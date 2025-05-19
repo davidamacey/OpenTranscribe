@@ -84,17 +84,19 @@ The development environment uses Docker Compose to run all components with live-
 
 1. Start the development environment:
    ```bash
-   ./start-dev.sh
+   ./start.sh dev
+   # or use the opentr.sh utility:
+   # ./opentr.sh start dev
    ```
    
-   This script performs the following actions:
+   This performs the following actions:
    - Starts all Docker containers with proper dependency ordering
    - Creates necessary directories for models and temporary files
    - Sets up the database with initial schema if needed
    - Starts the backend API server with auto-reload for instant code changes
    - Launches Celery workers for background processing with GPU support if available
    - Starts the frontend development server with hot module replacement
-   - Opens log streams in separate terminal windows for easy monitoring
+   - Shows container logs for monitoring
 
 2. Access the application and related services:
    - 🌐 **Frontend**: http://localhost:5173 (Svelte application with hot reloading)
@@ -104,16 +106,29 @@ The development environment uses Docker Compose to run all components with live-
    - 📁 **MinIO Console**: http://localhost:9091 (Object storage, credentials in .env file)
    - 🌺 **Flower Dashboard**: http://localhost:5555/flower (Celery task monitoring)
 
-3. Reset the development environment (clear all data):
+3. Manage the development environment:
    ```bash
+   # Reset the environment (clear all data):
    ./reset_and_init.sh dev
+   # or
+   ./opentr.sh reset dev
+   
+   # Stop all services:
+   ./opentr.sh stop
+   
+   # View logs:
+   ./opentr.sh logs [service]  # e.g., backend, frontend, postgres
+   
+   # Open a shell in a container:
+   ./opentr.sh shell backend  # or frontend, postgres, etc.
    ```
-   This resets the database, removes all volumes, and reinitializes the system with fresh data.
-
-4. To stop the development environment:
-   ```bash
-   docker compose down
-   ```
+   
+   The reset command performs these actions:
+   - Stops and removes all containers
+   - Removes volumes (clearing all data)
+   - Rebuilds and restarts the services
+   - Reinitializes the database with base schema
+   - Creates an admin user if one doesn't exist
 
 ### 🚀 Production Mode
 
@@ -131,18 +146,21 @@ For production deployment, OpenTranscribe uses a specialized build process to op
    # - Configure appropriate JWT secrets
    ```
 
-2. Build and start the production environment using the frontend-prod service:
+2. Build and start the production environment:
    ```bash
-   # Use the reset_and_init.sh script with "prod" parameter
+   # Using the utility script (recommended):
+   ./opentr.sh start prod
+   
+   # Or manually:
    ./reset_and_init.sh prod
    ```
    
-   The script will:
+   This will:
    - Stop any existing containers and clear volumes
    - Build optimized production images (including minified frontend)
    - Start only the necessary services for production
-   - Use the frontend-prod service which builds a production-optimized Svelte app
    - Initialize the database with base schema and admin user
+   - Configure NGINX to serve the production frontend
 
 3. Access the application:
    - 🌐 **Frontend**: http://localhost:5173 (production build served via NGINX in container)
@@ -173,21 +191,56 @@ The application includes Flower for monitoring Celery tasks:
 
 For database operations:
 
-```bash
-# Connect to PostgreSQL
-docker compose exec postgres psql -U postgres -d opentranscribe
+### Database Management
 
-# Reset the database and initialize (warning: this will delete all data)
-./reset_and_init.sh
+For database operations, use the utility script:
+
+```bash
+# Connect to PostgreSQL shell
+./opentr.sh shell postgres psql -U postgres -d opentranscribe
+
+# Create a database backup
+./opentr.sh backup
+
+# Restore from backup
+./opentr.sh restore ./backups/your_backup_file.sql
+
+# Reset the database (warning: deletes all data)
+./opentr.sh reset
 ```
 
-**Note**: The reset_and_init.sh script performs these tasks:
-- Stops all containers
-- Removes Docker volumes (clearing all data)
-- Restarts the containers
-- Initializes the database schema
-- Creates an admin user
-- Opens container logs for monitoring
+### 🛠️ Utility Script Reference
+
+OpenTranscribe includes a powerful utility script `opentr.sh` for common tasks:
+
+```bash
+# Start services (dev mode by default)
+./opentr.sh start [dev|prod]
+
+# Stop all services
+./opentr.sh stop
+
+# Reset and reinitialize (deletes data!)
+./opentr.sh reset [dev|prod]
+
+# View logs
+./opentr.sh logs [service]  # e.g., backend, frontend, postgres
+
+# Check container status
+./opentr.sh status
+
+# Open a shell in a container
+./opentr.sh shell [service]
+
+# Create a database backup
+./opentr.sh backup
+
+# Restore database from backup
+./opentr.sh restore [backup_file]
+
+# Rebuild containers
+./opentr.sh build
+```
 
 ## 📁 Working with Media Files
 
