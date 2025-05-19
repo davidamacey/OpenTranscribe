@@ -1,0 +1,24 @@
+{
+	"/": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/admin": [
+		"src/routes/+layout.ts"
+	],
+	"/files/[id]": [
+		"src/routes/+layout.ts"
+	],
+	"/login": [
+		"src/routes/+layout.ts"
+	],
+	"/register": [
+		"src/routes/+layout.ts"
+	],
+	"/settings": [
+		"src/routes/+layout.ts"
+	],
+	"/tasks": [
+		"src/routes/+layout.ts"
+	]
+}

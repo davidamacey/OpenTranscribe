@@ -1,0 +1,238 @@
+/* Theme Variables */
+
+:root {
+  /* Default Light Theme */
+  --primary-color: #3b82f6; /* Original blue color */
+  --primary-color-rgb: 59, 130, 246; /* RGB values for primary color */
+  --primary-hover: #2563eb;
+  --primary-light: #dbeafe; /* Light blue for button backgrounds */
+  --primary-dark: #1d4ed8; /* Darker blue for button text */
+  --surface-color: #ffffff;
+  --background-color: #f8fafc;
+  --text-color: #1e293b;
+  --text-secondary: #64748b;
+  --border-color: #e5e7eb;
+  --error-color: #ef4444;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --info-color: #3b82f6;
+  --card-background: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --divider-color: #e5e7eb;
+  --input-background: #ffffff;
+  --input-border: #d1d5db;
+  --input-focus-border: #3b82f6;
+  --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --button-hover: rgba(0, 0, 0, 0.05);
+  --toggle-bg: #e5e7eb;
+  --toggle-button: #ffffff;
+  --table-header-bg: #f1f5f9;
+  --table-row-hover: #f8fafc;
+  --modal-backdrop: rgba(0, 0, 0, 0.5);
+  --link-color: #2563eb; /* Blue for links */
+  --link-hover: #1d4ed8;
+  --link-visited: #4f46e5; /* Royal blue for visited links */
+}
+
+/* Dark Theme */
+[data-theme='dark'] {
+  --primary-color: #60a5fa; /* Lighter blue for dark mode */
+  --primary-color-rgb: 96, 165, 250; /* RGB values for primary color in dark mode */
+  --primary-hover: #93c5fd;
+  --primary-light: #1e3a8a; /* Deeper blue for button backgrounds in dark mode */
+  --primary-dark: #93c5fd; /* Lighter blue for button text in dark mode */
+  --surface-color: #1e293b;
+  --background-color: #0f172a;
+  --text-color: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --border-color: #334155;
+  --error-color: #f87171;
+  --success-color: #34d399;
+  --warning-color: #fbbf24;
+  --info-color: #60a5fa;
+  --card-background: #1e293b;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --divider-color: #334155;
+  --input-background: #334155; /* Darker input background */
+  --input-border: #475569;
+  --input-focus-border: #60a5fa;
+  --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --button-hover: rgba(255, 255, 255, 0.1);
+  --toggle-bg: #334155;
+  --toggle-button: #f8fafc;
+  --table-header-bg: #293548; /* Darker header background for better contrast */
+  --table-row-hover: #334155;
+  --modal-backdrop: rgba(0, 0, 0, 0.7);
+  --link-color: #60a5fa; /* Brighter blue for links in dark mode */
+  --link-hover: #93c5fd;
+  --link-visited: #818cf8; /* Light indigo instead of purple */
+}
+
+/* Global styles that should adapt to theme */
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Ensure all interactive elements have a smooth transition */
+button, a, input, select, textarea {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Link styling */
+a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
+a:visited {
+  color: var(--link-visited);
+}
+
+/* Override for navigation links that shouldn't use the visited style */
+.nav-links a, .navbar a, .sidebar a {
+  color: var(--text-color);
+}
+
+.nav-links a:hover, .navbar a:hover, .sidebar a:hover {
+  color: var(--primary-color);
+}
+
+/* Additional dark mode styles to ensure consistency */
+[data-theme='dark'] input,
+[data-theme='dark'] select,
+[data-theme='dark'] textarea {
+  background-color: var(--input-background);
+  color: var(--text-color);
+  border-color: var(--input-border);
+}
+
+/* Tables in dark mode */
+[data-theme='dark'] table {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+[data-theme='dark'] table th {
+  background-color: var(--table-header-bg);
+}
+
+[data-theme='dark'] table td {
+  border-color: var(--border-color);
+}
+
+[data-theme='dark'] table tr:hover {
+  background-color: var(--table-row-hover);
+}
+
+/* Improve buttons in dark mode */
+[data-theme='dark'] button.primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+/* Form elements and cards in dark mode */
+[data-theme='dark'] .card,
+[data-theme='dark'] .panel,
+[data-theme='dark'] .box,
+[data-theme='dark'] form {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+/* Placeholders in dark mode */
+[data-theme='dark'] input::placeholder,
+[data-theme='dark'] textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+/* Theme toggle switch styles */
+.theme-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 26px;
+}
+
+.theme-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.theme-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--toggle-bg);
+  transition: 0.4s;
+  border-radius: 34px;
+  overflow: visible; /* Ensure icons are visible */
+}
+
+.theme-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--toggle-button);
+  transition: 0.4s;
+  border-radius: 50%;
+  z-index: 2; /* Ensure the circle is above the icons */
+}
+
+input:checked + .theme-toggle-slider {
+  background-color: var(--primary-color);
+}
+
+input:checked + .theme-toggle-slider:before {
+  transform: translateX(26px);
+}
+
+/* Light/Dark mode icons */
+.theme-toggle-slider .sun-icon,
+.theme-toggle-slider .moon-icon {
+  position: absolute;
+  top: 5px;
+  width: 16px;
+  height: 16px;
+  transition: opacity 0.3s ease;
+  z-index: 1; /* Place icons below the slider button */
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 2px;
+}
+
+.theme-toggle-slider .sun-icon {
+  left: 6px;
+  color: #f59e0b; /* Sun color - amber */
+  opacity: 1;
+}
+
+.theme-toggle-slider .moon-icon {
+  right: 6px;
+  color: #f8fafc; /* Moon color - white */
+  opacity: 0;
+}
+
+input:checked + .theme-toggle-slider .sun-icon {
+  opacity: 0;
+}
+
+input:checked + .theme-toggle-slider .moon-icon {
+  opacity: 1;
+}

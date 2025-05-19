@@ -1,0 +1,86 @@
+/* Specific table styles to override any component-specific styling */
+
+/* Standard table styling that applies to all tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--card-background);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  box-shadow: var(--card-shadow);
+}
+
+/* Table headers */
+table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600;
+  background-color: var(--table-header-bg);
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+}
+
+/* Table cells */
+table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+/* Table rows */
+table tr:hover {
+  background-color: var(--table-row-hover);
+}
+
+/* Last row shouldn't have a border */
+table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Empty state for tables */
+.table-empty-state {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* User management specific table fixes */
+[data-theme='dark'] .user-table th {
+  background-color: var(--table-header-bg);
+  color: var(--text-color);
+}
+
+[data-theme='dark'] .user-table td {
+  background-color: var(--card-background);
+  color: var(--text-color);
+}
+
+/* User management actions */
+[data-theme='dark'] .user-table .actions button {
+  background-color: transparent;
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+
+[data-theme='dark'] .user-table .actions button:hover {
+  background-color: var(--button-hover);
+}
+
+/* Make sure striped tables have consistent colors */
+.table-striped tr:nth-child(even) {
+  background-color: var(--table-row-hover);
+}
+
+/* Ensure specificity for the UserManagementTable component */
+[data-theme='dark'] .UserManagementTable table th,
+[data-theme='dark'] .user-management-table th {
+  background-color: var(--table-header-bg);
+  color: var(--text-color);
+}
+
+[data-theme='dark'] .UserManagementTable table td,
+[data-theme='dark'] .user-management-table td {
+  color: var(--text-color);
+}

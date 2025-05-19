@@ -1,0 +1,148 @@
+/* Form element styles for both light and dark mode */
+
+/* Input fields */
+input, select, textarea, .input-like, .select-like {
+  background-color: var(--input-background);
+  color: var(--text-color);
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary-color);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.25);
+}
+
+/* Table styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+th {
+  background-color: var(--table-header-bg);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover {
+  background-color: var(--table-row-hover);
+}
+
+/* General form layout */
+.form-row {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.form-help {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.form-error {
+  color: var(--error-color);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+/* Buttons with proper contrast */
+button, .btn {
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.6rem 1.2rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+  font-size: 0.95rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+button:hover:not(:disabled), .btn:hover:not(:disabled),
+button:focus:not(:disabled), .btn:focus:not(:disabled) {
+  background-color: var(--button-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  text-decoration: none !important;
+}
+
+button:active:not(:disabled), .btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button.primary, .btn-primary {
+  background-color: #3b82f6; /* Use explicit color for consistency */
+  color: white !important; /* Force white text */
+  border: none;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+}
+
+button.primary:hover:not(:disabled), .btn-primary:hover:not(:disabled),
+button.primary:focus:not(:disabled), .btn-primary:focus:not(:disabled) {
+  background-color: #2563eb; /* Darker blue on hover */
+  color: white !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+}
+
+button:disabled, .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Modal/Dialog styles */
+.modal, .dialog {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border-color);
+}
+
+.modal-header, .dialog-header {
+  border-bottom: 1px solid var(--border-color);
+  padding: 16px;
+}
+
+.modal-body, .dialog-body {
+  padding: 16px;
+}
+
+.modal-footer, .dialog-footer {
+  border-top: 1px solid var(--border-color);
+  padding: 16px;
+}

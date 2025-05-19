@@ -1,0 +1,31 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies with legacy peer deps to handle Svelte 4 + svelte-navigator compatibility
+RUN npm install --legacy-peer-deps
+
+# Create public directory for fonts
+RUN mkdir -p public/fonts
+
+# Copy application code
+COPY . .
+
+# Ensure the fonts directory has the correct permissions
+RUN chmod -R 755 public/fonts
+
+# Expose port 5173 for Vite dev server
+EXPOSE 5173
+
+# Start the development server
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

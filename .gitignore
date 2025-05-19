@@ -1,0 +1,78 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Production
+build/
+dist/
+*.egg-info/
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.python-version
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Databases
+*.sqlite3
+*.db
+
+# Docker volumes
+*_data/
+
+# AI models and temp files
+models/
+temp/
+
+# Media files
+uploads/
+downloads/
+media/
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local fonts (will be downloaded during build)
+frontend/public/fonts/
+
+# Local development specific
+.ipynb_checkpoints/
+notebooks/
