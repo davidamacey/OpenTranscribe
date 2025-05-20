@@ -173,11 +173,6 @@
 </script>
 
 <div class="uploader-container">
-  <h2>Upload Media</h2>
-  <p class="uploader-description">
-    Upload audio or video files for transcription with speaker diarization.
-  </p>
-  
   {#if error}
     <div class="error-message">
       {error}
@@ -198,7 +193,10 @@
         <polyline points="17 8 12 3 7 8"></polyline>
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
-      <p>Drag & drop your audio/video file here<br> or click to browse</p>
+      <div class="upload-text">
+        <span>Drag & drop your audio/video file here</span>
+        <span class="or-text">or click to browse</span>
+      </div>
       <input
         type="file"
         accept="audio/*,video/*"
@@ -250,48 +248,55 @@
   .uploader-container {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .uploader-container h2 {
-    font-size: 1.2rem;
-    margin: 0;
-  }
-  
-  .uploader-description {
-    font-size: 0.9rem;
-    color: var(--text-light);
-    margin: 0;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 0;
   }
   
   .drop-zone {
-    border: 2px dashed var(--border-color);
-    border-radius: 8px;
-    padding: 2rem;
+    padding: 3rem 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: var(--text-light);
+    gap: 1rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    background-color: var(--background-alt);
     cursor: pointer;
-    transition: border-color 0.2s, background-color 0.2s;
+    transition: all 0.2s ease;
+    text-align: center;
   }
   
-  .drop-zone:hover, .drop-zone.active {
+  .drop-zone:hover,
+  .drop-zone.active {
     border-color: var(--primary-color);
     background-color: rgba(59, 130, 246, 0.05);
   }
   
-  .drop-zone p {
-    margin: 1rem 0 0;
-    text-align: center;
-    font-size: 0.9rem;
+  .drop-zone svg {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
   }
   
-  .supported-formats {
+  .upload-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
     text-align: center;
-    font-size: 0.8rem;
+    color: var(--text-color);
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+  
+  .or-text {
     color: var(--text-light);
+    font-size: 0.9em;
   }
   
   .supported-formats p {

@@ -387,30 +387,30 @@
     role="presentation"
     on:click|self={toggleUploadModal}
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
-  ></div>
-  
-  <!-- The actual modal dialog -->
-  <div 
-    class="modal-container" 
-    role="dialog"
-    aria-labelledby="upload-modal-title"
-    aria-modal="true">
+  >
+    <!-- The actual modal dialog -->
     <div 
-      class="modal-content"
-      tabindex="-1">
-      <!-- Using svelte-ignore for the click-to-close backdrop which is a common UX pattern -->
-      <!-- The modal container itself has proper keyboard navigation and focus management -->
-      <div class="modal-header">
-        <h2 id="upload-modal-title">Upload Media</h2>
-        <button class="modal-close" on:click={toggleUploadModal}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <FileUploader on:uploadComplete={handleUploadComplete} />
+      class="modal-container" 
+      role="dialog"
+      aria-labelledby="upload-modal-title"
+      aria-modal="true"
+      on:click|stopPropagation>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="upload-modal-title">Upload Media</h2>
+          <button 
+            class="modal-close" 
+            on:click={toggleUploadModal}
+            aria-label="Close upload dialog">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <FileUploader on:uploadComplete={handleUploadComplete} />
+        </div>
       </div>
     </div>
   </div>
@@ -738,62 +738,86 @@
     right: 0;
     bottom: 0;
     background-color: rgba(0, 0, 0, 0.5);
-    z-index: 100;
-  }
-  
-  .modal-container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 101;
-    padding: 1rem;
-    pointer-events: none;
+  }
+  
+  .modal-container {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    margin: 1rem;
   }
   
   .modal-content {
     background-color: var(--surface-color);
-    border-radius: 8px;
+    border-radius: 12px;
     width: 100%;
-    max-width: 600px;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
-    pointer-events: auto; /* Re-enable pointer events for the modal content */
+    position: relative;
   }
   
   .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
+    position: relative;
+    padding: 1.25rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
   }
   
   .modal-header h2 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
   }
   
   .modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
     background: transparent;
     border: none;
-    cursor: pointer;
-    padding: 0.25rem;
-    color: var(--text-light);
+    border-radius: 50%;
+    width: 2rem;
+    height: 2rem;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background-color: var(--background-alt);
+    color: var(--text-color);
+  }
+  
+  .modal-close svg {
+    width: 1.25rem;
+    height: 1.25rem;
   }
   
   .modal-body {
-    padding: 1.5rem;
+    padding: 1.5rem 1.5rem 2rem;
+  }
+  
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   
   .file-grid {
