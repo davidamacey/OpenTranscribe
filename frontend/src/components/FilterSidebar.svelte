@@ -127,23 +127,33 @@
   
   /**
    * Handle from date input changes
-   * @param {Event} event - The input event
+   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
   function handleFromDateChange(event) {
-    if (event.target && 'value' in event.target) {
-      const date = event.target.value ? new Date(event.target.value) : null;
-      dateRange = { ...dateRange, from: date };
+    const value = event.currentTarget?.value;
+    if (value) {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) { // Check if the date is valid
+        dateRange = { ...dateRange, from: date };
+      }
+    } else {
+      dateRange = { ...dateRange, from: null };
     }
   }
   
   /**
    * Handle to date input changes
-   * @param {Event} event - The input event
+   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
   function handleToDateChange(event) {
-    if (event.target && 'value' in event.target) {
-      const date = event.target.value ? new Date(event.target.value) : null;
-      dateRange = { ...dateRange, to: date };
+    const value = event.currentTarget?.value;
+    if (value) {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) { // Check if the date is valid
+        dateRange = { ...dateRange, to: date };
+      }
+    } else {
+      dateRange = { ...dateRange, to: null };
     }
   }
   
@@ -209,7 +219,7 @@
           type="date"
           id="fromDate"
           bind:value={fromDate}
-          on:change={handleFromDateChange}
+          on:input={handleFromDateChange}
           class="filter-input"
         />
       </div>
@@ -219,7 +229,7 @@
           type="date"
           id="toDate"
           bind:value={toDate}
-          on:change={handleToDateChange}
+          on:input={handleToDateChange}
           class="filter-input"
         />
       </div>
@@ -379,18 +389,31 @@
   
   .apply-button {
     width: 100%;
-    background-color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    font-size: 0.9rem;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
-  .apply-button:hover {
-    background-color: var(--primary-dark);
+  .apply-button:hover:not(:disabled) {
+    background-color: #2563eb;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    text-decoration: none;
+  }
+  
+  .apply-button:active:not(:disabled) {
+    transform: translateY(0);
   }
 </style>
