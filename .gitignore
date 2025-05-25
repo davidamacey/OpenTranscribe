@@ -78,3 +78,4 @@ frontend/public/fonts/
 .ipynb_checkpoints/
 notebooks/
 backend/models/
+backend/whisperx-test.py
