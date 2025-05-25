@@ -14,6 +14,7 @@ coverage/
 .coverage
 htmlcov/
 .pytest_cache/
+test_videos/
 
 # Production
 build/
@@ -44,7 +45,7 @@ yarn-error.log*
 *_data/
 
 # AI models and temp files
-models/
+models_ai/
 temp/
 
 # Media files

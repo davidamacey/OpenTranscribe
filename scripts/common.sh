@@ -47,7 +47,7 @@ start_environment() {
     echo "💼 Production mode: Using optimized build with NGINX"
   else
     # Start with development configuration (using frontend service for hot reload)
-    docker compose up -d --build
+    docker compose up -d --build backend postgres redis minio opensearch celery-worker frontend flower
     FRONTEND_SERVICE="frontend"
     echo "🧪 Development mode: Hot reload enabled for faster development"
   fi

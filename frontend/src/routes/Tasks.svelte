@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { Link } from "svelte-navigator";
   import { user } from "../stores/auth";
+  import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
   
   /** @type {Array<{
     id: string,
@@ -28,6 +29,63 @@
   
   /** @type {number | null} */
   let refreshInterval = null;
+  
+  // Subscribe to WebSocket file status updates to update task status
+  const unsubscribeFileStatus = fileStatusUpdates.subscribe(updates => {
+    if (tasks.length > 0 && Object.keys(updates).length > 0) {
+      let updatedTask = false;
+      
+      // Find tasks that match updated files and update their status
+      tasks = tasks.map(task => {
+        if (task.media_file && updates[task.media_file.id]) {
+          const update = updates[task.media_file.id];
+          console.log(`Tasks: Received WebSocket update for file ${task.media_file.id}:`, update);
+          
+          // Convert file status to task status
+          let newTaskStatus;
+          let newProgress;
+          
+          if (update.status === 'completed') {
+            newTaskStatus = 'completed';
+            newProgress = 1.0;
+          } else if (update.status === 'processing') {
+            newTaskStatus = 'in_progress';
+            newProgress = update.progress ? update.progress/100 : task.progress;
+          } else if (update.status === 'error') {
+            newTaskStatus = 'failed';
+            newProgress = 0;
+          }
+          
+          // Only update if we have a new status and it's different
+          if (newTaskStatus && task.status !== newTaskStatus) {
+            console.log(`Tasks: Updating task ${task.id} status from ${task.status} to ${newTaskStatus}`);
+            updatedTask = true;
+            return {
+              ...task,
+              status: newTaskStatus,
+              progress: newProgress || task.progress
+            };
+          }
+        }
+        return task;
+      });
+      
+      // If we updated any tasks, immediately fetch fresh data
+      if (updatedTask) {
+        console.log('Tasks: Tasks updated via WebSocket, fetching fresh data');
+        fetchTasks();
+      }
+    }
+  });
+  
+  // Also track general notifications for task updates
+  const unsubscribeNotifications = lastNotification.subscribe(notification => {
+    if (notification && notification.type === 'task_status') {
+      console.log('Tasks: Received task status notification:', notification);
+      // Refresh task list when we receive task status notifications
+      fetchTasks();
+    }
+  });
   
   /**
    * Fetch all tasks for the current user
@@ -112,8 +170,11 @@
   
   // Lifecycle hooks
   onMount(() => {
+    // Setup WebSocket connection
+    setupWebsocketConnection(window.location.origin);
+    
     fetchTasks();
-    // Refresh tasks every 30 seconds
+    // Refresh tasks every 30 seconds as a fallback
     refreshInterval = window.setInterval(fetchTasks, 30000);
     
     return () => {
@@ -124,6 +185,15 @@
   onDestroy(() => {
     if (refreshInterval) {
       clearInterval(refreshInterval);
+    }
+    
+    // Unsubscribe from WebSocket updates
+    if (unsubscribeFileStatus) {
+      unsubscribeFileStatus();
+    }
+    
+    if (unsubscribeNotifications) {
+      unsubscribeNotifications();
     }
   });
 </script>

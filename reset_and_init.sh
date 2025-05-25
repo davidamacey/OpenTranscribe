@@ -21,8 +21,48 @@ docker compose down -v
 # Create necessary directories
 create_required_dirs
 
-# Start environment and get frontend service name
-FRONTEND_SERVICE=$(start_environment $ENVIRONMENT)
+# Start services one by one for better debugging
+echo "🚀 Starting database service..."
+docker compose up -d --build postgres
+sleep 5
+
+echo "🚀 Starting Redis service..."
+docker compose up -d --build redis
+sleep 3
+
+echo "🚀 Starting MinIO service..."
+docker compose up -d --build minio
+sleep 3
+
+echo "🚀 Starting OpenSearch service..."
+docker compose up -d --build opensearch
+sleep 5
+
+echo "🚀 Starting backend service..."
+docker compose up -d --build backend
+sleep 5
+
+# Check if backend is healthy
+if ! docker compose ps | grep backend | grep "(healthy)" > /dev/null; then
+  echo "⚠️ Backend might not be fully healthy yet, but continuing..."
+  docker compose logs backend --tail 20
+fi
+
+echo "🚀 Starting Celery worker..."
+docker compose up -d --build celery-worker
+sleep 3
+
+echo "🚀 Starting frontend service..."
+if [ "$ENVIRONMENT" == "prod" ]; then
+  docker compose up -d --build frontend-prod
+  FRONTEND_SERVICE="frontend-prod"
+else
+  docker compose up -d --build frontend
+  FRONTEND_SERVICE="frontend"
+fi
+
+echo "🚀 Starting Flower service..."
+docker compose up -d --build flower
 
 echo "⏳ Waiting for database to be ready..."
 sleep 10

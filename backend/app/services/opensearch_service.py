@@ -272,10 +272,27 @@ def search_transcripts(query: str, user_id: int, speaker: Optional[str] = None,
         
         # Add semantic search if requested
         if use_semantic and query:
-            # In a real implementation, we'd compute the query embedding here
-            # query_embedding = get_embedding(query)
-            # For now, we'll use a placeholder embedding
-            query_embedding = [0.0] * 384
+            # Compute the query embedding using sentence-transformers
+            try:
+                from sentence_transformers import SentenceTransformer
+                # Check if model exists locally or download it
+                model_path = os.path.join(settings.MODELS_DIRECTORY, "sentence-transformers")
+                os.makedirs(model_path, exist_ok=True)
+                
+                # Load the model (will download if not present)
+                embedding_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=model_path)
+                
+                # Generate embedding for the query
+                query_embedding = embedding_model.encode(query).tolist()
+                logger.info(f"Generated embedding for query: {query[:30]}...")
+            except ImportError:
+                logger.warning("sentence-transformers package not installed, using fallback embedding")
+                # Fallback to zero vector
+                query_embedding = [0.0] * 384
+            except Exception as e:
+                logger.warning(f"Error generating query embedding: {e}")
+                # Fallback to zero vector
+                query_embedding = [0.0] * 384
             
             # Add kNN query
             knn_query = {
