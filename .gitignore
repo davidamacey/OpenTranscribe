@@ -77,3 +77,4 @@ frontend/public/fonts/
 # Local development specific
 .ipynb_checkpoints/
 notebooks/
+backend/models/whisperx/
