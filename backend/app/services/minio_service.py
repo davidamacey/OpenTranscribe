@@ -60,7 +60,7 @@ def upload_file(file_content: BinaryIO, file_size: int, object_name: str, conten
         raise Exception(f"Error uploading file: {e}")
 
 
-def download_file(object_name: str) -> bytes:
+def download_file(object_name: str) -> Tuple[io.BytesIO, int, str]:
     """
     Download a file from MinIO
     
@@ -68,11 +68,20 @@ def download_file(object_name: str) -> bytes:
         object_name: Object name in MinIO
         
     Returns:
-        File content as bytes
+        Tuple containing:
+        - File content as BytesIO object
+        - File size in bytes
+        - Content type (MIME type)
     """
     try:
         # Get the file from MinIO
         response = minio_client.get_object(settings.MEDIA_BUCKET_NAME, object_name)
+        
+        # Get content type
+        content_type = response.headers.get('content-type', 'application/octet-stream')
+        
+        # Get content length
+        content_length = int(response.headers.get('content-length', 0))
         
         # Read the entire file into memory
         file_content = response.read()
@@ -81,7 +90,8 @@ def download_file(object_name: str) -> bytes:
         response.close()
         response.release_conn()
         
-        return file_content
+        # Return tuple with file data as BytesIO, size, and content type
+        return io.BytesIO(file_content), content_length, content_type
     except Exception as e:
         print(f"Error downloading file: {e}")
         raise Exception(f"Error downloading file: {e}")

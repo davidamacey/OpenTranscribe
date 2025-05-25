@@ -28,6 +28,13 @@ CREATE TABLE IF NOT EXISTS media_file (
     language VARCHAR(10) NULL,
     summary TEXT NULL,
     translated_text TEXT NULL,
+    -- Video metadata fields
+    width INTEGER NULL,
+    height INTEGER NULL,
+    frame_rate FLOAT NULL,
+    codec VARCHAR(50) NULL,
+    bit_rate INTEGER NULL,
+    metadata JSONB NULL,
     user_id INTEGER NOT NULL REFERENCES "user" (id)
 );
 
@@ -51,8 +58,11 @@ CREATE TABLE IF NOT EXISTS file_tag (
 CREATE TABLE IF NOT EXISTS speaker (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES "user"(id),
-    name VARCHAR(255) NOT NULL,
-    embedding_vector JSONB NULL,
+    name VARCHAR(255) NOT NULL, -- Original name from diarization (e.g., "SPEAKER_01")
+    display_name VARCHAR(255) NULL, -- User-assigned name (e.g., "John Doe")
+    uuid VARCHAR(255) NOT NULL UNIQUE, -- Unique identifier for the speaker
+    verified BOOLEAN NOT NULL DEFAULT FALSE, -- Flag to indicate if the speaker has been verified by a user
+    embedding_vector JSONB NULL, -- Speaker embedding as JSON array
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -114,4 +124,5 @@ CREATE TABLE IF NOT EXISTS alembic_version (
     version_num VARCHAR(32) NOT NULL,
     PRIMARY KEY (version_num)
 );
-INSERT INTO alembic_version (version_num) VALUES ('001') ON CONFLICT DO NOTHING;
+-- Update to include video metadata fields migration
+INSERT INTO alembic_version (version_num) VALUES ('74093bff36e6') ON CONFLICT DO NOTHING;

@@ -15,6 +15,9 @@ from app.db.base import Base
 from app.models.user import User
 from app.models.media import MediaFile, TranscriptSegment, Speaker, Comment, Tag, FileTag, Task, Analytics
 
+# NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema
+# until the application reaches releases. After that, we will use Alembic migrations.
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

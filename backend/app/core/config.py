@@ -75,11 +75,13 @@ class Settings(BaseSettings):
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     USE_GPU: bool = os.getenv("USE_GPU", "True").lower() == "true"  # Default to True as we have a powerful GPU
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mistral-7b-instruct-v0.2.Q4_K_M")  # For summarization
+    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
     
     # Storage paths
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/mnt/nvm/repos/transcribe-app/data"))
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_CACHE_DIR: Path = DATA_DIR / "model_cache"
+    MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     
     # Initialization (CORS and directories)
     def __init__(self, **data):

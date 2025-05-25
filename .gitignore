@@ -14,6 +14,7 @@ coverage/
 .coverage
 htmlcov/
 .pytest_cache/
+test_videos/
 
 # Production
 build/
@@ -44,7 +45,7 @@ yarn-error.log*
 *_data/
 
 # AI models and temp files
-models/
+models_ai/
 temp/
 
 # Media files
@@ -76,3 +77,5 @@ frontend/public/fonts/
 # Local development specific
 .ipynb_checkpoints/
 notebooks/
+backend/models/
+backend/whisperx-test.py

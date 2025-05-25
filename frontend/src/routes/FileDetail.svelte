@@ -87,12 +87,17 @@
    * @property {Object.<string, SpeakerSpecificMetrics>} [speakers] // Metrics per speaker
    */
 
+  // Speaker type is already defined above
+
   /**
    * @typedef {object} TranscriptSegment
    * @property {number} start_time
    * @property {number} end_time
    * @property {string} text
    * @property {string} [speaker_label] // Optional speaker label
+   * @property {string} [speaker_id] // ID of the speaker
+   * @property {string} [speaker_uuid] // UUID of the speaker for cross-video identification
+   * @property {Speaker} [speaker] // Full speaker object with details
    */
 
   /**
@@ -143,9 +148,27 @@
   let editedTranscript = '';
   let savingTranscript = false;
   let transcriptError = '';
+  let editingSegmentId = null;
+  let editingSegmentText = '';
+  let isEditingSpeakers = false;
+  let savingSpeakers = false;
+  let speakerError = '';
   let isTagsExpanded = false; // Control for tags dropdown
   let isAnalyticsExpanded = false; // Control for analytics dropdown
   let activeSpeaker = '';
+  /**
+   * @typedef {Object} Speaker
+   * @property {number} id - The speaker ID
+   * @property {string} name - The speaker name
+   * @property {string} display_name - The display name for the speaker
+   * @property {string} [color] - The color assigned to the speaker
+   */
+  
+  /** @type {Speaker[]} */
+  let speakerList = [];
+  /** @type {{ [key: string]: string }} */
+  let speakerColors = {};
+  let loadingSpeakers = false; // Flag for speaker loading state
 
   // These variables are already declared above
 
@@ -182,6 +205,51 @@
       });
     }
   });
+  
+  /**
+   * Handles clicking on a transcript segment to jump to that point in the video
+   * @param {number} startTime - The start time of the segment in seconds
+   */
+  function handleSegmentClick(startTime) {
+    if (player && player.ready) {
+      console.log(`Jumping to time: ${startTime} seconds`);
+      player.currentTime = startTime;
+      player.play().catch(error => {
+        console.error('Error playing video after segment click:', error);
+      });
+    } else {
+      console.warn('Player not ready for seeking');
+    }
+  }
+
+  /**
+   * Highlights the current segment based on video playback time
+   * @param {number} currentPlaybackTime - Current video playback time in seconds
+   */
+  function highlightCurrentSegment(currentPlaybackTime) {
+    if (!file || !file.transcript || !file.transcript.segments) return;
+    
+    // Remove highlight from all segments
+    const allSegments = document.querySelectorAll('.transcript-segment');
+    allSegments.forEach(segment => {
+      segment.classList.remove('active-segment');
+    });
+    
+    // Find the current segment based on playback time
+    const currentSegment = file.transcript.segments.find(segment => {
+      return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
+    });
+    
+    if (currentSegment) {
+      // Find and highlight the corresponding DOM element
+      const segmentElement = document.querySelector(`[data-segment-id="${currentSegment.start_time}-${currentSegment.end_time}"]`);
+      if (segmentElement) {
+        segmentElement.classList.add('active-segment');
+        // Optionally scroll into view if not visible
+        segmentElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }
   
   // Fetch file details on component mount
   onMount(() => {
@@ -239,73 +307,184 @@
     }
   });
 
-  async function fetchFileDetails() {
+  /**
+   * Fetch analytics data for a file
+   * @param {number} fileId - The ID of the file to fetch analytics for
+   */
+  async function fetchAnalytics(fileId) {
+    try {
+      console.log(`FileDetail: Fetching analytics for file ID: ${fileId}`);
+      const response = await axiosInstance.get(`/files/${fileId}/analytics`);
+      
+      if (response.data && typeof response.data === 'object') {
+        console.log('FileDetail: Received analytics data:', response.data);
+        
+        // Update file with analytics data
+        if (file) {
+          file.analytics = response.data;
+          reactiveFile.set(file);
+        }
+      } else {
+        console.warn('FileDetail: No analytics data received');
+      }
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+      // If the endpoint doesn't exist, create a basic analytics structure
+      // Use JavaScript-compatible error handling
+      const err = error;
+      
+      /** @type {any} */ // Type assertion for error object
+      const errorObj = err;
+      if (file && errorObj && typeof errorObj === 'object' && errorObj.response && typeof errorObj.response === 'object' && errorObj.response.status === 404) {
+        console.log('FileDetail: Creating default analytics structure');
+          // Create a basic analytics structure from transcript data
+          if (file && file.transcript && file.transcript.length > 0) {
+            // Initialize with JavaScript-compatible typing
+            const speakerCounts = {};
+            let totalWords = 0;
+            
+            file.transcript.forEach(segment => {
+              const speaker = segment.speaker_label || 'Unknown';
+              const words = segment.text.split(/\s+/).filter(Boolean).length;
+              speakerCounts[speaker] = (speakerCounts[speaker] || 0) + words;
+              totalWords += words;
+            });
+            
+            // Create analytics structure
+            file.analytics = {
+              overall: {
+                word_count: totalWords,
+                duration_seconds: file.duration || 0,
+                talk_time: {
+                  by_speaker: speakerCounts,
+                  total: totalWords
+                }
+              }
+            };
+            reactiveFile.set(file);
+          }
+      }
+    }
+  }
+  
+  /**
+   * Fetch transcript segments for a file
+   * @param {number} fileId - The ID of the file to fetch transcript segments for
+   */
+  async function fetchTranscriptSegments(fileId) {
+    try {
+      console.log(`FileDetail: Fetching transcript segments for file ID: ${fileId}`);
+      const response = await axiosInstance.get(`/api/files/${fileId}/transcript`);
+      
+      if (response.data && Array.isArray(response.data)) {
+        console.log(`FileDetail: Received ${response.data.length} transcript segments`);
+        
+        // Update file with transcript segments
+        if (file) {
+          file.transcript = response.data;
+          
+          // Update transcript text
+          transcriptText = file.transcript.map(seg => 
+            `${formatTimestampWithMillis(seg.start_time)} [${seg.speaker_label || 'Speaker'}]: ${seg.text}`
+          ).join('\n');
+          
+          editedTranscript = transcriptText;
+          
+          // Load speakers for this file
+          loadSpeakers();
+        }
+      } else {
+        console.warn('FileDetail: No transcript segments received');
+        transcriptText = 'No transcript available.';
+      }
+    } catch (err) {
+      console.error('Error fetching transcript segments:', err);
+      transcriptText = 'Error loading transcript.';
+    }
+  }
+  
+  /**
+   * Fetch file details from the API
+   * @param {MouseEvent | string | undefined} fileIdOrEvent - Either a file ID or a click event
+   */
+  async function fetchFileDetails(fileIdOrEvent = id) {
+    // Handle both string ID and click event cases
+    const fileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : id;
+    if (!fileId) {
+      errorMessage = 'No file ID provided';
+      isLoading = false;
+      return;
+    }
+    
     isLoading = true;
     errorMessage = '';
+    
     try {
-      console.log(`FileDetail: Fetching details for file ID: ${fileId}`);
+      console.log(`FileDetail: Fetching file details for ID: ${fileId}`);
       const response = await axiosInstance.get(`/files/${fileId}`);
       
-      console.log('FileDetail: File data received:', response.status);
-      console.log('FileDetail: Complete file data:', response.data);
-      file = response.data;
-      
-      if (!file) {
-        console.error('FileDetail: File data is null or undefined');
-        errorMessage = 'Error loading file data';
-        isLoading = false;
-        return;
-      }
-      
-      // Enhanced debugging for video URL handling
-      console.log('FileDetail: Raw preview_url:', file.preview_url || 'null/undefined');
-      console.log('FileDetail: Raw download_url:', file.download_url || 'null/undefined');
-      
-      // Check if we have any URL at all
-      if (!file.preview_url && !file.download_url) {
-        console.error('FileDetail: Neither preview_url nor download_url is available');
-        console.log('FileDetail: Full file data for debugging:', JSON.stringify(file, null, 2));
-      }
-      
-      // Handle URL choices based on path type - with enhanced error handling
-      // Use the simple-video endpoint which returns the complete video file
-      // This is not efficient for large files but works reliably for development
-      videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
-      console.log('FileDetail: Using simple-video endpoint for direct download:', videoUrl);
-      
-      // Reset video element check flag to prompt afterUpdate to try initialization
-      videoElementChecked = false;
-      
-      if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
-        videoUrl = '/' + videoUrl;
-        console.log('FileDetail: Added leading slash to URL:', videoUrl);
-      }
-      
-      console.log('FileDetail: Final videoUrl chosen:', videoUrl || 'none');
-      
-      transcriptText = file.transcript ? file.transcript.map(seg => `${seg.speaker_label || 'Unknown'}: ${seg.text}`).join('\n') : 'No transcript available.';
-      editedTranscript = transcriptText;
-      
-      console.log('FileDetail: File status:', file.status);
-      console.log('FileDetail: Storage path:', file.storage_path || 'none');
-      
-      if (videoUrl) {
-        console.log('FileDetail: S3 direct URL is available for playback:', videoUrl);
-        // Reset flag to prompt afterUpdate to try initialization
+      if (response.data) {
+        file = response.data;
+        console.log('FileDetail: File details:', file);
+        
+        // Set video URL - use the simple-video endpoint for efficient streaming
+        videoUrl = `${apiBaseUrl}/api/files/${file.id}/simple-video`;
+        console.log('FileDetail: Video URL set to:', videoUrl);
+        
+        // Initialize player (will be done after DOM update via afterUpdate hook)
         videoElementChecked = false;
-      } else {
-        console.warn('FileDetail: No video URL available - investigating why');
-        // Add more debugging information if URL is missing
-        if (file.status !== 'completed') {
-          console.log('FileDetail: File not completed yet, status =', file.status);
-          errorMessage = `Video not available yet. File status: ${file.status}`;
-        } else if (!file.storage_path) {
-          console.log('FileDetail: No storage path available');
-          errorMessage = 'Video URL not available. No storage path found.';
-        } else {
-          console.log('FileDetail: Unknown reason for missing URL');
-          errorMessage = 'Video URL not available. The file might still be processing.';
+        
+        // Fetch transcript if not included in response
+        if (!file.transcript || file.transcript.length === 0) {
+          console.log('FileDetail: No transcript data in file, fetching separately');
+          fetchTranscriptSegments(file.id);
         }
+        
+        // Process transcript data if available
+        if (file && file.transcript && file.transcript.length > 0) {
+          console.log(`FileDetail: File has ${file.transcript.length} transcript segments`);
+          
+          // Load speakers for this file to associate with transcript segments
+          loadSpeakers();
+          
+          // Create text representation of transcript
+          transcriptText = file.transcript.map(seg => `${formatTimestampWithMillis(seg.start_time)} [${seg.speaker_label || 'Speaker'}]: ${seg.text}`).join('\n');
+        } else if (file && response.data.transcript_segments && response.data.transcript_segments.length > 0) {
+          // Handle case where transcript is in transcript_segments field instead of transcript
+          console.log(`FileDetail: File has ${response.data.transcript_segments.length} transcript segments in transcript_segments field`);
+          file.transcript = response.data.transcript_segments;
+          
+          // Load speakers for this file to associate with transcript segments
+          loadSpeakers();
+          
+          // Create text representation of transcript
+          transcriptText = file.transcript.map(seg => `${formatTimestampWithMillis(seg.start_time)} [${seg.speaker_label || 'Speaker'}]: ${seg.text}`).join('\n');
+        } else if (file) {
+          console.warn('FileDetail: No transcript data found');
+          // Check if we need to fetch transcript segments separately
+          fetchTranscriptSegments(file.id);
+          transcriptText = 'Loading transcript...';
+        }
+        
+        // Check if we need to fetch analytics separately
+        if (file && (!file.analytics || !file.analytics.overall)) {
+          console.log('FileDetail: No analytics data found, fetching separately');
+          fetchAnalytics(file.id);
+        } else if (file && file.analytics) {
+          console.log('FileDetail: Analytics data found:', file.analytics);
+        }
+        editedTranscript = transcriptText;
+        
+        console.log('FileDetail: File status:', file.status);
+        console.log('FileDetail: Storage path:', file.storage_path || 'none');
+        
+        if (videoUrl) {
+          console.log('FileDetail: S3 direct URL is available for playback:', videoUrl);
+          // Reset flag to prompt afterUpdate to try initialization
+          videoElementChecked = false;
+        }
+        
+        console.log('FileDetail: Final videoUrl chosen:', videoUrl || 'none');
       }
       if (file.status === 'processing') {
         // If still processing, poll for updates
@@ -315,30 +494,15 @@
 
     } catch (err) {
       console.error('Error fetching file details:', err);
-      // Log more detailed error information
-      console.error('Error fetching file details:', err);
       
-      // Define an ErrorLike type with JSDoc for better error handling
-      /**
-       * @typedef {object} ErrorResponse
-       * @property {number} status - HTTP status code
-       * @property {string} statusText - Status text
-       * @property {any} data - Response data
-       */
-       
-      /**
-       * @typedef {object} ErrorWithResponse
-       * @property {ErrorResponse} response - Error response object
-       * @property {object} [request] - Error request object
-       */
-       
-      /** @type {ErrorWithResponse|Error|any} */
+      // Handle error with structured approach
       const error = err;
       
-      // Using a structured approach with proper type checking for all properties
       if (error && typeof error === 'object') {
-        if (error.response && typeof error.response === 'object') {
-          const response = error.response;
+        // Use a different variable name to avoid shadowing
+        const errorObj = error;
+        if (errorObj.response && typeof errorObj.response === 'object') {
+          const response = errorObj.response;
           
           console.error('Error response:', {
             status: response.status,
@@ -371,6 +535,26 @@
   }
 
   /**
+   * Set up the video URL for streaming
+   * @param {string} fileId - The ID of the file to stream
+   */
+  function setupVideoUrl(fileId) {
+    // Use the simple-video endpoint which returns the complete video file
+    // Use the correct API endpoint for video streaming
+    videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
+    console.log('FileDetail: Using simple-video endpoint for streaming:', videoUrl);
+    
+    // Ensure URL has proper formatting
+    if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
+      videoUrl = '/' + videoUrl;
+    }
+    console.log('FileDetail: Added leading slash to URL:', videoUrl);
+    
+    // Reset video element check flag to prompt afterUpdate to try initialization
+    videoElementChecked = false;
+  }
+
+  /**
    * Initialize the Plyr video player
    */
   function initializePlayer() {
@@ -381,7 +565,7 @@
     
     console.log('FileDetail: Initializing Plyr player with URL:', videoUrl);
     // Make sure we're checking for the video element with a more robust approach
-    const videoElement = /** @type {HTMLVideoElement|null} */ (document.querySelector('#player'));
+    const videoElement = document.querySelector('#player');
     
     if (!videoElement) {
       console.error('FileDetail: Video element not found in DOM');
@@ -390,6 +574,16 @@
         Array.from(document.querySelectorAll('body > *')).map(el => el.tagName).join(', '));
       console.log('FileDetail: Video container exists:', 
         document.querySelector('.video-player-container') !== null);
+      
+      // Try again after a short delay to allow DOM to fully render
+      setTimeout(() => {
+        console.log('FileDetail: Retrying player initialization after delay');
+        const retryVideoElement = document.querySelector('#player');
+        if (retryVideoElement) {
+          console.log('FileDetail: Video element found on retry');
+          initializePlayer();
+        }
+      }, 1000);
       return;
     }
     
@@ -399,13 +593,20 @@
       return;
     }
     
-    // Set source to make sure it's available
-    if (videoElement.querySelector('source')) {
-      const sourceElement = videoElement.querySelector('source');
-      if (sourceElement) {
-        sourceElement.src = videoUrl;
-        videoElement.load(); // Force reload with new source
-      }
+    // Set source to ensure it's correctly loaded
+    // Check if source element exists and create if it doesn't
+    let sourceElement = videoElement.querySelector('source');
+    if (!sourceElement) {
+      console.log('FileDetail: Creating new source element');
+      sourceElement = document.createElement('source');
+      sourceElement.type = 'video/mp4';
+      videoElement.appendChild(sourceElement);
+    }
+    
+    // Update source with current URL
+    if (sourceElement) {
+      sourceElement.src = videoUrl;
+      videoElement.load(); // Force reload with new source
     }
     
     // Clear previous Plyr instance if any
@@ -413,77 +614,102 @@
       console.log('FileDetail: Destroying previous player instance');
       try {
         player.destroy();
-      } catch (err) {
-        console.error('FileDetail: Error destroying previous player:', err);
+      } catch (e) {
+        console.error('Error destroying player:', e);
       }
-      player = null;
     }
     
     try {
-      // Simplest possible Plyr initialization
-      player = new Plyr('#player', {
-        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen']
-      });
+      console.log('FileDetail: Initializing Plyr player with URL:', videoUrl);
+      const videoElement = document.querySelector('#player');
       
-      // Only track timeupdate and error events
+      if (!videoElement) {
+        console.error('FileDetail: Video element not found');
+        return;
+      }
+
+      // Create new Plyr instance
+      player = new Plyr(videoElement, {
+        controls: [
+          'play-large', 'play', 'progress', 'current-time', 'mute', 
+          'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'
+        ],
+        seekTime: 5,
+        keyboard: { focused: true, global: false }
+      });
+
+      // Set up event listeners
+      player.on('ready', () => {
+        console.log('FileDetail: Player ready');
+        playerInitialized = true;
+      });
+
       player.on('timeupdate', () => {
-        currentTime = player.currentTime;
+        if (player && player.currentTime) {
+          currentTime = player.currentTime;
+          // Highlight the current segment based on playback time
+          highlightCurrentSegment(currentTime);
+        }
       });
 
       player.on('loadedmetadata', () => {
-        console.log('FileDetail: Video metadata loaded');
         if (player && player.duration) {
           duration = player.duration;
+          console.log(`FileDetail: Video duration loaded: ${duration}s`);
         }
       });
 
-      player.on('error', () => {
-        console.error('FileDetail: Video player error');
-        errorMessage = 'Error loading video. The file may not be available or supported.';
-      });
+      playerInitialized = true;
+      console.log('FileDetail: Player initialized successfully');
+    } catch (error) {
+      console.error('FileDetail: Error initializing player:', error);
       
-      // Listen for video error events directly on the video element
-      videoElement.addEventListener('error', (e) => {
-        console.error('FileDetail: Native video error:', e);
-        errorMessage = 'Error loading video. Please try again or download the file directly.';
-      });
-      
-      // Log detailed stream information to the console
-      console.log('FileDetail: Player initialized with source:', videoUrl);
-      
-      // Add a canplay event listener to confirm when video is actually ready
-      videoElement.addEventListener('canplay', () => {
-        console.log('FileDetail: Video CAN PLAY event fired - video is ready to play');
-      });
-      
-      // Add loadstart event to track when video starts loading
-      videoElement.addEventListener('loadstart', () => {
-        console.log('FileDetail: Video LOADSTART event fired - loading has begun');
-      });
-      
-      // Track progress events
-      videoElement.addEventListener('progress', () => {
-        console.log('FileDetail: Video PROGRESS event fired - download in progress');
-        // Log what's been buffered
-        if (videoElement.buffered.length) {
-          console.log(`FileDetail: Buffered ${videoElement.buffered.end(0)} of ${videoElement.duration} seconds`);
-        }
-      });
-      
-      // Log detailed stream info for debugging
-      console.log('FileDetail: Video element details:', {
-        readyState: videoElement.readyState,
-        networkState: videoElement.networkState, 
-        error: videoElement.error,
-        src: videoElement.currentSrc || videoUrl
-      });
-    } catch (err) {
-      console.error('FileDetail: Error initializing player:', err);
       // Safely get error message from error object
-      const errorMsg = (err && typeof err === 'object' && 'message' in err) 
-        ? String(err.message) 
+      const errorMsg = (error && typeof error === 'object' && 'message' in error) 
+        ? String(error.message) 
         : 'Unknown error';
       errorMessage = 'Could not initialize video player. ' + errorMsg;
+      
+      /**
+       * @typedef {Object} PlyrErrorEvent
+       * @property {string} [code] - Error code
+       * @property {string} [message] - Error message
+       */
+
+      // Set up error handlers for future errors
+      if (player) {
+        player.on('error', (event) => {
+          console.error('FileDetail: Video player error:', event);
+          errorMessage = 'Error loading video. The file may not be available or supported.';
+        });
+      }
+      
+      // Listen for video error events directly on the video element
+      if (videoElement) {
+        // Listen for video error events directly on the video element
+        videoElement.addEventListener('error', (e) => {
+          console.error('FileDetail: Native video error:', e);
+          errorMessage = 'Error loading video. Please try again or download the file directly.';
+        });
+        
+        // Add a canplay event listener to confirm when video is actually ready
+        videoElement.addEventListener('canplay', () => {
+          console.log('FileDetail: Video CAN PLAY event fired - video is ready to play');
+          playerInitialized = true;
+        });
+        
+        // Add loadstart event to track when video starts loading
+        videoElement.addEventListener('loadstart', () => {
+          console.log('FileDetail: Video LOADSTART event fired - loading has begun');
+        });
+        
+        // Track progress events
+        videoElement.addEventListener('progress', () => {
+          if (videoElement.buffered.length) {
+            console.log(`FileDetail: Buffered ${videoElement.buffered.end(0)} of ${videoElement.duration} seconds`);
+          }
+        });
+      }
     }
   }
 
@@ -492,31 +718,65 @@
     savingTranscript = true;
     transcriptError = '';
     try {
-      // Basic parsing: assumes "Speaker: Text" format per line
-      const updatedTranscriptSegments = editedTranscript.split('\n').map((line, index) => {
-        const parts = line.match(/^([^:]+):\s*(.*)$/);
-        let speaker_label = `SPK${index % 2}`; // Default if no match
-        let text = line;
-        if (parts && parts.length === 3) {
-          speaker_label = parts[1].trim();
-          text = parts[2].trim();
+      // Parse transcript with timestamp and speaker format: "MM:SS [Speaker]: Text"
+      const updatedTranscriptSegments = [];
+      const lines = editedTranscript.split('\n').filter(line => line.trim() !== '');
+      
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        // Try to match timestamp and speaker pattern: "MM:SS [Speaker]: Text"
+        const timestampMatch = line.match(/^(\d+:\d+)\s+\[([^\]]+)\]:\s*(.*)$/);
+        
+        if (timestampMatch && timestampMatch.length === 4) {
+          // We have a timestamp, speaker, and text
+          const timestampStr = timestampMatch[1];
+          const speaker_label = timestampMatch[2].trim();
+          const text = timestampMatch[3].trim();
+          
+          // Convert MM:SS to seconds
+          const [minutes, seconds] = timestampStr.split(':').map(Number);
+          const start_time = minutes * 60 + seconds;
+          
+          // Try to find the original segment to preserve end_time
+          const existingSegment = file?.transcript?.find(seg => 
+            Math.abs(seg.start_time - start_time) < 2 && // Within 2 seconds
+            (seg.speaker_label === speaker_label || seg.speaker?.name === speaker_label || seg.speaker?.display_name === speaker_label)
+          );
+          
+          updatedTranscriptSegments.push({
+            start_time: start_time,
+            end_time: existingSegment ? existingSegment.end_time : (index < lines.length - 1 ? start_time + 5 : start_time + 10),
+            text: text,
+            speaker_label: speaker_label,
+          });
+        } else {
+          // Fallback for lines without proper formatting
+          const parts = line.match(/^\[([^\]]+)\]:\s*(.*)$/);
+          let speaker_label = `Speaker ${index % 2 + 1}`; // Default if no match
+          let text = line;
+          
+          if (parts && parts.length === 3) {
+            speaker_label = parts[1].trim();
+            text = parts[2].trim();
+          }
+          
+          // Find original timing if possible, or assign new ones
+          const existingSegment = file?.transcript?.[index];
+          
+          updatedTranscriptSegments.push({
+            start_time: existingSegment ? existingSegment.start_time : index * 5,
+            end_time: existingSegment ? existingSegment.end_time : (index + 1) * 5,
+            text: text,
+            speaker_label: speaker_label,
+          });
         }
-        // Find original timing if possible, or assign new ones (this part is complex without UI for timing)
-        // For simplicity, this example doesn't re-time segments, it just updates text and speaker.
-        // A real implementation would need a more sophisticated editor or rely on backend re-processing.
-        // Add proper null/undefined checks to avoid runtime errors
-        const existingSegment = file && file.transcript && Array.isArray(file.transcript) ? file.transcript[index] : null;
-        return {
-          start_time: existingSegment ? existingSegment.start_time : index * 5, // Placeholder timing
-          end_time: existingSegment ? existingSegment.end_time : (index + 1) * 5, // Placeholder timing
-          text: text,
-          speaker_label: speaker_label,
-        };
-      });
+      }
+      
+      // Sort segments by start time
+      updatedTranscriptSegments.sort((a, b) => a.start_time - b.start_time);
 
-      await axiosInstance.put(`/files/${file.id}/transcript`, {
-        transcript: updatedTranscriptSegments,
-      });
+      // The API expects transcript segments as a list, not as an object with a transcript property
+      await axiosInstance.put(`/files/${file.id}/transcript`, updatedTranscriptSegments);
       isEditingTranscript = false;
       transcriptText = editedTranscript; // Update the displayed transcript
       if (file) file.transcript = updatedTranscriptSegments; // Update local file object
@@ -527,7 +787,7 @@
       
       if (err && typeof err === 'object') {
         // Handle Axios error response
-        const axiosError = /** @type {import('axios').AxiosError} */ (err);
+        const axiosError = err;
         
         if (axiosError.response) {
           // The request was made and the server responded with a status code
@@ -562,7 +822,16 @@
       isEditingTranscript = false;
     } else {
       if (file && file.transcript && file.transcript.length > 0) {
-        editedTranscript = file.transcript.map(segment => `${formatTimestampWithMillis(segment.start_time)} [${segment.speaker_label || 'Unknown'}]: ${segment.text}`).join('\n');
+        // Use proper speaker display names when available
+        editedTranscript = file.transcript.map(segment => {
+          // Get the proper speaker name, prioritizing display_name over original name
+          const speakerName = segment.speaker?.display_name || 
+                             segment.speaker?.name || 
+                             segment.speaker_label || 
+                             'Unknown';
+          
+          return `${formatSimpleTimestamp(segment.start_time)} [${speakerName}]: ${segment.text}`;
+        }).join('\n');
         isEditingTranscript = true;
       } else {
         errorMessage = 'No transcript available to edit';
@@ -571,27 +840,237 @@
   }
   
   /**
-   * Export transcript to a downloadable text file
+   * Start editing a specific transcript segment
+   * @param {Object} segment - The transcript segment to edit
    */
-  function exportTranscript() {
+  function editSegment(segment) {
+    if (!segment || !segment.id) {
+      console.error('Cannot edit segment without a valid ID');
+      return;
+    }
+    // Use the segment ID from the database
+    editingSegmentId = segment.id;
+    editingSegmentText = segment.text || '';
+    console.log('Editing segment with ID:', editingSegmentId);
+  }
+  
+  function cancelEditSegment() {
+    editingSegmentId = null;
+    editingSegmentText = '';
+  }
+  
+  /**
+   * Save changes to a specific transcript segment
+   * @param {Object} segment - The transcript segment being edited
+   */
+  async function saveSegment(segment) {
+    if (!file || !file.id) return;
+    savingTranscript = true;
+    transcriptError = '';
+
+    if (!segment || !segment.id) {
+      console.error('Cannot save segment without a valid ID');
+      transcriptError = 'Error: Cannot save segment without a valid ID';
+      savingTranscript = false;
+      return;
+    }
+
+    try {
+      // Create a segment update object with only the fields we want to update
+      // @ts-ignore - Ignoring TypeScript errors as per user preference
+      const segmentUpdate = {
+        id: segment.id,
+        text: editingSegmentText
+      };
+      
+      // Add timing and speaker information if available
+      if (segment.start_time !== undefined) {
+        // @ts-ignore
+        segmentUpdate.start_time = segment.start_time;
+      }
+      
+      if (segment.end_time !== undefined) {
+        // @ts-ignore
+        segmentUpdate.end_time = segment.end_time;
+      }
+      
+      if (segment.speaker_id !== undefined) {
+        // @ts-ignore
+        segmentUpdate.speaker_id = segment.speaker_id || null;
+      }
+      
+      console.log('Saving segment update:', segmentUpdate, 'Original segment:', segment);
+      
+      // Send the updated segment to the API as an array
+      console.log('Sending segment update to API:', [segmentUpdate]);
+      // The API expects a list of segments
+      const response = await axiosInstance.put(`/api/files/${file.id}/transcript`, [segmentUpdate]);
+      
+      // After successful update, refresh the transcript segments to ensure we have the latest data
+      if (response.status === 200) {
+        console.log('Segment updated successfully, refreshing transcript data');
+        // Fetch the updated transcript data
+        if (file && file.id) {
+          await fetchTranscriptSegments(file.id);
+        }
+      }
+      
+      // Update the local state if file and transcript exist
+      if (file && file.transcript) {
+        // @ts-ignore - Ignoring TypeScript errors as per user preference
+        const updatedSegment = file.transcript.find(s => s.id === segment.id);
+        if (updatedSegment) {
+          updatedSegment.text = editingSegmentText;
+        } else {
+          console.warn('Updated segment not found in local state after saving');
+        }
+      }
+      
+      // Reset editing state
+      editingSegmentId = null;
+      editingSegmentText = '';
+    } catch (err) {
+      console.error('Error saving segment:', err);
+      let errorDetail = 'An unknown error occurred';
+      
+      if (err && typeof err === 'object') {
+        // @ts-ignore - Ignoring TypeScript errors as per user preference
+        const axiosError = err;
+        
+        // @ts-ignore - Ignoring TypeScript errors as per user preference
+        if (axiosError.response) {
+          // @ts-ignore - Ignoring TypeScript errors as per user preference
+          const responseData = axiosError.response.data;
+          if (responseData && typeof responseData === 'object' && 'detail' in responseData) {
+            errorDetail = String(responseData.detail);
+          // @ts-ignore - Ignoring TypeScript errors as per user preference
+          } else if (axiosError.response.statusText) {
+            // @ts-ignore - Ignoring TypeScript errors as per user preference
+            errorDetail = `${axiosError.response.status}: ${axiosError.response.statusText}`;
+          } else {
+            // @ts-ignore - Ignoring TypeScript errors as per user preference
+            errorDetail = `Server responded with status ${axiosError.response.status}`;
+          }
+        // @ts-ignore - Ignoring TypeScript errors as per user preference
+        } else if (axiosError.request) {
+          errorDetail = 'No response from server';
+        } else {
+          // @ts-ignore - Ignoring TypeScript errors as per user preference
+          errorDetail = axiosError.message || 'Error setting up request';
+        }
+      } else if (err) {
+        errorDetail = String(err);
+      }
+      
+      transcriptError = `Failed to save segment. ${errorDetail}`;
+    } finally {
+      savingTranscript = false;
+    }
+  }
+  
+  /**
+   * Export transcript to a downloadable file in various formats
+   * @param {string} format - The format to export (txt, json, csv, srt, vtt)
+   */
+  function exportTranscript(format = 'txt') {
     if (!file || !file.transcript || file.transcript.length === 0) {
       errorMessage = 'No transcript available to export';
       return;
     }
     
     try {
-      // Format transcript for export
-      const transcriptText = file.transcript.map(segment => 
-        `${formatTimestampWithMillis(segment.start_time)} - ${formatTimestampWithMillis(segment.end_time)}\n` +
-        `[${segment.speaker_label || 'Unknown'}]: ${segment.text}\n`
-      ).join('\n');
+      let content = '';
+      let mimeType = 'text/plain';
+      let extension = 'txt';
+      
+      // Generate content based on selected format
+      switch (format) {
+        case 'json':
+          // Export as JSON with speaker and timing information
+          // Create a deep copy with proper speaker names
+          const jsonData = file.transcript.map(segment => {
+            const speakerName = segment.speaker?.display_name || 
+                               segment.speaker?.name || 
+                               segment.speaker_label || 
+                               'Unknown';
+            return {
+              ...segment,
+              speaker_display_name: speakerName
+            };
+          });
+          content = JSON.stringify(jsonData, null, 2);
+          mimeType = 'application/json';
+          extension = 'json';
+          break;
+          
+        case 'csv':
+          // Export as CSV with headers
+          content = 'Start Time,End Time,Speaker,Text\n';
+          content += file.transcript.map(segment => {
+            // Get proper speaker name
+            const speakerName = segment.speaker?.display_name || 
+                               segment.speaker?.name || 
+                               segment.speaker_label || 
+                               'Unknown';
+            // Escape quotes in text for CSV
+            const escapedText = segment.text.replace(/"/g, '""');
+            return `${segment.start_time},${segment.end_time},"${speakerName}","${escapedText}"`;
+          }).join('\n');
+          mimeType = 'text/csv';
+          extension = 'csv';
+          break;
+          
+        case 'srt':
+          // Export as SubRip subtitle format
+          content = file.transcript.map((segment, index) => {
+            const speakerName = segment.speaker?.display_name || 
+                               segment.speaker?.name || 
+                               segment.speaker_label || 
+                               'Unknown';
+            const startTime = formatSrtTimestamp(segment.start_time);
+            const endTime = formatSrtTimestamp(segment.end_time);
+            return `${index + 1}\n${startTime} --> ${endTime}\n${speakerName}: ${segment.text}\n`;
+          }).join('\n');
+          mimeType = 'text/plain';
+          extension = 'srt';
+          break;
+          
+        case 'vtt':
+          // Export as WebVTT subtitle format
+          content = 'WEBVTT\n\n';
+          content += file.transcript.map((segment, index) => {
+            const speakerName = segment.speaker?.display_name || 
+                               segment.speaker?.name || 
+                               segment.speaker_label || 
+                               'Unknown';
+            const startTime = formatVttTimestamp(segment.start_time);
+            const endTime = formatVttTimestamp(segment.end_time);
+            return `${index + 1}\n${startTime} --> ${endTime}\n<v ${speakerName}>${segment.text}\n`;
+          }).join('\n');
+          mimeType = 'text/vtt';
+          extension = 'vtt';
+          break;
+          
+        default: // txt
+          // Format transcript for plain text export
+          content = file.transcript.map(segment => {
+            const speakerName = segment.speaker?.display_name || 
+                               segment.speaker?.name || 
+                               segment.speaker_label || 
+                               'Unknown';
+            return `${formatSimpleTimestamp(segment.start_time)} - ${formatSimpleTimestamp(segment.end_time)}\n` +
+                   `[${speakerName}]: ${segment.text}\n`;
+          }).join('\n');
+          mimeType = 'text/plain';
+          extension = 'txt';
+      }
       
       // Create file and trigger download
-      const blob = new Blob([transcriptText], { type: 'text/plain' });
+      const blob = new Blob([content], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${file.filename.replace(/\.[^\.]+$/, '')}_transcript.txt`;
+      a.download = `${file.filename.replace(/\.[^\.]+$/, '')}_transcript.${extension}`;
       document.body.appendChild(a);
       a.click();
       
@@ -605,19 +1084,64 @@
       errorMessage = 'Failed to export transcript';
     }
   }
+  
+  /**
+   * Format timestamp for SRT format (00:00:00,000)
+   * @param {number} seconds - Time in seconds
+   * @returns {string} - Formatted timestamp
+   */
+  function formatSrtTimestamp(seconds) {
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+    const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+    const secs = (totalSeconds % 60).toString().padStart(2, '0');
+    const millis = Math.floor((seconds - Math.floor(seconds)) * 1000).toString().padStart(3, '0');
+    return `${hours}:${minutes}:${secs},${millis}`;
+  }
+  
+  /**
+   * Format timestamp for VTT format (00:00:00.000)
+   * @param {number} seconds - Time in seconds
+   * @returns {string} - Formatted timestamp
+   */
+  function formatVttTimestamp(seconds) {
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+    const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+    const secs = (totalSeconds % 60).toString().padStart(2, '0');
+    const millis = Math.floor((seconds - Math.floor(seconds)) * 1000).toString().padStart(3, '0');
+    return `${hours}:${minutes}:${secs}.${millis}`;
+  }
+  
+  /**
+   * Format seconds to MM:SS or HH:MM:SS format
+   * @param {number} seconds - Time in seconds to format
+   * @returns {string} - Formatted time string
+   */
+  function formatSimpleTimestamp(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    } else {
+      return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+  }
 
   /** 
    * @param {Event} event 
    */
   function handleTranscriptInput(event) {
     // Cast target to HTMLTextAreaElement to access value property
-    const target = /** @type {HTMLTextAreaElement} */ (event.target);
+    const target = event.target;
     editedTranscript = target?.value;
   }
 
   /**
    * Handles tags updated event from TagsEditor.
-   * @param {CustomEvent} event - The event containing updated tags.
+   * @param {CustomEvent<{tags: any[]}>} event - The event containing updated tags.
    */
   function handleTagsUpdated(event) {
     if (file) {
@@ -638,7 +1162,153 @@
     // console.log('Comment deleted:', event.detail);
     fetchFileDetails(); // Re-fetch to get updated comment counts or data if necessary
   }
-
+  
+  /**
+   * Load speakers for the current file
+   */
+  async function loadSpeakers() {
+    if (!file || !file.id) {
+      console.error('Cannot load speakers: File ID is missing');
+      return;
+    }
+    
+    try {
+      loadingSpeakers = true;
+      // Get speakers for this specific file by adding a file_id query parameter
+      const response = await axiosInstance.get(`/api/speakers/?file_id=${file.id}`);
+      speakerList = response.data;
+      console.log('FileDetail: Speakers loaded:', speakerList);
+      
+      // Process transcript with speaker information
+      updateTranscriptWithSpeakers();
+      
+      loadingSpeakers = false;
+    } catch (error) {
+      console.error('Error loading speakers:', error);
+      loadingSpeakers = false;
+    }
+  }
+  
+  /**
+   * Handle speaker updates from the SpeakerEditor component
+   */
+  function handleSpeakersUpdated(event) {
+    console.log('FileDetail: Speakers updated:', event.detail.speakers);
+    speakerList = event.detail.speakers;
+    
+    // Update transcript display with new speaker names
+    updateTranscriptWithSpeakers();
+    
+    // Re-fetch file details to get updated speaker information
+    fetchFileDetails();
+  }
+  
+  /**
+   * Save updated speaker names to the server
+   */
+  async function saveSpeakerNames() {
+    if (!speakerList || speakerList.length === 0 || !file || !file.id) {
+      speakerError = 'No speakers to save';
+      return;
+    }
+    
+    savingSpeakers = true;
+    speakerError = '';
+    
+    try {
+      console.log('FileDetail: Saving speaker names:', speakerList);
+      
+      // Format speakers for API
+      const speakersToUpdate = speakerList.map(speaker => ({
+        id: speaker.id,
+        display_name: speaker.display_name || speaker.name
+      }));
+      
+      // Send update to server - use the correct endpoint format with speaker IDs
+      // Process each speaker individually to ensure correct API format
+      const updatedSpeakers = [];
+      
+      for (const speaker of speakersToUpdate) {
+        if (!speaker.id) continue;
+        
+        try {
+          // Use numeric ID in the URL path
+          const speakerResponse = await axiosInstance.put(`/speakers/${speaker.id}`, {
+            display_name: speaker.display_name
+          });
+          
+          if (speakerResponse.data) {
+            updatedSpeakers.push(speakerResponse.data);
+          }
+        } catch (err) {
+          console.error(`Failed to update speaker ${speaker.id}:`, err);
+        }
+      }
+      
+      // Use the updated speakers or the original response
+      const response = { data: updatedSpeakers.length > 0 ? updatedSpeakers : speakerList };
+      
+      console.log('FileDetail: Speaker names saved successfully:', response.data);
+      
+      // Update local speaker list
+      if (response.data && Array.isArray(response.data)) {
+        speakerList = response.data;
+      }
+      
+      // Update transcript display with new speaker names
+      updateTranscriptWithSpeakers();
+      
+      // Hide speaker editor
+      isEditingSpeakers = false;
+    } catch (error) {
+      console.error('Error saving speaker names:', error);
+      speakerError = 'Failed to save speaker names. Please try again.';
+    } finally {
+      savingSpeakers = false;
+    }
+  }
+  
+  /**
+   * Update transcript segments with speaker information
+   */
+  function updateTranscriptWithSpeakers() {
+    if (!file || !file.transcript || !file.transcript.length || !speakerList.length) {
+      return;
+    }
+    
+    const updatedTranscript = [...file.transcript];
+    for (let segment of updatedTranscript) {
+      // Try to find a matching speaker by ID, UUID, or label
+      const matchingSpeaker = speakerList.find(s => {
+        return s.id === segment.speaker_id || 
+               (s.uuid && s.uuid === segment.speaker_uuid) ||
+               (segment.speaker_label && s.name === segment.speaker_label);
+      });
+      
+      if (matchingSpeaker) {
+        // Add speaker info to the segment for display purposes
+        segment.speaker = {
+          id: matchingSpeaker.id,
+          name: matchingSpeaker.name,
+          display_name: matchingSpeaker.display_name || matchingSpeaker.name,
+          uuid: matchingSpeaker.uuid
+        };
+      } else if (segment.speaker_label) {
+        // If no matching speaker found but we have a label, create a minimal speaker object
+        // Generate a temporary ID based on the label to satisfy the Speaker type
+        segment.speaker = {
+          id: `temp_${segment.speaker_label.replace(/\s+/g, '_').toLowerCase()}`,
+          name: segment.speaker_label,
+          display_name: segment.speaker_label
+        };
+      }
+    }
+    
+    // Update the file with updated speaker information
+    file.transcript = updatedTranscript;
+    console.log('Transcript updated with speaker information');
+  }
+  
   /** @param {CustomEvent} event - Event containing the seek time */
   function handleSeekTo(event) {
     if (player && typeof player.currentTime === 'number') {
@@ -683,81 +1353,75 @@
   
   // formatDuration is already imported at the top of the file
   
-  // Helper to simulate processing for UI testing
-  function simulateProcessing() {
-    if (!file || file.status !== 'processing') return;
-    let progress = file.progress || 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      if (progress >= 100) {
-        clearInterval(interval);
-        if (file) {
-          file.status = 'completed'; // Simulate completion
-          file.progress = 100;
-          // Simulate some analytics data appearing
-          file.analytics = {
-            overall: {
-              word_count: 1234,
-              duration_seconds: 300,
-              clarity_score: 'Good',
-              sentiment_score: 0.7,
-              sentiment_magnitude: 1.2,
-              silence_ratio: 0.1,
-              speaking_pace: 150,
-              language: 'en-US',
-              talk_time: {
-                by_speaker: {
-                  'Speaker A': 120,
-                  'Speaker B': 130
-                },
-                total: 250
-              },
-              interruptions: {
-                by_speaker: {
-                  'Speaker A': 2,
-                  'Speaker B': 1
-                },
-                total: 3
-              },
-              turn_taking: {
-                by_speaker: {
-                  'Speaker A': 5,
-                  'Speaker B': 4
-                },
-                total_turns: 9
-              },
-              questions: {
-                by_speaker: {
-                  'Speaker A': 3,
-                  'Speaker B': 2
-                },
-                total: 5
-              }
-            },
-            speakers: {
-              'Speaker A': { word_count: 600, speaking_time: 120 },
-              'Speaker B': { word_count: 634, speaking_time: 130 },
-            }
-          };
-          reactiveFile.set(file); // Trigger reactivity
-          initializePlayer(); // Re-initialize player if source might have changed (e.g. preview_url becomes available)
+  // Poll for file processing status updates
+  function pollForFileStatus() {
+    if (!file || !file.id || file.status !== 'processing') return;
+    
+    console.log('FileDetail: Polling for file status updates...');
+    
+    // Use a closure to maintain state across polling intervals
+    const pollInterval = 5000; // 5 seconds between polls
+    let isPolling = false;
+    let currentFileId = file.id; // Cache the file ID to use in async callbacks
+    
+    const poll = async () => {
+      // Prevent concurrent polling or if no longer relevant
+      if (isPolling || !file) return;
+      isPolling = true;
+      
+      try {
+        // Always use the cached file ID to prevent null reference errors
+        console.log(`FileDetail: Polling for updates for file ID: ${currentFileId}`);
+        const response = await axiosInstance.get(`/files/${currentFileId}`);
+        const updatedFile = response.data;
+        
+        // Update local file state with new data if we still have a valid file reference
+        if (updatedFile) {
+          // Update file state safely
+          file = updatedFile;
+          reactiveFile.set(file);
+          
+          // Safe access to properties with null checks
+          const fileStatus = file?.status || 'unknown';
+          const fileProgress = file?.progress || 0;
+          console.log(`FileDetail: File status update - ${fileStatus}, progress: ${fileProgress}%`);
+          
+          // If processing is complete, try to initialize the player
+          if (file && file.status === 'completed' && file.id) {
+            console.log('FileDetail: Processing completed, updating video URL');
+            // Update video URL and initialize player
+            videoUrl = `${apiBaseUrl}/api/files/${file.id}/simple-video`;
+            videoElementChecked = false;
+            initializePlayer();
+          }
         }
-      } else if (file) {
-        file.progress = progress;
-        reactiveFile.set(file); // Trigger reactivity
+      } catch (err) {
+        console.error('FileDetail: Error polling for file status:', err);
+      } finally {
+        isPolling = false;
+        
+        // Continue polling if still processing and file reference is valid
+        if (file && file.status === 'processing') {
+          setTimeout(poll, pollInterval);
+        }
       }
-    }, 500);
+    };
+    
+    // Start the polling process
+    setTimeout(poll, 1000); // Start first poll after 1 second
   }
 
   // Reactive statement to re-initialize player if videoUrl changes after initial mount
   // and player wasn't initialized (e.g., fetched file details did not have URL initially)
   $: if (videoUrl && !player && !isLoading) {
+    console.log('FileDetail: Video URL available but no player, initializing player');
     initializePlayer();
   }
 
-  // Simulate processing if status is 'processing'
+  // Start polling for file status updates if the file is processing
   $: if (file && file.status === 'processing') {
-      simulateProcessing();
+    console.log('FileDetail: File is processing, starting status polling');
+    pollForFileStatus();
   }
 
 </script>
@@ -775,7 +1439,7 @@
   {:else if errorMessage}
     <div class="error-container">
       <p class="error-message">{errorMessage}</p>
-      <button on:click={fetchFileDetails}>Try Again</button>
+      <button on:click={(e) => fetchFileDetails()}>Try Again</button>
     </div>
   {:else if file}
     <div class="file-header">
@@ -829,11 +1493,20 @@
         <h4>Video</h4>
         <div class="video-player-container">
           {#if videoUrl}
-            <!-- Simple video player with a11y track for captions -->
-            <video id="player" playsinline controls crossorigin="anonymous">
+            <!-- Video player with embedded captions track to avoid CORS issues -->
+            <video id="player" playsinline controls>
               <source src={videoUrl} type="video/mp4" />
-              <!-- Add caption track for accessibility -->
-              <track kind="captions" label="English" src="data:text/vtt,WEBVTT" default />
+              <!-- Using embedded VTT data to avoid CORS issues -->
+              {#if file && file.transcript && file.transcript.length > 0}
+                <!-- Generate captions from transcript in memory -->
+                <track kind="captions" label="English" default
+                  src={`data:text/vtt;base64,${btoa('WEBVTT\n\n' + file.transcript.map(segment => 
+                    `${formatTimestampWithMillis(segment.start_time).replace(',', '.')} --> ${formatTimestampWithMillis(segment.end_time).replace(',', '.')}\n${segment.text}\n\n`
+                  ).join(''))}`} />
+              {:else}
+                <!-- Empty track to satisfy accessibility requirements -->
+                <track kind="captions" label="English" src="data:text/vtt;base64,V0VCVlRUCgo=" />
+              {/if}
               Your browser does not support the video element.
             </video>
             
@@ -943,10 +1616,10 @@
         <div class="comments-section">
           <h4 class="comments-heading">Comments & Discussion</h4>
           <div class="comments-section-wrapper">
-            <div class="section-header">
+            <!-- <div class="section-header">
               <h2>Comments</h2>
               <div class="spacer"></div>
-            </div>
+            </div> -->
             <CommentSection 
               fileId={file?.id ? String(file.id) : ''} 
               currentTime={currentTime} 
@@ -967,45 +1640,107 @@
               <button on:click={saveTranscript} disabled={savingTranscript}>
                 {savingTranscript ? 'Saving...' : 'Save Transcript'}
               </button>
-              <button on:click={toggleEditTranscript} class="cancel-button">Cancel</button>
+              <button class="cancel-button" on:click={() => isEditingTranscript = false}>Cancel</button>
             </div>
             {#if transcriptError}
               <p class="error-message small">{transcriptError}</p>
             {/if}
           {:else}
             <div class="transcript-display">
-              {#each file.transcript as segment, i (segment.start_time + '-' + i)}
-                <div
-                  class="transcript-segment"
-                  class:active={currentTime >= segment.start_time && currentTime < segment.end_time}
-                  on:click={() => handleSeekTo(new CustomEvent('seek', { detail: segment.start_time }))}
-                  role="button"
-                  tabindex="0"
-                  on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSeekTo(new CustomEvent('seek', { detail: segment.start_time })); }}
+              {#each file.transcript as segment, i}
+                <div 
+                  class="transcript-segment" 
+                  data-segment-id="{segment.id || `${segment.start_time}-${segment.end_time}`}"
                 >
-                  <span class="timestamp">{formatTimestampWithMillis(segment.start_time)}</span>
-                  <span class="speaker">{segment.speaker_label || 'Unknown'}:</span>
-                  <span class="text">{segment.text}</span>
+                  {#if editingSegmentId === segment.id}
+                    <div class="segment-edit-container">
+                      <div class="segment-time">{formatSimpleTimestamp(segment.start_time)}</div>
+                      <div class="segment-speaker">{segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}</div>
+                      <div class="segment-edit-input">
+                        <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
+                        <div class="segment-edit-actions">
+                          <button class="save-button" on:click={() => saveSegment(segment)} disabled={savingTranscript}>
+                            {savingTranscript ? 'Saving...' : 'Save'}
+                          </button>
+                          <button class="cancel-button" on:click={cancelEditSegment}>Cancel</button>
+                        </div>
+                        {#if transcriptError}
+                          <p class="error-message small">{transcriptError}</p>
+                        {/if}
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="segment-row">
+                      <button 
+                        class="segment-content" 
+                        on:click={() => handleSegmentClick(segment.start_time)}
+                        on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
+                        title="Jump to this segment"
+                      >
+                        <div class="segment-time">{formatSimpleTimestamp(segment.start_time)}</div>
+                        <div class="segment-speaker">{segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}</div>
+                        <div class="segment-text">{segment.text}</div>
+                      </button>
+                      <button 
+                        class="edit-button" 
+                        on:click|stopPropagation={() => editSegment(segment)} 
+                        title="Edit segment"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  {/if}
                 </div>
               {/each}
             </div>
+            
             <div class="transcript-actions">
-              <button on:click={toggleEditTranscript} class="edit-transcript-button">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                </svg>
-                Edit Transcript
-              </button>
-              <button on:click={exportTranscript} class="export-transcript-button">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Export
+              
+              <div class="export-dropdown">
+                <button class="export-transcript-button">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  Export
+                </button>
+                <div class="export-dropdown-content">
+                  <button on:click={() => exportTranscript('txt')}>Plain Text (.txt)</button>
+                  <button on:click={() => exportTranscript('json')}>JSON Format (.json)</button>
+                  <button on:click={() => exportTranscript('csv')}>CSV Format (.csv)</button>
+                  <button on:click={() => exportTranscript('srt')}>SubRip Subtitles (.srt)</button>
+                  <button on:click={() => exportTranscript('vtt')}>WebVTT Subtitles (.vtt)</button>
+                </div>
+              </div>
+              
+              <button class="edit-speakers-button" on:click={() => isEditingSpeakers = !isEditingSpeakers}>
+                {isEditingSpeakers ? 'Hide Speaker Editor' : 'Edit Speakers'}
               </button>
             </div>
+            
+            {#if isEditingSpeakers}
+              <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
+                <h4>Edit Speaker Names</h4>
+                {#if speakerList && speakerList.length > 0}
+                  <div class="speaker-list">
+                    {#each speakerList as speaker}
+                      <div class="speaker-item">
+                        <span class="speaker-original">{speaker.name}</span>
+                        <input 
+                          type="text" 
+                          bind:value={speaker.display_name} 
+                          placeholder="Enter display name"
+                        />
+                      </div>
+                    {/each}
+                    <button class="save-speakers-button" on:click={saveSpeakerNames}>Save Speaker Names</button>
+                  </div>
+                {:else}
+                  <p>No speakers found in this transcript.</p>
+                {/if}
+              </div>
+            {/if}
           {/if}
         {:else if file.status === 'completed'}
           <p>No transcript available for this file.</p>
@@ -1103,21 +1838,48 @@
     overflow: hidden;
   }
   
+  .segment-content {
+    display: flex;
+    flex: 1;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    width: 100%;
+  }
+  
+  .segment-actions {
+    display: flex;
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+  
   .tags-header, .analytics-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.5rem;
-    background: none;
+    background-color: rgba(59, 130, 246, 0.05);
     border: none;
+    border-radius: 8px;
     width: 100%;
     text-align: left;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
   
   .tags-header:hover, .analytics-header:hover {
-    background-color: rgba(59, 130, 246, 0.05);
+    background-color: rgba(59, 130, 246, 0.1);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
   }
   
   .section-heading {
@@ -1147,21 +1909,31 @@
     gap: 0.5rem;
     margin: 0 1rem;
     flex-wrap: wrap;
+    min-height: 24px;
   }
   
   .tag-chip, .analytics-chip {
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(59, 130, 246, 0.15);
     color: var(--primary-color);
-    padding: 0.25rem 0.5rem;
+    padding: 0.35rem 0.75rem;
     border-radius: 1rem;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 500;
     display: inline-flex;
     align-items: center;
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.3);
     white-space: nowrap;
-    max-width: 120px;
+    max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+  }
+  
+  .tag-chip:hover, .analytics-chip:hover {
+    background-color: rgba(59, 130, 246, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
   .tag-chip.more, .analytics-chip.processing {
@@ -1405,6 +2177,95 @@
     color: var(--primary-color);
   }
   
+  .transcript-segment {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    background-color: var(--surface-color, #ffffff);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  
+  .transcript-segment:hover {
+    background-color: var(--hover-color, #f0f7ff);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+  }
+  
+  .transcript-segment.active-segment {
+    background-color: var(--primary-color-light, #e6f0ff);
+    border-left: 3px solid var(--primary-color);
+    box-shadow: 0 4px 10px rgba(59, 130, 246, 0.15);
+  }
+  
+  .segment-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.5rem;
+  }
+  
+  .segment-time {
+    min-width: 80px;
+    color: var(--text-color-light, #666);
+    font-size: 0.85rem;
+    padding-right: 0.5rem;
+  }
+  
+  .segment-speaker {
+    min-width: 100px;
+    font-weight: 600;
+    color: var(--primary-color);
+    padding-right: 1rem;
+  }
+  
+  .segment-text {
+    flex: 1;
+    line-height: 1.4;
+  }
+  
+  .segment-content {
+    display: flex;
+    flex: 1;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+    font-size: inherit;
+    font-family: inherit;
+    color: inherit;
+  }
+  
+  .edit-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    margin-left: 0.5rem;
+    min-width: 60px;
+    justify-content: center;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .edit-button:hover {
+    background-color: var(--primary-color-dark, #2563eb);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+  }
+  
   .analytics-column {
     background-color: var(--surface-color);
     padding: 1rem;
@@ -1495,9 +2356,9 @@
 
   .transcript-textarea {
     width: 100%;
-    padding: 0.8rem;
+    padding: 1rem;
     border: 1px solid var(--border-color);
-    border-radius: var(--border-radius);
+    border-radius: calc(var(--border-radius) * 1.5);
     font-family: var(--font-family-mono);
     font-size: 0.9rem;
     line-height: 1.6;
@@ -1505,6 +2366,7 @@
     color: var(--text-color);
     min-height: 200px;
     resize: vertical;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   }
 
   /* Debug styles removed as they're no longer used */
@@ -1515,37 +2377,194 @@
     gap: 0.5rem;
   }
   .edit-actions button {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: var(--border-radius);
-    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #3b82f6;
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    text-decoration: none;
     font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    border: none;
+    cursor: pointer;
   }
+  
+  .edit-actions button:hover {
+    background-color: #2563eb;
+    color: white;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: translateY(-1px);
+  }
+  
+  .edit-actions button:active {
+    transform: translateY(0);
+  }
+  
   .edit-actions button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
+  
   .edit-actions .cancel-button {
-    background-color: var(--button-secondary-bg);
-    color: var(--button-secondary-text);
-  }
-  .edit-actions .cancel-button:hover {
-    background-color: var(--button-secondary-hover-bg);
+    background-color: #f3f4f6;
+    color: #374151;
+    border: 1px solid #e5e7eb;
   }
   
-  .edit-transcript-button {
-    margin-top: 1rem;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--primary-color);
-    background-color: transparent;
-    color: var(--primary-color);
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s, color 0.2s;
+  .edit-actions .cancel-button:hover {
+    background-color: #e5e7eb;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
-  .edit-transcript-button:hover {
-    background-color: rgba(var(--primary-color-rgb), 0.1);
+  
+  .transcript-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  
+  .edit-transcript-button,
+  .export-transcript-button,
+  .edit-speakers-button,
+  .save-transcript-button,
+  .save-speakers-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #3b82f6; /* Use explicit color instead of variable */
+    color: white;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    border: none;
+    cursor: pointer;
+  }
+  
+  .edit-transcript-button:hover,
+  .export-transcript-button:hover,
+  .edit-speakers-button:hover,
+  .save-transcript-button:hover,
+  .save-speakers-button:hover {
+    background-color: #2563eb; /* Darker blue on hover */
+    color: white;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    transform: translateY(-1px);
+  }
+  
+  .edit-transcript-button:active,
+  .export-transcript-button:active,
+  .edit-speakers-button:active,
+  .save-transcript-button:active,
+  .save-speakers-button:active {
+    transform: translateY(0);
+  }
+  
+  /* Export dropdown styles */
+  .export-dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .export-dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: var(--surface-color);
+    min-width: 200px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+  }
+  
+  .export-dropdown-content button {
+    color: var(--text-color);
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    background: none;
+    border: none;
+    text-align: left;
+    width: 100%;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-weight: 500;
+  }
+  
+  .export-dropdown-content button:hover {
+    background-color: var(--primary-color-light, #e6f0ff);
+    color: var(--primary-color);
+  }
+  
+  .export-dropdown:hover .export-dropdown-content {
+    display: block;
+  }
+  
+  /* Speaker editor styles */
+  .speaker-editor-container {
+    margin-top: 1rem;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 16px;
+    background-color: var(--card-background, var(--surface-color, #ffffff));
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+  
+  .speaker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+  
+  .speaker-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background-color: var(--card-background, var(--surface-color, #ffffff));
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s ease;
+  }
+  
+  .speaker-item:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+  }
+  
+  .speaker-original {
+    min-width: 100px;
+    font-weight: bold;
+    color: var(--text-color, #4b5563);
+  }
+  
+  .speaker-item input {
+    flex: 1;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    background-color: var(--input-background, var(--surface-color, #ffffff));
+    color: var(--text-color, #1f2937);
+    transition: all 0.2s ease;
+  }
+  
+  .speaker-item input:focus {
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    outline: none;
+  }
+  
+  .save-speakers-button {
+    margin-top: 1.25rem;
+    align-self: flex-start;
   }
 
   .error-message.small {

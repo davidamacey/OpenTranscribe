@@ -20,6 +20,9 @@ class TaskStatus(str, Enum):
 
 class SpeakerBase(BaseModel):
     name: str
+    display_name: Optional[str] = None
+    uuid: str  # Non-optional to match database NOT NULL constraint
+    verified: bool = False
 
 
 class SpeakerCreate(SpeakerBase):
@@ -29,6 +32,8 @@ class SpeakerCreate(SpeakerBase):
 
 class SpeakerUpdate(BaseModel):
     name: Optional[str] = None
+    display_name: Optional[str] = None
+    verified: Optional[bool] = None
     embedding_vector: Optional[List[float]] = None
 
 
@@ -53,6 +58,7 @@ class TranscriptSegmentCreate(TranscriptSegmentBase):
 
 
 class TranscriptSegmentUpdate(BaseModel):
+    id: int
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     text: Optional[str] = None

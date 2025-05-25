@@ -478,13 +478,13 @@ async def video_file(file_id: int, request: Request, db: Session = Depends(get_d
 # Removed unused endpoint stream_media_file
 
 @router.get("/{file_id}/simple-video")
-async def simple_video(file_id: int, db: Session = Depends(get_db)):
+async def simple_video(file_id: int, request: Request, db: Session = Depends(get_db)):
     """
-    Simple video endpoint that just returns the file as a binary response
-    This is the most basic approach for development purposes
+    Video streaming endpoint that efficiently serves video content with range support
+    This allows browsers to request only the portions they need, like YouTube
     """
     # Log the request
-    logger.info(f"Simple video request for file {file_id}")
+    logger.info(f"Video streaming request for file {file_id}")
     
     # Get the file without user filtering (public endpoint)
     db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -507,34 +507,48 @@ async def simple_video(file_id: int, db: Session = Depends(get_db)):
         return {"content": "Mock video content", "content_type": db_file.content_type}
     
     try:
-        # Log detailed file info
-        logger.info(f"Retrieving file content directly: id={file_id}, path={db_file.storage_path}")
+        # Get the range header if present (used for video seeking)
+        range_header = request.headers.get("range")
         
-        # Download the entire file content at once
-        # This is not efficient for large files but works reliably for development
-        content = download_file(db_file.storage_path)
+        # Log the range request if present
+        if range_header:
+            logger.info(f"Range request: {range_header} for file {file_id}")
         
-        # Set appropriate headers for video playback
+        # Set media type based on file content type
+        media_type = db_file.content_type
+        
+        # Determine response status code (206 Partial Content for range requests)
+        status_code = status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
+        
+        # Set comprehensive CORS and caching headers
         headers = {
             'Content-Disposition': f'inline; filename="{db_file.filename}"',
-            'Content-Type': db_file.content_type,
-            'Access-Control-Allow-Origin': '*',
+            'Content-Type': media_type,
+            'Accept-Ranges': 'bytes',  # Inform client we support range requests
+            'Access-Control-Allow-Origin': '*',  # Allow any origin for development
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': 'Range, Origin, Content-Type, Accept',
             'Cache-Control': 'max-age=3600'
         }
         
-        logger.info(f"Returning file content directly, size: {len(content)} bytes")
+        # Get file content as a stream, passing the range header for partial content
+        # This uses get_file_stream which efficiently handles range requests
+        logger.info(f"Streaming file: id={file_id}, path={db_file.storage_path}")
+        file_stream = get_file_stream(db_file.storage_path, range_header)
         
-        # Return the file as a regular response with the content directly
-        return Response(
-            content=content,
-            media_type=db_file.content_type,
+        # Return a streaming response that doesn't load the entire file into memory
+        # The browser will receive chunks of the video as needed
+        return StreamingResponse(
+            content=file_stream,
+            status_code=status_code,
+            media_type=media_type,
             headers=headers
         )
     except Exception as e:
-        logger.error(f"Error serving simple video: {e}")
+        logger.error(f"Error streaming video: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error serving file: {e}"
+            detail=f"Error streaming video: {e}"
         )
 
 @router.put("/{file_id}/transcript", response_model=MediaFileDetail)
