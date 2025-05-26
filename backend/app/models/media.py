@@ -30,6 +30,37 @@ class MediaFile(Base):
     summary = Column(Text, nullable=True)
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
     
+    # Detailed metadata fields
+    metadata_raw = Column(JSON, nullable=True)  # Complete raw metadata from extraction
+    metadata_important = Column(JSON, nullable=True)  # Important metadata for display
+    
+    # Media technical specs
+    media_format = Column(String, nullable=True)  # Container format (MP4, MOV, etc.)
+    codec = Column(String, nullable=True)  # Codec used (H.264, AAC, etc.)
+    frame_rate = Column(Float, nullable=True)  # Frames per second for video
+    frame_count = Column(Integer, nullable=True)  # Total frames for video
+    resolution_width = Column(Integer, nullable=True)  # Video width in pixels
+    resolution_height = Column(Integer, nullable=True)  # Video height in pixels
+    aspect_ratio = Column(String, nullable=True)  # Aspect ratio (16:9, etc.)
+    
+    # Audio specs
+    audio_channels = Column(Integer, nullable=True)  # Number of audio channels
+    audio_sample_rate = Column(Integer, nullable=True)  # Audio sample rate (Hz)
+    audio_bit_depth = Column(Integer, nullable=True)  # Audio bit depth
+    
+    # Creation information
+    creation_date = Column(DateTime(timezone=True), nullable=True)  # Original creation date
+    last_modified_date = Column(DateTime(timezone=True), nullable=True)  # Last modified date
+    
+    # Device information
+    device_make = Column(String, nullable=True)  # Device manufacturer
+    device_model = Column(String, nullable=True)  # Device model
+    
+    # Content information
+    title = Column(String, nullable=True)  # Content title from metadata
+    author = Column(String, nullable=True)  # Content author/artist
+    description = Column(Text, nullable=True)  # Content description
+    
     # Relationships
     user = relationship("User", back_populates="media_files")
     transcript_segments = relationship("TranscriptSegment", back_populates="media_file", cascade="all, delete-orphan")

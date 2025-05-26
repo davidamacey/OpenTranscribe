@@ -28,13 +28,31 @@ CREATE TABLE IF NOT EXISTS media_file (
     language VARCHAR(10) NULL,
     summary TEXT NULL,
     translated_text TEXT NULL,
-    -- Video metadata fields
-    width INTEGER NULL,
-    height INTEGER NULL,
-    frame_rate FLOAT NULL,
+    -- Detailed metadata fields
+    metadata_raw JSONB NULL,
+    metadata_important JSONB NULL,
+    -- Media technical specs
+    media_format VARCHAR(50) NULL,
     codec VARCHAR(50) NULL,
-    bit_rate INTEGER NULL,
-    metadata JSONB NULL,
+    frame_rate FLOAT NULL,
+    frame_count INTEGER NULL,
+    resolution_width INTEGER NULL,
+    resolution_height INTEGER NULL,
+    aspect_ratio VARCHAR(20) NULL,
+    -- Audio specs
+    audio_channels INTEGER NULL,
+    audio_sample_rate INTEGER NULL,
+    audio_bit_depth INTEGER NULL,
+    -- Creation information
+    creation_date TIMESTAMP WITH TIME ZONE NULL,
+    last_modified_date TIMESTAMP WITH TIME ZONE NULL,
+    -- Device information
+    device_make VARCHAR(100) NULL,
+    device_model VARCHAR(100) NULL,
+    -- Content information
+    title VARCHAR(255) NULL,
+    author VARCHAR(255) NULL,
+    description TEXT NULL,
     user_id INTEGER NOT NULL REFERENCES "user" (id)
 );
 

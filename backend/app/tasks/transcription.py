@@ -40,6 +40,86 @@ MODELS_DIR = Path(settings.MODEL_BASE_DIR)
 if not os.path.exists(MODELS_DIR):
     os.makedirs(MODELS_DIR, exist_ok=True)
 
+
+def get_important_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Extract important metadata fields from the full metadata.
+    
+    Args:
+        metadata: Dictionary of all metadata
+        
+    Returns:
+        Dictionary of important metadata fields
+    """
+    # Define field mappings for different metadata formats
+    field_mappings = {
+        # Basic file info
+        "FileName": ["File:FileName", "FileName", "SourceFile"],
+        "FileSize": ["File:FileSize", "FileSize"],
+        "MIMEType": ["File:MIMEType", "MIMEType"],
+        "FileType": ["File:FileType", "FileType"],
+        "FileTypeExtension": ["File:FileTypeExtension", "FileTypeExtension"],
+        
+        # Video specs
+        "VideoFormat": ["QuickTime:VideoFormat", "VideoFormat", "Format"],
+        "Duration": ["QuickTime:Duration", "Duration", "MediaDuration"],
+        "FrameRate": ["QuickTime:FrameRate", "FrameRate"],
+        "FrameCount": ["QuickTime:FrameCount", "FrameCount"],
+        "VideoFrameRate": ["QuickTime:VideoFrameRate", "VideoFrameRate", "FrameRate"],
+        "VideoWidth": ["QuickTime:ImageWidth", "File:ImageWidth", "ImageWidth", "Width"],
+        "VideoHeight": ["QuickTime:ImageHeight", "File:ImageHeight", "ImageHeight", "Height"],
+        "AspectRatio": ["QuickTime:AspectRatio", "AspectRatio"],
+        "VideoCodec": ["QuickTime:CompressorID", "CompressorID", "VideoCodec", "Codec"],
+        
+        # Audio specs
+        "AudioFormat": ["QuickTime:AudioFormat", "AudioFormat"],
+        "AudioChannels": ["QuickTime:AudioChannels", "AudioChannels"],
+        "AudioSampleRate": ["QuickTime:AudioSampleRate", "AudioSampleRate"],
+        "AudioBitsPerSample": ["QuickTime:AudioBitsPerSample", "AudioBitsPerSample"],
+        
+        # Creation info
+        "CreateDate": ["QuickTime:CreateDate", "CreateDate", "DateTimeOriginal"],
+        "ModifyDate": ["QuickTime:ModifyDate", "ModifyDate"],
+        "DateTimeOriginal": ["EXIF:DateTimeOriginal", "DateTimeOriginal"],
+        
+        # Device info
+        "DeviceManufacturer": ["QuickTime:Make", "EXIF:Make", "Make", "DeviceManufacturer"],
+        "DeviceModel": ["QuickTime:Model", "EXIF:Model", "Model", "DeviceModel"],
+        
+        # GPS info
+        "GPSLatitude": ["EXIF:GPSLatitude", "GPSLatitude"],
+        "GPSLongitude": ["EXIF:GPSLongitude", "GPSLongitude"],
+        
+        # Software used
+        "Software": ["EXIF:Software", "Software"],
+        
+        # Content information
+        "Title": ["QuickTime:Title", "Title"],
+        "Artist": ["QuickTime:Artist", "Artist"],
+        "Author": ["QuickTime:Author", "Author"],
+        "Comment": ["QuickTime:Comment", "Comment"],
+        "Description": ["QuickTime:Description", "Description"],
+        "LongDescription": ["QuickTime:LongDescription", "LongDescription"],
+        "HandlerDescription": ["QuickTime:HandlerDescription", "HandlerDescription"],
+    }
+    
+    important_fields = {}
+    
+    # Extract values using the field mappings
+    for field_name, possible_keys in field_mappings.items():
+        for key in possible_keys:
+            if key in metadata and metadata[key] is not None:
+                important_fields[field_name] = metadata[key]
+                break
+    
+    # Look for any additional fields that might be useful
+    for key, value in metadata.items():
+        if any(term in key.lower() for term in ["creator", "copyright", "language", "genre"]):
+            important_fields[key] = value
+    
+    return important_fields
+
+
 def create_task_record(db: Session, celery_task_id: str, user_id: int, media_file_id: int, task_type: str) -> Task:
     """Create a new task record in the database"""
     task = Task(
@@ -176,84 +256,148 @@ def transcribe_audio_task(self, file_id: int):
             with open(temp_file_path, "wb") as f:
                 f.write(file_data.read())
             
-            # Extract detailed metadata from the video file using ExifTool
-            if content_type.startswith("video/"):
-                try:
-                    logger.info(f"Extracting metadata with ExifTool from {temp_file_path}")
-                    video_metadata = {}
-                    
-                    # Try to use Python ExifTool library if available
-                    if "exiftool" in sys.modules:
-                        try:
-                            with exiftool.ExifToolHelper() as et:
-                                metadata_list = et.get_metadata(temp_file_path)
+            # Extract detailed metadata from the media file using ExifTool
+            # This works for both audio and video files
+            try:
+                logger.info(f"Extracting metadata with ExifTool from {temp_file_path}")
+                extracted_metadata = {}
+                
+                # Try to use Python ExifTool library if available
+                if "exiftool" in sys.modules:
+                    try:
+                        with exiftool.ExifToolHelper() as et:
+                            metadata_list = et.get_metadata(temp_file_path)
+                            if metadata_list:
+                                extracted_metadata = metadata_list[0]
+                                logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields")
+                    except Exception as et_err:
+                        logger.warning(f"Error using Python ExifTool: {et_err}")
+                        
+                # Fallback to command-line ExifTool if the Python library fails
+                if not extracted_metadata:
+                    try:
+                        # Try to extract metadata using subprocess
+                        exif_process = subprocess.run(
+                            ["exiftool", "-json", "-n", temp_file_path],
+                            capture_output=True,
+                            text=True,
+                            check=True
+                        )
+                        
+                        if exif_process.stdout:
+                            try:
+                                metadata_list = json.loads(exif_process.stdout)
                                 if metadata_list:
-                                    video_metadata = metadata_list[0]
-                                    
-                                    # Extract important video properties
-                                    with session_scope() as db:
-                                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                                        if media_file:
-                                            # Common ExifTool fields for video files
-                                            media_file.width = video_metadata.get("File:ImageWidth") or video_metadata.get("QuickTime:ImageWidth")
-                                            media_file.height = video_metadata.get("File:ImageHeight") or video_metadata.get("QuickTime:ImageHeight")
-                                            media_file.frame_rate = video_metadata.get("QuickTime:VideoFrameRate")
-                                            media_file.codec = video_metadata.get("QuickTime:CompressorID")
-                                            media_file.bit_rate = video_metadata.get("QuickTime:BitRate")
-                                            
-                                            # Store full metadata as JSON
-                                            media_file.metadata = video_metadata
-                                            db.commit()
-                                            
-                                    logger.info(f"Metadata extracted: {video_metadata.get('File:FileName')} - "
-                                             f"{video_metadata.get('File:ImageWidth')}x{video_metadata.get('File:ImageHeight')} "
-                                             f"@ {video_metadata.get('QuickTime:VideoFrameRate')} fps")
-                        except Exception as et_err:
-                            logger.warning(f"Error using Python ExifTool: {et_err}")
+                                    extracted_metadata = metadata_list[0]
+                                    logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields via subprocess")
+                            except json.JSONDecodeError as jde:
+                                logger.warning(f"Error decoding ExifTool JSON output: {jde}")
+                    except (subprocess.SubprocessError, FileNotFoundError) as sp_err:
+                        logger.warning(f"Error running ExifTool subprocess: {sp_err}")
+                
+                # If we successfully extracted metadata, process and store it
+                if extracted_metadata:
+                    # Process the extracted metadata
+                    important_metadata = get_important_metadata(extracted_metadata)
+                    
+                    # Update the database with the extracted metadata
+                    with session_scope() as db:
+                        media_file = get_refreshed_object(db, MediaFile, file_id)
+                        if media_file:
+                            # Store full metadata information
+                            media_file.metadata_raw = extracted_metadata
+                            media_file.metadata_important = important_metadata
                             
-                    # Fallback to command-line ExifTool if the Python library fails
-                    if not video_metadata:
-                        try:
-                            # Try to extract metadata using subprocess
-                            exif_process = subprocess.run(
-                                ["exiftool", "-json", "-n", temp_file_path],
-                                capture_output=True,
-                                text=True,
-                                check=True
-                            )
+                            # Set basic file information
+                            media_file.file_size = os.path.getsize(temp_file_path)  # File size in bytes
                             
-                            if exif_process.stdout:
+                            # Set media format and related info
+                            media_file.media_format = important_metadata.get("FileType")
+                            
+                            # Video specific metadata
+                            if content_type.startswith("video/") or content_type.startswith("image/"):
+                                # Resolution information
+                                media_file.resolution_width = important_metadata.get("VideoWidth") or important_metadata.get("ImageWidth")
+                                media_file.resolution_height = important_metadata.get("VideoHeight") or important_metadata.get("ImageHeight")
+                                media_file.frame_rate = important_metadata.get("VideoFrameRate") or important_metadata.get("FrameRate")
+                                media_file.codec = important_metadata.get("VideoCodec") or important_metadata.get("CompressorID")
+                                media_file.frame_count = important_metadata.get("FrameCount")
+                                
+                                # Set aspect ratio if available
+                                if important_metadata.get("AspectRatio"):
+                                    media_file.aspect_ratio = important_metadata.get("AspectRatio")
+                            
+                            # Audio specific metadata
+                            if content_type.startswith("audio/") or content_type.startswith("video/"):
+                                media_file.audio_channels = important_metadata.get("AudioChannels")
+                                media_file.audio_sample_rate = important_metadata.get("AudioSampleRate")
+                                media_file.audio_bit_depth = important_metadata.get("AudioBitsPerSample")
+                            
+                            # Duration (important for all media types)
+                            if important_metadata.get("Duration"):
                                 try:
-                                    metadata_list = json.loads(exif_process.stdout)
-                                    if metadata_list:
-                                        video_metadata = metadata_list[0]
-                                        
-                                        # Extract important video properties
-                                        with session_scope() as db:
-                                            media_file = get_refreshed_object(db, MediaFile, file_id)
-                                            if media_file:
-                                                # Common exiftool fields for video files
-                                                media_file.width = video_metadata.get("ImageWidth")
-                                                media_file.height = video_metadata.get("ImageHeight")
-                                                media_file.frame_rate = video_metadata.get("VideoFrameRate")
-                                                media_file.codec = video_metadata.get("CompressorID")
-                                                media_file.bit_rate = video_metadata.get("AvgBitrate")
-                                                
-                                                # Store full metadata as JSON
-                                                media_file.metadata = video_metadata
-                                                db.commit()
-                                        
-                                        logger.info(f"Metadata extracted via subprocess: {video_metadata.get('FileName')} - "
-                                                 f"{video_metadata.get('ImageWidth')}x{video_metadata.get('ImageHeight')} "
-                                                 f"@ {video_metadata.get('VideoFrameRate')} fps")
-                                except json.JSONDecodeError as jde:
-                                    logger.warning(f"Error decoding ExifTool JSON output: {jde}")
-                        except (subprocess.SubprocessError, FileNotFoundError) as sp_err:
-                            logger.warning(f"Error running ExifTool subprocess: {sp_err}")
-                except Exception as e:
-                    logger.warning(f"Error extracting video metadata: {e}")
-                    # Continue processing even if metadata extraction fails
-            
+                                    duration_value = float(important_metadata.get("Duration"))
+                                    media_file.duration = duration_value
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Could not parse duration: {important_metadata.get('Duration')}")
+                            
+                            # Creation and modification dates
+                            if important_metadata.get("CreateDate"):
+                                try:
+                                    # Parse the date into a datetime object
+                                    create_date_str = important_metadata.get("CreateDate")
+                                    # Normalize format if needed (many formats possible from exiftool)
+                                    if ":" in create_date_str and len(create_date_str) >= 10:
+                                        # Common format: 2023:01:30 15:45:22
+                                        if len(create_date_str) <= 19:  # No timezone
+                                            create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
+                                        media_file.creation_date = datetime.datetime.fromisoformat(create_date_str)
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Could not parse creation date: {important_metadata.get('CreateDate')}")
+                            
+                            # Last modified date
+                            if important_metadata.get("ModifyDate"):
+                                try:
+                                    modify_date_str = important_metadata.get("ModifyDate")
+                                    if ":" in modify_date_str and len(modify_date_str) >= 10:
+                                        modify_date_str = modify_date_str.replace(":", "-", 2)
+                                        if len(modify_date_str) <= 19:  # No timezone
+                                            modify_date_str += "+00:00"
+                                        media_file.last_modified_date = datetime.datetime.fromisoformat(modify_date_str)
+                                except (ValueError, TypeError):
+                                    logger.warning(f"Could not parse modification date: {important_metadata.get('ModifyDate')}")
+                            
+                            # Device information
+                            media_file.device_make = important_metadata.get("DeviceManufacturer")
+                            media_file.device_model = important_metadata.get("DeviceModel")
+                            
+                            # Content information
+                            media_file.title = important_metadata.get("Title")
+                            media_file.author = important_metadata.get("Author") or important_metadata.get("Artist")
+                            media_file.description = important_metadata.get("Description") or important_metadata.get("Comment") or important_metadata.get("LongDescription")
+                            
+                            # Store both important and full metadata
+                            media_file.important_metadata = important_metadata  # Store only the important fields
+                            media_file.metadata = extracted_metadata  # Store the full metadata
+                            
+                            db.commit()
+                    
+                    # Log the metadata extraction results
+                    resolution = ""            
+                    if important_metadata.get("VideoWidth") and important_metadata.get("VideoHeight"):
+                        resolution = f"{important_metadata.get('VideoWidth')}x{important_metadata.get('VideoHeight')}"
+                    
+                    fps = important_metadata.get("VideoFrameRate", "")
+                    duration = important_metadata.get("Duration", "")
+                    
+                    logger.info(f"Metadata extracted: {important_metadata.get('FileName', file_name)} - "
+                             f"{resolution} @ {fps} fps, Duration: {duration}")
+                    
+            except Exception as e:
+                logger.warning(f"Error extracting media metadata: {e}")
+                # Continue processing even if metadata extraction fails
+
+
             try:
                 # For video files, extract audio first
                 if content_type.startswith("video/"):

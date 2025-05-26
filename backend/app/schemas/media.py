@@ -98,6 +98,8 @@ class MediaFile(MediaFileBase):
     id: int
     storage_path: str
     upload_time: datetime
+    file_size: Optional[int] = None
+    content_type: Optional[str] = None
     duration: Optional[float] = None
     language: Optional[str] = None
     status: FileStatus
@@ -105,6 +107,31 @@ class MediaFile(MediaFileBase):
     translated_text: Optional[str] = None
     download_url: Optional[str] = None
     preview_url: Optional[str] = None
+    
+    # Technical metadata
+    media_format: Optional[str] = None
+    codec: Optional[str] = None
+    resolution_width: Optional[int] = None
+    resolution_height: Optional[int] = None
+    frame_rate: Optional[float] = None
+    frame_count: Optional[int] = None
+    aspect_ratio: Optional[str] = None
+    
+    # Audio specs
+    audio_channels: Optional[int] = None
+    audio_sample_rate: Optional[int] = None
+    audio_bit_depth: Optional[int] = None
+    
+    # Creation and device information
+    creation_date: Optional[datetime] = None
+    last_modified_date: Optional[datetime] = None
+    device_make: Optional[str] = None
+    device_model: Optional[str] = None
+    
+    # Content information
+    title: Optional[str] = None
+    author: Optional[str] = None
+    description: Optional[str] = None
     
     class Config:
         from_attributes = True

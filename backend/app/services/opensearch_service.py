@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import json
 import logging
 import os
+import datetime
 
 from app.core.config import settings
 
@@ -141,7 +142,7 @@ def index_transcript(file_id: int, user_id: int, transcript_text: str,
             "speakers": speakers,
             "title": title,
             "tags": tags or [],
-            "upload_time": "now",  # OpenSearch will interpret "now" as the current time
+            "upload_time": datetime.datetime.now().isoformat(),  # ISO-8601 format that OpenSearch can parse
             "embedding": embedding
         }
         

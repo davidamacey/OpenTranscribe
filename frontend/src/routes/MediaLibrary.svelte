@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Link, useNavigate } from 'svelte-navigator';
+  import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
   
   // Explicitly declare props to prevent warnings
   export const location = null;
@@ -17,8 +18,47 @@
     status: 'pending' | 'processing' | 'completed' | 'error';
     upload_time: string;
     duration?: number;
+    file_size?: number;
+    content_type?: string;
     tags?: string[];
     summary?: string;
+    
+    // Technical metadata
+    media_format?: string;
+    codec?: string;
+    resolution_width?: number;
+    resolution_height?: number;
+    frame_rate?: number;
+    frame_count?: number;
+    aspect_ratio?: string;
+    
+    // Audio specs
+    audio_channels?: number;
+    audio_sample_rate?: number;
+    audio_bit_depth?: number;
+    
+    // Creation info
+    creation_date?: string;
+    last_modified_date?: string;
+    device_make?: string;
+    device_model?: string;
+    
+    // Content info
+    title?: string;
+    author?: string;
+    description?: string;
+  }
+  
+  interface DurationRange {
+    min: number | null;
+    max: number | null;
+  }
+  
+  interface ResolutionRange {
+    minWidth: number | null;
+    maxWidth: number | null;
+    minHeight: number | null;
+    maxHeight: number | null;
   }
   
   interface FilterEvent {
@@ -27,6 +67,10 @@
       tags: string[];
       speaker: string | null;
       dates: DateRange;
+      durationRange?: DurationRange;
+      formats?: string[];
+      codecs?: string[];
+      resolution?: ResolutionRange;
     };
   }
   
@@ -57,11 +101,39 @@
   let selectedFiles = new Set<number>();
   let isSelecting: boolean = false;
   
+  // WebSocket subscription
+  let unsubscribeFileStatus: () => void;
+  
+  // Define WebSocket update type
+  interface FileStatusUpdate {
+    file_id: number;
+    status: 'pending' | 'processing' | 'completed' | 'error';
+    progress?: number;
+  }
+  
+  interface FileStatusUpdates {
+    [key: string]: FileStatusUpdate;
+  }
+  
+  interface Notification {
+    type: string;
+    data: any;
+  }
+  
   // Filter state
   let searchQuery: string = '';
   let selectedTags: string[] = [];
   let selectedSpeaker: string | null = null;
   let dateRange = { from: null as Date | null, to: null as Date | null };
+  let durationRange = { min: null as number | null, max: null as number | null };
+  let selectedFormats: string[] = [];
+  let selectedCodecs: string[] = [];
+  let resolutionRange = { 
+    minWidth: null as number | null, 
+    maxWidth: null as number | null, 
+    minHeight: null as number | null, 
+    maxHeight: null as number | null 
+  };
   let showFilters: boolean = false; // For mobile
   
   // Fetch media files
@@ -93,6 +165,40 @@
         params.append('to_date', dateRange.to.toISOString());
       }
       
+      // Add metadata filter parameters
+      if (durationRange.min !== null) {
+        params.append('min_duration', durationRange.min.toString());
+      }
+      
+      if (durationRange.max !== null) {
+        params.append('max_duration', durationRange.max.toString());
+      }
+      
+      if (selectedFormats.length > 0) {
+        selectedFormats.forEach(format => params.append('format', format));
+      }
+      
+      if (selectedCodecs.length > 0) {
+        selectedCodecs.forEach(codec => params.append('codec', codec));
+      }
+      
+      // Resolution filters
+      if (resolutionRange.minWidth !== null) {
+        params.append('min_width', resolutionRange.minWidth.toString());
+      }
+      
+      if (resolutionRange.maxWidth !== null) {
+        params.append('max_width', resolutionRange.maxWidth.toString());
+      }
+      
+      if (resolutionRange.minHeight !== null) {
+        params.append('min_height', resolutionRange.minHeight.toString());
+      }
+      
+      if (resolutionRange.maxHeight !== null) {
+        params.append('max_height', resolutionRange.maxHeight.toString());
+      }
+      
       const response = await axiosInstance.get('/files', { params });
       files = response.data;
     } catch (err) {
@@ -105,12 +211,18 @@
   
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, dates } = event.detail;
+    const { search, tags, speaker, dates, durationRange: duration, formats, codecs, resolution } = event.detail;
     
     searchQuery = search;
     selectedTags = tags;
     selectedSpeaker = speaker;
     dateRange = dates;
+    
+    // Handle advanced filters if provided
+    if (duration) durationRange = duration;
+    if (formats) selectedFormats = formats;
+    if (codecs) selectedCodecs = codecs;
+    if (resolution) resolutionRange = resolution;
     
     fetchFiles();
   }
@@ -227,10 +339,80 @@
     showUploadModal = false;
   }
   
+  // Subscribe to WebSocket file status updates to update file status in real-time
+  function setupWebSocketUpdates() {
+    unsubscribeFileStatus = fileStatusUpdates.subscribe((updates: FileStatusUpdates) => {
+      if (files.length > 0 && Object.keys(updates).length > 0) {
+        let updatedFile = false;
+        
+        // Update the status of files that have been processed
+        files = files.map(file => {
+          // Convert file id to string for comparison since our updates keys are strings
+          const fileIdStr = file.id.toString();
+          
+          // Check if this file has an update in the updates object
+          if (updates[fileIdStr]) {
+            const update = updates[fileIdStr];
+            console.log(`Updating file ${file.id} status from ${file.status} to ${update.status}`);
+            updatedFile = true;
+            
+            // Return updated file object with new status
+            return {
+              ...file,
+              status: update.status
+            };
+          }
+          return file;
+        });
+        
+        // Force a UI update by creating a new array
+        if (updatedFile) {
+          files = [...files];
+          console.log('Updated files array with new statuses');
+        }
+      }
+    });
+    
+    // Also listen for general notifications that might affect files
+    unsubscribeNotifications = lastNotification.subscribe((notification: Notification | null) => {
+      if (notification) {
+        console.log('Gallery: Received notification:', notification);
+        
+        // Check if this is a completion notification that requires refreshing files
+        if (notification.type === 'transcription_status' && notification.data && notification.data.status === 'completed') {
+          console.log('Transcription completed, refreshing files to ensure latest data');
+          // Wait a brief moment to allow backend processing to complete
+          setTimeout(() => fetchFiles(), 1000);
+        } else if (notification.type === 'file_update') {
+          console.log('File update notification received, will refresh files');
+          setTimeout(() => fetchFiles(), 1000);
+        }
+      }
+    });
+  }
+  
+  let unsubscribeNotifications: () => void;
+  
   onMount(() => {
     // Update document title
     document.title = 'Gallery | OpenTranscribe';
+    
+    // Setup WebSocket connection
+    setupWebsocketConnection(window.location.origin);
+    setupWebSocketUpdates();
+    
     fetchFiles();
+  });
+  
+  onDestroy(() => {
+    // Clean up subscriptions when component is destroyed
+    if (unsubscribeFileStatus) {
+      unsubscribeFileStatus();
+    }
+    
+    if (unsubscribeNotifications) {
+      unsubscribeNotifications();
+    }
   });
 </script>
 
@@ -394,7 +576,9 @@
       role="dialog"
       aria-labelledby="upload-modal-title"
       aria-modal="true"
-      on:click|stopPropagation>
+      tabindex="-1"
+      on:click|stopPropagation
+      on:keydown|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
           <h2 id="upload-modal-title">Upload Media</h2>

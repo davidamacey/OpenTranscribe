@@ -1,5 +1,5 @@
 
-- After making changes, ALWAYS make sure to start up a new server so I can test it.
+- After making changes, ALWAYS make sure to start up a new server so I can test it. Using available opentr.sh file in the repo, using appropriate options for the change required (restart, reset, etc)
 - Always look for existing code to iterate on instead of creating new code.
 - Do not drastically change the patterns before trying to iterate on existing patterns.
 - Always kill all existing related servers that may have been created in previous testing before trying to start a new server.
@@ -29,3 +29,5 @@
 - Ensure documentation is up to date and accurate
 - Continually update the Readme with any new changes or updates, ensuring easy understanding of the codebase, setup and deployment.
 - When looking through database structures, orms, and pydantic models. look in the coed base first, then fix the database.  Always look in code base for errors first.
+- any changes to the database need to be made WITHOUT added alembic migrations, update the database/init_db.sql file and the pydantic modes and the sqlalchemy orm all at once.  We are still developing the application and we do not need to worry about migrations until an official release.  you will now when I tell you.
+- any frontend modifications must be light and dark mode compliant.

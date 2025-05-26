@@ -1,8 +1,15 @@
 #!/bin/bash
 
 # Common functions for OpenTranscribe shell scripts
+# These functions are used by opentr.sh to provide common functionality
+#
+# Usage: source ./scripts/common.sh
 
-# Check if Docker is running
+#######################
+# UTILITY FUNCTIONS
+#######################
+
+# Check if Docker is running and exit if not
 check_docker() {
   if ! docker info > /dev/null 2>&1; then
     echo "❌ Error: Docker is not running. Please start Docker and try again."
@@ -25,7 +32,11 @@ create_required_dirs() {
   fi
 }
 
-# Print access information
+#######################
+# INFO FUNCTIONS
+#######################
+
+# Print access information for all services
 print_access_info() {
   echo "🌐 Access the application at:"
   echo "   - Frontend: http://localhost:5173"
@@ -35,6 +46,31 @@ print_access_info() {
   echo "   - Flower Dashboard: http://localhost:5555/flower"
 }
 
+#######################
+# DOCKER FUNCTIONS
+#######################
+
+# Wait for backend to be healthy with timeout
+wait_for_backend_health() {
+  TIMEOUT=60
+  INTERVAL=2
+  ELAPSED=0
+  
+  while [ $ELAPSED -lt $TIMEOUT ]; do
+    if docker compose ps | grep backend | grep "(healthy)" > /dev/null; then
+      echo "✅ Backend is healthy!"
+      return 0
+    fi
+    sleep $INTERVAL
+    ELAPSED=$((ELAPSED + INTERVAL))
+    echo "⏳ Waiting for backend... ($ELAPSED/$TIMEOUT seconds)"
+  done
+  
+  echo "⚠️ Backend health check timed out, but continuing anyway..."
+  docker compose logs backend --tail 20
+  return 1
+}
+
 # Start containers based on environment
 start_environment() {
   local environment=$1
@@ -42,12 +78,24 @@ start_environment() {
   echo "🔄 Starting containers in ${environment} mode..."
   if [ "$environment" == "prod" ]; then
     # Start with production configuration (using frontend-prod service)
-    docker compose up -d --build backend postgres redis minio opensearch celery-worker frontend-prod flower
+    # Start base infrastructure services first with a single command
+    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
+    docker compose up -d --build postgres redis minio opensearch
+    
+    # Then start the application services that depend on infrastructure
+    echo "🚀 Starting application services (backend, celery-worker, frontend-prod, flower)..."
+    docker compose up -d --build backend celery-worker frontend-prod flower
     FRONTEND_SERVICE="frontend-prod"
     echo "💼 Production mode: Using optimized build with NGINX"
   else
     # Start with development configuration (using frontend service for hot reload)
-    docker compose up -d --build backend postgres redis minio opensearch celery-worker frontend flower
+    # Start base infrastructure services first with a single command
+    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
+    docker compose up -d --build postgres redis minio opensearch
+    
+    # Then start the application services that depend on infrastructure
+    echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."
+    docker compose up -d --build backend celery-worker frontend flower
     FRONTEND_SERVICE="frontend"
     echo "🧪 Development mode: Hot reload enabled for faster development"
   fi
@@ -73,9 +121,12 @@ start_logs() {
   echo "📊 Log tailing started in background."
 }
 
-# Display help commands
+# Display quick reference commands
 print_help_commands() {
-  echo "🔄 To reset the environment completely: ./reset_and_init.sh [dev|prod]"
-  echo "🛑 To stop all services: docker compose down"
-  echo "📋 To view logs: docker compose logs -f [service_name]"
+  echo "⚡ Quick Commands Reference:"
+  echo "   - Reset environment: ./opentr.sh reset [dev|prod]"
+  echo "   - Stop all services: ./opentr.sh stop"
+  echo "   - View logs: ./opentr.sh logs [service_name]"
+  echo "   - Restart backend: ./opentr.sh restart-backend"
+  echo "   - Rebuild after code changes: ./opentr.sh rebuild-backend or ./opentr.sh rebuild-frontend"
 }
