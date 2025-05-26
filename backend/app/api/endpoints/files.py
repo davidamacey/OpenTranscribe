@@ -480,8 +480,13 @@ async def video_file(file_id: int, request: Request, db: Session = Depends(get_d
 @router.get("/{file_id}/simple-video")
 async def simple_video(file_id: int, request: Request, db: Session = Depends(get_db)):
     """
-    Video streaming endpoint that efficiently serves video content with range support
-    This allows browsers to request only the portions they need, like YouTube
+    Enhanced video streaming endpoint that efficiently serves video content with YouTube-like streaming.
+    Features:
+    - Precise range request handling for seeking
+    - Adaptive chunk sizes based on file size
+    - Proper content-length headers for progress indication
+    - Efficient memory usage for large files
+    - Browser caching support
     """
     # Log the request
     logger.info(f"Video streaming request for file {file_id}")
@@ -514,13 +519,18 @@ async def simple_video(file_id: int, request: Request, db: Session = Depends(get
         if range_header:
             logger.info(f"Range request: {range_header} for file {file_id}")
         
-        # Set media type based on file content type
-        media_type = db_file.content_type
+        # Set media type based on file content type with fallback to mp4
+        media_type = db_file.content_type or 'video/mp4'
+        
+        # Get file content as a stream with range information
+        # The enhanced get_file_stream now returns more information
+        logger.info(f"Streaming file: id={file_id}, path={db_file.storage_path}")
+        file_stream, start_byte, end_byte, total_length = get_file_stream(db_file.storage_path, range_header)
         
         # Determine response status code (206 Partial Content for range requests)
         status_code = status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
         
-        # Set comprehensive CORS and caching headers
+        # Set comprehensive response headers for optimal streaming
         headers = {
             'Content-Disposition': f'inline; filename="{db_file.filename}"',
             'Content-Type': media_type,
@@ -528,16 +538,34 @@ async def simple_video(file_id: int, request: Request, db: Session = Depends(get
             'Access-Control-Allow-Origin': '*',  # Allow any origin for development
             'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
             'Access-Control-Allow-Headers': 'Range, Origin, Content-Type, Accept',
-            'Cache-Control': 'max-age=3600'
         }
         
-        # Get file content as a stream, passing the range header for partial content
-        # This uses get_file_stream which efficiently handles range requests
-        logger.info(f"Streaming file: id={file_id}, path={db_file.storage_path}")
-        file_stream = get_file_stream(db_file.storage_path, range_header)
+        # Add Content-Range header for range requests (required for 206 responses)
+        if range_header and total_length is not None:
+            content_range = f'bytes {start_byte}-{end_byte}/{total_length}'
+            headers['Content-Range'] = content_range
+            
+            # For range requests, content length is the actual bytes being sent
+            content_length = end_byte - start_byte + 1 if end_byte is not None else total_length - start_byte
+            headers['Content-Length'] = str(content_length)
+            
+            logger.info(f"Serving range: {content_range}, length: {content_length}")
+        elif total_length is not None:
+            # For full file requests, content length is the total file size
+            headers['Content-Length'] = str(total_length)
+        
+        # Add caching headers based on content type
+        # Video files can be cached longer as they rarely change
+        if media_type.startswith('video/') or media_type.startswith('audio/'):
+            headers['Cache-Control'] = 'public, max-age=86400, stale-while-revalidate=604800'  # 1 day cache, 7 day stale
+            # Add ETag if available to support conditional requests
+            if hasattr(db_file, 'md5_hash') and db_file.md5_hash:
+                headers['ETag'] = f'"{db_file.md5_hash}"'
+        else:
+            # Other media types get shorter cache times
+            headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour cache
         
         # Return a streaming response that doesn't load the entire file into memory
-        # The browser will receive chunks of the video as needed
         return StreamingResponse(
             content=file_stream,
             status_code=status_code,

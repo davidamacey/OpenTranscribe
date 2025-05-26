@@ -99,61 +99,133 @@ def download_file(object_name: str) -> Tuple[io.BytesIO, int, str]:
 
 def get_file_stream(object_name: str, range_header: str = None):
     """
-    Get a file stream from MinIO for efficient streaming of large files
+    Get a file stream from MinIO for efficient streaming of large files with adaptive chunking.
+    Implements robust range request handling for YouTube-like video streaming experience.
     
     Args:
         object_name: Object name in MinIO
         range_header: HTTP Range header for partial content requests
         
     Returns:
-        Generator that yields chunks of the file
+        Tuple of (Generator that yields chunks of the file, start_byte, end_byte, total_length)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Default values
+    start_byte = 0
+    end_byte = None
+    total_length = None
+    
     try:
+        # Get object stats first to know the total size
+        try:
+            stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
+            total_length = stats.size
+            logger.info(f"File size for {object_name}: {total_length} bytes")
+        except Exception as e:
+            logger.error(f"Error getting object stats: {e}")
+            # Continue without total size - less optimal but still functional
+            pass
+            
         kwargs = {
             'bucket_name': settings.MEDIA_BUCKET_NAME,
             'object_name': object_name
         }
         
-        # Parse range header if present
+        # Parse range header if present - implement robust range parsing
         if range_header and range_header.startswith('bytes='):
             try:
                 # Parse range from format "bytes=start-end"
                 range_value = range_header.replace('bytes=', '')
                 parts = range_value.split('-')
                 
-                # Get start and end values
-                start = int(parts[0]) if parts[0] else 0
-                end = int(parts[1]) if len(parts) > 1 and parts[1] else None
+                # Handle different range request formats
+                if parts[0] and parts[1]:  # Format: bytes=start-end
+                    start_byte = int(parts[0])
+                    end_byte = min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
+                elif parts[0]:  # Format: bytes=start-
+                    start_byte = int(parts[0])
+                    end_byte = total_length - 1 if total_length else None
+                elif parts[1]:  # Format: bytes=-end (last N bytes)
+                    requested_length = int(parts[1])
+                    if total_length:
+                        start_byte = max(0, total_length - requested_length)
+                        end_byte = total_length - 1
                 
-                # Add offset and length parameters if we have a valid range
-                kwargs['offset'] = start
-                if end is not None:
-                    kwargs['length'] = end - start + 1  # +1 because range is inclusive
+                # Validate range is within bounds
+                if total_length and start_byte >= total_length:
+                    logger.warning(f"Range start {start_byte} exceeds file size {total_length}")
+                    start_byte = 0
+                    end_byte = total_length - 1
+                
+                # Add offset and length parameters for MinIO
+                kwargs['offset'] = start_byte
+                if end_byte is not None:
+                    kwargs['length'] = end_byte - start_byte + 1  # +1 because range is inclusive
                     
-                print(f"Streaming with range: start={start}, end={end if end is not None else 'EOF'}")
+                logger.info(f"Streaming with range: start={start_byte}, end={end_byte if end_byte is not None else 'EOF'}, total={total_length}")
             except Exception as e:
-                print(f"Error parsing range header: {e}")
+                logger.error(f"Error parsing range header '{range_header}': {e}")
                 # Continue without range if parsing fails
-                pass
+                start_byte = 0
+                end_byte = total_length - 1 if total_length else None
+        elif total_length:  # No range but we know the size
+            end_byte = total_length - 1
         
         # Get the file from MinIO
         response = minio_client.get_object(**kwargs)
         
-        # Create a generator that yields chunks of the file
-        chunk_size = 8192  # 8KB chunks
+        # Choose optimal chunk size based on file size and range
+        # - Smaller chunks for small files or small ranges (reduces latency for small files)
+        # - Larger chunks for big files (improves throughput)
+        if total_length:
+            if total_length < 1024 * 1024:  # < 1MB
+                chunk_size = 4096  # 4KB chunks
+            elif total_length < 10 * 1024 * 1024:  # < 10MB
+                chunk_size = 16384  # 16KB chunks
+            elif total_length < 100 * 1024 * 1024:  # < 100MB
+                chunk_size = 65536  # 64KB chunks
+            else:  # Very large files
+                chunk_size = 131072  # 128KB chunks
+        else:
+            # Default if we don't know the size
+            chunk_size = 32768  # 32KB chunks
         
-        # Yield chunks of the file
-        while True:
-            chunk = response.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-            
-        # Close the response when done
-        response.close()
-        response.release_conn()
+        # Function to yield chunks with proper resource cleanup
+        def generate_chunks():
+            try:
+                bytes_read = 0
+                max_bytes = kwargs.get('length')
+                
+                while True:
+                    # Adjust final chunk size if we're at the end of requested range
+                    if max_bytes is not None and bytes_read + chunk_size > max_bytes:
+                        final_chunk_size = max_bytes - bytes_read
+                        if final_chunk_size <= 0:
+                            break
+                        chunk = response.read(final_chunk_size)
+                    else:
+                        chunk = response.read(chunk_size)
+                    
+                    if not chunk:
+                        break
+                        
+                    bytes_read += len(chunk)
+                    yield chunk
+            finally:
+                # Ensure resources are properly cleaned up
+                try:
+                    response.close()
+                    response.release_conn()
+                except Exception as e:
+                    logger.error(f"Error closing MinIO response: {e}")
+        
+        # Return the generator along with range information
+        return generate_chunks(), start_byte, end_byte, total_length
+        
     except Exception as e:
-        print(f"Error streaming file: {e}")
+        logger.error(f"Error setting up file stream for {object_name}: {e}")
         raise Exception(f"Error streaming file: {e}")
 
 
