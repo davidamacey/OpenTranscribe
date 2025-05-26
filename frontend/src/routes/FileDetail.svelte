@@ -179,9 +179,16 @@
     reactiveFile.set(file);
   }
 
-  // Video player initialization flag to track status
+  // Video player initialization and state tracking
   let playerInitialized = false;
   let videoElementChecked = false;
+  let isPlayerBuffering = false;
+  let loadStartTime = 0;
+  let loadProgress = 0;
+  let playerQuality = 'auto';
+  let playbackSpeed = 1.0;
+  let isFullscreen = false;
+  let playerErrorDetails = '';
   
   // Use afterUpdate to check for video element after DOM updates
   afterUpdate(() => {
@@ -196,6 +203,28 @@
           setTimeout(() => {
             initializePlayer();
             videoElementChecked = true;
+            
+            // Add event listeners for detailed video metrics
+            videoElement.addEventListener('waiting', () => {
+              isPlayerBuffering = true;
+              if (!loadStartTime) loadStartTime = Date.now();
+            });
+            
+            videoElement.addEventListener('canplay', () => {
+              isPlayerBuffering = false;
+              if (loadStartTime) {
+                const loadTime = Date.now() - loadStartTime;
+                console.log(`FileDetail: Video loaded in ${loadTime}ms`);
+                loadStartTime = 0;
+              }
+            });
+            
+            // Track loading progress
+            videoElement.addEventListener('progress', () => {
+              if (videoElement.buffered.length > 0 && videoElement.duration) {
+                loadProgress = (videoElement.buffered.end(0) / videoElement.duration) * 100;
+              }
+            });
           }, 100);
         } else {
           console.log('FileDetail: Video element not found yet, will try again next update');
@@ -555,7 +584,7 @@
   }
 
   /**
-   * Initialize the Plyr video player
+   * Initialize the Plyr video player with enhanced streaming capabilities
    */
   function initializePlayer() {
     if (playerInitialized) {
@@ -563,7 +592,7 @@
       return;
     }
     
-    console.log('FileDetail: Initializing Plyr player with URL:', videoUrl);
+    console.log('FileDetail: Initializing enhanced video player with URL:', videoUrl);
     // Make sure we're checking for the video element with a more robust approach
     const videoElement = document.querySelector('#player');
     
@@ -592,6 +621,40 @@
       console.error('FileDetail: No video URL provided');
       return;
     }
+
+    // Configure video element with preload hint for improved startup performance
+    videoElement.preload = 'metadata'; // Fetch metadata but don't download entire video until play
+    videoElement.crossOrigin = 'anonymous'; // Enable CORS for subtitle support
+    videoElement.playsInline = true; // Better mobile experience
+    
+    // Set up buffer management for more efficient streaming
+    // HTML5 video buffer hints for improved streaming performance
+    const setVideoBufferPreferences = () => {
+      try {
+        // @ts-ignore - Media Source Extensions API may not be fully typed
+        if ('bufferingGoal' in HTMLMediaElement.prototype) {
+          // @ts-ignore - Set buffer goal to improve streaming performance
+          videoElement.bufferingGoal = 15; // Buffer 15 seconds ahead
+        }
+        
+        // Set buffering policy using Media Source Extensions if available
+        if (window.MediaSource) {
+          // Configure video to aggressively preload on good connections
+          // and conservatively on slower connections
+          if (navigator.connection) {
+            // @ts-ignore - Connection API may not be fully typed
+            const connection = navigator.connection;
+            if (connection.downlink > 5) { // >5Mbps connection
+              videoElement.preload = 'auto';
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Advanced buffer settings not supported by browser:', e);
+      }
+    };
+    
+    setVideoBufferPreferences();
     
     // Set source to ensure it's correctly loaded
     // Check if source element exists and create if it doesn't
@@ -603,9 +666,15 @@
       videoElement.appendChild(sourceElement);
     }
     
-    // Update source with current URL
+    // Update source with current URL and add cache-busting parameter if needed
     if (sourceElement) {
-      sourceElement.src = videoUrl;
+      // Add a cache parameter only if experiencing caching issues
+      const hasQuery = videoUrl.includes('?');
+      const cacheBuster = `${hasQuery ? '&' : '?'}_t=${Date.now()}`;
+      // Only add cache buster during development or if experiencing issues
+      const finalUrl = import.meta.env.DEV ? `${videoUrl}${cacheBuster}` : videoUrl;
+      
+      sourceElement.src = finalUrl;
       videoElement.load(); // Force reload with new source
     }
     
@@ -620,32 +689,36 @@
     }
     
     try {
-      console.log('FileDetail: Initializing Plyr player with URL:', videoUrl);
-      const videoElement = document.querySelector('#player');
+      console.log('FileDetail: Creating enhanced Plyr player instance');
       
       if (!videoElement) {
         console.error('FileDetail: Video element not found');
         return;
       }
 
-      // Create new Plyr instance
+      // Create new Plyr instance with enhanced options
       player = new Plyr(videoElement, {
         controls: [
           'play-large', 'play', 'progress', 'current-time', 'mute', 
           'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'
         ],
         seekTime: 5,
-        keyboard: { focused: true, global: false }
+        keyboard: { focused: true, global: false },
+        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
+        quality: { default: 'auto', options: ['auto'] },
+        tooltips: { controls: true, seek: true },
+        previewThumbnails: false, // Could be enabled with sprite generation
+        storage: { enabled: true, key: 'opentranscribe-player' }
       });
 
-      // Set up event listeners
+      // Set up comprehensive event listeners for player metrics and experience
       player.on('ready', () => {
         console.log('FileDetail: Player ready');
         playerInitialized = true;
       });
 
       player.on('timeupdate', () => {
-        if (player && player.currentTime) {
+        if (player && typeof player.currentTime === 'number') {
           currentTime = player.currentTime;
           // Highlight the current segment based on playback time
           highlightCurrentSegment(currentTime);
@@ -653,14 +726,117 @@
       });
 
       player.on('loadedmetadata', () => {
-        if (player && player.duration) {
+        if (player && typeof player.duration === 'number') {
           duration = player.duration;
           console.log(`FileDetail: Video duration loaded: ${duration}s`);
+          // Update file object with duration if not already set
+          if (file && (!file.duration || file.duration === 0) && duration > 0) {
+            file.duration = duration;
+            reactiveFile.set(file);
+          }
         }
+      });
+      
+      // Improved error tracking with detailed diagnostics
+      player.on('error', (event) => {
+        console.error('FileDetail: Player error event:', event);
+        const videoError = videoElement.error;
+        let errorDetail = 'Unknown error';
+        
+        if (videoError) {
+          const errorCodes = {
+            1: 'MEDIA_ERR_ABORTED: The fetching process was aborted by the user',
+            2: 'MEDIA_ERR_NETWORK: A network error occurred while fetching the media',
+            3: 'MEDIA_ERR_DECODE: The media cannot be decoded (likely corrupt or unsupported format)',
+            4: 'MEDIA_ERR_SRC_NOT_SUPPORTED: The media format or MIME type is not supported'
+          };
+          errorDetail = errorCodes[videoError.code] || `Error code ${videoError.code}`;
+          playerErrorDetails = errorDetail;
+          console.error(`FileDetail: Video error: ${errorDetail}`, videoError);
+        }
+        
+        errorMessage = `Error playing video: ${errorDetail}. Try refreshing the page or downloading the file.`;
+      });
+
+      // Track loading state for better user feedback
+      player.on('stalled', () => {
+        console.warn('FileDetail: Video playback has stalled');
+        isPlayerBuffering = true;
+      });
+
+      player.on('playing', () => {
+        isPlayerBuffering = false;
+        errorMessage = ''; // Clear any error messages when playback succeeds
+      });
+      
+      // Track player settings
+      player.on('qualitychange', (event) => {
+        playerQuality = event.detail.quality;
+      });
+      
+      player.on('ratechange', () => {
+        playbackSpeed = player.speed || 1;
+      });
+      
+      player.on('enterfullscreen', () => {
+        isFullscreen = true;
+      });
+      
+      player.on('exitfullscreen', () => {
+        isFullscreen = false;
       });
 
       playerInitialized = true;
-      console.log('FileDetail: Player initialized successfully');
+      console.log('FileDetail: Enhanced player initialized successfully');
+      
+      // Set up additional native video element event listeners for better metrics
+      if (videoElement) {
+        // Listen for more granular loading events
+        videoElement.addEventListener('waiting', () => {
+          isPlayerBuffering = true;
+          console.log('FileDetail: Video is waiting for more data');
+        });
+        
+        videoElement.addEventListener('canplaythrough', () => {
+          console.log('FileDetail: Video CAN PLAY THROUGH - enough data is loaded to play to the end');
+          isPlayerBuffering = false;
+        });
+        
+        // Monitor network and buffer state for diagnostics
+        videoElement.addEventListener('progress', () => {
+          // Ensure videoElement is an HTMLVideoElement with buffered property
+          if (videoElement && 'buffered' in videoElement && videoElement.buffered && videoElement.buffered.length) {
+            const bufferedEnd = videoElement.buffered.end(0);
+            const bufferedPercent = (bufferedEnd / videoElement.duration) * 100;
+            loadProgress = bufferedPercent;
+            
+            // Log buffer status periodically (every 20%)
+            if (Math.floor(bufferedPercent) % 20 === 0) {
+              console.log(`FileDetail: Buffered ${Math.floor(bufferedPercent)}% (${bufferedEnd.toFixed(1)}s of ${videoElement.duration.toFixed(1)}s)`);
+            }
+          }
+        });
+        
+        // Detailed error handling for native video element
+        videoElement.addEventListener('error', (e) => {
+          console.error('FileDetail: Native video error event:', e);
+          const videoError = videoElement.error;
+          
+          if (videoError) {
+            playerErrorDetails = `Error code ${videoError.code}: ${videoError.message || 'No details available'}`;
+            console.error('Video error details:', playerErrorDetails);
+          }
+          
+          // Try to recover by reloading source if it's a network error
+          if (videoError && videoError.code === 2 && sourceElement) { // MEDIA_ERR_NETWORK
+            console.log('FileDetail: Attempting to recover from network error by reloading source');
+            setTimeout(() => {
+              sourceElement.src = videoUrl;
+              videoElement.load();
+            }, 3000); // Wait 3 seconds before retry
+          }
+        });
+      }
     } catch (error) {
       console.error('FileDetail: Error initializing player:', error);
       
@@ -668,48 +844,8 @@
       const errorMsg = (error && typeof error === 'object' && 'message' in error) 
         ? String(error.message) 
         : 'Unknown error';
-      errorMessage = 'Could not initialize video player. ' + errorMsg;
-      
-      /**
-       * @typedef {Object} PlyrErrorEvent
-       * @property {string} [code] - Error code
-       * @property {string} [message] - Error message
-       */
-
-      // Set up error handlers for future errors
-      if (player) {
-        player.on('error', (event) => {
-          console.error('FileDetail: Video player error:', event);
-          errorMessage = 'Error loading video. The file may not be available or supported.';
-        });
-      }
-      
-      // Listen for video error events directly on the video element
-      if (videoElement) {
-        // Listen for video error events directly on the video element
-        videoElement.addEventListener('error', (e) => {
-          console.error('FileDetail: Native video error:', e);
-          errorMessage = 'Error loading video. Please try again or download the file directly.';
-        });
-        
-        // Add a canplay event listener to confirm when video is actually ready
-        videoElement.addEventListener('canplay', () => {
-          console.log('FileDetail: Video CAN PLAY event fired - video is ready to play');
-          playerInitialized = true;
-        });
-        
-        // Add loadstart event to track when video starts loading
-        videoElement.addEventListener('loadstart', () => {
-          console.log('FileDetail: Video LOADSTART event fired - loading has begun');
-        });
-        
-        // Track progress events
-        videoElement.addEventListener('progress', () => {
-          if (videoElement.buffered.length) {
-            console.log(`FileDetail: Buffered ${videoElement.buffered.end(0)} of ${videoElement.duration} seconds`);
-          }
-        });
-      }
+      errorMessage = 'Could not initialize video player: ' + errorMsg;
+      playerInitialized = false;
     }
   }
 
@@ -1491,14 +1627,22 @@
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
         <h4>Video</h4>
-        <div class="video-player-container">
+        <div class="video-player-container" class:loading={isPlayerBuffering}>
           {#if videoUrl}
-            <!-- Video player with embedded captions track to avoid CORS issues -->
+            <!-- Enhanced video player with improved streaming capabilities -->
             <video id="player" playsinline controls>
               <source src={videoUrl} type="video/mp4" />
-              <!-- Using embedded VTT data to avoid CORS issues -->
+              <!-- Captions track using transcript data -->
               {#if file && file.transcript && file.transcript.length > 0}
                 <!-- Generate captions from transcript in memory -->
+                
+              <!-- Show buffering indicator when video is loading -->
+              {#if isPlayerBuffering}
+                <div class="buffer-indicator">
+                  <div class="spinner"></div>
+                  <div class="buffer-text">Loading video... {Math.round(loadProgress)}%</div>
+                </div>
+              {/if}
                 <track kind="captions" label="English" default
                   src={`data:text/vtt;base64,${btoa('WEBVTT\n\n' + file.transcript.map(segment => 
                     `${formatTimestampWithMillis(segment.start_time).replace(',', '.')} --> ${formatTimestampWithMillis(segment.end_time).replace(',', '.')}\n${segment.text}\n\n`
