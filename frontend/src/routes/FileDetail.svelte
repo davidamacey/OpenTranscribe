@@ -190,6 +190,48 @@
   let isFullscreen = false;
   let playerErrorDetails = '';
   
+  // Metadata sections expansion state
+  /** @type {{ technical: boolean; audio: boolean; device: boolean; content: boolean }} */
+  let expandedSections = {
+    technical: false,
+    audio: false,
+    device: false,
+    content: false // Content section no longer expanded by default
+  };
+
+  // New tooltip visibility state
+  let showTechTooltip = false;
+  let showAudioTooltip = false;
+  let showContentTooltip = false;
+  
+  /**
+   * Toggles the expanded state of a metadata section
+   * @param {'technical'|'audio'|'device'|'content'} section - The section identifier to toggle
+   */
+  function toggleMetadataSection(section) {
+    expandedSections[section] = !expandedSections[section];
+  }
+  
+  /**
+   * Format file size in human-readable format
+   * @param {number} bytes - The file size in bytes
+   * @returns {string} Formatted file size with units
+   */
+  function formatFileSize(bytes) {
+    if (!bytes || isNaN(bytes)) return 'Unknown';
+    
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
+  }
+  
   // Use afterUpdate to check for video element after DOM updates
   afterUpdate(() => {
     if (videoUrl && !videoElementChecked && !playerInitialized) {
@@ -1468,24 +1510,7 @@
     }
   });
 
-  /**
-   * Format file size in bytes to a human-readable format
-   * @param {number} bytes - File size in bytes
-   * @returns {string} Formatted file size
-   */
-  function formatFileSize(bytes) {
-    if (!bytes || isNaN(bytes)) return 'Unknown';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let size = bytes;
-    let unitIndex = 0;
-    
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  }
+  /* This function has been moved to the top of the file */
   
   // formatDuration is already imported at the top of the file
   
@@ -1580,26 +1605,271 @@
   {:else if file}
     <div class="file-header">
       <div class="file-header-main">
-        <div class="title-status">
+        <div class="file-title">
           <h1>{file.filename}</h1>
-          <div class="status-badge status-{file.status}">{file.status}</div>
         </div>
-        <div class="file-metadata">
-          {#if file.size}
-            <span class="metadata-item">Size: {formatFileSize(file.size)}</span>
-          {/if}
-          {#if file.duration}
-            <span class="metadata-item">Duration: {formatDuration(file.duration)}</span>
-          {/if}
-          {#if file.created_at}
-            <span class="metadata-item">Uploaded: {new Date(file.created_at).toLocaleDateString()}</span>
-          {/if}
+
+        <!-- Enhanced metadata section with collapsible panels -->
+        <div class="enhanced-metadata">
+          <!-- Basic Info Panel (always visible) -->
+          <!-- Metadata Panel - 4 column layout with basic info -->
+          <div class="metadata-panel">
+            <div class="metadata-grid four-columns">
+              <div class="metadata-item">
+                <span class="metadata-label">Uploaded by:</span>
+                <span class="metadata-value">{$authStore?.user?.email || 'Unknown user'}</span>
+              </div>
+              
+              <div class="metadata-item">
+                <span class="metadata-label">Upload date:</span>
+                <span class="metadata-value">{file && 'upload_time' in file && file.upload_time ? new Date(file.upload_time).toLocaleDateString() : 'Unknown'}</span>
+              </div>
+              
+              <div class="metadata-item">
+                <span class="metadata-label">Media type:</span>
+                <span class="metadata-value">{file && 'content_type' in file ? file.content_type : 'Unknown'}</span>
+              </div>
+              
+              <div class="metadata-item">
+                <span class="metadata-label">Duration:</span>
+                <span class="metadata-value">
+                  {#if file && 'duration' in file && file.duration}
+                    {formatDuration(file.duration)}
+                  {:else}
+                    Unknown
+                  {/if}
+                </span>
+              </div>
+              
+              <div class="metadata-item">
+                <span class="metadata-label">File size:</span>
+                <span class="metadata-value">
+                  {#if file && 'file_size' in file && file.file_size}
+                    {formatFileSize(file.file_size)}
+                  {:else}
+                    Unknown
+                  {/if}
+                </span>
+              </div>
+              
+              <div class="metadata-item">
+                <span class="metadata-label">Transcript status:</span>
+                <span class="metadata-value">
+                  <span class="status-completed">Completed <i class="fas fa-check-circle"></i></span>
+                </span>
+              </div>
+              
+              {#if file && 'language' in file && file.language}
+                <div class="metadata-item">
+                  <span class="metadata-label">Language:</span>
+                  <span class="metadata-value">{file.language}</span>
+                </div>
+              {/if}
+              
+              <div class="metadata-item">
+                <span class="metadata-label">Created date:</span>
+                <span class="metadata-value">{file && 'created_date' in file && file.created_date ? new Date(file.created_date).toLocaleDateString() : 'Unknown'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Tech Specs, Audio, and Content Info with clickable icons in separate section -->
+        <div class="tech-info-section">
+          <div class="tech-info-container">
+            <div class="tech-info-item">
+              <span class="info-label">Tech Specs:</span>
+              <span class="info-value">
+                {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
+                  {file.resolution_width}×{file.resolution_height}
+                {/if}
+                {#if file && 'frame_rate' in file && file.frame_rate}
+                  {typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(0) : file.frame_rate}fps
+                {/if}
+                {#if file && file.status === 'completed'}
+                  <span class="status-icon status-completed"><i class="fas fa-check-circle"></i></span>
+                {:else if file && file.status === 'failed'}
+                  <span class="status-icon status-failed"><i class="fas fa-times-circle"></i></span>
+                {/if}
+              </span>
+              <button class="info-button" aria-label="Show technical specifications" on:click={() => showTechTooltip = !showTechTooltip}>
+                <i class="fas fa-info" aria-hidden="true"></i>
+              </button>
+              {#if showTechTooltip}
+                <div class="tooltip-content tech-tooltip" transition:slide>
+                  <div class="tooltip-grid">
+                    {#if file && 'media_format' in file && file.media_format}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Format:</span>
+                        <span class="tooltip-value">{file.media_format}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'codec' in file && file.codec}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Codec:</span>
+                        <span class="tooltip-value">{file.codec}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Resolution:</span>
+                        <span class="tooltip-value">{file.resolution_width} × {file.resolution_height}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'aspect_ratio' in file && file.aspect_ratio}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Aspect Ratio:</span>
+                        <span class="tooltip-value">{file.aspect_ratio}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'frame_rate' in file && file.frame_rate}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Frame Rate:</span>
+                        <span class="tooltip-value">{typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(2) : file.frame_rate} fps</span>
+                      </div>
+                    {/if}
+                    {#if file && 'frame_count' in file && file.frame_count}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Total Frames:</span>
+                        <span class="tooltip-value">{file.frame_count.toLocaleString()}</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+            
+            <div class="tech-info-item">
+              <span class="info-label">Audio Info:</span>
+              <span class="info-value">
+                {#if file && 'audio_channels' in file && file.audio_channels}
+                  {file.audio_channels}ch
+                {/if}
+                {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
+                  {Math.round(file.audio_sample_rate/1000)}kHz
+                {/if}
+              </span>
+              <button class="info-button" aria-label="Show audio information" on:click={() => showAudioTooltip = !showAudioTooltip}>
+                <i class="fas fa-info" aria-hidden="true"></i>
+              </button>
+              {#if showAudioTooltip}
+                <div class="tooltip-content audio-tooltip" transition:slide>
+                  <div class="tooltip-grid">
+                    {#if file && 'audio_codec' in file && file.audio_codec}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Audio Codec:</span>
+                        <span class="tooltip-value">{file.audio_codec}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Sample Rate:</span>
+                        <span class="tooltip-value">{file.audio_sample_rate} Hz</span>
+                      </div>
+                    {/if}
+                    {#if file && 'audio_channels' in file && file.audio_channels}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Channels:</span>
+                        <span class="tooltip-value">{file.audio_channels}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'audio_bitrate' in file && file.audio_bitrate}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Bitrate:</span>
+                        <span class="tooltip-value">{file.audio_bitrate}</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+            
+            <div class="tech-info-item">
+              <span class="info-label">Content Info:</span>
+              <span class="info-value">
+                {#if file && 'artist' in file && file.artist}
+                  {file.artist}
+                {:else}
+                  Details
+                {/if}
+              </span>
+              <button class="info-button" aria-label="Show content information" on:click={() => showContentTooltip = !showContentTooltip}>
+                <i class="fas fa-info" aria-hidden="true"></i>
+              </button>
+              {#if showContentTooltip}
+                <div class="tooltip-content content-tooltip" transition:slide>
+                  <div class="tooltip-grid">
+                    {#if file && 'content_created' in file && file.content_created}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Created:</span>
+                        <span class="tooltip-value">{new Date(file.content_created).toLocaleString()}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'content_modified' in file && file.content_modified}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Modified:</span>
+                        <span class="tooltip-value">{new Date(file.content_modified).toLocaleString()}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'artist' in file && file.artist}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Artist:</span>
+                        <span class="tooltip-value">{file.artist}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'album' in file && file.album}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Album:</span>
+                        <span class="tooltip-value">{file.album}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'track_number' in file && file.track_number}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Track:</span>
+                        <span class="tooltip-value">{file.track_number}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'genre' in file && file.genre}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Genre:</span>
+                        <span class="tooltip-value">{file.genre}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'description' in file && file.description}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Description:</span>
+                        <span class="tooltip-value">{file.description}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'copyright' in file && file.copyright}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Copyright:</span>
+                        <span class="tooltip-value">{file.copyright}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'encoder' in file && file.encoder}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Encoder:</span>
+                        <span class="tooltip-value">{file.encoder}</span>
+                      </div>
+                    {/if}
+                    {#if file && 'encoding_settings' in file && file.encoding_settings}
+                      <div class="tooltip-item">
+                        <span class="tooltip-label">Encoding:</span>
+                        <span class="tooltip-value">{file.encoding_settings}</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
         </div>
         
         <!-- File summary section -->
         <div class="file-summary">
           <p>
-            {file.description || `This file contains ${file.duration ? formatDuration(file.duration) + ' of ' : ''}audio${file.speakers && file.speakers.length ? ' with ' + file.speakers.length + ' speakers' : ''}. ${file.transcript ? 'Transcript is available.' : ''}`}
+            {file.description || `This file contains ${file.speakers && file.speakers.length ? file.speakers.length + ' speakers' : 'unidentified speakers'}.`}
           </p>
         </div>
       </div>
@@ -1634,33 +1904,32 @@
               <source src={videoUrl} type="video/mp4" />
               <!-- Captions track using transcript data -->
               {#if file && file.transcript && file.transcript.length > 0}
-                <!-- Generate captions from transcript in memory -->
-                
-              <!-- Show buffering indicator when video is loading -->
-              {#if isPlayerBuffering}
-                <div class="buffer-indicator">
-                  <div class="spinner"></div>
-                  <div class="buffer-text">Loading video... {Math.round(loadProgress)}%</div>
-                </div>
-              {/if}
                 <track kind="captions" label="English" default
                   src={`data:text/vtt;base64,${btoa('WEBVTT\n\n' + file.transcript.map(segment => 
                     `${formatTimestampWithMillis(segment.start_time).replace(',', '.')} --> ${formatTimestampWithMillis(segment.end_time).replace(',', '.')}\n${segment.text}\n\n`
                   ).join(''))}`} />
               {:else}
-                <!-- Empty track to satisfy accessibility requirements -->
-                <track kind="captions" label="English" src="data:text/vtt;base64,V0VCVlRUCgo=" />
+                <!-- Empty captions track to satisfy accessibility requirements -->
+                <track kind="captions" label="English" src="data:text/vtt;base64,V0VCVlRUCgogMDA6MDA6MDAuMDAwIC0tPiAwMDowMDowMS4wMDAKTm8gY2FwdGlvbnMgYXZhaWxhYmxlCg==" />
               {/if}
               Your browser does not support the video element.
             </video>
+            
+            <!-- Show buffering indicator when video is loading -->
+            {#if isPlayerBuffering}
+              <div class="buffer-indicator">
+                <div class="spinner"></div>
+                <div class="buffer-text">Loading video... {Math.round(loadProgress)}%</div>
+              </div>
+            {/if}
             
             {#if errorMessage}
               <p class="error-message">{errorMessage}</p>
               <button class="retry-button" on:click={fetchFileDetails}>Retry Loading Video</button>
             {/if}
-          {:else if file.status === 'completed'}
+          {:else if file && file.status === 'completed'}
             <div class="no-preview">Video preview not available. You can try downloading the file.</div>
-          {:else if file.status !== 'processing'}
+          {:else if file && file.status !== 'processing'}
              <div class="no-preview">Video processing or not available.</div>
           {/if}
         </div>
@@ -1921,14 +2190,266 @@
     text-align: center;
   }
 
-  .spinner {
-    border: 4px solid rgba(0, 0, 0, 0.1);
-    width: 36px;
-    height: 36px;
+  .loading-spinner {
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-top: 3px solid var(--primary-color);
     border-radius: 50%;
-    border-left-color: var(--primary-color);
-    animation: spin 1s ease infinite;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
     margin-bottom: 1rem;
+  }
+  
+  /* Enhanced metadata section styles */
+  .enhanced-metadata {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .metadata-panel {
+    background-color: var(--card-background, #ffffff);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color, #e5e7eb);
+  }
+  
+  .metadata-panel.collapsible {
+    overflow: hidden;
+  }
+  
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding-bottom: 0.5rem;
+    user-select: none;
+  }
+  
+  .panel-header span, .panel-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--heading-color, #111827);
+  }
+  
+  /* Tech Info Section - Separate from metadata panel */
+  .tech-info-section {
+    margin: 0.75rem 0 1.25rem;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .tech-info-container {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    background-color: var(--card-background, var(--surface-color, #ffffff));
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+  
+  .tech-info-item {
+    display: flex;
+    align-items: center;
+    position: relative;
+    margin-right: 2rem;
+  }
+  
+  .info-label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-right: 0.5rem;
+    color: var(--text-color, #111827);
+  }
+  
+  .info-value {
+    font-size: 0.9rem;
+    color: var(--text-color-secondary, #4b5563);
+    margin-right: 0.5rem;
+  }
+  
+  .info-button {
+    background-color: var(--primary-color, #3b82f6);
+    border: none;
+    color: white;
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+    margin-left: 0.5rem;
+  }
+  
+  .info-button:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+  
+  .info-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+  }
+  
+  .tech-tooltip, .audio-tooltip, .content-tooltip {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 20;
+    min-width: 200px;
+    max-width: 320px;
+    width: auto;
+    background-color: var(--surface-color, #ffffff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    white-space: normal;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  
+  .info-icon {
+    position: relative;
+    cursor: pointer;
+    color: var(--primary-color, #3b82f6);
+    display: inline-flex;
+    align-items: center;
+    font-size: 1rem;
+    padding: 0.25rem;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+    outline: none;
+  }
+  
+  .info-icon:focus {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+  }
+  
+  .info-icon:hover {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+  
+  .panel-toggle {
+    font-size: 1.2rem;
+    color: var(--primary-color, #3b82f6);
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+  }
+  
+  .metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    padding: 1rem 0;
+  }
+  
+  .metadata-grid.four-columns {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    padding: 1rem 0;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .metadata-grid.five-columns {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr) 1.2fr;
+    gap: 0.75rem;
+  }
+
+  .three-columns {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    position: relative;
+  }
+  
+  .right-column {
+    grid-column: 5;
+    grid-row: span 3;
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .compact-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
+  .metadata-item {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .metadata-label {
+    color: var(--text-secondary, #6b7280);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+  
+  .metadata-value {
+    color: var(--text-color, #1f2937);
+    font-size: 0.95rem;
+    font-weight: 400;
+    word-break: break-word;
+  }
+
+  /* Status colors in metadata */
+  .transcript-available {
+    color: var(--success-color, #10b981);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  .transcript-not-available {
+    color: var(--error-color, #ef4444);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .status-completed {
+    color: var(--success-color, #10b981);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .status-failed, .status-error {
+    color: var(--error-color, #ef4444);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .status-pending {
+    color: var(--info-color, #3b82f6);
+  }
+  .status-error {
+    color: var(--error-color, #ef4444);
   }
 
   @keyframes spin {
@@ -2029,22 +2550,20 @@
   .section-heading {
     margin: 0;
     margin-top: 0;
-    margin-bottom: 1rem;
+    margin-bottom: 0.25rem;
     font-size: 1.2rem;
     font-weight: 600;
     color: var(--primary-color);
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.15rem;
     border-bottom: 1px solid var(--border-color-soft);
   }
   
   h4 {
     margin-top: 0;
-    margin-bottom: 1rem;
-    font-size: 1.2rem;
+    margin-bottom: 0.25rem;
+    font-size: 1.1rem;
     font-weight: 600;
-    color: var(--primary-color);
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color-soft);
+    color: var(--heading-color, #111827);
   }
   
   .tags-preview, .analytics-preview {
@@ -2109,10 +2628,10 @@
   }
 
   .file-header h1 {
-    font-size: 1.8rem;
-    font-weight: 600;
-    color: var(--heading-color);
-    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-color, #111827);
+    margin: 0 0 0.5rem 0;
   }
 
   .status-badge {
@@ -2286,7 +2805,7 @@
   }
   
   .video-column .video-player-container {
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
   
   .transcript-column .transcript-display {
@@ -2303,7 +2822,7 @@
   }
   
   .edit-transcript-button, .export-transcript-button {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     background-color: var(--background-alt);
@@ -2353,9 +2872,12 @@
   
   .segment-time {
     min-width: 80px;
-    color: var(--text-color-light, #666);
-    font-size: 0.85rem;
     padding-right: 0.5rem;
+  }
+  
+  .segment-time .segment-timestamp {
+    color: var(--text-color-light, #6b7280);
+    font-size: 0.85rem;
   }
   
   .segment-speaker {
@@ -2456,8 +2978,8 @@
     font-weight: 600;
     color: var(--heading-color);
     margin-top: 0;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+    padding-bottom: 0.15rem;
     border-bottom: 1px solid var(--border-color-soft);
   }
 
@@ -2563,7 +3085,7 @@
     background-color: #e5e7eb;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
-  
+
   .transcript-actions {
     display: flex;
     flex-wrap: wrap;
@@ -2652,20 +3174,31 @@
   }
   
   /* Speaker editor styles */
-  .speaker-editor-container {
-    margin-top: 1rem;
-    padding: 1.5rem;
+  .transcript-segments-container {
+    max-height: 600px;
+    overflow-y: auto;
     border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 16px;
+    border-radius: 12px;
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    background-color: var(--surface-color, #ffffff);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.03);
+  }
+  
+  .speaker-editor-container {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 12px;
     background-color: var(--card-background, var(--surface-color, #ffffff));
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
   }
   
   .speaker-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 1rem;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
   }
   
   .speaker-item {

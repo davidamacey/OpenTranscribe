@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import func, cast, Float, Integer
+from typing import List, Optional, Dict
 from datetime import datetime
 import os
 import io
 import logging
+import json
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -129,59 +131,98 @@ async def upload_media_file(
 
 
 @router.get("/", response_model=List[MediaFileSchema])
-@router.get("", response_model=List[MediaFileSchema])  # Add route without trailing slash
-async def list_media_files(
+@router.get("", response_model=List[MediaFileSchema])  # Additional route without trailing slash for flexible routing
+def list_media_files(
     search: Optional[str] = None,
-    tag: Optional[str] = None,
+    tag: Optional[List[str]] = Query(None),
     speaker: Optional[str] = None,
     from_date: Optional[datetime] = None,
     to_date: Optional[datetime] = None,
+    min_duration: Optional[float] = None,
+    max_duration: Optional[float] = None,
+    format: Optional[List[str]] = Query(None),
+    codec: Optional[List[str]] = Query(None),
+    min_width: Optional[int] = None,
+    max_width: Optional[int] = None,
+    min_height: Optional[int] = None,
+    max_height: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
     List all media files for the current user with optional filters
     """
-    # Add detailed logging to debug authentication issues
-    logger.info(f"Listing files for user: {current_user.email} (ID: {current_user.id})")
-    logger.info(f"Request parameters: search={search}, tag={tag}, speaker={speaker}, date range: {from_date} to {to_date}")
-    try:
-        query = db.query(MediaFile).filter(MediaFile.user_id == current_user.id)
-        
-        # Apply search filter
-        if search:
-            query = query.filter(MediaFile.filename.ilike(f"%{search}%"))
-        
-        # Apply date filter
-        if from_date:
-            query = query.filter(MediaFile.upload_time >= from_date)
-        if to_date:
-            query = query.filter(MediaFile.upload_time <= to_date)
-        
-        # Apply tag filter
-        if tag:
-            tag_obj = db.query(Tag).filter(Tag.name == tag).first()
-            if tag_obj:
-                query = query.join(FileTag).filter(FileTag.tag_id == tag_obj.id)
-        
-        # Apply speaker filter (more complex, would need to join with transcripts and speakers)
-        try:
-            if speaker:
-                query = query.join(TranscriptSegment).join("speaker").filter(
-                    TranscriptSegment.speaker.has(name=speaker)
-                )
-        except Exception as speaker_error:
-            print(f"Error applying speaker filter: {speaker_error}")
-            # Continue without the speaker filter if it fails
-        
-        # Order by most recent
-        query = query.order_by(MediaFile.upload_time.desc())
-        
-        return query.all()
-    except Exception as e:
-        print(f"Error in list_media_files: {e}")
-        # If there's an error, return an empty list
-        return []
+    query = db.query(MediaFile).filter(MediaFile.user_id == current_user.id)
+    
+    # Apply search filter
+    if search:
+        query = query.filter(
+            MediaFile.filename.ilike(f"%{search}%")
+        )
+    
+    # Apply tag filter - now supports multiple tags
+    if tag:
+        for t in tag:
+            query = query.join(FileTag, FileTag.media_file_id == MediaFile.id)\
+                        .join(Tag, Tag.id == FileTag.tag_id)\
+                        .filter(Tag.name == t)
+    
+    # Apply speaker filter if a specific speaker is selected
+    if speaker:
+        # This assumes we have a 'speakers' JSON column or another way to filter by speaker
+        query = query.filter(MediaFile.speakers.contains(f'"{speaker}"'))
+    
+    # Apply date filters
+    if from_date:
+        query = query.filter(MediaFile.upload_time >= from_date)
+    
+    if to_date:
+        query = query.filter(MediaFile.upload_time <= to_date)
+    
+    # Apply metadata filters
+    
+    # Duration filters
+    if min_duration is not None:
+        query = query.filter(cast(MediaFile.duration, Float) >= min_duration)
+    
+    if max_duration is not None:
+        query = query.filter(cast(MediaFile.duration, Float) <= max_duration)
+    
+    # Format filters
+    if format:
+        format_conditions = []
+        for fmt in format:
+            format_conditions.append(MediaFile.metadata_important['format'].astext == fmt)
+        if format_conditions:
+            from sqlalchemy import or_
+            query = query.filter(or_(*format_conditions))
+    
+    # Codec filters
+    if codec:
+        codec_conditions = []
+        for c in codec:
+            codec_conditions.append(MediaFile.metadata_important['codec'].astext == c)
+        if codec_conditions:
+            from sqlalchemy import or_
+            query = query.filter(or_(*codec_conditions))
+    
+    # Resolution filters
+    if min_width is not None:
+        query = query.filter(cast(MediaFile.metadata_important['width'].astext, Integer) >= min_width)
+    
+    if max_width is not None:
+        query = query.filter(cast(MediaFile.metadata_important['width'].astext, Integer) <= max_width)
+    
+    if min_height is not None:
+        query = query.filter(cast(MediaFile.metadata_important['height'].astext, Integer) >= min_height)
+    
+    if max_height is not None:
+        query = query.filter(cast(MediaFile.metadata_important['height'].astext, Integer) <= max_height)
+    
+    # Order by most recent
+    query = query.order_by(MediaFile.upload_time.desc())
+    
+    return query.all()
 
 
 @router.get("/{file_id}", response_model=MediaFileDetail)
@@ -578,6 +619,70 @@ async def simple_video(file_id: int, request: Request, db: Session = Depends(get
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error streaming video: {e}"
         )
+
+@router.get("/metadata-filters", response_model=Dict)
+def get_metadata_filters(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get available metadata filters like formats, codecs, etc.
+    """
+    # Query for unique formats
+    formats_query = db.query(MediaFile.metadata_important['format'].astext.distinct())\
+                    .filter(MediaFile.user_id == current_user.id)\
+                    .filter(MediaFile.metadata_important['format'].astext != 'null')
+    formats = [fmt[0] for fmt in formats_query.all() if fmt[0]]  # Filter out None values
+    
+    # Query for unique codecs
+    codecs_query = db.query(MediaFile.metadata_important['codec'].astext.distinct())\
+                   .filter(MediaFile.user_id == current_user.id)\
+                   .filter(MediaFile.metadata_important['codec'].astext != 'null')
+    codecs = [codec[0] for codec in codecs_query.all() if codec[0]]  # Filter out None values
+    
+    # Get min/max duration
+    duration_range = db.query(
+        func.min(cast(MediaFile.duration, Float)),
+        func.max(cast(MediaFile.duration, Float))
+    ).filter(MediaFile.user_id == current_user.id).first()
+    
+    min_duration = duration_range[0] if duration_range[0] is not None else 0
+    max_duration = duration_range[1] if duration_range[1] is not None else 0
+    
+    # Get resolution ranges
+    width_range = db.query(
+        func.min(cast(MediaFile.metadata_important['width'].astext, Integer)),
+        func.max(cast(MediaFile.metadata_important['width'].astext, Integer))
+    ).filter(MediaFile.user_id == current_user.id).first()
+    
+    height_range = db.query(
+        func.min(cast(MediaFile.metadata_important['height'].astext, Integer)),
+        func.max(cast(MediaFile.metadata_important['height'].astext, Integer))
+    ).filter(MediaFile.user_id == current_user.id).first()
+    
+    min_width = width_range[0] if width_range[0] is not None else 0
+    max_width = width_range[1] if width_range[1] is not None else 0
+    min_height = height_range[0] if height_range[0] is not None else 0
+    max_height = height_range[1] if height_range[1] is not None else 0
+    
+    return {
+        "formats": formats,
+        "codecs": codecs,
+        "duration": {
+            "min": min_duration,
+            "max": max_duration
+        },
+        "resolution": {
+            "width": {
+                "min": min_width,
+                "max": max_width
+            },
+            "height": {
+                "min": min_height,
+                "max": max_height
+            }
+        }
+    }
 
 @router.put("/{file_id}/transcript", response_model=MediaFileDetail)
 def update_transcript(

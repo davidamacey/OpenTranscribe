@@ -1,24 +1,35 @@
 <script>
   import { onMount, onDestroy } from "svelte";
+  import { slide } from 'svelte/transition';
   import { Link } from "svelte-navigator";
   import { user } from "../stores/auth";
   import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
   
-  /** @type {Array<{
-    id: string,
-    media_file_id: number | null,
-    task_type: string,
-    status: string,
-    progress: number,
-    created_at: string,
-    updated_at: string,
-    completed_at: string | null,
-    error_message: string | null,
-    media_file: {
-      id: number,
-      filename: string
-    } | null
-  }>} */
+  /** @typedef {object} MediaFile
+   * @property {number} id
+   * @property {string} filename
+   * @property {number} [file_size]
+   * @property {string} [content_type]
+   * @property {string} [language]
+   * @property {string} [upload_time]
+   * @property {number} [duration]
+   */
+
+  /** @typedef {object} Task
+   * @property {string} id
+   * @property {number|null} media_file_id
+   * @property {string} task_type
+   * @property {string} status
+   * @property {number} progress
+   * @property {string} created_at
+   * @property {string} updated_at
+   * @property {string|null} completed_at
+   * @property {string|null} error_message
+   * @property {MediaFile|null} media_file
+   * @property {boolean} [showMetadata]
+   */
+
+  /** @type {Array<Task>} */
   let tasks = [];
   
   /** @type {boolean} */
@@ -29,6 +40,10 @@
   
   /** @type {number | null} */
   let refreshInterval = null;
+  
+  // Track which metadata popups are open
+  /** @type {string|null} */
+  let openMetadataId = null;
   
   // Subscribe to WebSocket file status updates to update task status
   const unsubscribeFileStatus = fileStatusUpdates.subscribe(updates => {
@@ -126,6 +141,42 @@
   }
   
   /**
+   * Format duration in seconds to human readable format
+   * @param {number} seconds - Duration in seconds
+   * @return {string} Formatted duration
+   */
+  function formatDuration(seconds) {
+    if (!seconds || isNaN(seconds)) return 'Unknown';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    let result = '';
+    if (hours > 0) result += `${hours}h `;
+    if (minutes > 0 || hours > 0) result += `${minutes}m `;
+    result += `${secs}s`;
+    
+    return result.trim();
+  }
+  
+  /**
+   * Calculate the processing time from creation to completion
+   * @param {string} createdAt - ISO date string for creation time
+   * @param {string} completedAt - ISO date string for completion time
+   * @return {string} Human readable processing time
+   */
+  function calculateProcessingTime(createdAt, completedAt) {
+    if (!createdAt || !completedAt) return 'In progress';
+    
+    const created = new Date(createdAt).getTime();
+    const completed = new Date(completedAt).getTime();
+    const diffSeconds = Math.floor((completed - created) / 1000);
+    
+    return formatDuration(diffSeconds);
+  }
+  
+  /**
    * Calculate time elapsed since a date
    * @param {string} dateString - ISO date string
    * @return {string} Time elapsed in human-readable format
@@ -166,6 +217,40 @@
       default:
         return '';
     }
+  }
+  
+  /**
+   * Format file size in bytes to human readable format
+   * @param {number} bytes - File size in bytes
+   * @return {string} Formatted file size
+   */
+  function formatFileSize(bytes) {
+    if (!bytes || isNaN(bytes)) return 'Unknown';
+    
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 Bytes';
+    
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+  
+  /**
+   * Toggle metadata info display for a specific task
+   * @param {string} taskId - Task ID
+   */
+  function toggleMetadataInfo(taskId) {
+    // If clicking the same task, toggle it off/on
+    if (openMetadataId === taskId) {
+      openMetadataId = null;
+    } else {
+      openMetadataId = taskId;
+    }
+    
+    // Update task objects to include showMetadata property
+    tasks = tasks.map(task => ({
+      ...task,
+      showMetadata: task.id === openMetadataId
+    }));
   }
   
   // Lifecycle hooks
@@ -264,30 +349,66 @@
             <div class="task-type">
               {#if task.task_type === 'transcription'}
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
                 </svg>
-              {:else if task.task_type === 'summarization'}
+                Transcription
+              {:else}
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="8" y1="6" x2="21" y2="6"></line>
                   <line x1="8" y1="12" x2="21" y2="12"></line>
                   <line x1="8" y1="18" x2="21" y2="18"></line>
                   <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
-                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
                 </svg>
-              {:else}
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"></path>
-                  <line x1="16" y1="8" x2="2" y2="22"></line>
-                  <line x1="17.5" y1="15" x2="9" y2="15"></line>
-                </svg>
+                Summarization
               {/if}
-              <span>{task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)}</span>
             </div>
-            <div class={`task-status ${getStatusClass(task.status)}`}>
-              <span>{task.status}</span>
-              {#if task.status === 'in_progress'}
+            <div class="task-status {getStatusClass(task.status)}">
+              {#if task.status === 'pending'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"></line>
+                  <line x1="12" y1="18" x2="12" y2="22"></line>
+                  <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                  <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                  <line x1="2" y1="12" x2="6" y2="12"></line>
+                  <line x1="18" y1="12" x2="22" y2="12"></line>
+                  <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                  <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                </svg>
+                Pending
+              {:else if task.status === 'in_progress'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                In Progress
                 <span class="task-progress">{Math.round(task.progress * 100)}%</span>
+              {:else if task.status === 'completed'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                Completed
+              {:else if task.status === 'failed'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="15" y1="9" x2="9" y2="15"></line>
+                  <line x1="9" y1="9" x2="15" y2="15"></line>
+                </svg>
+                Failed
+              {/if}
+              
+              <!-- Info button -->
+              {#if task.media_file}
+                <button class="info-button" on:click|stopPropagation={() => toggleMetadataInfo(task.id)}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                </button>
               {/if}
             </div>
           </div>
@@ -295,10 +416,7 @@
           <div class="task-info">
             {#if task.media_file}
               <div class="media-info">
-                <span class="info-label">File:</span>
-                <Link to={`/media/${task.media_file.id}`} class="file-link">
-                  {task.media_file.filename}
-                </Link>
+                <Link to="/file/{task.media_file.id}" class="file-link">{task.media_file.filename}</Link>
               </div>
             {/if}
             
@@ -309,14 +427,77 @@
                 <span class="date-relative">({timeElapsed(task.created_at)})</span>
               </div>
               
-              {#if task.completed_at}
+              {#if task.status === 'completed' && task.completed_at}
                 <div class="date-info">
                   <span class="info-label">Completed:</span>
                   <span class="date-value">{formatDate(task.completed_at)}</span>
                   <span class="date-relative">({timeElapsed(task.completed_at)})</span>
                 </div>
+                
+                <!-- Processing duration information -->
+                <div class="date-info processing-time">
+                  <span class="info-label">Processing:</span>
+                  <span class="date-value">{calculateProcessingTime(task.created_at, task.completed_at)}</span>
+                </div>
+              {/if}
+              
+              <!-- File duration if available -->
+              {#if task.media_file && task.media_file.duration}
+                <div class="date-info">
+                  <span class="info-label">Duration:</span>
+                  <span class="date-value">{formatDuration(task.media_file.duration)}</span>
+                </div>
               {/if}
             </div>
+            
+            <!-- Metadata popup -->
+            {#if task.showMetadata}
+              <div class="metadata-popup" transition:slide={{duration: 300}}>
+                <h4>File Details</h4>
+                <div class="metadata-grid">
+                  {#if task.media_file}
+                    <div class="metadata-item">
+                      <span class="metadata-label">File Name:</span>
+                      <span class="metadata-value">{task.media_file.filename}</span>
+                    </div>
+                    <div class="metadata-item">
+                      <span class="metadata-label">File Size:</span>
+                      <span class="metadata-value">{task.media_file.file_size ? formatFileSize(task.media_file.file_size) : 'Unknown'}</span>
+                    </div>
+                    <div class="metadata-item">
+                      <span class="metadata-label">Content Type:</span>
+                      <span class="metadata-value">{task.media_file.content_type || 'Unknown'}</span>
+                    </div>
+                    <div class="metadata-item">
+                      <span class="metadata-label">Language:</span>
+                      <span class="metadata-value">{task.media_file.language || 'Auto-detected'}</span>
+                    </div>
+                    <div class="metadata-item">
+                      <span class="metadata-label">Upload Time:</span>
+                      <span class="metadata-value">{formatDate(task.media_file.upload_time)}</span>
+                    </div>
+                  {/if}
+                  <div class="metadata-item">
+                    <span class="metadata-label">Task Type:</span>
+                    <span class="metadata-value">{task.task_type}</span>
+                  </div>
+                  <div class="metadata-item">
+                    <span class="metadata-label">Task Created:</span>
+                    <span class="metadata-value">{formatDate(task.created_at)}</span>
+                  </div>
+                  {#if task.completed_at}
+                    <div class="metadata-item">
+                      <span class="metadata-label">Task Completed:</span>
+                      <span class="metadata-value">{formatDate(task.completed_at)}</span>
+                    </div>
+                    <div class="metadata-item">
+                      <span class="metadata-label">Processing Time:</span>
+                      <span class="metadata-value">{calculateProcessingTime(task.created_at, task.completed_at)}</span>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
             
             {#if task.error_message}
               <div class="error-details">
@@ -586,6 +767,70 @@
   .date-relative {
     font-size: 0.85rem;
     color: var(--text-secondary-color);
+  }
+  
+  .processing-time {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .info-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary-color);
+    padding: 4px;
+    margin-left: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  
+  .info-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color);
+  }
+  
+  .metadata-popup {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: var(--background-color);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .metadata-popup h4 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  
+  .metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .metadata-item {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .metadata-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary-color);
+  }
+  
+  .metadata-value {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-color);
   }
   
   .error-details {
