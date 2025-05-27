@@ -51,16 +51,12 @@
       return;
     }
     
-    // Log for debugging
-    console.log('Attempting registration with:', { email, full_name: username, password });
-    
     try {
       // Make sure we're using the right parameters in the right order:
       // register(email, fullName, password) is expected by our auth store
       const result = await register(email, username, password);
       
       if (result.success) {
-        console.log('Registration successful, attempting login');
         // Log the user in automatically after registration
         const loginResult = await login(email, password);
         if (loginResult.success) {

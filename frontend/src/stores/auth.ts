@@ -49,7 +49,6 @@ const createAuthStore = (): AuthStore => {
       // Always update localStorage when user data changes
       if (userData) {
         localStorage.setItem('user', JSON.stringify(userData));
-        console.log('auth.ts: User data updated in localStorage:', userData);
       }
     },
     setToken: (tokenValue: string | null) => {
@@ -84,15 +83,12 @@ export const token = derived(authStore, $store => $store.token);
 
 // Initialize auth state from localStorage
 export async function initAuth() { 
-  console.log('auth.ts: initAuth - Started');
   authStore.setReady(false); 
 
   const resetAndFinalize = (reason: string) => {
-    console.log(`auth.ts: initAuth - ${reason}. Resetting auth state.`);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     authStore.reset(); 
-    console.log('auth.ts: initAuth - Reset complete. Final state:', get(authStore));
   };
 
   try {
@@ -126,14 +122,12 @@ export async function initAuth() {
         const userData: User = JSON.parse(storedUser);
         authStore.setUser(userData);
         userDataSet = true;
-        console.log('auth.ts: initAuth - User set from localStorage');
       } catch (error) {
         console.warn('auth.ts: initAuth - Failed to parse stored user. Will attempt to fetch from API.', error);
       }
     }
 
     if (!userDataSet) { 
-      console.log('auth.ts: initAuth - Attempting to fetch user info from API.');
       const fetchedUser = await fetchUserInfo(); 
       if (!fetchedUser) {
         if (!get(authStore).ready) {
@@ -141,13 +135,11 @@ export async function initAuth() {
         }
         return;
       }
-      console.log('auth.ts: initAuth - User info fetched from API.');
     }
 
     if (!get(authStore).ready) { 
         authStore.setReady(true);
     }
-    console.log('auth.ts: initAuth - Successfully completed. Final state:', get(authStore));
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -158,17 +150,13 @@ export async function initAuth() {
 // Fetch current user info from API
 export async function fetchUserInfo() {
   try {
-    console.log('auth.ts: Fetching user info');
-    // Use consistent URL format without leading slash
     const response = await axiosInstance.get('auth/me');
-    console.log('auth.ts: User info response received:', response.status);
     const userData = response.data;
     
     authStore.setUser(userData);
     
     localStorage.setItem('user', JSON.stringify(userData));
     
-    console.log('auth.ts: User info fetched successfully');
     return userData;
   } catch (error: any) {
     console.error('auth.ts: Failed to fetch user info:', error);
@@ -180,8 +168,6 @@ export async function fetchUserInfo() {
 // Login function
 export async function login(email: string, password: string) {
   try {
-    console.log(`auth.ts: Attempting login with: ${email}`);
-    
     const params = new URLSearchParams();
     params.append('username', email);
     params.append('password', password);
@@ -193,11 +179,6 @@ export async function login(email: string, password: string) {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     });
-    
-    // Add debug logging
-    console.log('auth.ts: Login response received');
-    
-    console.log('auth.ts: Login response:', response.status);
     
     if (response.status !== 200 || !response.data.access_token) {
       console.error('auth.ts: Invalid login response');
@@ -232,19 +213,12 @@ export async function login(email: string, password: string) {
 // Register function
 export async function register(email: string, fullName: string, password: string) {
   try {
-    console.log('auth.ts: Attempting registration for:', email);
-    
     // Use consistent URL format without leading slash
     const response = await axiosInstance.post('auth/register', {
       email,
       full_name: fullName,
       password
     });
-    
-    // Add debug logging
-    console.log('auth.ts: Registration response received:', response.status);
-    
-    console.log('auth.ts: Registration successful');
     
     return { success: true, user: response.data };
   } catch (error: any) {
@@ -259,8 +233,6 @@ export async function register(email: string, fullName: string, password: string
 
 // Logout function
 export function logout() {
-  console.log('auth.ts: Logging out');
-  
   localStorage.removeItem('token');
   localStorage.removeItem('user');
   

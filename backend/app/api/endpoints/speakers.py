@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
+import logging
 
 from app.db.base import get_db
 from app.models.user import User
 from app.models.media import Speaker, TranscriptSegment
 from app.schemas.media import Speaker as SpeakerSchema, SpeakerUpdate
 from app.api.endpoints.auth import get_current_active_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -109,7 +112,7 @@ def list_speakers(
         speakers = query.order_by(Speaker.verified.desc(), Speaker.name).all()
         return speakers
     except Exception as e:
-        print(f"Error in list_speakers: {e}")
+        logger.error(f"Error in list_speakers: {e}")
         # If there's an error or no speakers, return an empty list
         return []
 

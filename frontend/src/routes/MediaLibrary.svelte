@@ -353,7 +353,6 @@
           // Check if this file has an update in the updates object
           if (updates[fileIdStr]) {
             const update = updates[fileIdStr];
-            console.log(`Updating file ${file.id} status from ${file.status} to ${update.status}`);
             updatedFile = true;
             
             // Return updated file object with new status
@@ -368,7 +367,6 @@
         // Force a UI update by creating a new array
         if (updatedFile) {
           files = [...files];
-          console.log('Updated files array with new statuses');
         }
       }
     });
@@ -376,15 +374,11 @@
     // Also listen for general notifications that might affect files
     unsubscribeNotifications = lastNotification.subscribe((notification: Notification | null) => {
       if (notification) {
-        console.log('Gallery: Received notification:', notification);
-        
         // Check if this is a completion notification that requires refreshing files
         if (notification.type === 'transcription_status' && notification.data && notification.data.status === 'completed') {
-          console.log('Transcription completed, refreshing files to ensure latest data');
           // Wait a brief moment to allow backend processing to complete
           setTimeout(() => fetchFiles(), 1000);
         } else if (notification.type === 'file_update') {
-          console.log('File update notification received, will refresh files');
           setTimeout(() => fetchFiles(), 1000);
         }
       }

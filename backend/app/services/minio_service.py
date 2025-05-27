@@ -6,6 +6,7 @@ import io
 import os
 import datetime
 import urllib3
+import logging
 
 from app.core.config import settings
 
@@ -73,6 +74,7 @@ def download_file(object_name: str) -> Tuple[io.BytesIO, int, str]:
         - File size in bytes
         - Content type (MIME type)
     """
+    logger = logging.getLogger(__name__)
     try:
         # Get the file from MinIO
         response = minio_client.get_object(settings.MEDIA_BUCKET_NAME, object_name)
@@ -93,7 +95,7 @@ def download_file(object_name: str) -> Tuple[io.BytesIO, int, str]:
         # Return tuple with file data as BytesIO, size, and content type
         return io.BytesIO(file_content), content_length, content_type
     except Exception as e:
-        print(f"Error downloading file: {e}")
+        logger.error(f"Error downloading file: {e}")
         raise Exception(f"Error downloading file: {e}")
 
 
@@ -246,7 +248,8 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
             expires = 86400  # Default to 24 hours
             
         # Debug logging
-        print(f"Getting presigned URL for {object_name} with expires={expires} seconds")
+        logger = logging.getLogger(__name__)
+        logger.info(f"Getting presigned URL for {object_name} with expires={expires} seconds")
         
         # Create a direct URL using the get_presigned_url method
         try:
@@ -258,7 +261,7 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
                 expires=delta
             )
         except Exception as inner_e:
-            print(f"First attempt failed: {inner_e}, trying alternative method")
+            logger.info(f"First attempt failed: {inner_e}, trying alternative method")
             # If that fails, try using the raw method with seconds
             url = minio_client.get_presigned_url(
                 "GET",
@@ -282,16 +285,16 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
                     minio_server,
                     f"{os.environ.get('MINIO_PUBLIC_HOST')}:{os.environ.get('MINIO_PUBLIC_PORT')}"
                 )
-                print(f"Replaced internal {minio_server} with public host in URL")
+                logger.info(f"Replaced internal {minio_server} with public host in URL")
                 url = public_url
         
         # Log the generated URL (truncated for security)
-        print(f"Generated presigned URL: {url[:50]}...")
+        logger.info(f"Generated presigned URL: {url[:50]}...")
         
         return url
     except Exception as e:
         # Catch all exceptions, not just S3Error
-        print(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
+        logger.error(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
         raise Exception(f"Error getting file URL: {e}")
 
 
