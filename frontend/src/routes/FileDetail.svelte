@@ -1,5 +1,5 @@
 <script>
-  import { slide } from 'svelte/transition';
+  import { slide, fade } from 'svelte/transition';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import { onMount, onDestroy, afterUpdate } from 'svelte';
@@ -1714,76 +1714,94 @@ let showMetadata = true; // Default to showing metadata
               
               <div class="tech-info-item">
                 <span class="info-label">Content Info:</span>
-                <button class="info-value-button" on:click={() => showContentTooltip = !showContentTooltip}>
-                  {#if file && 'artist' in file && file.artist}
-                    {file.artist}
-                  {:else}
-                    Details
-                  {/if}
+                <button
+                  class="info-icon"
+                  on:click|stopPropagation={() => showContentTooltip = !showContentTooltip}
+                  aria-label="Show content information"
+                  title="Show content information"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
                 </button>
                 {#if showContentTooltip}
-                  <div class="tooltip-content content-tooltip" transition:slide>
-                    <div class="tooltip-grid">
-                      {#if file && 'content_created' in file && file.content_created}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Created:</span>
-                          <span class="tooltip-value">{new Date(file.content_created).toLocaleString()}</span>
+                  <div class="modal-overlay" transition:fade={{ duration: 150 }} on:click|self={() => showContentTooltip = false} role="dialog" aria-labelledby="content-info-title" aria-modal="true">
+                    <div class="modal-content" transition:slide={{ duration: 200 }}>
+                      <div class="modal-header">
+                        <h3 id="content-info-title">Content Information</h3>
+                        <button class="modal-close" on:click={() => showContentTooltip = false}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                          </svg>
+                        </button>
+                      </div>
+                      <div class="modal-body">
+                        <div class="tooltip-grid">
+                          {#if file && 'content_created' in file && file.content_created}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Created:</span>
+                              <span class="tooltip-value">{new Date(file.content_created).toLocaleString()}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'content_modified' in file && file.content_modified}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Modified:</span>
+                              <span class="tooltip-value">{new Date(file.content_modified).toLocaleString()}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'artist' in file && file.artist}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Artist:</span>
+                              <span class="tooltip-value">{file.artist}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'album' in file && file.album}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Album:</span>
+                              <span class="tooltip-value">{file.album}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'track_number' in file && file.track_number}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Track:</span>
+                              <span class="tooltip-value">{file.track_number}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'genre' in file && file.genre}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Genre:</span>
+                              <span class="tooltip-value">{file.genre}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'description' in file && file.description}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Description:</span>
+                              <span class="tooltip-value">{file.description}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'copyright' in file && file.copyright}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Copyright:</span>
+                              <span class="tooltip-value">{file.copyright}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'encoder' in file && file.encoder}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Encoder:</span>
+                              <span class="tooltip-value">{file.encoder}</span>
+                            </div>
+                          {/if}
+                          {#if file && 'encoding_settings' in file && file.encoding_settings}
+                            <div class="tooltip-item">
+                              <span class="tooltip-label">Encoding:</span>
+                              <span class="tooltip-value">{file.encoding_settings}</span>
+                            </div>
+                          {/if}
                         </div>
-                      {/if}
-                      {#if file && 'content_modified' in file && file.content_modified}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Modified:</span>
-                          <span class="tooltip-value">{new Date(file.content_modified).toLocaleString()}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'artist' in file && file.artist}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Artist:</span>
-                          <span class="tooltip-value">{file.artist}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'album' in file && file.album}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Album:</span>
-                          <span class="tooltip-value">{file.album}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'track_number' in file && file.track_number}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Track:</span>
-                          <span class="tooltip-value">{file.track_number}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'genre' in file && file.genre}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Genre:</span>
-                          <span class="tooltip-value">{file.genre}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'description' in file && file.description}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Description:</span>
-                          <span class="tooltip-value">{file.description}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'copyright' in file && file.copyright}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Copyright:</span>
-                          <span class="tooltip-value">{file.copyright}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'encoder' in file && file.encoder}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Encoder:</span>
-                          <span class="tooltip-value">{file.encoder}</span>
-                        </div>
-                      {/if}
-                      {#if file && 'encoding_settings' in file && file.encoding_settings}
-                        <div class="tooltip-item">
-                          <span class="tooltip-label">Encoding:</span>
-                          <span class="tooltip-value">{file.encoding_settings}</span>
-                        </div>
-                      {/if}
+                      </div>
                     </div>
                   </div>
                 {/if}
@@ -2222,7 +2240,7 @@ let showMetadata = true; // Default to showing metadata
   .tech-info-section {
     margin: 0.75rem 0 1.25rem;
     position: relative;
-    z-index: 2;
+    z-index: 10; /* Increase z-index of the section containing the tooltip anchor */
   }
 
   .tech-info-container {
@@ -2237,9 +2255,10 @@ let showMetadata = true; // Default to showing metadata
 
   .tech-info-container.centered {
     display: flex;
-    justify-content: space-around;
+    justify-content: center; /* Re-center the items */
     align-items: center;
     width: 100%;
+    gap: 0.75rem; /* Keep the reduced gap */
   }
 
   .tech-info-item {
@@ -2301,7 +2320,7 @@ let showMetadata = true; // Default to showing metadata
     position: absolute;
     top: 100%;
     right: 0;
-    z-index: 20;
+    z-index: 999; /* Significantly increase z-index */
     min-width: 200px;
     max-width: 320px;
     width: auto;
@@ -2324,11 +2343,14 @@ let showMetadata = true; // Default to showing metadata
     color: var(--primary-color, #3b82f6);
     display: inline-flex;
     align-items: center;
-    font-size: 1rem;
+    /* font-size: 1rem; /* SVG size controlled by its attributes */
     padding: 0.25rem;
     border-radius: 50%;
     transition: background-color 0.2s ease;
     outline: none;
+    background: none;
+    border: none;
+    margin-left: 8px; /* Spacing from the label */
   }
   
   .info-icon:focus {
@@ -2337,6 +2359,117 @@ let showMetadata = true; // Default to showing metadata
   
   .info-icon:hover {
     background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  .tooltip-grid {
+    display: grid;
+    grid-template-columns: auto 1fr; /* Label and value columns */
+    gap: 0.3rem 0.6rem; /* row-gap column-gap */
+    align-items: start;
+  }
+
+  .tooltip-item {
+    display: contents; /* Makes .tooltip-item act as if its children are direct children of the grid */
+  }
+
+  .tooltip-label {
+    font-weight: 600;
+    color: var(--text-secondary-color, #6b7280);
+    margin-right: 0.5rem;
+  }
+  
+  [data-theme='dark'] .tooltip-label {
+    color: #9ca3af; /* Lighter gray for dark mode labels */
+  }
+  
+  .tooltip-value {
+    font-size: 0.8rem;
+    color: var(--text-color);
+    word-break: break-word;
+  }
+  
+  [data-theme='dark'] .tooltip-value {
+    color: #f3f4f6; /* Brighter text for dark mode */
+  }
+  
+  /* Modal styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999; /* Extremely high z-index to appear above everything */
+  }
+  
+  [data-theme='dark'] .modal-overlay {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+  
+  [data-theme='dark'] .modal-content {
+    background-color: var(--surface-color, #1f2937);
+    border: 1px solid var(--border-color, #374151);
+  }
+  
+  .modal-content {
+    background-color: var(--surface-color, #ffffff);
+    border-radius: 12px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    padding: 0;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+  }
+  
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color, #111827);
+  }
+  
+  [data-theme='dark'] .modal-header h3 {
+    color: #f3f4f6; /* Lighter color for dark mode */
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--text-color);
+  }
+  
+  [data-theme='dark'] .modal-close:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
   }
   
   .panel-toggle {
