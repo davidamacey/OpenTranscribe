@@ -183,6 +183,19 @@ class Comment(CommentBase):
         from_attributes = True
 
 
+class MediaFileInfo(BaseModel):
+    """Schema for simplified media file information that gets included in tasks"""
+    id: int
+    filename: str
+    file_size: Optional[int] = None
+    content_type: Optional[str] = None
+    duration: Optional[float] = None
+    language: Optional[str] = None
+    format: Optional[str] = None
+    media_format: Optional[str] = None
+    codec: Optional[str] = None
+    upload_time: Optional[datetime] = None
+
 class TaskBase(BaseModel):
     task_type: str
     status: str
@@ -209,6 +222,7 @@ class Task(TaskBase):
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    media_file: Optional[MediaFileInfo] = None
 
     class Config:
         from_attributes = True
