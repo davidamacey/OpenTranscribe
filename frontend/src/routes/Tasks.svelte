@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { slide } from 'svelte/transition';
+  import { slide, fade } from 'svelte/transition';
   import { Link } from "svelte-navigator";
   import { user } from "../stores/auth";
   import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
@@ -13,6 +13,9 @@
    * @property {string} [language]
    * @property {string} [upload_time]
    * @property {number} [duration]
+   * @property {string} [format]
+   * @property {string} [media_format]
+   * @property {string} [codec]
    */
 
   /** @typedef {object} Task
@@ -126,6 +129,7 @@
       const axiosInstance = (await import('../lib/axios')).default;
       const response = await axiosInstance.get('/tasks/');
       tasks = response.data;
+      console.log("Tasks data received:", tasks);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
       error = err instanceof Error ? err.message : 'Failed to load tasks';
@@ -158,34 +162,17 @@
    * @return {string} Formatted duration
    */
   function formatDuration(seconds) {
-    if (!seconds || isNaN(seconds)) return 'Unknown';
-    
+    if (!seconds && seconds !== 0) return "Unknown";
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
+    const remainingSeconds = Math.floor(seconds % 60);
     
-    let result = '';
-    if (hours > 0) result += `${hours}h `;
-    if (minutes > 0 || hours > 0) result += `${minutes}m `;
-    result += `${secs}s`;
-    
-    return result.trim();
-  }
-  
-  /**
-   * Calculate the processing time from creation to completion
-   * @param {string} createdAt - ISO date string for creation time
-   * @param {string} completedAt - ISO date string for completion time
-   * @return {string} Human readable processing time
-   */
-  function calculateProcessingTime(createdAt, completedAt) {
-    if (!createdAt || !completedAt) return 'In progress';
-    
-    const created = new Date(createdAt).getTime();
-    const completed = new Date(completedAt).getTime();
-    const diffSeconds = Math.floor((completed - created) / 1000);
-    
-    return formatDuration(diffSeconds);
+    let result = "";
+    if (hours > 0) {
+      result += `${hours.toString().padStart(2, "0")}:`;
+    }
+    result += `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    return result;
   }
   
   /**
@@ -430,41 +417,83 @@
           
           <div class="task-info">
             {#if task.media_file}
-              <div class="media-info">
-                <Link to="/file/{task.media_file.id}" class="file-link">{task.media_file.filename}</Link>
-              </div>
+              <!-- Media info moved to task-dates section -->
             {/if}
             
-            <div class="task-dates">
-              <div class="date-info">
-                <span class="info-label">Created:</span>
-                <span class="date-value">{formatDate(task.created_at)}</span>
-                <span class="date-relative">({timeElapsed(task.created_at)})</span>
+            <div class="task-info-card">
+              <!-- Status indicator with task type -->
+              <div class="task-status-row">
+                <div class="task-type">{task.task_type === "transcription" ? "Transcription" : "Summarization"}</div>
+                <div class="status-indicator {getStatusClass(task.status)}">
+                  {#if task.status === "in_progress"}
+                    <span>In Progress: {Math.round(task.progress * 100)}%</span>
+                  {:else if task.status === "pending"}
+                    <span>Pending</span>
+                  {:else if task.status === "failed"}
+                    <span>Failed</span>
+                  {:else}
+                    <span>✓</span>
+                  {/if}
+                </div>
               </div>
-              
-              {#if task.status === 'completed' && task.completed_at}
-                <div class="date-info">
-                  <span class="info-label">Completed:</span>
-                  <span class="date-value">{formatDate(task.completed_at)}</span>
-                  <span class="date-relative">({timeElapsed(task.completed_at)})</span>
+
+              <!-- File information -->
+              {#if task.media_file}
+                <!-- Filename -->
+                <div class="info-row">
+                  <span class="info-label">Filename:</span>
+                  <span class="detail-value">{task.media_file.filename}</span>
                 </div>
                 
-                <!-- Processing duration information -->
-                <div class="date-info processing-time">
-                  <span class="info-label">Processing:</span>
-                  <span class="date-value">{calculateProcessingTime(task.created_at, task.completed_at)}</span>
-                </div>
+                <!-- File format -->
+                {#if task.media_file.format}
+                  <div class="info-row">
+                    <span class="info-label">File Type:</span>
+                    <span class="detail-value">{(task.media_file.format || "").toUpperCase()}</span>
+                  </div>
+                {/if}
+                
+                <!-- Audio/video length -->
+                {#if task.media_file.duration}
+                  <div class="info-row">
+                    <span class="info-label">Audio Length:</span>
+                    <span class="detail-value highlight">{formatDuration(task.media_file.duration)}</span>
+                  </div>
+                {/if}
+                
+                <!-- File size -->
+                {#if task.media_file.file_size}
+                  <div class="info-row">
+                    <span class="info-label">File Size:</span>
+                    <span class="detail-value">{formatFileSize(task.media_file.file_size)}</span>
+                  </div>
+                {/if}
               {/if}
-              
-              <!-- File duration if available -->
-              {#if task.media_file && task.media_file.duration}
-                <div class="date-info">
-                  <span class="info-label">Duration:</span>
-                  <span class="date-value">{formatDuration(task.media_file.duration)}</span>
+
+              <!-- Task timing information -->
+              <div class="timing-section">
+                <!-- Created time -->
+                <div class="info-row">
+                  <span class="info-label">Created at:</span>
+                  <span class="detail-value">{formatDate(task.created_at)}</span>
                 </div>
-              {/if}
+
+                <!-- Completed time for completed tasks -->
+                {#if task.status === "completed" && task.completed_at}
+                  <div class="info-row">
+                    <span class="info-label">Completed at:</span>
+                    <span class="detail-value">{formatDate(task.completed_at)}</span>
+                  </div>
+                  
+                  <!-- Processing duration information -->
+                  <div class="info-row highlight-row">
+                    <span class="info-label">Processing time:</span>
+                    <span class="detail-value highlight">{formatDuration(Math.floor((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000))}</span>
+                  </div>
+                {/if}
+              </div>
             </div>
-            
+
             <!-- Metadata popup -->
             {#if task.showMetadata}
               <div class="metadata-popup" transition:slide={{duration: 300}}>
@@ -507,13 +536,13 @@
                     </div>
                     <div class="metadata-item">
                       <span class="metadata-label">Processing Time:</span>
-                      <span class="metadata-value">{calculateProcessingTime(task.created_at, task.completed_at)}</span>
+                      <span class="metadata-value">{formatDuration(Math.floor((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000))}</span>
                     </div>
                   {/if}
                 </div>
               </div>
             {/if}
-            
+
             {#if task.error_message}
               <div class="error-details">
                 <span class="info-label">Error:</span>
@@ -521,7 +550,7 @@
               </div>
             {/if}
           </div>
-          
+
           {#if task.status === 'in_progress'}
             <div class="progress-bar-container">
               <div class="progress-bar" style="width: {task.progress * 100}%"></div>
@@ -539,26 +568,26 @@
     margin: 0 auto;
     padding: 2rem 1rem;
   }
-  
+
   .tasks-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
   }
-  
+
   .tasks-header h1 {
     font-size: 1.75rem;
     font-weight: 600;
     color: var(--text-color);
     margin: 0;
   }
-  
+
   .tasks-actions {
     display: flex;
     gap: 1rem;
   }
-  
+
   .flower-link,
   .refresh-button {
     display: flex;
@@ -570,14 +599,14 @@
     transition: background-color 0.2s;
     font-size: 0.9rem;
   }
-  
+
   .flower-link {
     background-color: var(--card-background);
     color: var(--text-color);
     text-decoration: none;
     border: 1px solid var(--border-color);
   }
-  
+
   .refresh-button {
     background-color: var(--surface-color);
     color: var(--text-color);
@@ -585,12 +614,12 @@
     cursor: pointer;
     font-family: inherit;
   }
-  
+
   .flower-link:hover,
   .refresh-button:hover {
     background-color: var(--button-hover);
   }
-  
+
   .loading-container,
   .error-container,
   .empty-container {
@@ -604,7 +633,7 @@
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
-  
+
   .loading-spinner {
     border: 3px solid rgba(0, 0, 0, 0.1);
     border-top: 3px solid var(--primary-color);
@@ -614,17 +643,17 @@
     animation: spin 1s linear infinite;
     margin-bottom: 1rem;
   }
-  
+
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  
+
   .error-message {
     color: var(--error-color);
     margin-bottom: 1rem;
   }
-  
+
   .retry-button {
     background-color: var(--primary-color);
     color: white;
@@ -635,39 +664,39 @@
     font-weight: 500;
     cursor: pointer;
   }
-  
+
   .empty-container {
     color: var(--text-secondary-color);
   }
-  
+
   .empty-icon {
     color: var(--text-secondary-color);
     opacity: 0.5;
     margin-bottom: 1rem;
   }
-  
+
   .empty-container h3 {
     margin: 0 0 0.5rem;
     font-weight: 600;
   }
-  
+
   .empty-container p {
     margin: 0.25rem 0;
   }
-  
+
   .tasks-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 1.5rem;
   }
-  
+
   .task-card {
     background-color: var(--surface-color);
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     overflow: hidden;
   }
-  
+
   .task-header {
     display: flex;
     justify-content: space-between;
@@ -675,14 +704,14 @@
     padding: 1rem;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .task-type {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-weight: 600;
   }
-  
+
   .task-status {
     padding: 0.25rem 0.75rem;
     border-radius: 100px;
@@ -692,102 +721,146 @@
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .status-pending {
     background-color: var(--background-color);
     color: var(--text-secondary);
   }
-  
+
   [data-theme='dark'] .status-pending {
     background-color: #334155;
     color: #cbd5e1;
   }
-  
+
   .status-in-progress {
     background-color: #cff4fc;
     color: #055160;
   }
-  
+
   [data-theme='dark'] .status-in-progress {
     background-color: #164e63;
     color: #7dd3fc;
   }
-  
+
+  /* Dark mode styles handled through variables in global.css */
+  /* These selectors need :global to work properly */
+  :global([data-theme='dark']) .file-info-section {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  :global([data-theme='dark']) .highlight {
+    color: var(--primary-color-light);
+  }
+
   .status-completed {
     background-color: #d1e7dd;
     color: #0f5132;
   }
-  
+
   [data-theme='dark'] .status-completed {
     background-color: #064e3b;
     color: #6ee7b7;
   }
-  
+
   .status-failed {
     background-color: #f8d7da;
     color: #842029;
   }
-  
+
   [data-theme='dark'] .status-failed {
     background-color: #7f1d1d;
     color: #fca5a5;
   }
-  
+
   .task-progress {
     font-weight: 600;
   }
-  
+
   .task-info {
     padding: 1rem;
   }
-  
-  .media-info {
-    margin-bottom: 1rem;
-  }
-  
+
   .file-link {
     color: var(--primary-color);
     text-decoration: none;
     font-weight: 500;
   }
-  
+
   .file-link:hover {
     text-decoration: underline;
   }
-  
-  .task-dates {
+
+  /* Removed file-info-section class as file info is now at the same level as timing info */
+
+  .highlight {
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  /* Removed highlight-box as it's replaced by highlight-row */
+
+  .task-info-card {
     display: flex;
     flex-direction: column;
+    gap: 1rem;
+  }
+
+  .task-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .status-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 100px;
+    font-weight: 500;
     gap: 0.5rem;
-    margin-bottom: 1rem;
   }
   
-  .date-info {
+  .task-type {
+    font-weight: 500;
+    color: var(--text-secondary-color);
+  }
+  
+  .file-name-row {
     display: flex;
     align-items: baseline;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  /* Removed file-info-rows class as we now use consistent info-row styling */
+  
+  .info-row {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
   }
   
   .info-label {
     font-weight: 600;
     color: var(--text-secondary-color);
-    min-width: 80px;
+    font-size: 0.85rem;
   }
   
-  .date-value {
+  .detail-value {
     font-weight: 500;
   }
   
-  .date-relative {
-    font-size: 0.85rem;
-    color: var(--text-secondary-color);
+  .timing-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
   
-  .processing-time {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .highlight-row {
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    border-radius: 6px;
+    padding: 0.5rem;
   }
   
   .info-button {

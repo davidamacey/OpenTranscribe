@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS media_file (
     file_size BIGINT NOT NULL,
     duration FLOAT,
     upload_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE NULL,
     content_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
     is_public BOOLEAN DEFAULT FALSE,
@@ -144,3 +145,11 @@ CREATE TABLE IF NOT EXISTS alembic_version (
 );
 -- Update to include video metadata fields migration
 INSERT INTO alembic_version (version_num) VALUES ('74093bff36e6') ON CONFLICT DO NOTHING;
+
+-- Add completed_at column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'media_file' AND column_name = 'completed_at') THEN
+        ALTER TABLE media_file ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE NULL;
+    END IF;
+END$$;

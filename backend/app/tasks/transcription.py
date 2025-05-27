@@ -697,7 +697,7 @@ def transcribe_audio_task(self, file_id: int):
                     media_file.duration = duration
                     media_file.language = result.get("language", "en")
                     media_file.status = FileStatus.COMPLETED
-                    media_file.transcription_completed_at = datetime.datetime.now()
+                    media_file.completed_at = datetime.datetime.now()
                     
                     logger.info(f"Saved {len(segments)} transcript segments to database")
                     

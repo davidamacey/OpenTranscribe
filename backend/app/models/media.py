@@ -21,6 +21,7 @@ class MediaFile(Base):
     filename = Column(String, index=True)
     storage_path = Column(String, nullable=False)  # Path in MinIO/S3
     upload_time = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)  # When processing completed
     duration = Column(Float, nullable=True)  # Duration in seconds
     file_size = Column(Integer, nullable=False)  # Size in bytes
     content_type = Column(String, nullable=False)  # MIME type

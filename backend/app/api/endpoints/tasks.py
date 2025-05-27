@@ -46,21 +46,45 @@ def list_tasks(
             elif file.status == FileStatus.ERROR:
                 task_status = "failed"
                 
+            # Use the actual completed_at time stored in the database
+            completed_at = getattr(file, "completed_at", None)
+            if file.status == FileStatus.COMPLETED and not completed_at:
+                # Fall back to upload_time for older records without completed_at
+                completed_at = file.upload_time
+            
+            # Extract file format from content_type or use extension
+            file_format = None
+            if file.content_type:
+                # Extract format from content_type (e.g., audio/mp3 -> mp3)
+                if "/" in file.content_type:
+                    file_format = file.content_type.split("/")[1]
+            if not file_format and file.filename and "." in file.filename:
+                # Fall back to filename extension
+                file_format = file.filename.split(".")[-1]
+            
             # Create a task for each file based on its status
             task = Task(
                 id=f"task_{file.id}",
-                user_id=current_user.id,  # Explicitly include user_id to match schema
+                user_id=current_user.id,
                 task_type="transcription",
                 status=task_status,
                 media_file_id=file.id,
                 progress=1.0 if file.status == FileStatus.COMPLETED else 0.5 if file.status == FileStatus.PROCESSING else 0.0,
                 created_at=file.upload_time,
                 updated_at=file.upload_time,
-                completed_at=file.upload_time if file.status == FileStatus.COMPLETED else None,
+                completed_at=completed_at,
                 error_message=None if file.status != FileStatus.ERROR else "Transcription failed",
                 media_file={
                     "id": file.id,
-                    "filename": file.filename
+                    "filename": file.filename,
+                    "file_size": file.file_size,
+                    "content_type": file.content_type,
+                    "duration": file.duration,
+                    "language": file.language,
+                    "format": file_format,
+                    "media_format": getattr(file, "media_format", None),
+                    "codec": getattr(file, "codec", None),
+                    "upload_time": file.upload_time
                 }
             )
             tasks.append(task)
@@ -117,21 +141,44 @@ def get_task(
         elif media_file.status == FileStatus.ERROR:
             task_status = "failed"
         
+        # Use the actual completed_at time stored in the database
+        completed_at = getattr(media_file, "completed_at", None)
+        if media_file.status == FileStatus.COMPLETED and not completed_at:
+            # Fall back to upload_time for older records without completed_at
+            completed_at = media_file.upload_time
+        
+        # Extract file format from content_type or use extension
+        file_format = None
+        if media_file.content_type:
+            # Extract format from content_type (e.g., audio/mp3 -> mp3)
+            if "/" in media_file.content_type:
+                file_format = media_file.content_type.split("/")[1]
+        if not file_format and media_file.filename and "." in media_file.filename:
+            # Fall back to filename extension
+            file_format = media_file.filename.split(".")[-1]
+        
         # Convert to task
         task = Task(
             id=task_id,
-            user_id=current_user.id,  # Include user_id to match schema requirement
+            user_id=current_user.id,
             media_file_id=media_file.id,
             task_type="transcription",
             status=task_status,
             progress=1.0 if media_file.status == FileStatus.COMPLETED else 0.5 if media_file.status == FileStatus.PROCESSING else 0.0,
             created_at=media_file.upload_time,
             updated_at=media_file.upload_time,
-            completed_at=media_file.upload_time if media_file.status == FileStatus.COMPLETED else None,
+            completed_at=completed_at,
             error_message=None if media_file.status != FileStatus.ERROR else "Transcription failed",
             media_file={
                 "id": media_file.id,
-                "filename": media_file.filename
+                "filename": media_file.filename,
+                "file_size": media_file.file_size,
+                "content_type": media_file.content_type,
+                "duration": media_file.duration,
+                "language": media_file.language,
+                "format": file_format,
+                "media_format": getattr(media_file, "media_format", None),
+                "codec": getattr(media_file, "codec", None)
             }
         )
         
