@@ -203,6 +203,7 @@
   let showTechTooltip = false;
   let showAudioTooltip = false;
   let showContentTooltip = false;
+let showMetadata = true; // Default to showing metadata
   
   /**
    * Toggles the expanded state of a metadata section
@@ -1610,9 +1611,19 @@
         </div>
 
         <!-- Enhanced metadata section with collapsible panels -->
-        <div class="enhanced-metadata">
-          <!-- Basic Info Panel (always visible) -->
-          <!-- Metadata Panel - 4 column layout with basic info -->
+        <div class="metadata-dropdown-section">
+          <button class="section-header" on:click={() => showMetadata = !showMetadata} on:keydown={e => e.key === 'Enter' && (showMetadata = !showMetadata)} aria-expanded={showMetadata}>
+            <h4 class="section-heading">File Details</h4>
+            <span class="dropdown-toggle" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showMetadata ? '180deg' : '0deg'})">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </span>
+          </button>
+          
+          {#if showMetadata}
+          <!-- Metadata Panel with collapsible content -->
+          <div class="section-content" transition:slide={{ duration: 200 }}>
           <div class="metadata-panel">
             <div class="metadata-grid four-columns">
               <div class="metadata-item">
@@ -1671,199 +1682,121 @@
                 <span class="metadata-value">{file && 'created_date' in file && file.created_date ? new Date(file.created_date).toLocaleDateString() : 'Unknown'}</span>
               </div>
             </div>
+            <div class="tech-info-container centered">
+              <div class="tech-info-item">
+                <span class="info-label">Tech Specs:</span>
+                <span class="info-value">
+                  {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
+                    {file.resolution_width}×{file.resolution_height}
+                  {/if}
+                  {#if file && 'frame_rate' in file && file.frame_rate}
+                    {typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(0) : file.frame_rate}fps
+                  {/if}
+                  {#if file && file.status === 'completed'}
+                    <span class="status-icon status-completed"><i class="fas fa-check-circle"></i></span>
+                  {:else if file && file.status === 'failed'}
+                    <span class="status-icon status-failed"><i class="fas fa-times-circle"></i></span>
+                  {/if}
+                </span>
+              </div>
+              
+              <div class="tech-info-item">
+                <span class="info-label">Audio Info:</span>
+                <span class="info-value">
+                  {#if file && 'audio_channels' in file && file.audio_channels}
+                    {file.audio_channels}ch
+                  {/if}
+                  {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
+                    {Math.round(file.audio_sample_rate/1000)}kHz
+                  {/if}
+                </span>
+              </div>
+              
+              <div class="tech-info-item">
+                <span class="info-label">Content Info:</span>
+                <button class="info-value-button" on:click={() => showContentTooltip = !showContentTooltip}>
+                  {#if file && 'artist' in file && file.artist}
+                    {file.artist}
+                  {:else}
+                    Details
+                  {/if}
+                </button>
+                {#if showContentTooltip}
+                  <div class="tooltip-content content-tooltip" transition:slide>
+                    <div class="tooltip-grid">
+                      {#if file && 'content_created' in file && file.content_created}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Created:</span>
+                          <span class="tooltip-value">{new Date(file.content_created).toLocaleString()}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'content_modified' in file && file.content_modified}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Modified:</span>
+                          <span class="tooltip-value">{new Date(file.content_modified).toLocaleString()}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'artist' in file && file.artist}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Artist:</span>
+                          <span class="tooltip-value">{file.artist}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'album' in file && file.album}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Album:</span>
+                          <span class="tooltip-value">{file.album}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'track_number' in file && file.track_number}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Track:</span>
+                          <span class="tooltip-value">{file.track_number}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'genre' in file && file.genre}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Genre:</span>
+                          <span class="tooltip-value">{file.genre}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'description' in file && file.description}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Description:</span>
+                          <span class="tooltip-value">{file.description}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'copyright' in file && file.copyright}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Copyright:</span>
+                          <span class="tooltip-value">{file.copyright}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'encoder' in file && file.encoder}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Encoder:</span>
+                          <span class="tooltip-value">{file.encoder}</span>
+                        </div>
+                      {/if}
+                      {#if file && 'encoding_settings' in file && file.encoding_settings}
+                        <div class="tooltip-item">
+                          <span class="tooltip-label">Encoding:</span>
+                          <span class="tooltip-value">{file.encoding_settings}</span>
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            </div>
           </div>
+          </div>
+          {/if}
         </div>
         
         <!-- Tech Specs, Audio, and Content Info with clickable icons in separate section -->
         <div class="tech-info-section">
-          <div class="tech-info-container">
-            <div class="tech-info-item">
-              <span class="info-label">Tech Specs:</span>
-              <span class="info-value">
-                {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
-                  {file.resolution_width}×{file.resolution_height}
-                {/if}
-                {#if file && 'frame_rate' in file && file.frame_rate}
-                  {typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(0) : file.frame_rate}fps
-                {/if}
-                {#if file && file.status === 'completed'}
-                  <span class="status-icon status-completed"><i class="fas fa-check-circle"></i></span>
-                {:else if file && file.status === 'failed'}
-                  <span class="status-icon status-failed"><i class="fas fa-times-circle"></i></span>
-                {/if}
-              </span>
-              <button class="info-button" aria-label="Show technical specifications" on:click={() => showTechTooltip = !showTechTooltip}>
-                <i class="fas fa-info" aria-hidden="true"></i>
-              </button>
-              {#if showTechTooltip}
-                <div class="tooltip-content tech-tooltip" transition:slide>
-                  <div class="tooltip-grid">
-                    {#if file && 'media_format' in file && file.media_format}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Format:</span>
-                        <span class="tooltip-value">{file.media_format}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'codec' in file && file.codec}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Codec:</span>
-                        <span class="tooltip-value">{file.codec}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Resolution:</span>
-                        <span class="tooltip-value">{file.resolution_width} × {file.resolution_height}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'aspect_ratio' in file && file.aspect_ratio}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Aspect Ratio:</span>
-                        <span class="tooltip-value">{file.aspect_ratio}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'frame_rate' in file && file.frame_rate}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Frame Rate:</span>
-                        <span class="tooltip-value">{typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(2) : file.frame_rate} fps</span>
-                      </div>
-                    {/if}
-                    {#if file && 'frame_count' in file && file.frame_count}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Total Frames:</span>
-                        <span class="tooltip-value">{file.frame_count.toLocaleString()}</span>
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-            </div>
-            
-            <div class="tech-info-item">
-              <span class="info-label">Audio Info:</span>
-              <span class="info-value">
-                {#if file && 'audio_channels' in file && file.audio_channels}
-                  {file.audio_channels}ch
-                {/if}
-                {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
-                  {Math.round(file.audio_sample_rate/1000)}kHz
-                {/if}
-              </span>
-              <button class="info-button" aria-label="Show audio information" on:click={() => showAudioTooltip = !showAudioTooltip}>
-                <i class="fas fa-info" aria-hidden="true"></i>
-              </button>
-              {#if showAudioTooltip}
-                <div class="tooltip-content audio-tooltip" transition:slide>
-                  <div class="tooltip-grid">
-                    {#if file && 'audio_codec' in file && file.audio_codec}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Audio Codec:</span>
-                        <span class="tooltip-value">{file.audio_codec}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Sample Rate:</span>
-                        <span class="tooltip-value">{file.audio_sample_rate} Hz</span>
-                      </div>
-                    {/if}
-                    {#if file && 'audio_channels' in file && file.audio_channels}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Channels:</span>
-                        <span class="tooltip-value">{file.audio_channels}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'audio_bitrate' in file && file.audio_bitrate}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Bitrate:</span>
-                        <span class="tooltip-value">{file.audio_bitrate}</span>
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-            </div>
-            
-            <div class="tech-info-item">
-              <span class="info-label">Content Info:</span>
-              <span class="info-value">
-                {#if file && 'artist' in file && file.artist}
-                  {file.artist}
-                {:else}
-                  Details
-                {/if}
-              </span>
-              <button class="info-button" aria-label="Show content information" on:click={() => showContentTooltip = !showContentTooltip}>
-                <i class="fas fa-info" aria-hidden="true"></i>
-              </button>
-              {#if showContentTooltip}
-                <div class="tooltip-content content-tooltip" transition:slide>
-                  <div class="tooltip-grid">
-                    {#if file && 'content_created' in file && file.content_created}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Created:</span>
-                        <span class="tooltip-value">{new Date(file.content_created).toLocaleString()}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'content_modified' in file && file.content_modified}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Modified:</span>
-                        <span class="tooltip-value">{new Date(file.content_modified).toLocaleString()}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'artist' in file && file.artist}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Artist:</span>
-                        <span class="tooltip-value">{file.artist}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'album' in file && file.album}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Album:</span>
-                        <span class="tooltip-value">{file.album}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'track_number' in file && file.track_number}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Track:</span>
-                        <span class="tooltip-value">{file.track_number}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'genre' in file && file.genre}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Genre:</span>
-                        <span class="tooltip-value">{file.genre}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'description' in file && file.description}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Description:</span>
-                        <span class="tooltip-value">{file.description}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'copyright' in file && file.copyright}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Copyright:</span>
-                        <span class="tooltip-value">{file.copyright}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'encoder' in file && file.encoder}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Encoder:</span>
-                        <span class="tooltip-value">{file.encoder}</span>
-                      </div>
-                    {/if}
-                    {#if file && 'encoding_settings' in file && file.encoding_settings}
-                      <div class="tooltip-item">
-                        <span class="tooltip-label">Encoding:</span>
-                        <span class="tooltip-value">{file.encoding_settings}</span>
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-            </div>
-          </div>
+          
         </div>
         
         <!-- File summary section -->
@@ -1934,19 +1867,7 @@
           {/if}
         </div>
         
-        <!-- Download button area -->
-        {#if file.download_url}
-          <div class="download-container">
-            <a href={file.download_url} class="download-button" download={file.filename}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              <span>Download</span>
-            </a>
-          </div>
-        {/if}
+        <!-- Download button moved to transcript actions section -->
         
         <!-- Tags dropdown section -->
         <div class="tags-dropdown-section">
@@ -2117,6 +2038,13 @@
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                   </svg>
                   Export
+                  <!-- Transcript icon on the right -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                    <line x1="9" y1="9" x2="15" y2="9"></line>
+                    <line x1="9" y1="13" x2="15" y2="13"></line>
+                    <line x1="9" y1="17" x2="11" y2="17"></line>
+                  </svg>
                 </button>
                 <div class="export-dropdown-content">
                   <button on:click={() => exportTranscript('txt')}>Plain Text (.txt)</button>
@@ -2128,8 +2056,40 @@
               </div>
               
               <button class="edit-speakers-button" on:click={() => isEditingSpeakers = !isEditingSpeakers}>
+                <!-- Edit icon on the left -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
                 {isEditingSpeakers ? 'Hide Speaker Editor' : 'Edit Speakers'}
+                <!-- Person face icon on the right -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
               </button>
+              
+              {#if file && file.download_url}
+                <a href={file.download_url} class="action-button download-button" download={file.filename}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  Download
+                  <!-- Video icon on the right -->
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                    <line x1="7" y1="2" x2="7" y2="22"></line>
+                    <line x1="17" y1="2" x2="17" y2="22"></line>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <line x1="2" y1="7" x2="7" y2="7"></line>
+                    <line x1="2" y1="17" x2="7" y2="17"></line>
+                    <line x1="17" y1="17" x2="22" y2="17"></line>
+                    <line x1="17" y1="7" x2="22" y2="7"></line>
+                  </svg>
+                </a>
+              {/if}
             </div>
             
             {#if isEditingSpeakers}
@@ -2200,27 +2160,48 @@
     margin-bottom: 1rem;
   }
   
-  /* Enhanced metadata section styles */
-  .enhanced-metadata {
+  /* File details section styles */
+  .metadata-dropdown-section {
     margin-top: 0.5rem;
-    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .section-header {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background-color: var(--surface-color, #f9fafb);
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    text-align: left;
+  }
+  
+  .section-heading {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--heading-color, #111827);
+  }
+
+  .section-content {
+    padding: 0.5rem 1rem 1rem;
+    background-color: var(--card-background, #ffffff);
   }
   
   .metadata-panel {
-    background-color: var(--card-background, #ffffff);
-    border-radius: 12px;
-    padding: 1rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--border-color, #e5e7eb);
+    background-color: transparent;
+    padding: 0.5rem 0;
   }
-  
+
   .metadata-panel.collapsible {
     overflow: hidden;
   }
-  
+
   .panel-header {
     display: flex;
     justify-content: space-between;
@@ -2229,51 +2210,72 @@
     padding-bottom: 0.5rem;
     user-select: none;
   }
-  
+
   .panel-header span, .panel-header h3 {
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
     color: var(--heading-color, #111827);
   }
-  
+
   /* Tech Info Section - Separate from metadata panel */
   .tech-info-section {
     margin: 0.75rem 0 1.25rem;
     position: relative;
     z-index: 2;
   }
-  
+
   .tech-info-container {
     display: flex;
-    justify-content: space-between;
     flex-wrap: wrap;
-    background-color: var(--card-background, var(--surface-color, #ffffff));
-    border-radius: 12px;
-    padding: 1rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    gap: 1rem;
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background-color: var(--surface-color-alt);
+    border-radius: 6px;
   }
-  
+
+  .tech-info-container.centered {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    width: 100%;
+  }
+
   .tech-info-item {
     display: flex;
     align-items: center;
     position: relative;
-    margin-right: 2rem;
   }
-  
+
   .info-label {
     font-weight: 600;
     font-size: 0.95rem;
     margin-right: 0.5rem;
     color: var(--text-color, #111827);
   }
-  
+
   .info-value {
     font-size: 0.9rem;
     color: var(--text-color-secondary, #4b5563);
     margin-right: 0.5rem;
   }
-  
+
+  .info-value-button {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: underline;
+    color: var(--text-color-secondary);
+  }
+
+  .info-value-button:hover {
+    color: var(--primary-color);
+  }
+
   .info-button {
     background-color: var(--primary-color, #3b82f6);
     border: none;
@@ -2290,16 +2292,11 @@
     transition: background-color 0.2s ease;
     margin-left: 0.5rem;
   }
-  
+
   .info-button:hover {
     background-color: rgba(59, 130, 246, 0.1);
   }
-  
-  .info-button:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
-  }
-  
+
   .tech-tooltip, .audio-tooltip, .content-tooltip {
     position: absolute;
     top: 100%;
@@ -2462,19 +2459,19 @@
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color-soft);
   }
-  
+
   .file-header-main {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  
+
   .title-status {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .file-metadata {
     display: flex;
     flex-wrap: wrap;
@@ -2484,7 +2481,7 @@
     color: var(--text-color-secondary);
     margin-bottom: 0.5rem;
   }
-  
+
   .file-summary {
     margin-top: 0.5rem;
     font-size: 0.95rem;
@@ -2813,7 +2810,7 @@
     overflow-y: auto;
     padding-right: 0.5rem;
   }
-  
+
   .transcript-actions {
     display: flex;
     justify-content: space-between;
