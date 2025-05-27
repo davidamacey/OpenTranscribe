@@ -420,79 +420,7 @@
               <!-- Media info moved to task-dates section -->
             {/if}
             
-            <div class="task-info-card">
-              <!-- Status indicator with task type -->
-              <div class="task-status-row">
-                <div class="task-type">{task.task_type === "transcription" ? "Transcription" : "Summarization"}</div>
-                <div class="status-indicator {getStatusClass(task.status)}">
-                  {#if task.status === "in_progress"}
-                    <span>In Progress: {Math.round(task.progress * 100)}%</span>
-                  {:else if task.status === "pending"}
-                    <span>Pending</span>
-                  {:else if task.status === "failed"}
-                    <span>Failed</span>
-                  {:else}
-                    <span>✓</span>
-                  {/if}
-                </div>
-              </div>
 
-              <!-- File information -->
-              {#if task.media_file}
-                <!-- Filename -->
-                <div class="info-row">
-                  <span class="info-label">Filename:</span>
-                  <span class="detail-value">{task.media_file.filename}</span>
-                </div>
-                
-                <!-- File format -->
-                {#if task.media_file.format}
-                  <div class="info-row">
-                    <span class="info-label">File Type:</span>
-                    <span class="detail-value">{(task.media_file.format || "").toUpperCase()}</span>
-                  </div>
-                {/if}
-                
-                <!-- Audio/video length -->
-                {#if task.media_file.duration}
-                  <div class="info-row">
-                    <span class="info-label">Audio Length:</span>
-                    <span class="detail-value highlight">{formatDuration(task.media_file.duration)}</span>
-                  </div>
-                {/if}
-                
-                <!-- File size -->
-                {#if task.media_file.file_size}
-                  <div class="info-row">
-                    <span class="info-label">File Size:</span>
-                    <span class="detail-value">{formatFileSize(task.media_file.file_size)}</span>
-                  </div>
-                {/if}
-              {/if}
-
-              <!-- Task timing information -->
-              <div class="timing-section">
-                <!-- Created time -->
-                <div class="info-row">
-                  <span class="info-label">Created at:</span>
-                  <span class="detail-value">{formatDate(task.created_at)}</span>
-                </div>
-
-                <!-- Completed time for completed tasks -->
-                {#if task.status === "completed" && task.completed_at}
-                  <div class="info-row">
-                    <span class="info-label">Completed at:</span>
-                    <span class="detail-value">{formatDate(task.completed_at)}</span>
-                  </div>
-                  
-                  <!-- Processing duration information -->
-                  <div class="info-row highlight-row">
-                    <span class="info-label">Processing time:</span>
-                    <span class="detail-value highlight">{formatDuration(Math.floor((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000))}</span>
-                  </div>
-                {/if}
-              </div>
-            </div>
 
             <!-- Metadata popup -->
             {#if task.showMetadata}
