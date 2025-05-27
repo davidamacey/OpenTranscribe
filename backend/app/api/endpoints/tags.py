@@ -53,7 +53,7 @@ def list_tags(
             MediaFile.user_id == current_user.id
         ).distinct().all()
     except Exception as e:
-        print(f"Error in list_tags: {e}")
+        logger.error(f"Error in list_tags: {e}")
         # If there's an error or no tags, return an empty list
         return []
     

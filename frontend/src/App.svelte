@@ -59,33 +59,25 @@
   
   // Initialize auth state when the component mounts
   onMount(async () => {
-    console.log('App.svelte: onMount - Initializing authentication');
-    
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
     
     try {
       await initAuth();
-      console.log('App.svelte: onMount - initAuth completed. Auth state:', get(authStore));
 
       const isAuth = get(isAuthenticated);
       const publicPaths = ["/login", "/register"];
       const isPublicPath = publicPaths.includes(currentPath);
 
       if (!isAuth && !isPublicPath) {
-        console.log('App.svelte: onMount - Not authenticated and not on public path, redirecting to login');
         navigate("/login", { replace: true });
       } else if (isAuth && isPublicPath) {
-        console.log('App.svelte: onMount - Authenticated and on public/login path, redirecting to home');
         navigate("/", { replace: true });
-      } else {
-        console.log('App.svelte: onMount - Authentication check complete, no redirect needed.');
       }
 
     } catch (error) {
       console.error('App.svelte: onMount - Error during initAuth or subsequent logic:', error);
       if (currentPath !== "/login" && currentPath !== "/register") {
-        console.log('App.svelte: onMount - Redirecting to login due to initialization error');
         navigate("/login", { replace: true });
       }
     }

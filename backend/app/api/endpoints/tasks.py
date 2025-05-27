@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import logging
 
 from app.db.base import get_db
 from app.models.user import User
 from app.models.media import MediaFile
 from app.schemas.media import Task, TaskStatus, FileStatus
 from app.api.endpoints.auth import get_current_active_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -20,7 +23,6 @@ def list_tasks(
     List all tasks for the current user
     """
     try:
-        print("Fetching tasks for user", current_user.id)
         # Query tasks from the database
         # In a real implementation, we would have a Task model
         # Here we're simulating tasks based on MediaFile statuses
@@ -29,8 +31,6 @@ def list_tasks(
         media_files = db.query(MediaFile).filter(
             MediaFile.user_id == current_user.id
         ).all()
-        
-        print(f"Found {len(media_files)} media files")
         
         # Convert them to tasks
         tasks = []
@@ -65,10 +65,9 @@ def list_tasks(
             )
             tasks.append(task)
         
-        print(f"Returning {len(tasks)} tasks")
         return tasks
     except Exception as e:
-        print(f"Error in list_tasks: {e}")
+        logger.error(f"Error in list_tasks: {e}")
         # Return an empty list if there's an error
         return []
 
@@ -141,7 +140,7 @@ def get_task(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        print(f"Error in get_task: {e}")
+        logger.error(f"Error in get_task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"

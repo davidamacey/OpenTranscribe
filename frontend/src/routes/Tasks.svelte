@@ -46,40 +46,49 @@
   let openMetadataId = null;
   
   // Subscribe to WebSocket file status updates to update task status
+  // Define proper type for updates object with string keys
+  /** @type {Object.<string, {status: string, progress?: number}>} */
+  let fileUpdates = {};
+  
   const unsubscribeFileStatus = fileStatusUpdates.subscribe(updates => {
-    if (tasks.length > 0 && Object.keys(updates).length > 0) {
+    // Cast updates to the proper type
+    fileUpdates = /** @type {Object.<string, {status: string, progress?: number}>} */ (updates || {});
+    if (tasks.length > 0 && Object.keys(fileUpdates).length > 0) {
       let updatedTask = false;
       
       // Find tasks that match updated files and update their status
       tasks = tasks.map(task => {
-        if (task.media_file && updates[task.media_file.id]) {
-          const update = updates[task.media_file.id];
-          console.log(`Tasks: Received WebSocket update for file ${task.media_file.id}:`, update);
+        if (task.media_file && task.media_file.id) {
+          // Convert ID to string for object key access
+          const fileIdStr = task.media_file.id.toString();
           
-          // Convert file status to task status
-          let newTaskStatus;
-          let newProgress;
-          
-          if (update.status === 'completed') {
-            newTaskStatus = 'completed';
-            newProgress = 1.0;
-          } else if (update.status === 'processing') {
-            newTaskStatus = 'in_progress';
-            newProgress = update.progress ? update.progress/100 : task.progress;
-          } else if (update.status === 'error') {
-            newTaskStatus = 'failed';
-            newProgress = 0;
-          }
-          
-          // Only update if we have a new status and it's different
-          if (newTaskStatus && task.status !== newTaskStatus) {
-            console.log(`Tasks: Updating task ${task.id} status from ${task.status} to ${newTaskStatus}`);
-            updatedTask = true;
-            return {
-              ...task,
-              status: newTaskStatus,
-              progress: newProgress || task.progress
-            };
+          if (fileUpdates[fileIdStr]) {
+            const update = fileUpdates[fileIdStr];
+            
+            // Convert file status to task status
+            let newTaskStatus;
+            let newProgress;
+            
+            if (update.status === 'completed') {
+              newTaskStatus = 'completed';
+              newProgress = 1.0;
+            } else if (update.status === 'processing') {
+              newTaskStatus = 'in_progress';
+              newProgress = update.progress ? update.progress/100 : task.progress;
+            } else if (update.status === 'error') {
+              newTaskStatus = 'failed';
+              newProgress = 0;
+            }
+            
+            // Only update if we have a new status and it's different
+            if (newTaskStatus && task.status !== newTaskStatus) {
+              updatedTask = true;
+              return {
+                ...task,
+                status: newTaskStatus,
+                progress: newProgress || task.progress
+              };
+            }
           }
         }
         return task;
@@ -87,7 +96,6 @@
       
       // If we updated any tasks, immediately fetch fresh data
       if (updatedTask) {
-        console.log('Tasks: Tasks updated via WebSocket, fetching fresh data');
         fetchTasks();
       }
     }
@@ -95,10 +103,14 @@
   
   // Also track general notifications for task updates
   const unsubscribeNotifications = lastNotification.subscribe(notification => {
-    if (notification && notification.type === 'task_status') {
-      console.log('Tasks: Received task status notification:', notification);
-      // Refresh task list when we receive task status notifications
-      fetchTasks();
+    // Only process if notification exists and has a type property
+    if (notification && typeof notification === 'object' && 'type' in notification) {
+      // Use a type assertion to avoid 'type' not existing on type 'never' error
+      const typedNotification = /** @type {{type: string}} */ (notification);
+      if (typedNotification.type === 'task_status') {
+        // Refresh task list when we receive task status notifications
+        fetchTasks();
+      }
     }
   });
   
@@ -221,17 +233,20 @@
   
   /**
    * Format file size in bytes to human readable format
-   * @param {number} bytes - File size in bytes
+   * @param {number|string} bytes - File size in bytes
    * @return {string} Formatted file size
    */
   function formatFileSize(bytes) {
-    if (!bytes || isNaN(bytes)) return 'Unknown';
+    // Convert to number if it's a string
+    const sizeInBytes = typeof bytes === 'string' ? Number(bytes) : bytes;
+    
+    if (!sizeInBytes || isNaN(sizeInBytes)) return 'Unknown';
     
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Bytes';
+    if (sizeInBytes === 0) return '0 Bytes';
     
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+    const i = Math.floor(Math.log(sizeInBytes) / Math.log(1024));
+    return parseFloat((sizeInBytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
   }
   
   /**
@@ -462,7 +477,7 @@
                     </div>
                     <div class="metadata-item">
                       <span class="metadata-label">File Size:</span>
-                      <span class="metadata-value">{task.media_file.file_size ? formatFileSize(task.media_file.file_size) : 'Unknown'}</span>
+                      <span class="metadata-value">{task.media_file.file_size !== undefined && task.media_file.file_size !== null ? formatFileSize(task.media_file.file_size) : 'Unknown'}</span>
                     </div>
                     <div class="metadata-item">
                       <span class="metadata-label">Content Type:</span>

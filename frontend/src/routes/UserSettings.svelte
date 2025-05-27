@@ -33,12 +33,9 @@
     success = '';
     
     try {
-      console.log('UserSettings: Updating profile with new full_name:', fullName);
       const response = await axiosInstance.put('/users/me', {
         full_name: fullName
       });
-      
-      console.log('UserSettings: Profile update response:', response.data);
       
       // Update store with new user info
       authStore.setUser(response.data);

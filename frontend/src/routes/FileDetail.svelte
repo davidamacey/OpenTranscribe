@@ -739,7 +739,7 @@
       }
 
       // Create new Plyr instance with enhanced options
-      player = new Plyr(videoElement, {
+      player = new Plyr(/** @type {HTMLElement} */ (videoElement), {
         controls: [
           'play-large', 'play', 'progress', 'current-time', 'mute', 
           'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'

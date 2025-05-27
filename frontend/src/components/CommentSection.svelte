@@ -34,13 +34,10 @@
   
   // Fetch comments for the file
   onMount(() => {
-    console.log('%c [COMMENTS DEBUG] Component mounted, fetching comments...', 'background: #222; color: #bada55; font-size: 14px; font-weight: bold;');
-    console.log('%c [COMMENTS DEBUG] File ID:', 'background: #222; color: #bada55; font-size: 14px;', fileId, 'Type:', typeof fileId);
     fetchComments();
   });
   
   async function fetchComments() {
-    console.log('%c [COMMENTS DEBUG] Starting fetchComments() function', 'background: #222; color: #bada55; font-size: 14px;');
     loading = true;
     error = null;
     try {
@@ -48,7 +45,6 @@
       const token = localStorage.getItem('token');
       // Make sure we have a valid numeric file ID
       const numericFileId = Number(fileId);
-      console.log('%c [COMMENTS DEBUG] Converted fileId to number:', 'background: #222; color: #bada55; font-size: 14px;', numericFileId, 'Type:', typeof numericFileId);
       
       // Validate fileId is a valid number
       if (isNaN(numericFileId) || numericFileId <= 0) {
@@ -78,20 +74,10 @@
       try {
         // Use the correct endpoint structure: /comments/files/{fileId}/comments
         const endpoint = `/comments/files/${numericFileId}/comments`;
-        console.log('%c [COMMENTS DEBUG] Fetching comments with endpoint: ' + endpoint, 'background: #222; color: #bada55; font-size: 14px; font-weight: bold;');
-        
-        // Ensure token is included in the headers
-        console.log('%c [COMMENTS DEBUG] Making GET request with headers:', 'background: #222; color: #bada55; font-size: 14px;', headers);
         response = await axiosInstance.get(endpoint, { headers });
-        
-        console.log('%c [COMMENTS DEBUG] Successfully fetched comments - Status: ' + response.status, 'background: #222; color: #6bff6b; font-size: 14px; font-weight: bold;');
-        console.log('%c [COMMENTS DEBUG] Response headers:', 'background: #222; color: #bada55; font-size: 14px;', response.headers);
-        console.log('%c [COMMENTS DEBUG] Response data:', 'background: #222; color: #bada55; font-size: 14px;', response.data);
       } catch (/** @type {any} */ error) {
-        // Log detailed error information for debugging
-        console.error('%c [COMMENTS DEBUG] 🛑 ERROR fetching comments:', 'background: #222; color: #ff6b6b; font-size: 14px; font-weight: bold;', error);
-        console.error('%c [COMMENTS DEBUG] 🛑 Error response status:', 'background: #222; color: #ff6b6b; font-size: 14px;', error.response?.status);
-        console.error('%c [COMMENTS DEBUG] 🛑 Error response data:', 'background: #222; color: #ff6b6b; font-size: 14px;', error.response?.data);
+        // Log error information for debugging
+        console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
         
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {

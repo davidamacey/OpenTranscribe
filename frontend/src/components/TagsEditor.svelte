@@ -46,12 +46,9 @@
     error = null; // Reset error state before making request
     try {
       const token = localStorage.getItem('token');
-      console.log('[TagsEditor] Fetching all tags with token:', token ? token.substring(0, 8) + '...' : '[none]');
-      console.log('[TagsEditor] Request URL:', '/tags/');
       
       // Use consistent URL format
       const response = await axiosInstance.get('/tags/');
-      console.log('[TagsEditor] Tags response:', response.status, response.headers);
       
       // Ensure all tags have valid IDs before adding them to the allTags array
       const validTags = (response.data || []).filter(tag => 
@@ -61,12 +58,6 @@
       );
       
       allTags = validTags;
-      
-      if (!Array.isArray(allTags) || allTags.length === 0) {
-        console.log('[TagsEditor] No tags found.');
-      } else {
-        console.log(`[TagsEditor] Found ${allTags.length} tags`);
-      }
     } catch (err) { 
       console.error('[TagsEditor] Error fetching tags:', err);
       console.error('[TagsEditor] Error details:', {
@@ -103,15 +94,10 @@
       
       // Prepare request payload
       const payload = { name: tagToAdd.name };
-      console.log(`[TagsEditor] Adding tag with name: "${tagToAdd.name}" to file: ${fileId}`);
-      console.log('[TagsEditor] Payload:', JSON.stringify(payload));
       
       // Send the payload as required by the backend API - must match the router configuration
       const addTagUrl = `/tags/files/${fileId}/tags`;
-      console.log('[TagsEditor] POST URL:', addTagUrl);
       const response = await axiosInstance.post(addTagUrl, payload);
-      console.log('[TagsEditor] Add tag response status:', response.status);
-      console.log('[TagsEditor] Add tag response data:', response.data);
       
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = response.data;
@@ -154,16 +140,9 @@
       
       // Step 1: Create the tag with proper payload format
       const createPayload = { name: newTagInput.trim() };
-      console.log('[TagsEditor] Creating tag with payload:', JSON.stringify(createPayload));
-      
-      // Debug the URL and payload
-      console.log('[TagsEditor] POST URL:', '/tags/');
-      console.log('[TagsEditor] Headers:', axiosInstance.defaults.headers);
       
       const createResponse = await axiosInstance.post('/tags/', createPayload);
-      console.log('[TagsEditor] Create tag response status:', createResponse.status);
       const newTag = createResponse.data;
-      console.log('[TagsEditor] Created tag:', newTag);
       
       // Ensure the tag has a valid ID and name to prevent 'undefined' key errors
       if (!newTag || typeof newTag.id === 'undefined') {
@@ -174,12 +153,8 @@
       // Then add the tag to the file, similar to addTag but using the new tag data
       const addTagUrl = `/tags/files/${fileId}/tags`;
       const addPayload = { name: newTag.name };
-      console.log('[TagsEditor] Adding tag to file URL:', addTagUrl);
-      console.log('[TagsEditor] Adding tag to file payload:', JSON.stringify(addPayload));
       
       const addResponse = await axiosInstance.post(addTagUrl, addPayload);
-      console.log('[TagsEditor] Add tag response status:', addResponse.status);
-      console.log('[TagsEditor] Add tag response data:', addResponse.data);
       
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = addResponse.data;
@@ -262,9 +237,6 @@
       if (updatedTags.length !== tags.length) {
         tags = updatedTags;
         dispatch('tagsUpdated', { tags });
-        console.log('[TagsEditor] Tag removed successfully');
-      } else {
-        console.log('[TagsEditor] Tag not found in current tags list');
       }
     } catch (err) {
       console.error('[TagsEditor] Error removing tag:', err);

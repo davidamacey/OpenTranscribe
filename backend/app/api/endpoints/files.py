@@ -92,7 +92,7 @@ async def upload_media_file(
             translated_text=None
         )
     except Exception as e:
-        print(f"Error creating MediaFile: {e}")
+        logger.error(f"Error creating MediaFile: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating media file record: {str(e)}"
@@ -295,7 +295,7 @@ def get_media_file(
         
         return response
     except Exception as e:
-        print(f"Error in get_media_file: {e}")
+        logger.error(f"Error in get_media_file: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving media file: {str(e)}"

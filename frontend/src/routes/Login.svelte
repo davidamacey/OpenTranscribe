@@ -58,27 +58,14 @@
     loading = true;
     
     try {
-      console.log('Login.svelte: Attempting login with:', email.trim());
-      
-      // Track login start time for performance monitoring
-      const startTime = performance.now();
-      
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
       
-      const endTime = performance.now();
-      console.log(`Login.svelte: Login request took ${endTime - startTime}ms`);
-      
       if (result.success) {
-        console.log('Login.svelte: Login successful, preparing to redirect');
         successMessage = "Login successful! Redirecting...";
-        
-        // Check if auth store is properly updated
-        console.log(`Login.svelte: Auth state after login - isAuthenticated: ${$isAuthenticated}`);
         
         // Add a small delay before redirecting for better UX
         setTimeout(() => {
-          console.log('Login.svelte: Redirecting to home page');
           // Use window.location for a full page refresh to ensure auth state is properly loaded
           window.location.href = "/";
         }, 1000);
