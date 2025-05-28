@@ -23,6 +23,7 @@
       type="button" 
       class="toggle-truncation" 
       on:click={toggleExpanded}
+      title={expanded ? "Show less text" : "Show the full text content"}
     >
       {expanded ? showLessText : showMoreText}
     </button>

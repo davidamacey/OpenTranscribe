@@ -143,6 +143,7 @@
                 placeholder="Enter real name" 
                 bind:value={speaker.display_name}
                 on:input={() => handleInputChange(speaker.id)}
+                title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
               />
               {#if speaker.verified}
                 <span class="verified-badge" title="This speaker has been verified">✓</span>
@@ -152,7 +153,11 @@
         {/each}
         
         <div class="speaker-actions">
-          <button on:click={saveChanges} disabled={savingChanges}>
+          <button 
+            on:click={saveChanges} 
+            disabled={savingChanges}
+            title="Save all speaker name changes and update the transcript"
+          >
             {savingChanges ? 'Saving...' : 'Save Speaker Names'}
           </button>
         </div>

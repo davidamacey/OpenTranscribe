@@ -254,10 +254,15 @@
         placeholder="Search users..." 
         on:input={handleSearchInput}
         value={searchTerm}
+        title="Search users by name, email, or role"
       />
     </div>
     
-    <button on:click={toggleAddUserForm} class="add-button">
+    <button 
+      on:click={toggleAddUserForm} 
+      class="add-button"
+      title="{showAddUserForm ? 'Cancel adding a new user' : 'Create a new user account'}"
+    >
       {showAddUserForm ? 'Cancel' : 'Add User'}
     </button>
   </div>
@@ -306,7 +311,11 @@
         </select>
       </div>
       
-      <button on:click={createUser} class="create-button">Create User</button>
+      <button 
+        on:click={createUser} 
+        class="create-button"
+        title="Create the new user account with the provided information"
+      >Create User</button>
     </div>
   {/if}
   
@@ -339,6 +348,7 @@
                 <select 
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.id, e)}
+                  title="Change the role for {currentUser.full_name || currentUser.email}"
                 >
                   <option value="user">User</option>
                   <option value="admin">Admin</option>
@@ -354,6 +364,7 @@
                   <button 
                     class="delete-button"
                     on:click={() => deleteUser(currentUser.id)}
+                    title="Permanently delete {currentUser.full_name || currentUser.email}'s account"
                   >
                     Delete
                   </button>

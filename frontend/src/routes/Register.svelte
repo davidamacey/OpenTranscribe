@@ -98,6 +98,7 @@
           bind:value={username}
           placeholder="Choose a username"
           disabled={loading}
+          title="Enter a unique username for your account"
         />
       </div>
       
@@ -109,6 +110,7 @@
           bind:value={email}
           placeholder="Enter your email"
           disabled={loading}
+          title="Enter a valid email address for your account"
         />
       </div>
       
@@ -120,6 +122,7 @@
           bind:value={password}
           placeholder="Choose a password"
           disabled={loading}
+          title="Choose a secure password (minimum 8 characters)"
         />
       </div>
       
@@ -131,16 +134,26 @@
           bind:value={confirmPassword}
           placeholder="Confirm your password"
           disabled={loading}
+          title="Re-enter your password to confirm it matches"
         />
       </div>
       
-      <button type="submit" class="auth-button" disabled={loading}>
+      <button 
+        type="submit" 
+        class="auth-button" 
+        disabled={loading}
+        title="Create your new OpenTranscribe account"
+      >
         {loading ? "Creating account..." : "Create Account"}
       </button>
       
       <div class="auth-footer">
         <p>
-          Already have an account? <a href="/login" class="auth-link">Login</a>
+          Already have an account? <a 
+            href="/login" 
+            class="auth-link"
+            title="Sign in to your existing OpenTranscribe account"
+          >Login</a>
         </p>
       </div>
     </form>

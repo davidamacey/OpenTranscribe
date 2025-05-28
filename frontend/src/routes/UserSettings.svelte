@@ -130,6 +130,7 @@
           value={email} 
           disabled 
           class="form-control"
+          title="Your email address cannot be changed after account creation"
         />
         <p class="form-text">Email cannot be changed</p>
       </div>
@@ -141,6 +142,7 @@
           id="fullName" 
           bind:value={fullName} 
           class="form-control"
+          title="Enter your full name as you want it to appear in the application"
         />
       </div>
       
@@ -149,6 +151,7 @@
           type="submit" 
           class="button primary-button" 
           disabled={loading || !profileChanged}
+          title="Save changes to your profile information"
         >
           {loading ? 'Saving...' : 'Save Changes'}
         </button>
@@ -167,6 +170,7 @@
           id="currentPassword" 
           bind:value={currentPassword} 
           class="form-control"
+          title="Enter your current password to verify your identity"
         />
       </div>
       
@@ -177,6 +181,7 @@
           id="newPassword" 
           bind:value={newPassword} 
           class="form-control"
+          title="Enter a new password (must be at least 8 characters long)"
         />
         <p class="form-text">Must be at least 8 characters long</p>
       </div>
@@ -188,6 +193,7 @@
           id="confirmPassword" 
           bind:value={confirmPassword} 
           class="form-control"
+          title="Re-enter your new password to confirm it matches"
         />
       </div>
       
@@ -196,6 +202,7 @@
           type="submit" 
           class="button primary-button" 
           disabled={loading || !passwordChanged}
+          title="Change your account password to the new password"
         >
           {loading ? 'Changing...' : 'Change Password'}
         </button>

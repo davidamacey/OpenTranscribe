@@ -147,18 +147,21 @@
       <button 
         class="tab-button {activeTab === 'users' ? 'active' : ''}" 
         on:click={() => activeTab = 'users'}
+        title="Manage user accounts, roles, and permissions"
       >
         Users
       </button>
       <button 
         class="tab-button {activeTab === 'stats' ? 'active' : ''}" 
         on:click={() => activeTab = 'stats'}
+        title="View system performance statistics and analytics"
       >
         System Stats
       </button>
       <button 
         class="tab-button {activeTab === 'settings' ? 'active' : ''}" 
         on:click={() => activeTab = 'settings'}
+        title="Configure system-wide settings and preferences"
       >
         Settings
       </button>

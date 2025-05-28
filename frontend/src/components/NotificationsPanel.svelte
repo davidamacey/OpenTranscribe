@@ -135,7 +135,12 @@
 
 <div class="notifications-container">
   {#if !hideButton}
-  <button class="notifications-button" on:click={togglePanel} on:keydown={(e) => e.key === 'Enter' && togglePanel()}>
+  <button 
+    class="notifications-button" 
+    on:click={togglePanel} 
+    on:keydown={(e) => e.key === 'Enter' && togglePanel()}
+    title="View notifications and alerts{$wsUnreadCount > 0 ? ` (${$wsUnreadCount} unread)` : ''}"
+  >
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
       <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -150,7 +155,11 @@
     <div class="notifications-panel">
       <div class="panel-header">
         <h3>Notifications</h3>
-        <button class="clear-all" on:click={clearAllNotifications}>Clear All</button>
+        <button 
+          class="clear-all" 
+          on:click={clearAllNotifications}
+          title="Remove all notifications from the list"
+        >Clear All</button>
       </div>
       
       <div class="notifications-list">
@@ -184,7 +193,11 @@
               <div class="notification-content">
                 <div class="notification-header">
                   <h4>{notification.title}</h4>
-                  <button class="remove-button" on:click={() => removeNotification(notification.id)}>×</button>
+                  <button 
+                    class="remove-button" 
+                    on:click={() => removeNotification(notification.id)}
+                    title="Remove this notification"
+                  >×</button>
                 </div>
                 
                 <p>{notification.message}</p>

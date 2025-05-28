@@ -1,0 +1,166 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Architecture
+
+OpenTranscribe is a containerized AI-powered transcription application with these core services:
+- **Frontend**: Svelte/TypeScript SPA with Progressive Web App capabilities
+- **Backend**: FastAPI with async support and OpenAPI documentation
+- **Database**: PostgreSQL with SQLAlchemy ORM (no migrations during development)
+- **Storage**: MinIO S3-compatible object storage
+- **Search**: OpenSearch for full-text and vector search
+- **Queue**: Celery with Redis for background AI processing
+- **Monitoring**: Flower for task monitoring
+
+### Key Technologies
+- **AI Models**: WhisperX for transcription, PyAnnote for speaker diarization
+- **Frontend**: Svelte, TypeScript, Vite, Plyr for media playback
+- **Backend**: FastAPI, SQLAlchemy 2.0, Alembic, Celery
+- **Infrastructure**: Docker Compose, NGINX for production
+
+## Development Commands
+
+### Primary Development Script
+Use `./opentr.sh` for all development operations:
+
+```bash
+# Start development environment
+./opentr.sh start dev
+
+# Stop all services
+./opentr.sh stop
+
+# View logs (all or specific service)
+./opentr.sh logs [backend|frontend|postgres|celery-worker]
+
+# Reset environment (WARNING: deletes all data)
+./opentr.sh reset dev
+
+# Check service status
+./opentr.sh status
+
+# Access container shell
+./opentr.sh shell [backend|frontend|postgres]
+
+# Database backup/restore
+./opentr.sh backup
+./opentr.sh restore backups/backup_file.sql
+```
+
+### Frontend Development
+```bash
+# From frontend/ directory
+npm run dev          # Start dev server
+npm run build        # Production build
+npm run check        # Type checking
+```
+
+### Backend Development
+```bash
+# From backend/ directory (or via container)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
+pytest tests/        # Run tests
+alembic upgrade head # Apply migrations (production only)
+```
+
+## Database Management
+
+**IMPORTANT**: During development, do NOT create Alembic migrations. Instead:
+1. Update `database/init_db.sql` directly
+2. Update SQLAlchemy models in `backend/app/models/`
+3. Update Pydantic schemas in `backend/app/schemas/`
+4. Reset the development database: `./opentr.sh reset dev`
+
+For production deployments, migrations will be handled differently.
+
+## Code Organization Patterns
+
+### Backend Structure
+- `app/api/endpoints/` - REST API routes organized by resource
+- `app/models/` - SQLAlchemy ORM models
+- `app/schemas/` - Pydantic validation schemas
+- `app/services/` - Business logic and external integrations
+- `app/tasks/` - Celery background tasks
+- `app/core/` - Configuration and security
+
+### Frontend Structure
+- `src/components/` - Reusable Svelte components
+- `src/routes/` - Page components
+- `src/stores/` - Svelte stores for state management
+- `src/lib/` - Utilities and services
+
+### Key Patterns
+- **Authentication**: JWT-based with role-based access control
+- **File Processing**: Upload to MinIO → Celery task → AI processing → Database storage
+- **Real-time Updates**: WebSockets for task progress notifications
+- **Error Handling**: Structured error responses with proper HTTP status codes
+
+## Development Guidelines
+
+### Code Quality
+- Keep files under 200-300 lines
+- Use Google-style docstrings for Python code
+- Follow existing patterns before creating new ones
+- Always check for TypeScript errors
+- Ensure light/dark mode compliance for frontend changes
+
+### Docker and Services
+- Use `docker compose` (not `docker-compose`)
+- Always check container logs after starting services
+- Kill existing servers before testing changes
+- Layer Docker files for optimal caching
+
+### Testing and Deployment
+- Write thorough tests for major functionality
+- No mocking data for dev/prod (tests only)
+- Always restart/reset services after making changes
+- Use appropriate opentr.sh commands for testing changes
+
+## Service Endpoints
+
+### Development URLs
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8080/api
+- API Docs: http://localhost:8080/docs
+- MinIO Console: http://localhost:9091
+- Flower Dashboard: http://localhost:5555/flower
+- OpenSearch: http://localhost:9200
+
+### Important File Locations
+- Environment config: `.env` (never overwrite without confirmation)
+- Database init: `database/init_db.sql`
+- Docker config: `docker-compose.yml`
+- Frontend build: `frontend/vite.config.ts`
+
+## AI Processing Workflow
+
+1. File upload to MinIO storage
+2. Metadata extraction and database record creation
+3. Celery task dispatch to worker with GPU support
+4. WhisperX transcription with word-level alignment
+5. PyAnnote speaker diarization and voice fingerprinting
+6. Database storage and OpenSearch indexing
+7. WebSocket notification to frontend
+
+## Common Tasks
+
+### Adding New API Endpoints
+1. Create endpoint in `backend/app/api/endpoints/`
+2. Add to router in `backend/app/api/router.py`
+3. Create/update schemas in `backend/app/schemas/`
+4. Update database models if needed
+5. Test with `./opentr.sh restart-backend`
+
+### Frontend Component Development
+1. Create component in `src/components/`
+2. Ensure light/dark mode support
+3. Test responsive design
+4. Update relevant routes/stores if needed
+5. Test with `./opentr.sh restart-frontend`
+
+### Database Changes
+1. Modify `database/init_db.sql`
+2. Update SQLAlchemy models
+3. Update Pydantic schemas
+4. Reset dev environment: `./opentr.sh reset dev`

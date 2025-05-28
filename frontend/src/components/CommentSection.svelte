@@ -542,7 +542,10 @@
   {#if error}
     <div class="error-message">
       <p>{error}</p>
-      <button on:click={fetchComments}>Try Again</button>
+      <button 
+        on:click={fetchComments}
+        title="Retry loading comments"
+      >Try Again</button>
     </div>
   {/if}
   
@@ -553,6 +556,7 @@
         bind:value={newComment}
         placeholder="Add your comment here..."
         rows="2"
+        title="Type your comment here. You can optionally mark a timestamp to link your comment to a specific moment in the video."
       ></textarea>
       <div class="form-actions">
         <div class="timestamp-actions">
@@ -561,6 +565,7 @@
               type="button"
               class="timestamp-button"
               on:click={useCurrentTime}
+              title="Mark the current video playback time to link this comment to that moment"
             >
               <span class="button-icon">⏱</span>
               <span>Mark Current Time</span>
@@ -579,7 +584,12 @@
             </div>
           {/if}
         </div>
-        <button type="submit" class="submit-button" disabled={!newComment.trim()}>
+        <button
+          type="submit"
+          class="submit-button"
+          disabled={!newComment.trim()}
+          title="Add your comment to this file{timestampInput !== null ? ' at the marked timestamp' : ''}"
+        >
           Add Comment
         </button>
       </div>
@@ -611,6 +621,7 @@
                   on:click={() => dispatch('seekTo', comment.timestamp)}
                   on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', comment.timestamp)}
                   aria-label="Jump to timestamp {formatTimestamp(comment.timestamp)}"
+                  title="Jump to {formatTimestamp(comment.timestamp)} in the video"
                 >
                   {formatTimestamp(comment.timestamp)}
                 </button>
@@ -626,10 +637,19 @@
                 rows="2"
               ></textarea>
               <div class="edit-buttons">
-                <button type="button" class="cancel-button" on:click={() => editingCommentId = null}>
+                <button 
+                  type="button" 
+                  class="cancel-button" 
+                  on:click={() => editingCommentId = null}
+                  title="Cancel editing this comment and discard changes"
+                >
                   Cancel
                 </button>
-                <button type="submit" class="save-button">
+                <button 
+                  type="submit" 
+                  class="save-button"
+                  title="Save the changes to this comment"
+                >
                   Save
                 </button>
               </div>
@@ -649,6 +669,7 @@
                     editingCommentId = comment.id;
                     editingCommentText = comment.text;
                   }}
+                  title="Edit this comment"
                 >
                   Edit
                 </button>
@@ -656,6 +677,7 @@
                   type="button"
                   class="delete-button"
                   on:click={() => deleteComment(comment.id)}
+                  title="Delete this comment permanently"
                 >
                   Delete
                 </button>
@@ -674,12 +696,8 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    background-color: var(--background-color, #1e1e1e);
-    border-radius: 12px;
-    border: 1px solid rgba(120, 120, 120, 0.2);
-    max-height: 600px; /* Maximum height for the entire component */
-    overflow: hidden; /* Hide overflow, only the list will scroll */
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    max-height: 600px;
+    overflow: hidden;
   }
   
   /* Fixed comment form container at the top */
@@ -687,9 +705,8 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    background-color: var(--background-color, #1e1e1e);
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 0.5rem;
+    border-bottom: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
   }
   
   /* Scrollable comments list container */
@@ -701,53 +718,36 @@
   }
   
   .comments-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem;
+    max-height: 400px;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    overflow-y: auto; /* Only this container will scroll */
-    padding: 0.75rem;
-    max-height: 400px; /* Maximum height for scrollable area */
-    background-color: var(--background-color, #1e1e1e);
-  }
-  
-  .comment-form-container {
-    flex-shrink: 0; /* Prevent form from shrinking */
-    margin-bottom: 1rem;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 1rem;
-  }
-  
-  .comments-list-container {
-    flex: 1; /* Take remaining space */
-    overflow-y: auto; /* Add scroll to container */
-    border-radius: 4px;
-    padding-right: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
   }
   
   .comment-form {
-    background-color: rgba(255, 255, 255, 0.05);
-    padding: 0.75rem;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--border-color-soft);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: none;
   }
 
   textarea {
     width: 100%;
-    padding: 0.85rem;
-    border: 1px solid rgba(120, 120, 120, 0.2);
-    border-radius: 10px;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
+    border-radius: 8px;
     resize: vertical;
     min-height: 70px;
     font-family: inherit;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     line-height: 1.5;
-    margin-bottom: 0.75rem;
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: var(--input-background, rgba(255, 255, 255, 0.05));
     color: var(--text-color);
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   
@@ -762,10 +762,9 @@
   .form-actions {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-top: 0.5rem;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
   
   .timestamp-actions {
@@ -782,21 +781,20 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    background-color: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 8px;
+    background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
+    border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
+    border-radius: 6px;
     color: var(--primary-color);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
-    height: 2.5rem;
   }
   
   .timestamp-button:hover {
-    background-color: rgba(59, 130, 246, 0.2);
+    background-color: var(--button-secondary-bg-hover, rgba(59, 130, 246, 0.2));
     border-color: var(--primary-color);
   }
   
@@ -826,15 +824,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 8px;
+    gap: 0.5rem;
+    background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
+    border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
+    border-radius: 6px;
     color: var(--primary-color);
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
     font-weight: 500;
-    height: 2.5rem;
     white-space: nowrap;
   }
   
@@ -891,26 +888,20 @@
   }
   
   .submit-button {
-    background-color: #3b82f6; /* Use explicit color instead of variable */
-    color: white !important; /* Force white text */
+    background-color: var(--primary-color, #3b82f6);
+    color: white;
     border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.95rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
-  .submit-button:hover:not(:disabled),
-  .submit-button:focus:not(:disabled),
-  .submit-button:active:not(:disabled) {
-    background-color: #2563eb; /* Darker blue on hover */
-    color: white !important; /* Force white text on hover */
+  .submit-button:hover:not(:disabled) {
+    background-color: var(--primary-color-dark, #2563eb);
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-    text-decoration: none !important;
   }
   
   .submit-button:disabled {
@@ -918,41 +909,19 @@
     cursor: not-allowed;
   }
   
-  /* Styles for comments items within the list container */
-  .comments-list-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  /* Comment form stays fixed at top */
-  .comment-form-container {
-    position: sticky;
-    top: 0;
-    background-color: var(--background-color-light);
-    padding-bottom: 0.5rem;
-    margin-bottom: 0.5rem;
-    z-index: 5;
-  }
-  
-  .comment-form {
-    width: 100%;
-    margin-bottom: 0;
-  }
   
   .comment-item {
-    padding: 1rem;
-    border: 1px solid rgba(120, 120, 120, 0.15);
-    border-radius: 10px;
-    background-color: var(--surface-color, #333333);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-    margin-bottom: 0.75rem;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
+    border-radius: 8px;
+    background-color: var(--surface-color, rgba(255, 255, 255, 0.03));
+    transition: border-color 0.2s ease;
+    width: 100%;
+    box-sizing: border-box;
   }
   
   .comment-item:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+    border-color: var(--border-color-hover, rgba(120, 120, 120, 0.3));
   }
   
   .comment-header {

@@ -304,13 +304,18 @@
           window.open(url, '_blank');
         }}
         aria-label="Open Flower Dashboard"
+        title="Open Flower monitoring dashboard to view detailed task queue status and worker performance"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
         </svg>
         Flower Dashboard
       </button>
-      <button class="refresh-button" on:click={fetchTasks}>
+      <button 
+        class="refresh-button" 
+        on:click={fetchTasks}
+        title="Refresh the tasks list to see the latest status updates"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 4v6h-6"></path>
           <path d="M1 20v-6h6"></path>
@@ -330,7 +335,11 @@
   {:else if error}
     <div class="error-container">
       <p class="error-message">{error}</p>
-      <button class="retry-button" on:click={fetchTasks}>Try Again</button>
+      <button 
+        class="retry-button" 
+        on:click={fetchTasks}
+        title="Retry loading the tasks list"
+      >Try Again</button>
     </div>
   {:else if tasks.length === 0}
     <div class="empty-container">
@@ -404,7 +413,11 @@
               
               <!-- Info button -->
               {#if task.media_file}
-                <button class="info-button" on:click|stopPropagation={() => toggleMetadataInfo(task.id)}>
+                <button 
+                  class="info-button" 
+                  on:click|stopPropagation={() => toggleMetadataInfo(task.id)}
+                  title="View detailed task metadata and file information"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>

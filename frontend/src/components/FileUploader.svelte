@@ -187,6 +187,7 @@
       on:keydown={(e) => e.key === 'Enter' && openFileDialog()} 
       role="button" 
       tabindex="0"
+      title="Drop your audio or video file here, or click to browse and select a file"
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -224,10 +225,20 @@
       </div>
       
       <div class="file-actions">
-        <button class="cancel-button" on:click={cancelUpload} disabled={uploading}>
+        <button 
+          class="cancel-button" 
+          on:click={cancelUpload} 
+          disabled={uploading}
+          title="Cancel and remove the selected file"
+        >
           Cancel
         </button>
-        <button class="upload-button" on:click={uploadFile} disabled={uploading}>
+        <button 
+          class="upload-button" 
+          on:click={uploadFile} 
+          disabled={uploading}
+          title="Upload the selected file for transcription"
+        >
           {uploading ? 'Uploading...' : 'Upload'}
         </button>
       </div>

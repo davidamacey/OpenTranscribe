@@ -310,12 +310,14 @@
         on:keydown={handleInputKeydown}
         class="tag-input"
         disabled={loading}
+        title="Type a new tag name and press Enter or click Add to create and apply it to this file"
       >
       {#if newTagInput.trim()}
         <button 
           class="tag-add-button"
           on:click={createAndAddTag}
           disabled={loading}
+          title="Create and add the tag '{newTagInput.trim()}' to this file"
         >
           Add
         </button>
@@ -331,6 +333,7 @@
           class="suggested-tag"
           on:click={() => addTag(tag.id)}
           disabled={loading}
+          title="Add the existing tag '{tag.name}' to this file"
         >
           {tag.name}
         </button>

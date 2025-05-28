@@ -121,6 +121,7 @@
           placeholder="Enter your email"
           aria-invalid={!emailValid && formSubmitted}
           autocomplete="email"
+          title="Enter the email address associated with your account"
         />
         {#if !emailValid && formSubmitted}
           <div class="field-error">Please enter a valid email address</div>
@@ -138,6 +139,7 @@
               placeholder="Enter your password"
               aria-invalid={!passwordValid && formSubmitted}
               autocomplete="current-password"
+              title="Enter your account password"
             />
           {:else}
             <input 
@@ -147,6 +149,7 @@
               placeholder="Enter your password"
               aria-invalid={!passwordValid && formSubmitted}
               autocomplete="current-password"
+              title="Enter your account password"
             />
           {/if}
           <button 
@@ -154,6 +157,7 @@
             class="toggle-password" 
             on:click={togglePasswordVisibility}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
+            title={showPassword ? 'Hide password text' : 'Show password text'}
           >
             {showPassword ? '👁️' : '👁️‍🗨️'}
           </button>
@@ -163,7 +167,12 @@
         {/if}
       </div>
       
-      <button type="submit" class="auth-button" disabled={loading}>
+      <button 
+        type="submit" 
+        class="auth-button" 
+        disabled={loading}
+        title="Sign in to your OpenTranscribe account"
+      >
         {#if loading}
           <span class="spinner"></span> Signing In...
         {:else}
@@ -173,7 +182,11 @@
     </form>
     
     <div class="auth-links">
-      <Link to="/register" class="auth-link">Need an account? Register</Link>
+      <Link 
+        to="/register" 
+        class="auth-link"
+        title="Create a new OpenTranscribe account"
+      >Need an account? Register</Link>
     </div>
   </div>
 </div>
