@@ -1,5 +1,5 @@
 <script>
-  import { Link, useNavigate } from "svelte-navigator";
+  import { Link, useNavigate, useLocation } from "svelte-navigator";
   import { user, logout, fetchUserInfo } from "../stores/auth";
   import { onMount, onDestroy } from "svelte";
   import NotificationsPanel from "./NotificationsPanel.svelte";
@@ -8,6 +8,14 @@
   // Import the centralized notification store
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
   import { unreadCount } from '../stores/websocket';
+  
+  // Location for active state detection
+  const location = useLocation();
+  
+  // Reactive statements for active page detection
+  $: currentPath = $location.pathname;
+  $: isGalleryActive = currentPath === '/' || currentPath === '' || currentPath.startsWith('/files');
+  $: isTasksActive = currentPath === '/tasks' || currentPath.startsWith('/tasks');
   
   // Navigation
   const navigate = useNavigate();
@@ -89,14 +97,21 @@
 <nav class="navbar">
   <div class="navbar-container">
     <div class="navbar-brand">
-      <Link to="/">
+      <Link 
+        to="/"
+        title="Go to OpenTranscribe home page"
+      >
         <span class="logo-text">OpenTranscribe</span>
       </Link>
     </div>
     
     <div class="nav-links">
       <!-- Gallery button with icon -->
-      <a href="/">
+      <a 
+        href="/"
+        title="View your media library and uploaded files"
+        class="nav-link {isGalleryActive ? 'active' : ''}"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -106,7 +121,11 @@
       </a>
       
       <!-- Tasks button with icon -->
-      <a href="/tasks">
+      <a 
+        href="/tasks"
+        title="View transcription tasks and processing status"
+        class="nav-link {isTasksActive ? 'active' : ''}"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 11l3 3L22 4"></path>
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
@@ -115,7 +134,11 @@
       </a>
       
       <!-- Notifications button -->
-      <button class="notifications-btn" on:click={handleToggleNotifications}>
+      <button 
+        class="notifications-btn" 
+        on:click={handleToggleNotifications}
+        title="View notifications and alerts{$unreadCount > 0 ? ` (${$unreadCount} unread)` : ''}"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -132,7 +155,11 @@
       
       <!-- User profile dropdown -->
       <div class="user-dropdown" bind:this={dropdownRef}>
-        <button class="user-button" on:click={toggleDropdown}>
+        <button 
+          class="user-button" 
+          on:click={toggleDropdown}
+          title="Open user menu for settings, admin access, and logout"
+        >
           <div class="user-avatar">
             <!-- First letter of full name as avatar -->
             {#if $user && $user.full_name}
@@ -154,59 +181,68 @@
               <strong>{$user ? $user.email : 'User'}</strong>
             </div>
             <div class="dropdown-divider"></div>
-            <div class="dropdown-item-container">
-              <Link to="/settings" class="dropdown-item" on:click={() => showDropdown = false}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="3"></circle>
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-                <span>Settings</span>
-              </Link>
-            </div>
+            <Link 
+              to="/settings" 
+              class="dropdown-item" 
+              on:click={() => showDropdown = false}
+              title="Manage your account settings and preferences"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span>Settings</span>
+            </Link>
             
             {#if $user && $user.role === "admin"}
-              <div class="dropdown-item-container">
-                <Link to="/admin" class="dropdown-item" on:click={() => showDropdown = false}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                  </svg>
-                  <span>Admin</span>
-                </Link>
-              </div>
-            {/if}
-            
-            <div class="dropdown-item-container">
-              <button 
+              <Link 
+                to="/admin" 
                 class="dropdown-item" 
-                on:click={() => {
-                  // Get the current protocol and host
-                  const protocol = window.location.protocol;
-                  const host = window.location.hostname;
-                  const port = import.meta.env.VITE_FLOWER_PORT || '5555';
-                  const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-                  
-                  // Construct the URL properly with trailing slash
-                  const url = urlPrefix 
-                    ? `${protocol}//${host}:${port}/${urlPrefix}/` 
-                    : `${protocol}//${host}:${port}/`;
-                  
-                  // Open Flower in a new tab with the correct URL
-                  window.open(url, '_blank');
-                  showDropdown = false;
-                }}
-                aria-label="Open Flower Dashboard"
+                on:click={() => showDropdown = false}
+                title="Access admin dashboard for user management and system settings"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                 </svg>
-                <span>Flower Dashboard</span>
-              </button>
-            </div>
+                <span>Admin</span>
+              </Link>
+            {/if}
+            
+            <button 
+              class="dropdown-item" 
+              on:click={() => {
+                // Get the current protocol and host
+                const protocol = window.location.protocol;
+                const host = window.location.hostname;
+                const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+                const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
+                
+                // Construct the URL properly with trailing slash
+                const url = urlPrefix 
+                  ? `${protocol}//${host}:${port}/${urlPrefix}/` 
+                  : `${protocol}//${host}:${port}/`;
+                
+                // Open Flower in a new tab with the correct URL
+                window.open(url, '_blank');
+                showDropdown = false;
+              }}
+              aria-label="Open Flower Dashboard"
+              title="Open Flower dashboard to monitor task queues and worker status"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+              </svg>
+              <span>Flower Dashboard</span>
+            </button>
             <div class="dropdown-divider"></div>
-            <button class="dropdown-item logout" on:click={handleLogout}>
+            <button 
+              class="dropdown-item logout" 
+              on:click={handleLogout}
+              title="Sign out of your account"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
@@ -283,13 +319,13 @@
     gap: 1.5rem;
   }
   
-  .nav-links a,
+  .nav-link,
   .nav-button {
     color: var(--text-color);
     text-decoration: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
-    transition: background-color 0.2s;
+    border-radius: 6px;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -298,12 +334,125 @@
     font-family: inherit;
     font-size: 1rem;
     cursor: pointer;
+    position: relative;
+    font-weight: 500;
   }
   
-  .nav-links a:hover,
+  .nav-link:hover,
   .nav-button:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
   }
+  
+  /* Active state styling - subtle underline approach */
+  .nav-link.active {
+    color: var(--primary-color, #3b82f6);
+    font-weight: 600;
+    background-color: transparent;
+    user-select: none;
+    position: relative;
+  }
+  
+  .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 1rem);
+    height: 3px;
+    background-color: var(--primary-color, #3b82f6);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  @keyframes slideIn {
+    from {
+      width: 0;
+      opacity: 0;
+    }
+    to {
+      width: calc(100% - 1rem);
+      opacity: 1;
+    }
+  }
+  
+  .nav-link.active:hover {
+    color: var(--primary-color-dark, #2563eb);
+    background-color: var(--hover-color, rgba(59, 130, 246, 0.05));
+  }
+  
+  .nav-link.active:hover::after {
+    background-color: var(--primary-color-dark, #2563eb);
+    width: 100%;
+    height: 4px;
+  }
+  
+  /* Active state icon styling */
+  .nav-link.active svg {
+    color: var(--primary-color, #3b82f6);
+  }
+  
+  /* Focus states for accessibility */
+  .nav-link:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  
+  .nav-link.active:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  
+  /* Responsive adjustments for mobile */
+  @media (max-width: 768px) {
+    .nav-links {
+      gap: 0.5rem;
+    }
+    
+    .nav-link {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.9rem;
+    }
+    
+    .nav-link.active::after {
+      bottom: -6px;
+      height: 2px;
+    }
+    
+    .nav-link.active:hover::after {
+      height: 3px;
+    }
+  }
+  
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .nav-link.active {
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+    
+    .nav-link.active::after {
+      height: 4px;
+      background-color: var(--primary-color);
+    }
+    
+    .nav-link.active:hover::after {
+      height: 5px;
+    }
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .nav-link,
+    .nav-link.active,
+    .nav-link.active::after {
+      transition: none;
+      animation: none;
+    }
+  }
+  
   
   .theme-toggle-container {
     display: flex;
@@ -402,6 +551,8 @@
     z-index: 1000;
     padding: 0.5rem 0;
     min-width: 200px;
+    display: flex;
+    flex-direction: column;
   }
   
   .dropdown-header {
@@ -423,61 +574,138 @@
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
-    margin: 0.25rem 0;
+    margin: 0.125rem 0;
     border: none;
   }
   
-  .dropdown-item-container {
-    display: block;
-    width: 100%;
-    padding: 0.25rem 0.5rem;
-  }
   
   .dropdown-item {
-    display: flex;
+    display: flex !important;
     align-items: center;
     gap: 0.75rem;
     padding: 0.5rem 1rem;
-    color: var(--text-color);
-    text-decoration: none;
-    transition: all 0.15s ease;
+    color: var(--text-color) !important;
+    text-decoration: none !important;
+    transition: all 0.2s ease;
     font-size: 0.9rem;
+    font-weight: 500;
     border: none;
-    width: 100%;
+    width: calc(100% - 1rem);
     text-align: left;
     background-color: transparent;
     cursor: pointer;
     font-family: inherit;
     box-sizing: border-box;
-    margin: 0;
-    border-radius: 4px;
+    margin: 0.125rem 0.5rem;
+    border-radius: 6px;
     white-space: nowrap;
+    position: relative;
+  }
+  
+  /* Override any global link styles specifically for dropdown items */
+  .dropdown-menu :global(a.dropdown-item) {
+    color: var(--text-color) !important;
+    text-decoration: none !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+    padding: 0.5rem 1rem !important;
+    margin: 0.125rem 0.5rem !important;
+    width: calc(100% - 1rem) !important;
+    font-weight: 500 !important;
+    border-radius: 6px !important;
+    background-color: transparent !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .dropdown-menu :global(a.dropdown-item:hover) {
+    color: var(--primary-color) !important;
+    text-decoration: none !important;
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
+    transform: translateX(2px) !important;
+  }
+  
+  .dropdown-menu :global(a.dropdown-item:visited) {
+    color: var(--text-color) !important;
+    text-decoration: none !important;
+  }
+  
+  .dropdown-menu :global(a.dropdown-item:visited:hover) {
+    color: var(--primary-color) !important;
+    text-decoration: none !important;
   }
   
   .dropdown-item svg {
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+    opacity: 0.7;
+    transition: all 0.2s ease;
+  }
+  
+  /* Ensure SVGs in Link components behave the same as button SVGs */
+  .dropdown-menu :global(a.dropdown-item svg) {
+    width: 16px !important;
+    height: 16px !important;
+    flex-shrink: 0 !important;
+    opacity: 0.7 !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .dropdown-menu :global(a.dropdown-item:hover svg) {
+    opacity: 1 !important;
+    color: var(--primary-color) !important;
   }
   
   .dropdown-item:hover {
-    background-color: var(--background-alt);
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
+    transform: translateX(2px);
+  }
+  
+  .dropdown-item:hover svg {
+    opacity: 1;
     color: var(--primary-color);
   }
   
-  .dropdown-item svg {
-    flex-shrink: 0;
-    opacity: 0.8;
-    width: 16px;
-    height: 16px;
+  .dropdown-item:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
   }
   
   .dropdown-item.logout {
-    color: var(--error-color);
+    color: var(--error-color, #ef4444);
+    margin-top: 0.125rem;
+  }
+  
+  .dropdown-item.logout svg {
+    opacity: 0.8;
   }
   
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
+    color: var(--error-color, #dc2626);
+    transform: translateX(2px);
+  }
+  
+  .dropdown-item.logout:hover svg {
+    opacity: 1;
+    color: var(--error-color, #dc2626);
+  }
+  
+  /* Active state for dropdown items */
+  .dropdown-item:active {
+    transform: translateX(1px);
+    background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
+  }
+  
+  /* Improved spacing between groups */
+  .dropdown-item + .dropdown-divider {
+    margin-top: 0.25rem;
+  }
+  
+  .dropdown-divider + .dropdown-item {
+    margin-top: 0.125rem;
   }
   
   .mobile-toggle {
@@ -510,6 +738,50 @@
       border: none;
       cursor: pointer;
       color: var(--text-color);
+    }
+    
+    /* Mobile dropdown adjustments */
+    .dropdown-menu {
+      width: 220px;
+      right: -10px;
+    }
+    
+    .dropdown-item {
+      padding: 0.625rem 1rem;
+      margin: 0.125rem 0.25rem;
+      font-size: 0.95rem;
+    }
+    
+    .dropdown-item:hover {
+      transform: none; /* Disable transform on mobile for better touch experience */
+    }
+  }
+  
+  /* Reduced motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    .dropdown-item,
+    .dropdown-item svg {
+      transition: none;
+    }
+    
+    .dropdown-item:hover {
+      transform: none;
+    }
+  }
+  
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .dropdown-item {
+      border: 1px solid transparent;
+    }
+    
+    .dropdown-item:hover {
+      border-color: var(--primary-color);
+      background-color: var(--hover-color);
+    }
+    
+    .dropdown-item.logout:hover {
+      border-color: var(--error-color);
     }
   }
 </style>

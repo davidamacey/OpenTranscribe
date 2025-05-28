@@ -13,7 +13,8 @@
   /**
    * @typedef {Object} Speaker
    * @property {number} id - Speaker ID
-   * @property {string} name - Speaker name
+   * @property {string} name - Speaker name (original name like SPEAKER_01)
+   * @property {string|null} display_name - Display name set by user
    */
   
   /**
@@ -43,8 +44,8 @@
   /** @type {string[]} */
   export let selectedTags = [];
   
-  /** @type {string|null} */
-  export let selectedSpeaker = null;
+  /** @type {string[]} */
+  export let selectedSpeakers = [];
   
   /** @type {DateRange} */
   export let dateRange = { from: null, to: null };
@@ -63,27 +64,21 @@
     max: 0
   };
 
-  /** @type {string[]} */
-  export let selectedFormats = [];
+  // File size range for filtering (in MB)
+  /** @type {{ min: number|null, max: number|null }} */
+  export let fileSizeRange = {
+    min: null,
+    max: null
+  };
 
   /** @type {string[]} */
-  export let selectedCodecs = [];
+  export let selectedFileTypes = []; // ['audio', 'video']
 
-  // Resolution range for filtering
-  /** @type {{ minWidth: number|null, maxWidth: number|null, minHeight: number|null, maxHeight: number|null }} */
-  export let resolutionRange = {
-    minWidth: null,
-    maxWidth: null,
-    minHeight: null,
-    maxHeight: null
-  };
-  
-  // Server-provided min/max values for resolution
-  /** @type {{ width: { min: number, max: number }, height: { min: number, max: number } }} */
-  let resolutionRangeMinMax = {
-    width: { min: 0, max: 0 },
-    height: { min: 0, max: 0 }
-  };
+  /** @type {string[]} */
+  export let selectedStatuses = []; // ['pending', 'processing', 'completed', 'error']
+
+  /** @type {string} */
+  export let transcriptSearch = '';
 
   /** @type {boolean} */
   export let showAdvancedFilters = false;
@@ -107,14 +102,11 @@
   /** @type {string|null} */
   let errorSpeakers = null;
   
+  // Available options for filters
   /** @type {string[]} */
-  let availableFormats = [];
+  let availableFileTypes = ['audio', 'video'];
   /** @type {string[]} */
-  let availableCodecs = [];
-  /** @type {boolean} */
-  let loadingFormats = false;
-  /** @type {boolean} */
-  let loadingCodecs = false;
+  let availableStatuses = ['pending', 'processing', 'completed', 'error'];
   
   // Event dispatcher
   const dispatch = createEventDispatcher();
@@ -145,13 +137,13 @@
     }
   }
   
-  // Fetch all speakers
+  // Fetch all speakers for filtering (only those with display names)
   async function fetchSpeakers() {
     loadingSpeakers = true;
     errorSpeakers = null;
     
     try {
-      const response = await axiosInstance.get('/speakers/');
+      const response = await axiosInstance.get('/speakers/?for_filter=true');
       allSpeakers = response.data;
     } catch (err) {
       console.error('Error fetching speakers:', err);
@@ -177,14 +169,16 @@
   }
   
   /**
-   * Handle speaker selection
-   * @param {string} speaker - The speaker to select/deselect
+   * Handle speaker selection (multi-select like tags)
+   * @param {string} speaker - The speaker to toggle
    */
-  function selectSpeaker(speaker) {
-    if (selectedSpeaker === speaker) {
-      selectedSpeaker = null;
+  function toggleSpeaker(speaker) {
+    const index = selectedSpeakers.indexOf(speaker);
+    
+    if (index === -1) {
+      selectedSpeakers = [...selectedSpeakers, speaker];
     } else {
-      selectedSpeaker = speaker;
+      selectedSpeakers = selectedSpeakers.filter(s => s !== speaker);
     }
   }
   
@@ -241,17 +235,11 @@
         };
       }
       
-      // Update resolution range with min/max values from server
-      if (metadataFilters.resolution) {
-        resolutionRangeMinMax = {
-          width: {
-            min: metadataFilters.resolution.width?.min || 0,
-            max: metadataFilters.resolution.width?.max || 0
-          },
-          height: {
-            min: metadataFilters.resolution.height?.min || 0,
-            max: metadataFilters.resolution.height?.max || 0
-          }
+      // Update duration range with min/max values from server  
+      if (metadataFilters.duration) {
+        durationRangeMinMax = {
+          min: metadataFilters.duration.min || 0,
+          max: metadataFilters.duration.max || 0
         };
       }
       
@@ -265,30 +253,30 @@
   }
   
   /**
-   * Toggle a media format in the filter
-   * @param {string} format - The format to toggle
+   * Toggle a file type in the filter
+   * @param {string} fileType - The file type to toggle
    */
-  function toggleFormat(format) {
-    const index = selectedFormats.indexOf(format);
+  function toggleFileType(fileType) {
+    const index = selectedFileTypes.indexOf(fileType);
     
     if (index === -1) {
-      selectedFormats = [...selectedFormats, format];
+      selectedFileTypes = [...selectedFileTypes, fileType];
     } else {
-      selectedFormats = selectedFormats.filter(f => f !== format);
+      selectedFileTypes = selectedFileTypes.filter(ft => ft !== fileType);
     }
   }
   
   /**
-   * Toggle a codec in the filter
-   * @param {string} codec - The codec to toggle
+   * Toggle a status in the filter
+   * @param {string} status - The status to toggle
    */
-  function toggleCodec(codec) {
-    const index = selectedCodecs.indexOf(codec);
+  function toggleStatus(status) {
+    const index = selectedStatuses.indexOf(status);
     
     if (index === -1) {
-      selectedCodecs = [...selectedCodecs, codec];
+      selectedStatuses = [...selectedStatuses, status];
     } else {
-      selectedCodecs = selectedCodecs.filter(c => c !== codec);
+      selectedStatuses = selectedStatuses.filter(s => s !== status);
     }
   }
   
@@ -308,6 +296,16 @@
   function handleMaxDurationChange(event) {
     const value = event.currentTarget?.value;
     durationRange.max = value ? parseFloat(value) : null;
+  }
+
+  /**
+   * Handle file size range input changes
+   * @param {'min'|'max'} field - The field to update
+   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
+   */
+  function handleFileSizeChange(field, event) {
+    const value = event.currentTarget?.value;
+    fileSizeRange[field] = value ? parseFloat(value) : null;
   }
   
   /**
@@ -330,12 +328,13 @@
     dispatch('filter', {
       search: searchQuery,
       tags: selectedTags,
-      speaker: selectedSpeaker,
+      speaker: selectedSpeakers,
       dates: dateRange,
       durationRange,
-      formats: selectedFormats,
-      codecs: selectedCodecs,
-      resolution: resolutionRange
+      fileSizeRange,
+      fileTypes: selectedFileTypes,
+      statuses: selectedStatuses,
+      transcriptSearch
     });
   }
   
@@ -343,10 +342,15 @@
   function resetFilters() {
     searchQuery = '';
     selectedTags = [];
-    selectedSpeaker = null;
+    selectedSpeakers = [];
     dateRange = { from: null, to: null };
     fromDate = '';
     toDate = '';
+    durationRange = { min: null, max: null };
+    fileSizeRange = { min: null, max: null };
+    selectedFileTypes = [];
+    selectedStatuses = [];
+    transcriptSearch = '';
     
     dispatch('reset');
   }
@@ -369,17 +373,23 @@
 <div class="filter-sidebar">
   <div class="filter-header">
     <h2>Filters</h2>
-    <button class="reset-button" on:click={resetFilters}>Reset</button>
+    <button 
+      class="reset-button" 
+      on:click={resetFilters}
+      title="Clear all filters and show all files"
+    >Reset</button>
   </div>
   
   <div class="filter-section">
-    <h3>Search</h3>
+    <h3>Search Files</h3>
     <input
       type="text"
       bind:value={searchQuery}
-      placeholder="Search files..."
+      placeholder="Search filenames and titles..."
       class="filter-input"
+      title="Search by file name or title - does not search transcript content"
     />
+    <small class="input-help">Searches file names and titles only</small>
   </div>
   
   <div class="filter-section">
@@ -393,6 +403,7 @@
           bind:value={fromDate}
           on:input={handleFromDateChange}
           class="filter-input"
+          title="Filter files uploaded on or after this date"
         />
       </div>
       <div class="date-group">
@@ -403,6 +414,7 @@
           bind:value={toDate}
           on:input={handleToDateChange}
           class="filter-input"
+          title="Filter files uploaded on or before this date"
         />
       </div>
     </div>
@@ -422,6 +434,7 @@
           <button
             class="tag-button {selectedTags.includes(tag.name) ? 'selected' : ''}"
             on:click={() => toggleTag(tag.name)}
+            title="Filter files tagged with '{tag.name}'. Click to toggle selection."
           >
             {tag.name}
           </button>
@@ -442,10 +455,11 @@
       <div class="speakers-list">
         {#each allSpeakers as speaker}
           <button
-            class="speaker-button {selectedSpeaker === speaker.name ? 'selected' : ''}"
-            on:click={() => selectSpeaker(speaker.name)}
+            class="speaker-button {selectedSpeakers.includes(speaker.display_name || speaker.name) ? 'selected' : ''}"
+            on:click={() => toggleSpeaker(speaker.display_name || speaker.name)}
+            title="Filter files containing speaker '{speaker.display_name || speaker.name}'. Click to toggle selection."
           >
-            {speaker.name}
+            {speaker.display_name || speaker.name}
           </button>
         {/each}
       </div>
@@ -453,16 +467,37 @@
   </div>
   
   <!-- Advanced Filters Toggle -->
-  <div class="filter-section">
-    <button class="advanced-toggle" on:click={toggleAdvancedFilters}>
-      {showAdvancedFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
-      <span class="toggle-icon">{showAdvancedFilters ? '▲' : '▼'}</span>
+  <div class="advanced-filters-divider">
+    <hr class="divider-line" />
+    <button 
+      class="advanced-toggle-compact" 
+      on:click={toggleAdvancedFilters}
+      title="{showAdvancedFilters ? 'Hide' : 'Show'} advanced filtering options including transcript search, duration, file size, type, and status filters"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toggle-icon {showAdvancedFilters ? 'rotated' : ''}">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+      <span>Advanced Filters</span>
     </button>
+    <hr class="divider-line" />
   </div>
   
   <!-- Advanced Filters Section -->
   {#if showAdvancedFilters}
-    <div class="advanced-filters" transition:slide={{ duration: 300 }}>
+    <div class="advanced-filters-content" transition:slide={{ duration: 300 }}>
+      <!-- Transcript Content Search -->
+      <div class="filter-section">
+        <h3>Search Transcript Content</h3>
+        <input
+          type="text"
+          placeholder="Search within spoken words..."
+          bind:value={transcriptSearch}
+          class="filter-input"
+          title="Search for specific words or phrases within the transcript content of your files"
+        />
+        <small class="input-help">Searches within the actual transcript text content</small>
+      </div>
+
       <!-- Duration Range -->
       <div class="filter-section">
         <h3>Duration</h3>
@@ -476,6 +511,7 @@
               placeholder="Minimum" 
               class="filter-input" 
               on:input={handleMinDurationChange}
+              title="Filter files with duration greater than or equal to this value (in seconds)"
             />
           </div>
           <div class="range-group">
@@ -487,119 +523,83 @@
               placeholder="Maximum" 
               class="filter-input" 
               on:input={handleMaxDurationChange}
+              title="Filter files with duration less than or equal to this value (in seconds)"
             />
           </div>
         </div>
       </div>
 
-      <!-- Media Format -->
+      <!-- File Size Range -->
       <div class="filter-section">
-        <h3>Media Format</h3>
-        {#if loadingFormats}
-          <p class="loading-text">Loading formats...</p>
-        {:else if availableFormats.length === 0}
-          <p class="empty-text">No formats available</p>
-        {:else}
-          <div class="format-list">
-            {#each availableFormats as format}
-              <button
-                class="format-button {selectedFormats.includes(format) ? 'selected' : ''}"
-                on:click={() => toggleFormat(format)}
-              >
-                {format}
-              </button>
-            {/each}
+        <h3>File Size (MB)</h3>
+        <div class="range-inputs">
+          <div class="range-group">
+            <label for="minFileSize">Min (MB)</label>
+            <input 
+              type="number" 
+              id="minFileSize" 
+              min="0" 
+              placeholder="Minimum" 
+              class="filter-input" 
+              on:input={(e) => handleFileSizeChange('min', e)}
+              title="Filter files with size greater than or equal to this value (in megabytes)"
+            />
           </div>
-        {/if}
+          <div class="range-group">
+            <label for="maxFileSize">Max (MB)</label>
+            <input 
+              type="number" 
+              id="maxFileSize" 
+              min="0" 
+              placeholder="Maximum" 
+              class="filter-input" 
+              on:input={(e) => handleFileSizeChange('max', e)}
+              title="Filter files with size less than or equal to this value (in megabytes)"
+            />
+          </div>
+        </div>
       </div>
 
-      <!-- Codec -->
+      <!-- File Type -->
       <div class="filter-section">
-        <h3>Codec</h3>
-        {#if loadingCodecs}
-          <p class="loading-text">Loading codecs...</p>
-        {:else if availableCodecs.length === 0}
-          <p class="empty-text">No codecs available</p>
-        {:else}
-          <div class="codec-list">
-            {#each availableCodecs as codec}
-              <button
-                class="codec-button {selectedCodecs.includes(codec) ? 'selected' : ''}"
-                on:click={() => toggleCodec(codec)}
-              >
-                {codec}
-              </button>
-            {/each}
-          </div>
-        {/if}
+        <h3>File Type</h3>
+        <div class="file-type-list">
+          {#each availableFileTypes as fileType}
+            <button
+              class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
+              on:click={() => toggleFileType(fileType)}
+              title="Filter files by type: {fileType} files only. Click to toggle selection."
+            >
+              {fileType.charAt(0).toUpperCase() + fileType.slice(1)}
+            </button>
+          {/each}
+        </div>
       </div>
 
-      <!-- Resolution -->
+      <!-- Processing Status -->
       <div class="filter-section">
-        <h3>Resolution</h3>
-        <div class="resolution-filters">
-          <div class="resolution-group">
-            <h4>Width (pixels)</h4>
-            <div class="range-inputs">
-              <div class="range-group">
-                <label for="minWidth">Min</label>
-                <input 
-                  type="number" 
-                  id="minWidth" 
-                  min="0" 
-                  placeholder="Min width" 
-                  class="filter-input" 
-                  on:input={(e) => handleResolutionChange('minWidth', e)}
-                />
-              </div>
-              <div class="range-group">
-                <label for="maxWidth">Max</label>
-                <input 
-                  type="number" 
-                  id="maxWidth" 
-                  min="0" 
-                  placeholder="Max width" 
-                  class="filter-input" 
-                  on:input={(e) => handleResolutionChange('maxWidth', e)}
-                />
-              </div>
-            </div>
-          </div>
-          
-          <div class="resolution-group">
-            <h4>Height (pixels)</h4>
-            <div class="range-inputs">
-              <div class="range-group">
-                <label for="minHeight">Min</label>
-                <input 
-                  type="number" 
-                  id="minHeight" 
-                  min="0" 
-                  placeholder="Min height" 
-                  class="filter-input" 
-                  on:input={(e) => handleResolutionChange('minHeight', e)}
-                />
-              </div>
-              <div class="range-group">
-                <label for="maxHeight">Max</label>
-                <input 
-                  type="number" 
-                  id="maxHeight" 
-                  min="0" 
-                  placeholder="Max height" 
-                  class="filter-input" 
-                  on:input={(e) => handleResolutionChange('maxHeight', e)}
-                />
-              </div>
-            </div>
-          </div>
+        <h3>Processing Status</h3>
+        <div class="status-list">
+          {#each availableStatuses as status}
+            <button
+              class="status-button {selectedStatuses.includes(status) ? 'selected' : ''}"
+              on:click={() => toggleStatus(status)}
+              title="Filter files by processing status: {status} files only. Click to toggle selection."
+            >
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </button>
+          {/each}
         </div>
       </div>
     </div>
   {/if}
   
   <div class="filter-actions">
-    <button class="apply-button" on:click={applyFilters}>Apply Filters</button>
+    <button 
+      class="apply-button" 
+      on:click={applyFilters}
+      title="Apply all selected filters to update the file list"
+    >Apply Filters</button>
   </div>
 </div>
 
@@ -607,11 +607,11 @@
   .filter-sidebar {
     background-color: var(--surface-color);
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: 0.75rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
   }
   
   .filter-header {
@@ -636,7 +636,7 @@
   .filter-section {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
   
   .filter-section h3 {
@@ -693,6 +693,50 @@
     color: white;
     border-color: var(--primary-color);
   }
+
+  /* File Type and Status button styles */
+  .file-type-list,
+  .status-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .file-type-button,
+  .status-button {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .file-type-button:hover,
+  .status-button:hover {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color-light);
+  }
+
+  .file-type-button.selected,
+  .status-button.selected {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  /* Input help text */
+  .input-help {
+    font-size: 0.75rem;
+    color: var(--text-light, rgba(255, 255, 255, 0.6));
+    margin-top: 0.25rem;
+    display: block;
+    font-style: italic;
+  }
   
   .loading-text,
   .empty-text {
@@ -734,40 +778,73 @@
   .apply-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  /* Advanced filters styles */
-  .advanced-toggle {
-    width: 100%;
+  /* Advanced filters divider and toggle styles */
+  .advanced-filters-divider {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-color);
-    font-size: 0.9rem;
-    font-weight: 500;
-    padding: 0.75rem 1rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    margin: 0.75rem 0 0.5rem 0;
+    position: relative;
   }
   
-  .advanced-toggle:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color);
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    border: none;
+    background-color: var(--border-color, #e5e7eb);
+    margin: 0;
+  }
+  
+  .advanced-toggle-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--surface-color);
+    border: none;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 20px;
+    margin: 0 1rem;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .advanced-toggle-compact:hover {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
   
   .toggle-icon {
-    font-size: 0.8rem;
+    transition: transform 0.2s ease;
     color: var(--primary-color);
   }
   
-  .advanced-filters {
-    background-color: var(--surface-color);
+  .toggle-icon.rotated {
+    transform: rotate(180deg);
+  }
+  
+  .advanced-filters-content {
+    /* Seamless integration with subtle visual distinction */
+    padding: 0.5rem 0.25rem;
+    margin: 0;
+    background: linear-gradient(135deg, transparent 0%, rgba(59, 130, 246, 0.02) 100%);
+    border: none;
+    box-shadow: none;
     border-radius: 8px;
-    padding: 1rem;
-    margin-top: 0.5rem;
-    border: 1px solid var(--border-color);
-    box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  
+  
+  .advanced-filters-content .filter-section {
+    margin-bottom: 1rem;
+  }
+  
+  .advanced-filters-content .filter-section:last-child {
+    margin-bottom: 0;
   }
   
   .range-inputs {
@@ -782,8 +859,7 @@
     gap: 0.25rem;
   }
   
-  .range-group input[type="number"],
-  .resolution-group input[type="number"] {
+  .range-group input[type="number"] {
     padding: 0.5rem;
     border-radius: 4px;
     border: 1px solid var(--border-color);
@@ -793,62 +869,126 @@
     transition: border-color 0.2s, box-shadow 0.2s;
   }
   
-  .range-group input[type="number"]:focus,
-  .resolution-group input[type="number"]:focus {
+  .range-group input[type="number"]:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px var(--primary-color-light, rgba(59, 130, 246, 0.2));
   }
   
-  .range-group label,
-  .resolution-group label {
+  .range-group label {
     font-size: 0.85rem;
     color: var(--text-color-light, var(--text-color));
     margin-bottom: 0.25rem;
   }
-  
-  .resolution-filters {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .resolution-group h4 {
-    font-size: 0.9rem;
-    margin: 0 0 0.5rem 0;
-    color: var(--text-color);
-  }
-  
-  .format-list,
-  .codec-list {
+
+  /* Tag and Speaker button styles */
+  .tags-list,
+  .speakers-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 0.5rem;
   }
-  
-  .format-button,
-  .codec-button {
+
+  .tag-button,
+  .speaker-button {
     background-color: var(--background-color);
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     color: var(--text-color);
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
     cursor: pointer;
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+    transition: all 0.2s ease;
+    white-space: nowrap;
   }
-  
-  .format-button:hover,
-  .codec-button:hover {
+
+  .tag-button:hover,
+  .speaker-button:hover {
     background-color: var(--hover-color);
     border-color: var(--primary-color-light);
   }
-  
-  .format-button.selected,
-  .codec-button.selected {
+
+  .tag-button.selected,
+  .speaker-button.selected {
     background-color: var(--primary-color);
-    color: var(--on-primary-color, white);
+    color: white;
     border-color: var(--primary-color);
+  }
+
+  /* File Type and Status button styles */
+  .file-type-list,
+  .status-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .file-type-button,
+  .status-button {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .file-type-button:hover,
+  .status-button:hover {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color-light);
+  }
+
+  .file-type-button.selected,
+  .status-button.selected {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  /* Input help text */
+  .input-help {
+    font-size: 0.75rem;
+    color: var(--text-light, rgba(255, 255, 255, 0.6));
+    margin-top: 0.25rem;
+    display: block;
+    font-style: italic;
+  }
+  
+  /* Responsive adjustments for advanced filters */
+  @media (max-width: 768px) {
+    .advanced-filters-divider {
+      margin: 1rem 0 0.75rem 0;
+    }
+    
+    .advanced-toggle-compact {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.8rem;
+      margin: 0 0.5rem;
+    }
+    
+    .advanced-filters-content {
+      padding: 0.75rem 0.25rem;
+    }
+    
+    .advanced-filters-content .filter-section {
+      margin-bottom: 1rem;
+    }
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .toggle-icon {
+      transition: none;
+    }
+    
+    .advanced-toggle-compact {
+      transition: none;
+    }
   }
 </style>
