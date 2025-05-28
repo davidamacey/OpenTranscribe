@@ -1,4 +1,6 @@
 <script>
+  import { getSpeakerColor } from '$lib/utils/speakerColors';
+  
   // Type definitions matching FileDetail.svelte
   /**
    * @typedef {Object} SpeakerTime
@@ -59,6 +61,8 @@
   // Component props - accept partial metrics with all properties optional
   /** @type {OverallFileMetrics} */
   export let analytics = {};
+  /** @type {Array<{name: string, display_name: string}>} */
+  export let speakerList = [];
   
   // Merge provided analytics with defaults
   const safeAnalytics = {
@@ -139,24 +143,34 @@
   }
   
   /**
-   * Generate a consistent color for each speaker
-   * @param {string} name - The name of the speaker
-   * @param {number} index - The index of the speaker in the list
-   * @returns {string} - A CSS RGB color value
+   * Get the speaker name to use for color mapping (original name, not display name)
+   * This ensures consistent colors even when display names change
+   * @param {string} displayName - The display name shown in analytics
+   * @returns {string} - The original speaker name for color mapping
    */
-  function getSpeakerColor(name, index) {
-    const colors = [
-      'rgb(79, 169, 255)',  // Blue
-      'rgb(101, 179, 46)',  // Green
-      'rgb(233, 84, 32)',   // Red/Orange
-      'rgb(209, 147, 33)',  // Yellow/Gold
-      'rgb(176, 114, 227)', // Purple
-      'rgb(45, 204, 211)',  // Teal
-      'rgb(232, 101, 163)', // Pink
-    ];
+  function getSpeakerNameForColor(displayName) {
+    // If this looks like an original speaker label (SPEAKER_XX), use it directly
+    if (displayName.match(/^SPEAKER_\d+$/)) {
+      return displayName;
+    }
     
-    // Use index for color selection
-    return colors[index % colors.length];
+    // Find the original speaker name by looking up the display name in speakerList
+    const speaker = speakerList.find(s => s.display_name === displayName);
+    if (speaker) {
+      return speaker.name; // Use original name for color consistency
+    }
+    
+    // Fall back to display name if no mapping found
+    return displayName;
+  }
+
+  /**
+   * Get speaker color using the shared color system (matching transcript style)
+   * @param {string} name - The name of the speaker
+   * @returns {string} - A CSS color value
+   */
+  function getSpeakerBgColor(name) {
+    return getSpeakerColor(getSpeakerNameForColor(name)).bg;
   }
   
   /**
@@ -176,29 +190,34 @@
   
   {#if normalizedAnalytics.talk_time.total > 0}
     <div class="talk-time-container">
-      <h3>Talk Time</h3>
+      <h3>Talk Time Distribution</h3>
       
-      <div class="talk-time-bars">
-        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time], index}
-          <div class="speaker-bar">
-            <div class="speaker-name-container">
-              <div 
-                class="speaker-color-indicator" 
-                style="background-color: {getSpeakerColor(speakerName, index)};"
-              ></div>
-              <span class="speaker-name">{speakerName}</span>
-            </div>
-            
-            <div class="bar-container">
-              <div 
-                class="bar-fill" 
-                style="
-                  width: {safeCalculatePercentage(time, normalizedAnalytics.talk_time.total)}%; 
-                  background-color: {getSpeakerColor(speakerName, index)};
-                "
-              ></div>
-              <span class="time-label">{formatTime(time)}</span>
-            </div>
+      <!-- Single horizontal bar showing all speakers -->
+      <div class="talk-time-combined-bar">
+        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time]}
+          <div 
+            class="speaker-segment"
+            style="
+              width: {safeCalculatePercentage(time, normalizedAnalytics.talk_time.total)}%;
+              background-color: {getSpeakerBgColor(speakerName)};
+              border-right: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};
+            "
+            title="{speakerName}: {formatTime(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
+          ></div>
+        {/each}
+      </div>
+      
+      <!-- Legend below the bar -->
+      <div class="talk-time-legend">
+        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time]}
+          <div class="legend-item">
+            <div 
+              class="legend-color-indicator" 
+              style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
+            ></div>
+            <span class="legend-speaker-name">{speakerName}</span>
+            <span class="legend-time">{formatTime(time)}</span>
+            <span class="legend-percentage">({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)</span>
           </div>
         {/each}
       </div>
@@ -213,12 +232,12 @@
       <h3>Interruptions</h3>
       
       <div class="interruptions-list">
-        {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count], index}
+        {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count]}
           <div class="interruption-item">
             <div class="speaker-name-container">
               <div 
                 class="speaker-color-indicator" 
-                style="background-color: {getSpeakerColor(speakerName, index)};"
+                style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
               ></div>
               <span class="speaker-name">{speakerName}</span>
             </div>
@@ -246,12 +265,12 @@
       
       <div class="turn-distribution">
         <div class="turn-bars">
-          {#each getObjectEntries(normalizedAnalytics.turn_taking.by_speaker) as [speakerName, turns], index}
+          {#each getObjectEntries(normalizedAnalytics.turn_taking.by_speaker) as [speakerName, turns]}
             <div class="speaker-bar">
               <div class="speaker-name-container">
                 <div 
                   class="speaker-color-indicator" 
-                  style="background-color: {getSpeakerColor(speakerName, index)};"
+                  style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
                 ></div>
                 <span class="speaker-name">{speakerName}</span>
               </div>
@@ -261,7 +280,8 @@
                   class="bar-fill" 
                   style="
                     width: {safeCalculatePercentage(turns, normalizedAnalytics.turn_taking.total_turns)}%; 
-                    background-color: {getSpeakerColor(speakerName, index)};
+                    background-color: {getSpeakerBgColor(speakerName)};
+                    border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};
                   "
                 ></div>
                 <span class="turn-label">{turns} {turns === 1 ? 'turn' : 'turns'}</span>
@@ -278,12 +298,12 @@
       <h3>Questions</h3>
       
       <div class="questions-list">
-        {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count], index}
+        {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count]}
           <div class="question-item">
             <div class="speaker-name-container">
               <div 
                 class="speaker-color-indicator" 
-                style="background-color: {getSpeakerColor(speakerName, index)};"
+                style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
               ></div>
               <span class="speaker-name">{speakerName}</span>
             </div>
@@ -336,7 +356,63 @@
     gap: 0.75rem;
   }
   
-  .talk-time-bars, .turn-bars {
+  .talk-time-combined-bar {
+    display: flex;
+    width: 100%;
+    height: 24px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+  }
+  
+  .speaker-segment {
+    height: 100%;
+    transition: opacity 0.2s ease;
+  }
+  
+  .speaker-segment:hover {
+    opacity: 0.8;
+  }
+  
+  .talk-time-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  
+  .legend-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  
+  .legend-speaker-name {
+    font-weight: 500;
+    color: var(--text-color);
+    min-width: 80px;
+  }
+  
+  .legend-time {
+    color: var(--text-color);
+    min-width: 50px;
+  }
+  
+  .legend-percentage {
+    color: var(--text-light);
+    font-size: 0.8rem;
+  }
+  
+  .turn-bars {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -379,7 +455,7 @@
     border-radius: 5px;
   }
   
-  .time-label, .turn-label {
+  .turn-label {
     position: absolute;
     right: 0;
     bottom: -20px;

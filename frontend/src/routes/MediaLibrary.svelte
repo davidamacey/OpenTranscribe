@@ -65,12 +65,13 @@
     detail: {
       search: string;
       tags: string[];
-      speaker: string | null;
+      speaker: string[];
       dates: DateRange;
       durationRange?: DurationRange;
-      formats?: string[];
-      codecs?: string[];
-      resolution?: ResolutionRange;
+      fileSizeRange?: { min: number | null; max: number | null };
+      fileTypes?: string[];
+      statuses?: string[];
+      transcriptSearch?: string;
     };
   }
   
@@ -123,17 +124,13 @@
   // Filter state
   let searchQuery: string = '';
   let selectedTags: string[] = [];
-  let selectedSpeaker: string | null = null;
+  let selectedSpeakers: string[] = [];
   let dateRange = { from: null as Date | null, to: null as Date | null };
   let durationRange = { min: null as number | null, max: null as number | null };
-  let selectedFormats: string[] = [];
-  let selectedCodecs: string[] = [];
-  let resolutionRange = { 
-    minWidth: null as number | null, 
-    maxWidth: null as number | null, 
-    minHeight: null as number | null, 
-    maxHeight: null as number | null 
-  };
+  let fileSizeRange = { min: null as number | null, max: null as number | null };
+  let selectedFileTypes: string[] = [];
+  let selectedStatuses: string[] = [];
+  let transcriptSearch: string = '';
   let showFilters: boolean = false; // For mobile
   
   // Fetch media files
@@ -153,8 +150,8 @@
         selectedTags.forEach(tag => params.append('tag', tag));
       }
       
-      if (selectedSpeaker) {
-        params.append('speaker', selectedSpeaker);
+      if (selectedSpeakers.length > 0) {
+        selectedSpeakers.forEach(speaker => params.append('speaker', speaker));
       }
       
       if (dateRange.from) {
@@ -165,7 +162,7 @@
         params.append('to_date', dateRange.to.toISOString());
       }
       
-      // Add metadata filter parameters
+      // Add duration filter parameters
       if (durationRange.min !== null) {
         params.append('min_duration', durationRange.min.toString());
       }
@@ -174,29 +171,28 @@
         params.append('max_duration', durationRange.max.toString());
       }
       
-      if (selectedFormats.length > 0) {
-        selectedFormats.forEach(format => params.append('format', format));
+      // Add file size filter parameters
+      if (fileSizeRange.min !== null) {
+        params.append('min_file_size', fileSizeRange.min.toString());
       }
       
-      if (selectedCodecs.length > 0) {
-        selectedCodecs.forEach(codec => params.append('codec', codec));
+      if (fileSizeRange.max !== null) {
+        params.append('max_file_size', fileSizeRange.max.toString());
       }
       
-      // Resolution filters
-      if (resolutionRange.minWidth !== null) {
-        params.append('min_width', resolutionRange.minWidth.toString());
+      // Add file type filter parameters
+      if (selectedFileTypes.length > 0) {
+        selectedFileTypes.forEach(fileType => params.append('file_type', fileType));
       }
       
-      if (resolutionRange.maxWidth !== null) {
-        params.append('max_width', resolutionRange.maxWidth.toString());
+      // Add status filter parameters
+      if (selectedStatuses.length > 0) {
+        selectedStatuses.forEach(status => params.append('status', status));
       }
       
-      if (resolutionRange.minHeight !== null) {
-        params.append('min_height', resolutionRange.minHeight.toString());
-      }
-      
-      if (resolutionRange.maxHeight !== null) {
-        params.append('max_height', resolutionRange.maxHeight.toString());
+      // Add transcript search parameter
+      if (transcriptSearch.trim()) {
+        params.append('transcript_search', transcriptSearch.trim());
       }
       
       const response = await axiosInstance.get('/files', { params });
@@ -211,18 +207,19 @@
   
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, dates, durationRange: duration, formats, codecs, resolution } = event.detail;
+    const { search, tags, speaker, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, transcriptSearch: transcript } = event.detail;
     
     searchQuery = search;
     selectedTags = tags;
-    selectedSpeaker = speaker;
+    selectedSpeakers = speaker;
     dateRange = dates;
     
     // Handle advanced filters if provided
     if (duration) durationRange = duration;
-    if (formats) selectedFormats = formats;
-    if (codecs) selectedCodecs = codecs;
-    if (resolution) resolutionRange = resolution;
+    if (fileSize) fileSizeRange = fileSize;
+    if (fileTypes) selectedFileTypes = fileTypes;
+    if (statuses) selectedStatuses = statuses;
+    if (transcript) transcriptSearch = transcript;
     
     fetchFiles();
   }
@@ -326,8 +323,13 @@
   function resetFilters() {
     searchQuery = '';
     selectedTags = [];
-    selectedSpeaker = null;
+    selectedSpeakers = [];
     dateRange = { from: null, to: null };
+    durationRange = { min: null, max: null };
+    fileSizeRange = { min: null, max: null };
+    selectedFileTypes = [];
+    selectedStatuses = [];
+    transcriptSearch = '';
     
     fetchFiles();
   }
@@ -418,19 +420,35 @@
       <div class="header-actions">
         {#if isSelecting}
           <div class="selection-controls">
-            <button class="select-all-btn" on:click={selectAllFiles}>
+            <button 
+              class="select-all-btn" 
+              on:click={selectAllFiles}
+              title="{selectedFiles.size === files.length ? 'Remove all files from selection' : 'Add all visible files to selection'}"
+            >
               {selectedFiles.size === files.length ? 'Deselect all' : 'Select all'}
             </button>
-            <button class="cancel-selection-btn" on:click={clearSelection}>
-              Cancel
-            </button>
-            <button class="delete-selected-btn" on:click={deleteSelectedFiles}>
+            <button 
+              class="delete-selected-btn" 
+              on:click={deleteSelectedFiles}
+              title="Permanently delete the {selectedFiles.size} selected file{selectedFiles.size === 1 ? '' : 's'} - this action cannot be undone"
+            >
               Delete {selectedFiles.size} selected
+            </button>
+            <button 
+              class="cancel-selection-btn" 
+              on:click={clearSelection}
+              title="Exit selection mode and clear all selected files"
+            >
+              Cancel
             </button>
           </div>
         {:else}
           <div class="normal-actions">
-            <button class="upload-button" on:click={toggleUploadModal}>
+            <button 
+              class="upload-button" 
+              on:click={toggleUploadModal}
+              title="Upload new audio or video files for transcription"
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
@@ -438,7 +456,11 @@
               </svg>
               Upload Media
             </button>
-            <button class="select-files-btn" on:click={() => isSelecting = true}>
+            <button 
+              class="select-files-btn" 
+              on:click={() => isSelecting = true}
+              title="Enter selection mode to choose multiple files for batch operations"
+            >
               Select Files
             </button>
           </div>
@@ -447,7 +469,10 @@
     </div>
     
     <div class="mobile-filter-toggle">
-      <button on:click={toggleFilters}>
+      <button 
+        on:click={toggleFilters}
+        title="Show or hide the filter sidebar to search and filter your media files"
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
         </svg>
@@ -461,8 +486,13 @@
       <FilterSidebar 
         {searchQuery}
         {selectedTags}
-        {selectedSpeaker}
+        {selectedSpeakers}
         {dateRange}
+        {durationRange}
+        {fileSizeRange}
+        {selectedFileTypes}
+        {selectedStatuses}
+        {transcriptSearch}
         on:filter={applyFilters}
         on:reset={resetFilters}
       />
@@ -477,7 +507,11 @@
       {:else if error}
         <div class="error-state">
           <p>Unable to connect to the server. Please check your connection and try again.</p>
-          <button class="retry-button" on:click={fetchFiles}>Retry</button>
+          <button 
+            class="retry-button" 
+            on:click={fetchFiles}
+            title="Retry loading your media files"
+          >Retry</button>
         </div>
       {:else if files.length === 0}
         <div class="empty-state">
@@ -497,6 +531,7 @@
                       class="file-checkbox" 
                       checked={selectedFiles.has(file.id)} 
                       on:change={(e) => toggleFileSelection(file.id, e)}
+                      title="Select or deselect this file for batch operations"
                     />
                     <span class="checkmark"></span>
                   </label>
@@ -511,28 +546,33 @@
                     }
                   }}
                 >
-                <div class="file-status status-{file.status}">
-                  {#if file.status === 'pending' || file.status === 'processing'}
-                    <span class="status-dot"></span>
-                    Processing
-                  {:else if file.status === 'completed'}
-                    <span class="status-dot"></span>
-                    Completed
-                  {:else if file.status === 'error'}
-                    <span class="status-dot"></span>
-                    Error
-                  {/if}
-                </div>
-                
-                <div class="file-info">
-                  <h2 class="file-name">{file.filename}</h2>
-                  <div class="file-meta">
-                    <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
-                    {#if file.duration}
-                      <span class="file-duration">{formatDuration(file.duration)}</span>
+                <div class="file-content">
+                  <!-- Status - Top Right -->
+                  <div class="file-status status-{file.status}">
+                    {#if file.status === 'pending' || file.status === 'processing'}
+                      <span class="status-dot"></span>
+                      Processing
+                    {:else if file.status === 'completed'}
+                      <span class="status-dot"></span>
+                      Completed
+                    {:else if file.status === 'error'}
+                      <span class="status-dot"></span>
+                      Error
                     {/if}
                   </div>
                   
+                  <!-- Title - Middle Row -->
+                  <h2 class="file-name">{file.filename}</h2>
+                  
+                  <!-- Date - Bottom Left -->
+                  <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
+                  
+                  <!-- Duration - Bottom Right -->
+                  {#if file.duration}
+                    <span class="file-duration">{formatDuration(file.duration)}</span>
+                  {/if}
+                  
+                  <!-- Optional: Tags and Summary (can be positioned below or removed) -->
                   {#if file.tags && file.tags.length > 0}
                     <div class="file-tags">
                       {#each file.tags as tag}
@@ -579,7 +619,9 @@
           <button 
             class="modal-close" 
             on:click={toggleUploadModal}
-            aria-label="Close upload dialog">
+            aria-label="Close upload dialog"
+            title="Close the upload dialog"
+          >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -763,8 +805,8 @@
   
   .file-selector {
     position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
+    top: 1rem;
+    left: 1rem;
     z-index: 10;
     width: 20px;
     height: 20px;
@@ -831,7 +873,8 @@
     display: block;
     text-decoration: none;
     color: inherit;
-    padding: 1rem;
+    padding: 0;
+    height: 100%;
   }
   
   .media-library {
@@ -1027,11 +1070,28 @@
     border: 2px solid var(--primary-color);
   }
   
+  .file-content {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto auto auto;
+    gap: 0.5rem;
+    height: 100%;
+    position: relative;
+    min-height: 120px;
+    margin: 1rem;
+  }
+
   .file-status {
-    padding: 0.5rem;
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0.25rem 0.5rem;
     font-size: 0.8rem;
     font-weight: 500;
-    text-align: right;
+    background: var(--surface-color);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    align-self: start;
+    justify-self: end;
   }
   
   .status-dot {
@@ -1056,31 +1116,38 @@
     background-color: var(--error-color);
   }
   
-  .file-info {
-    padding: 1rem;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  
   .file-name {
+    grid-column: 1 / -1;
+    grid-row: 2;
     font-size: 1.1rem;
     margin: 0;
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    align-self: center;
   }
   
-  .file-meta {
-    display: flex;
-    gap: 1rem;
+  .file-date {
+    grid-column: 1;
+    grid-row: 3;
     font-size: 0.8rem;
     color: var(--text-light);
+    align-self: end;
+  }
+  
+  .file-duration {
+    grid-column: 2;
+    grid-row: 3;
+    font-size: 0.8rem;
+    color: var(--text-light);
+    text-align: right;
+    align-self: end;
   }
   
   .file-tags {
+    grid-column: 1 / -1;
+    grid-row: 4;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -1096,13 +1163,16 @@
   }
   
   .file-summary {
+    grid-column: 1 / -1;
+    grid-row: 5;
     font-size: 0.9rem;
     color: var(--text-light);
     margin: 0;
+    margin-top: 0.5rem;
     overflow: hidden;
     display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
   }
   

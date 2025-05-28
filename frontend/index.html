@@ -20,11 +20,15 @@
         
         // Apply theme to document immediately - before any rendering happens
         document.documentElement.setAttribute('data-theme', initialTheme);
-        // Also block rendering until theme is applied
-        document.documentElement.style.visibility = 'hidden';
-        window.addEventListener('DOMContentLoaded', function() {
-          document.documentElement.style.visibility = '';
-        });
+        
+        // Set theme-aware background color on html and body immediately
+        if (initialTheme === 'dark') {
+          document.documentElement.style.backgroundColor = '#0f172a';
+          document.documentElement.style.color = '#f8fafc';
+        } else {
+          document.documentElement.style.backgroundColor = '#f8fafc';
+          document.documentElement.style.color = '#1e293b';
+        }
       })();
     </script>
     <meta charset="UTF-8" />
@@ -83,12 +87,31 @@
         }
       })();
     </script>
-    <!-- Base styles -->
+    <!-- Base styles with theme-aware colors to prevent flash -->
     <style>
+      :root {
+        /* Light theme defaults */
+        --bg-primary: #f8fafc;
+        --text-primary: #1e293b;
+        --surface-primary: #ffffff;
+      }
+      
+      /* Dark theme variables */
+      [data-theme='dark'] {
+        --bg-primary: #0f172a;
+        --text-primary: #f8fafc;
+        --surface-primary: #1e293b;
+      }
+      
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
+      }
+      
+      html {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
       }
       
       body {
@@ -96,6 +119,20 @@
           Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         line-height: 1.5;
         min-height: 100vh;
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        /* Remove visibility hidden approach and use instant background */
+      }
+      
+      #app {
+        background-color: var(--bg-primary);
+        min-height: 100vh;
+      }
+      
+      /* Prevent any white flashes during initial load */
+      .loading-placeholder {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
       }
     </style>
   </head>
