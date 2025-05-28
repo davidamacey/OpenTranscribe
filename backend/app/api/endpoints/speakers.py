@@ -78,6 +78,7 @@ def create_speaker(
 def list_speakers(
     verified_only: bool = False,
     file_id: Optional[int] = None,
+    for_filter: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -87,6 +88,7 @@ def list_speakers(
     Args:
         verified_only: If true, return only verified speakers
         file_id: If provided, return only speakers associated with this file
+        for_filter: If true, return only speakers with distinct display names for filtering
     """
     try:
         query = db.query(Speaker).filter(Speaker.user_id == current_user.id)
@@ -94,6 +96,10 @@ def list_speakers(
         # Filter by verification status if requested
         if verified_only:
             query = query.filter(Speaker.verified == True)
+        
+        # If this is for filtering, only return speakers with display names
+        if for_filter:
+            query = query.filter(Speaker.display_name.isnot(None), Speaker.display_name != "")
         
         # Filter by file_id if provided
         if file_id is not None:
@@ -109,7 +115,19 @@ def list_speakers(
                 # No speakers in this file, return empty list
                 return []
             
-        speakers = query.order_by(Speaker.verified.desc(), Speaker.name).all()
+        speakers = query.order_by(Speaker.verified.desc(), Speaker.display_name, Speaker.name).all()
+        
+        # If for_filter, group by display_name to avoid duplicates
+        if for_filter:
+            seen_names = set()
+            unique_speakers = []
+            for speaker in speakers:
+                display_name = speaker.display_name or speaker.name
+                if display_name not in seen_names:
+                    seen_names.add(display_name)
+                    unique_speakers.append(speaker)
+            return unique_speakers
+        
         return speakers
     except Exception as e:
         logger.error(f"Error in list_speakers: {e}")
