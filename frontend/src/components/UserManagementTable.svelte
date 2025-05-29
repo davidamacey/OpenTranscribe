@@ -6,7 +6,6 @@
   /**
    * @typedef {Object} User
    * @property {string} id
-   * @property {string} username
    * @property {string} email
    * @property {string} role
    * @property {string} created_at
@@ -80,9 +79,8 @@
     
     const term = searchTerm.toLowerCase();
     filteredUsers = users.filter(user => 
-      user.username.toLowerCase().includes(term) ||
-      (user.email && user.email.toLowerCase().includes(term)) ||
-      (user.full_name && user.full_name.toLowerCase().includes(term))
+      (user.full_name && user.full_name.toLowerCase().includes(term)) ||
+      (user.email && user.email.toLowerCase().includes(term))
     );
   }
 
@@ -251,10 +249,10 @@
     <div class="search-container">
       <input 
         type="text" 
-        placeholder="Search users..." 
+        placeholder="Search users by name or email..." 
         on:input={handleSearchInput}
         value={searchTerm}
-        title="Search users by name, email, or role"
+        title="Search users by name or email"
       />
     </div>
     
@@ -271,12 +269,12 @@
     <div class="add-user-form">
       <h3>Add New User</h3>
       <div class="form-group">
-        <label for="username">Username</label>
+        <label for="username">Full Name</label>
         <input 
           type="text" 
           id="username" 
           bind:value={newUsername} 
-          placeholder="Username"
+          placeholder="Full Name"
           required
         />
       </div>
@@ -331,7 +329,7 @@
     <table class="users-table user-management-table">
       <thead>
         <tr>
-          <th>Username</th>
+          <th>Name</th>
           <th>Email</th>
           <th>Role</th>
           <th>Created</th>
@@ -341,7 +339,7 @@
       <tbody>
         {#each filteredUsers as currentUser (currentUser.id)}
           <tr>
-            <td>{currentUser.username}</td>
+            <td>{currentUser.full_name || 'N/A'}</td>
             <td>{currentUser.email}</td>
             <td>
               {#if currentUser.id !== currentUserId}
