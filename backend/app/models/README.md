@@ -1,4 +1,8 @@
-# Data Models Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
+  
+  # Data Models Documentation
+</div>
 
 This directory contains SQLAlchemy ORM models that define the database schema and relationships for OpenTranscribe.
 

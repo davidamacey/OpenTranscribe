@@ -1,4 +1,8 @@
-# Backend Utility Scripts
+<div align="center">
+  <img src="../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
+  
+  # Backend Utility Scripts
+</div>
 
 This directory contains utility scripts for OpenTranscribe backend operations.
 

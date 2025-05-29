@@ -1,4 +1,8 @@
-# OpenTranscribe Frontend
+<div align="center">
+  <img src="../assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
+  
+  # Frontend
+</div>
 
 A modern Svelte-based frontend for the OpenTranscribe AI-powered transcription application.
 

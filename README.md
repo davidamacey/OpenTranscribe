@@ -1,6 +1,8 @@
-# 🎙️ OpenTranscribe
-
-**AI-Powered Transcription and Media Analysis Platform**
+<div align="center">
+  <img src="assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
+  
+  **AI-Powered Transcription and Media Analysis Platform**
+</div>
 
 OpenTranscribe is a powerful, containerized web application for transcribing and analyzing audio/video files using state-of-the-art AI models. Built with modern technologies and designed for scalability, it provides an end-to-end solution for speech-to-text conversion, speaker identification, and content analysis.
 

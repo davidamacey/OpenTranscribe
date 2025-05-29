@@ -1,4 +1,8 @@
-# Background Tasks Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
+  
+  # Background Tasks Documentation
+</div>
 
 This directory contains Celery-based background tasks for CPU-intensive AI processing operations. Tasks are designed to run asynchronously to avoid blocking API requests.
 

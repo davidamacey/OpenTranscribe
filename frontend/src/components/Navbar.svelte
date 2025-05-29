@@ -101,7 +101,7 @@
         to="/"
         title="Go to OpenTranscribe home page"
       >
-        <span class="logo-text">OpenTranscribe</span>
+        <img src="/src/assets/logo-banner.png" alt="OpenTranscribe" class="logo-banner" />
       </Link>
     </div>
     
@@ -309,8 +309,11 @@
     font-size: 1.25rem;
   }
   
-  .logo-text {
-    margin-left: 0.5rem;
+  .logo-banner {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+    border-radius: 6px;
   }
   
   .nav-links {

@@ -1,4 +1,8 @@
-# API Layer Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
+  
+  # API Layer Documentation
+</div>
 
 This directory contains the FastAPI application's API layer, organized by resource and functionality.
 

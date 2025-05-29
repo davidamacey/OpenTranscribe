@@ -1,4 +1,8 @@
-# Services Layer Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
+  
+  # Services Layer Documentation
+</div>
 
 The services layer provides a clean abstraction for business logic, separating it from API endpoints and database operations. This layer orchestrates complex operations, manages transactions, and provides reusable business functionality.
 

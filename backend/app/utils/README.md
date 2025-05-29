@@ -1,4 +1,8 @@
-# Utilities Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="200">
+  
+  # Utilities Documentation
+</div>
 
 This directory contains common utilities and helper functions that provide reusable functionality across the OpenTranscribe backend application.
 
