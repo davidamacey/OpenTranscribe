@@ -1,4 +1,8 @@
-# OpenTranscribe Backend Documentation Index
+<div align="center">
+  <img src="assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
+  
+  # Backend Documentation Index
+</div>
 
 Comprehensive documentation for the OpenTranscribe backend system, organized by component and use case.
 

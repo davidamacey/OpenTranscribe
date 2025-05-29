@@ -1,4 +1,8 @@
-# OpenTranscribe Backend
+<div align="center">
+  <img src="../assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
+  
+  # Backend
+</div>
 
 A modern FastAPI-based backend for AI-powered transcription and media processing.
 

@@ -1,4 +1,8 @@
-# Database Layer Documentation
+<div align="center">
+  <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="200">
+  
+  # Database Layer Documentation
+</div>
 
 This directory contains core database configuration, session management, and the comprehensive database management approach for OpenTranscribe.
 

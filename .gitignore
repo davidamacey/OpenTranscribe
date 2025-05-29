@@ -228,3 +228,6 @@ backend/whisperx-test.py
 
 # Fonts (downloaded during build)
 frontend/public/fonts/
+
+# Private project management files
+GITHUB_OPTIMIZATION_TASKS.md

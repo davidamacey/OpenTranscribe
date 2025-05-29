@@ -90,6 +90,9 @@
 <div class="auth-container">
   <div class="auth-card">
     <div class="auth-header">
+      <div class="auth-logo">
+        <img src="/src/assets/logo-banner.png" alt="OpenTranscribe" class="logo-banner" />
+      </div>
       <h1>Login</h1>
       <p>Sign in to your account</p>
       <div class="info-message">
@@ -352,5 +355,17 @@
     color: var(--error-color);
     padding: 0.75rem;
     border-radius: 4px;
+  }
+  
+  .auth-logo {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+  
+  .auth-logo .logo-banner {
+    height: 60px;
+    width: auto;
+    object-fit: contain;
+    border-radius: 8px;
   }
 </style>

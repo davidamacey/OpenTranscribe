@@ -1,4 +1,8 @@
-# Application Architecture
+<div align="center">
+  <img src="../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="300">
+  
+  # Application Architecture
+</div>
 
 This directory contains the main OpenTranscribe application code, organized following modern FastAPI and Python best practices.
 
