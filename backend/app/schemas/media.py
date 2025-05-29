@@ -176,8 +176,6 @@ class Comment(CommentBase):
     media_file_id: int
     user_id: int
     created_at: datetime
-    # Add fields for user information
-    user: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True

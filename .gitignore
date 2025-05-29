@@ -1,61 +1,128 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
-venv/
-__pycache__/
-*.py[cod]
-*$py.class
-pip-log.txt
-pip-delete-this-directory.txt
+# OpenTranscribe .gitignore
 
-# Testing
-coverage/
-.coverage
-htmlcov/
-.pytest_cache/
-test_videos/
-
-# Production
-build/
-dist/
-*.egg-info/
-
-# Local environment files
+# Environment variables
 .env
 .env.local
-.env.*.local
+.env.production
+.env.prod
 .env.development
 .env.test
-.env.production
-.python-version
+.env.*.local
 
-# Logs
-logs/
+# Runtime data and logs
 *.log
+logs/
+backups/
+temp/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
 
-# Databases
+# Database data
+/data/
+models_ai/
+flower.db
 *.sqlite3
 *.db
 
 # Docker volumes
+postgres-data/
+minio-data/
+opensearch-data/
+redis-data/
 *_data/
 
-# AI models and temp files
-models_ai/
-temp/
-
-# Media files
-uploads/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
 downloads/
-media/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Editor directories and files
-.idea/
+# Virtual environments
+venv/
+.venv
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Testing
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+notebooks/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Node.js
+node_modules/
+.pnp
+.pnp.js
+jspm_packages/
+.npm
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+.yarn-integrity
+.parcel-cache
+
+# Build outputs
+build/
+dist/
+.next
+out
+.nuxt
+.svelte-kit/
+.cache
+public
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE files
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
 *.suo
 *.ntvs*
 *.njsproj
@@ -71,11 +138,93 @@ media/
 ehthumbs.db
 Thumbs.db
 
-# Local fonts (will be downloaded during build)
-frontend/public/fonts/
+# Docker
+.docker/
 
-# Local development specific
-.ipynb_checkpoints/
-notebooks/
-backend/models/
+# Test files
+test-output/
+screenshots/
+videos/
+test_videos/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+
+# AI model downloads (runtime only)
+/backend/models/
+/models/
+*.bin
+*.safetensors
+*.gguf
+
+# Media upload testing
+/uploads/
+/test_uploads/
+uploads/
+downloads/
+media/
+
+# Security
+*.pem
+*.key
+*.crt
+*.csr
+secrets/
+
+# Package files
+*.deb
+*.rpm
+*.msi
+*.dmg
+*.AppImage
+
+# Archived releases
+releases/
+*.tar.gz
+*.zip
+*.rar
+
+# Local configuration overrides
+local_config.py
+local_settings.py
+config.local.json
+
+# Process files
+*.pid
+*.seed
+*.pid.lock
+
+# Documentation build
+docs/_build/
+docs/build/
+
+# Profiling data
+*.prof
+
+# Container runtime data
+.dockerignore.local
+
+# Monitoring and metrics
+metrics/
+monitoring/
+
+# Backup files
+*.sql.bak
+*.db.bak
+dump.rdb
+
+# System and temporary files
+.system
+.tmp/
+.temp/
+
+# Development specific files
 backend/whisperx-test.py
+
+# Fonts (downloaded during build)
+frontend/public/fonts/

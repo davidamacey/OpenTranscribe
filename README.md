@@ -1,579 +1,545 @@
 # 🎙️ OpenTranscribe
 
-**This application is 99.9% created by AI using Windsurf and a variety of commercial LLMs**
+**AI-Powered Transcription and Media Analysis Platform**
 
-## 📋 Overview
+OpenTranscribe is a powerful, containerized web application for transcribing and analyzing audio/video files using state-of-the-art AI models. Built with modern technologies and designed for scalability, it provides an end-to-end solution for speech-to-text conversion, speaker identification, and content analysis.
 
-OpenTranscribe is a powerful web application for transcribing and analyzing audio/video files. This application leverages state-of-the-art AI models for speech recognition, speaker diarization, and text analysis to provide an end-to-end solution for transcription needs.
-
-⚠️ **IMPORTANT**: This project is a work in progress and may have issues. Some features are still under development, and the application may not function perfectly in all scenarios. We are continuously working to improve stability and feature completeness.
+> **Note**: This application is 99.9% created by AI using Windsurf and various commercial LLMs, demonstrating the power of AI-assisted development.
 
 ## ✨ Key Features
 
-- 🔊 **Audio/Video Transcription**: Upload media files and get accurate transcripts with word-level timestamps using state-of-the-art speech recognition technology
-- 👥 **Speaker Diarization**: Automatically identify and label different speakers in your recordings, making multi-person conversations easy to follow
-- 🧠 **Speaker Recognition**: Recognize the same speakers across multiple recordings through voice fingerprinting technology
-- 🖱️ **Interactive Transcript**: Navigate media playback by clicking on transcript text, making it easy to find and reference specific moments
-- 💬 **Comments & Annotations**: Add time-stamped comments to mark important moments, perfect for collaboration and review
-- 🔍 **Powerful Search**: Find specific content using both keyword and semantic search capabilities through OpenSearch integration
-- 📊 **Analytics & Insights**: View speaker statistics, sentiment analysis, and key topics to gain deeper understanding of your content
-- 📝 **Summarization**: Generate concise summaries of your transcripts using local LLMs to quickly grasp main points
-- 🌐 **Multi-language Support**: Transcribe in multiple languages with translation capabilities for global content
-- 📺 **Subtitle Export**: Generate SRT/VTT files or embed subtitles directly into videos for sharing and accessibility
+### 🎧 **Advanced Transcription**
+- **High-Accuracy Speech Recognition**: Powered by WhisperX with faster-whisper backend
+- **Word-Level Timestamps**: Precise timing for every word using WAV2VEC2 alignment
+- **Multi-Language Support**: Transcribe in multiple languages with automatic English translation
+- **Batch Processing**: 70x realtime speed with large-v2 model on GPU
+
+### 👥 **Smart Speaker Management**
+- **Automatic Speaker Diarization**: Identify different speakers using PyAnnote.audio
+- **Cross-Recording Recognition**: Voice fingerprinting to recognize speakers across files
+- **Custom Speaker Labels**: Edit and manage speaker names and information
+- **Speaker Analytics**: View speaking time distribution and interaction patterns
+
+### 🎬 **Rich Media Support**
+- **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
+- **Interactive Media Player**: Click transcript to navigate playback
+- **Metadata Extraction**: Comprehensive file information using ExifTool
+- **Subtitle Export**: Generate SRT/VTT files for accessibility
+
+### 🔍 **Powerful Search & Discovery**
+- **Hybrid Search**: Combine keyword and semantic search capabilities
+- **Full-Text Indexing**: Lightning-fast content search with OpenSearch
+- **Advanced Filtering**: Filter by speaker, date, tags, duration, and more
+- **Smart Tagging**: Organize content with custom tags and categories
+
+### 📊 **Analytics & Insights**
+- **Content Analysis**: Word count, speaking time, and conversation flow
+- **Speaker Statistics**: Individual speaker metrics and participation
+- **Sentiment Analysis**: Understand tone and emotional content
+- **Automated Summaries**: Generate concise summaries using local LLMs
+
+### 💬 **Collaboration Features**
+- **Time-Stamped Comments**: Add annotations at specific moments
+- **User Management**: Role-based access control (admin/user)
+- **Export Options**: Download transcripts in multiple formats
+- **Real-Time Updates**: Live progress tracking with WebSocket notifications
 
 ## 🛠️ Technology Stack
 
-OpenTranscribe is built using modern technologies carefully selected for performance, reliability, and maintainability:
+### **Frontend**
+- **Svelte** - Reactive UI framework with excellent performance
+- **TypeScript** - Type-safe development with modern JavaScript
+- **Progressive Web App** - Offline capabilities and native-like experience
+- **Responsive Design** - Seamless experience across all devices
 
-- 🖥️ **Frontend**: 
-  - Svelte framework for reactive and efficient UI components
-  - Responsive design that works across desktop and mobile devices
-  - Modern JavaScript with component-based architecture
+### **Backend**
+- **FastAPI** - High-performance async Python web framework
+- **SQLAlchemy 2.0** - Modern ORM with type safety
+- **Celery + Redis** - Distributed task processing for AI workloads
+- **WebSocket** - Real-time communication for live updates
 
-- 🔧 **Backend**: 
-  - Python FastAPI with async support for high performance
-  - Modular coding practices for maintainability and extensibility
-  - RESTful API design with comprehensive Swagger documentation
+### **AI/ML Stack**
+- **WhisperX** - Advanced speech recognition with alignment
+- **PyAnnote.audio** - Speaker diarization and voice analysis
+- **Faster-Whisper** - Optimized inference engine
+- **Local LLMs** - Privacy-focused text processing
 
-- 🗄️ **Databases**: 
-  - PostgreSQL for reliable relational data storage
-  - SQLAlchemy ORM for type-safe database interactions
-  - Pydantic for robust data validation and schemas
+### **Infrastructure**
+- **PostgreSQL** - Reliable relational database
+- **MinIO** - S3-compatible object storage
+- **OpenSearch** - Full-text and vector search engine
+- **Docker** - Containerized deployment
+- **NGINX** - Production web server
 
-- 🔍 **Vector Storage**: 
-  - OpenSearch for powerful full-text and vector search capabilities
-  - Custom embedding integration for semantic similarity searching
-  - Hybrid search combining traditional and vector-based approaches
-
-- 🔄 **Task Processing**: 
-  - Celery with Redis for reliable asynchronous job processing
-  - Task monitoring through Flower dashboard
-  - Robust error handling and task retry mechanisms
-
-- 🧠 **AI Models**:
-  - Faster-Whisper for efficient and accurate speech-to-text conversion
-  - PyAnnotate for precise speaker diarization and voice fingerprinting
-  - Local LLMs for natural language processing tasks like summarization
-  - FFmpeg for comprehensive media processing capabilities
-
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
+```bash
+# Required
 - Docker and Docker Compose
 - Git
-- NVIDIA GPU recommended (for faster processing) with CUDA support
-- Make the script executable:
-  ```bash
-  chmod +x opentr.sh
-  ```
+- 8GB+ RAM (16GB+ recommended)
+
+# Recommended for optimal performance
+- NVIDIA GPU with CUDA support
+- 50GB+ free disk space (for AI models)
+```
 
 ### Installation
 
-1. Clone the repository:
+1. **Clone the Repository**
    ```bash
-   git clone https://github.com/yourusername/opentranscribe.git
-   cd opentranscribe
+   git clone https://github.com/yourusername/OpenTranscribe.git
+   cd OpenTranscribe
+   
+   # Make utility script executable
+   chmod +x opentr.sh
    ```
 
-2. Create an environment file:
+2. **Environment Configuration**
    ```bash
+   # Copy environment template
    cp .env.example .env
-   # Edit .env with your configurations if needed
+   
+   # Edit .env file with your settings (optional for development)
+   # Key variables:
+   # - HUGGINGFACE_TOKEN (required for speaker diarization)
+   # - GPU settings for optimal performance
    ```
 
-### 🧪 Development Mode
-
-OpenTranscribe provides a comprehensive utility script `opentr.sh` to manage all aspects of the application. The development environment uses Docker Compose to run all components with live-reloading for a productive development experience.
-
-#### Basic Commands
-
-1. **Start the application** in development mode:
+3. **Start OpenTranscribe**
    ```bash
+   # Start in development mode (with hot reload)
    ./opentr.sh start dev
-   ```
    
-   This will:
-   - Start all Docker containers with proper dependency ordering
-   - Create necessary directories for models and temporary files
-   - Set up the database with initial schema
-   - Start backend API server with auto-reload
-   - Launch Celery workers with GPU support if available
-   - Start the frontend development server with hot module replacement
-   - Show container logs for monitoring
-
-2. **Stop all services**:
-   ```bash
-   ./opentr.sh stop
-   ```
-
-3. **View container status**:
-   ```bash
-   ./opentr.sh status
-   ```
-
-4. **View logs**:
-   ```bash
-   # All logs
-   ./opentr.sh logs
-   
-   # Specific service logs (e.g., backend, frontend, postgres)
-   ./opentr.sh logs backend
-   ```
-
-2. Access the application and related services:
-   - 🌐 **Frontend**: http://localhost:5173 (Svelte application with hot reloading)
-   - 🔌 **API**: http://localhost:8080/api (FastAPI with auto-reload)
-   - 📚 **API Documentation**: http://localhost:8080/docs (Swagger UI)
-   - 🔍 **OpenSearch**: http://localhost:9200 (Vector & full-text search)
-   - 📁 **MinIO Console**: http://localhost:9091 (Object storage, credentials in .env file)
-   - 🌺 **Flower Dashboard**: http://localhost:5555/flower (Celery task monitoring)
-
-#### Reset & Database Commands
-
-1. **Reset the environment** (WARNING: deletes all data):
-   ```bash
-   ./opentr.sh reset dev
-   ```
-   This will:
-   - Stop and remove all containers
-   - Remove volumes (clearing all data)
-   - Rebuild and restart services
-   - Reinitialize database with base schema
-   - Create an admin user
-
-2. **Database backup and restore**:
-   ```bash
-   # Create a backup
-   ./opentr.sh backup
-   
-   # Restore from backup
-   ./opentr.sh restore backups/backup_file.sql
-   ```
-
-3. **Initialize database only** (without full reset):
-   ```bash
-   ./opentr.sh init-db
-   ```
-
-#### Development Workflow
-
-1. **Restart services** without database reset:
-   ```bash
-   # Restart backend services only
-   ./opentr.sh restart-backend
-   
-   # Restart frontend only
-   ./opentr.sh restart-frontend
-   
-   # Restart all services
-   ./opentr.sh restart-all
-   ```
-
-2. **Rebuild services** with code changes:
-   ```bash
-   # Rebuild backend
-   ./opentr.sh rebuild-backend
-   
-   # Rebuild frontend
-   ./opentr.sh rebuild-frontend
-   
-   # Rebuild all
-   ./opentr.sh build
-   ```
-
-3. **Access containers**:
-   ```bash
-   # Open a shell in a container
-   ./opentr.sh shell backend
-   
-   # Available containers: backend, frontend, postgres, redis, minio, opensearch
-   ```
-
-### 🚀 Production Deployment
-
-For production deployment, OpenTranscribe uses optimized builds and configurations:
-
-1. **Configure production environment**:
-   ```bash
-   # Create production environment file
-   cp .env.example .env.prod
-   
-   # Edit .env.prod with production settings:
-   # - NODE_ENV=production
-   # - Strong, unique passwords for all services
-   # - Resource limits based on your hardware
-   # - JWT secrets and security settings
-   # - SSL/TLS configuration
-   ```
-
-2. **Start production environment**:
-   ```bash
-   # Start in production mode
+   # Or start in production mode
    ./opentr.sh start prod
    ```
-   
-   This will:
-   - Build optimized production images
-   - Start only necessary services
-   - Configure NGINX for production frontend
-   - Set up proper security headers
-   - Enable production optimizations
 
-3. **Production maintenance**:
-   ```bash
-   # Check service health
-   ./opentr.sh health
-   
-   # View production logs
-   ./opentr.sh logs
-   
-   # Create database backup
-   ./opentr.sh backup
-   
-   # Clean up unused resources
-   ./opentr.sh clean
-   ```
+4. **Access the Application**
+   - 🌐 **Web Interface**: http://localhost:5173
+   - 📚 **API Documentation**: http://localhost:8080/docs
+   - 🌺 **Task Monitor**: http://localhost:5555/flower
+   - 🔍 **Search Engine**: http://localhost:9200
+   - 📁 **File Storage**: http://localhost:9091
 
-3. Access the application:
-   - 🌐 **Frontend**: http://localhost:5173 (production build served via NGINX in container)
-   - 🔌 **API**: http://localhost:8080/api (optimized FastAPI without debug/reload)
-   - 🌺 **Flower**: http://localhost:5555/flower (for monitoring tasks) 
+## 📋 OpenTranscribe Utility Commands
 
-4. Important production considerations:
-   - 🔒 **Security**: Set strong passwords in the .env file and limit access to admin interfaces
-   - 🛡️ **Reverse Proxy**: Configure a proper reverse proxy (NGINX) with SSL/TLS certificates
-   - 🔥 **Firewall**: Set up appropriate firewall rules to protect services
-   - 💾 **Backups**: Implement automated backups for the database and object storage
-   - 📈 **Monitoring**: Set up health checks and system monitoring
-   - 🔄 **Updates**: Establish a process for safe updates and migrations
+The `opentr.sh` script provides comprehensive management for all application operations:
 
-> **Note**: The frontend-prod service in docker-compose.yml builds the Svelte application with production optimizations and serves it using NGINX, which is more efficient than the development server. This is the key difference between development and production modes.
-
-## 🛠️ System Administration
-
-### Monitoring Tools
-
-1. **Celery Flower Dashboard**
-   - URL: http://localhost:5555/flower
-   - Monitor task progress and worker status
-   - View task history and resource usage
-   - Manage and retry failed tasks
-
-2. **Container Monitoring**
-   ```bash
-   # View container status
-   ./opentr.sh status
-   
-   # View container logs
-   ./opentr.sh logs [service]
-   ```
-
-### Database Management
-
-1. **PostgreSQL Access**
-   ```bash
-   # Connect to PostgreSQL shell
-   ./opentr.sh shell postgres psql -U postgres -d opentranscribe
-   
-   # Run SQL file
-   ./opentr.sh shell postgres psql -U postgres -d opentranscribe -f /path/to/query.sql
-   ```
-
-2. **Backup and Restore**
-   ```bash
-   # Create timestamped backup
-   ./opentr.sh backup
-   
-   # Restore from backup
-   ./opentr.sh restore backups/backup_file.sql
-   
-   # List available backups
-   ls -l backups/
-   ```
-
-3. **Database Maintenance**
-   ```bash
-   # Rebuild database indexes
-   ./opentr.sh shell backend python -m app.scripts.maintenance.rebuild_indexes
-   
-   # Run database migrations
-   ./opentr.sh shell backend alembic upgrade head
-   ```
-
-### System Maintenance
-
-1. **Resource Management**
-   ```bash
-   # Check system health
-   ./opentr.sh health
-   
-   # Clean up unused resources
-   ./opentr.sh clean
-   
-   # View disk usage
-   df -h
-   ```
-
-2. **Log Management**
-   ```bash
-   # Follow logs in real-time
-   ./opentr.sh logs -f
-   
-   # View logs for specific service
-   ./opentr.sh logs backend -f
-   
-   # View recent errors
-   ./opentr.sh logs | grep -i error | tail -n 50
-   ```
-
-3. **Troubleshooting**
-   ```bash
-   # Check service health
-   ./opentr.sh health
-   
-   # View container stats
-   docker stats
-   
-   # Inspect container configuration
-   docker inspect <container_name>
-   
-   # View resource usage
-   docker system df
-   ```
-
-# Create a database backup
-./opentr.sh backup
-
-# Restore from backup
-./opentr.sh restore ./backups/your_backup_file.sql
-
-# Reset the database (warning: deletes all data)
-./opentr.sh reset
-```
-
-### 🛠️ Utility Script Reference
-
-OpenTranscribe includes a powerful utility script `opentr.sh` for common tasks:
-
+### **Basic Operations**
 ```bash
-# Start services (dev mode by default)
-./opentr.sh start [dev|prod]
-
-# Stop all services
-./opentr.sh stop
-
-# Reset and reinitialize (deletes data!)
-./opentr.sh reset [dev|prod]
-
-# View logs
-./opentr.sh logs [service]  # e.g., backend, frontend, postgres
-
-# Check container status
-./opentr.sh status
-
-# Open a shell in a container
-./opentr.sh shell [service]
-
-# Create a database backup
-./opentr.sh backup
-
-# Restore database from backup
-./opentr.sh restore [backup_file]
-
-# Rebuild containers
-./opentr.sh build
+# Start the application
+./opentr.sh start [dev|prod]     # Start in development or production mode
+./opentr.sh stop                 # Stop all services
+./opentr.sh status               # Show container status
+./opentr.sh logs [service]       # View logs (all or specific service)
 ```
 
-## 📁 Working with Media Files
+### **Development Workflow**
+```bash
+# Service management
+./opentr.sh restart-backend      # Restart API and workers without database reset
+./opentr.sh restart-frontend     # Restart frontend only
+./opentr.sh restart-all          # Restart all services without data loss
 
-### 🎵 Supported Formats
-
-OpenTranscribe supports most common audio and video formats through FFmpeg integration:
-
-- 🎧 **Audio Formats**: 
-  - MP3 (most common compressed audio)
-  - WAV (uncompressed audio, highest quality)
-  - FLAC (lossless compressed audio)
-  - M4A (Apple's AAC container)
-  - AAC (Advanced Audio Coding)
-  - OGG (open source audio format)
-
-- 🎬 **Video Formats**: 
-  - MP4 (most widely supported)
-  - MOV (QuickTime format)
-  - AVI (older but widely supported)
-  - MKV (high quality container with multiple tracks)
-  - WEBM (optimized for web)
-
-### 🔄 Transcription Process
-
-When you upload a file to OpenTranscribe, a sophisticated process begins:
-
-1. 📤 **Upload & Storage**: The file is streamed to MinIO (S3-compatible object storage)
-2. 📋 **Job Creation**: A transcription job is created and queued in Celery with appropriate priority
-3. 🧠 **Audio Processing**: 
-   - Audio is extracted from video files if necessary
-   - Audio is normalized and prepared for transcription
-   - Faster-Whisper processes the audio to generate text with timestamps
-4. 👥 **Speaker Analysis**: PyAnnotate analyzes the audio for different speakers and creates voice embeddings
-5. 🔗 **Alignment**: The transcript and speaker information are aligned and merged
-6. 💽 **Storage & Indexing**: 
-   - Results are saved to the PostgreSQL database
-   - Text and metadata are indexed in OpenSearch for fast retrieval
-   - Speaker embeddings are stored for future recognition
-7. 🔔 **Notification**: The UI shows progress and notifies when complete via WebSockets
-
-> **Note**: ⚠️ The transcription process is resource-intensive and currently under optimization. Processing long files may take significant time depending on your hardware. GPU acceleration significantly improves performance when available.
-
-## 🛠️ Development Notes
-
-### 📂 Project Structure
-
-```
-opentranscribe/
-├── backend/                # Python FastAPI backend
-│   ├── app/                # Application modules
-│   │   ├── api/            # API endpoints and routers
-│   │   ├── core/           # Core functionality and config
-│   │   │   ├── celery.py   # Celery task queue configuration
-│   │   │   ├── config.py   # Application configuration
-│   │   │   └── security.py # Authentication and authorization
-│   │   ├── models/         # SQLAlchemy database models
-│   │   ├── schemas/        # Pydantic validation schemas
-│   │   └── services/       # Business logic and external integrations
-│   │       ├── search.py   # OpenSearch integration
-│   │       ├── storage.py  # MinIO/S3 integration
-│   │       └── transcription.py # Transcription pipeline
-│   ├── models/             # AI model files (downloaded at runtime)
-│   └── Dockerfile.dev      # Development Docker configuration
-├── frontend/               # Svelte frontend application
-│   ├── public/             # Static assets and resources
-│   ├── src/                # Source code
-│   │   ├── components/     # Reusable UI components
-│   │   ├── routes/         # Page components and routing
-│   │   ├── stores/         # Svelte stores for state management
-│   │   ├── utils/          # Helper functions and utilities
-│   │   └── App.svelte      # Main application component
-│   ├── Dockerfile.dev      # Development Docker configuration
-│   └── Dockerfile.prod     # Production optimization build
-├── database/               # Database initialization and migrations
-│   └── init_db.sql         # Initial schema setup
-└── .env.example            # Example environment configuration
+# Container rebuilding (after code changes)
+./opentr.sh rebuild-backend      # Rebuild backend with new code
+./opentr.sh rebuild-frontend     # Rebuild frontend with new code
+./opentr.sh build                # Rebuild all containers
 ```
 
-### 🌱 Current Development Status
+### **Database Management**
+```bash
+# Data operations (⚠️ DESTRUCTIVE)
+./opentr.sh reset [dev|prod]     # Complete reset - deletes ALL data!
+./opentr.sh init-db              # Initialize database without container reset
 
-**⚠️ Work in Progress**: OpenTranscribe is currently in active development with the following status:
+# Backup and restore
+./opentr.sh backup               # Create timestamped database backup
+./opentr.sh restore [file]       # Restore from backup file
+```
 
-- ✅ **Working Features**:
-  - User authentication and file management
-  - Web UI Interface with file upload
+### **System Administration**
+```bash
+# Maintenance
+./opentr.sh clean                # Remove unused containers and images
+./opentr.sh health               # Check service health status
+./opentr.sh shell [service]      # Open shell in container
 
-- 🚧 **In Progress**:
-  - Basic audio/video upload and storage
-  - Transcription with Faster-Whisper
-  - Simple speaker diarization
-  - Basic transcript viewing and playback
-  - Advanced speaker recognition across files
-  - Improved UI/UX for transcript editing
-  - Search functionality optimization
-  - Full summarization capabilities
-  - Error handling and system stability
+# Available services: backend, frontend, postgres, redis, minio, opensearch, celery-worker
+```
 
-- 📅 **Future Work**:
-  - Advanced analytics and insights
-  - Public API for integrations
-  - Mobile optimization
-  - Enterprise features (teams, sharing, etc.)
-  - Offline processing mode
+### **Monitoring and Debugging**
+```bash
+# View specific service logs
+./opentr.sh logs backend         # API server logs
+./opentr.sh logs celery-worker   # AI processing logs
+./opentr.sh logs frontend        # Frontend development logs
+./opentr.sh logs postgres        # Database logs
 
-### 👥 Contributing
+# Follow logs in real-time
+./opentr.sh logs backend -f
+```
 
-We welcome contributions to help improve OpenTranscribe! Here's how you can help:
+## 🎯 Usage Guide
 
-- 🐛 Report bugs and issues you encounter
-- 💡 Suggest new features or improvements
-- 🔧 Submit pull requests for fixes or enhancements
-- 📚 Improve documentation and examples
-- 🧪 Add tests to improve reliability
+### **Getting Started**
 
-Please check the issues list for specific areas where help is needed.
+1. **User Registration**
+   - Navigate to http://localhost:5173
+   - Create an account or use default admin credentials
+   - Set up your profile and preferences
+
+2. **Upload Your First File**
+   - Click \"Upload Files\" or drag-and-drop media files
+   - Supported formats: MP3, WAV, MP4, MOV, and more
+   - Files are automatically queued for processing
+
+3. **Monitor Processing**
+   - Watch real-time progress in the dashboard
+   - View task status in Flower monitor
+   - Receive notifications when processing completes
+
+4. **Explore Your Transcript**
+   - Click on transcript text to navigate media playback
+   - Edit speaker names and add custom labels
+   - Add time-stamped comments and annotations
+
+### **Advanced Features**
+
+#### **Speaker Management**
+```
+👥 Automatic Detection → 🏷️ Custom Labels → 🔍 Cross-File Recognition
+```
+- Speakers are automatically detected and assigned labels
+- Edit speaker names for better organization
+- System learns to recognize speakers across different files
+
+#### **Search and Discovery**
+```
+🔍 Keyword Search → 🧠 Semantic Search → 🏷️ Smart Filtering
+```
+- Search transcript content with advanced filters
+- Use semantic search to find related concepts
+- Organize content with custom tags and categories
+
+#### **Export and Integration**
+```
+📄 Multiple Formats → 📺 Subtitle Files → 🔗 API Access
+```
+- Export transcripts as TXT, JSON, or CSV
+- Generate SRT/VTT subtitle files
+- Access data programmatically via REST API
+
+## 📁 Project Structure
+
+```
+OpenTranscribe/
+├── 📁 backend/                 # Python FastAPI backend
+│   ├── 📁 app/                # Application modules
+│   │   ├── 📁 api/            # REST API endpoints
+│   │   ├── 📁 models/         # Database models
+│   │   ├── 📁 services/       # Business logic
+│   │   ├── 📁 tasks/          # Background AI processing
+│   │   ├── 📁 utils/          # Common utilities
+│   │   └── 📁 db/             # Database configuration
+│   ├── 📁 scripts/            # Admin and maintenance scripts
+│   ├── 📁 tests/              # Comprehensive test suite
+│   └── 📄 README.md           # Backend documentation
+├── 📁 frontend/               # Svelte frontend application
+│   ├── 📁 src/                # Source code
+│   │   ├── 📁 components/     # Reusable UI components
+│   │   ├── 📁 routes/         # Page components
+│   │   ├── 📁 stores/         # State management
+│   │   └── 📁 styles/         # CSS and themes
+│   └── 📄 README.md           # Frontend documentation
+├── 📁 database/               # Database initialization
+├── 📁 models_ai/              # AI model storage (runtime)
+├── 📁 scripts/                # Utility scripts
+├── 📄 docker-compose.yml      # Container orchestration
+├── 📄 opentr.sh               # Main utility script
+└── 📄 README.md               # This file
+```
+
+## 🔧 Configuration
+
+### **Environment Variables**
+
+#### **Core Application**
+```bash
+# Database
+DATABASE_URL=postgresql://postgres:password@postgres:5432/opentranscribe
+
+# Security
+SECRET_KEY=your-super-secret-key-here
+JWT_SECRET_KEY=your-jwt-secret-key
+
+# Object Storage
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+MINIO_BUCKET_NAME=transcribe-app
+```
+
+#### **AI Processing**
+```bash
+# Required for speaker diarization
+HUGGINGFACE_TOKEN=your_huggingface_token_here
+
+# Model configuration
+WHISPER_MODEL=large-v2              # large-v2, medium, small, base
+COMPUTE_TYPE=float16                # float16, int8
+BATCH_SIZE=16                       # Reduce if GPU memory limited
+
+# Speaker detection
+MIN_SPEAKERS=1                      # Minimum speakers to detect
+MAX_SPEAKERS=10                     # Maximum speakers to detect
+```
+
+#### **Performance Tuning**
+```bash
+# GPU settings
+USE_GPU=true                        # Enable GPU acceleration
+CUDA_VISIBLE_DEVICES=0              # GPU device selection
+
+# Resource limits
+MAX_UPLOAD_SIZE=2GB                 # Maximum file size
+CELERY_WORKER_CONCURRENCY=2         # Concurrent tasks
+```
+
+### **Production Deployment**
+
+For production use, ensure you:
+
+1. **Security Configuration**
+   ```bash
+   # Generate strong secrets
+   openssl rand -hex 32  # For SECRET_KEY
+   openssl rand -hex 32  # For JWT_SECRET_KEY
+   
+   # Set strong database passwords
+   # Configure proper firewall rules
+   # Set up SSL/TLS certificates
+   ```
+
+2. **Performance Optimization**
+   ```bash
+   # Use production environment
+   NODE_ENV=production
+   
+   # Configure resource limits
+   # Set up monitoring and logging
+   # Configure backup strategies
+   ```
+
+3. **Reverse Proxy Setup**
+   ```nginx
+   # Example NGINX configuration
+   server {
+       listen 80;
+       server_name your-domain.com;
+       
+       location / {
+           proxy_pass http://localhost:5173;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+       
+       location /api {
+           proxy_pass http://localhost:8080;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+
+## 🧪 Development
+
+### **Development Environment**
+```bash
+# Start development with hot reload
+./opentr.sh start dev
+
+# Backend development
+cd backend/
+pip install -r requirements.txt
+pytest tests/                    # Run tests
+black app/                       # Format code
+flake8 app/                      # Lint code
+
+# Frontend development  
+cd frontend/
+npm install
+npm run dev                      # Development server
+npm run test                     # Run tests
+npm run lint                     # Lint code
+```
+
+### **Testing**
+```bash
+# Backend tests
+./opentr.sh shell backend
+pytest tests/                    # All tests
+pytest tests/api/                # API tests only
+pytest --cov=app tests/          # With coverage
+
+# Frontend tests
+cd frontend/
+npm run test                     # Unit tests
+npm run test:e2e                 # End-to-end tests
+npm run test:components          # Component tests
+```
+
+### **Contributing**
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## 🔍 Troubleshooting
 
-### ⚠️ Common Issues
+### **Common Issues**
 
-- 🖥️ **GPU not detected**: 
-  - Verify your NVIDIA drivers are properly installed: `nvidia-smi` should display your GPU
-  - Ensure CUDA is installed and compatible with the container runtime
-  - Check that the appropriate devices are passed to the container in docker-compose.yml
-  - Try setting USE_GPU=false in .env for CPU-only operation (will be slower)
-
-- 🎞️ **Media processing errors**: 
-  - Ensure FFmpeg is properly configured in the container
-  - Check if your media file is corrupted or in an unsupported format
-  - Look at the celery-worker logs for specific error messages
-  - Try converting your media using an external tool first
-
-- 🐢 **Slow transcription**: 
-  - Consider using a smaller Whisper model variant (medium or small instead of large)
-  - Add more GPU memory to the worker container
-  - For very long files, consider splitting them into smaller segments
-  - CPU transcription is significantly slower than GPU - consider GPU hardware
-
-- 🗄️ **Database issues**:
-  - If PostgreSQL fails to start, check if the port is already in use
-  - Use the reset_and_init.sh script to reinitialize the database
-  - Check if the database name matches in all configurations (should be 'opentranscribe')
-
-- 🌐 **Network issues**:
-  - Ensure all ports specified in docker-compose.yml are available
-  - Check if firewalls or proxies are blocking connections between services
-
-### 📊 Logs and Monitoring
-
-To view logs for specific services, use the following commands:
-
+#### **GPU Not Detected**
 ```bash
-# Backend API logs
-docker compose logs -f backend
+# Check GPU availability
+nvidia-smi
 
-# Celery worker logs (AI processing)
-docker compose logs -f celery-worker
+# Verify Docker GPU support
+docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 
-# Frontend development server logs
-docker compose logs -f frontend
-
-# Production frontend logs
-docker compose logs -f frontend-prod
-
-# Database logs
-docker compose logs -f postgres
-
-# All logs combined
-docker compose logs -f
+# Set CPU-only mode if needed
+echo "USE_GPU=false" >> .env
 ```
 
-For convenience during development:
-- The start-dev.sh script automatically opens separate log windows for each service
-- The reset_and_init.sh script also opens logs after initialization
-- Flower dashboard (http://localhost:5555/flower) provides detailed task monitoring
-
-### 🔄 Reset and Recovery
-
-If you encounter persistent issues, a full reset often helps:
-
+#### **Memory Issues**
 ```bash
-# Full development reset
-./reset_and_init.sh dev
+# Reduce model size
+echo "WHISPER_MODEL=medium" >> .env
+echo "BATCH_SIZE=8" >> .env
+echo "COMPUTE_TYPE=int8" >> .env
 
-# Full production reset
-./reset_and_init.sh prod
+# Monitor memory usage
+docker stats
 ```
 
-This will stop all containers, remove volumes (clearing all data), and restart with a fresh environment.
+#### **Slow Transcription**
+- Use GPU acceleration (`USE_GPU=true`)
+- Reduce model size (`WHISPER_MODEL=medium`)
+- Increase batch size if you have GPU memory
+- Split large files into smaller segments
 
-## License
+#### **Database Connection Issues**
+```bash
+# Reset database
+./opentr.sh reset dev
 
-[MIT](LICENSE)
+# Check database logs
+./opentr.sh logs postgres
+
+# Verify database is running
+./opentr.sh shell postgres psql -U postgres -l
+```
+
+#### **Container Issues**
+```bash
+# Check service status
+./opentr.sh status
+
+# Clean up resources
+./opentr.sh clean
+
+# Full reset (⚠️ deletes all data)
+./opentr.sh reset dev
+```
+
+### **Getting Help**
+
+- 📚 **Documentation**: Check README files in each component directory
+- 🐛 **Issues**: Report bugs on GitHub Issues
+- 💬 **Discussions**: Ask questions in GitHub Discussions
+- 📊 **Monitoring**: Use Flower dashboard for task debugging
+
+## 📈 Performance & Scalability
+
+### **Hardware Recommendations**
+
+#### **Minimum Requirements**
+- 8GB RAM
+- 4 CPU cores
+- 50GB disk space
+- Any modern GPU (optional but recommended)
+
+#### **Recommended Configuration**
+- 16GB+ RAM
+- 8+ CPU cores
+- 100GB+ SSD storage
+- NVIDIA GPU with 8GB+ VRAM (RTX 3070 or better)
+- High-speed internet for model downloads
+
+#### **Production Scale**
+- 32GB+ RAM
+- 16+ CPU cores
+- Multiple GPUs for parallel processing
+- Fast NVMe storage
+- Load balancer for multiple instances
+
+### **Performance Tuning**
+
+```bash
+# GPU optimization
+COMPUTE_TYPE=float16              # Use half precision
+BATCH_SIZE=32                     # Increase for more GPU memory
+WHISPER_MODEL=large-v2            # Best accuracy
+
+# CPU optimization (if no GPU)
+COMPUTE_TYPE=int8                 # Use quantization
+BATCH_SIZE=1                      # Reduce memory usage
+WHISPER_MODEL=base                # Faster processing
+```
+
+## 🔐 Security Considerations
+
+### **Data Privacy**
+- All processing happens locally - no data sent to external services
+- Optional: Disable external model downloads for air-gapped environments
+- User data is encrypted at rest and in transit
+- Configurable data retention policies
+
+### **Access Control**
+- Role-based permissions (admin/user)
+- File ownership validation
+- API rate limiting
+- Secure session management
+
+### **Network Security**
+- All services run in isolated Docker network
+- Configurable firewall rules
+- Optional SSL/TLS termination
+- Secure default configurations
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **OpenAI Whisper** - Foundation speech recognition model
+- **WhisperX** - Enhanced alignment and diarization
+- **PyAnnote.audio** - Speaker diarization capabilities
+- **FastAPI** - Modern Python web framework
+- **Svelte** - Reactive frontend framework
+- **Docker** - Containerization platform
+
+## 🔗 Useful Links
+
+- 📚 **Documentation**: [Complete documentation index](BACKEND_DOCUMENTATION.md)
+- 🛠️ **API Reference**: http://localhost:8080/docs (when running)
+- 🌺 **Task Monitor**: http://localhost:5555/flower (when running)
+- 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/OpenTranscribe/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/OpenTranscribe/discussions)
+
+---
+
+**Built with ❤️ using AI assistance and modern open-source technologies.**
+
+*OpenTranscribe demonstrates the power of AI-assisted development while maintaining full local control over your data and processing.*

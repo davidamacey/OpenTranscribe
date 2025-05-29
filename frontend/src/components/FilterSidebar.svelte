@@ -118,6 +118,20 @@
   /** @type {string} */
   let toDate = '';
   
+  // Duration input values  
+  /** @type {string} */
+  let minDurationInput = '';
+  
+  /** @type {string} */
+  let maxDurationInput = '';
+  
+  // File size input values
+  /** @type {string} */
+  let minFileSizeInput = '';
+  
+  /** @type {string} */
+  let maxFileSizeInput = '';
+  
   // Fetch all tags
   async function fetchTags() {
     loadingTags = true;
@@ -214,18 +228,11 @@
     }
   }
   
-  // Fetch media formats and codecs
+  // Fetch media metadata - currently not used, reserved for future enhancement
   async function fetchMediaMetadata() {
     try {
-      loadingFormats = true;
-      loadingCodecs = true;
-      
       const response = await axiosInstance.get('/files/metadata-filters');
       const metadataFilters = response.data;
-      
-      // Update available formats and codecs
-      availableFormats = metadataFilters.formats || [];
-      availableCodecs = metadataFilters.codecs || [];
       
       // Update duration range with min/max values from server
       if (metadataFilters.duration) {
@@ -234,21 +241,8 @@
           max: metadataFilters.duration.max || 0
         };
       }
-      
-      // Update duration range with min/max values from server  
-      if (metadataFilters.duration) {
-        durationRangeMinMax = {
-          min: metadataFilters.duration.min || 0,
-          max: metadataFilters.duration.max || 0
-        };
-      }
-      
-      loadingFormats = false;
-      loadingCodecs = false;
     } catch (error) {
       console.error('Error fetching media metadata:', error);
-      loadingFormats = false;
-      loadingCodecs = false;
     }
   }
   
@@ -309,14 +303,14 @@
   }
   
   /**
-   * Handle resolution input changes
+   * Handle resolution input changes - currently not used, reserved for future enhancement
    * @param {'minWidth'|'maxWidth'|'minHeight'|'maxHeight'} field - The field to update
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleResolutionChange(field, event) {
-    const value = event.currentTarget?.value;
-    resolutionRange[field] = value ? parseInt(value, 10) : null;
-  }
+  // function handleResolutionChange(field, event) {
+  //   const value = event.currentTarget?.value;
+  //   resolutionRange[field] = value ? parseInt(value, 10) : null;
+  // }
   
   // Toggle advanced filters visibility
   function toggleAdvancedFilters() {
@@ -351,6 +345,13 @@
     selectedFileTypes = [];
     selectedStatuses = [];
     transcriptSearch = '';
+    showAdvancedFilters = false; // Collapse advanced filters on reset
+    
+    // Clear input field values
+    minDurationInput = '';
+    maxDurationInput = '';
+    minFileSizeInput = '';
+    maxFileSizeInput = '';
     
     dispatch('reset');
   }
@@ -510,6 +511,7 @@
               min="0" 
               placeholder="Minimum" 
               class="filter-input" 
+              bind:value={minDurationInput}
               on:input={handleMinDurationChange}
               title="Filter files with duration greater than or equal to this value (in seconds)"
             />
@@ -522,6 +524,7 @@
               min="0" 
               placeholder="Maximum" 
               class="filter-input" 
+              bind:value={maxDurationInput}
               on:input={handleMaxDurationChange}
               title="Filter files with duration less than or equal to this value (in seconds)"
             />
@@ -541,6 +544,7 @@
               min="0" 
               placeholder="Minimum" 
               class="filter-input" 
+              bind:value={minFileSizeInput}
               on:input={(e) => handleFileSizeChange('min', e)}
               title="Filter files with size greater than or equal to this value (in megabytes)"
             />
@@ -553,6 +557,7 @@
               min="0" 
               placeholder="Maximum" 
               class="filter-input" 
+              bind:value={maxFileSizeInput}
               on:input={(e) => handleFileSizeChange('max', e)}
               title="Filter files with size less than or equal to this value (in megabytes)"
             />

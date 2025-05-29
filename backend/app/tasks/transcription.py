@@ -1,829 +1,27 @@
-import os
-import tempfile
-import numpy as np
-from pathlib import Path
-import torch
-import datetime
-from sqlalchemy.orm import Session
-import ffmpeg
-import logging
-from typing import Dict, List, Any, Tuple, Optional
-import json
-import asyncio
-import io
-import subprocess
-import sys
-import uuid
+"""
+Transcription tasks module - refactored for modularity.
 
-# Try to import ExifTool - will be installed with pyexiftool
-try:
-    import exiftool
-except ImportError:
-    logging.warning("exiftool not found. Video metadata extraction will be limited.")
+This file now serves as the main entry point for transcription tasks,
+with the actual implementation moved to the transcription/ submodule.
+"""
+
+import tempfile
+import logging
+from pathlib import Path
+from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
-from app.db.base import SessionLocal
-from app.models.media import MediaFile, TranscriptSegment, Speaker, Task, Analytics, FileStatus
+from app.db.session_utils import session_scope, get_refreshed_object
+from app.models.media import MediaFile, TranscriptSegment, Analytics
 from app.services.minio_service import download_file, upload_file
-from app.services.opensearch_service import index_transcript, add_speaker_embedding
-from app.core.config import settings
-from app.api.websockets import send_notification
-from app.db.session_utils import session_scope, get_refreshed_object, refresh_session_object
+from app.utils.task_utils import update_task_status, update_media_file_status
 
-# Setup logging
+# Import the main transcription task from the modular implementation
+from .transcription import transcribe_audio_task
+
 logger = logging.getLogger(__name__)
 
-# Constants for models
-MODELS_DIR = Path(settings.MODEL_BASE_DIR)
 
-# Ensure models directory exists
-if not os.path.exists(MODELS_DIR):
-    os.makedirs(MODELS_DIR, exist_ok=True)
-
-
-def get_important_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extract important metadata fields from the full metadata.
-    
-    Args:
-        metadata: Dictionary of all metadata
-        
-    Returns:
-        Dictionary of important metadata fields
-    """
-    # Define field mappings for different metadata formats
-    field_mappings = {
-        # Basic file info
-        "FileName": ["File:FileName", "FileName", "SourceFile"],
-        "FileSize": ["File:FileSize", "FileSize"],
-        "MIMEType": ["File:MIMEType", "MIMEType"],
-        "FileType": ["File:FileType", "FileType"],
-        "FileTypeExtension": ["File:FileTypeExtension", "FileTypeExtension"],
-        
-        # Video specs
-        "VideoFormat": ["QuickTime:VideoFormat", "VideoFormat", "Format"],
-        "Duration": ["QuickTime:Duration", "Duration", "MediaDuration"],
-        "FrameRate": ["QuickTime:FrameRate", "FrameRate"],
-        "FrameCount": ["QuickTime:FrameCount", "FrameCount"],
-        "VideoFrameRate": ["QuickTime:VideoFrameRate", "VideoFrameRate", "FrameRate"],
-        "VideoWidth": ["QuickTime:ImageWidth", "File:ImageWidth", "ImageWidth", "Width"],
-        "VideoHeight": ["QuickTime:ImageHeight", "File:ImageHeight", "ImageHeight", "Height"],
-        "AspectRatio": ["QuickTime:AspectRatio", "AspectRatio"],
-        "VideoCodec": ["QuickTime:CompressorID", "CompressorID", "VideoCodec", "Codec"],
-        
-        # Audio specs
-        "AudioFormat": ["QuickTime:AudioFormat", "AudioFormat"],
-        "AudioChannels": ["QuickTime:AudioChannels", "AudioChannels"],
-        "AudioSampleRate": ["QuickTime:AudioSampleRate", "AudioSampleRate"],
-        "AudioBitsPerSample": ["QuickTime:AudioBitsPerSample", "AudioBitsPerSample"],
-        
-        # Creation info
-        "CreateDate": ["QuickTime:CreateDate", "CreateDate", "DateTimeOriginal"],
-        "ModifyDate": ["QuickTime:ModifyDate", "ModifyDate"],
-        "DateTimeOriginal": ["EXIF:DateTimeOriginal", "DateTimeOriginal"],
-        
-        # Device info
-        "DeviceManufacturer": ["QuickTime:Make", "EXIF:Make", "Make", "DeviceManufacturer"],
-        "DeviceModel": ["QuickTime:Model", "EXIF:Model", "Model", "DeviceModel"],
-        
-        # GPS info
-        "GPSLatitude": ["EXIF:GPSLatitude", "GPSLatitude"],
-        "GPSLongitude": ["EXIF:GPSLongitude", "GPSLongitude"],
-        
-        # Software used
-        "Software": ["EXIF:Software", "Software"],
-        
-        # Content information
-        "Title": ["QuickTime:Title", "Title"],
-        "Artist": ["QuickTime:Artist", "Artist"],
-        "Author": ["QuickTime:Author", "Author"],
-        "Comment": ["QuickTime:Comment", "Comment"],
-        "Description": ["QuickTime:Description", "Description"],
-        "LongDescription": ["QuickTime:LongDescription", "LongDescription"],
-        "HandlerDescription": ["QuickTime:HandlerDescription", "HandlerDescription"],
-    }
-    
-    important_fields = {}
-    
-    # Extract values using the field mappings
-    for field_name, possible_keys in field_mappings.items():
-        for key in possible_keys:
-            if key in metadata and metadata[key] is not None:
-                important_fields[field_name] = metadata[key]
-                break
-    
-    # Look for any additional fields that might be useful
-    for key, value in metadata.items():
-        if any(term in key.lower() for term in ["creator", "copyright", "language", "genre"]):
-            important_fields[key] = value
-    
-    return important_fields
-
-
-def create_task_record(db: Session, celery_task_id: str, user_id: int, media_file_id: int, task_type: str) -> Task:
-    """Create a new task record in the database"""
-    task = Task(
-        id=celery_task_id,
-        user_id=user_id,
-        media_file_id=media_file_id,
-        task_type=task_type,
-        status="pending",
-        progress=0.0
-    )
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
-
-def update_task_status(db: Session, task_id: str, status: str, progress: float = None, 
-                       error_message: str = None, completed: bool = False):
-    """Update task status in the database"""
-    task = db.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        return
-    
-    task.status = status
-    if progress is not None:
-        task.progress = progress
-    if error_message:
-        task.error_message = error_message
-    if completed:
-        task.completed_at = datetime.datetime.now()
-    
-    db.commit()
-
-def update_media_file_status(db: Session, file_id: int, status: str):
-    """Update media file status"""
-    media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-    if media_file:
-        media_file.status = status
-        db.commit()
-@celery_app.task(bind=True, name="transcribe_audio")
-def transcribe_audio_task(self, file_id: int):
-    """
-    Process an audio/video file with WhisperX for transcription and Pyannote for diarization
-    
-    Args:
-        file_id: Database ID of the MediaFile to transcribe
-    """
-    task_id = self.request.id
-    user_id = None
-    file_path = None
-    file_name = None
-    content_type = None
-    
-    try:
-        # Step 1: Update file status to processing and get user_id
-        with session_scope() as db:
-            # Get the media file with a session-safe method that handles detached objects
-            media_file = get_refreshed_object(db, MediaFile, file_id)
-            if not media_file:
-                logger.error(f"Media file with ID {file_id} not found")
-                return {"status": "error", "message": f"Media file with ID {file_id} not found"}
-            
-            # Get all needed data before the session is committed
-            user_id = media_file.user_id
-            file_path = media_file.storage_path
-            file_name = media_file.filename
-            content_type = media_file.content_type
-            
-            # Update status
-            media_file.status = FileStatus.PROCESSING
-            db.commit()
-            
-        # Send WebSocket notification about status change
-        try:
-            asyncio.run(send_notification(
-                user_id,
-                "transcription_status", 
-                {
-                    "file_id": str(file_id),
-                    "status": FileStatus.PROCESSING.value,
-                    "message": "Transcription started",
-                    "progress": 10
-                }
-            ))
-        except Exception as e:
-            logger.warning(f"Failed to send WebSocket notification: {e}")
-            # Continue with processing even if notification fails
-        
-        # Step 2: Create task record with session_scope
-        with session_scope() as db:
-            create_task_record(db, task_id, user_id, file_id, "transcription")
-        
-        # Step 3: Update task status with session_scope
-        with session_scope() as db:
-            update_task_status(db, task_id, "in_progress", progress=0.1)
-            
-        # Download file from MinIO to a temporary file
-        logger.info(f"Downloading file {file_path}")
-        file_data, file_size, content_type = download_file(file_path)
-        
-        # Determine file extension based on content type
-        file_ext = os.path.splitext(file_name)[1]
-        if not file_ext and content_type:
-            # Map MIME types to extensions if needed
-            mime_to_ext = {
-                "audio/mpeg": ".mp3",
-                "audio/mp3": ".mp3",
-                "audio/wav": ".wav",
-                "audio/wave": ".wav",
-                "audio/x-wav": ".wav",
-                "audio/webm": ".webm",
-                "audio/ogg": ".ogg",
-                "video/mp4": ".mp4",
-                "video/webm": ".webm",
-                "video/ogg": ".ogg"
-            }
-            file_ext = mime_to_ext.get(content_type, ".mp4")
-            
-        # Ensure WhisperX models directory exists
-        whisper_model_name = "medium.en"
-        whisperx_model_directory = os.path.join(MODELS_DIR, "whisperx")
-        os.makedirs(whisperx_model_directory, exist_ok=True)
-        
-        # Log model information
-        logger.info(f"Using WhisperX with model: {whisper_model_name}")
-        logger.info(f"Model directory: {whisperx_model_directory}")
-        
-        # Create temporary directory for processing
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Create temporary file path
-            temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
-            temp_audio_path = os.path.join(temp_dir, "audio.wav")
-            
-            # Save the downloaded file to the temporary path
-            with open(temp_file_path, "wb") as f:
-                f.write(file_data.read())
-            
-            # Extract detailed metadata from the media file using ExifTool
-            # This works for both audio and video files
-            try:
-                logger.info(f"Extracting metadata with ExifTool from {temp_file_path}")
-                extracted_metadata = {}
-                
-                # Try to use Python ExifTool library if available
-                if "exiftool" in sys.modules:
-                    try:
-                        with exiftool.ExifToolHelper() as et:
-                            metadata_list = et.get_metadata(temp_file_path)
-                            if metadata_list:
-                                extracted_metadata = metadata_list[0]
-                                logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields")
-                    except Exception as et_err:
-                        logger.warning(f"Error using Python ExifTool: {et_err}")
-                        
-                # Fallback to command-line ExifTool if the Python library fails
-                if not extracted_metadata:
-                    try:
-                        # Try to extract metadata using subprocess
-                        exif_process = subprocess.run(
-                            ["exiftool", "-json", "-n", temp_file_path],
-                            capture_output=True,
-                            text=True,
-                            check=True
-                        )
-                        
-                        if exif_process.stdout:
-                            try:
-                                metadata_list = json.loads(exif_process.stdout)
-                                if metadata_list:
-                                    extracted_metadata = metadata_list[0]
-                                    logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields via subprocess")
-                            except json.JSONDecodeError as jde:
-                                logger.warning(f"Error decoding ExifTool JSON output: {jde}")
-                    except (subprocess.SubprocessError, FileNotFoundError) as sp_err:
-                        logger.warning(f"Error running ExifTool subprocess: {sp_err}")
-                
-                # If we successfully extracted metadata, process and store it
-                if extracted_metadata:
-                    # Process the extracted metadata
-                    important_metadata = get_important_metadata(extracted_metadata)
-                    
-                    # Update the database with the extracted metadata
-                    with session_scope() as db:
-                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                        if media_file:
-                            # Store full metadata information
-                            media_file.metadata_raw = extracted_metadata
-                            media_file.metadata_important = important_metadata
-                            
-                            # Set basic file information
-                            media_file.file_size = os.path.getsize(temp_file_path)  # File size in bytes
-                            
-                            # Set media format and related info
-                            media_file.media_format = important_metadata.get("FileType")
-                            
-                            # Video specific metadata
-                            if content_type.startswith("video/") or content_type.startswith("image/"):
-                                # Resolution information
-                                media_file.resolution_width = important_metadata.get("VideoWidth") or important_metadata.get("ImageWidth")
-                                media_file.resolution_height = important_metadata.get("VideoHeight") or important_metadata.get("ImageHeight")
-                                media_file.frame_rate = important_metadata.get("VideoFrameRate") or important_metadata.get("FrameRate")
-                                media_file.codec = important_metadata.get("VideoCodec") or important_metadata.get("CompressorID")
-                                media_file.frame_count = important_metadata.get("FrameCount")
-                                
-                                # Set aspect ratio if available
-                                if important_metadata.get("AspectRatio"):
-                                    media_file.aspect_ratio = important_metadata.get("AspectRatio")
-                            
-                            # Audio specific metadata
-                            if content_type.startswith("audio/") or content_type.startswith("video/"):
-                                media_file.audio_channels = important_metadata.get("AudioChannels")
-                                media_file.audio_sample_rate = important_metadata.get("AudioSampleRate")
-                                media_file.audio_bit_depth = important_metadata.get("AudioBitsPerSample")
-                            
-                            # Duration (important for all media types)
-                            if important_metadata.get("Duration"):
-                                try:
-                                    duration_value = float(important_metadata.get("Duration"))
-                                    media_file.duration = duration_value
-                                except (ValueError, TypeError):
-                                    logger.warning(f"Could not parse duration: {important_metadata.get('Duration')}")
-                            
-                            # Creation and modification dates
-                            if important_metadata.get("CreateDate"):
-                                try:
-                                    # Parse the date into a datetime object
-                                    create_date_str = important_metadata.get("CreateDate")
-                                    # Normalize format if needed (many formats possible from exiftool)
-                                    if ":" in create_date_str and len(create_date_str) >= 10:
-                                        # Common format: 2023:01:30 15:45:22
-                                        if len(create_date_str) <= 19:  # No timezone
-                                            create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
-                                        media_file.creation_date = datetime.datetime.fromisoformat(create_date_str)
-                                except (ValueError, TypeError):
-                                    logger.warning(f"Could not parse creation date: {important_metadata.get('CreateDate')}")
-                            
-                            # Last modified date
-                            if important_metadata.get("ModifyDate"):
-                                try:
-                                    modify_date_str = important_metadata.get("ModifyDate")
-                                    if ":" in modify_date_str and len(modify_date_str) >= 10:
-                                        modify_date_str = modify_date_str.replace(":", "-", 2)
-                                        if len(modify_date_str) <= 19:  # No timezone
-                                            modify_date_str += "+00:00"
-                                        media_file.last_modified_date = datetime.datetime.fromisoformat(modify_date_str)
-                                except (ValueError, TypeError):
-                                    logger.warning(f"Could not parse modification date: {important_metadata.get('ModifyDate')}")
-                            
-                            # Device information
-                            media_file.device_make = important_metadata.get("DeviceManufacturer")
-                            media_file.device_model = important_metadata.get("DeviceModel")
-                            
-                            # Content information
-                            media_file.title = important_metadata.get("Title")
-                            media_file.author = important_metadata.get("Author") or important_metadata.get("Artist")
-                            media_file.description = important_metadata.get("Description") or important_metadata.get("Comment") or important_metadata.get("LongDescription")
-                            
-                            # Store both important and full metadata
-                            media_file.important_metadata = important_metadata  # Store only the important fields
-                            media_file.metadata = extracted_metadata  # Store the full metadata
-                            
-                            db.commit()
-                    
-                    # Log the metadata extraction results
-                    resolution = ""            
-                    if important_metadata.get("VideoWidth") and important_metadata.get("VideoHeight"):
-                        resolution = f"{important_metadata.get('VideoWidth')}x{important_metadata.get('VideoHeight')}"
-                    
-                    fps = important_metadata.get("VideoFrameRate", "")
-                    duration = important_metadata.get("Duration", "")
-                    
-                    logger.info(f"Metadata extracted: {important_metadata.get('FileName', file_name)} - "
-                             f"{resolution} @ {fps} fps, Duration: {duration}")
-                    
-            except Exception as e:
-                logger.warning(f"Error extracting media metadata: {e}")
-                # Continue processing even if metadata extraction fails
-
-
-            try:
-                # For video files, extract audio first
-                if content_type.startswith("video/"):
-                    logger.info(f"Extracting audio from video file {temp_file_path}")
-                    # Use ffmpeg to extract audio
-                    ffmpeg.input(temp_file_path).output(temp_audio_path, acodec="pcm_s16le", ar="16000", ac=1).run(quiet=True)
-                    audio_file_path = temp_audio_path
-                else:
-                    # For audio files, convert to WAV format if needed
-                    if not file_ext.lower() == ".wav":
-                        logger.info(f"Converting audio to WAV format")
-                        ffmpeg.input(temp_file_path).output(temp_audio_path, acodec="pcm_s16le", ar="16000", ac=1).run(quiet=True)
-                        audio_file_path = temp_audio_path
-                    else:
-                        audio_file_path = temp_file_path
-                
-                # Update task status
-                with session_scope() as db:
-                    update_task_status(db, task_id, "in_progress", progress=0.3)
-                
-                # Import WhisperX for transcription, alignment, and diarization
-                try:
-                    import whisperx
-                    import gc
-                    import torch
-                except ImportError:
-                    logger.error("WhisperX is not installed. Please install it with 'pip install whisperx'.")
-                    with session_scope() as db:
-                        update_task_status(db, task_id, "failed", error_message="WhisperX not installed", completed=True)
-                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                        if media_file:
-                            media_file.status = FileStatus.ERROR
-                    return {"status": "error", "message": "WhisperX not installed"}
-                
-                # Set device and compute type
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                compute_type = "float16" if device == "cuda" else "float32"
-                download_root = os.path.join(MODELS_DIR, "whisperx")
-                batch_size = 16  # Reduce if low on GPU memory
-                
-                # Step 1: Transcribe with WhisperX (utilizing faster-whisper under the hood)
-                logger.info(f"Loading WhisperX model: {whisper_model_name}...")
-                model = whisperx.load_model(
-                    whisper_model_name,
-                    device,
-                    compute_type=compute_type,
-                    download_root=download_root,
-                    language="en"  # Always use English for consistent results
-                )
-                
-                # Load audio
-                logger.info(f"Transcribing audio file: {audio_file_path}")
-                audio = whisperx.load_audio(audio_file_path)
-                
-                # Transcribe with batching for speed
-                transcription_result = model.transcribe(
-                    audio,
-                    batch_size=batch_size,
-                    task="translate"  # Always translate to English
-                )
-                
-                logger.info(f"Initial transcription completed with {len(transcription_result['segments'])} segments")
-                
-                # Free GPU memory if needed
-                if device == "cuda":
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    del model
-                
-                # Update task progress
-                with session_scope() as db:
-                    update_task_status(db, task_id, "in_progress", progress=0.4)
-                
-                # Step 2: Align whisper output with WAV2VEC2 for accurate word-level timestamps
-                logger.info("Loading alignment model...")
-                align_model, align_metadata = whisperx.load_align_model(
-                    language_code=transcription_result["language"],
-                    device=device,
-                    model_name=None  # Use default model for the language
-                )
-                
-                logger.info("Aligning transcription for precise word timings...")
-                aligned_result = whisperx.align(
-                    transcription_result["segments"],
-                    align_model,
-                    align_metadata,
-                    audio,
-                    device,
-                    return_char_alignments=False
-                )
-                
-                # Free GPU memory if needed
-                if device == "cuda":
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    del align_model
-                
-                # Update task progress
-                with session_scope() as db:
-                    update_task_status(db, task_id, "in_progress", progress=0.6)
-                
-                # Step 3: Perform speaker diarization
-                logger.info("Performing speaker diarization...")
-                hf_token = settings.HUGGINGFACE_TOKEN or None
-                
-                # Set diarization parameters
-                diarize_params = {}
-                diarize_params["max_speakers"] = 10
-                diarize_params["min_speakers"] = 1
-                
-                # Create diarization pipeline
-                diarize_model = whisperx.DiarizationPipeline(
-                    use_auth_token=hf_token,
-                    device=device
-                )
-                
-                # Run diarization
-                diarize_segments = diarize_model(audio, **diarize_params)
-                
-                # Assign speakers to words in the aligned result
-                logger.info("Assigning speaker labels to transcript...")
-                result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
-                
-                # Process the diarized result to store in database
-                logger.info("Processing diarized result for database storage...")
-                segments = []
-                speaker_mapping = {}
-                
-                # First, create or get speakers in the database for each unique speaker ID
-                unique_speakers = set()
-                
-                # Normalize speaker labels first to ensure consistent format (SPEAKER_XX)
-                for segment in result["segments"]:
-                    if "speaker" in segment and segment["speaker"] is not None:
-                        # Ensure speaker labels follow the SPEAKER_XX format
-                        if not segment["speaker"].startswith("SPEAKER_"):
-                            segment["speaker"] = f"SPEAKER_{segment['speaker']}"
-                        unique_speakers.add(segment["speaker"])
-                
-                # Store each unique speaker in the database
-                for speaker_id in unique_speakers:
-                    # Skip if already processed
-                    if speaker_id in speaker_mapping:
-                        continue
-                        
-                    with session_scope() as db:
-                        # Check if speaker already exists for this user
-                        speaker = db.query(Speaker).filter(
-                            Speaker.user_id == user_id,
-                            Speaker.name == speaker_id
-                        ).first()
-                        
-                        # Create new speaker if needed
-                        if not speaker:
-                            speaker = Speaker(
-                                user_id=user_id,
-                                name=speaker_id,
-                                uuid=str(uuid.uuid4())
-                            )
-                            db.add(speaker)
-                            db.commit()
-                            
-                        # Store speaker ID mapping
-                        speaker_mapping[speaker_id] = speaker.id
-                
-                # Process segments from WhisperX result
-                logger.info(f"Converting {len(result['segments'])} segments to database format...")
-                for i, segment in enumerate(result["segments"]):
-                    # Get start and end time
-                    segment_start = segment["start"]
-                    segment_end = segment["end"]
-                    segment_text = segment["text"]
-                    
-                    # Get speaker ID (WhisperX has already assigned speakers)
-                    speaker_id = segment.get("speaker")
-                    
-                    # Ensure consistent speaker format
-                    if speaker_id is None:
-                        speaker_id = f"SPEAKER_{i % 2}" # Fallback if no speaker assigned
-                    elif not speaker_id.startswith("SPEAKER_"):
-                        speaker_id = f"SPEAKER_{speaker_id}"
-                    
-                    # Get database ID for this speaker
-                    speaker_db_id = speaker_mapping.get(speaker_id)
-                    if not speaker_db_id and speaker_id not in speaker_mapping:
-                            # Create speaker if needed
-                            with session_scope() as db:
-                                speaker = Speaker(
-                                    user_id=user_id,
-                                    name=speaker_id,
-                                    uuid=str(uuid.uuid4())
-                                )
-                                db.add(speaker)
-                            db.commit()
-                            speaker_mapping[speaker_id] = speaker.id
-                            speaker_db_id = speaker.id
-                    
-                    # Get words with timestamps (important for highlighting during playback)
-                    words_data = []
-                    if "words" in segment:
-                        for word in segment["words"]:
-                            if "start" in word and "end" in word:
-                                words_data.append({
-                                    "word": word.get("word", ""),
-                                    "start": word.get("start", 0.0),
-                                    "end": word.get("end", 0.0),
-                                    "score": word.get("score", 1.0)
-                                })
-                    
-                    # Add segment to our processed list
-                    segments.append({
-                        "start": segment_start,
-                        "end": segment_end,
-                        "text": segment_text,
-                        "speaker": speaker_id,
-                        "speaker_id": speaker_db_id,
-                        "words": words_data,
-                        "confidence": segment.get("confidence", 1.0)
-                    })
-                
-                # Calculate the total duration from the last segment end time
-                duration = segments[-1]["end"] if segments else 0.0
-                
-                logger.info(f"Transcription completed with {len(segments)} segments and duration {duration}s")
-                
-                # Save transcription to database
-                with session_scope() as db:
-                    media_file = get_refreshed_object(db, MediaFile, file_id)
-                    if not media_file:
-                        logger.error(f"Media file with ID {file_id} not found when saving transcription")
-                        return {"status": "error", "message": f"Media file not found"}
-                    
-                    # Add transcript segments to database
-                    for i, segment in enumerate(segments):
-                        # Check if speaker exists or create a new one
-                        speaker_label = segment["speaker"]
-                        
-                        # Try to find an existing speaker with the same label
-                        speaker = db.query(Speaker).filter_by(name=speaker_label, user_id=user_id).first()
-                        
-                        if not speaker:
-                            try:
-                                # Create a new speaker with a unique UUID
-                                # This UUID will be used to track the same speaker across different videos
-                                speaker_uuid = str(uuid.uuid4())
-                                
-                                # Extract numerical ID from speaker label (e.g., SPEAKER_01 -> 01)
-                                # This helps with display in the UI
-                                speaker_number = ''
-                                if '_' in speaker_label:
-                                    try:
-                                        speaker_number = speaker_label.split('_')[1]
-                                    except IndexError:
-                                        speaker_number = speaker_label
-                                
-                                # Ensure the UUID is never null
-                                if not speaker_uuid:
-                                    speaker_uuid = str(uuid.uuid4())
-                                    logger.warning(f"Generated fallback UUID for speaker {speaker_label}: {speaker_uuid}")
-                                
-                                speaker = Speaker(
-                                    name=speaker_label,
-                                    display_name=None,  # Will be set by user later
-                                    uuid=speaker_uuid,
-                                    user_id=user_id,
-                                    verified=False
-                                )
-                                db.add(speaker)
-                                db.flush()  # Get the ID without committing
-                                logger.info(f"Created new speaker: {speaker_label} with UUID: {speaker_uuid}")
-                            except Exception as e:
-                                logger.error(f"Error creating speaker {speaker_label}: {str(e)}")
-                                # Create a fallback speaker with guaranteed UUID
-                                speaker_uuid = str(uuid.uuid4())
-                                speaker = Speaker(
-                                    name=speaker_label,
-                                    display_name=None,
-                                    uuid=speaker_uuid,
-                                    user_id=user_id,
-                                    verified=False
-                                )
-                                db.add(speaker)
-                                db.flush()
-                        db_segment = TranscriptSegment(
-                            media_file_id=file_id,
-                            start_time=segment["start"],
-                            end_time=segment["end"],
-                            text=segment["text"],
-                            speaker_id=speaker.id,
-                            # confidence=segment["confidence"],
-
-
-                        )
-                        db.add(db_segment)
-                    
-                    # Update media file with transcription metadata
-                    media_file.duration = duration
-                    media_file.language = result.get("language", "en")
-                    media_file.status = FileStatus.COMPLETED
-                    media_file.completed_at = datetime.datetime.now()
-                    
-                    logger.info(f"Saved {len(segments)} transcript segments to database")
-                    
-                    # Update task progress
-                    update_task_status(db, task_id, "in_progress", progress=0.8)
-                # Index transcript in OpenSearch for search functionality
-                try:
-                    logger.info("Indexing transcript in search database...")
-                    # Create a clean version of segments for indexing
-                    index_segments = []
-                    for segment in segments:
-                        index_segments.append({
-                            "start": segment["start"],
-                            "end": segment["end"],
-                            "text": segment["text"],
-                            "speaker": segment["speaker"]
-                        })
-                    
-                    # Generate full transcript text for search indexing
-                    full_transcript = " ".join([segment["text"] for segment in segments])
-                    
-                    # Get unique speakers
-                    speaker_names = list(set([segment["speaker"] for segment in segments]))
-                    
-                    # Get the file title from the database
-                    with session_scope() as db:
-                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                        file_title = media_file.filename if media_file else f"File {file_id}"
-                    
-                    # Index in OpenSearch
-                    index_transcript(file_id, user_id, full_transcript, speaker_names, file_title)
-                    
-                    # Complete task
-                    with session_scope() as db:
-                        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-                        
-                except Exception as e:
-                    logger.warning(f"Error indexing transcript: {e}")
-                    # Still mark as completed even if indexing fails
-                    with session_scope() as db:
-                        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-                
-                # Send WebSocket notification about completion with retry logic
-                notification_success = False
-                for retry in range(3):  # Try up to 3 times
-                    try:
-                        # Send the notification
-                        asyncio.run(send_notification(
-                            user_id, 
-                            "transcription_status", 
-                            {
-                                "file_id": str(file_id),
-                                "status": FileStatus.COMPLETED.value,
-                                "message": "Transcription completed successfully",
-                                "progress": 100
-                            }
-                        ))
-                        notification_success = True
-                        logger.info(f"Successfully sent completion notification for file {file_id} on try {retry+1}")
-                        break  # Exit retry loop if successful
-                    except Exception as e:
-                        logger.warning(f"Failed to send completion notification (attempt {retry+1}/3): {e}")
-                        if retry < 2:  # Don't sleep on the last attempt
-                            import time
-                            time.sleep(1)  # Short delay before retry
-                
-                # Even if notification failed, ensure the database is updated
-                if not notification_success:
-                    logger.warning("Websocket notification failed, ensuring database status is updated")
-                    with session_scope() as db:
-                        # Double-check media file status
-                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                        if media_file and media_file.status != FileStatus.COMPLETED:
-                            media_file.status = FileStatus.COMPLETED
-                            media_file.transcription_completed_at = datetime.datetime.now()
-                        # Double-check task status
-                        task = db.query(Task).filter(Task.id == task_id).first()
-                        if task and task.status != "completed":
-                            task.status = "completed"
-                            task.progress = 1.0
-                            task.completed_at = datetime.datetime.now()
-                
-                # Return success result
-                return {"status": "success", "file_id": file_id, "segments": len(segments)}
-                
-            except Exception as e:
-                logger.error(f"Error processing audio: {str(e)}")
-                with session_scope() as db:
-                    update_task_status(db, task_id, "failed", error_message=f"Audio processing error: {str(e)}", completed=True)
-                    media_file = get_refreshed_object(db, MediaFile, file_id)
-                    if media_file:
-                        media_file.status = FileStatus.ERROR
-                return {"status": "error", "message": str(e)}
-    
-    except Exception as e:
-        # Handle any errors
-        logger.error(f"Error processing file {file_id}: {str(e)}")
-        
-        # Update status in database to indicate error
-        try:
-            with session_scope() as db:
-                media_file = get_refreshed_object(db, MediaFile, file_id)
-                if media_file:
-                    media_file.status = FileStatus.ERROR
-                
-                update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-                
-            # Send error notification via WebSocket
-            try:
-                asyncio.run(send_notification(
-                    user_id, 
-                    "transcription_status", 
-                    {
-                        "file_id": str(file_id),
-                        "status": FileStatus.ERROR.value,
-                        "message": f"Transcription failed: {str(e)}",
-                        "progress": 0
-                    }
-                ))
-            except Exception as notif_err:
-                logger.warning(f"Failed to send error notification: {notif_err}")
-                
-        except Exception as update_err:
-            logger.error(f"Error updating task status: {update_err}")
-            
-        return {"status": "error", "message": str(e)}
 @celery_app.task(name="extract_audio")
 def extract_audio_task(file_id: int, output_format: str = "wav"):
     """
@@ -834,49 +32,42 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
         output_format: Output audio format (default: wav)
     """
     try:
-        # Use session_scope to manage DB session properly
         with session_scope() as db:
-            # Get media file from database using get_refreshed_object for proper session binding
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
                 return {"status": "error", "message": f"Media file with ID {file_id} not found"}
             
-            # Store needed properties before session closes
             user_id = media_file.user_id
             storage_path = media_file.storage_path
             filename = media_file.filename
         
-        # Download file from MinIO outside of DB session
         file_data, file_size, content_type = download_file(storage_path)
         
-        # Check if it's a video file
         if not content_type.startswith('video/'):
             return {"status": "error", "message": "Not a video file"}
         
-        # Create temporary file for video
         video_suffix = Path(filename).suffix
         with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as temp_video:
             temp_video.write(file_data.read())
             video_path = temp_video.name
         
         try:
-            # Generate output audio filename
+            import ffmpeg
+            import io
+            import os
+            
             audio_filename = f"{Path(filename).stem}.{output_format}"
             audio_storage_path = f"user_{user_id}/file_{file_id}/audio/{audio_filename}"
             
-            # Create temporary file for audio
             with tempfile.NamedTemporaryFile(suffix=f".{output_format}", delete=False) as temp_audio:
                 audio_path = temp_audio.name
             
-            # Extract audio using ffmpeg
             ffmpeg.input(video_path).output(audio_path).run(quiet=True, overwrite_output=True)
             
-            # Upload audio file to MinIO
             with open(audio_path, 'rb') as audio_file:
                 audio_data = audio_file.read()
                 
-            # Upload the extracted audio file
             upload_file(
                 file_content=io.BytesIO(audio_data),
                 file_size=os.path.getsize(audio_path),
@@ -884,15 +75,7 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
                 content_type=f"audio/{output_format}"
             )
             
-            # Update task status with session_scope
-            with session_scope() as db:
-                # Update the media file to include the audio path
-                media_file = get_refreshed_object(db, MediaFile, file_id)
-                if media_file:
-                    # Could store audio path if needed
-                    # media_file.audio_path = audio_storage_path
-                    logger.info(f"Audio extraction completed for file {file_id}")
-            
+            logger.info(f"Audio extraction completed for file {file_id}")
             return {
                 "status": "success", 
                 "file_id": file_id,
@@ -900,19 +83,18 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
             }
             
         finally:
-            # Clean up temporary files
             try:
                 if os.path.exists(video_path):
                     os.unlink(video_path)
-                if os.path.exists(audio_path):
+                if 'audio_path' in locals() and os.path.exists(audio_path):
                     os.unlink(audio_path)
             except Exception as e:
                 logger.error(f"Error cleaning up temporary files: {e}")
     
     except Exception as e:
-        # Handle errors
         logger.error(f"Error extracting audio from file {file_id}: {str(e)}")
         return {"status": "error", "message": str(e)}
+
 
 @celery_app.task(name="analyze_transcript")
 def analyze_transcript_task(file_id: int):
@@ -924,13 +106,11 @@ def analyze_transcript_task(file_id: int):
     """
     try:
         with session_scope() as db:
-            # Get the media file
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
                 return {"status": "error", "message": f"Media file with ID {file_id} not found"}
             
-            # Get all transcript segments for this file
             segments = db.query(TranscriptSegment).filter(
                 TranscriptSegment.media_file_id == file_id
             ).order_by(TranscriptSegment.segment_index).all()
@@ -939,20 +119,16 @@ def analyze_transcript_task(file_id: int):
                 logger.warning(f"No transcript segments found for file {file_id}")
                 return {"status": "error", "message": "No transcript segments found"}
             
-            # Combine all text for analysis
             full_text = " ".join([segment.text for segment in segments])
             
-            # Create or update analytics record
             analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
             if not analytics:
                 analytics = Analytics(media_file_id=file_id)
                 db.add(analytics)
             
-            # Count words, speakers, and segments
             word_count = len(full_text.split())
             unique_speakers = len(set([segment.speaker_id for segment in segments]))
             
-            # Update analytics record with results
             analytics.word_count = word_count
             analytics.speaker_count = unique_speakers
             analytics.segment_count = len(segments)
@@ -966,6 +142,7 @@ def analyze_transcript_task(file_id: int):
         logger.error(f"Error analyzing transcript for file {file_id}: {str(e)}")
         return {"status": "error", "message": str(e)}
 
+
 @celery_app.task(name="summarize_transcript")
 def summarize_transcript_task(file_id: int):
     """
@@ -976,13 +153,11 @@ def summarize_transcript_task(file_id: int):
     """
     try:
         with session_scope() as db:
-            # Get the media file
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
                 return {"status": "error", "message": f"Media file with ID {file_id} not found"}
             
-            # Get all transcript segments for this file
             segments = db.query(TranscriptSegment).filter(
                 TranscriptSegment.media_file_id == file_id
             ).order_by(TranscriptSegment.segment_index).all()
@@ -991,70 +166,63 @@ def summarize_transcript_task(file_id: int):
                 logger.warning(f"No transcript segments found for file {file_id}")
                 return {"status": "error", "message": "No transcript segments found"}
             
-            # Combine all text for summarization
             full_text = " ".join([segment.text for segment in segments])
             
-            # Implement text summarization
-            # In a production environment, this would use a language model API
-            # For now, use a simple extractive summarization approach
-            from nltk.tokenize import sent_tokenize
-            from nltk.corpus import stopwords
-            from nltk.probability import FreqDist
-            import nltk
-            
-            # Download necessary NLTK resources if they're not already available
+            # Simple extractive summarization using NLTK
             try:
-                nltk.data.find('tokenizers/punkt')
-            except LookupError:
-                nltk.download('punkt')
-            try:
-                nltk.data.find('corpora/stopwords')
-            except LookupError:
-                nltk.download('stopwords')
+                from nltk.tokenize import sent_tokenize
+                from nltk.corpus import stopwords
+                from nltk.probability import FreqDist
+                import nltk
                 
-            # Tokenize into sentences
-            sentences = sent_tokenize(full_text)
-            
-            # Remove stop words and punctuation
-            stop_words = set(stopwords.words('english'))
-            words = [word.lower() for sentence in sentences 
-                    for word in nltk.word_tokenize(sentence) 
-                    if word.isalnum() and word.lower() not in stop_words]
-            
-            # Calculate word frequency
-            word_frequencies = FreqDist(words)
-            
-            # Calculate sentence scores based on word frequency
-            sentence_scores = {}
-            for i, sentence in enumerate(sentences):
-                for word in nltk.word_tokenize(sentence.lower()):
-                    if word in word_frequencies:
-                        if i in sentence_scores:
-                            sentence_scores[i] += word_frequencies[word]
-                        else:
-                            sentence_scores[i] = word_frequencies[word]
-            
-            # Get top 3 sentences or fewer if there aren't enough
-            num_summary_sentences = min(3, len(sentences))
-            top_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)[:num_summary_sentences]
-            top_sentences = sorted(top_sentences, key=lambda x: x[0])  # Sort by position in text
-            
-            # Generate the summary
-            summary = ' '.join([sentences[i] for i, _ in top_sentences])
-            
-            # If summary is empty (possible if processing failed), provide a simple summary
-            if not summary.strip():
+                try:
+                    nltk.data.find('tokenizers/punkt')
+                except LookupError:
+                    nltk.download('punkt')
+                try:
+                    nltk.data.find('corpora/stopwords')
+                except LookupError:
+                    nltk.download('stopwords')
+                    
+                sentences = sent_tokenize(full_text)
+                stop_words = set(stopwords.words('english'))
+                words = [word.lower() for sentence in sentences 
+                        for word in nltk.word_tokenize(sentence) 
+                        if word.isalnum() and word.lower() not in stop_words]
+                
+                word_frequencies = FreqDist(words)
+                
+                sentence_scores = {}
+                for i, sentence in enumerate(sentences):
+                    for word in nltk.word_tokenize(sentence.lower()):
+                        if word in word_frequencies:
+                            if i in sentence_scores:
+                                sentence_scores[i] += word_frequencies[word]
+                            else:
+                                sentence_scores[i] = word_frequencies[word]
+                
+                num_summary_sentences = min(3, len(sentences))
+                top_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)[:num_summary_sentences]
+                top_sentences = sorted(top_sentences, key=lambda x: x[0])
+                
+                summary = ' '.join([sentences[i] for i, _ in top_sentences])
+                
+                if not summary.strip():
+                    summary = f"Transcript with {len(segments)} segments and approximately {len(full_text.split())} words."
+                
+                media_file.summary = summary
+                db.commit()
+                
+                logger.info(f"Summarization completed for file {file_id}")
+                return {"status": "success", "file_id": file_id, "summary": summary}
+                
+            except ImportError:
+                # Fallback summary if NLTK is not available
                 summary = f"Transcript with {len(segments)} segments and approximately {len(full_text.split())} words."
-            
-            # Update the media file with the summary
-            media_file.summary = summary
-            db.commit()
-            
-            logger.info(f"Summarization completed for file {file_id}")
-            return {"status": "success", "file_id": file_id, "summary": summary}
+                media_file.summary = summary
+                db.commit()
+                return {"status": "success", "file_id": file_id, "summary": summary}
             
     except Exception as e:
         logger.error(f"Error summarizing transcript for file {file_id}: {str(e)}")
         return {"status": "error", "message": str(e)}
-# Translation task is no longer needed as faster-whisper automatically translates to English
-# The transcribe_audio_task uses the task="translate" parameter to ensure all transcripts are in English
