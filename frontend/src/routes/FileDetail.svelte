@@ -326,6 +326,7 @@
     } catch (error) {
       console.error('Error initializing player:', error);
       errorMessage = 'Failed to initialize video player';
+      playerInitialized = false;
     }
   }
 
@@ -357,25 +358,7 @@
   // Event handlers for components
   function handleSegmentClick(event: any) {
     const startTime = event.detail.startTime;
-    if (player) {
-      player.currentTime = startTime;
-      
-      // Flash player controls briefly to show timestamp
-      const playerContainer = document.querySelector('.plyr');
-      if (playerContainer) {
-        playerContainer.classList.add('plyr--show-controls');
-        setTimeout(() => {
-          playerContainer.classList.remove('plyr--show-controls');
-        }, 3000); // Show controls for 3 seconds
-      }
-      
-      if (player.paused) {
-        const playPromise = player.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(console.error);
-        }
-      }
-    }
+    seekToTime(startTime);
   }
 
   // Handle speaker name updates
@@ -705,9 +688,31 @@
   }
 
   function handleSeekTo(event: any) {
-    const time = event.detail.time;
+    const time = event.detail.time || event.detail;
+    seekToTime(time);
+  }
+
+  function seekToTime(time: number) {
     if (player) {
-      player.currentTime = time;
+      // Add 0.5 second padding before the target time for better context
+      const paddedTime = Math.max(0, time - 0.5);
+      player.currentTime = paddedTime;
+      
+      // Flash player controls briefly to show timestamp
+      const playerContainer = document.querySelector('.plyr');
+      if (playerContainer) {
+        playerContainer.classList.add('plyr--show-controls');
+        setTimeout(() => {
+          playerContainer.classList.remove('plyr--show-controls');
+        }, 3000); // Show controls for 3 seconds
+      }
+      
+      if (player.paused) {
+        const playPromise = player.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          playPromise.catch(console.error);
+        }
+      }
     }
   }
 
@@ -746,6 +751,8 @@
     if (player) {
       try {
         player.destroy();
+        player = null;
+        playerInitialized = false;
       } catch (err) {
         console.error('Error destroying player:', err);
       }

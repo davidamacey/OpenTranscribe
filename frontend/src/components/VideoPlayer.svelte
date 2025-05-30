@@ -19,7 +19,6 @@
     <!-- svelte-ignore a11y-media-has-caption -->
     <video id="player" playsinline controls>
       <source src={videoUrl} type="video/mp4" />
-      <!-- Captions disabled to avoid CORS issues -->
       Your browser does not support the video element.
     </video>
     
@@ -33,10 +32,10 @@
     {#if errorMessage}
       <p class="error-message">{errorMessage}</p>
       <button 
-      class="retry-button" 
-      on:click={handleRetry}
-      title="Retry loading the video file"
-    >Retry Loading Video</button>
+        class="retry-button" 
+        on:click={handleRetry}
+        title="Retry loading the video file"
+      >Retry Loading Video</button>
     {/if}
   {:else if file && file.status === 'completed'}
     <div class="no-preview">Video preview not available. You can try downloading the file.</div>
