@@ -1,5 +1,4 @@
 -- Initialize database tables for OpenTranscribe
--- This replaces the need for Alembic migrations
 
 -- Users table
 CREATE TABLE IF NOT EXISTS "user" (
@@ -105,8 +104,6 @@ CREATE TABLE IF NOT EXISTS comment (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- These tables are already defined above, so we're removing the duplicate definitions
-
 -- Tasks table
 CREATE TABLE IF NOT EXISTS task (
     id VARCHAR(255) PRIMARY KEY,
@@ -130,26 +127,4 @@ CREATE TABLE IF NOT EXISTS analytics (
     keywords JSONB NULL
 );
 
--- Insert default tag values if needed
-INSERT INTO tag (name) VALUES
-    ('Important'),
-    ('Meeting'),
-    ('Interview'),
-    ('Personal')
-ON CONFLICT (name) DO NOTHING;
-
--- Alembic version tracking (to maintain compatibility)
-CREATE TABLE IF NOT EXISTS alembic_version (
-    version_num VARCHAR(32) NOT NULL,
-    PRIMARY KEY (version_num)
-);
--- Update to include video metadata fields migration
-INSERT INTO alembic_version (version_num) VALUES ('74093bff36e6') ON CONFLICT DO NOTHING;
-
--- Add completed_at column if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'media_file' AND column_name = 'completed_at') THEN
-        ALTER TABLE media_file ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE NULL;
-    END IF;
-END$$;
+-- Note: Default tags are now handled by the backend in app/initial_data.py
