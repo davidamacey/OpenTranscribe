@@ -72,9 +72,9 @@
       return;
     }
     
-    // Check file size (limit to 500MB for example)
-    if (selectedFile.size > 500 * 1024 * 1024) {
-      error = 'File too large. Please upload a file smaller than 500MB.';
+    // Check file size (limit to 4GB for GoPro and high-quality videos)
+    if (selectedFile.size > 4 * 1024 * 1024 * 1024) {
+      error = 'File too large. Please upload a file smaller than 4GB.';
       return;
     }
     
