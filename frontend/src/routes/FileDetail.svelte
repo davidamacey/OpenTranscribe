@@ -5,6 +5,7 @@
   import 'plyr/dist/plyr.css';
   import axiosInstance from '$lib/axios';
   import { formatTimestampWithMillis } from '$lib/utils/formatting';
+  import { websocketStore } from '$stores/websocket';
   
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
@@ -45,6 +46,7 @@
   let editingSegmentText = '';
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
+  let reprocessing = false;
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
@@ -773,6 +775,28 @@
     fetchFileDetails();
   }
 
+  async function handleReprocess(event: CustomEvent) {
+    const { fileId } = event.detail;
+    
+    try {
+      reprocessing = true;
+      await axiosInstance.post(`/api/files/${fileId}/reprocess`);
+      
+      // Refresh file details to show updated status
+      await fetchFileDetails(fileId);
+      
+      console.log('File reprocessing started');
+    } catch (error) {
+      console.error('Error starting reprocess:', error);
+      errorMessage = 'Failed to start reprocessing. Please try again.';
+    } finally {
+      reprocessing = false;
+    }
+  }
+
+  // WebSocket subscription for real-time updates
+  let wsUnsubscribe: () => void;
+
   // Component mount logic
   onMount(() => {
     apiBaseUrl = window.location.origin;
@@ -791,6 +815,42 @@
       errorMessage = 'Invalid file ID';
       isLoading = false;
     }
+
+    // Track last processed notification to avoid duplicate processing
+    let lastProcessedNotificationId = '';
+
+    // Subscribe to WebSocket notifications for real-time updates
+    wsUnsubscribe = websocketStore.subscribe(($ws) => {
+      if ($ws.notifications.length > 0) {
+        const latestNotification = $ws.notifications[0];
+        
+        // Only process if this is a new notification we haven't handled
+        if (latestNotification.id !== lastProcessedNotificationId) {
+          lastProcessedNotificationId = latestNotification.id;
+          
+          // Check if this notification is for our current file
+          // Convert both to strings for comparison since notification sends file_id as string
+          if (String(latestNotification.data?.file_id) === String(fileId) && 
+              latestNotification.type === 'transcription_status') {
+            
+            // Update progress in real-time without full refresh for progress updates
+            if (latestNotification.data?.status === 'processing' && latestNotification.data?.progress !== undefined) {
+              if (file) {
+                file.progress = latestNotification.data.progress;
+                file.status = 'processing';
+                file = { ...file }; // Trigger reactivity
+                reactiveFile.set(file);
+              }
+              console.log('Progress update for file:', fileId, 'Progress:', latestNotification.data.progress + '%', 'Message:', latestNotification.data.message);
+            } else {
+              // For status changes (completed, error), do a full refresh
+              console.log('Status change for file:', fileId, 'Status:', latestNotification.data?.status);
+              fetchFileDetails();
+            }
+          }
+        }
+      }
+    });
   });
 
   onDestroy(() => {
@@ -802,6 +862,11 @@
       } catch (err) {
         console.error('Error destroying player:', err);
       }
+    }
+    
+    // Clean up WebSocket subscription
+    if (wsUnsubscribe) {
+      wsUnsubscribe();
     }
   });
 
@@ -907,6 +972,7 @@
           bind:editingSegmentText
           {isEditingSpeakers}
           {speakerList}
+          {reprocessing}
           on:segmentClick={handleSegmentClick}
           on:editSegment={handleEditSegment}
           on:saveSegment={handleSaveSegment}
@@ -915,6 +981,7 @@
           on:exportTranscript={handleExportTranscript}
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}
+          on:reprocess={handleReprocess}
         />
       {:else}
         <section class="transcript-column">

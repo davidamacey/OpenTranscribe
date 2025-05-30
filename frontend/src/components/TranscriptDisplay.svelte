@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import ReprocessButton from './ReprocessButton.svelte';
   
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -12,6 +13,7 @@
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
   export let speakerList: any[] = [];
+  export let reprocessing: boolean = false;
 
   const dispatch = createEventDispatcher();
 
@@ -61,6 +63,10 @@
 
   function saveSpeakerNames() {
     dispatch('saveSpeakerNames');
+  }
+
+  function handleReprocess(event: any) {
+    dispatch('reprocess', event.detail);
   }
 </script>
 
@@ -233,6 +239,8 @@
             </svg>
           </a>
         {/if}
+
+        <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
       </div>
       
       {#if isEditingSpeakers}
