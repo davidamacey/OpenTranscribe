@@ -118,7 +118,7 @@ def transcribe_audio_task(self, file_id: int):
                 unique_speakers = extract_unique_speakers(result["segments"])
                 
                 with session_scope() as db:
-                    speaker_mapping = create_speaker_mapping(db, user_id, unique_speakers)
+                    speaker_mapping = create_speaker_mapping(db, user_id, file_id, unique_speakers)
                 
                 processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
                 

@@ -5,6 +5,25 @@
   export let file: any = null;
   export let isAnalyticsExpanded: boolean = false;
   export let speakerList: any[] = [];
+  
+  // Simple refresh counter to force re-rendering
+  let refreshCounter = 0;
+  
+  // Create a unique key based on speaker list and analytics data to force re-rendering when speakers change
+  $: speakerKey = speakerList.map(s => `${s.id}-${s.display_name || s.name}`).join('-');
+  $: analyticsKey = file?.analytics ? 
+    JSON.stringify({
+      talk_time: file.analytics.overall?.talk_time,
+      turn_taking: file.analytics.overall?.turn_taking,
+      interruptions: file.analytics.overall?.interruptions,
+      questions: file.analytics.overall?.questions
+    }) : '';
+  $: combinedKey = `${speakerKey}-${analyticsKey}-${refreshCounter}`;
+  
+  // Watch for changes and force refresh
+  $: if (file?.analytics) {
+    refreshCounter++;
+  }
 
   function toggleAnalytics() {
     isAnalyticsExpanded = !isAnalyticsExpanded;
@@ -37,16 +56,18 @@
   {#if isAnalyticsExpanded}
     <div class="analytics-content" transition:slide={{ duration: 200 }}>
       {#if file && file.analytics && file.analytics.overall}
-        <SpeakerStats 
-          analytics={{
-            talk_time: file.analytics.overall.talk_time || { by_speaker: {}, total: 0 },
-            interruptions: file.analytics.overall.interruptions || { by_speaker: {}, total: 0 },
-            turn_taking: file.analytics.overall.turn_taking || { by_speaker: {}, total_turns: 0 },
-            questions: file.analytics.overall.questions || { by_speaker: {}, total: 0 },
-            ...file.analytics.overall
-          }}
-          {speakerList}
-        />
+        {#key combinedKey}
+          <SpeakerStats 
+            analytics={{
+              talk_time: file.analytics.overall.talk_time || { by_speaker: {}, total: 0 },
+              interruptions: file.analytics.overall.interruptions || { by_speaker: {}, total: 0 },
+              turn_taking: file.analytics.overall.turn_taking || { by_speaker: {}, total_turns: 0 },
+              questions: file.analytics.overall.questions || { by_speaker: {}, total: 0 },
+              ...file.analytics.overall
+            }}
+            {speakerList}
+          />
+        {/key}
       {:else if file && file.status === 'processing'}
         <p>Analytics are being processed...</p>
       {:else if file && file.status === 'completed' && !file.analytics}

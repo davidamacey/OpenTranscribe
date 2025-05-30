@@ -65,6 +65,7 @@ class MediaFile(Base):
     # Relationships
     user = relationship("User", back_populates="media_files")
     transcript_segments = relationship("TranscriptSegment", back_populates="media_file", cascade="all, delete-orphan")
+    speakers = relationship("Speaker", back_populates="media_file", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="media_file", cascade="all, delete-orphan")
     file_tags = relationship("FileTag", back_populates="media_file", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="media_file", cascade="all, delete-orphan")
@@ -91,6 +92,7 @@ class Speaker(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)  # Original name from diarization (e.g., "SPEAKER_01")
     display_name = Column(String, nullable=True)  # User-assigned name (e.g., "John Doe")
     uuid = Column(String, nullable=False, index=True)  # Unique identifier for the speaker
@@ -100,6 +102,7 @@ class Speaker(Base):
     
     # Relationships
     user = relationship("User", back_populates="speakers")
+    media_file = relationship("MediaFile", back_populates="speakers")
     transcript_segments = relationship("TranscriptSegment", back_populates="speaker")
 
 

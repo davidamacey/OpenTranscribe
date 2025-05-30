@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
 import logging
+import re
 
 from app.db.base import get_db
 from app.models.user import User
@@ -46,11 +47,12 @@ def delete_speaker(
 @router.post("/", response_model=SpeakerSchema)
 def create_speaker(
     speaker: SpeakerUpdate,
+    media_file_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Create a new speaker
+    Create a new speaker for a specific media file
     """
     # Generate a UUID for the new speaker
     speaker_uuid = str(uuid.uuid4())
@@ -60,6 +62,7 @@ def create_speaker(
         display_name=speaker.display_name,
         uuid=speaker_uuid,
         user_id=current_user.id,
+        media_file_id=media_file_id,
         verified=speaker.verified if speaker.verified is not None else False
     )
     
@@ -97,25 +100,28 @@ def list_speakers(
         if verified_only:
             query = query.filter(Speaker.verified == True)
         
-        # If this is for filtering, only return speakers with display names
+        # If this is for filtering, only return speakers with meaningful display names
         if for_filter:
-            query = query.filter(Speaker.display_name.isnot(None), Speaker.display_name != "")
+            query = query.filter(
+                Speaker.display_name.isnot(None), 
+                Speaker.display_name != "",
+                # Exclude display names that are just the original speaker labels (SPEAKER_XX)
+                ~Speaker.display_name.op('~')(r'^SPEAKER_\d+$')
+            )
         
         # Filter by file_id if provided
         if file_id is not None:
-            # Get the speaker IDs that appear in this file's transcript segments
-            speaker_ids = db.query(TranscriptSegment.speaker_id).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).distinct().all()
-            speaker_ids = [s[0] for s in speaker_ids if s[0] is not None]
+            # Filter speakers directly by media_file_id
+            query = query.filter(Speaker.media_file_id == file_id)
             
-            if speaker_ids:
-                query = query.filter(Speaker.id.in_(speaker_ids))
-            else:
-                # No speakers in this file, return empty list
-                return []
-            
-        speakers = query.order_by(Speaker.verified.desc(), Speaker.display_name, Speaker.name).all()
+        speakers = query.all()
+        
+        # Sort speakers by SPEAKER_XX numbering for consistent ordering
+        def get_speaker_number(speaker):
+            match = re.match(r'^SPEAKER_(\d+)$', speaker.name)
+            return int(match.group(1)) if match else 999  # Unknown speakers go to end
+        
+        speakers.sort(key=lambda s: (not s.verified, get_speaker_number(s), s.display_name or s.name))
         
         # If for_filter, group by display_name to avoid duplicates
         if for_filter:
@@ -123,7 +129,10 @@ def list_speakers(
             unique_speakers = []
             for speaker in speakers:
                 display_name = speaker.display_name or speaker.name
-                if display_name not in seen_names:
+                # Additional check: skip SPEAKER_XX patterns even if they somehow made it through
+                if (display_name not in seen_names and 
+                    not display_name.startswith('SPEAKER_') and
+                    display_name.strip() != ""):
                     seen_names.add(display_name)
                     unique_speakers.append(speaker)
             return unique_speakers

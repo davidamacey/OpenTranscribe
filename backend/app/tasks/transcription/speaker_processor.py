@@ -48,21 +48,23 @@ def extract_unique_speakers(segments: List[Dict[str, Any]]) -> Set[str]:
     return unique_speakers
 
 
-def create_or_get_speaker(db: Session, user_id: int, speaker_label: str) -> Speaker:
+def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker_label: str) -> Speaker:
     """
-    Create a new speaker or get existing one from database.
+    Create a new speaker or get existing one from database for a specific file.
     
     Args:
         db: Database session
         user_id: User ID
+        media_file_id: Media file ID to associate speaker with
         speaker_label: Speaker label (e.g., "SPEAKER_01")
         
     Returns:
         Speaker object
     """
-    # Check if speaker already exists for this user
+    # Check if speaker already exists for this user and file
     speaker = db.query(Speaker).filter(
         Speaker.user_id == user_id,
+        Speaker.media_file_id == media_file_id,
         Speaker.name == speaker_label
     ).first()
     
@@ -75,14 +77,15 @@ def create_or_get_speaker(db: Session, user_id: int, speaker_label: str) -> Spea
                 display_name=None,
                 uuid=speaker_uuid,
                 user_id=user_id,
+                media_file_id=media_file_id,
                 verified=False
             )
             db.add(speaker)
             db.flush()  # Get the ID without committing
-            logger.info(f"Created new speaker: {speaker_label} with UUID: {speaker_uuid}")
+            logger.info(f"Created new speaker: {speaker_label} with UUID: {speaker_uuid} for file: {media_file_id}")
             
         except Exception as e:
-            logger.error(f"Error creating speaker {speaker_label}: {str(e)}")
+            logger.error(f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}")
             # Create a fallback speaker with guaranteed UUID
             speaker_uuid = str(uuid.uuid4())
             speaker = Speaker(
@@ -90,6 +93,7 @@ def create_or_get_speaker(db: Session, user_id: int, speaker_label: str) -> Spea
                 display_name=None,
                 uuid=speaker_uuid,
                 user_id=user_id,
+                media_file_id=media_file_id,
                 verified=False
             )
             db.add(speaker)
@@ -98,13 +102,14 @@ def create_or_get_speaker(db: Session, user_id: int, speaker_label: str) -> Spea
     return speaker
 
 
-def create_speaker_mapping(db: Session, user_id: int, unique_speakers: Set[str]) -> Dict[str, int]:
+def create_speaker_mapping(db: Session, user_id: int, media_file_id: int, unique_speakers: Set[str]) -> Dict[str, int]:
     """
-    Create a mapping of speaker labels to database IDs.
+    Create a mapping of speaker labels to database IDs for a specific file.
     
     Args:
         db: Database session
         user_id: User ID
+        media_file_id: Media file ID
         unique_speakers: Set of unique speaker labels
         
     Returns:
@@ -113,7 +118,7 @@ def create_speaker_mapping(db: Session, user_id: int, unique_speakers: Set[str])
     speaker_mapping = {}
     
     for speaker_id in unique_speakers:
-        speaker = create_or_get_speaker(db, user_id, speaker_id)
+        speaker = create_or_get_speaker(db, user_id, media_file_id, speaker_id)
         speaker_mapping[speaker_id] = speaker.id
     
     return speaker_mapping
