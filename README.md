@@ -35,6 +35,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Full-Text Indexing**: Lightning-fast content search with OpenSearch
 - **Advanced Filtering**: Filter by speaker, date, tags, duration, and more
 - **Smart Tagging**: Organize content with custom tags and categories
+- **Collections System**: Group related media files into organized collections for better project management
 
 ### 📊 **Analytics & Insights**
 - **Content Analysis**: Word count, speaking time, and conversation flow
@@ -48,6 +49,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Export Options**: Download transcripts in multiple formats
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
 - **Enhanced Progress Tracking**: 13 granular processing stages with descriptive messages
+- **Collection Management**: Create, organize, and share collections of related media files
 
 ## 🛠️ Technology Stack
 
@@ -230,6 +232,15 @@ The `opentr.sh` script provides comprehensive management for all application ope
 - Search transcript content with advanced filters
 - Use semantic search to find related concepts
 - Organize content with custom tags and categories
+
+#### **Collections Management**
+```
+📁 Create Collections → 📂 Organize Files → 🏷️ Bulk Operations
+```
+- Group related media files into named collections
+- Filter library view by specific collections
+- Bulk add/remove files from collections
+- Manage collection metadata and descriptions
 
 #### **Export and Integration**
 ```
