@@ -4,6 +4,11 @@
   import axiosInstance from '../lib/axios';
   import { authStore, fetchUserInfo } from '../stores/auth';
   
+  // Explicitly declare router props to prevent warnings
+  export let location = null;
+  export let navigate = null;
+  export let condition = true;
+  
   // Form data
   let fullName = '';
   let email = '';

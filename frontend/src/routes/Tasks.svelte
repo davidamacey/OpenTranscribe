@@ -2,8 +2,13 @@
   import { onMount, onDestroy } from "svelte";
   import { slide, fade } from 'svelte/transition';
   import { Link } from "svelte-navigator";
-  import { user } from "../stores/auth";
+  import { user, authStore } from "../stores/auth";
   import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
+  
+  // Explicitly declare router props to prevent warnings
+  export let location = null;
+  export let navigate = null;
+  export let condition = true;
   
   /** @typedef {object} MediaFile
    * @property {number} id
@@ -129,7 +134,6 @@
       const axiosInstance = (await import('../lib/axios')).default;
       const response = await axiosInstance.get('/tasks/');
       tasks = response.data;
-      console.log("Tasks data received:", tasks);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
       error = err instanceof Error ? err.message : 'Failed to load tasks';
@@ -257,8 +261,9 @@
   
   // Lifecycle hooks
   onMount(() => {
-    // Setup WebSocket connection
-    setupWebsocketConnection(window.location.origin);
+    // Setup WebSocket connection with auth token
+    const authToken = $authStore.token;
+    setupWebsocketConnection(window.location.origin, authToken);
     
     fetchTasks();
     // Refresh tasks every 30 seconds as a fallback
@@ -668,7 +673,7 @@
     color: var(--text-secondary);
   }
 
-  [data-theme='dark'] .status-pending {
+  :global([data-theme='dark']) .status-pending {
     background-color: #334155;
     color: #cbd5e1;
   }
@@ -678,7 +683,7 @@
     color: #055160;
   }
 
-  [data-theme='dark'] .status-in-progress {
+  :global([data-theme='dark']) .status-in-progress {
     background-color: #164e63;
     color: #7dd3fc;
   }
@@ -698,7 +703,7 @@
     color: #0f5132;
   }
 
-  [data-theme='dark'] .status-completed {
+  :global([data-theme='dark']) .status-completed {
     background-color: #064e3b;
     color: #6ee7b7;
   }
@@ -708,7 +713,7 @@
     color: #842029;
   }
 
-  [data-theme='dark'] .status-failed {
+  :global([data-theme='dark']) .status-failed {
     background-color: #7f1d1d;
     color: #fca5a5;
   }

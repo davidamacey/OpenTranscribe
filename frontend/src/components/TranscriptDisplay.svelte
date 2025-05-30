@@ -66,7 +66,7 @@
 
 <section class="transcript-column">
   <h4>Transcript</h4>
-  {#if file.transcript && file.transcript.length > 0}
+  {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
       <div class="edit-actions">
@@ -88,7 +88,7 @@
       {/if}
     {:else}
       <div class="transcript-display">
-        {#each file.transcript as segment}
+        {#each file.transcript_segments as segment}
           <div 
             class="transcript-segment" 
             data-segment-id="{segment.id || `${segment.start_time}-${segment.end_time}`}"

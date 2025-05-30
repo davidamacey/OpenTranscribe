@@ -1,9 +1,13 @@
 import asyncio
 import logging
+import threading
+import json
+import redis
 from typing import Dict, Any
 
 from app.api.websockets import send_notification
 from app.models.media import FileStatus
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,47 @@ async def send_status_notification(user_id: int, file_id: int, status: FileStatu
         return False
 
 
+def send_notification_via_redis(user_id: int, file_id: int, status: FileStatus, 
+                               message: str, progress: int = 0) -> bool:
+    """
+    Send notification via Redis pub/sub from synchronous context (like Celery worker).
+    
+    Args:
+        user_id: User ID
+        file_id: File ID
+        status: File status
+        message: Status message
+        progress: Progress percentage
+        
+    Returns:
+        True if notification was sent successfully, False otherwise
+    """
+    try:
+        # Create Redis client
+        redis_client = redis.from_url(settings.REDIS_URL)
+        
+        # Prepare notification data
+        notification = {
+            "user_id": user_id,
+            "type": "transcription_status",
+            "data": {
+                "file_id": str(file_id),
+                "status": status.value,
+                "message": message,
+                "progress": progress
+            }
+        }
+        
+        # Publish to Redis
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published notification via Redis for user {user_id}, file {file_id}: {status.value}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send notification via Redis for file {file_id}: {e}")
+        return False
+
+
 def send_notification_with_retry(user_id: int, file_id: int, status: FileStatus, 
                                 message: str, progress: int = 0, max_retries: int = 3) -> bool:
     """
@@ -58,14 +103,18 @@ def send_notification_with_retry(user_id: int, file_id: int, status: FileStatus,
     """
     for retry in range(max_retries):
         try:
-            asyncio.run(send_status_notification(user_id, file_id, status, message, progress))
-            logger.info(f"Successfully sent notification for file {file_id} on attempt {retry + 1}")
-            return True
+            success = send_notification_via_redis(user_id, file_id, status, message, progress)
+            if success:
+                logger.info(f"Successfully sent notification for file {file_id} on attempt {retry + 1}")
+                return True
+            else:
+                logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries})")
         except Exception as e:
             logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries}): {e}")
-            if retry < max_retries - 1:  # Don't sleep on the last attempt
-                import time
-                time.sleep(1)  # Short delay before retry
+        
+        if retry < max_retries - 1:  # Don't sleep on the last attempt
+            import time
+            time.sleep(1)  # Short delay before retry
     
     logger.error(f"Failed to send notification for file {file_id} after {max_retries} attempts")
     return False

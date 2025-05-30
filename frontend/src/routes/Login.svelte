@@ -4,8 +4,9 @@
   import { onMount } from 'svelte';
   
   // Explicitly declare props to prevent warnings
-  export const location = null;
-  const navigate = useNavigate();
+  export let location = null;
+  export let navigate = null;
+  const navigateHook = useNavigate();
   
   // Form data
   let email = "";

@@ -48,20 +48,20 @@
       
       // Validate fileId is a valid number
       if (isNaN(numericFileId) || numericFileId <= 0) {
-        console.error('%c [COMMENTS DEBUG] Invalid file ID:', 'background: #222; color: #ff6b6b; font-size: 14px;', fileId);
+        console.error('Invalid file ID:', fileId);
         error = 'Invalid file ID provided';
         loading = false;
         return;
       }
       
       if (!token) {
-        console.error('%c [COMMENTS DEBUG] No auth token found in localStorage', 'background: #222; color: #ff6b6b; font-size: 14px;');
+        console.error('No auth token found in localStorage');
         error = 'You need to be logged in to view comments';
         loading = false;
         return;
       }
       
-      console.log('%c [COMMENTS DEBUG] Fetching comments for file ' + numericFileId + ' with token present: ' + !!token, 'background: #222; color: #bada55; font-size: 14px');
+      // Fetching comments for file
       
       // Create custom headers with authentication token
       const headers = {
@@ -90,18 +90,18 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint without leading slash as fallback
-            console.log('%c [COMMENTS DEBUG] Trying legacy endpoint', 'background: #222; color: #ff9a3c; font-size: 14px;');
+            // Trying legacy endpoint
             response = await axiosInstance.get(`files/${numericFileId}/comments`, { headers });
-            console.log('%c [COMMENTS DEBUG] Successfully fetched comments using legacy endpoint', 'background: #222; color: #6bff6b; font-size: 14px;');
+            // Successfully fetched comments using legacy endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
-              console.log('%c [COMMENTS DEBUG] Trying query parameter approach as last resort', 'background: #222; color: #ff9a3c; font-size: 14px;');
+              // Trying query parameter approach as last resort
               response = await axiosInstance.get('/comments', { 
                 params: { media_file_id: numericFileId },
                 headers 
               });
-              console.log('%c [COMMENTS DEBUG] Successfully fetched comments using query param', 'background: #222; color: #6bff6b; font-size: 14px;');
+              // Successfully fetched comments using query param
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
               error = `Failed to load comments: ${lastError.message}`;
@@ -114,10 +114,10 @@
         }
       }
       
-      console.log('[CommentSection] Comments response:', response.status, response.headers);
+      // Comments response received
       
       // Process comments to ensure they have user information
-      console.log('%c [COMMENTS DEBUG] Processing ' + response.data.length + ' comments', 'background: #222; color: #bada55; font-size: 14px;');
+      // Processing comments
       comments = response.data.map(/** @param {any} comment */ (comment) => {
         // If comment has no user info, add it from the stored user data
         if (!comment.user) {
@@ -135,9 +135,9 @@
       });
       
       if (!Array.isArray(comments) || comments.length === 0) {
-        console.log('[CommentSection] No comments found for this file.');
+        // No comments found for this file
       } else {
-        console.log(`%c [COMMENTS DEBUG] Successfully processed ${comments.length} comments`, 'background: #222; color: #6bff6b; font-size: 14px; font-weight: bold;');
+        // Successfully processed comments
       }
       
       // Sort by timestamp
@@ -173,7 +173,7 @@
       event.stopPropagation();
     }
     
-    console.log('[CommentSection] Adding comment with button click');
+    // Adding comment with button click
     
     if (!newComment.trim()) return;
     
@@ -197,11 +197,10 @@
       const token = localStorage.getItem('token');
       const numericFileId = Number(fileId);
       
-      console.log('[CommentSection] Adding comment for file', numericFileId, 'with token present:', !!token);
-      console.log('[CommentSection] Comment data:', { text: newComment, timestamp, media_file_id: numericFileId });
+      // Adding comment for file
 
       if (!token) {
-        console.error('[CommentSection] No auth token found in localStorage');
+        console.error('No auth token found in localStorage');
         error = 'You need to be logged in to add comments';
         return;
       }
@@ -225,12 +224,12 @@
         // The correct endpoint without leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
         const endpoint = `comments/files/${numericFileId}/comments`;
-        console.log('%c [COMMENTS DEBUG] Adding comment with endpoint:', 'background: #222; color: #bada55; font-size: 14px;', endpoint);
+        // Adding comment with endpoint
         
         // Log the full URL that will be used
         const baseURL = axiosInstance.defaults.baseURL || '';
         const fullURL = baseURL + (baseURL.endsWith('/') ? '' : '/') + endpoint;
-        console.log('%c [COMMENTS DEBUG] Full URL for adding comment:', 'background: #222; color: #bada55; font-size: 14px;', fullURL);
+        // Full URL for adding comment
         
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
@@ -242,7 +241,7 @@
         // Ensure token is included in the headers
         response = await axiosInstance.post(endpoint, commentPayload, { headers });
         
-        console.log('[CommentSection] Successfully added comment');
+        // Successfully added comment
       } catch (/** @type {any} */ error) {
         // Log detailed error information for debugging
         console.error('[CommentSection] Error adding comment:', error);
@@ -261,24 +260,24 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint approach without leading slash
-            console.log('%c [COMMENTS DEBUG] Trying legacy endpoint for adding comment', 'background: #222; color: #ff9a3c; font-size: 14px;');
+            // Trying legacy endpoint for adding comment
             const legacyPayload = {
               text: newComment,
               timestamp: timestamp,
               media_file_id: numericFileId // Required by the CommentCreate schema
             };
             response = await axiosInstance.post(`files/${numericFileId}/comments`, legacyPayload, { headers });
-            console.log('[CommentSection] Successfully added comment using main endpoint');
+            // Successfully added comment using main endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
               // Try the query parameter endpoint as last resort
-              console.log('%c [COMMENTS DEBUG] Trying query parameter endpoint as last resort', 'background: #222; color: #ff9a3c; font-size: 14px;');
+              // Trying query parameter endpoint as last resort
               response = await axiosInstance.post('comments', {
                 text: newComment,
                 timestamp,
                 media_file_id: numericFileId // Required by the CommentCreate schema
               }, { headers });
-              console.log('[CommentSection] Successfully added comment using root endpoint');
+              // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
               error = `Failed to add comment: ${lastError.message}`;
@@ -291,7 +290,7 @@
         }
       }
       
-      console.log('[CommentSection] Comment added:', response.data);
+      // Comment added successfully
       
       // Ensure the comment has a user object with username
       const commentWithUser = {
@@ -368,7 +367,7 @@
     }
     
     try {
-      console.log('[CommentSection] Editing comment:', commentId, newText);
+      // Editing comment
       
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
@@ -387,24 +386,19 @@
       // Use PUT as the backend expects PUT for updates
       // The backend route is /comments/{comment_id} - need to include the full path
       // Adding detailed debug logging to track the request
-      console.log('%c [COMMENTS DEBUG] Editing comment ' + commentId + ' with text: ' + newText, 'background: #222; color: #bada55; font-size: 14px;');
+      // Editing comment with new text
       
       // Log detailed request info
       const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       if (isDevMode) {
-        console.log('%c [COMMENTS DEBUG] Request details:', 'background: #222; color: #bada55; font-size: 14px;', {
-          url: `comments/${commentId}`,
-          baseURL: axiosInstance.defaults.baseURL,
-          headers: headers,
-          data: { text: newText }
-        });
+        // Request details for editing comment
       }
       
       const response = await axiosInstance.put(`comments/${commentId}`, {
         text: newText
       }, { headers });
       
-      console.log('[CommentSection] Comment edited successfully');
+      // Comment edited successfully
       
       // Update the comment in the list
       comments = comments.map(c => c.id === commentId ? { ...c, text: newText } : c);
@@ -448,7 +442,7 @@
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      console.log('[CommentSection] Deleting comment', commentId, 'with token:', token ? token.substring(0, 8) + '...' : '[none]');
+      // Deleting comment
       
       if (!token) {
         error = 'You need to be logged in to delete comments';
@@ -462,20 +456,16 @@
       };
       
       // The correct endpoint is under the comments router without leading slash
-      console.log('%c [COMMENTS DEBUG] Deleting comment ' + commentId, 'background: #222; color: #ff9a3c; font-size: 14px;');
+      // Deleting comment with ID
       
       // Log detailed request info
       const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       if (isDevMode) {
-        console.log('%c [COMMENTS DEBUG] Delete request details:', 'background: #222; color: #ff9a3c; font-size: 14px;', {
-          url: `comments/${commentId}`,
-          baseURL: axiosInstance.defaults.baseURL,
-          headers: headers
-        });
+        // Delete request details
       }
       
       await axiosInstance.delete(`comments/${commentId}`, { headers });
-      console.log('%c [COMMENTS DEBUG] Comment deleted successfully', 'background: #222; color: #6bff6b; font-size: 14px;');
+      // Comment deleted successfully
       
       comments = comments.filter(c => c.id !== commentId);
     } catch (/** @type {any} */ err) { // Handle error with proper type
@@ -519,7 +509,7 @@
     // Get the current time directly from the player
     // This ensures we get the exact current time from the player
     timestampInput = currentTime;
-    console.log('[CommentSection] Set timestamp to current time:', timestampInput);
+    // Set timestamp to current time
   }
   
   // Check if the current user is the author of a comment

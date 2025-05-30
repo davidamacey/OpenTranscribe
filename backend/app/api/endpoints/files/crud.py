@@ -185,44 +185,44 @@ def delete_media_file(db: Session, file_id: int, current_user: User) -> None:
     db.commit()
 
 
-def update_transcript_segments(db: Session, file_id: int, segments: List[TranscriptSegmentUpdate], 
-                              current_user: User) -> MediaFileDetail:
+def update_single_transcript_segment(db: Session, file_id: int, segment_id: int, 
+                                   segment_update: TranscriptSegmentUpdate, current_user: User) -> TranscriptSegment:
     """
-    Update transcript segments for a media file.
+    Update a single transcript segment for a media file.
     
     Args:
         db: Database session
         file_id: File ID
-        segments: List of segment updates
+        segment_id: Segment ID
+        segment_update: Segment update data
         current_user: Current user
         
     Returns:
-        Updated MediaFileDetail object
+        Updated TranscriptSegment object
     """
     # Verify user owns the file
     db_file = get_media_file_by_id(db, file_id, current_user.id)
     
-    # Update segments
-    for segment_update in segments:
-        segment = db.query(TranscriptSegment).filter(
-            TranscriptSegment.id == segment_update.id,
-            TranscriptSegment.media_file_id == file_id
-        ).first()
-        
-        if segment:
-            # Update fields
-            for field, value in segment_update.model_dump(exclude_unset=True).items():
-                setattr(segment, field, value)
+    # Find the specific segment
+    segment = db.query(TranscriptSegment).filter(
+        TranscriptSegment.id == segment_id,
+        TranscriptSegment.media_file_id == file_id
+    ).first()
+    
+    if not segment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transcript segment not found"
+        )
+    
+    # Update fields
+    for field, value in segment_update.model_dump(exclude_unset=True).items():
+        setattr(segment, field, value)
     
     db.commit()
+    db.refresh(segment)
     
-    # Return updated file details
-    tags = get_file_tags(db, file_id)
-    
-    response = MediaFileDetail.model_validate(db_file)
-    response.tags = tags
-    
-    return response
+    return segment
 
 
 def get_stream_url_info(db: Session, file_id: int, current_user: User) -> dict:

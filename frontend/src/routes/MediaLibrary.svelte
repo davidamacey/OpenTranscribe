@@ -2,11 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { Link, useNavigate } from 'svelte-navigator';
   import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
+  import { authStore } from '../stores/auth';
   
   // Explicitly declare props to prevent warnings
-  export const location = null;
-  export const condition = true;
-  const navigate = useNavigate();
+  export let location = null;
+  export let navigate = null;
+  export let condition = true;
+  const navigateHook = useNavigate();
   
   // Modal state
   let showUploadModal = false;
@@ -393,8 +395,9 @@
     // Update document title
     document.title = 'Gallery | OpenTranscribe';
     
-    // Setup WebSocket connection
-    setupWebsocketConnection(window.location.origin);
+    // Setup WebSocket connection with auth token
+    const authToken = $authStore.token;
+    setupWebsocketConnection(window.location.origin, authToken);
     setupWebSocketUpdates();
     
     fetchFiles();
@@ -598,6 +601,8 @@
 {#if showUploadModal}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- The modal backdrop that closes on click -->
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div 
     class="modal-backdrop" 
     role="presentation"

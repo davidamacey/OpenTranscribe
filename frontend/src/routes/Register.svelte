@@ -3,8 +3,9 @@
   import { register, login } from "../stores/auth";
   
   // Explicitly declare props to prevent warnings
-  export const location = null;
-  const navigate = useNavigate();
+  export let location = null;
+  export let navigate = null;
+  const navigateHook = useNavigate();
   
   // Form data
   let username = "";
@@ -60,7 +61,7 @@
         // Log the user in automatically after registration
         const loginResult = await login(email, password);
         if (loginResult.success) {
-          navigate("/");
+          navigateHook("/");
         } else {
           error = "Registration successful, but login failed. Please try logging in manually.";
         }

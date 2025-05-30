@@ -109,19 +109,15 @@
     
     try {
       // Log the file being uploaded for debugging
-      console.log('Uploading file:', file.name, file.type, file.size);
       
       // Create a properly configured FormData object with required file field name
       const formData = new FormData();
       formData.append('file', file); // 'file' name must match the FastAPI parameter name
       
       // Add debug logs to see exactly what's being sent
-      console.log('FormData content keys:', [...formData.keys()]);
-      console.log('File being uploaded:', file.name, file.type, file.size);
       
       // Log token for debugging
       const token = localStorage.getItem('token');
-      console.log('Token available for upload:', !!token);
       
       // Use axiosInstance with correct path - ensure proper formatting
       const response = await axiosInstance.post('/files', formData, {
@@ -140,7 +136,7 @@
       });
       
       const responseData = response.data;
-      console.log('Upload successful:', responseData);
+      // Upload successful
       
       // Clear form and dispatch event
       file = null;

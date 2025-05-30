@@ -322,8 +322,7 @@
     gap: 1.5rem;
   }
   
-  .nav-link,
-  .nav-button {
+  .nav-link {
     color: var(--text-color);
     text-decoration: none;
     padding: 0.5rem 1rem;
@@ -341,8 +340,7 @@
     font-weight: 500;
   }
   
-  .nav-link:hover,
-  .nav-button:hover {
+  .nav-link:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-color);
   }

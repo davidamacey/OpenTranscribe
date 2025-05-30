@@ -138,9 +138,7 @@
     errorTags = null;
     
     try {
-      console.log('[FilterSidebar] Fetching tags');
       const response = await axiosInstance.get('/tags/');
-      console.log('[FilterSidebar] Tags response:', response.data);
       allTags = response.data;
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);

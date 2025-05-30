@@ -39,48 +39,12 @@ table tr:last-child td {
   border-bottom: none;
 }
 
-/* Empty state for tables */
-.table-empty-state {
-  padding: 2rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-/* User management specific table fixes */
-[data-theme='dark'] .user-table th {
-  background-color: var(--table-header-bg);
-  color: var(--text-color);
-}
-
-[data-theme='dark'] .user-table td {
-  background-color: var(--card-background);
-  color: var(--text-color);
-}
-
-/* User management actions */
-[data-theme='dark'] .user-table .actions button {
-  background-color: transparent;
-  color: var(--text-color);
-  border-color: var(--border-color);
-}
-
-[data-theme='dark'] .user-table .actions button:hover {
-  background-color: var(--button-hover);
-}
-
-/* Make sure striped tables have consistent colors */
-.table-striped tr:nth-child(even) {
-  background-color: var(--table-row-hover);
-}
-
-/* Ensure specificity for the UserManagementTable component */
-[data-theme='dark'] .UserManagementTable table th,
+/* Ensure specificity for the user management table */
 [data-theme='dark'] .user-management-table th {
   background-color: var(--table-header-bg);
   color: var(--text-color);
 }
 
-[data-theme='dark'] .UserManagementTable table td,
 [data-theme='dark'] .user-management-table td {
   color: var(--text-color);
 }
