@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 
 from app.models.user import User
-from app.models.media import MediaFile, TranscriptSegment, FileTag, Tag
+from app.models.media import MediaFile, TranscriptSegment, FileTag, Tag, Collection, CollectionMember
 from app.schemas.media import MediaFileDetail, MediaFileUpdate, TranscriptSegmentUpdate
 from app.services.minio_service import delete_file
 
@@ -70,6 +70,49 @@ def get_file_tags(db: Session, file_id: int) -> List[str]:
     return [tag[0] for tag in tags]
 
 
+def get_file_collections(db: Session, file_id: int, user_id: int) -> List[dict]:
+    """
+    Get collections that contain a media file.
+    
+    Args:
+        db: Database session
+        file_id: File ID
+        user_id: User ID
+        
+    Returns:
+        List of collection dictionaries
+    """
+    collections = []
+    try:
+        # Check if collection tables exist first
+        inspector = inspect(db.bind)
+        if 'collection' in inspector.get_table_names() and 'collection_member' in inspector.get_table_names():
+            collection_objs = db.query(Collection).join(CollectionMember).filter(
+                CollectionMember.media_file_id == file_id,
+                Collection.user_id == user_id
+            ).all()
+            
+            # Convert to dictionaries
+            collections = [
+                {
+                    "id": col.id,
+                    "name": col.name,
+                    "description": col.description,
+                    "is_public": col.is_public,
+                    "created_at": col.created_at.isoformat() if col.created_at else None,
+                    "updated_at": col.updated_at.isoformat() if col.updated_at else None
+                }
+                for col in collection_objs
+            ]
+        else:
+            logger.warning("Collection tables don't exist yet, skipping collection retrieval")
+    except Exception as collection_error:
+        logger.error(f"Error getting collections: {collection_error}")
+        db.rollback()  # Important to roll back the failed transaction
+    
+    return collections
+
+
 def set_file_urls(db_file: MediaFile) -> None:
     """
     Set download and preview URLs for a media file.
@@ -113,6 +156,9 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
         # Get tags for this file
         tags = get_file_tags(db, file_id)
         
+        # Get collections for this file
+        collections = get_file_collections(db, file_id, current_user.id)
+        
         # Set URLs
         set_file_urls(db_file)
         
@@ -122,6 +168,7 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
         # Prepare the response
         response = MediaFileDetail.model_validate(db_file)
         response.tags = tags
+        response.collections = collections
         
         return response
         

@@ -141,6 +141,7 @@ class MediaFile(MediaFileBase):
 class MediaFileDetail(MediaFile):
     transcript_segments: List[TranscriptSegment] = []
     tags: List[str] = []
+    collections: List["Collection"] = []
 
     class Config:
         from_attributes = True
@@ -243,3 +244,46 @@ class Analytics(AnalyticsBase):
 
     class Config:
         from_attributes = True
+
+
+# Collection schemas
+class CollectionBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_public: bool = False
+
+
+class CollectionCreate(CollectionBase):
+    pass
+
+
+class CollectionUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_public: Optional[bool] = None
+
+
+class Collection(CollectionBase):
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CollectionWithCount(Collection):
+    media_count: int = 0
+
+
+class CollectionResponse(Collection):
+    media_files: Optional[List[MediaFile]] = []
+
+
+class CollectionMemberAdd(BaseModel):
+    media_file_ids: List[int]
+
+
+class CollectionMemberRemove(BaseModel):
+    media_file_ids: List[int]

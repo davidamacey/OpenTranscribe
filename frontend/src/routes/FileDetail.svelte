@@ -15,6 +15,7 @@
   import FileHeader from '$components/FileHeader.svelte';
   import TagsSection from '$components/TagsSection.svelte';
   import CommentSection from '$components/CommentSection.svelte';
+  import CollectionsSection from '$components/CollectionsSection.svelte';
 
   // Props
   export let id = '';
@@ -33,10 +34,12 @@
   let loadProgress = 0;
   let playerInitialized = false;
   let videoElementChecked = false;
+  let collections: any[] = [];
 
   // UI state
   let showMetadata = false;
   let isTagsExpanded = false;
+  let isCollectionsExpanded = false;
   let isAnalyticsExpanded = false;
   let isEditingTranscript = false;
   let editedTranscript = '';
@@ -72,12 +75,10 @@
       
       if (response.data && typeof response.data === 'object') {
         file = response.data;
+        collections = response.data.collections || [];
         reactiveFile.set(file);
 
         // Set up video URL using the simple-video endpoint
-        setupVideoUrl(targetFileId);
-
-        // Set up video URL
         setupVideoUrl(targetFileId);
         
         // Process transcript data from the file response
@@ -771,6 +772,20 @@
     }
   }
 
+  function handleCollectionRemoved(event: any) {
+    const { collectionId } = event.detail;
+    
+    // Update collections array by removing the collection
+    collections = collections.filter(c => c.id !== collectionId);
+    
+    // Update file object if it has collections
+    if (file && file.collections) {
+      file.collections = file.collections.filter((c: any) => c.id !== collectionId);
+      file = { ...file }; // Trigger reactivity
+      reactiveFile.set(file);
+    }
+  }
+
   function handleVideoRetry() {
     fetchFileDetails();
   }
@@ -940,6 +955,13 @@
           {file} 
           bind:isTagsExpanded 
           on:tagsUpdated={handleTagsUpdated}
+        />
+        
+        <CollectionsSection 
+          bind:collections 
+          fileId={file?.id}
+          bind:isExpanded={isCollectionsExpanded}
+          on:collectionRemoved={handleCollectionRemoved}
         />
 
         <AnalyticsSection 
