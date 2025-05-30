@@ -271,7 +271,7 @@
     gap: 1rem;
     border: 2px dashed var(--border-color);
     border-radius: 12px;
-    background-color: var(--background-alt);
+    background-color: var(--surface-color);
     cursor: pointer;
     transition: all 0.2s ease;
     text-align: center;
@@ -281,6 +281,11 @@
   .drop-zone.active {
     border-color: var(--primary-color);
     background-color: rgba(59, 130, 246, 0.05);
+  }
+  
+  :global(.dark) .drop-zone:hover,
+  :global(.dark) .drop-zone.active {
+    background-color: rgba(59, 130, 246, 0.1);
   }
   
   .drop-zone svg {
@@ -308,12 +313,15 @@
   
   .supported-formats p {
     margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
   }
   
   .selected-file {
     padding: 1rem;
     border: 1px solid var(--border-color);
     border-radius: 8px;
+    background-color: var(--surface-color);
     display: flex;
     justify-content: space-between;
     align-items: center;

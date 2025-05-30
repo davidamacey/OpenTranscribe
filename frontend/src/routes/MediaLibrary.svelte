@@ -3,6 +3,7 @@
   import { Link, useNavigate } from 'svelte-navigator';
   import { websocketStore } from '$stores/websocket';
   import { authStore } from '../stores/auth';
+  import { toastStore } from '$stores/toast';
   
   // Explicitly declare props to prevent warnings
   export let location = null;
@@ -68,6 +69,7 @@
       search: string;
       tags: string[];
       speaker: string[];
+      collectionId: number | null;
       dates: DateRange;
       durationRange?: DurationRange;
       fileSizeRange?: { min: number | null; max: number | null };
@@ -94,6 +96,7 @@
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
   import FilterSidebar from '../components/FilterSidebar.svelte';
+  import CollectionsPanel from '../components/CollectionsPanel.svelte';
   
   // Media files state
   let files: MediaFile[] = [];
@@ -104,8 +107,15 @@
   let selectedFiles = new Set<number>();
   let isSelecting: boolean = false;
   
+  // View state
+  let selectedCollectionId: number | null = null;
+  let showCollectionsModal = false;
+  
+  // Component refs
+  let filterSidebarRef: any;
+  
   // WebSocket subscription
-  let unsubscribeFileStatus: () => void;
+  let unsubscribeFileStatus: (() => void) | undefined;
   
   // Define WebSocket update type
   interface FileStatusUpdate {
@@ -197,8 +207,14 @@
         params.append('transcript_search', transcriptSearch.trim());
       }
       
-      const response = await axiosInstance.get('/files', { params });
-      files = response.data;
+      // If a collection is selected, fetch files from that collection
+      if (selectedCollectionId !== null) {
+        const response = await axiosInstance.get(`/api/collections/${selectedCollectionId}/media`, { params });
+        files = response.data;
+      } else {
+        const response = await axiosInstance.get('/files', { params });
+        files = response.data;
+      }
     } catch (err) {
       console.error('Error fetching files:', err);
       error = 'Failed to load media files. Please try again.';
@@ -209,11 +225,12 @@
   
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, transcriptSearch: transcript } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, transcriptSearch: transcript } = event.detail;
     
     searchQuery = search;
     selectedTags = tags;
     selectedSpeakers = speaker;
+    selectedCollectionId = collectionId;
     dateRange = dates;
     
     // Handle advanced filters if provided
@@ -289,9 +306,9 @@
       const failedDeletions = results.filter(result => !result.success);
       
       if (failedDeletions.length > 0) {
-        alert(`Failed to delete ${failedDeletions.length} file(s). Please try again.`);
+        toastStore.error(`Failed to delete ${failedDeletions.length} file(s). Please try again.`);
       } else {
-        alert(`Successfully deleted ${selectedFiles.size} file(s).`);
+        toastStore.success(`Successfully deleted ${selectedFiles.size} file(s).`);
       }
       
       // Refresh the file list
@@ -300,7 +317,7 @@
       
     } catch (err) {
       console.error('Error deleting files:', err);
-      alert('An error occurred while deleting files. Please try again.');
+      toastStore.error('An error occurred while deleting files. Please try again.');
     } finally {
       loading = false;
     }
@@ -326,6 +343,7 @@
     searchQuery = '';
     selectedTags = [];
     selectedSpeakers = [];
+    selectedCollectionId = null;
     dateRange = { from: null, to: null };
     durationRange = { min: null, max: null };
     fileSizeRange = { min: null, max: null };
@@ -398,7 +416,7 @@
 </script>
 
 <div class="media-library">
-  <div class="library-header">
+  <header class="library-header">
     <div class="header-row">
       <h1>Gallery</h1>
       
@@ -411,6 +429,13 @@
               title="{selectedFiles.size === files.length ? 'Remove all files from selection' : 'Add all visible files to selection'}"
             >
               {selectedFiles.size === files.length ? 'Deselect all' : 'Select all'}
+            </button>
+            <button
+              class="add-to-collection-btn"
+              on:click={() => showCollectionsModal = true}
+              title="Add selected files to a collection"
+            >
+              Add to Collection
             </button>
             <button 
               class="delete-selected-btn" 
@@ -442,6 +467,13 @@
               Upload Media
             </button>
             <button 
+              class="collections-btn"
+              on:click={() => showCollectionsModal = true}
+              title="Manage your collections"
+            >
+              Collections
+            </button>
+            <button 
               class="select-files-btn" 
               on:click={() => isSelecting = true}
               title="Enter selection mode to choose multiple files for batch operations"
@@ -464,14 +496,16 @@
         Filters
       </button>
     </div>
-  </div>
+  </header>
 
   <div class="library-content">
     <div class="filter-sidebar {showFilters ? 'show' : ''}">
       <FilterSidebar 
+        bind:this={filterSidebarRef}
         {searchQuery}
         {selectedTags}
         {selectedSpeakers}
+        {selectedCollectionId}
         {dateRange}
         {durationRange}
         {fileSizeRange}
@@ -484,7 +518,6 @@
     </div>
     
     <div class="file-list-container">
-      
       {#if loading}
         <div class="loading-state">
           <p>Loading files...</p>
@@ -500,7 +533,7 @@
         </div>
       {:else if files.length === 0}
         <div class="empty-state">
-          <p>Your media library is empty.</p>
+          <p>{selectedCollectionId ? 'No files in this collection.' : 'Your media library is empty.'}</p>
           <p>Use the uploader above to add your first media file!</p>
         </div>
       {:else}
@@ -532,43 +565,25 @@
                   }}
                 >
                 <div class="file-content">
-                  <!-- Status - Top Right -->
-                  <div class="file-status status-{file.status}">
-                    {#if file.status === 'pending' || file.status === 'processing'}
-                      <span class="status-dot"></span>
-                      Processing
-                    {:else if file.status === 'completed'}
-                      <span class="status-dot"></span>
-                      Completed
-                    {:else if file.status === 'error'}
-                      <span class="status-dot"></span>
-                      Error
+                  <h2 class="file-name">{file.filename}</h2>
+                  
+                  <div class="file-meta">
+                    <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
+                    {#if file.duration}
+                      <span class="file-duration">{formatDuration(file.duration)}</span>
                     {/if}
                   </div>
                   
-                  <!-- Title - Middle Row -->
-                  <h2 class="file-name">{file.filename}</h2>
-                  
-                  <!-- Date - Bottom Left -->
-                  <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
-                  
-                  <!-- Duration - Bottom Right -->
-                  {#if file.duration}
-                    <span class="file-duration">{formatDuration(file.duration)}</span>
-                  {/if}
-                  
-                  <!-- Optional: Tags and Summary (can be positioned below or removed) -->
-                  {#if file.tags && file.tags.length > 0}
-                    <div class="file-tags">
-                      {#each file.tags as tag}
-                        <span class="tag">{tag}</span>
-                      {/each}
-                    </div>
-                  {/if}
-                  
-                  {#if file.summary}
-                    <p class="file-summary">{file.summary.substring(0, 100)}...</p>
-                  {/if}
+                  <div class="file-status status-{file.status}">
+                    <span class="status-dot"></span>
+                    {#if file.status === 'pending' || file.status === 'processing'}
+                      Processing
+                    {:else if file.status === 'completed'}
+                      Completed
+                    {:else if file.status === 'error'}
+                      Error
+                    {/if}
+                  </div>
                 </div>
               </Link>
             </div>
@@ -623,6 +638,49 @@
   </div>
 {/if}
 
+<!-- Collections Modal -->
+{#if showCollectionsModal}
+  <div class="modal-backdrop" on:click={() => showCollectionsModal = false}>
+    <div class="modal-container" on:click|stopPropagation>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>{selectedFiles.size > 0 ? 'Add to Collection' : 'Manage Collections'}</h2>
+          <button 
+            class="modal-close" 
+            on:click={() => showCollectionsModal = false}
+            aria-label="Close collections dialog"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <CollectionsPanel 
+            selectedMediaIds={Array.from(selectedFiles)}
+            viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
+            onCollectionSelect={() => {
+              showCollectionsModal = false;
+              if (selectedFiles.size > 0) {
+                clearSelection();
+              }
+              // Refresh collections in filter
+              if (filterSidebarRef && filterSidebarRef.refreshCollections) {
+                filterSidebarRef.refreshCollections();
+              }
+              // Refresh files if we're filtering by collection
+              if (selectedCollectionId !== null) {
+                fetchFiles();
+              }
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   /* Selection controls */
   .header-row {
@@ -663,162 +721,79 @@
     transform: translateY(0);
   }
   
+  .cancel-selection-btn {
+    background-color: #6b7280;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .cancel-selection-btn:hover:not(:disabled) {
+    background-color: #4b5563;
+    text-decoration: none;
+  }
+  
+  .select-all-btn {
+    background-color: #059669;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .select-all-btn:hover:not(:disabled) {
+    background-color: #047857;
+    text-decoration: none;
+  }
+  
+  .delete-selected-btn {
+    background-color: #dc2626;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  
+  .delete-selected-btn:hover:not(:disabled) {
+    background-color: #b91c1c;
+  }
+  
   .selection-controls {
     display: flex;
     gap: 0.75rem;
     align-items: center;
-    background: var(--background-alt);
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    animation: fadeIn 0.2s ease;
   }
-  
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  
-  .select-all-btn,
-  .cancel-selection-btn {
-    padding: 0.6rem 1.2rem;
-    border: 1px solid var(--border-color);
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-  
-  .select-all-btn {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-  }
-  
-  .select-all-btn:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-    text-decoration: none;
-  }
-  
-  .select-all-btn:active:not(:disabled) {
-    transform: translateY(0);
-  }
-  
-  .cancel-selection-btn {
-    background-color: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-  }
-  
-  .cancel-selection-btn:hover:not(:disabled) {
-    background-color: var(--button-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-    text-decoration: none;
-  }
-  
-  .cancel-selection-btn:active:not(:disabled) {
-    transform: translateY(0);
-  }
-  
-  .delete-selected-btn {
-    padding: 0.6rem 1.2rem;
-    background-color: var(--error-color);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.95rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-  
-  .delete-selected-btn:hover:not(:disabled) {
-    background-color: #d32f2f; /* Slightly darker red on hover */
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-    text-decoration: none;
-  }
-  
-  .delete-selected-btn:active:not(:disabled) {
-    transform: translateY(0);
-  }
-  
-  .selection-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.3);
-    opacity: 0;
-    pointer-events: none;
-    z-index: 10;
-    transition: opacity 0.2s ease;
-  }
-  
-  .selection-overlay.active {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  
-  /* File card selection */
-  .file-card {
-    position: relative;
-    transition: all 0.2s ease;
-    border: 2px solid transparent;
-    border-radius: 8px;
-    background: var(--background-color);
-    overflow: hidden;
-  }
-  
-  .file-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-  
-  .file-card.selected {
-    border-color: var(--primary-color);
-    background-color: rgba(var(--primary-rgb), 0.05);
-  }
-  
+
+  /* File selector checkbox - bottom right */
   .file-selector {
     position: absolute;
-    top: 1rem;
-    left: 1rem;
+    bottom: 12px;
+    right: 12px;
     z-index: 10;
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-    pointer-events: auto;
-  }
-  
-  .file-checkbox {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .checkmark {
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 20px;
     height: 20px;
     background-color: var(--background-color);
     border: 2px solid var(--border-color);
     border-radius: 4px;
+    position: relative;
+    cursor: pointer;
     transition: all 0.2s ease;
-    pointer-events: none;
   }
   
   .file-selector:hover .checkmark {
@@ -854,14 +829,6 @@
   
   .file-checkbox:checked ~ .checkmark:after {
     display: block;
-  }
-  
-  .file-card-link {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-    padding: 0;
-    height: 100%;
   }
   
   .media-library {
@@ -937,269 +904,165 @@
   .upload-button:active:not(:disabled) {
     transform: translateY(0);
   }
-
-  /* Modal Styles */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
   
-  .modal-container {
-    position: relative;
-    width: 100%;
-    max-width: 600px;
-    margin: 1rem;
-  }
-  
-  .modal-content {
-    background-color: var(--surface-color);
-    border-radius: 12px;
-    width: 100%;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    position: relative;
-  }
-  
-  .modal-header {
-    position: relative;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-  
-  .modal-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-  
-  .modal-close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: transparent;
+  .collections-btn {
+    background-color: #8b5cf6;
+    color: white;
     border: none;
-    border-radius: 50%;
-    width: 2rem;
-    height: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    color: var(--text-light);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
   }
   
-  .modal-close:hover {
-    background-color: var(--background-alt);
-    color: var(--text-color);
+  .collections-btn:hover {
+    background-color: #7c3aed;
   }
   
-  .modal-close svg {
-    width: 1.25rem;
-    height: 1.25rem;
+  /* Add to collection button */
+  .add-to-collection-btn {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
   
-  .modal-body {
-    padding: 1.5rem 1.5rem 2rem;
+  .add-to-collection-btn:hover {
+    background-color: #059669;
   }
   
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  
+  /* File grid */
   .file-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    grid-gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
   }
   
   .file-card {
-    background-color: var(--surface-color);
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s;
-    text-decoration: none;
-    color: inherit;
     position: relative;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
+    transition: all 0.2s ease;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
   
-  .file-card:not(.selected):hover {
+  .file-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
   }
   
   .file-card.selected {
-    border: 2px solid var(--primary-color);
+    border-color: var(--primary-color);
+    border-width: 2px;
+    background-color: rgba(59, 130, 246, 0.05);
+  }
+  
+  :global(.dark) .file-card {
+    background: var(--surface-color);
+    border-color: var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  
+  :global(.dark) .file-card.selected {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: var(--primary-color);
   }
   
   .file-content {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto auto auto auto;
-    gap: 0.5rem;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .file-card-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
     height: 100%;
-    position: relative;
-    min-height: 120px;
-    margin: 1rem;
-  }
-
-  .file-status {
-    grid-column: 2;
-    grid-row: 1;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-    font-weight: 500;
-    background: var(--surface-color);
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    align-self: start;
-    justify-self: end;
-  }
-  
-  .status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 5px;
-  }
-  
-  .status-pending .status-dot,
-  .status-processing .status-dot {
-    background-color: var(--warning-color);
-    animation: pulse 1.5s infinite;
-  }
-  
-  .status-completed .status-dot {
-    background-color: var(--success-color);
-  }
-  
-  .status-error .status-dot {
-    background-color: var(--error-color);
   }
   
   .file-name {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    font-size: 1.1rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
     margin: 0;
-    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    align-self: center;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
   }
   
   .file-date {
-    grid-column: 1;
-    grid-row: 3;
-    font-size: 0.8rem;
-    color: var(--text-light);
-    align-self: end;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: auto;
   }
   
   .file-duration {
-    grid-column: 2;
-    grid-row: 3;
-    font-size: 0.8rem;
-    color: var(--text-light);
-    text-align: right;
-    align-self: end;
-  }
-  
-  .file-tags {
-    grid-column: 1 / -1;
-    grid-row: 4;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-  
-  .tag {
-    background-color: var(--background-color);
-    color: var(--text-light);
-    font-size: 0.7rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-  }
-  
-  .file-summary {
-    grid-column: 1 / -1;
-    grid-row: 5;
-    font-size: 0.9rem;
-    color: var(--text-light);
-    margin: 0;
-    margin-top: 0.5rem;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-  
-  .loading-state,
-  .error-state,
-  .empty-state {
-    padding: 2rem;
-    text-align: center;
-    background-color: var(--surface-color);
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    color: var(--text-light);
-  }
-  
-  .retry-button {
-    margin-top: 1rem;
-    background: var(--primary-light);
-    color: var(--primary-dark);
-    border: 2px solid var(--primary-color);
-    border-radius: 6px;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
     font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
   }
   
-  .retry-button:hover {
-    background: var(--primary-color);
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  .file-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
   }
   
-  .retry-button:active {
-    transform: translateY(0);
+  .file-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    background-color: rgba(0, 0, 0, 0.05);
+    width: fit-content;
+    align-self: flex-start;
   }
   
-  .mobile-filter-toggle {
-    display: none;
+  :global(.dark) .file-status {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  
+  .status-pending,
+  .status-processing {
+    color: #f59e0b;
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+  
+  .status-completed {
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+  }
+  
+  .status-error {
+    color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+  
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
   }
   
   @keyframes pulse {
@@ -1214,37 +1077,228 @@
     }
   }
   
+  .status-processing .status-dot {
+    animation: pulse 2s ease-in-out infinite;
+  }
+  
+  .file-tags {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+  }
+  
+  .tag {
+    background-color: var(--primary-light);
+    color: var(--primary-color);
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  
+  .file-summary {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin: 0.5rem 0 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .loading-state,
+  .error-state,
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    text-align: center;
+    color: var(--text-secondary);
+  }
+  
+  .error-state {
+    color: var(--error-color);
+  }
+  
+  .retry-button {
+    margin-top: 1rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  
+  .retry-button:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-1px);
+  }
+  
+  .retry-button:active {
+    transform: translateY(0);
+  }
+  
+  .mobile-filter-toggle {
+    display: none;
+  }
+  
+  /* Modal styles */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  :global(.dark) .modal-backdrop {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  
+  .modal-container {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    max-width: 90%;
+    max-height: 90vh;
+    width: 600px;
+    overflow: hidden;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+  
+  :global(.dark) .modal-container {
+    background: var(--background-color);
+    border-color: var(--border-color);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+  
+  .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  
+  .modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+  }
+  
+  .modal-close:hover {
+    color: var(--text-primary);
+  }
+  
+  .modal-body {
+    flex: 1;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+  
+  /* Dark mode adjustments */
+  :global(.dark) .file-card {
+    background: var(--surface-color);
+    border-color: var(--border-color);
+  }
+  
+  :global(.dark) .file-card:hover {
+    border-color: var(--border-hover);
+  }
+  
+  :global(.dark) .file-name {
+    color: var(--text-primary);
+  }
+  
+  :global(.dark) .file-date,
+  :global(.dark) .file-duration,
+  :global(.dark) .file-summary {
+    color: var(--text-secondary);
+  }
+  
+  :global(.dark) .tag {
+    background-color: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+  }
+  
+  /* Responsive design */
   @media (max-width: 768px) {
     .library-header {
       flex-direction: column;
       align-items: flex-start;
     }
     
-    .search-container {
-      max-width: 100%;
+    .header-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .header-actions {
+      width: 100%;
+    }
+    
+    .selection-controls {
+      flex-wrap: wrap;
+      width: 100%;
+    }
+    
+    .selection-controls button {
+      flex: 1;
+      min-width: 120px;
     }
     
     .filter-sidebar {
-      display: none;
       position: fixed;
-      top: 60px;
-      left: 0;
-      bottom: 0;
-      width: 80%;
-      max-width: 300px;
-      background-color: var(--surface-color);
-      z-index: 10;
-      box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: white;
+      z-index: 100;
+      transition: left 0.3s ease;
       overflow-y: auto;
       padding: 1rem;
     }
     
+    :global(.dark) .filter-sidebar {
+      background: var(--surface-color);
+    }
+    
     .filter-sidebar.show {
-      display: block;
+      left: 0;
     }
     
     .mobile-filter-toggle {
       display: block;
+      margin-top: 1rem;
     }
     
     .mobile-filter-toggle button {

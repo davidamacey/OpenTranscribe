@@ -15,6 +15,7 @@
   // Import components
   import Navbar from "./components/Navbar.svelte";
   import NotificationsPanel from "./components/NotificationsPanel.svelte";
+  import ToastContainer from "./components/ToastContainer.svelte";
   
   // Import routes
   import Login from "./routes/Login.svelte";
@@ -88,6 +89,7 @@
 {#if $authReady} 
   <Router>
     <div class="app">
+      <ToastContainer />
       {#if $isAuthenticated}
         <Navbar />
         <NotificationsPanel hideButton={true} />

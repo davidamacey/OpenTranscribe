@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, Enum, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, Boolean, Enum, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -70,6 +70,7 @@ class MediaFile(Base):
     file_tags = relationship("FileTag", back_populates="media_file", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="media_file", cascade="all, delete-orphan")
     analytics = relationship("Analytics", back_populates="media_file", uselist=False, cascade="all, delete-orphan")
+    collection_memberships = relationship("CollectionMember", back_populates="media_file", cascade="all, delete-orphan")
 
 
 class TranscriptSegment(Base):
@@ -169,3 +170,38 @@ class Analytics(Base):
     
     # Relationships
     media_file = relationship("MediaFile", back_populates="analytics")
+
+
+class Collection(Base):
+    __tablename__ = "collection"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Unique constraint
+    __table_args__ = (UniqueConstraint('user_id', 'name', name='_user_collection_uc'),)
+    
+    # Relationships
+    user = relationship("User", back_populates="collections")
+    collection_members = relationship("CollectionMember", back_populates="collection", cascade="all, delete-orphan")
+
+
+class CollectionMember(Base):
+    __tablename__ = "collection_member"
+
+    id = Column(Integer, primary_key=True, index=True)
+    collection_id = Column(Integer, ForeignKey("collection.id", ondelete="CASCADE"), nullable=False)
+    media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Unique constraint
+    __table_args__ = (UniqueConstraint('collection_id', 'media_file_id', name='_collection_member_uc'),)
+    
+    # Relationships
+    collection = relationship("Collection", back_populates="collection_members")
+    media_file = relationship("MediaFile", back_populates="collection_memberships")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Response
 from fastapi.routing import APIRoute
-from .endpoints import auth, files, search, speakers, comments, tags, users, tasks, admin
+from .endpoints import auth, files, search, speakers, comments, tags, users, tasks, admin, collections
 from . import websockets
 import logging
 
@@ -54,6 +54,7 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(collections.router, prefix="/collections", tags=["collections"])
 
 # Include WebSocket router without prefix since it handles its own paths
 api_router.include_router(websockets.router, tags=["websockets"])

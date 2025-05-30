@@ -1,7 +1,8 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import axiosInstance from '../lib/axios';
+  import CollectionsFilter from './CollectionsFilter.svelte';
   
   // Type definitions for props and state
   /**
@@ -49,6 +50,9 @@
   
   /** @type {DateRange} */
   export let dateRange = { from: null, to: null };
+  
+  /** @type {number|null} */
+  export let selectedCollectionId = null;
 
   // Duration range for filtering
   /** @type {{ min: number|null, max: number|null }} */
@@ -86,6 +90,9 @@
   // State
   /** @type {Tag[]} */
   let allTags = [];
+  
+  // Component refs
+  let collectionsFilterRef: any;
   
   /** @type {Speaker[]} */
   let allSpeakers = [];
@@ -321,6 +328,7 @@
       search: searchQuery,
       tags: selectedTags,
       speaker: selectedSpeakers,
+      collectionId: selectedCollectionId,
       dates: dateRange,
       durationRange,
       fileSizeRange,
@@ -335,6 +343,7 @@
     searchQuery = '';
     selectedTags = [];
     selectedSpeakers = [];
+    selectedCollectionId = null;
     dateRange = { from: null, to: null };
     fromDate = '';
     toDate = '';
@@ -352,6 +361,13 @@
     maxFileSizeInput = '';
     
     dispatch('reset');
+  }
+  
+  // Public method to refresh collections
+  export function refreshCollections() {
+    if (collectionsFilterRef && collectionsFilterRef.fetchCollections) {
+      collectionsFilterRef.fetchCollections();
+    }
   }
   
   onMount(() => {
@@ -389,6 +405,11 @@
       title="Search by file name or title - does not search transcript content"
     />
     <small class="input-help">Searches file names and titles only</small>
+  </div>
+  
+  <div class="filter-section">
+    <h3>Collection</h3>
+    <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
   </div>
   
   <div class="filter-section">

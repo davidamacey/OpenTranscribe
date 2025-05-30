@@ -129,4 +129,25 @@ CREATE TABLE IF NOT EXISTS analytics (
     keywords JSONB NULL
 );
 
+-- Collections table
+CREATE TABLE IF NOT EXISTS collection (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    user_id INTEGER NOT NULL REFERENCES "user"(id),
+    is_public BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name) -- Ensure unique collection names per user
+);
+
+-- Collection members join table
+CREATE TABLE IF NOT EXISTS collection_member (
+    id SERIAL PRIMARY KEY,
+    collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
+    added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(collection_id, media_file_id) -- Ensure a file can only be in a collection once
+);
+
 -- Note: Default tags are now handled by the backend in app/initial_data.py
