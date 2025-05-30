@@ -63,16 +63,12 @@
     }
 
     try {
-      console.log(`FileDetail: Fetching details for file ID: ${targetFileId}`);
       isLoading = true;
       errorMessage = '';
 
       const response = await axiosInstance.get(`/api/files/${targetFileId}`);
       
       if (response.data && typeof response.data === 'object') {
-        console.log('FileDetail: Received file data:', response.data);
-        console.log('FileDetail: Transcript segments:', response.data.transcript_segments);
-        console.log('FileDetail: Legacy transcript:', response.data.transcript);
         file = response.data;
         reactiveFile.set(file);
 
@@ -104,12 +100,9 @@
    */
   async function fetchAnalytics(fileId: string) {
     try {
-      console.log(`FileDetail: Attempting to fetch analytics for file ID: ${fileId}`);
-      
       // Since there's no dedicated analytics endpoint, create analytics from available data
-      const transcriptData = file?.transcript_segments || file?.transcript;
+      const transcriptData = file?.transcript_segments;
       if (file && transcriptData && transcriptData.length > 0) {
-        console.log('FileDetail: Creating analytics from transcript data');
         const speakerCounts: any = {};
         const speakerTimes: any = {};
         let totalWords = 0;
@@ -151,7 +144,6 @@
         };
         
         reactiveFile.set(file);
-        console.log('FileDetail: Analytics created successfully:', file.analytics);
       } else {
         console.warn('FileDetail: No transcript data available for analytics');
       }
@@ -164,30 +156,23 @@
    * Process transcript data from the main file response
    */
   function processTranscriptData() {
-    // Check for transcript_segments (from backend) or transcript (legacy)
-    let transcriptData = file?.transcript_segments || file?.transcript;
+    // Use transcript_segments from backend
+    let transcriptData = file?.transcript_segments;
     
     if (!file || !transcriptData || !Array.isArray(transcriptData)) {
-      console.log('FileDetail: No transcript data in file response');
       return;
     }
     
     try {
-      console.log(`FileDetail: Processing ${transcriptData.length} transcript segments`);
-      
       // Sort transcript segments by start_time to ensure proper ordering
       transcriptData = [...transcriptData].sort((a: any, b: any) => {
         const aStart = parseFloat(a.start_time || a.start || 0);
         const bStart = parseFloat(b.start_time || b.start || 0);
         return aStart - bStart;
       });
-      console.log('FileDetail: Sorted transcript segments by timestamp');
       
-      // Normalize the transcript data structure
-      file.transcript = transcriptData;
-      if (file.transcript_segments) {
-        file.transcript_segments = transcriptData;
-      }
+      // Update the file with sorted data
+      file.transcript_segments = transcriptData;
       
       // Update transcript text for editing
       editedTranscript = transcriptData.map((seg: any) => 
@@ -195,7 +180,6 @@
       ).join('\n');
       
       loadSpeakers();
-      console.log('FileDetail: Transcript processing complete');
     } catch (error) {
       console.error('Error processing transcript:', error);
     }
@@ -221,10 +205,9 @@
           uuid: speaker.uuid,
           verified: speaker.verified
         }));
-        console.log('FileDetail: Loaded speakers from API:', speakerList);
       } else {
         // Fallback: extract from transcript data
-        const transcriptData = file?.transcript_segments || file?.transcript;
+        const transcriptData = file?.transcript_segments;
         if (transcriptData) {
           const speakers = new Map();
           transcriptData.forEach((segment: any) => {
@@ -242,7 +225,7 @@
     } catch (error) {
       console.error('Error loading speakers:', error);
       // Fallback: extract from transcript data
-      const transcriptData = file?.transcript_segments || file?.transcript;
+      const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakers = new Map();
         transcriptData.forEach((segment: any) => {
@@ -264,13 +247,11 @@
    */
   function setupVideoUrl(fileId: string) {
     videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
-    console.log('FileDetail: Using simple-video endpoint for streaming:', videoUrl);
     
     // Ensure URL has proper formatting
     if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
       videoUrl = '/' + videoUrl;
     }
-    console.log('FileDetail: Video URL set:', videoUrl);
     
     // Reset video element check flag to prompt afterUpdate to try initialization
     videoElementChecked = false;
@@ -281,15 +262,12 @@
    */
   function initializePlayer() {
     if (playerInitialized || !videoUrl) {
-      console.log('FileDetail: Player already initialized or no video URL');
       return;
     }
     
-    console.log('FileDetail: Initializing enhanced video player with URL:', videoUrl);
     const videoElement = document.querySelector('#player') as HTMLVideoElement;
     
     if (!videoElement) {
-      console.log('FileDetail: Video element not found yet, waiting for component to render');
       return;
     }
 
@@ -311,7 +289,6 @@
 
       // Set up event listeners
       player.on('ready', () => {
-        console.log('FileDetail: Player is ready');
         playerInitialized = true;
       });
 
@@ -322,7 +299,6 @@
 
       player.on('loadedmetadata', () => {
         duration = player?.duration || 0;
-        console.log('FileDetail: Video metadata loaded, duration:', duration);
       });
 
       player.on('loadstart', () => {
@@ -346,8 +322,6 @@
           loadProgress = (videoElement.buffered.end(0) / videoElement.duration) * 100;
         }
       });
-
-      console.log('FileDetail: Player initialized successfully');
       
     } catch (error) {
       console.error('Error initializing player:', error);
@@ -359,7 +333,7 @@
    * Update current segment highlighting without auto-scrolling
    */
   function updateCurrentSegment(currentPlaybackTime: number): void {
-    const transcriptData = file?.transcript_segments || file?.transcript;
+    const transcriptData = file?.transcript_segments;
     if (!file || !transcriptData || !Array.isArray(transcriptData)) return;
     
     const allSegments = document.querySelectorAll('.transcript-segment');
@@ -417,7 +391,7 @@
     });
     
     // Update transcript data with new speaker name
-    const transcriptData = file?.transcript_segments || file?.transcript;
+    const transcriptData = file?.transcript_segments;
     if (transcriptData && Array.isArray(transcriptData)) {
       transcriptData.forEach(segment => {
         if (segment.speaker_id === speakerId) {
@@ -426,13 +400,7 @@
       });
       
       // Update file data
-      if (file.transcript_segments) {
-        file.transcript_segments = [...transcriptData];
-      }
-      if (file.transcript) {
-        file.transcript = [...transcriptData];
-      }
-      
+      file.transcript_segments = [...transcriptData];
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
     }
@@ -445,7 +413,6 @@
           display_name: newName,
           name: newName
         });
-        console.log('Speaker name updated in database:', newName);
       }
     } catch (error) {
       console.error('Failed to update speaker name in database:', error);
@@ -496,33 +463,48 @@
     try {
       savingTranscript = true;
       
-      // Client-side segment editing since backend endpoint doesn't exist
-      const transcriptData = file?.transcript_segments || file?.transcript;
-      if (transcriptData) {
-        const segmentIndex = transcriptData.findIndex((s: any) => s.id === segment.id);
-        if (segmentIndex !== -1) {
-          transcriptData[segmentIndex].text = editingSegmentText;
-          
-          // Update both transcript_segments and transcript for compatibility
-          if (file.transcript_segments) {
-            file.transcript_segments = [...transcriptData];
-          }
-          if (file.transcript) {
-            file.transcript = [...transcriptData];
-          }
-          
-          file = { ...file }; // Trigger reactivity
-          reactiveFile.set(file);
-        }
-      }
+      // Call backend API to update the specific segment
+      const segmentUpdate = {
+        text: editingSegmentText
+      };
       
-      editingSegmentId = null;
-      editingSegmentText = '';
-      transcriptError = '';
-      console.log('Segment updated locally');
-    } catch (error) {
+      const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segment.id}`, segmentUpdate);
+      
+      if (response.data) {
+        // Update the specific segment in local data
+        const transcriptData = file?.transcript_segments;
+        if (transcriptData && file) {
+          const segmentIndex = transcriptData.findIndex((s: any) => s.id === segment.id);
+          
+          if (segmentIndex !== -1) {
+            // Create a new array with the updated segment
+            const updatedSegments = [...transcriptData];
+            updatedSegments[segmentIndex] = response.data;
+            
+            // Update file with new segments array
+            file = { 
+              ...file, 
+              transcript_segments: updatedSegments 
+            };
+            reactiveFile.set(file);
+          }
+        }
+        
+        editingSegmentId = null;
+        editingSegmentText = '';
+        transcriptError = '';
+      }
+    } catch (error: any) {
       console.error('Error saving segment:', error);
-      transcriptError = 'Failed to save segment changes';
+      
+      // If API call fails, show specific error message
+      if (error.response?.status === 405) {
+        transcriptError = 'Transcript editing is not supported by the server';
+      } else if (error.response?.status === 404) {
+        transcriptError = 'Transcript segment not found';
+      } else {
+        transcriptError = 'Failed to save segment changes';
+      }
     } finally {
       savingTranscript = false;
     }
@@ -558,7 +540,7 @@
 
   async function handleExportTranscript(event: any) {
     const format = event.detail.format;
-    let transcriptData = file?.transcript_segments || file?.transcript;
+    let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
     
     try {
@@ -629,7 +611,7 @@
       link.download = `${filename}.${format}`;
       link.click();
       window.URL.revokeObjectURL(url);
-      console.log(`Transcript exported as ${format} with updated speaker names`);
+      // Transcript exported successfully
     } catch (error) {
       console.error('Error exporting transcript:', error);
     }
@@ -654,7 +636,7 @@
       await Promise.all(updatePromises.filter(p => p !== null));
       
       // Update local transcript data with new display names
-      const transcriptData = file?.transcript_segments || file?.transcript;
+      const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakerMapping = new Map();
         speakerList.forEach((speaker: any) => {
@@ -675,13 +657,7 @@
         });
         
         // Update file data
-        if (file.transcript_segments) {
-          file.transcript_segments = [...transcriptData];
-        }
-        if (file.transcript) {
-          file.transcript = [...transcriptData];
-        }
-        
+        file.transcript_segments = [...transcriptData];
         file = { ...file }; // Trigger reactivity
         reactiveFile.set(file);
       }
@@ -691,11 +667,11 @@
         await fetchAnalytics(file.id.toString());
       }
       
-      console.log('Speaker names saved to database and updated locally');
+      // Speaker names saved to database and updated locally
     } catch (error) {
       console.error('Error saving speaker names:', error);
       // Fall back to local-only updates
-      const transcriptData = file?.transcript_segments || file?.transcript;
+      const transcriptData = file?.transcript_segments;
       if (transcriptData) {
         const speakerMapping = new Map();
         speakerList.forEach((speaker: any) => {
@@ -723,7 +699,7 @@
           await fetchAnalytics(file.id.toString());
         }
         
-        console.log('Speaker names updated locally only (database update failed)');
+        // Speaker names updated locally only (database update failed)
       }
     }
   }
@@ -781,10 +757,10 @@
       videoElementChecked = true;
       const videoElement = document.getElementById('player');
       if (videoElement) {
-        console.log('FileDetail: Video element found, initializing player');
+        // Video element found, initializing player
         setTimeout(() => initializePlayer(), 100); // Small delay to ensure element is fully rendered
       } else {
-        console.log('FileDetail: Video element not found yet, will try again next update');
+        // Video element not found yet, will try again next update
         videoElementChecked = false;
       }
     }
@@ -792,7 +768,7 @@
 
   // Reactive statement to re-initialize player if videoUrl changes
   $: if (videoUrl && !playerInitialized && !isLoading) {
-    console.log('FileDetail: Video URL available but no player, scheduling initialization');
+    // Video URL available but no player, scheduling initialization
     setTimeout(() => {
       if (!playerInitialized) {
         initializePlayer();
@@ -867,7 +843,7 @@
       </section>
       
       <!-- Transcript section - right side -->
-      {#if file && (file.transcript_segments || file.transcript)}
+      {#if file && file.transcript_segments}
         <TranscriptDisplay 
           {file}
           {isEditingTranscript}
@@ -875,7 +851,7 @@
           {savingTranscript}
           {transcriptError}
           {editingSegmentId}
-          {editingSegmentText}
+          bind:editingSegmentText
           {isEditingSpeakers}
           {speakerList}
           on:segmentClick={handleSegmentClick}
@@ -892,7 +868,7 @@
           <h4>Transcript</h4>
           <div class="no-transcript">
             <p>No transcript available for this file.</p>
-            <p>Debug: file={!!file}, transcript_segments={!!file?.transcript_segments}, transcript={!!file?.transcript}</p>
+            <p>Debug: file={!!file}, transcript_segments={!!file?.transcript_segments}</p>
           </div>
         </section>
       {/if}

@@ -2,7 +2,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from typing import Dict, List, Optional
 import json
 import logging
+import asyncio
+import redis.asyncio as redis
 from ..core.security import get_token_from_cookie, verify_token
+from ..core.config import settings
 from ..db.base import get_db
 from sqlalchemy.orm import Session
 from ..models.user import User
@@ -48,6 +51,64 @@ class ConnectionManager:
 # Create connection manager instance
 manager = ConnectionManager()
 
+# Redis client for pub/sub
+redis_client = None
+
+async def setup_redis():
+    """Initialize Redis connection for pub/sub notifications."""
+    global redis_client
+    if not redis_client:
+        redis_client = redis.from_url(settings.REDIS_URL)
+        # Start Redis subscriber in background
+        asyncio.create_task(redis_subscriber())
+
+async def redis_subscriber():
+    """Subscribe to Redis notifications and forward to WebSocket connections."""
+    try:
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe("websocket_notifications")
+        
+        logger.info("Started Redis subscriber for WebSocket notifications")
+        
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                try:
+                    notification_data = json.loads(message["data"])
+                    user_id = notification_data.get("user_id")
+                    notification_type = notification_data.get("type")
+                    data = notification_data.get("data", {})
+                    
+                    if user_id and notification_type:
+                        await manager.send_personal_message(user_id, {
+                            "type": notification_type,
+                            "data": data
+                        })
+                        logger.info(f"Forwarded notification to user {user_id}: {notification_type}")
+                    else:
+                        logger.warning(f"Invalid notification data: {notification_data}")
+                except Exception as e:
+                    logger.error(f"Error processing Redis notification: {e}")
+    except Exception as e:
+        logger.error(f"Redis subscriber error: {e}")
+
+# Function to publish notification to Redis (for use from other processes)
+async def publish_notification(user_id: int, notification_type: str, data: dict):
+    """Publish notification via Redis pub/sub."""
+    if not redis_client:
+        await setup_redis()
+    
+    notification = {
+        "user_id": user_id,
+        "type": notification_type,
+        "data": data
+    }
+    
+    try:
+        await redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published notification to Redis for user {user_id}: {notification_type}")
+    except Exception as e:
+        logger.error(f"Failed to publish notification to Redis: {e}")
+
 
 # Authenticate WebSocket connection
 async def get_user_from_websocket(
@@ -85,6 +146,9 @@ async def websocket_endpoint(
     websocket: WebSocket,
     db: Session = Depends(get_db)
 ):
+    # Initialize Redis subscriber if not already running
+    await setup_redis()
+    
     # Authenticate the connection
     user = await get_user_from_websocket(websocket, db)
     

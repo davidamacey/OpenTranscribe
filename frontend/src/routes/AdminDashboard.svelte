@@ -4,6 +4,11 @@
   import { user as userStore } from '../stores/auth';
   import UserManagementTable from '../components/UserManagementTable.svelte';
   
+  // Explicitly declare router props to prevent warnings
+  export let location = null;
+  export let navigate = null;
+  export let condition = true;
+  
   // Component state
   /** @type {Array<any>} */
   let users = [];

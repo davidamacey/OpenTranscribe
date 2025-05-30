@@ -16,14 +16,14 @@ from datetime import datetime
 from app.db.base import get_db
 from app.models.user import User
 from app.models.media import MediaFile
-from app.schemas.media import MediaFile as MediaFileSchema, MediaFileDetail, TranscriptSegmentUpdate, MediaFileUpdate
+from app.schemas.media import MediaFile as MediaFileSchema, MediaFileDetail, TranscriptSegmentUpdate, MediaFileUpdate, TranscriptSegment
 from app.api.endpoints.auth import get_current_active_user
 
 # Import main functions for use in the router
 from .upload import process_file_upload
 from .crud import (
     get_media_file_detail, update_media_file, delete_media_file,
-    update_transcript_segments, get_stream_url_info, get_media_file_by_id
+    update_single_transcript_segment, get_stream_url_info, get_media_file_by_id
 )
 from .filtering import apply_all_filters, get_metadata_filters
 from .streaming import (
@@ -179,15 +179,17 @@ def get_metadata_filters_endpoint(
     return get_metadata_filters(db, current_user.id)
 
 
-@router.put("/{file_id}/transcript", response_model=MediaFileDetail)
-def update_transcript(
+@router.put("/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment)
+def update_transcript_segment(
     file_id: int,
-    segments: List[TranscriptSegmentUpdate],
+    segment_id: int,
+    segment_update: TranscriptSegmentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Update transcript segments"""
-    return update_transcript_segments(db, file_id, segments, current_user)
+    """Update a specific transcript segment"""
+    from .crud import update_single_transcript_segment
+    return update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
 
 
 __all__ = [
@@ -196,7 +198,7 @@ __all__ = [
     "get_media_file_detail",
     "update_media_file", 
     "delete_media_file",
-    "update_transcript_segments",
+    "update_single_transcript_segment",
     "get_stream_url_info",
     "apply_all_filters",
     "get_metadata_filters",

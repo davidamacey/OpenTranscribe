@@ -1,7 +1,7 @@
 /* Form element styles for both light and dark mode */
 
 /* Input fields */
-input, select, textarea, .input-like, .select-like {
+input, select, textarea {
   background-color: var(--input-background);
   color: var(--text-color);
   border: 1px solid var(--input-border);
@@ -53,32 +53,8 @@ tr:hover {
   background-color: var(--table-row-hover);
 }
 
-/* General form layout */
-.form-row {
-  margin-bottom: 1rem;
-}
-
-.form-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--text-color);
-}
-
-.form-help {
-  margin-top: 0.25rem;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.form-error {
-  color: var(--error-color);
-  font-size: 0.85rem;
-  margin-top: 0.25rem;
-}
-
 /* Buttons with proper contrast */
-button, .btn {
+button {
   background-color: var(--surface-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
@@ -92,34 +68,34 @@ button, .btn {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-button:hover:not(:disabled), .btn:hover:not(:disabled),
-button:focus:not(:disabled), .btn:focus:not(:disabled) {
+button:hover:not(:disabled),
+button:focus:not(:disabled) {
   background-color: var(--button-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   text-decoration: none !important;
 }
 
-button:active:not(:disabled), .btn:active:not(:disabled) {
+button:active:not(:disabled) {
   transform: translateY(0);
 }
 
-button.primary, .btn-primary {
+button.primary {
   background-color: #3b82f6; /* Use explicit color for consistency */
   color: white !important; /* Force white text */
   border: none;
   box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
 }
 
-button.primary:hover:not(:disabled), .btn-primary:hover:not(:disabled),
-button.primary:focus:not(:disabled), .btn-primary:focus:not(:disabled) {
+button.primary:hover:not(:disabled),
+button.primary:focus:not(:disabled) {
   background-color: #2563eb; /* Darker blue on hover */
   color: white !important;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
 }
 
-button:disabled, .btn:disabled {
+button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

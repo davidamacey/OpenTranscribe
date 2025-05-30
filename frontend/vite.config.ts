@@ -46,9 +46,11 @@ export default defineConfig(({ mode }) => {
           });
         }
       },
-      '/ws': {
+      '/api/ws': {
         target: 'ws://backend:8080',
         ws: true,
+        changeOrigin: true,
+        rewrite: (path) => path
       }
     },
     // Add historyApiFallback to handle client-side routing

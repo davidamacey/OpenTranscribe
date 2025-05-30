@@ -31,7 +31,7 @@ axiosInstance.interceptors.request.use(
     
     // Log the request URL for debugging
     if (isDevMode) {
-      console.log(`[Axios] ${config.method?.toUpperCase()} Original URL: ${config.url}`);
+      // Axios: Processing request URL
     }
     
     // We don't need to add /api prefix since baseURL already has it
@@ -39,7 +39,7 @@ axiosInstance.interceptors.request.use(
     if (config.url && !config.url.startsWith('/') && !config.url.startsWith('http')) {
       config.url = `/${config.url}`;
       if (isDevMode) {
-        console.log(`Ensured URL starts with slash: ${config.url}`);
+        // Ensured URL starts with slash
       }
     }
     
@@ -47,7 +47,7 @@ axiosInstance.interceptors.request.use(
     if (config.url?.startsWith('/api/')) {
       config.url = config.url.substring(4); // Remove '/api' prefix
       if (isDevMode) {
-        console.log(`Removed duplicate /api prefix, now: ${config.url}`);
+        // Removed duplicate /api prefix
       }
     }
 
@@ -60,12 +60,12 @@ axiosInstance.interceptors.request.use(
     if (!config.url.startsWith('/') && !config.url.startsWith('http')) {
       config.url = `/${config.url}`;
       if (isDevMode) {
-        console.log(`Ensured URL starts with slash: ${config.url}`);
+        // Ensured URL starts with slash
       }
     }
     
     if (isDevMode) {
-      console.log(`[Axios] ${config.method?.toUpperCase()} Final URL: ${config.baseURL}${config.url}`);
+      // Axios: Final URL processed
     }
     
     return config;
@@ -79,7 +79,7 @@ axiosInstance.interceptors.request.use(
 // Add response logging
 axiosInstance.interceptors.response.use(
   (response) => {
-    console.log(`Response status for ${response.config.url}: ${response.status}`);
+    // Response received
     return response;
   },
   (error) => {
@@ -114,7 +114,7 @@ axiosInstance.interceptors.request.use(
       // Log the token being used (first 10 chars only for security) in dev mode
       const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       if (isDevMode) {
-        console.log(`Using auth token: ${token.substring(0, 10)}... for ${config.url}`);
+        // Using auth token for request
       }
     } else if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
       // Log when no token is available - helpful for debugging

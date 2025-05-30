@@ -83,7 +83,7 @@
     error = null;
     try {
       const token = localStorage.getItem('token');
-      console.log(`[TagsEditor] Adding tag ${tagId} to file ${fileId} with token:`, token ? token.substring(0, 8) + '...' : '[none]');
+      // Adding tag to file
       
       // Get the tag name by ID and send tag_data with name field as required by backend
       const tagToAdd = allTags.find(t => t.id === tagId);
@@ -136,7 +136,7 @@
     error = null;
     try {
       const token = localStorage.getItem('token');
-      console.log(`[TagsEditor] Creating tag '${newTagInput.trim()}' and adding to file ${fileId} with token:`, token ? token.substring(0, 8) + '...' : '[none]');
+      // Creating tag and adding to file
       
       // Step 1: Create the tag with proper payload format
       const createPayload = { name: newTagInput.trim() };
@@ -210,7 +210,7 @@
     error = null;
     try {
       const token = localStorage.getItem('token');
-      console.log(`[TagsEditor] Removing tag ${tagId} from file ${fileId} with token:`, token ? token.substring(0, 8) + '...' : '[none]');
+      // Removing tag from file
       
       // Find the tag by ID to get its name - the backend needs tag name, not ID
       const tagToRemove = tags.find(t => t.id === tagId);
@@ -221,11 +221,11 @@
       
       // IMPORTANT: The backend expects /tags/files/{file_id}/tags/{tag_name} due to router prefix configuration
       const deleteUrl = `/tags/files/${fileId}/tags/${encodeURIComponent(tagToRemove.name)}`;
-      console.log('[TagsEditor] DELETE URL:', deleteUrl);
+      // Deleting tag
       
       // Send the delete request
       const response = await axiosInstance.delete(deleteUrl);
-      console.log('[TagsEditor] Delete tag response status:', response.status);
+      // Tag deleted successfully
       
       // Update the local tags array
       // Filter out the removed tag using a safe comparison

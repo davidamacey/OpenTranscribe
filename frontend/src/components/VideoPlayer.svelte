@@ -16,6 +16,7 @@
 
 <div class="video-player-container" class:loading={isPlayerBuffering}>
   {#if videoUrl}
+    <!-- svelte-ignore a11y-media-has-caption -->
     <video id="player" playsinline controls>
       <source src={videoUrl} type="video/mp4" />
       <!-- Captions disabled to avoid CORS issues -->
