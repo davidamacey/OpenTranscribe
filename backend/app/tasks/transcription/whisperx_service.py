@@ -165,27 +165,36 @@ class WhisperXService:
         result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
         return result
     
-    def process_full_pipeline(self, audio_file_path: str, hf_token: str = None) -> Dict[str, Any]:
+    def process_full_pipeline(self, audio_file_path: str, hf_token: str = None, progress_callback=None) -> Dict[str, Any]:
         """
         Run the complete WhisperX pipeline: transcription, alignment, and diarization.
         
         Args:
             audio_file_path: Path to the audio file
             hf_token: HuggingFace token for speaker diarization
+            progress_callback: Optional callback function for progress updates
             
         Returns:
             Complete processing result with speaker assignments
         """
-        # Step 1: Transcribe
+        # Step 1: Transcribe (40% -> 50%)
+        if progress_callback:
+            progress_callback(0.42, "Running initial transcription")
         transcription_result, audio = self.transcribe_audio(audio_file_path)
         
-        # Step 2: Align
+        # Step 2: Align (50% -> 55%)
+        if progress_callback:
+            progress_callback(0.50, "Aligning word-level timestamps")
         aligned_result = self.align_transcription(transcription_result, audio)
         
-        # Step 3: Diarize
+        # Step 3: Diarize (55% -> 65%)
+        if progress_callback:
+            progress_callback(0.55, "Analyzing speaker patterns")
         diarize_segments = self.perform_speaker_diarization(audio, hf_token)
         
-        # Step 4: Assign speakers
+        # Step 4: Assign speakers (65% -> 70%)
+        if progress_callback:
+            progress_callback(0.65, "Assigning speakers to transcript")
         final_result = self.assign_speakers_to_words(diarize_segments, aligned_result)
         
         return final_result
