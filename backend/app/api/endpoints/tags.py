@@ -45,19 +45,29 @@ def list_tags(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    List all tags used by the current user
+    List all available tags for the current user, including both used and unused tags
     """
-    # Find all tags that are used in files owned by this user
     try:
-        tags = db.query(Tag).join(FileTag).join(MediaFile).filter(
+        # First, get tags that are used in files owned by this user
+        used_tags = db.query(Tag).join(FileTag).join(MediaFile).filter(
             MediaFile.user_id == current_user.id
         ).distinct().all()
+        
+        # Get all unused tags (not associated with any files)
+        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
+        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()
+        
+        # Combine both lists, ensuring no duplicates
+        all_tags = {tag.id: tag for tag in used_tags}
+        for tag in unused_tags:
+            if tag.id not in all_tags:
+                all_tags[tag.id] = tag
+                
+        return list(all_tags.values())
     except Exception as e:
         logger.error(f"Error in list_tags: {e}")
-        # If there's an error or no tags, return an empty list
+        # If there's an error, return an empty list
         return []
-    
-    return tags
 
 
 @router.get("/unused", response_model=List[TagSchema])
