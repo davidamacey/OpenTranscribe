@@ -608,8 +608,8 @@
                 <button
                   type="button"
                   class="timestamp-link"
-                  on:click={() => dispatch('seekTo', comment.timestamp)}
-                  on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', comment.timestamp)}
+                  on:click={() => dispatch('seekTo', { time: comment.timestamp })}
+                  on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', { time: comment.timestamp })}
                   aria-label="Jump to timestamp {formatTimestamp(comment.timestamp)}"
                   title="Jump to {formatTimestamp(comment.timestamp)} in the video"
                 >
