@@ -24,9 +24,11 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
+- **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
 - **Metadata Extraction**: Comprehensive file information using ExifTool
 - **Subtitle Export**: Generate SRT/VTT files for accessibility
+- **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
 
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
@@ -44,7 +46,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Time-Stamped Comments**: Add annotations at specific moments
 - **User Management**: Role-based access control (admin/user)
 - **Export Options**: Download transcripts in multiple formats
-- **Real-Time Updates**: Live progress tracking with WebSocket notifications
+- **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
+- **Enhanced Progress Tracking**: 13 granular processing stages with descriptive messages
 
 ## 🛠️ Technology Stack
 
@@ -195,19 +198,20 @@ The `opentr.sh` script provides comprehensive management for all application ope
    - Set up your profile and preferences
 
 2. **Upload Your First File**
-   - Click \"Upload Files\" or drag-and-drop media files
+   - Click \"Upload Files\" or drag-and-drop media files (up to 4GB)
    - Supported formats: MP3, WAV, MP4, MOV, and more
    - Files are automatically queued for processing
 
 3. **Monitor Processing**
-   - Watch real-time progress in the dashboard
+   - Watch detailed real-time progress with 13 processing stages
    - View task status in Flower monitor
-   - Receive notifications when processing completes
+   - Receive live WebSocket notifications for all status changes
 
 4. **Explore Your Transcript**
    - Click on transcript text to navigate media playback
    - Edit speaker names and add custom labels
    - Add time-stamped comments and annotations
+   - Reprocess files to improve accuracy while preserving your edits
 
 ### **Advanced Features**
 
@@ -306,7 +310,7 @@ USE_GPU=true                        # Enable GPU acceleration
 CUDA_VISIBLE_DEVICES=0              # GPU device selection
 
 # Resource limits
-MAX_UPLOAD_SIZE=2GB                 # Maximum file size
+MAX_UPLOAD_SIZE=4GB                 # Maximum file size (supports GoPro videos)
 CELERY_WORKER_CONCURRENCY=2         # Concurrent tasks
 ```
 
