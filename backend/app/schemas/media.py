@@ -27,6 +27,7 @@ class SpeakerBase(BaseModel):
 
 class SpeakerCreate(SpeakerBase):
     user_id: int
+    media_file_id: int
     embedding_vector: Optional[List[float]] = None
 
 
@@ -40,6 +41,7 @@ class SpeakerUpdate(BaseModel):
 class Speaker(SpeakerBase):
     id: int
     user_id: int
+    media_file_id: int
     created_at: datetime
 
     class Config:

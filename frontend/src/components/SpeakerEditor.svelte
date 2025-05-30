@@ -36,12 +36,12 @@
   });
 
   /**
-   * Load all speakers for the current user
+   * Load speakers for the current file only
    */
   async function loadSpeakers() {
     try {
       isLoading = true;
-      const response = await axiosInstance.get('/api/speakers/');
+      const response = await axiosInstance.get(`/api/speakers/?file_id=${fileId}`);
       speakers = response.data;
       updateEditableSpeakers();
     } catch (error) {
@@ -77,7 +77,7 @@
   }
 
   /**
-   * Save all changed speakers
+   * Save only changed speakers with meaningful names
    */
   async function saveChanges() {
     savingChanges = true;
@@ -85,23 +85,27 @@
     successMessage = null;
     
     try {
-      const changedSpeakers = editableSpeakers.filter(s => s.changed);
+      const changedSpeakers = editableSpeakers.filter(s => 
+        s.changed && 
+        s.display_name.trim() !== "" && 
+        !s.display_name.startsWith('SPEAKER_')
+      );
       
       if (changedSpeakers.length === 0) {
-        successMessage = 'No changes to save';
+        successMessage = 'No meaningful speaker names to save';
         return;
       }
       
-      // Save each changed speaker
+      // Save each changed speaker with a meaningful name
       for (const speaker of changedSpeakers) {
         await axiosInstance.put(`/api/speakers/${speaker.id}`, {
-          display_name: speaker.display_name
+          display_name: speaker.display_name.trim()
         });
       }
       
       // Reload speakers to get updated data
       await loadSpeakers();
-      successMessage = 'Speakers updated successfully';
+      successMessage = `${changedSpeakers.length} speaker(s) updated successfully`;
       dispatch('speakersUpdated', { speakers });
     } catch (error) {
       console.error('Error saving speakers:', error);

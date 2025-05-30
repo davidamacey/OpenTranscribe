@@ -108,9 +108,24 @@
         let totalWords = 0;
         let totalDuration = 0;
         
+        // Create a speaker mapping from current speakerList for latest display names
+        const speakerMapping = new Map();
+        speakerList.forEach((speaker: any) => {
+          // Map both the original name and any existing display names to the current display name
+          speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
+          if (speaker.display_name) {
+            speakerMapping.set(speaker.display_name, speaker.display_name);
+          }
+        });
+        
         transcriptData.forEach((segment: any) => {
-          // Use display name if available, otherwise fall back to original speaker label
-          const speaker = segment.speaker?.display_name || segment.speaker_label || segment.speaker?.name || 'Unknown';
+          // Get the speaker identifier from the segment
+          const segmentSpeakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
+          // Use the latest display name from speakerList, or fall back to segment data
+          const speaker = speakerMapping.get(segmentSpeakerLabel) || 
+                         segment.speaker?.display_name || 
+                         segmentSpeakerLabel;
+          
           const words = segment.text.split(/\s+/).filter(Boolean).length;
           const segmentDuration = (segment.end_time || 0) - (segment.start_time || 0);
           
@@ -120,7 +135,8 @@
           totalDuration += segmentDuration;
         });
         
-        file.analytics = {
+        // Create new analytics object
+        const newAnalytics = {
           overall: {
             word_count: totalWords,
             duration_seconds: file.duration || totalDuration,
@@ -141,6 +157,12 @@
               total: 0
             }
           }
+        };
+        
+        // Create a new file object to trigger reactivity
+        file = {
+          ...file,
+          analytics: newAnalytics
         };
         
         reactiveFile.set(file);
@@ -186,6 +208,14 @@
   }
 
   /**
+   * Extract speaker number from SPEAKER_XX format for sorting
+   */
+  function getSpeakerNumber(speakerName: string): number {
+    const match = speakerName.match(/^SPEAKER_(\d+)$/);
+    return match ? parseInt(match[1], 10) : 999; // Unknown speakers go to end
+  }
+
+  /**
    * Load speakers for the current file
    */
   async function loadSpeakers() {
@@ -198,13 +228,15 @@
       });
       
       if (response.data && Array.isArray(response.data)) {
-        speakerList = response.data.map((speaker: any) => ({
-          id: speaker.id,
-          name: speaker.name,
-          display_name: speaker.display_name || speaker.name,
-          uuid: speaker.uuid,
-          verified: speaker.verified
-        }));
+        speakerList = response.data
+          .map((speaker: any) => ({
+            id: speaker.id,
+            name: speaker.name,
+            display_name: speaker.display_name || speaker.name,
+            uuid: speaker.uuid,
+            verified: speaker.verified
+          }))
+          .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
       } else {
         // Fallback: extract from transcript data
         const transcriptData = file?.transcript_segments;
@@ -219,7 +251,8 @@
               });
             }
           });
-          speakerList = Array.from(speakers.values());
+          speakerList = Array.from(speakers.values())
+            .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
         }
       }
     } catch (error) {
@@ -237,7 +270,8 @@
             });
           }
         });
-        speakerList = Array.from(speakers.values());
+        speakerList = Array.from(speakers.values())
+          .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
       }
     }
   }
@@ -365,13 +399,15 @@
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
     
-    // Update the speaker in the speakerList
-    speakerList = speakerList.map(speaker => {
-      if (speaker.id === speakerId || speaker.uuid === speakerId) {
-        return { ...speaker, display_name: newName, name: newName };
-      }
-      return speaker;
-    });
+    // Update the speaker in the speakerList and maintain sort order
+    speakerList = speakerList
+      .map(speaker => {
+        if (speaker.id === speakerId || speaker.uuid === speakerId) {
+          return { ...speaker, display_name: newName, name: newName };
+        }
+        return speaker;
+      })
+      .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
     
     // Update transcript data with new speaker name
     const transcriptData = file?.transcript_segments;
@@ -604,19 +640,23 @@
     if (!speakerList || speakerList.length === 0) return;
     
     try {
-      // Update speakers in the backend
-      const updatePromises = speakerList.map(async (speaker: any) => {
-        if (speaker.id) {
-          // Update existing speaker
+      // Update speakers in the backend (only meaningful names)
+      const updatePromises = speakerList
+        .filter(speaker => 
+          speaker.id && 
+          speaker.display_name && 
+          speaker.display_name.trim() !== "" && 
+          !speaker.display_name.startsWith('SPEAKER_')
+        )
+        .map(async (speaker: any) => {
+          // Update existing speaker with meaningful display name
           return axiosInstance.put(`/api/speakers/${speaker.id}`, {
-            display_name: speaker.display_name,
+            display_name: speaker.display_name.trim(),
             name: speaker.name
           });
-        }
-        return null;
-      });
+        });
       
-      await Promise.all(updatePromises.filter(p => p !== null));
+      await Promise.all(updatePromises);
       
       // Update local transcript data with new display names
       const transcriptData = file?.transcript_segments;
@@ -644,6 +684,9 @@
         file = { ...file }; // Trigger reactivity
         reactiveFile.set(file);
       }
+      
+      // Reload speakers to ensure consistent data and sort order
+      await loadSpeakers();
       
       // Regenerate analytics with updated speaker names
       if (file?.id) {
@@ -676,6 +719,9 @@
         
         file = { ...file };
         reactiveFile.set(file);
+        
+        // Reload speakers to ensure consistent data and sort order
+        await loadSpeakers();
         
         // Regenerate analytics with updated speaker names
         if (file?.id) {

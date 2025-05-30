@@ -76,12 +76,14 @@ CREATE TABLE IF NOT EXISTS file_tag (
 CREATE TABLE IF NOT EXISTS speaker (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES "user"(id),
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE, -- Associate speaker with specific file
     name VARCHAR(255) NOT NULL, -- Original name from diarization (e.g., "SPEAKER_01")
     display_name VARCHAR(255) NULL, -- User-assigned name (e.g., "John Doe")
-    uuid VARCHAR(255) NOT NULL UNIQUE, -- Unique identifier for the speaker
+    uuid VARCHAR(255) NOT NULL, -- Unique identifier for the speaker
     verified BOOLEAN NOT NULL DEFAULT FALSE, -- Flag to indicate if the speaker has been verified by a user
     embedding_vector JSONB NULL, -- Speaker embedding as JSON array
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, media_file_id, name) -- Ensure unique speaker names per file per user
 );
 
 -- Transcript segments table
