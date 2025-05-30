@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Link, useNavigate } from 'svelte-navigator';
-  import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
+  import { websocketStore } from '$stores/websocket';
   import { authStore } from '../stores/auth';
   
   // Explicitly declare props to prevent warnings
@@ -344,73 +344,55 @@
   }
   
   // Subscribe to WebSocket file status updates to update file status in real-time
+  // Track last processed notification to avoid duplicate processing
+  let lastProcessedNotificationId = '';
+  
   function setupWebSocketUpdates() {
-    unsubscribeFileStatus = fileStatusUpdates.subscribe((updates: FileStatusUpdates) => {
-      if (files.length > 0 && Object.keys(updates).length > 0) {
-        let updatedFile = false;
+    unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
+      if ($ws.notifications.length > 0) {
+        const latestNotification = $ws.notifications[0];
         
-        // Update the status of files that have been processed
-        files = files.map(file => {
-          // Convert file id to string for comparison since our updates keys are strings
-          const fileIdStr = file.id.toString();
+        // Only process if this is a new notification we haven't handled
+        if (latestNotification.id !== lastProcessedNotificationId) {
+          lastProcessedNotificationId = latestNotification.id;
           
-          // Check if this file has an update in the updates object
-          if (updates[fileIdStr]) {
-            const update = updates[fileIdStr];
-            updatedFile = true;
+          // Check if this notification is for transcription status
+          if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
+            const fileId = String(latestNotification.data.file_id);
+            const status = latestNotification.data.status;
             
-            // Return updated file object with new status
-            return {
-              ...file,
-              status: update.status
-            };
+            // Update any files that match this notification
+            files = files.map(file => {
+              if (String(file.id) === fileId) {
+                return {
+                  ...file,
+                  status: status
+                };
+              }
+              return file;
+            });
+            
+            console.log('MediaLibrary updated from WebSocket notification for file:', fileId, 'Status:', status);
           }
-          return file;
-        });
-        
-        // Force a UI update by creating a new array
-        if (updatedFile) {
-          files = [...files];
-        }
-      }
-    });
-    
-    // Also listen for general notifications that might affect files
-    unsubscribeNotifications = lastNotification.subscribe((notification: Notification | null) => {
-      if (notification) {
-        // Check if this is a completion notification that requires refreshing files
-        if (notification.type === 'transcription_status' && notification.data && notification.data.status === 'completed') {
-          // Wait a brief moment to allow backend processing to complete
-          setTimeout(() => fetchFiles(), 1000);
-        } else if (notification.type === 'file_update') {
-          setTimeout(() => fetchFiles(), 1000);
         }
       }
     });
   }
   
-  let unsubscribeNotifications: () => void;
-  
   onMount(() => {
     // Update document title
     document.title = 'Gallery | OpenTranscribe';
     
-    // Setup WebSocket connection with auth token
-    const authToken = $authStore.token;
-    setupWebsocketConnection(window.location.origin, authToken);
+    // Setup WebSocket subscription for real-time updates
     setupWebSocketUpdates();
     
     fetchFiles();
   });
   
   onDestroy(() => {
-    // Clean up subscriptions when component is destroyed
+    // Clean up WebSocket subscription when component is destroyed
     if (unsubscribeFileStatus) {
       unsubscribeFileStatus();
-    }
-    
-    if (unsubscribeNotifications) {
-      unsubscribeNotifications();
     }
   });
 </script>
