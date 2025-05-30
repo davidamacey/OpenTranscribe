@@ -128,6 +128,15 @@ def send_processing_notification(user_id: int, file_id: int) -> None:
     )
 
 
+def send_progress_notification(user_id: int, file_id: int, progress: float, message: str) -> None:
+    """Send progress update notification."""
+    progress_percent = int(progress * 100)
+    send_notification_with_retry(
+        user_id, file_id, FileStatus.PROCESSING,
+        message, progress=progress_percent
+    )
+
+
 def send_completion_notification(user_id: int, file_id: int) -> None:
     """Send transcription completed notification."""
     send_notification_with_retry(

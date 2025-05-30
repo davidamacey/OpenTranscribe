@@ -15,7 +15,9 @@ from app.schemas.media import TranscriptSegmentUpdate
 from app.utils.db_helpers import safe_get_by_id, get_or_create
 from app.utils.auth_decorators import AuthorizationHelper
 from app.utils.error_handlers import ErrorHandler
-from app.tasks.transcription import transcribe_audio_task, analyze_transcript_task, summarize_transcript_task
+from app.tasks.transcription import transcribe_audio_task
+from app.tasks.analytics import analyze_transcript_task
+from app.tasks.summarization import summarize_transcript_task
 
 logger = logging.getLogger(__name__)
 

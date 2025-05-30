@@ -3,7 +3,7 @@
   import { slide, fade } from 'svelte/transition';
   import { Link } from "svelte-navigator";
   import { user, authStore } from "../stores/auth";
-  import { setupWebsocketConnection, fileStatusUpdates, lastNotification } from "$lib/websocket";
+  import { websocketStore } from "$stores/websocket";
   
   // Explicitly declare router props to prevent warnings
   export let location = null;
@@ -53,74 +53,67 @@
   /** @type {string|null} */
   let openMetadataId = null;
   
-  // Subscribe to WebSocket file status updates to update task status
-  // Define proper type for updates object with string keys
-  /** @type {Object.<string, {status: string, progress?: number}>} */
-  let fileUpdates = {};
+  // Track last processed notification to avoid duplicate processing
+  let lastProcessedNotificationId = '';
   
-  const unsubscribeFileStatus = fileStatusUpdates.subscribe(updates => {
-    // Cast updates to the proper type
-    fileUpdates = /** @type {Object.<string, {status: string, progress?: number}>} */ (updates || {});
-    if (tasks.length > 0 && Object.keys(fileUpdates).length > 0) {
-      let updatedTask = false;
-      
-      // Find tasks that match updated files and update their status
-      tasks = tasks.map(task => {
-        if (task.media_file && task.media_file.id) {
-          // Convert ID to string for object key access
-          const fileIdStr = task.media_file.id.toString();
+  // Subscribe to WebSocket notifications for real-time task updates
+  let wsUnsubscribe = null;
+  
+  function setupWebSocketSubscription() {
+    if (wsUnsubscribe) {
+      wsUnsubscribe();
+    }
+    
+    wsUnsubscribe = websocketStore.subscribe(($ws) => {
+      if ($ws.notifications.length > 0) {
+        const latestNotification = $ws.notifications[0];
+        
+        // Only process if this is a new notification we haven't handled
+        if (latestNotification.id !== lastProcessedNotificationId) {
+          lastProcessedNotificationId = latestNotification.id;
           
-          if (fileUpdates[fileIdStr]) {
-            const update = fileUpdates[fileIdStr];
+          // Check if this notification is for transcription status
+          if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
+            const fileId = String(latestNotification.data.file_id);
+            const status = latestNotification.data.status;
+            const progress = latestNotification.data.progress;
             
-            // Convert file status to task status
-            let newTaskStatus;
-            let newProgress;
+            // Update any tasks that match this file
+            tasks = tasks.map(task => {
+              if (task.media_file && String(task.media_file.id) === fileId) {
+                // Convert file status to task status
+                let newTaskStatus;
+                let newProgress;
+                
+                if (status === 'completed') {
+                  newTaskStatus = 'completed';
+                  newProgress = 1.0;
+                } else if (status === 'processing') {
+                  newTaskStatus = 'in_progress';
+                  newProgress = progress ? progress/100 : task.progress;
+                } else if (status === 'error') {
+                  newTaskStatus = 'failed';
+                  newProgress = 0;
+                }
+                
+                // Update task with new status and progress
+                if (newTaskStatus) {
+                  return {
+                    ...task,
+                    status: newTaskStatus,
+                    progress: newProgress || task.progress
+                  };
+                }
+              }
+              return task;
+            });
             
-            if (update.status === 'completed') {
-              newTaskStatus = 'completed';
-              newProgress = 1.0;
-            } else if (update.status === 'processing') {
-              newTaskStatus = 'in_progress';
-              newProgress = update.progress ? update.progress/100 : task.progress;
-            } else if (update.status === 'error') {
-              newTaskStatus = 'failed';
-              newProgress = 0;
-            }
-            
-            // Only update if we have a new status and it's different
-            if (newTaskStatus && task.status !== newTaskStatus) {
-              updatedTask = true;
-              return {
-                ...task,
-                status: newTaskStatus,
-                progress: newProgress || task.progress
-              };
-            }
+            console.log('Tasks updated from WebSocket notification for file:', fileId, 'Status:', status, 'Progress:', progress);
           }
         }
-        return task;
-      });
-      
-      // If we updated any tasks, immediately fetch fresh data
-      if (updatedTask) {
-        fetchTasks();
       }
-    }
-  });
-  
-  // Also track general notifications for task updates
-  const unsubscribeNotifications = lastNotification.subscribe(notification => {
-    // Only process if notification exists and has a type property
-    if (notification && typeof notification === 'object' && 'type' in notification) {
-      // Use a type assertion to avoid 'type' not existing on type 'never' error
-      const typedNotification = /** @type {{type: string}} */ (notification);
-      if (typedNotification.type === 'task_status') {
-        // Refresh task list when we receive task status notifications
-        fetchTasks();
-      }
-    }
-  });
+    });
+  }
   
   /**
    * Fetch all tasks for the current user
@@ -261,9 +254,8 @@
   
   // Lifecycle hooks
   onMount(() => {
-    // Setup WebSocket connection with auth token
-    const authToken = $authStore.token;
-    setupWebsocketConnection(window.location.origin, authToken);
+    // Setup WebSocket subscription for real-time updates
+    setupWebSocketSubscription();
     
     fetchTasks();
     // Refresh tasks every 30 seconds as a fallback
@@ -280,12 +272,8 @@
     }
     
     // Unsubscribe from WebSocket updates
-    if (unsubscribeFileStatus) {
-      unsubscribeFileStatus();
-    }
-    
-    if (unsubscribeNotifications) {
-      unsubscribeNotifications();
+    if (wsUnsubscribe) {
+      wsUnsubscribe();
     }
   });
 </script>

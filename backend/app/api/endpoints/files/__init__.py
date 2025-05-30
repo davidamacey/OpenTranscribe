@@ -30,6 +30,7 @@ from .streaming import (
     get_content_streaming_response, get_video_streaming_response,
     get_enhanced_video_streaming_response, validate_file_exists
 )
+from .reprocess import process_file_reprocess
 
 # Create the router
 router = APIRouter()
@@ -192,9 +193,20 @@ def update_transcript_segment(
     return update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
 
 
+@router.post("/{file_id}/reprocess", response_model=MediaFileSchema)
+async def reprocess_media_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Reprocess a media file for transcription"""
+    return await process_file_reprocess(file_id, db, current_user)
+
+
 __all__ = [
     "router",
     "process_file_upload",
+    "process_file_reprocess",
     "get_media_file_detail",
     "update_media_file", 
     "delete_media_file",

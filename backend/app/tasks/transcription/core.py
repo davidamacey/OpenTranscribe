@@ -21,7 +21,8 @@ from .storage import (
     generate_full_transcript, get_unique_speaker_names
 )
 from .notifications import (
-    send_processing_notification, send_completion_notification, send_error_notification
+    send_processing_notification, send_completion_notification, send_error_notification,
+    send_progress_notification
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,7 @@ def transcribe_audio_task(self, file_id: int):
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.3)
             
+            send_progress_notification(user_id, file_id, 0.3, "Preparing audio for transcription")
             audio_file_path = prepare_audio_for_transcription(temp_file_path, content_type, temp_dir)
             
             # Step 7: Run WhisperX pipeline
@@ -105,34 +107,45 @@ def transcribe_audio_task(self, file_id: int):
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.4)
                 
-                # Run full WhisperX pipeline
+                send_progress_notification(user_id, file_id, 0.4, "Running AI transcription")
+                
+                # Create progress callback for detailed WhisperX updates
+                def whisperx_progress_callback(progress, message):
+                    with session_scope() as db:
+                        update_task_status(db, task_id, "in_progress", progress=progress)
+                    send_progress_notification(user_id, file_id, progress, message)
+                
+                # Run full WhisperX pipeline with progress updates
                 result = whisperx_service.process_full_pipeline(
                     audio_file_path, 
-                    settings.HUGGINGFACE_TOKEN
+                    settings.HUGGINGFACE_TOKEN,
+                    progress_callback=whisperx_progress_callback
                 )
                 
-                with session_scope() as db:
-                    update_task_status(db, task_id, "in_progress", progress=0.6)
-                
-                # Step 8: Process speakers and segments
+                # Step 8: Process speakers and segments (WhisperX callback handles 0.4->0.65)
+                send_progress_notification(user_id, file_id, 0.68, "Processing speaker segments")
                 unique_speakers = extract_unique_speakers(result["segments"])
                 
                 with session_scope() as db:
                     speaker_mapping = create_speaker_mapping(db, user_id, file_id, unique_speakers)
+                    update_task_status(db, task_id, "in_progress", progress=0.72)
                 
+                send_progress_notification(user_id, file_id, 0.72, "Organizing transcript segments")
                 processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
                 
                 with session_scope() as db:
-                    update_task_status(db, task_id, "in_progress", progress=0.7)
+                    update_task_status(db, task_id, "in_progress", progress=0.75)
                 
+                send_progress_notification(user_id, file_id, 0.75, "Saving transcript to database")
                 # Step 9: Save to database
                 with session_scope() as db:
                     save_transcript_segments(db, file_id, processed_segments)
                     update_media_file_transcription_status(
                         db, file_id, processed_segments, result.get("language", "en")
                     )
-                    update_task_status(db, task_id, "in_progress", progress=0.8)
+                    update_task_status(db, task_id, "in_progress", progress=0.85)
                 
+                send_progress_notification(user_id, file_id, 0.85, "Indexing for search")
                 # Step 10: Index in search
                 try:
                     full_transcript = generate_full_transcript(processed_segments)
@@ -146,7 +159,8 @@ def transcribe_audio_task(self, file_id: int):
                 except Exception as e:
                     logger.warning(f"Error indexing transcript: {e}")
                 
-                # Step 11: Complete task
+                # Step 11: Finalize
+                send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
                 with session_scope() as db:
                     update_task_status(db, task_id, "completed", progress=1.0, completed=True)
                 
