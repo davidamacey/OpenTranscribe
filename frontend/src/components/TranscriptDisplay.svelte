@@ -71,7 +71,10 @@
 </script>
 
 <section class="transcript-column">
-  <h4>Transcript</h4>
+  <div class="transcript-header">
+    <h4>Transcript</h4>
+    <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} class="reprocess-button" />
+  </div>
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
@@ -240,7 +243,6 @@
           </a>
         {/if}
 
-        <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
       </div>
       
       {#if isEditingSpeakers}
@@ -291,11 +293,22 @@
     min-width: 0;
   }
 
+  .transcript-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
   .transcript-column h4 {
-    margin: 0 0 16px 0;
+    margin: 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
+  }
+  
+  .reprocess-button {
+    margin: 0;
   }
 
   .transcript-textarea {
