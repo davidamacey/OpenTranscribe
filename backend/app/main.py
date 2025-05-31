@@ -12,7 +12,7 @@ from app.middleware.route_fixer import RouteFixerMiddleware
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app with consistent routing configuration
+# Create FastAPI app with consistent routing configuration and file upload settings
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Audio transcription and analysis API",
@@ -22,7 +22,9 @@ app = FastAPI(
     redoc_url=f"{settings.API_PREFIX}/redoc",
     # Enable built-in support for routes with or without trailing slashes
     # This ensures consistent behavior regardless of how frontend makes requests
-    redirect_slashes=True
+    redirect_slashes=True,
+    # Increase default timeout to 1 hour for large file uploads
+    default_timeout=3600
 )
 
 # Set up CORS
@@ -33,6 +35,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure maximum upload size (50GB)
+app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # 50GB
 
 # Add Route Fixer Middleware to handle inconsistent frontend/backend API calls
 app.add_middleware(

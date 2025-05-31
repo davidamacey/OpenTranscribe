@@ -18,6 +18,22 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
+class PrepareUploadRequest(BaseModel):
+    """Request schema for preparing a file upload.
+    
+    This schema is used to create a file record before the actual upload starts.
+    
+    Attributes:
+        filename: Name of the file to be uploaded
+        file_size: Size of the file in bytes
+        content_type: MIME type of the file
+    """
+    filename: str = Field(..., description="Name of the file to be uploaded")
+    file_size: int = Field(..., description="Size of the file in bytes")
+    content_type: str = Field(..., description="MIME type of the file")
+
+
+
 class SpeakerBase(BaseModel):
     name: str
     display_name: Optional[str] = None
