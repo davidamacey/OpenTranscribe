@@ -1,92 +1,213 @@
-<script>
+<script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
+  import type { AxiosProgressEvent, CancelTokenSource } from 'axios';
+  import axios from 'axios';
+  
+  // Constants for file handling
+  const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+  const MB = 1024 * 1024; // 1 MB in bytes
+  
+  // Types
+  interface FileWithSize extends File {
+    size: number;
+  }
   
   // State
-  let file = null;
+  let file: File | null = null;
   let uploading = false;
   let progress = 0;
   let error = '';
+  let statusMessage = ''; // Status message for user feedback
   let drag = false;
-  let fileInput = null;
+  let fileInput: HTMLInputElement | null = null;
+  let cancelTokenSource: CancelTokenSource | null = null;
+  let isCancelling = false;
+  let currentFileId: number | null = null; // Track the current file ID for cancellation
+  let token = ''; // Store the auth token
   
-  // Event dispatcher
-  const dispatch = createEventDispatcher();
+  // Upload speed calculation variables
+  let lastLoaded = 0;
+  let lastTime = Date.now();
   
-  // Track allowed file types
+  // Get token from localStorage on component mount
+  onMount(() => {
+    token = localStorage.getItem('token') || '';
+    const cleanup = initDragAndDrop();
+    return () => {
+      if (cleanup) cleanup();
+    };
+  });
+  
+  // Event dispatcher with proper types
+  const dispatch = createEventDispatcher<{
+    uploadComplete: { id: string; filename: string };
+    uploadError: { error: string };
+  }>();
+  
+  // Track allowed file types with more comprehensive list
   const allowedTypes = [
+    // Audio types
     'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/aac', 'audio/m4a',
-    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'
+    'audio/x-wav', 'audio/x-aiff', 'audio/x-m4a', 'audio/x-m4b', 'audio/x-m4p',
+    'audio/mp3', 'audio/x-mpeg', 'audio/x-ms-wma', 'audio/x-ms-wax', 'audio/x-ms-wmv',
+    'audio/vnd.rn-realaudio', 'audio/x-realaudio', 'audio/webm', 'audio/3gpp', 'audio/3gpp2',
+    
+    // Video types
+    'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo',
+    'video/x-ms-wmv', 'video/x-matroska', 'video/3gpp', 'video/3gpp2', 'video/x-flv',
+    'video/x-m4v', 'video/mpeg', 'video/x-ms-asf', 'video/x-ms-wvx', 'video/avi'
   ];
+  
+  // Max file size (50GB in bytes)
+  const MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024; // 50GB
   
   // Initialize drag and drop
   function initDragAndDrop() {
     const dropZone = document.getElementById('drop-zone');
     
     if (dropZone) {
-      dropZone.addEventListener('dragover', handleDragOver);
-      dropZone.addEventListener('dragleave', handleDragLeave);
-      dropZone.addEventListener('drop', handleDrop);
+      const dragOverHandler = (e: DragEvent) => handleDragOver(e);
+      const dragLeaveHandler = (e: DragEvent) => handleDragLeave(e);
+      const dropHandler = (e: DragEvent) => handleDrop(e);
+      
+      dropZone.addEventListener('dragover', dragOverHandler);
+      dropZone.addEventListener('dragleave', dragLeaveHandler);
+      dropZone.addEventListener('drop', dropHandler);
       
       return () => {
-        dropZone.removeEventListener('dragover', handleDragOver);
-        dropZone.removeEventListener('dragleave', handleDragLeave);
-        dropZone.removeEventListener('drop', handleDrop);
+        dropZone.removeEventListener('dragover', dragOverHandler);
+        dropZone.removeEventListener('dragleave', dragLeaveHandler);
+        dropZone.removeEventListener('drop', dropHandler);
       };
     }
+    return () => {}; // Return empty cleanup function if no drop zone
   }
   
   // Handle drag events
-  function handleDragOver(e) {
+  function handleDragOver(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     drag = true;
   }
   
-  function handleDragLeave(e) {
+  function handleDragLeave(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     drag = false;
   }
   
-  function handleDrop(e) {
+  function handleDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     drag = false;
     
     const dt = e.dataTransfer;
-    const files = dt.files;
+    if (!dt) return;
     
+    const files = dt.files;
     if (files && files.length > 0) {
       handleFileSelect(files[0]);
     }
   }
   
   // Handle file selection
-  function handleFileSelect(selectedFile) {
+  function handleFileSelect(selectedFile: File) {
     error = '';
+    file = selectedFile;
+    
+    // Check if file has a valid type
+    if (!selectedFile.type) {
+      // Try to determine type from extension if browser doesn't provide it
+      const extension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
+      const extensionMap: Record<string, string> = {
+        // Audio extensions
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav',
+        'ogg': 'audio/ogg',
+        'flac': 'audio/flac',
+        'aac': 'audio/aac',
+        'm4a': 'audio/m4a',
+        'aif': 'audio/x-aiff',
+        'aiff': 'audio/x-aiff',
+        'wma': 'audio/x-ms-wma',
+        'ra': 'audio/vnd.rn-realaudio',
+        'ram': 'audio/vnd.rn-realaudio',
+        'weba': 'audio/webm',
+        '3ga': 'audio/3gpp',
+        '3gp': 'audio/3gpp',
+        '3g2': 'audio/3gpp2',
+        // Video extensions
+        'mp4': 'video/mp4',
+        'webm': 'video/webm',
+        'ogv': 'video/ogg',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+        'wmv': 'video/x-ms-wmv',
+        'mkv': 'video/x-matroska',
+        'm4v': 'video/x-m4v',
+        'mpeg': 'video/mpeg',
+        'mpg': 'video/mpeg',
+        'flv': 'video/x-flv',
+        'asf': 'video/x-ms-asf'
+      };
+      
+      const mimeType = extensionMap[extension];
+      if (extension && mimeType) {
+        // Create a new File object with the correct type
+        file = new File([selectedFile], selectedFile.name, {
+          type: mimeType,
+          lastModified: selectedFile.lastModified
+        }) as FileWithSize;
+      } else {
+        error = 'File type could not be determined. Please upload a supported audio or video file.';
+        file = null;
+        return;
+      }
+    }
     
     // Check file type
-    if (!allowedTypes.includes(selectedFile.type)) {
-      error = 'File type not supported. Please upload an audio or video file.';
+    if (!allowedTypes.some(type => selectedFile.type.startsWith(type.split('/')[0]))) {
+      error = `File type "${selectedFile.type}" is not supported. Please upload an audio or video file.`;
       return;
     }
     
-    // Check file size (limit to 4GB for GoPro and high-quality videos)
-    if (selectedFile.size > 4 * 1024 * 1024 * 1024) {
-      error = 'File too large. Please upload a file smaller than 4GB.';
+    // Check file size
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      error = `File too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}.`;
+      return;
+    }
+    
+    // Additional checks for very large files
+    if (selectedFile.size > 2 * 1024 * 1024 * 1024) { // > 2GB
+      // Warn about potential upload time for very large files
+      error = `Warning: This is a large file (${formatFileSize(selectedFile.size)}). Upload may take a while. Click upload again to proceed.`;
+      file = selectedFile;
       return;
     }
     
     file = selectedFile;
   }
   
+  // Format file size for display
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const size = parseFloat((bytes / Math.pow(k, i)).toFixed(2));
+    return `${size} ${sizes[i]}`;
+  }
+  
   // Handle file input change
-  function handleFileInputChange(e) {
-    const selectedFile = e.target.files?.[0];
+  function handleFileInputChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const selectedFile = target.files?.[0];
     if (selectedFile) {
       handleFileSelect(selectedFile);
     }
+    // Reset the input value to allow re-uploading the same file
+    target.value = '';
   }
   
   // Trigger file input click
@@ -96,82 +217,285 @@
     }
   }
   
-  // Upload file
+  // Upload file with enhanced error handling and retry logic
   async function uploadFile() {
-    if (!file) {
-      error = 'Please select a file first';
-      return;
-    }
+    if (!file) return;
     
+    error = '';
     uploading = true;
     progress = 0;
-    error = '';
+    isCancelling = false;
+    currentFileId = null; // Reset file ID at the start of upload
+    statusMessage = ''; // Clear any status messages
+    
+    // Create a cancel token
+    cancelTokenSource = axios.CancelToken.source();
     
     try {
-      // Log the file being uploaded for debugging
+      // If we have a warning but no error, and the user clicked upload again, proceed
+      if (error && error.includes('Warning:')) {
+        error = '';
+      } else if (error) {
+        // If there's a real error, don't proceed
+        return;
+      }
       
-      // Create a properly configured FormData object with required file field name
+      statusMessage = 'Preparing upload...';
+      
+      // First, prepare the upload to get a file ID
+      try {
+        const prepareResponse = await axiosInstance.post('/api/files/prepare', {
+          filename: file.name,
+          file_size: file.size,
+          content_type: file.type
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        // Store the file ID as soon as we get it
+        currentFileId = prepareResponse.data.file_id;
+        statusMessage = `Upload prepared (File ID: ${currentFileId})`;
+      } catch (err) {
+        error = 'Failed to prepare upload';
+        uploading = false;
+        return;
+      }
+      
+      // Create FormData with the file
       const formData = new FormData();
-      formData.append('file', file); // 'file' name must match the FastAPI parameter name
+      formData.append('file', file);
       
-      // Add debug logs to see exactly what's being sent
+      // Get auth token from the component state
+      if (!token) {
+        throw new Error('Authentication required. Please log in again.');
+      }
       
-      // Log token for debugging
-      const token = localStorage.getItem('token');
-      
-      // Use axiosInstance with correct path - ensure proper formatting
-      const response = await axiosInstance.post('/files', formData, {
+      // Configure axios with timeout and upload progress
+      const config = {
         headers: {
-          // Remove the default Content-Type to let axios set it correctly for multipart/form-data
-          'Content-Type': undefined,
-          // Explicitly set Authorization header for file uploads
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}`,
+          'X-File-Size': file.size.toString(),
+          'X-File-Name': encodeURIComponent(file.name)
         },
-        onUploadProgress: (progressEvent) => {
-          const total = progressEvent.total || 0;
-          if (total > 0) {
-            progress = Math.round((progressEvent.loaded * 100) / total);
+        timeout: 0, // No timeout for large uploads - server handles timeouts
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        cancelToken: cancelTokenSource.token,
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+          if (progressEvent.total) {
+            // Calculate progress percentage
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            progress = Math.min(percentCompleted, 99); // Cap at 99% until fully processed
+            
+            // We can't reliably get the X-File-ID during upload progress in Axios
+            // We'll get it from the final response instead
+            
+            // Update status message for large files
+            if (file && file.size > LARGE_FILE_THRESHOLD) { 
+              const loadedMB = (progressEvent.loaded / MB).toFixed(2);
+              const totalMB = (progressEvent.total / MB).toFixed(2);
+              const speedMBps = calculateUploadSpeed(progressEvent);
+              statusMessage = `Uploaded ${loadedMB}MB of ${totalMB}MB (${speedMBps} MB/s)`;
+            }
           }
         }
-      });
+      };
       
+      // Start the upload
+      const response = await axiosInstance.post('/api/files', formData, config);
       const responseData = response.data;
-      // Upload successful
       
-      // Clear form and dispatch event
+      // Store the file ID for potential cancellation
+      if (responseData && responseData.id) {
+        currentFileId = responseData.id;
+      }
+      
+      // Update progress to 100% when complete
+      progress = 100;
+      
+      // Notify parent component
+      dispatch('uploadComplete', responseData);
+      
+    } catch (err: unknown) {
+      if (axios.isCancel(err)) {
+        // This is an expected cancellation - don't treat as an error
+        // Just update the status message (already set by cancelUpload)
+        return;
+      }
+      
+      // Handle different types of errors
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'ECONNABORTED') {
+        error = 'Upload timed out. The server took too long to respond. Please try again.';
+      } else if (err && typeof err === 'object' && 'response' in err && err.response && 
+                typeof err.response === 'object' && err.response !== null) {
+        const response = err.response as {
+          status?: number;
+          data?: { detail?: string; message?: string };
+          statusText?: string;
+        };
+        
+        // Server responded with an error status code
+        if (response.status === 413) {
+          error = 'File too large. The server rejected the upload due to size limits.';
+        } else if (response.status === 401) {
+          error = 'Session expired. Please log in again.';
+        } else {
+          error = response.data?.detail || 
+                 response.data?.message || 
+                 `Server error: ${response.status} ${response.statusText || 'Unknown error'}`;
+        }
+      } else if (err && typeof err === 'object' && 'request' in err) {
+        // Request was made but no response received
+        error = 'No response from server. Please check your connection and try again.';
+      } else {
+        // Something else went wrong
+        error = (err as Error)?.message || 'An unknown error occurred during upload.';
+      }
+      
+      // If we have a file and it's large, suggest using a different upload method
+      if (file && file.size > 2 * 1024 * 1024 * 1024) { // > 2GB
+        error += '\n\nFor large files, consider using a more reliable upload method or splitting the file into smaller parts.';
+      }
+      
+      // Dispatch error event
+      dispatch('uploadError', { error });
+      
+    } finally {
+      // Clean up the cancel token
+      cancelTokenSource = null;
+      
+      // Only reset state if not in the middle of cancellation
+      // The cancellation handler will handle the state reset
+      if (!isCancelling) {
+        resetUploadState();
+      } else {
+        // Just reset the uploading state but keep the file
+        uploading = false;
+        progress = 0;
+        
+        // Set a timeout to clear the cancellation message after 3 seconds
+        setTimeout(() => {
+          isCancelling = false;
+          error = '';
+        }, 3000);
+      }
+    }
+  }
+  
+  // Cancel upload or selection
+  async function cancelUpload() {
+    if (uploading && !isCancelling) {
+      isCancelling = true;
+      
+      // Update UI immediately to show cancellation is in progress
+      progress = 0;
+      statusMessage = 'Cancelling upload...';
+      
+      try {
+        // Cancel the ongoing request if we have a cancel token
+        if (cancelTokenSource) {
+          cancelTokenSource.cancel('Upload cancelled by user');
+        }
+
+        // If we have a file ID, call the backend to clean up
+        if (currentFileId) {
+          try {
+            // Log the attempt to help with debugging
+            statusMessage = `Cleaning up file ID ${currentFileId}...`;
+            
+            await axiosInstance.delete(`/api/files/${currentFileId}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            statusMessage = 'Upload cancelled successfully';
+          } catch (err) {
+            // Log error but don't show console.error in production
+            statusMessage = 'Upload cancelled but cleanup may be incomplete';
+            // Continue with reset even if cleanup fails
+          }
+        } else {
+          statusMessage = 'Upload cancelled (no file ID to clean up)';
+        }
+
+        // Reset the button state after a short delay to show feedback
+        setTimeout(() => {
+          resetUploadState();
+        }, 2000);
+      } catch (err) {
+        statusMessage = 'Error during cancellation';
+        setTimeout(() => {
+          resetUploadState();
+        }, 2000);
+      }
+    } else {
+      // Not uploading or already cancelling: just clear the selection and reset state
+      resetUploadState();
+    }
+  }
+  
+  // Reset the upload state
+  function resetUploadState() {
+    // Don't reset the file if we're in the middle of cancellation
+    if (!isCancelling) {
       file = null;
       if (fileInput) {
         fileInput.value = '';
       }
-      
-      // Notify parent component
-      dispatch('uploadComplete', responseData);
-    } catch (err) {
-      console.error('Upload error:', err);
-      error = err.response?.data?.detail || err.message || 'Failed to upload file. Please try again.';
-    } finally {
-      uploading = false;
     }
+    uploading = false;
+    progress = 0;
+    isCancelling = false;
+    currentFileId = null;
+    error = '';
+    statusMessage = '';
+    
+    // Reset upload speed calculation variables
+    lastLoaded = 0;
+    lastTime = Date.now();
   }
   
-  // Cancel upload
-  function cancelUpload() {
-    file = null;
-    if (fileInput) {
-      fileInput.value = '';
+  // Calculate upload speed in MB/s
+  function calculateUploadSpeed(progressEvent: AxiosProgressEvent): string {
+    const now = Date.now();
+    const timeElapsed = (now - lastTime) / 1000; // in seconds
+    
+    if (timeElapsed > 0) {
+      const loadedSinceLastUpdate = progressEvent.loaded - lastLoaded;
+      const speedBps = loadedSinceLastUpdate / timeElapsed;
+      const speedMBps = (speedBps / MB).toFixed(1);
+      
+      // Update values for next calculation
+      lastLoaded = progressEvent.loaded;
+      lastTime = now;
+      
+      return speedMBps;
     }
+    
+    return '0.0';
+
   }
   
   onMount(() => {
     const cleanup = initDragAndDrop();
-    return cleanup;
+    return () => {
+      if (cleanup) cleanup();
+    };
   });
 </script>
 
 <div class="uploader-container">
   {#if error}
-    <div class="error-message">
+    <div class="message {error.includes('Warning:') ? 'warning-message' : 'error-message'}">
       {error}
+      {#if error.includes('Warning:')}
+        <button class="btn-continue" on:click|stopPropagation={uploadFile}>
+          Continue Anyway
+        </button>
+      {/if}
     </div>
   {/if}
   
@@ -221,13 +545,14 @@
       </div>
       
       <div class="file-actions">
-        <button 
-          class="cancel-button" 
-          on:click={cancelUpload} 
-          disabled={uploading}
-          title="Cancel and remove the selected file"
+        <button
+          type="button"
+          class="cancel-button"
+          on:click={cancelUpload}
+          disabled={isCancelling}
+          title={isCancelling ? 'Cancelling...' : 'Cancel selection or upload'}
         >
-          Cancel
+          {isCancelling ? 'Cancelling...' : 'Cancel'}
         </button>
         <button 
           class="upload-button" 
@@ -246,6 +571,9 @@
           <div class="progress-fill" style="width: {progress}%"></div>
         </div>
         <p class="progress-text">{progress}%</p>
+        {#if statusMessage}
+          <p class="status-message">{statusMessage}</p>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -397,10 +725,17 @@
   }
   
   .progress-text {
-    text-align: right;
+    margin-top: 4px;
     font-size: 0.8rem;
-    color: var(--text-light);
-    margin: 0.25rem 0 0;
+    color: var(--color-text);
+  }
+  
+  .status-message {
+    margin-top: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-align: center;
+    color: var(--color-primary);
   }
   
   .error-message {

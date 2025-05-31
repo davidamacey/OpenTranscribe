@@ -121,7 +121,7 @@ def start_transcription_task(file_id: int) -> None:
 
 async def process_file_upload(file: UploadFile, db: Session, current_user: User) -> MediaFile:
     """
-    Complete file upload processing pipeline.
+    Complete file upload processing pipeline with chunked upload support for large files.
     
     Args:
         file: Uploaded file
@@ -130,43 +130,81 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User)
         
     Returns:
         Created MediaFile object with storage path updated
+        
+    Raises:
+        HTTPException: If there's an error during file processing
     """
     try:
         logger.info(f"File upload request received from user: {current_user.email}")
         
-        # Validate file
+        # Validate file type first
         validate_file_type(file)
-        logger.info(f"File details - filename: {file.filename}, content_type: {file.content_type}")
+        logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
         
-        # Read file content
-        file_content = await file.read()
-        file_size = len(file_content)
-        
-        # Create database record
+        # Get file size from content-length header if available
+        file_size = 0
+        try:
+            file_size = int(file.headers.get('content-length', 0))
+        except (ValueError, TypeError):
+            # If we can't get size from headers, we'll calculate it while reading chunks
+            pass
+            
+        # Create database record first to get file ID
         db_file = create_media_file_record(db, file, current_user, file_size)
+        logger.info(f"Created file record with ID: {db_file.id}")
         
         # Generate storage path
         storage_path = f"user_{current_user.id}/file_{db_file.id}/{file.filename}"
         
-        # Upload to storage
-        upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
-        
-        # Update storage path in database
-        db_file.storage_path = storage_path
-        db.commit()
-        db.refresh(db_file)
-        
-        # Start background transcription
-        start_transcription_task(db_file.id)
-        
-        return db_file
-        
+        try:
+            # Process file in chunks (10MB chunks by default)
+            chunk_size = 10 * 1024 * 1024  # 10MB chunks
+            file_content = bytearray()
+            total_read = 0
+            
+            # Read file in chunks
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                file_content.extend(chunk)
+                total_read += len(chunk)
+                logger.debug(f"Read {total_read} bytes of {file.filename}")
+            
+            # Update file size with actual bytes read
+            file_size = total_read
+            
+            # Upload to storage
+            upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
+            
+            # Update storage path and file size in database
+            db_file.storage_path = storage_path
+            db_file.file_size = file_size
+            db.commit()
+            db.refresh(db_file)
+            
+            # Start background transcription
+            start_transcription_task(db_file.id)
+            
+            logger.info(f"Successfully processed file {file.filename} (ID: {db_file.id}), size: {file_size} bytes")
+            return db_file
+            
+        except Exception as upload_error:
+            # Clean up the database record if upload fails
+            db.delete(db_file)
+            db.commit()
+            logger.error(f"Error during file upload: {str(upload_error)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error during file upload: {str(upload_error)}"
+            )
+            
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error processing file upload: {e}")
+        logger.error(f"Error processing file upload: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing file upload request"
+            detail=f"Error processing file upload: {str(e)}"
         )

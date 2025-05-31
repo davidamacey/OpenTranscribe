@@ -8,7 +8,9 @@ This module contains the refactored files endpoint split into modular components
 - streaming.py: Video/audio streaming endpoints
 """
 
-from fastapi import APIRouter, Depends, UploadFile, File, Query, Request
+from fastapi import APIRouter, Depends, UploadFile, File, Query, Request, status, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -31,10 +33,15 @@ from .streaming import (
     get_enhanced_video_streaming_response, validate_file_exists
 )
 from .reprocess import process_file_reprocess
+from . import cancel_upload
+from . import prepare_upload
 
 # Create the router
 router = APIRouter()
 
+# Include all routers
+router.include_router(cancel_upload.router, prefix="", tags=["files"])
+router.include_router(prepare_upload.router, prefix="", tags=["files"])
 
 @router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
@@ -44,7 +51,15 @@ async def upload_media_file(
     current_user: User = Depends(get_current_active_user)
 ):
     """Upload a media file for transcription"""
-    return await process_file_upload(file, db, current_user)
+    # Process the file upload
+    db_file = await process_file_upload(file, db, current_user)
+    
+    # Create a response with the file ID in headers
+    response = JSONResponse(content=jsonable_encoder(db_file))
+    # Add file ID to header so frontend can access it early
+    response.headers["X-File-ID"] = str(db_file.id)
+    
+    return response
 
 
 @router.get("/", response_model=List[MediaFileSchema])
