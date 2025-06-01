@@ -96,6 +96,7 @@
   import FileUploader from '../components/FileUploader.svelte';
   import FilterSidebar from '../components/FilterSidebar.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import UserFileStatus from '../components/UserFileStatus.svelte';
   
   // Media files state
   let files: MediaFile[] = [];
@@ -109,6 +110,7 @@
   // View state
   let selectedCollectionId: number | null = null;
   let showCollectionsModal = false;
+  let activeTab: 'gallery' | 'status' = 'gallery';
   
   // Component refs
   let filterSidebarRef: any;
@@ -424,10 +426,27 @@
 <div class="media-library">
   <header class="library-header">
     <div class="header-row">
-      <h1>Gallery</h1>
+      <div class="title-and-tabs">
+        <h1>Media Library</h1>
+        <div class="tabs">
+          <button 
+            class="tab-button {activeTab === 'gallery' ? 'active' : ''}"
+            on:click={() => activeTab = 'gallery'}
+          >
+            Gallery
+          </button>
+          <button 
+            class="tab-button {activeTab === 'status' ? 'active' : ''}"
+            on:click={() => activeTab = 'status'}
+          >
+            File Status
+          </button>
+        </div>
+      </div>
       
-      <div class="header-actions">
-        {#if isSelecting}
+      {#if activeTab === 'gallery'}
+        <div class="header-actions">
+          {#if isSelecting}
           <div class="selection-controls">
             <button 
               class="select-all-btn" 
@@ -488,25 +507,29 @@
             </button>
           </div>
         {/if}
-      </div>
+        </div>
+      {/if}
     </div>
     
-    <div class="mobile-filter-toggle">
-      <button 
-        on:click={toggleFilters}
-        title="Show or hide the filter sidebar to search and filter your media files"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-        </svg>
-        Filters
-      </button>
-    </div>
+    {#if activeTab === 'gallery'}
+      <div class="mobile-filter-toggle">
+        <button 
+          on:click={toggleFilters}
+          title="Show or hide the filter sidebar to search and filter your media files"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          Filters
+        </button>
+      </div>
+    {/if}
   </header>
 
   <div class="library-content">
-    <div class="filter-sidebar {showFilters ? 'show' : ''}">
-      <FilterSidebar 
+    {#if activeTab === 'gallery'}
+      <div class="filter-sidebar {showFilters ? 'show' : ''}">
+        <FilterSidebar 
         bind:this={filterSidebarRef}
         searchQuery={searchQuery}
         selectedTags={selectedTags}
@@ -634,7 +657,15 @@
         </div>
       {/if}
     </div>
+  
+  {:else if activeTab === 'status'}
+    <div class="status-tab-content">
+      <UserFileStatus />
+    </div>
+  {/if}
   </div>
+    
+  
 </div>
 
 <!-- Upload Modal -->
@@ -893,6 +924,44 @@
   .library-header h1 {
     font-size: 1.5rem;
     margin: 0;
+  }
+  
+  .title-and-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+  }
+  
+  .tab-button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #e5e7eb;
+    background: white;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    color: #6b7280;
+  }
+  
+  .tab-button.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+  
+  .tab-button:hover:not(.active) {
+    background: #f9fafb;
+    color: #374151;
+  }
+  
+  .status-tab-content {
+    padding: 1rem;
+    width: 100%;
   }
   
   /* Search functionality is now handled in the FilterSidebar component */

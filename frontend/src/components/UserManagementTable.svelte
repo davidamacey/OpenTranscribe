@@ -26,6 +26,9 @@
   /** @type {Function} */
   export let onRefresh = () => {};
 
+  /** @type {Function} */
+  export let onUserRecovery = () => {};
+
   /** @type {string} */
   let newUsername = '';
 
@@ -360,6 +363,13 @@
               <div class="table-actions">
                 {#if currentUser.id !== currentUserId}
                   <button 
+                    class="recover-button"
+                    on:click={() => onUserRecovery(currentUser.id)}
+                    title="Recover stuck files for {currentUser.full_name || currentUser.email}"
+                  >
+                    Recover Files
+                  </button>
+                  <button 
                     class="delete-button"
                     on:click={() => deleteUser(currentUser.id)}
                     title="Permanently delete {currentUser.full_name || currentUser.email}'s account"
@@ -537,6 +547,38 @@
   }
   
   .delete-button:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+  }
+  
+  .recover-button {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+    margin-right: 0.5rem;
+  }
+  
+  .recover-button:hover:not(:disabled),
+  .recover-button:focus:not(:disabled) {
+    background-color: #059669;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25);
+    text-decoration: none;
+  }
+  
+  .recover-button:active:not(:disabled) {
+    transform: translateY(0);
+  }
+  
+  .recover-button:disabled {
     background-color: #6c757d;
     cursor: not-allowed;
   }

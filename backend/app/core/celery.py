@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import settings
 
 # Initialize Celery
@@ -6,7 +7,13 @@ celery_app = Celery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.transcription", "app.tasks.summarization", "app.tasks.analytics"]
+    include=[
+        "app.tasks.transcription", 
+        "app.tasks.summarization", 
+        "app.tasks.analytics",
+        "app.tasks.utility",
+        "app.tasks.recovery"
+    ]
 )
 
 # Configure Celery
@@ -23,5 +30,13 @@ celery_app.conf.update(
         "app.tasks.summarization.*": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
         "app.tasks.utility.*": {"queue": "utility"}
+    },
+    # Configure beat schedule for periodic tasks
+    beat_schedule={
+        'periodic-health-check': {
+            'task': 'periodic_health_check',
+            'schedule': crontab(minute='*/10'),  # Run every 10 minutes
+            'options': {'queue': 'utility'}
+        }
     }
 )
