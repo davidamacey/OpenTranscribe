@@ -36,6 +36,7 @@ def get_current_user(
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
         user_id: str = payload.get("sub")
+        user_role: str = payload.get("role")  # Extract role from token
         if user_id is None:
             raise credentials_exception
         token_data = TokenPayload(sub=user_id)
@@ -48,6 +49,13 @@ def get_current_user(
             raise credentials_exception
         if not user.is_active:
             raise HTTPException(status_code=400, detail="Inactive user")
+        
+        # If role in token differs from DB, prioritize token's role
+        # This ensures newly granted admin rights take effect immediately
+        if user_role and user.role != user_role:
+            logger.info(f"Updating user {user.id} role from {user.role} to {user_role} based on token")
+            user.role = user_role
+            db.commit()
         
         return user
     except Exception as e:
@@ -181,10 +189,24 @@ def login_for_access_token(
                     
                 user_id = user.id
         
-        # Generate the JWT token
+        # Get user's role for inclusion in the token
+        user_role = None
+        if 'user_data' in locals() and user_data and 'role' in user_data:
+            user_role = user_data['role']
+        else:
+            # Get role from database if not available in direct auth
+            user_db = db.query(User).filter(User.id == user_id).first()
+            if user_db:
+                user_role = user_db.role
+        
+        # Generate the JWT token with role information
         access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {"sub": str(user_id)}
+        if user_role:
+            token_data["role"] = user_role
+        
         access_token = direct_create_token(
-            data={"sub": str(user_id)}, expires_delta=access_token_expires
+            data=token_data, expires_delta=access_token_expires
         )
         
         logger.info(f"Login successful for user: {form_data.username}")
