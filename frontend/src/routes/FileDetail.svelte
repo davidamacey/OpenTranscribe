@@ -16,6 +16,7 @@
   import TagsSection from '$components/TagsSection.svelte';
   import CommentSection from '$components/CommentSection.svelte';
   import CollectionsSection from '$components/CollectionsSection.svelte';
+  import ReprocessButton from '$components/ReprocessButton.svelte';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -1290,10 +1291,14 @@
         />
       {:else}
         <section class="transcript-column">
-          <h4>Transcript</h4>
+          <div class="transcript-header">
+            <h4>Transcript</h4>
+            <div class="reprocess-button-wrapper">
+              <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
+            </div>
+          </div>
           <div class="no-transcript">
             <p>No transcript available for this file.</p>
-            <p>Debug: file={!!file}, transcript_segments={!!file?.transcript_segments}</p>
           </div>
         </section>
       {/if}
@@ -1359,6 +1364,17 @@
 
   .error-container button:hover {
     background: var(--primary-hover);
+  }
+  
+  .reprocess-button-wrapper {
+    display: inline-block;
+  }
+  
+  .transcript-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
   }
 
   .file-header {
