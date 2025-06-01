@@ -89,29 +89,32 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 # Recommended for optimal performance
 - NVIDIA GPU with CUDA support
-- 50GB+ free disk space (for AI models)
 ```
 
 ### Quick Installation (Using Docker Hub Images)
 
-Run this one-liner to download and set up OpenTranscribe using our pre-built Docker images:
+Run this one-liner to download and set up OpenTranscribe using our pre-built Docker Hub images:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
-This will:
-1. Create a directory called `opentranscribe`
-2. Download the production `docker-compose.yml`
-3. Create a default `.env` file
-4. Create a management script for easy operation
+Then follow the on-screen instructions. The setup script will:
+- Download the production Docker Compose file
+- Configure environment variables including GPU support (default GPU device ID: 2)
+- Help you set up your Hugging Face token (required for speaker diarization)
+- Set up the management script (`opentranscribe.sh`)
 
-Then start OpenTranscribe with:
+Once setup is complete, start OpenTranscribe with:
 
 ```bash
 cd opentranscribe
 ./opentranscribe.sh start
 ```
+
+The Docker images are available on Docker Hub as separate repositories:
+- `davidamacey/opentranscribe-backend`: Backend service (also used for celery-worker and flower)
+- `davidamacey/opentranscribe-frontend`: Frontend service
 
 Access the web interface at http://localhost:5173
 

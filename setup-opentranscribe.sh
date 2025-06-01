@@ -153,6 +153,7 @@ case "$1" in
         echo -e "${YELLOW}Starting OpenTranscribe...${NC}"
         docker compose -f docker-compose.prod.yml up -d
         echo -e "${GREEN}OpenTranscribe started!${NC}"
+        echo "The application is now running. Please wait a moment for all services to initialize."
         echo "- API: http://localhost:8080"
         echo "- Web interface: http://localhost:5173"
         echo "- Flower dashboard: http://localhost:5555/flower"
