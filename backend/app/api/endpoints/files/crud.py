@@ -13,7 +13,7 @@ from app.services.minio_service import delete_file
 logger = logging.getLogger(__name__)
 
 
-def get_media_file_by_id(db: Session, file_id: int, user_id: int) -> MediaFile:
+def get_media_file_by_id(db: Session, file_id: int, user_id: int, is_admin: bool = False) -> MediaFile:
     """
     Get a media file by ID and user ID.
     
@@ -21,6 +21,7 @@ def get_media_file_by_id(db: Session, file_id: int, user_id: int) -> MediaFile:
         db: Database session
         file_id: File ID
         user_id: User ID
+        is_admin: Whether the current user is an admin (can access any file)
         
     Returns:
         MediaFile object
@@ -28,10 +29,12 @@ def get_media_file_by_id(db: Session, file_id: int, user_id: int) -> MediaFile:
     Raises:
         HTTPException: If file not found
     """
-    db_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == user_id
-    ).first()
+    # Admin users can access any file, regular users only their own
+    query = db.query(MediaFile).filter(MediaFile.id == file_id)
+    if not is_admin:
+        query = query.filter(MediaFile.user_id == user_id)
+    
+    db_file = query.first()
     
     if not db_file:
         raise HTTPException(
@@ -150,8 +153,9 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
         MediaFileDetail object
     """
     try:
-        # Get the media file
-        db_file = get_media_file_by_id(db, file_id, current_user.id)
+        # Get the file by id and user id (admin can access any file)
+        is_admin = current_user.role == "admin"
+        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
         
         # Get tags for this file
         tags = get_file_tags(db, file_id)
@@ -197,7 +201,8 @@ def update_media_file(db: Session, file_id: int, media_file_update: MediaFileUpd
     Returns:
         Updated MediaFile object
     """
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
     
     # Update fields
     for field, value in media_file_update.model_dump(exclude_unset=True).items():
@@ -218,7 +223,8 @@ def delete_media_file(db: Session, file_id: int, current_user: User) -> None:
         file_id: File ID
         current_user: Current user
     """
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
     
     # Delete from MinIO (if exists)
     try:
@@ -247,8 +253,9 @@ def update_single_transcript_segment(db: Session, file_id: int, segment_id: int,
     Returns:
         Updated TranscriptSegment object
     """
-    # Verify user owns the file
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    # Verify user owns the file or is admin
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
     
     # Find the specific segment
     segment = db.query(TranscriptSegment).filter(
@@ -284,7 +291,8 @@ def get_stream_url_info(db: Session, file_id: int, current_user: User) -> dict:
     Returns:
         Dictionary with URL and content type information
     """
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
     
     # Skip S3 operations in test environment
     if os.environ.get('SKIP_S3', 'False').lower() == 'true':

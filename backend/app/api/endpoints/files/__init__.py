@@ -81,7 +81,11 @@ def list_media_files(
     current_user: User = Depends(get_current_active_user)
 ):
     """List all media files for the current user with optional filters"""
-    base_query = db.query(MediaFile).filter(MediaFile.user_id == current_user.id)
+    # Admin users can see all files, regular users only see their own files
+    if current_user.role == "admin":
+        base_query = db.query(MediaFile)
+    else:
+        base_query = db.query(MediaFile).filter(MediaFile.user_id == current_user.id)
     
     # Prepare filters dictionary
     filters = {

@@ -12,7 +12,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.models.media import MediaFile, Speaker, TranscriptSegment
 from app.schemas.user import User as UserSchema, UserCreate
-from app.api.endpoints.auth import get_current_active_superuser
+from app.api.endpoints.auth import get_current_active_superuser, get_current_admin_user
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -108,7 +108,7 @@ def format_bytes(bytes):
 @router.get("/stats", response_model=Dict[str, Any])
 async def get_admin_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_superuser)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Get admin statistics about the application and system
@@ -241,9 +241,9 @@ async def get_admin_stats(
 
 
 @router.get("/users", response_model=List[UserSchema])
-async def get_admin_users(
+def get_admin_users(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_superuser)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Get all users for admin
@@ -262,10 +262,10 @@ async def get_admin_users(
 
 
 @router.post("/users", response_model=UserSchema)
-async def create_admin_user(
+def create_admin_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_superuser)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Create a new user (admin only)
@@ -289,10 +289,10 @@ async def create_admin_user(
 
 
 @router.delete("/users/{user_id}", response_model=Dict[str, str])
-async def delete_admin_user(
+def delete_admin_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_superuser)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Delete a user and all their data (admin only)

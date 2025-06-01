@@ -27,10 +27,13 @@ def list_tasks(
         # In a real implementation, we would have a Task model
         # Here we're simulating tasks based on MediaFile statuses
         
-        # Get all media files for this user
-        media_files = db.query(MediaFile).filter(
-            MediaFile.user_id == current_user.id
-        ).all()
+        # Admin users can see all files/tasks, regular users only see their own
+        if current_user.role == "admin":
+            media_files = db.query(MediaFile).all()
+        else:
+            media_files = db.query(MediaFile).filter(
+                MediaFile.user_id == current_user.id
+            ).all()
         
         # Convert them to tasks
         tasks = []
@@ -118,11 +121,16 @@ def get_task(
                 detail="Invalid task ID format"
             )
         
-        # Get the media file
-        media_file = db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == current_user.id
-        ).first()
+        # Admin users can access any file/task, regular users only their own
+        if current_user.role == "admin":
+            media_file = db.query(MediaFile).filter(
+                MediaFile.id == file_id
+            ).first()
+        else:
+            media_file = db.query(MediaFile).filter(
+                MediaFile.id == file_id,
+                MediaFile.user_id == current_user.id
+            ).first()
         
         if not media_file:
             raise HTTPException(
