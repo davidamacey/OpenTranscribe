@@ -1,0 +1,33 @@
+FROM python:3.10.12-slim-bullseye
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+# https://github.com/OpenNMT/CTranslate2/issues/1806, also requires downgrading torch to be compatible with ver8
+RUN pip install --no-cache-dir "torch==2.2.2" "torchaudio==2.2.2" "numpy<2.0"
+
+# Create directories for models and temporary files
+RUN mkdir -p /app/models /app/temp
+
+# Copy application code
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Command to run the application in production (no reload)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

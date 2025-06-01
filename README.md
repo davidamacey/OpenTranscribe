@@ -85,7 +85,6 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ```bash
 # Required
 - Docker and Docker Compose
-- Git
 - 8GB+ RAM (16GB+ recommended)
 
 # Recommended for optimal performance
@@ -93,11 +92,34 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - 50GB+ free disk space (for AI models)
 ```
 
-### Installation
+### Quick Installation (Using Docker Hub Images)
+
+Run this one-liner to download and set up OpenTranscribe using our pre-built Docker images:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+This will:
+1. Create a directory called `opentranscribe`
+2. Download the production `docker-compose.yml`
+3. Create a default `.env` file
+4. Create a management script for easy operation
+
+Then start OpenTranscribe with:
+
+```bash
+cd opentranscribe
+./opentranscribe.sh start
+```
+
+Access the web interface at http://localhost:5173
+
+### Manual Installation (From Source)
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/yourusername/OpenTranscribe.git
+   git clone https://github.com/davidamacey/OpenTranscribe.git
    cd OpenTranscribe
    
    # Make utility script executable
