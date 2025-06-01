@@ -25,12 +25,14 @@ from app.api.endpoints.auth import get_current_active_user
 from .upload import process_file_upload
 from .crud import (
     get_media_file_detail, update_media_file, delete_media_file,
-    update_single_transcript_segment, get_stream_url_info, get_media_file_by_id
+    update_single_transcript_segment, get_stream_url_info, get_media_file_by_id,
+    set_file_urls
 )
 from .filtering import apply_all_filters, get_metadata_filters
 from .streaming import (
     get_content_streaming_response, get_video_streaming_response,
-    get_enhanced_video_streaming_response, validate_file_exists
+    get_enhanced_video_streaming_response, validate_file_exists,
+    get_thumbnail_streaming_response
 )
 from .reprocess import process_file_reprocess
 from . import cancel_upload
@@ -48,11 +50,25 @@ router.include_router(prepare_upload.router, prefix="", tags=["files"])
 async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    request: Request = None
 ):
     """Upload a media file for transcription"""
+    # Check if we have a file_id from prepare step
+    existing_file_id = None
+    if request and request.headers.get("X-File-ID"):
+        try:
+            existing_file_id = int(request.headers.get("X-File-ID"))
+        except (ValueError, TypeError):
+            pass
+            
+    # Get file hash from header if provided
+    file_hash = None
+    if request and request.headers.get("X-File-Hash"):
+        file_hash = request.headers.get("X-File-Hash")
+    
     # Process the file upload
-    db_file = await process_file_upload(file, db, current_user)
+    db_file = await process_file_upload(file, db, current_user, existing_file_id, file_hash)
     
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
@@ -109,7 +125,14 @@ def list_media_files(
     # Order by most recent
     filtered_query = filtered_query.order_by(MediaFile.upload_time.desc())
     
-    return filtered_query.all()
+    # Get the result
+    result = filtered_query.all()
+    
+    # Set URLs for each file
+    for file in result:
+        set_file_urls(file)
+    
+    return result
 
 
 @router.get("/{file_id}", response_model=MediaFileDetail)
@@ -190,6 +213,17 @@ async def simple_video(file_id: int, request: Request, db: Session = Depends(get
     return get_enhanced_video_streaming_response(db_file, range_header)
 
 
+@router.get("/{file_id}/thumbnail")
+async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
+    """
+    Get the thumbnail image for a media file.
+    No authentication required - this is a public endpoint for thumbnail images only.
+    """
+    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    validate_file_exists(db_file)
+    return get_thumbnail_streaming_response(db_file)
+
+
 @router.get("/metadata-filters", response_model=Dict)
 def get_metadata_filters_endpoint(
     db: Session = Depends(get_db),
@@ -236,5 +270,6 @@ __all__ = [
     "get_content_streaming_response",
     "get_video_streaming_response", 
     "get_enhanced_video_streaming_response",
-    "validate_file_exists"
+    "validate_file_exists",
+    "get_thumbnail_streaming_response"
 ]

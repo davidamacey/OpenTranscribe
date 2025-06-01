@@ -27,10 +27,12 @@ class PrepareUploadRequest(BaseModel):
         filename: Name of the file to be uploaded
         file_size: Size of the file in bytes
         content_type: MIME type of the file
+        file_hash: SHA-256 hash of the file for duplicate detection
     """
     filename: str = Field(..., description="Name of the file to be uploaded")
     file_size: int = Field(..., description="Size of the file in bytes")
     content_type: str = Field(..., description="MIME type of the file")
+    file_hash: Optional[str] = Field(None, description="SHA-256 hash of the file for duplicate detection")
 
 
 
@@ -100,6 +102,8 @@ class MediaFileCreate(MediaFileBase):
     storage_path: str
     duration: Optional[float] = None
     language: Optional[str] = None
+    file_hash: Optional[str] = None
+    thumbnail_path: Optional[str] = None
 
 
 class MediaFileUpdate(BaseModel):
@@ -109,6 +113,8 @@ class MediaFileUpdate(BaseModel):
     translated_text: Optional[str] = None
     duration: Optional[float] = None
     language: Optional[str] = None
+    file_hash: Optional[str] = None
+    thumbnail_path: Optional[str] = None
 
 
 class MediaFile(MediaFileBase):
@@ -124,6 +130,9 @@ class MediaFile(MediaFileBase):
     translated_text: Optional[str] = None
     download_url: Optional[str] = None
     preview_url: Optional[str] = None
+    file_hash: Optional[str] = None
+    thumbnail_path: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     
     # Technical metadata
     media_format: Optional[str] = None

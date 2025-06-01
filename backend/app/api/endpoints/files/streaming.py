@@ -211,3 +211,49 @@ def validate_file_exists(db_file: MediaFile) -> None:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not available"
         )
+
+
+def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
+    """
+    Get streaming response for a thumbnail image.
+    
+    Args:
+        db_file: MediaFile object
+        
+    Returns:
+        StreamingResponse for thumbnail image
+        
+    Raises:
+        HTTPException: If thumbnail doesn't exist or can't be retrieved
+    """
+    if not db_file.thumbnail_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnail not available for this file"
+        )
+    
+    if os.environ.get('SKIP_S3', 'False').lower() == 'true':
+        return StreamingResponse(
+            content=io.BytesIO(b"Mock thumbnail content"),
+            media_type="image/jpeg"
+        )
+    
+    try:
+        # download_file returns a tuple of (BytesIO, content_length, content_type)
+        thumbnail_io, content_length, _ = download_file(db_file.thumbnail_path)
+        
+        return StreamingResponse(
+            content=thumbnail_io,
+            media_type="image/jpeg",  # Thumbnails are generated as JPEG
+            headers={
+                'Content-Disposition': f'inline; filename="{os.path.basename(db_file.thumbnail_path)}"',
+                'Cache-Control': 'public, max-age=86400',  # Cache thumbnails for 1 day
+                'Content-Length': str(content_length)
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving thumbnail: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving thumbnail: {str(e)}"
+        )

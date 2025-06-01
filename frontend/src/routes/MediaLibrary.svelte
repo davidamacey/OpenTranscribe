@@ -5,10 +5,7 @@
   import { authStore } from '../stores/auth';
   import { toastStore } from '$stores/toast';
   
-  // Explicitly declare props to prevent warnings
-  export let location = null;
-  export let navigate = null;
-  export let condition = true;
+  // Define navigate for routing
   const navigateHook = useNavigate();
   
   // Modal state
@@ -25,6 +22,8 @@
     content_type?: string;
     tags?: string[];
     summary?: string;
+    file_hash?: string;
+    thumbnail_url?: string;
     
     // Technical metadata
     media_format?: string;
@@ -355,10 +354,17 @@
   }
   
   // File upload completed handler
-  function handleUploadComplete() {
-    // Refresh the file list and close the modal
+  function handleUploadComplete(event: CustomEvent) {
+    // Refresh the file list
     fetchFiles();
-    showUploadModal = false;
+    
+    // Only close the modal if not a duplicate file
+    // For duplicates, we want to keep the modal open to show the notification
+    const isDuplicate = event.detail?.isDuplicate || false;
+    
+    if (!isDuplicate) {
+      showUploadModal = false;
+    }
   }
   
   // Subscribe to WebSocket file status updates to update file status in real-time
@@ -502,16 +508,16 @@
     <div class="filter-sidebar {showFilters ? 'show' : ''}">
       <FilterSidebar 
         bind:this={filterSidebarRef}
-        {searchQuery}
-        {selectedTags}
-        {selectedSpeakers}
-        {selectedCollectionId}
-        {dateRange}
-        {durationRange}
-        {fileSizeRange}
-        {selectedFileTypes}
-        {selectedStatuses}
-        {transcriptSearch}
+        searchQuery={searchQuery}
+        selectedTags={selectedTags}
+        selectedSpeakers={selectedSpeakers}
+        selectedCollectionId={selectedCollectionId}
+        dateRange={{from: null, to: null}}
+        durationRange={{min: null, max: null}}
+        fileSizeRange={{min: null, max: null}}
+        selectedFileTypes={selectedFileTypes}
+        selectedStatuses={selectedStatuses}
+        transcriptSearch={transcriptSearch}
         on:filter={applyFilters}
         on:reset={resetFilters}
       />
@@ -565,6 +571,43 @@
                   }}
                 >
                 <div class="file-content">
+                  {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
+                    <div class="file-thumbnail">
+                      <img 
+                        src={file.thumbnail_url} 
+                        alt="Thumbnail for {file.filename}" 
+                        loading="lazy"
+                        class="thumbnail-image"
+                      />
+                      <div class="video-overlay">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                      </div>
+                    </div>
+                  {:else if file.content_type && file.content_type.startsWith('video/')}
+                    <div class="file-thumbnail video-placeholder">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                        <line x1="7" y1="2" x2="7" y2="22"></line>
+                        <line x1="17" y1="2" x2="17" y2="22"></line>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <line x1="2" y1="7" x2="7" y2="7"></line>
+                        <line x1="2" y1="17" x2="7" y2="17"></line>
+                        <line x1="17" y1="17" x2="22" y2="17"></line>
+                        <line x1="17" y1="7" x2="22" y2="7"></line>
+                      </svg>
+                    </div>
+                  {:else if file.content_type && file.content_type.startsWith('audio/')}
+                    <div class="file-thumbnail audio-placeholder">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 18V5l12-2v13"></path>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <circle cx="18" cy="16" r="3"></circle>
+                      </svg>
+                    </div>
+                  {/if}
+                  
                   <h2 class="file-name">{file.filename}</h2>
                   
                   <div class="file-meta">
@@ -598,11 +641,12 @@
 {#if showUploadModal}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- The modal backdrop that closes on click -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div 
     class="modal-backdrop" 
-    role="presentation"
+    role="dialog"
+    aria-modal="true"
+    tabindex="0"
     on:click|self={toggleUploadModal}
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
   >
@@ -947,30 +991,85 @@
   
   .file-card {
     position: relative;
-    transition: all 0.2s ease;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
+    background-color: var(--surface-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
   }
   
   .file-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-color: var(--primary-color);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border-color: var(--border-hover);
   }
   
   .file-card.selected {
-    border-color: var(--primary-color);
-    border-width: 2px;
-    background-color: rgba(59, 130, 246, 0.05);
+    border: 2px solid var(--accent-color);
+    background-color: var(--selection-background);
   }
   
-  :global(.dark) .file-card {
-    background: var(--surface-color);
-    border-color: var(--border-color);
+  .file-thumbnail {
+    position: relative;
+    width: 100%;
+    height: 120px;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.04);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  
+  :global(.dark) .file-thumbnail {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  
+  .thumbnail-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+  
+  .file-card:hover .thumbnail-image {
+    transform: scale(1.05);
+  }
+  
+  .video-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+    transition: opacity 0.3s ease;
+  }
+  
+  .file-card:hover .video-overlay {
+    opacity: 1;
+  }
+  
+  .video-placeholder,
+  .audio-placeholder {
+    background-color: rgba(0, 0, 0, 0.04);
+    color: var(--text-secondary);
+  }
+  
+  :global(.dark) .video-placeholder,
+  :global(.dark) .audio-placeholder {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
   }
   
   :global(.dark) .file-card.selected {
@@ -1098,12 +1197,16 @@
   }
   
   .file-summary {
-    font-size: 0.875rem;
+    margin-top: 0.75rem;
     color: var(--text-secondary);
-    margin: 0.5rem 0 0 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    max-height: 3.6em;
   }
   
   .loading-state,

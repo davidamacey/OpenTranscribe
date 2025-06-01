@@ -30,6 +30,8 @@ class MediaFile(Base):
     status = Column(Enum(FileStatus), default=FileStatus.PENDING)
     summary = Column(Text, nullable=True)
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
+    file_hash = Column(String, nullable=True, index=True)  # SHA-256 hash for duplicate detection
+    thumbnail_path = Column(String, nullable=True)  # Path to video thumbnail in storage
     
     # Detailed metadata fields
     metadata_raw = Column(JSON, nullable=True)  # Complete raw metadata from extraction

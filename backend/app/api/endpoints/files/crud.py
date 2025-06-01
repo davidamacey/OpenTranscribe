@@ -118,26 +118,33 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> List[dict]:
 
 def set_file_urls(db_file: MediaFile) -> None:
     """
-    Set download and preview URLs for a media file.
+    Set download, preview, and thumbnail URLs for a media file.
     
     Args:
         db_file: MediaFile object to update
     """
     if db_file.storage_path:
-        logger.info(f"Setting up direct video URL for file {db_file.id}")
+        # Skip S3 operations in test environment
+        if os.environ.get('SKIP_S3', 'False').lower() == 'true':
+            db_file.download_url = f"/api/files/{db_file.id}/download"
+            db_file.preview_url = f"/api/files/{db_file.id}/video"
+            if db_file.thumbnail_path:
+                db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
+            return
         
-        # Simple video URL that doesn't require authentication
-        video_url = f"/api/files/{db_file.id}/video"
+        # Set URLs for frontend to use
+        db_file.download_url = f"/api/files/{db_file.id}/download"  # Download endpoint
         
-        # Set both download_url and preview_url to our video URL
-        db_file.download_url = video_url
-        db_file.preview_url = video_url
-        
-        logger.info(f"Direct video URL set: {video_url}")
-    else:
-        logger.warning(f"Cannot generate video URL: no storage path available")
-        db_file.download_url = None
-        db_file.preview_url = None
+        # Video files use our video endpoint for optimized streaming
+        if db_file.content_type.startswith('video/'):
+            db_file.preview_url = f"/api/files/{db_file.id}/video"
+        else:
+            # Audio files can use the download endpoint
+            db_file.preview_url = f"/api/files/{db_file.id}/download"
+            
+        # Set thumbnail URL if thumbnail exists
+        if db_file.thumbnail_path:
+            db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
 
 
 def get_media_file_detail(db: Session, file_id: int, current_user: User) -> MediaFileDetail:
