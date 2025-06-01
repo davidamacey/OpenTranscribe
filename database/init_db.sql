@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS media_file (
     language VARCHAR(10) NULL,
     summary TEXT NULL,
     translated_text TEXT NULL,
+    file_hash VARCHAR(255) NULL,
+    thumbnail_path VARCHAR(500) NULL,
     -- Detailed metadata fields
     metadata_raw JSONB NULL,
     metadata_important JSONB NULL,

@@ -7,6 +7,10 @@
   // Constants for file handling
   const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
   const MB = 1024 * 1024; // 1 MB in bytes
+  const FILE_SIZE_LIMIT = 2 * 1024 * 1024 * 1024; // 2GB
+  
+  // Constants for Imohash implementation
+  const IMOHASH_SAMPLE_SIZE = 64 * 1024; // 64KB samples for Imohash
   
   // Types
   interface FileWithSize extends File {
@@ -14,13 +18,15 @@
   }
   
   // State
-  let file: File | null = null;
+  let file: FileWithSize | null = null;
+  let fileInput: HTMLInputElement;
+  let drag = false;
   let uploading = false;
   let progress = 0;
   let error = '';
-  let statusMessage = ''; // Status message for user feedback
-  let drag = false;
-  let fileInput: HTMLInputElement | null = null;
+  let statusMessage = '';
+  let isDuplicateFile = false; // Track if the current file is a duplicate
+  let duplicateFileId: number | null = null; // Track the ID of the duplicate file
   let cancelTokenSource: CancelTokenSource | null = null;
   let isCancelling = false;
   let currentFileId: number | null = null; // Track the current file ID for cancellation
@@ -41,7 +47,7 @@
   
   // Event dispatcher with proper types
   const dispatch = createEventDispatcher<{
-    uploadComplete: { id: string; filename: string };
+    uploadComplete: { fileId: number; isDuplicate?: boolean };
     uploadError: { error: string };
   }>();
   
@@ -242,20 +248,55 @@
       
       statusMessage = 'Preparing upload...';
       
+      // Calculate file hash before upload
+      let fileHash = null;
+      try {
+        statusMessage = 'Calculating file hash with Imohash...';
+        fileHash = await calculateFileHash(file);
+        // Strip the 0x prefix for display and database consistency
+        const displayHash = fileHash.startsWith('0x') ? fileHash.substring(2) : fileHash;
+        statusMessage = `Hash calculated: ${displayHash.substring(0, 8)}...`;
+        // Remove 0x prefix for backend compatibility
+        if (fileHash.startsWith('0x')) {
+          fileHash = fileHash.substring(2);
+        }
+      } catch (err) {
+        // If hash calculation fails, show a warning but continue with upload
+        statusMessage = "Warning: Could not calculate file hash for duplicate detection. Upload will continue.";
+      }
+
       // First, prepare the upload to get a file ID
       try {
+        // Step 1: Prepare the upload and get a file ID
         const prepareResponse = await axiosInstance.post('/api/files/prepare', {
           filename: file.name,
           file_size: file.size,
-          content_type: file.type
+          content_type: file.type,
+          file_hash: fileHash
         }, {
           headers: {
-            'Authorization': `Bearer ${token}`
+            Authorization: `Bearer ${token}`
           }
         });
-        
         // Store the file ID as soon as we get it
         currentFileId = prepareResponse.data.file_id;
+        
+        // Check if this is a duplicate file
+        if (prepareResponse.data.is_duplicate === 1) {
+          duplicateFileId = prepareResponse.data.file_id;
+          statusMessage = `Duplicate file detected. Using existing file (ID: ${duplicateFileId})`;
+          uploading = false;
+          isDuplicateFile = true;
+          
+          // Show notification message that this is a duplicate file
+          error = `Duplicate file detected! This file has already been uploaded and is available in your library. You can use the existing file instead of uploading it again.`;
+          
+          // Note: We don't dispatch uploadComplete event here anymore
+          // We'll wait for user to acknowledge the message
+          
+          return;
+        }
+        
         statusMessage = `Upload prepared (File ID: ${currentFileId})`;
       } catch (err) {
         error = 'Failed to prepare upload';
@@ -272,13 +313,23 @@
         throw new Error('Authentication required. Please log in again.');
       }
       
+      // Include the file hash in the headers if available
+      const uploadHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'X-File-ID': currentFileId ? currentFileId.toString() : '',
+        'X-File-Size': file.size.toString(),
+        'X-File-Name': encodeURIComponent(file.name)
+      };
+      
+      if (fileHash) {
+        uploadHeaders['X-File-Hash'] = fileHash;
+      }
+      
       // Configure axios with timeout and upload progress
       const config = {
         headers: {
           'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${token}`,
-          'X-File-Size': file.size.toString(),
-          'X-File-Name': encodeURIComponent(file.name)
+          ...uploadHeaders
         },
         timeout: 0, // No timeout for large uploads - server handles timeouts
         maxContentLength: Infinity,
@@ -317,7 +368,10 @@
       progress = 100;
       
       // Notify parent component
-      dispatch('uploadComplete', responseData);
+      // Dispatch upload complete event with the appropriate structure
+      if (currentFileId) {
+        dispatch('uploadComplete', { fileId: currentFileId });
+      }
       
     } catch (err: unknown) {
       if (axios.isCancel(err)) {
@@ -437,6 +491,20 @@
     }
   }
   
+  // Function to handle acknowledging a duplicate file
+  function acknowledgeDuplicate() {
+    // Dispatch event to inform parent that upload is complete with duplicate file
+    if (duplicateFileId) {
+      dispatch('uploadComplete', { fileId: duplicateFileId, isDuplicate: true });
+    }
+    
+    // Reset state
+    isDuplicateFile = false;
+    error = '';
+    duplicateFileId = null;
+    resetUploadState();
+  }
+  
   // Reset the upload state
   function resetUploadState() {
     // Don't reset the file if we're in the middle of cancellation
@@ -479,6 +547,86 @@
 
   }
   
+  // Calculate file hash using imohash package
+  /**
+   * Calculate file hash using the Imohash algorithm
+   * 
+   * This is a simplified implementation of the Imohash algorithm:
+   * - Takes small samples from beginning, middle, and end of the file
+   * - Combines with file size
+   * - Creates SHA-256 hash of this data (truncated to 128 bits for compatibility)
+   * 
+   * This makes it extremely fast even for large files while providing reliable duplicate detection.
+   * 
+   * @param file - The file to hash
+   * @returns A hash as a hex string with 0x prefix
+   */
+  async function calculateFileHash(file: File): Promise<string> {
+    // Handle empty files according to Imohash spec
+    if (file.size === 0) {
+      return "0xc1c93cf2d1ecdc0b42e91262f343d8d9";
+    }
+    
+    try {
+      // For small files, just hash the entire content
+      if (file.size <= IMOHASH_SAMPLE_SIZE) {
+        const fileBuffer = await file.arrayBuffer();
+        const fileBytes = new Uint8Array(fileBuffer);
+        
+        // Combine file content with size (8 bytes, little-endian)
+        const hashData = new Uint8Array(fileBytes.length + 8);
+        hashData.set(fileBytes, 0);
+        
+        // Add file size as 8 bytes
+        const view = new DataView(hashData.buffer);
+        view.setBigUint64(fileBytes.length, BigInt(file.size), true); // true = little-endian
+        
+        // Calculate SHA-256 hash (browsers don't support MD5 in SubtleCrypto)
+        const hashBuffer = await crypto.subtle.digest('SHA-256', hashData);
+        // Use only first 16 bytes (128 bits) to match MD5 length for compatibility
+        const hashHex = Array.from(new Uint8Array(hashBuffer).slice(0, 16))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+        
+        return "0x" + hashHex;
+      }
+      
+      // For larger files, sample beginning, middle, and end
+      const beginBuffer = await file.slice(0, IMOHASH_SAMPLE_SIZE).arrayBuffer();
+      
+      const middleStart = Math.floor(file.size / 2) - Math.floor(IMOHASH_SAMPLE_SIZE / 2);
+      const middleBuffer = await file.slice(middleStart, middleStart + IMOHASH_SAMPLE_SIZE).arrayBuffer();
+      
+      const endStart = Math.max(0, file.size - IMOHASH_SAMPLE_SIZE);
+      const endBuffer = await file.slice(endStart).arrayBuffer();
+      
+      // Combine samples with file size (8 bytes)
+      const totalSize = beginBuffer.byteLength + middleBuffer.byteLength + endBuffer.byteLength + 8;
+      const hashData = new Uint8Array(totalSize);
+      
+      // Copy samples into combined buffer
+      hashData.set(new Uint8Array(beginBuffer), 0);
+      hashData.set(new Uint8Array(middleBuffer), beginBuffer.byteLength);
+      hashData.set(new Uint8Array(endBuffer), beginBuffer.byteLength + middleBuffer.byteLength);
+      
+      // Add file size as 8 bytes (little-endian)
+      const view = new DataView(hashData.buffer);
+      view.setBigUint64(totalSize - 8, BigInt(file.size), true); // true = little-endian
+      
+      // Calculate SHA-256 hash (browsers don't support MD5 in SubtleCrypto)
+      const hashBuffer = await crypto.subtle.digest('SHA-256', hashData);
+      // Use only first 16 bytes (128 bits) to match MD5 length for compatibility
+      const hashHex = Array.from(new Uint8Array(hashBuffer).slice(0, 16))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+      
+      return "0x" + hashHex;
+    } catch (error) {
+      console.error('Error calculating file hash:', error);
+      throw error;
+    }
+  }
+  
   onMount(() => {
     const cleanup = initDragAndDrop();
     return () => {
@@ -488,14 +636,49 @@
 </script>
 
 <div class="uploader-container">
-  {#if error}
+  <!-- Display duplicate notification - made more prominent with !important -->
+  {#if isDuplicateFile}
+    <div class="message duplicate-message" id="duplicate-notification">
+      <div class="message-icon">
+        <!-- Duplicate File Icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 17L21 12L16 7"></path>
+          <path d="M21 12H9"></path>
+          <path d="M3 3V21"></path>
+        </svg>
+      </div>
+      <div class="message-content">
+        <strong>Duplicate File Detected!</strong>
+        <p>This file has already been uploaded and is available in your library. You can use the existing file instead of uploading it again.</p>
+        <div class="message-actions">
+          <button class="btn-acknowledge" on:click|stopPropagation={acknowledgeDuplicate}>
+            Use Existing File
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+  
+  <!-- Regular error messages (non-duplicates) -->
+  {#if error && !isDuplicateFile}
     <div class="message {error.includes('Warning:') ? 'warning-message' : 'error-message'}">
-      {error}
-      {#if error.includes('Warning:')}
-        <button class="btn-continue" on:click|stopPropagation={uploadFile}>
-          Continue Anyway
-        </button>
-      {/if}
+      <div class="message-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+      </div>
+      <div class="message-content">
+        {error}
+        <div class="message-actions">
+          {#if error.includes('Warning:')}
+            <button class="btn-continue" on:click|stopPropagation={uploadFile}>
+              Continue Anyway
+            </button>
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
   
@@ -744,5 +927,78 @@
     padding: 0.75rem;
     border-radius: 4px;
     font-size: 0.9rem;
+  }
+  
+  .duplicate-message {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: var(--primary-color);
+    padding: 1.25rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--primary-color);
+    border-left: 6px solid var(--primary-color);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+    position: relative;
+    z-index: 10;
+  }
+  
+  #duplicate-notification {
+    display: flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+  
+  .duplicate-message strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    color: var(--primary-color);
+  }
+  
+  .duplicate-message p {
+    margin: 0 0 0.75rem 0;
+    line-height: 1.5;
+  }
+  
+  .message-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+    flex-shrink: 0;
+  }
+  
+  .message-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .message-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+  
+  .btn-acknowledge {
+    padding: 0.5rem 1rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+  }
+  
+  .btn-acknowledge:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 </style>
