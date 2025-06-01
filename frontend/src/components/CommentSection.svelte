@@ -1,5 +1,5 @@
 <script>
-  import { onMount, createEventDispatcher, tick } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { slide } from 'svelte/transition';
   import { fly } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
@@ -32,9 +32,32 @@
   // Event dispatcher
   const dispatch = createEventDispatcher();
   
-  // Fetch comments for the file
+  // Event listener for getComments events from parent components
+  /** @param {Event} event */
+  function handleGetCommentsEvent(event) {
+    // Cast standard Event to CustomEvent to access detail property
+    const customEvent = /** @type {CustomEvent} */ (event);
+    // Send comments data back through the event
+    dispatch('getComments', { comments: comments });
+  }
+  
+  // Add event listener when component is mounted
   onMount(() => {
     fetchComments();
+    
+    // Listen for getComments events
+    const commentsWrapper = document.querySelector('.comments-section-wrapper');
+    if (commentsWrapper) {
+      commentsWrapper.addEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
+    }
+  });
+  
+  // Remove event listener when component is destroyed
+  onDestroy(() => {
+    const commentsWrapper = document.querySelector('.comments-section-wrapper');
+    if (commentsWrapper) {
+      commentsWrapper.removeEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
+    }
   });
   
   async function fetchComments() {
