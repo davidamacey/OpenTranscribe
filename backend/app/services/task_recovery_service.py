@@ -172,6 +172,59 @@ class TaskRecoveryService:
             logger.error(f"Failed to schedule retry for file {media_file_id}: {e}")
             return False
 
+    def recover_stuck_files_without_celery_tasks(self, db: Session, stuck_files: List[MediaFile]) -> Dict[str, int]:
+        """
+        Recover files that are stuck in processing state without active Celery tasks.
+        
+        Args:
+            db: Database session
+            stuck_files: List of stuck files identified by detection service
+            
+        Returns:
+            Dict with recovery statistics
+        """
+        stats = {
+            "files_recovered": 0,
+            "tasks_retried": 0,
+            "tasks_failed": 0
+        }
+        
+        for media_file in stuck_files:
+            try:
+                logger.info(f"Recovering stuck file {media_file.id} ({media_file.filename})")
+                
+                # Mark any existing tasks as failed
+                stale_tasks = db.query(Task).filter(
+                    Task.media_file_id == media_file.id,
+                    Task.status.in_(["pending", "in_progress"])
+                ).all()
+                
+                for task in stale_tasks:
+                    update_task_status(
+                        db=db,
+                        task_id=task.id,
+                        status="failed",
+                        error_message="Task recovered - no active Celery worker found",
+                        completed=True
+                    )
+                    stats["tasks_failed"] += 1
+                
+                # Reset file status to pending for retry
+                update_media_file_status(db, media_file.id, FileStatus.PENDING)
+                stats["files_recovered"] += 1
+                
+                # Schedule new transcription task
+                if self.schedule_file_retry(media_file.id):
+                    stats["tasks_retried"] += 1
+                    logger.info(f"Successfully scheduled retry for stuck file {media_file.id}")
+                else:
+                    logger.error(f"Failed to schedule retry for stuck file {media_file.id}")
+                    
+            except Exception as e:
+                logger.error(f"Error recovering stuck file {media_file.id}: {e}")
+        
+        return stats
+    
     def recover_user_files(self, db: Session, problem_files: List[MediaFile]) -> Dict[str, int]:
         """
         Recover problem files for users.

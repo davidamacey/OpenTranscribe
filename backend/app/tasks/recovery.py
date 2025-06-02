@@ -137,6 +137,7 @@ def periodic_health_check_task(self):
     This task runs on a schedule to identify and recover:
     1. Tasks that are stuck in processing or pending state
     2. Media files with inconsistent states
+    3. Files stuck in processing without active Celery tasks
     
     Returns:
         Dictionary with summary of actions taken
@@ -145,7 +146,9 @@ def periodic_health_check_task(self):
         "stuck_tasks_found": 0,
         "stuck_tasks_recovered": 0,
         "inconsistent_files_found": 0,
-        "inconsistent_files_fixed": 0
+        "inconsistent_files_fixed": 0,
+        "stuck_files_without_celery_found": 0,
+        "stuck_files_without_celery_recovered": 0
     }
     
     try:
@@ -172,11 +175,21 @@ def periodic_health_check_task(self):
             
             summary["inconsistent_files_fixed"] = fixed_count
             
+            # Step 3: Identify and recover files stuck without active Celery tasks
+            stuck_files_without_celery = task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
+            summary["stuck_files_without_celery_found"] = len(stuck_files_without_celery)
+            
+            if stuck_files_without_celery:
+                recovery_stats = task_recovery_service.recover_stuck_files_without_celery_tasks(db, stuck_files_without_celery)
+                summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
+                logger.info(f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks")
+            
             # Log summary
             logger.info(
                 f"Periodic health check completed: "
                 f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
-                f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}"
+                f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
+                f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}"
             )
             
     except Exception as e:

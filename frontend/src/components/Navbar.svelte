@@ -14,8 +14,9 @@
   
   // Reactive statements for active page detection
   $: currentPath = $location.pathname;
-  $: isGalleryActive = currentPath === '/' || currentPath === '' || currentPath.startsWith('/files');
-  $: isTasksActive = currentPath === '/tasks' || currentPath.startsWith('/tasks');
+  $: isGalleryActive = currentPath === '/' || currentPath === '';
+  $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
+  $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
   
   // Navigation
   const navigate = useNavigate();
@@ -106,32 +107,21 @@
     </div>
     
     <div class="nav-links">
-      <!-- Gallery button with icon -->
-      <a 
-        href="/"
-        title="View your media library and uploaded files"
-        class="nav-link {isGalleryActive ? 'active' : ''}"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-          <polyline points="21 15 16 10 5 21"></polyline>
-        </svg>
-        Gallery
-      </a>
-      
-      <!-- Tasks button with icon -->
-      <a 
-        href="/tasks"
-        title="View transcription tasks and processing status"
-        class="nav-link {isTasksActive ? 'active' : ''}"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 11l3 3L22 4"></path>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-        </svg>
-        Tasks
-      </a>
+      <!-- Gallery link - only show when not on gallery/file pages -->
+      {#if showGalleryLink}
+        <a 
+          href="/"
+          title="Go back to your media library and files"
+          class="nav-link"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          Back to Gallery
+        </a>
+      {/if}
       
       <!-- Notifications button -->
       <button 
@@ -345,63 +335,8 @@
     color: var(--primary-color);
   }
   
-  /* Active state styling - subtle underline approach */
-  .nav-link.active {
-    color: var(--primary-color, #3b82f6);
-    font-weight: 600;
-    background-color: transparent;
-    user-select: none;
-    position: relative;
-  }
-  
-  .nav-link.active::after {
-    content: '';
-    position: absolute;
-    bottom: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: calc(100% - 1rem);
-    height: 3px;
-    background-color: var(--primary-color, #3b82f6);
-    border-radius: 2px;
-    transition: all 0.3s ease;
-    animation: slideIn 0.3s ease-out;
-  }
-  
-  @keyframes slideIn {
-    from {
-      width: 0;
-      opacity: 0;
-    }
-    to {
-      width: calc(100% - 1rem);
-      opacity: 1;
-    }
-  }
-  
-  .nav-link.active:hover {
-    color: var(--primary-color-dark, #2563eb);
-    background-color: var(--hover-color, rgba(59, 130, 246, 0.05));
-  }
-  
-  .nav-link.active:hover::after {
-    background-color: var(--primary-color-dark, #2563eb);
-    width: 100%;
-    height: 4px;
-  }
-  
-  /* Active state icon styling */
-  .nav-link.active svg {
-    color: var(--primary-color, #3b82f6);
-  }
-  
   /* Focus states for accessibility */
   .nav-link:focus {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-  
-  .nav-link.active:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
@@ -417,40 +352,19 @@
       font-size: 0.9rem;
     }
     
-    .nav-link.active::after {
-      bottom: -6px;
-      height: 2px;
-    }
-    
-    .nav-link.active:hover::after {
-      height: 3px;
-    }
   }
   
   /* High contrast mode support */
   @media (prefers-contrast: high) {
-    .nav-link.active {
-      color: var(--primary-color);
-      font-weight: 700;
-    }
-    
-    .nav-link.active::after {
-      height: 4px;
-      background-color: var(--primary-color);
-    }
-    
-    .nav-link.active:hover::after {
-      height: 5px;
+    .nav-link:hover {
+      border: 1px solid var(--primary-color);
     }
   }
   
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
-    .nav-link,
-    .nav-link.active,
-    .nav-link.active::after {
+    .nav-link {
       transition: none;
-      animation: none;
     }
   }
   

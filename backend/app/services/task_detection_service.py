@@ -56,6 +56,61 @@ class TaskDetectionService:
         
         logger.info(f"Identified {len(stuck_tasks)} stuck tasks")
         return stuck_tasks
+    
+    def identify_stuck_files_without_active_celery_tasks(self, db: Session) -> List[MediaFile]:
+        """
+        Identify files that are stuck in PROCESSING state without any active Celery tasks.
+        
+        This method identifies files that are marked as PROCESSING but have:
+        1. No tasks in "pending" or "in_progress" state
+        2. Been in this state for longer than a threshold time
+        3. No recent task updates (indicating Celery worker may have died)
+        
+        Args:
+            db: Database session
+            
+        Returns:
+            List of stuck files that need recovery
+        """
+        now = datetime.now(timezone.utc)
+        stuck_threshold = now - timedelta(minutes=5)  # Files stuck for 5+ minutes
+        
+        # Get all files currently in PROCESSING state
+        processing_files = db.query(MediaFile).filter(
+            MediaFile.status == FileStatus.PROCESSING
+        ).all()
+        
+        stuck_files = []
+        for media_file in processing_files:
+            # Check if file has been processing for too long
+            if media_file.updated_at and media_file.updated_at < stuck_threshold:
+                # Check if there are any active tasks
+                active_tasks = db.query(Task).filter(
+                    Task.media_file_id == media_file.id,
+                    Task.status.in_(["pending", "in_progress"])
+                ).all()
+                
+                if not active_tasks:
+                    # File is in processing state but has no active tasks
+                    stuck_files.append(media_file)
+                    logger.info(f"Found stuck file {media_file.id} ({media_file.filename}) - "
+                               f"processing for {(now - media_file.updated_at).total_seconds() / 60:.1f} minutes "
+                               f"with no active tasks")
+                else:
+                    # Check if tasks are truly stuck (no recent updates)
+                    all_tasks_stale = True
+                    for task in active_tasks:
+                        if task.updated_at and task.updated_at > stuck_threshold:
+                            all_tasks_stale = False
+                            break
+                    
+                    if all_tasks_stale:
+                        stuck_files.append(media_file)
+                        logger.info(f"Found stuck file {media_file.id} ({media_file.filename}) - "
+                                   f"has {len(active_tasks)} stale tasks")
+        
+        logger.info(f"Identified {len(stuck_files)} stuck files without active Celery tasks")
+        return stuck_files
 
     def identify_inconsistent_media_files(self, db: Session) -> List[MediaFile]:
         """

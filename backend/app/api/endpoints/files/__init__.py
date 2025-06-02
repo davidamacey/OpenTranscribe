@@ -188,6 +188,61 @@ def get_media_file_content(
     return get_content_streaming_response(db_file)
 
 
+@router.get("/{file_id}/download")
+def download_media_file(
+    file_id: int,
+    token: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Download a media file"""
+    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    return get_content_streaming_response(db_file)
+
+
+@router.get("/{file_id}/download-with-token")
+def download_media_file_with_token(
+    file_id: int,
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Download a media file using token parameter (for native browser downloads)
+    No authentication required - token is validated manually
+    """
+    from jose import JWTError, jwt
+    from app.core.config import settings
+    from app.schemas.user import TokenPayload
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate JWT token manually
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="Invalid user")
+        
+        # Get file and check ownership
+        is_admin = user.role == "admin"
+        db_file = get_media_file_by_id(db, file_id, user.id, is_admin=is_admin)
+        return get_content_streaming_response(db_file)
+        
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception as e:
+        logger.error(f"Error in download with token: {e}")
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+
 @router.get("/{file_id}/video")
 async def video_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     """

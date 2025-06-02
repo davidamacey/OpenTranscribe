@@ -1,5 +1,7 @@
 # OpenTranscribe .gitignore
 
+.github/DRAFT_ISSUES/
+
 # Environment variables
 .env
 .env.local

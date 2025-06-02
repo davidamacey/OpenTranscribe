@@ -17,6 +17,7 @@ from app.schemas.media import (
     MediaFile as MediaFileSchema
 )
 from app.api.endpoints.auth import get_current_user
+from app.api.endpoints.files.crud import set_file_urls
 
 router = APIRouter()
 
@@ -290,5 +291,9 @@ async def get_collection_media(
         .limit(limit)
         .all()
     )
+    
+    # Set file URLs for each media file (including thumbnail URLs)
+    for media_file in media_files:
+        set_file_urls(media_file)
     
     return media_files
