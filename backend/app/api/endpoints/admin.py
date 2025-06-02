@@ -183,8 +183,14 @@ async def get_admin_stats(
             if task.completed_at and task.created_at:
                 elapsed = (task.completed_at - task.created_at).total_seconds()
             elif task.created_at:
-                from datetime import datetime
-                elapsed = (datetime.utcnow() - task.created_at).total_seconds()
+                from datetime import datetime, timezone
+                # Make sure both datetimes are timezone-aware
+                now = datetime.now(timezone.utc)
+                created_at = task.created_at
+                # Convert created_at to timezone-aware if it's naive
+                if created_at and created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                elapsed = (now - created_at).total_seconds() if created_at else 0
             recent.append({
                 "id": task.id,
                 "type": getattr(task, 'task_type', ''),

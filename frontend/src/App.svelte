@@ -24,7 +24,7 @@
   import FileDetail from "./routes/FileDetail.svelte";
   import UserSettings from "./routes/UserSettings.svelte";
   import AdminDashboard from "./routes/AdminDashboard.svelte";
-  import Tasks from "./routes/Tasks.svelte";
+  import FileStatus from "./routes/FileStatus.svelte";
   
   // Store the current path to handle redirects
   let currentPath = window.location.pathname;
@@ -102,7 +102,7 @@
         <Route path="/files/:id" let:params primary={false}>
           <FileDetail id={params.id} />
         </Route>
-        <Route path="/tasks" component={Tasks} condition={authGuard} />
+        <Route path="/file-status" component={FileStatus} condition={authGuard} />
         <Route path="/settings" component={UserSettings} condition={authGuard} />
         <Route path="/admin" component={AdminDashboard} condition={adminGuard} />
       </main>

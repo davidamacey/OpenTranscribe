@@ -1,0 +1,1679 @@
+<script>
+  import { onMount, onDestroy } from 'svelte';
+  import axiosInstance from '../lib/axios';
+  import { user } from '../stores/auth';
+  import { websocketStore } from '../stores/websocket';
+  import { toastStore } from '../stores/toast';
+  
+  // Component state
+  let loading = false;
+  let error = null;
+  let fileStatus = null;
+  let selectedFile = null;
+  let detailedStatus = null;
+  let retryingFiles = new Set();
+  
+  // Auto-refresh settings (per session, not persistent)
+  let autoRefresh = false;
+  let refreshInterval = null;
+  
+  // Tasks section state
+  let tasks = [];
+  let tasksLoading = false;
+  let tasksError = null;
+  let showTasksSection = false;
+  
+  // Task filtering
+  let taskFilter = 'all'; // 'all', 'pending', 'in_progress', 'completed', 'failed'
+  let taskTypeFilter = 'all'; // 'all', 'transcription', 'summarization'
+  let taskAgeFilter = 'all'; // 'all', 'today', 'week', 'month', 'older'
+  let taskDateFrom = '';
+  let taskDateTo = '';
+  let filteredTasks = [];
+  
+  // WebSocket subscription
+  let unsubscribeWebSocket = null;
+  let lastProcessedNotificationId = '';
+  
+  onMount(() => {
+    fetchFileStatus();
+    setupWebSocketUpdates();
+  });
+  
+  async function fetchFileStatus() {
+    loading = true;
+    error = null;
+    
+    try {
+      const response = await axiosInstance.get('/my-files/status');
+      fileStatus = response.data;
+    } catch (err) {
+      console.error('Error fetching file status:', err);
+      error = err.response?.data?.detail || 'Failed to load file status';
+    } finally {
+      loading = false;
+    }
+  }
+  
+  async function fetchTasks() {
+    tasksLoading = true;
+    tasksError = null;
+    
+    try {
+      const response = await axiosInstance.get('/tasks/');
+      tasks = response.data;
+      filterTasks();
+    } catch (err) {
+      console.error('Error fetching tasks:', err);
+      tasksError = err.response?.data?.detail || 'Failed to load tasks';
+    } finally {
+      tasksLoading = false;
+    }
+  }
+  
+  function filterTasks() {
+    filteredTasks = tasks.filter(task => {
+      // Filter by status
+      if (taskFilter !== 'all' && task.status !== taskFilter) {
+        return false;
+      }
+      
+      // Filter by task type
+      if (taskTypeFilter !== 'all' && task.task_type !== taskTypeFilter) {
+        return false;
+      }
+      
+      // Filter by age
+      if (taskAgeFilter !== 'all') {
+        const taskDate = new Date(task.created_at);
+        const now = new Date();
+        const diffInHours = (now.getTime() - taskDate.getTime()) / (1000 * 60 * 60);
+        
+        switch (taskAgeFilter) {
+          case 'today':
+            if (diffInHours > 24) return false;
+            break;
+          case 'week':
+            if (diffInHours > 24 * 7) return false;
+            break;
+          case 'month':
+            if (diffInHours > 24 * 30) return false;
+            break;
+          case 'older':
+            if (diffInHours <= 24 * 30) return false;
+            break;
+        }
+      }
+      
+      // Filter by custom date range
+      if (taskDateFrom || taskDateTo) {
+        const taskDate = new Date(task.created_at);
+        
+        if (taskDateFrom) {
+          const fromDate = new Date(taskDateFrom);
+          if (taskDate < fromDate) return false;
+        }
+        
+        if (taskDateTo) {
+          const toDate = new Date(taskDateTo);
+          toDate.setHours(23, 59, 59, 999); // Include the entire end date
+          if (taskDate > toDate) return false;
+        }
+      }
+      
+      return true;
+    });
+  }
+  
+  function toggleTasksSection() {
+    showTasksSection = !showTasksSection;
+    if (showTasksSection && tasks.length === 0) {
+      fetchTasks();
+    }
+  }
+  
+  function openFlowerDashboard() {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+    const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
+    const url = urlPrefix 
+      ? `${protocol}//${host}:${port}/${urlPrefix}/` 
+      : `${protocol}//${host}:${port}/`;
+    window.open(url, '_blank');
+  }
+  
+  async function fetchDetailedStatus(fileId) {
+    try {
+      const response = await axiosInstance.get(`/my-files/${fileId}/status`);
+      detailedStatus = response.data;
+      selectedFile = fileId;
+    } catch (err) {
+      console.error('Error fetching detailed status:', err);
+      error = err.response?.data?.detail || 'Failed to load file details';
+    }
+  }
+  
+  async function retryFile(fileId) {
+    if (retryingFiles.has(fileId)) return;
+    
+    retryingFiles.add(fileId);
+    retryingFiles = retryingFiles; // Trigger reactivity
+    
+    try {
+      await axiosInstance.post(`/my-files/${fileId}/retry`);
+      
+      // Refresh status after retry
+      await fetchFileStatus();
+      if (selectedFile === fileId) {
+        await fetchDetailedStatus(fileId);
+      }
+      
+      // Show success message
+      showMessage('File retry initiated successfully', 'success');
+      
+    } catch (err) {
+      console.error('Error retrying file:', err);
+      const errorMsg = err.response?.data?.detail || 'Failed to retry file';
+      showMessage(errorMsg, 'error');
+    } finally {
+      retryingFiles.delete(fileId);
+      retryingFiles = retryingFiles; // Trigger reactivity
+    }
+  }
+  
+  async function requestRecovery() {
+    loading = true;
+    
+    try {
+      await axiosInstance.post('/my-files/request-recovery');
+      showMessage('Recovery process started for your files', 'success');
+      
+      // Refresh status after a delay
+      setTimeout(() => {
+        fetchFileStatus();
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Error requesting recovery:', err);
+      const errorMsg = err.response?.data?.detail || 'Failed to request recovery';
+      showMessage(errorMsg, 'error');
+    } finally {
+      loading = false;
+    }
+  }
+  
+  function toggleAutoRefresh() {
+    if (autoRefresh) {
+      refreshInterval = setInterval(fetchFileStatus, 30000); // Refresh every 30 seconds
+    } else {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+    }
+  }
+  
+  function showMessage(message, type) {
+    if (type === 'success') {
+      toastStore.success(message);
+    } else {
+      toastStore.error(message);
+    }
+  }
+  
+  function formatFileAge(hours) {
+    if (hours < 1) {
+      return `${Math.round(hours * 60)} minutes ago`;
+    } else if (hours < 24) {
+      return `${Math.round(hours)} hours ago`;
+    } else {
+      return `${Math.round(hours / 24)} days ago`;
+    }
+  }
+  
+  function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  }
+  
+  function formatDuration(seconds) {
+    if (!seconds && seconds !== 0) return "Unknown";
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    let result = "";
+    if (hours > 0) {
+      result += `${hours.toString().padStart(2, "0")}:`;
+    }
+    result += `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    return result;
+  }
+  
+  function formatFileSize(bytes) {
+    const sizeInBytes = typeof bytes === 'string' ? Number(bytes) : bytes;
+    
+    if (!sizeInBytes || isNaN(sizeInBytes)) return 'Unknown';
+    
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (sizeInBytes === 0) return '0 Bytes';
+    
+    const i = Math.floor(Math.log(sizeInBytes) / Math.log(1024));
+    return parseFloat((sizeInBytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+  
+  function getStatusBadgeClass(status) {
+    switch (status) {
+      case 'completed': return 'status-completed';
+      case 'processing': return 'status-processing';
+      case 'pending': return 'status-pending';
+      case 'error': return 'status-error';
+      default: return 'status-unknown';
+    }
+  }
+  
+  // Reactive statements for filtering
+  $: {
+    if (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo) {
+      filterTasks();
+    }
+  }
+  
+  // Setup WebSocket updates for real-time file status changes
+  function setupWebSocketUpdates() {
+    unsubscribeWebSocket = websocketStore.subscribe(($ws) => {
+      if ($ws.notifications.length > 0) {
+        const latestNotification = $ws.notifications[0];
+        
+        // Only process if this is a new notification we haven't handled
+        if (latestNotification.id !== lastProcessedNotificationId) {
+          lastProcessedNotificationId = latestNotification.id;
+          
+          // Check if this notification is for transcription status
+          if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
+            console.log('UserFileStatus received WebSocket update for file:', latestNotification.data.file_id, 'Status:', latestNotification.data.status);
+            
+            // Refresh file status when we get updates
+            fetchFileStatus();
+            
+            // Also refresh tasks if tasks section is open
+            if (showTasksSection) {
+              fetchTasks();
+            }
+          }
+        }
+      }
+    });
+  }
+  
+  // Cleanup on component destroy
+  onDestroy(() => {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+    if (unsubscribeWebSocket) {
+      unsubscribeWebSocket();
+    }
+  });
+</script>
+
+<div class="file-status-container">
+  <div class="header">
+    <h2>My Files Status</h2>
+    <div class="controls">
+      <button 
+        class="flower-btn" 
+        on:click={openFlowerDashboard}
+        title="Open Flower monitoring dashboard to view detailed task queue status and worker performance"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        Flower Dashboard
+      </button>
+      
+      <button 
+        class="refresh-btn" 
+        on:click={() => {
+          fetchFileStatus();
+          if (showTasksSection) fetchTasks();
+        }}
+        disabled={loading || tasksLoading}
+      >
+        {(loading || tasksLoading) ? 'Refreshing...' : 'Refresh'}
+      </button>
+      
+      <button 
+        class="tasks-toggle-btn" 
+        on:click={toggleTasksSection}
+        title="Show/hide detailed tasks view"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 11l3 3L22 4"></path>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+        </svg>
+        {showTasksSection ? 'Hide Tasks' : 'Show All Tasks'}
+      </button>
+      
+      <label class="auto-refresh-toggle">
+        <input 
+          type="checkbox" 
+          bind:checked={autoRefresh} 
+          on:change={() => toggleAutoRefresh()}
+        />
+        Auto-refresh
+      </label>
+    </div>
+  </div>
+  
+  {#if error}
+    <div class="error-message">
+      {error}
+    </div>
+  {/if}
+  
+  {#if loading && !fileStatus}
+    <div class="loading">Loading file status...</div>
+  {:else if fileStatus}
+    <div class="status-overview">
+      <div class="status-cards">
+        <div class="status-card">
+          <div class="status-number">{fileStatus.status_counts.total}</div>
+          <div class="status-label">Total Files</div>
+        </div>
+        
+        <div class="status-card">
+          <div class="status-number">{fileStatus.status_counts.completed}</div>
+          <div class="status-label">Completed</div>
+        </div>
+        
+        <div class="status-card">
+          <div class="status-number">{fileStatus.status_counts.processing}</div>
+          <div class="status-label">Processing</div>
+        </div>
+        
+        <div class="status-card">
+          <div class="status-number">{fileStatus.status_counts.pending}</div>
+          <div class="status-label">Pending</div>
+        </div>
+        
+        <div class="status-card error">
+          <div class="status-number">{fileStatus.status_counts.error}</div>
+          <div class="status-label">Errors</div>
+        </div>
+      </div>
+      
+      {#if fileStatus.has_problems}
+        <div class="problems-section">
+          <div class="problems-header">
+            <h3>Files That Need Attention</h3>
+            <button 
+              class="recovery-btn" 
+              on:click={requestRecovery}
+              disabled={loading}
+            >
+              Request Recovery for All
+            </button>
+          </div>
+          
+          <div class="problem-files">
+            {#each fileStatus.problem_files.files as file}
+              <div class="problem-file">
+                <div class="file-info">
+                  <div class="filename">{file.filename}</div>
+                  <div class="file-meta">
+                    <span class="status-badge {getStatusBadgeClass(file.status)}">
+                      {file.status}
+                    </span>
+                    <span class="file-age">{formatFileAge(file.age_hours)}</span>
+                  </div>
+                </div>
+                
+                <div class="file-actions">
+                  <button 
+                    class="info-button"
+                    on:click={() => fetchDetailedStatus(file.id)}
+                    title="View detailed file metadata and task information"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                  
+                  <button 
+                    class="details-btn"
+                    on:click={() => fetchDetailedStatus(file.id)}
+                  >
+                    Details
+                  </button>
+                  
+                  {#if file.can_retry}
+                    <button 
+                      class="retry-btn"
+                      on:click={() => retryFile(file.id)}
+                      disabled={retryingFiles.has(file.id)}
+                    >
+                      {retryingFiles.has(file.id) ? 'Retrying...' : 'Retry'}
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="no-problems">
+          <p>✅ All your files are processing normally!</p>
+        </div>
+      {/if}
+      
+      {#if fileStatus.recent_files.count > 0}
+        <div class="recent-files">
+          <h3>Recent Files (Last 24 Hours)</h3>
+          <div class="recent-files-grid">
+            {#each fileStatus.recent_files.files as file}
+              <div class="recent-file-card">
+                <div class="filename">{file.filename}</div>
+                <div class="file-status-row">
+                  <div class="status-info">
+                    <span class="status-badge {getStatusBadgeClass(file.status)}">
+                      {file.status}
+                    </span>
+                    <span class="file-age">{formatFileAge(file.age_hours)}</span>
+                  </div>
+                  <button 
+                    class="info-button small"
+                    on:click={() => fetchDetailedStatus(file.id)}
+                    title="View detailed file metadata and task information"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="12" y1="16" x2="12" y2="12"></line>
+                      <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
+  
+  <!-- Tasks Section -->
+  {#if showTasksSection}
+    <div class="tasks-section">
+      <div class="tasks-header">
+        <h3>All Tasks</h3>
+      </div>
+      
+      <div class="compact-filters">
+        <select bind:value={taskFilter} class="compact-filter-select">
+          <option value="all">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+        
+        <select bind:value={taskTypeFilter} class="compact-filter-select">
+          <option value="all">All Types</option>
+          <option value="transcription">Transcription</option>
+          <option value="summarization">Summarization</option>
+        </select>
+        
+        <select bind:value={taskAgeFilter} class="compact-filter-select">
+          <option value="all">All Ages</option>
+          <option value="today">Last 24h</option>
+          <option value="week">Last Week</option>
+          <option value="month">Last Month</option>
+          <option value="older">Older</option>
+        </select>
+        
+        <input 
+          type="date" 
+          bind:value={taskDateFrom} 
+          class="compact-date-input"
+          placeholder="From date"
+          title="Filter from this date"
+        />
+        
+        <input 
+          type="date" 
+          bind:value={taskDateTo} 
+          class="compact-date-input"
+          placeholder="To date"
+          title="Filter to this date"
+        />
+        
+        {#if taskFilter !== 'all' || taskTypeFilter !== 'all' || taskAgeFilter !== 'all' || taskDateFrom || taskDateTo}
+          <button 
+            class="compact-clear-btn"
+            on:click={() => {
+              taskFilter = 'all';
+              taskTypeFilter = 'all';
+              taskAgeFilter = 'all';
+              taskDateFrom = '';
+              taskDateTo = '';
+            }}
+            title="Clear all filters"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        {/if}
+      </div>
+      
+      {#if tasksLoading && tasks.length === 0}
+        <div class="loading">Loading tasks...</div>
+      {:else if tasksError}
+        <div class="error-message">{tasksError}</div>
+      {:else if filteredTasks.length === 0}
+        <div class="no-tasks">
+          <p>No tasks found{taskFilter !== 'all' || taskTypeFilter !== 'all' ? ' matching the selected filters' : ''}.</p>
+        </div>
+      {:else}
+        <div class="tasks-grid">
+          {#each filteredTasks as task (task.id)}
+            <div class="task-card">
+              <div class="task-header">
+                <div class="task-type">
+                  {#if task.task_type === 'transcription'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                      <line x1="12" y1="19" x2="12" y2="23"></line>
+                      <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                    Transcription
+                  {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="8" y1="6" x2="21" y2="6"></line>
+                      <line x1="8" y1="12" x2="21" y2="12"></line>
+                      <line x1="8" y1="18" x2="21" y2="18"></line>
+                      <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    </svg>
+                    Summarization
+                  {/if}
+                </div>
+                <div class="task-status {getStatusBadgeClass(task.status)}">
+                  {#if task.status === 'pending'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="2" x2="12" y2="6"></line>
+                      <line x1="12" y1="18" x2="12" y2="22"></line>
+                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                      <line x1="2" y1="12" x2="6" y2="12"></line>
+                      <line x1="18" y1="12" x2="22" y2="12"></line>
+                      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                    </svg>
+                    Pending
+                  {:else if task.status === 'in_progress'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                    In Progress
+                    <span class="task-progress">{Math.round(task.progress * 100)}%</span>
+                  {:else if task.status === 'completed'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    Completed
+                  {:else if task.status === 'failed'}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    Failed
+                  {/if}
+                  
+                  {#if task.media_file}
+                    <button 
+                      class="info-button small"
+                      on:click={() => fetchDetailedStatus(task.media_file.id)}
+                      title="View detailed file metadata and task information"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                      </svg>
+                    </button>
+                  {/if}
+                </div>
+              </div>
+              
+              <div class="task-info">
+                {#if task.media_file}
+                  <div class="task-file">{task.media_file.filename}</div>
+                {/if}
+                
+                {#if task.error_message}
+                  <div class="error-details">
+                    <span class="info-label">Error:</span>
+                    <div class="error-message">{task.error_message}</div>
+                  </div>
+                {/if}
+              </div>
+
+              {#if task.status === 'in_progress'}
+                <div class="progress-bar-container">
+                  <div class="progress-bar" style="width: {task.progress * 100}%"></div>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+  
+  {#if detailedStatus && selectedFile}
+    <div class="detailed-status-modal" on:click={() => { detailedStatus = null; selectedFile = null; }}>
+      <div class="modal-content" on:click|stopPropagation>
+        <div class="modal-header">
+          <h3>File Details: {detailedStatus.file.filename}</h3>
+          <button class="close-btn" on:click={() => { detailedStatus = null; selectedFile = null; }}>×</button>
+        </div>
+        
+        <div class="modal-body">
+          <!-- File Details Grid -->
+          <div class="file-details">
+            <h4>File Information</h4>
+            <div class="metadata-grid">
+              <div class="metadata-item">
+                <span class="metadata-label">File Name:</span>
+                <span class="metadata-value">{detailedStatus.file.filename}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Status:</span>
+                <span class="status-badge {getStatusBadgeClass(detailedStatus.file.status)}">
+                  {detailedStatus.file.status}
+                </span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">File Size:</span>
+                <span class="metadata-value">{detailedStatus.file.file_size ? formatFileSize(detailedStatus.file.file_size) : 'Unknown'}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Duration:</span>
+                <span class="metadata-value">{detailedStatus.file.duration ? formatDuration(detailedStatus.file.duration) : 'Unknown'}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Language:</span>
+                <span class="metadata-value">{detailedStatus.file.language || 'Auto-detected'}</span>
+              </div>
+              <div class="metadata-item">
+                <span class="metadata-label">Upload Time:</span>
+                <span class="metadata-value">{formatDate(detailedStatus.file.upload_time)}</span>
+              </div>
+              {#if detailedStatus.file.completed_at}
+                <div class="metadata-item">
+                  <span class="metadata-label">Completed At:</span>
+                  <span class="metadata-value">{formatDate(detailedStatus.file.completed_at)}</span>
+                </div>
+              {/if}
+              <div class="metadata-item">
+                <span class="metadata-label">File Age:</span>
+                <span class="metadata-value">{formatFileAge(detailedStatus.file_age_hours)}</span>
+              </div>
+            </div>
+            
+            {#if detailedStatus.is_stuck}
+              <div class="warning">
+                ⚠️ This file appears to be stuck in processing
+              </div>
+            {/if}
+            
+            {#if detailedStatus.can_retry}
+              <div class="retry-section">
+                <button 
+                  class="retry-btn large"
+                  on:click={() => retryFile(selectedFile)}
+                  disabled={retryingFiles.has(selectedFile)}
+                >
+                  {retryingFiles.has(selectedFile) ? 'Retrying...' : 'Retry Processing'}
+                </button>
+              </div>
+            {/if}
+          </div>
+          
+          {#if detailedStatus.task_details.length > 0}
+            <div class="task-details">
+              <h4>Task Details:</h4>
+              <div class="task-metadata-grid">
+                {#each detailedStatus.task_details as task}
+                  <div class="task-metadata-card">
+                    <div class="task-card-header">
+                      <span class="task-type-label">{task.task_type}</span>
+                      <span class="status-badge {getStatusBadgeClass(task.status)}">{task.status}</span>
+                    </div>
+                    <div class="task-metadata-items">
+                      <div class="metadata-item">
+                        <span class="metadata-label">Task Created:</span>
+                        <span class="metadata-value">{formatDate(task.created_at)}</span>
+                      </div>
+                      {#if task.updated_at}
+                        <div class="metadata-item">
+                          <span class="metadata-label">Last Updated:</span>
+                          <span class="metadata-value">{formatDate(task.updated_at)}</span>
+                        </div>
+                      {/if}
+                      {#if task.completed_at}
+                        <div class="metadata-item">
+                          <span class="metadata-label">Task Completed:</span>
+                          <span class="metadata-value">{formatDate(task.completed_at)}</span>
+                        </div>
+                        <div class="metadata-item">
+                          <span class="metadata-label">Processing Time:</span>
+                          <span class="metadata-value">{formatDuration(Math.floor((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000))}</span>
+                        </div>
+                      {/if}
+                      {#if task.progress !== undefined && task.status === 'in_progress'}
+                        <div class="metadata-item">
+                          <span class="metadata-label">Progress:</span>
+                          <span class="metadata-value">{Math.round(task.progress * 100)}%</span>
+                        </div>
+                      {/if}
+                    </div>
+                    {#if task.error_message}
+                      <div class="task-error-details">
+                        <span class="metadata-label">Error:</span>
+                        <div class="task-error">{task.error_message}</div>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .file-status-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem;
+    color: var(--text-color);
+  }
+  
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  
+  .header h2 {
+    margin: 0;
+    color: var(--text-color);
+  }
+  
+  .controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .refresh-btn, .recovery-btn, .flower-btn, .tasks-toggle-btn {
+    padding: 0.5rem 1rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+  }
+  
+  .flower-btn {
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+  }
+  
+  .refresh-btn:hover, .recovery-btn:hover, .tasks-toggle-btn:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+  }
+  
+  .flower-btn:hover {
+    background: var(--button-hover);
+    border-color: var(--border-hover);
+  }
+  
+  .refresh-btn:disabled, .recovery-btn:disabled, .tasks-toggle-btn:disabled {
+    background: var(--text-light);
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  .auto-refresh-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    color: var(--text-color);
+    font-weight: 500;
+  }
+  
+  .auto-refresh-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+  }
+  
+  .status-cards {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0.75rem;
+    margin: 0 auto 1.5rem auto;
+    max-width: 700px;
+  }
+  
+  .status-card {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+  }
+  
+  .status-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .status-card.error {
+    border-color: var(--error-color);
+    background: var(--error-background);
+  }
+  
+  :global(.dark) .status-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  
+  :global(.dark) .status-card:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+  }
+  
+  .status-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-color);
+    margin-bottom: 0.25rem;
+  }
+  
+  .status-label {
+    color: var(--text-light);
+    font-size: 0.8rem;
+    font-weight: 500;
+  }
+  
+  .problems-section {
+    background: var(--warning-background);
+    border: 1px solid var(--warning-border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  :global(.dark) .problems-section {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  
+  .problems-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
+  .problems-header h3 {
+    margin: 0;
+    color: var(--text-color);
+  }
+  
+  .problem-files {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .problem-file {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--background-color);
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+  }
+  
+  .problem-file:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+  }
+  
+  .file-info {
+    flex: 1;
+  }
+  
+  .filename {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    color: var(--text-color);
+  }
+  
+  .file-meta {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  
+  .file-age {
+    color: var(--text-light);
+    font-size: 0.875rem;
+  }
+  
+  .file-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  
+  .details-btn, .retry-btn {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .details-btn {
+    background: var(--background-color);
+    color: var(--text-color);
+    border-color: var(--border-color);
+  }
+  
+  .details-btn:hover {
+    background: var(--surface-color);
+    border-color: var(--border-hover);
+  }
+  
+  .retry-btn {
+    background: var(--success-color);
+    color: white;
+    border-color: var(--success-color);
+  }
+  
+  .retry-btn:hover {
+    background: var(--success-hover);
+    border-color: var(--success-hover);
+    transform: translateY(-1px);
+  }
+  
+  .retry-btn:disabled {
+    background: var(--text-light);
+    border-color: var(--text-light);
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  .status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+  
+  .status-completed {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+  
+  .status-processing {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+  }
+  
+  .status-pending {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+  }
+  
+  .status-error {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+  
+  :global(.dark) .status-completed {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+  }
+  
+  :global(.dark) .status-processing {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+  }
+  
+  :global(.dark) .status-pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+  }
+  
+  :global(.dark) .status-error {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+  
+  .no-problems {
+    text-align: center;
+    padding: 2rem;
+    background: var(--success-background);
+    border: 1px solid var(--success-border);
+    border-radius: 8px;
+    color: var(--success-color);
+  }
+  
+  :global(.dark) .no-problems {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #34d399;
+  }
+  
+  .recent-files {
+    margin-top: 2rem;
+  }
+  
+  .recent-files h3 {
+    color: var(--text-color);
+    margin-bottom: 1rem;
+  }
+  
+  .recent-files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .recent-file-card {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+  }
+  
+  .recent-file-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-color: var(--border-hover);
+  }
+  
+  .recent-file-card .filename {
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .file-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+  }
+  
+  .info-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary-color);
+    padding: 6px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+  
+  .info-button:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color);
+    transform: scale(1.1);
+  }
+  
+  :global(.dark) .info-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .info-button.small {
+    padding: 4px;
+  }
+  
+  /* Tasks Section Styles */
+  .tasks-section {
+    margin-top: 2rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  
+  .tasks-header {
+    margin-bottom: 1rem;
+  }
+  
+  .tasks-header h3 {
+    margin: 0;
+    color: var(--text-color);
+  }
+  
+  .compact-filters {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 0.75rem;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    width: fit-content;
+  }
+  
+  .compact-filter-select {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8rem;
+    cursor: pointer;
+    width: auto;
+    min-width: 0;
+  }
+  
+  .compact-filter-select:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  
+  .compact-date-input {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8rem;
+    font-family: inherit;
+    width: 115px;
+  }
+  
+  .compact-date-input:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  
+  .compact-clear-btn {
+    padding: 0.35rem;
+    background: var(--error-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+  }
+  
+  .compact-clear-btn:hover {
+    background: var(--error-hover);
+    transform: scale(1.1);
+  }
+  
+  
+  .tasks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1rem;
+  }
+  
+  .task-card {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+  }
+  
+  .task-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-color: var(--border-hover);
+  }
+  
+  .task-card .task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .task-card .task-type {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  
+  .task-card .task-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .task-file {
+    font-weight: 500;
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .task-progress {
+    font-weight: 600;
+    margin-left: 0.5rem;
+  }
+  
+  .no-tasks {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary-color);
+  }
+  
+  .detailed-status-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  :global(.dark) .detailed-status-modal {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  
+  .modal-content {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+  
+  :global(.dark) .modal-content {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .modal-header h3 {
+    margin: 0;
+    color: var(--text-color);
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--text-light);
+    transition: color 0.2s ease;
+  }
+  
+  .close-btn:hover {
+    color: var(--text-color);
+  }
+  
+  .modal-body {
+    padding: 1.5rem;
+  }
+  
+  .file-details h4 {
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
+    font-weight: 600;
+  }
+  
+  .metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .metadata-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .metadata-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .metadata-value {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-color);
+    word-break: break-word;
+  }
+  
+  .task-metadata-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .task-metadata-card {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  
+  .task-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .task-type-label {
+    font-weight: 600;
+    color: var(--text-color);
+    text-transform: capitalize;
+  }
+  
+  .task-metadata-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .task-error-details {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: rgba(var(--error-color-rgb, 239, 68, 68), 0.05);
+    border-radius: 4px;
+    border: 1px solid rgba(var(--error-color-rgb, 239, 68, 68), 0.2);
+  }
+  
+  .task-error-details .metadata-label {
+    color: var(--error-color);
+  }
+  
+  .task-error-details .task-error {
+    margin-top: 0.5rem;
+    font-family: monospace;
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+    color: var(--error-color);
+  }
+  
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .label {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+  
+  .warning {
+    background: var(--warning-background);
+    color: var(--warning-text);
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+    border: 1px solid var(--warning-border);
+  }
+  
+  :global(.dark) .warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  
+  .suggestions {
+    margin: 1rem 0;
+  }
+  
+  .suggestions h4 {
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+  }
+  
+  .suggestions ul {
+    list-style: none;
+    padding: 0;
+  }
+  
+  .suggestions li {
+    padding: 0.5rem 0;
+    color: var(--text-color);
+  }
+  
+  .retry-section {
+    text-align: center;
+    margin: 1rem 0;
+  }
+  
+  .retry-btn.large {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+  }
+  
+  .task-details {
+    margin-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+    padding-top: 1.5rem;
+  }
+  
+  .task-details h4 {
+    color: var(--text-color);
+    margin: 0 0 1rem 0;
+  }
+  
+  .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: var(--surface-color);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+  }
+  
+  .task-type {
+    color: var(--text-color);
+    font-weight: 500;
+  }
+  
+  .task-error {
+    color: var(--error-color);
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+  }
+  
+  .loading {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-light);
+  }
+  
+  .error-message {
+    background: var(--error-background);
+    color: var(--error-color);
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    border: 1px solid var(--error-border);
+  }
+  
+  :global(.dark) .error-message {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+  
+  @media (max-width: 768px) {
+    .header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .controls {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    
+    .compact-filters {
+      padding: 0.6rem;
+      gap: 0.4rem;
+      width: 100%;
+    }
+    
+    .compact-filter-select {
+      font-size: 0.75rem;
+      padding: 0.3rem 0.4rem;
+    }
+    
+    .compact-date-input {
+      width: 100px;
+      font-size: 0.75rem;
+      padding: 0.3rem 0.4rem;
+    }
+    
+    .compact-clear-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0.3rem;
+    }
+    
+    .problem-file {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    
+    .file-actions {
+      align-self: stretch;
+      justify-content: flex-end;
+    }
+    
+    .status-cards {
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.5rem;
+    }
+    
+    .status-card {
+      padding: 0.75rem;
+    }
+    
+    .status-number {
+      font-size: 1.25rem;
+    }
+    
+    .status-label {
+      font-size: 0.7rem;
+    }
+  }
+</style>

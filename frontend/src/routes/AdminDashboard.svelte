@@ -19,6 +19,18 @@
   /** @type {string} */
   let activeTab = 'users';
   
+  // Task health monitoring
+  /** @type {Array<any>} */
+  let stuckTasks = [];
+  /** @type {Array<any>} */
+  let inconsistentFiles = [];
+  /** @type {boolean} */
+  let loadingHealth = false;
+  /** @type {string|null} */
+  let healthError = null;
+  /** @type {boolean} */
+  let recoveryInProgress = false;
+  
   // System stats
   /** @type {{ 
     users: { total: number, new: number }, 
@@ -92,11 +104,177 @@
     }
   }
   /**
+   * Fetch task health data
+   */
+  async function fetchTaskHealth() {
+    loadingHealth = true;
+    healthError = null;
+    
+    try {
+      const response = await axiosInstance.get('/tasks/system/health');
+      stuckTasks = response.data.stuck_tasks?.items || [];
+      inconsistentFiles = response.data.inconsistent_files?.items || [];
+    } catch (err) {
+      console.error('Error fetching task health:', err);
+      healthError = err instanceof Error ? err.message : 'Failed to load task health data';
+    } finally {
+      loadingHealth = false;
+    }
+  }
+
+  /**
+   * Recover stuck tasks
+   */
+  async function recoverStuckTasks() {
+    if (recoveryInProgress) return;
+    
+    recoveryInProgress = true;
+    try {
+      const response = await axiosInstance.post('/tasks/recover-stuck-tasks');
+      // Refresh data after recovery
+      await fetchTaskHealth();
+      // Show success message or handle response as needed
+      alert(`Recovery completed: ${response.data.count} tasks processed`);
+    } catch (err) {
+      console.error('Error recovering tasks:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to recover tasks: ${errorMsg}`);
+    } finally {
+      recoveryInProgress = false;
+    }
+  }
+
+  /**
+   * Fix inconsistent files
+   */
+  async function fixInconsistentFiles() {
+    if (recoveryInProgress) return;
+    
+    recoveryInProgress = true;
+    try {
+      const response = await axiosInstance.post('/tasks/fix-inconsistent-files');
+      // Refresh data after fix
+      await fetchTaskHealth();
+      // Show success message or handle response as needed
+      alert(`Files fixed: ${response.data.count} files processed`);
+    } catch (err) {
+      console.error('Error fixing files:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to fix files: ${errorMsg}`);
+    } finally {
+      recoveryInProgress = false;
+    }
+  }
+
+  /**
+   * Recover a specific task that's stuck
+   * @param {string} taskId - The ID of the task to recover
+   */
+  async function recoverTask(taskId) {
+    try {
+      await axiosInstance.post(`/tasks/system/recover-task/${taskId}`);
+      alert('Task recovery initiated successfully');
+      // Refresh health data
+      fetchTaskHealth();
+    } catch (err) {
+      console.error('Error recovering task:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to recover task: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Retry a specific file's processing
+   * @param {number} fileId - The ID of the media file to retry
+   */
+  async function retryTask(fileId) {
+    try {
+      await axiosInstance.post(`/tasks/retry-file/${fileId}`);
+      alert('File processing restarted successfully');
+      // Refresh health data
+      fetchTaskHealth();
+    } catch (err) {
+      console.error('Error retrying task:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to retry task: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Trigger startup recovery
+   */
+  async function triggerStartupRecovery() {
+    if (recoveryInProgress) return;
+    
+    recoveryInProgress = true;
+    try {
+      const response = await axiosInstance.post('/tasks/system/startup-recovery');
+      alert('Startup recovery triggered successfully');
+      // Refresh health data after a delay
+      setTimeout(() => fetchTaskHealth(), 2000);
+    } catch (err) {
+      console.error('Error triggering startup recovery:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to trigger startup recovery: ${errorMsg}`);
+    } finally {
+      recoveryInProgress = false;
+    }
+  }
+
+  /**
+   * Trigger recovery for all user files
+   */
+  async function triggerAllUserRecovery() {
+    if (recoveryInProgress) return;
+    
+    if (!confirm('This will recover files for all users. Are you sure?')) {
+      return;
+    }
+    
+    recoveryInProgress = true;
+    try {
+      const response = await axiosInstance.post('/tasks/system/recover-all-user-files');
+      alert('All user file recovery triggered successfully');
+      // Refresh health data after a delay
+      setTimeout(() => fetchTaskHealth(), 2000);
+    } catch (err) {
+      console.error('Error triggering all user recovery:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to trigger all user recovery: ${errorMsg}`);
+    } finally {
+      recoveryInProgress = false;
+    }
+  }
+
+  /**
+   * Trigger recovery for a specific user's files
+   * @param {number} userId - The ID of the user to recover files for
+   */
+  async function triggerUserRecovery(userId) {
+    if (recoveryInProgress) return;
+    
+    recoveryInProgress = true;
+    try {
+      const response = await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
+      alert(`File recovery triggered for user: ${response.data.message}`);
+      // Refresh health data after a delay
+      setTimeout(() => fetchTaskHealth(), 2000);
+    } catch (err) {
+      console.error('Error triggering user recovery:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Failed to trigger user recovery: ${errorMsg}`);
+    } finally {
+      recoveryInProgress = false;
+    }
+  }
+
+  /**
    * Refresh all data
    */
   function refreshData() {
     fetchUsers();
     fetchStats();
+    fetchTaskHealth();
   }
   
   /**
@@ -134,9 +312,28 @@
     return result;
   }
   
+  /**
+   * Calculate how long a task has been stuck based on timestamp
+   * @param {string} timestamp - ISO timestamp string
+   * @returns {number} - Time in seconds
+   */
+  function calculateTimeStuck(timestamp) {
+    if (!timestamp) return 0;
+    try {
+      const timeStamp = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now.getTime() - timeStamp.getTime();
+      return Math.floor(diffMs / 1000); // Convert to seconds
+    } catch (error) {
+      console.error('Error calculating time stuck:', error);
+      return 0;
+    }
+  }
+  
   onMount(() => {
     fetchUsers();
     fetchStats();
+    fetchTaskHealth();
   });
 </script>
 
@@ -159,14 +356,21 @@
       <button 
         class="tab-button {activeTab === 'stats' ? 'active' : ''}" 
         on:click={() => activeTab = 'stats'}
-        title="View system performance statistics and analytics"
+        title="View system statistics and performance metrics"
       >
-        System Stats
+        Statistics
+      </button>
+      <button 
+        class="tab-button {activeTab === 'task-health' ? 'active' : ''}" 
+        on:click={() => { activeTab = 'task-health'; fetchTaskHealth(); }}
+        title="Monitor and recover stuck tasks and inconsistent files"
+      >
+        Task Health
       </button>
       <button 
         class="tab-button {activeTab === 'settings' ? 'active' : ''}" 
         on:click={() => activeTab = 'settings'}
-        title="Configure system-wide settings and preferences"
+        title="Configure system settings and preferences"
       >
         Settings
       </button>
@@ -186,6 +390,7 @@
           {loading} 
           {error} 
           onRefresh={refreshData}
+          onUserRecovery={triggerUserRecovery}
         />
       </div>
     {:else if activeTab === 'stats'}
@@ -312,6 +517,188 @@
               {/if}
             </tbody>
           </table>
+        </div>
+      </div>
+    {:else if activeTab === 'task-health'}
+      <div class="task-health-section">
+        <h2>Task Health Monitoring</h2>
+        
+        <div class="health-controls">
+          <button 
+            class="action-button refresh" 
+            on:click={fetchTaskHealth}
+            disabled={loadingHealth}
+            title="Refresh task health data"
+          >
+            {loadingHealth ? 'Refreshing...' : 'Refresh'}
+          </button>
+          
+          <button 
+            class="action-button recover" 
+            on:click={recoverStuckTasks}
+            disabled={loadingHealth || recoveryInProgress || stuckTasks.length === 0}
+            title="Attempt to recover all stuck tasks"
+          >
+            {recoveryInProgress ? 'Recovering...' : 'Recover All Stuck Tasks'}
+          </button>
+          
+          <button 
+            class="action-button fix" 
+            on:click={fixInconsistentFiles}
+            disabled={loadingHealth || recoveryInProgress || inconsistentFiles.length === 0}
+            title="Fix all inconsistent file statuses"
+          >
+            {recoveryInProgress ? 'Fixing...' : 'Fix All Inconsistent Files'}
+          </button>
+          
+          <button 
+            class="action-button startup-recovery" 
+            on:click={triggerStartupRecovery}
+            disabled={loadingHealth || recoveryInProgress}
+            title="Trigger startup recovery to handle files interrupted by crashes or shutdowns"
+          >
+            {recoveryInProgress ? 'Running...' : 'Startup Recovery'}
+          </button>
+          
+          <button 
+            class="action-button all-user-recovery" 
+            on:click={triggerAllUserRecovery}
+            disabled={loadingHealth || recoveryInProgress}
+            title="Recover stuck files for all users - use for system-wide issues"
+          >
+            {recoveryInProgress ? 'Running...' : 'Recover All User Files'}
+          </button>
+        </div>
+        
+        {#if healthError}
+          <div class="error-message">
+            <p>{healthError}</p>
+          </div>
+        {/if}
+        
+        <div class="health-panels">
+          <!-- Stuck Tasks Panel -->
+          <div class="health-panel">
+            <h3>Stuck Tasks <span class="badge">{stuckTasks.length}</span></h3>
+            
+            {#if loadingHealth}
+              <div class="loading-indicator">Loading tasks...</div>
+            {:else if stuckTasks.length === 0}
+              <p class="empty-state">No stuck tasks found. All tasks are running normally.</p>
+            {:else}
+              <table class="health-table">
+                <thead>
+                  <tr>
+                    <th>Task ID</th>
+                    <th>Media File</th>
+                    <th>Status</th>
+                    <th>Time Stuck</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each stuckTasks as task}
+                    <tr>
+                      <td title="{task.id}">{task.id.substring(0, 8)}...</td>
+                      <td>
+                        {#if task.media_file}
+                          <a href="/file/{task.media_file.id}" target="_blank" rel="noopener noreferrer">
+                            {task.media_file.filename || `File #${task.media_file.id}`}
+                          </a>
+                        {:else}
+                          N/A
+                        {/if}
+                      </td>
+                      <td>
+                        <span class="status-badge status-{task.status.toLowerCase().replace('_', '-')}">
+                          {task.status}
+                        </span>
+                      </td>
+                      <td>{formatTime(calculateTimeStuck(task.created_at || task.updated_at))}</td>
+                      <td>
+                        {#if task.media_file}
+                          <div class="button-group">
+                            <button 
+                              class="small-button recover-btn" 
+                              on:click={() => recoverTask(task.id)}
+                              title="Recover this stuck task"
+                            >
+                              Recover
+                            </button>
+                            <button 
+                              class="small-button" 
+                              on:click={() => retryTask(task.media_file.id)}
+                              title="Retry file processing"
+                            >
+                              Retry File
+                            </button>
+                          </div>
+                        {/if}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
+          
+          <!-- Inconsistent Files Panel -->
+          <div class="health-panel">
+            <h3>Inconsistent Files <span class="badge">{inconsistentFiles.length}</span></h3>
+            
+            {#if loadingHealth}
+              <div class="loading-indicator">Loading files...</div>
+            {:else if inconsistentFiles.length === 0}
+              <p class="empty-state">No inconsistent files found. All files have consistent status.</p>
+            {:else}
+              <table class="health-table">
+                <thead>
+                  <tr>
+                    <th>File ID</th>
+                    <th>Filename</th>
+                    <th>File Status</th>
+                    <th>Task Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each inconsistentFiles as file}
+                    <tr>
+                      <td>{file.id}</td>
+                      <td>
+                        <a href="/file/{file.id}" target="_blank" rel="noopener noreferrer">
+                          {file.filename || `File #${file.id}`}
+                        </a>
+                      </td>
+                      <td>
+                        <span class="status-badge status-{file.status.toLowerCase().replace('_', '-')}">
+                          {file.status}
+                        </span>
+                      </td>
+                      <td>
+                        {#if file.latest_task}
+                          <span class="status-badge status-{file.latest_task.status.toLowerCase().replace('_', '-')}">
+                            {file.latest_task.status}
+                          </span>
+                        {:else}
+                          <span class="status-badge status-unknown">NO TASK</span>
+                        {/if}
+                      </td>
+                      <td>
+                        <button 
+                          class="small-button" 
+                          on:click={() => retryTask(file.id)}
+                          title="Retry processing this file"
+                        >
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </div>
         </div>
       </div>
     {:else if activeTab === 'settings'}
@@ -522,6 +909,155 @@
     border-radius: 8px;
     padding: 1.5rem;
     margin-top: 1.5rem;
+  }
+  
+  /* Task Health Styles */
+  .task-health-section {
+    background-color: var(--surface-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .health-controls {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  
+  .action-button {
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+  }
+  
+  .action-button.refresh {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+  }
+  
+  .button-group {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+  
+  .small-button.recover-btn {
+    background-color: var(--brand-color-light);
+    color: var(--bg-color);
+  }
+  
+  .small-button.recover-btn:hover {
+    background-color: var(--brand-color);
+  }
+  
+  .action-button.recover {
+    background-color: #3b82f6;
+    color: white;
+  }
+  
+  .action-button.fix {
+    background-color: #10b981;
+    color: white;
+  }
+  
+  .action-button:hover:not(:disabled) {
+    filter: brightness(0.9);
+  }
+  
+  .action-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .health-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .health-panel {
+    background-color: var(--background-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .health-panel h3 {
+    display: flex;
+    align-items: center;
+    margin-top: 0;
+    margin-bottom: 1rem;
+  }
+  
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--primary-color);
+    color: white;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    margin-left: 0.75rem;
+  }
+  
+  .health-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  
+  .health-table th, .health-table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+  
+  .health-table th {
+    font-weight: 500;
+  }
+  
+  .health-table tr:last-child td {
+    border-bottom: none;
+  }
+  
+  .small-button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .small-button:hover {
+    background-color: #2563eb;
+  }
+  
+  .status-unknown {
+    background-color: rgba(156, 163, 175, 0.1);
+    color: #6b7280;
+  }
+  
+  .empty-state {
+    text-align: center;
+    color: var(--text-light);
+    padding: 2rem 0;
+  }
+  
+  .loading-indicator {
+    text-align: center;
+    color: var(--text-light);
+    padding: 1rem 0;
   }
   
   @media (min-width: 768px) {

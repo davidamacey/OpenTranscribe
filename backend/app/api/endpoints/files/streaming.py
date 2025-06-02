@@ -40,12 +40,13 @@ def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
         )
     
     try:
-        content = download_file(db_file.storage_path)
+        file_content_io, content_length, content_type = download_file(db_file.storage_path)
         return StreamingResponse(
-            content=io.BytesIO(content),
-            media_type=db_file.content_type,
+            content=file_content_io,
+            media_type=content_type or db_file.content_type,
             headers={
-                'Content-Disposition': f'attachment; filename="{db_file.filename}"'
+                'Content-Disposition': f'attachment; filename="{db_file.filename}"',
+                'Content-Length': str(content_length)
             }
         )
     except Exception as e:

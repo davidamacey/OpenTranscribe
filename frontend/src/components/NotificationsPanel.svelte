@@ -98,13 +98,13 @@
       return 'Just now';
     } else if (diff < 3600) {
       const minutes = Math.floor(diff / 60);
-      return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+      return `${minutes}m ago`;
     } else if (diff < 86400) {
       const hours = Math.floor(diff / 3600);
-      return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+      return `${hours}h ago`;
     } else {
       const days = Math.floor(diff / 86400);
-      return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+      return `${days}d ago`;
     }
   }
   
@@ -121,6 +121,30 @@
     }
     return null;
   }
+
+  /**
+   * Get status color for notification type
+   * @param {string} type - The notification type
+   * @returns {string} - CSS class for status
+   */
+  function getNotificationStatus(notification) {
+    if (notification.data?.status) {
+      const status = notification.data.status;
+      switch (status) {
+        case 'completed':
+          return 'success';
+        case 'error':
+        case 'failed':
+          return 'error';
+        case 'processing':
+        case 'in_progress':
+          return 'info';
+        default:
+          return 'default';
+      }
+    }
+    return 'default';
+  }
   
   onMount(() => {
     // Add event listener for clicks outside the panel
@@ -130,244 +154,523 @@
   onDestroy(() => {
     // Remove event listener when component is destroyed
     document.removeEventListener('click', handleClickOutside);
+    unsubscribePanel();
   });
 </script>
 
-<div class="notifications-container">
-  {#if !hideButton}
-  <button 
-    class="notifications-button" 
-    on:click={togglePanel} 
-    on:keydown={(e) => e.key === 'Enter' && togglePanel()}
-    title="View notifications and alerts{$wsUnreadCount > 0 ? ` (${$wsUnreadCount} unread)` : ''}"
-  >
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-      <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-    </svg>
-    {#if $wsUnreadCount > 0}
-      <span class="notification-badge">{$wsUnreadCount}</span>
-    {/if}
-  </button>
-  {/if}
+{#if showPanel}
+  <!-- Backdrop for mobile/tablet -->
+  <div class="notifications-backdrop" on:click={closePanel}></div>
   
-  {#if showPanel}
-    <div class="notifications-panel">
-      <div class="panel-header">
-        <h3>Notifications</h3>
-        <button 
-          class="clear-all" 
-          on:click={clearAllNotifications}
-          title="Remove all notifications from the list"
-        >Clear All</button>
+  <div class="notifications-panel">
+    <!-- Header -->
+    <div class="notifications-header">
+      <div class="header-left">
+        <h3 class="header-title">Notifications</h3>
+        {#if $wsUnreadCount > 0}
+          <span class="unread-badge">{$wsUnreadCount}</span>
+        {/if}
       </div>
-      
-      <div class="notifications-list">
-        {#if $websocketStore.notifications.length === 0}
-          <div class="empty-state">
-            <p>No notifications</p>
+      <div class="header-actions">
+        {#if $websocketStore.notifications.length > 0}
+          <button 
+            class="action-btn clear-btn" 
+            on:click={clearAllNotifications}
+            title="Clear all notifications"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Clear all
+          </button>
+        {/if}
+        <button 
+          class="action-btn close-btn" 
+          on:click={closePanel}
+          title="Close notifications panel"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Notifications List -->
+    <div class="notifications-content">
+      {#if $websocketStore.notifications.length === 0}
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
           </div>
-        {:else}
+          <p class="empty-title">No notifications</p>
+          <p class="empty-subtitle">You're all caught up!</p>
+        </div>
+      {:else}
+        <div class="notifications-list">
           {#each $websocketStore.notifications as notification (notification.id)}
-            <div class="notification-item {notification.read ? '' : 'unread'}">
-              <div class="notification-icon {notification.type}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  {#if getNotificationIcon(notification.type) === 'file-text'}
+            <div class="notification-item {notification.read ? 'read' : 'unread'} status-{getNotificationStatus(notification)}">
+              <!-- Status indicator -->
+              <div class="notification-indicator"></div>
+              
+              <!-- Icon -->
+              <div class="notification-icon">
+                {#if getNotificationIcon(notification.type) === 'file-text'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                     <line x1="16" y1="13" x2="8" y2="13"></line>
                     <line x1="16" y1="17" x2="8" y2="17"></line>
-                    <polyline points="10 9 9 9 8 9"></polyline>
-                  {:else if getNotificationIcon(notification.type) === 'bar-chart'}
+                  </svg>
+                {:else if getNotificationIcon(notification.type) === 'bar-chart'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
-                  {:else}
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                  {/if}
-                </svg>
+                  </svg>
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  </svg>
+                {/if}
               </div>
               
+              <!-- Content -->
               <div class="notification-content">
-                <div class="notification-header">
-                  <h4>{notification.title}</h4>
-                  <button 
-                    class="remove-button" 
-                    on:click={() => removeNotification(notification.id)}
-                    title="Remove this notification"
-                  >×</button>
+                <div class="notification-main">
+                  <h4 class="notification-title">{notification.title}</h4>
+                  <p class="notification-message">{notification.message}</p>
+                  
+                  <!-- Action link if available -->
+                  {#if getFileLink(notification) !== null}
+                    <Link 
+                      to={getFileLink(notification) || ''} 
+                      class="notification-action" 
+                      on:click={() => showPanel = false}
+                    >
+                      View File →
+                    </Link>
+                  {/if}
                 </div>
                 
-                <p>{notification.message}</p>
-                
-                {#if getFileLink(notification) !== null}
-                  <Link to={getFileLink(notification) || ''} class="notification-link" on:click={() => showPanel = false}>
-                    View File
-                  </Link>
-                {/if}
-                
-                <span class="notification-time">
-                  {formatTimestamp(notification.timestamp)}
-                </span>
+                <div class="notification-meta">
+                  <span class="notification-time">{formatTimestamp(notification.timestamp)}</span>
+                </div>
               </div>
+              
+              <!-- Dismiss button -->
+              <button 
+                class="notification-dismiss" 
+                on:click={() => removeNotification(notification.id)}
+                title="Dismiss notification"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
           {/each}
-        {/if}
-      </div>
+        </div>
+      {/if}
     </div>
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
-  .notifications-container {
+  .notifications-backdrop {
     position: fixed;
-    top: 70px;
-    right: 20px;
-    z-index: 1000;
-  }
-  
-  .notifications-button {
-    position: relative;
-    background-color: var(--surface-color);
-    border: none;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-  
-  .badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background-color: var(--error-color);
-    color: white;
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    font-size: 0.7rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    z-index: 999;
   }
   
   .notifications-panel {
-    position: absolute;
-    top: 50px;
-    right: 0;
-    width: 300px;
-    max-width: 90vw;
-    background-color: var(--surface-color);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    max-height: 400px;
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 90px);
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 
+      0 20px 25px -5px rgba(0, 0, 0, 0.1),
+      0 10px 10px -5px rgba(0, 0, 0, 0.04),
+      0 0 0 1px rgba(0, 0, 0, 0.05);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  
+  :global(.dark) .notifications-panel {
+    box-shadow: 
+      0 20px 25px -5px rgba(0, 0, 0, 0.4),
+      0 10px 10px -5px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+  
+  /* Header */
+  .notifications-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-color);
+    border-radius: 12px 12px 0 0;
+  }
+  
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .header-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  
+  .unread-badge {
+    background: var(--primary-color);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .action-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  
+  .action-btn:hover {
+    background: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--text-color);
+  }
+  
+  .clear-btn {
+    color: var(--error-color);
+  }
+  
+  .clear-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error-color);
+  }
+  
+  .close-btn {
+    padding: 6px;
+  }
+  
+  /* Content */
+  .notifications-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  
+  .notifications-list {
     display: flex;
     flex-direction: column;
   }
   
-  .panel-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .panel-header h3 {
-    margin: 0;
-    font-size: 1rem;
-  }
-  
-  .close-button {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    color: var(--text-light);
-  }
-  
-  .panel-content {
-    overflow-y: auto;
-    flex: 1;
-    max-height: 300px;
-  }
-  
+  /* Empty State */
   .empty-state {
-    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
     text-align: center;
-    color: var(--text-light);
   }
   
-  .notification-list {
-    list-style-type: none;
-    padding: 0;
+  .empty-icon {
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+  
+  .empty-title {
+    margin: 0 0 4px 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  
+  .empty-subtitle {
     margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
   }
   
+  /* Notification Items */
   .notification-item {
-    padding: 12px 16px;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+    background: var(--background-color);
+  }
+  
+  .notification-item:last-child {
+    border-bottom: none;
+  }
+  
+  .notification-item:hover {
+    background: var(--hover-color, rgba(0, 0, 0, 0.025));
   }
   
   .notification-item.unread {
-    background-color: rgba(59, 130, 246, 0.05);
+    background: rgba(59, 130, 246, 0.04);
   }
   
-  .notification-item.info {
-    border-left: 3px solid var(--info-color);
+  :global(.dark) .notification-item.unread {
+    background: rgba(59, 130, 246, 0.08);
   }
   
-  .notification-item.success {
-    border-left: 3px solid var(--success-color);
-  }
-  
-  .notification-item.warning {
-    border-left: 3px solid var(--warning-color);
-  }
-  
-  .notification-item.error {
-    border-left: 3px solid var(--error-color);
-  }
-  
-  .notification-content p {
-    margin: 0 0 5px 0;
-    font-size: 0.9rem;
-  }
-  
-  .timestamp {
-    font-size: 0.8rem;
-    color: var(--text-light);
-  }
-  
-  .panel-footer {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    justify-content: center;
-  }
-  
-  .mark-read-button {
-    background: transparent;
-    border: none;
-    color: var(--primary-color);
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-  
-  .sr-only {
+  /* Status indicators */
+  .notification-indicator {
     position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border-width: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: transparent;
+  }
+  
+  .notification-item.status-success .notification-indicator {
+    background: var(--success-color);
+  }
+  
+  .notification-item.status-error .notification-indicator {
+    background: var(--error-color);
+  }
+  
+  .notification-item.status-info .notification-indicator {
+    background: var(--primary-color);
+  }
+  
+  .notification-item.unread .notification-indicator {
+    background: var(--primary-color);
+  }
+  
+  /* Icon */
+  .notification-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  
+  .notification-item.status-success .notification-icon {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.2);
+    color: var(--success-color);
+  }
+  
+  .notification-item.status-error .notification-icon {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: var(--error-color);
+  }
+  
+  .notification-item.status-info .notification-icon {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.2);
+    color: var(--primary-color);
+  }
+  
+  /* Content */
+  .notification-content {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .notification-main {
+    margin-bottom: 8px;
+  }
+  
+  .notification-title {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.4;
+  }
+  
+  .notification-message {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    word-wrap: break-word;
+  }
+  
+  .notification-action {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  
+  .notification-action:hover {
+    color: var(--primary-color-dark, #2563eb);
+    text-decoration: none;
+  }
+  
+  .notification-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .notification-time {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    opacity: 0.8;
+  }
+  
+  /* Dismiss Button */
+  .notification-dismiss {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    opacity: 0.6;
+  }
+  
+  .notification-dismiss:hover {
+    background: var(--error-background, rgba(239, 68, 68, 0.1));
+    color: var(--error-color);
+    opacity: 1;
+  }
+  
+  /* Scrollbar Styling */
+  .notifications-content::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .notifications-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .notifications-content::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+  
+  .notifications-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 480px) {
+    .notifications-panel {
+      right: 8px;
+      left: 8px;
+      width: auto;
+      max-width: none;
+    }
+    
+    .notifications-header {
+      padding: 14px 16px;
+    }
+    
+    .notification-item {
+      padding: 14px 16px;
+      gap: 10px;
+    }
+    
+    .notification-icon {
+      width: 28px;
+      height: 28px;
+    }
+    
+    .header-title {
+      font-size: 15px;
+    }
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .notification-item,
+    .action-btn,
+    .notification-dismiss,
+    .notification-action {
+      transition: none;
+    }
+  }
+  
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .notifications-panel {
+      border-width: 2px;
+    }
+    
+    .notification-item {
+      border-bottom-width: 2px;
+    }
+    
+    .notification-indicator {
+      width: 4px;
+    }
   }
 </style>

@@ -96,6 +96,7 @@
   import FileUploader from '../components/FileUploader.svelte';
   import FilterSidebar from '../components/FilterSidebar.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
+  import UserFileStatus from '../components/UserFileStatus.svelte';
   
   // Media files state
   let files: MediaFile[] = [];
@@ -109,6 +110,7 @@
   // View state
   let selectedCollectionId: number | null = null;
   let showCollectionsModal = false;
+  let activeTab: 'gallery' | 'status' = 'gallery';
   
   // Component refs
   let filterSidebarRef: any;
@@ -380,7 +382,7 @@
         if (latestNotification.id !== lastProcessedNotificationId) {
           lastProcessedNotificationId = latestNotification.id;
           
-          // Check if this notification is for transcription status
+          // Handle different notification types
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             const fileId = String(latestNotification.data.file_id);
             const status = latestNotification.data.status;
@@ -397,6 +399,16 @@
             });
             
             console.log('MediaLibrary updated from WebSocket notification for file:', fileId, 'Status:', status);
+          } 
+          // Handle new file uploads
+          else if (latestNotification.type === 'file_upload' || latestNotification.type === 'file_created') {
+            console.log('New file uploaded, refreshing file list');
+            fetchFiles();
+          }
+          // Handle file updates (metadata, processing completion, etc.)
+          else if (latestNotification.type === 'file_updated' && latestNotification.data?.file_id) {
+            console.log('File updated, refreshing file list');
+            fetchFiles();
           }
         }
       }
@@ -424,10 +436,39 @@
 <div class="media-library">
   <header class="library-header">
     <div class="header-row">
-      <h1>Gallery</h1>
+      <div class="title-and-tabs">
+        <h1>Media Library</h1>
+        <div class="tabs">
+          <button 
+            class="tab-button {activeTab === 'gallery' ? 'active' : ''}"
+            on:click={() => activeTab = 'gallery'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            Gallery
+          </button>
+          <button 
+            class="tab-button {activeTab === 'status' ? 'active' : ''}"
+            on:click={() => activeTab = 'status'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            File Status
+          </button>
+        </div>
+      </div>
       
-      <div class="header-actions">
-        {#if isSelecting}
+      {#if activeTab === 'gallery'}
+        <div class="header-actions">
+          {#if isSelecting}
           <div class="selection-controls">
             <button 
               class="select-all-btn" 
@@ -488,25 +529,29 @@
             </button>
           </div>
         {/if}
-      </div>
+        </div>
+      {/if}
     </div>
     
-    <div class="mobile-filter-toggle">
-      <button 
-        on:click={toggleFilters}
-        title="Show or hide the filter sidebar to search and filter your media files"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-        </svg>
-        Filters
-      </button>
-    </div>
+    {#if activeTab === 'gallery'}
+      <div class="mobile-filter-toggle">
+        <button 
+          on:click={toggleFilters}
+          title="Show or hide the filter sidebar to search and filter your media files"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          Filters
+        </button>
+      </div>
+    {/if}
   </header>
 
   <div class="library-content">
-    <div class="filter-sidebar {showFilters ? 'show' : ''}">
-      <FilterSidebar 
+    {#if activeTab === 'gallery'}
+      <div class="filter-sidebar {showFilters ? 'show' : ''}">
+        <FilterSidebar 
         bind:this={filterSidebarRef}
         searchQuery={searchQuery}
         selectedTags={selectedTags}
@@ -634,7 +679,15 @@
         </div>
       {/if}
     </div>
+  
+  {:else if activeTab === 'status'}
+    <div class="status-tab-content">
+      <UserFileStatus />
+    </div>
+  {/if}
   </div>
+    
+  
 </div>
 
 <!-- Upload Modal -->
@@ -893,6 +946,100 @@
   .library-header h1 {
     font-size: 1.5rem;
     margin: 0;
+  }
+  
+  .title-and-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: 2rem;
+  }
+  
+  .tab-button {
+    color: var(--text-color);
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+    position: relative;
+    font-weight: 500;
+  }
+  
+  .tab-button:hover {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
+  }
+  
+  /* Active state styling - matches navbar */
+  .tab-button.active {
+    color: var(--primary-color, #3b82f6);
+    font-weight: 600;
+    background-color: transparent;
+    position: relative;
+  }
+  
+  .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 1rem);
+    height: 3px;
+    background-color: var(--primary-color, #3b82f6);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  @keyframes slideIn {
+    from {
+      width: 0;
+      opacity: 0;
+    }
+    to {
+      width: calc(100% - 1rem);
+      opacity: 1;
+    }
+  }
+  
+  .tab-button.active:hover {
+    color: var(--primary-color-dark, #2563eb);
+    background-color: var(--hover-color, rgba(59, 130, 246, 0.05));
+  }
+  
+  .tab-button.active:hover::after {
+    background-color: var(--primary-color-dark, #2563eb);
+    width: 100%;
+    height: 4px;
+  }
+  
+  /* Active state icon styling */
+  .tab-button.active svg {
+    color: var(--primary-color, #3b82f6);
+  }
+  
+  /* Focus states for accessibility */
+  .tab-button:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  
+  .status-tab-content {
+    padding: 1rem;
+    width: 100%;
   }
   
   /* Search functionality is now handled in the FilterSidebar component */
@@ -1439,6 +1586,55 @@
     
     .file-grid {
       grid-template-columns: 1fr;
+    }
+    
+    .tabs {
+      margin-left: 0;
+    }
+    
+    .tab-button {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.9rem;
+    }
+    
+    .tab-button.active::after {
+      bottom: -6px;
+      height: 2px;
+    }
+    
+    .tab-button.active:hover::after {
+      height: 3px;
+    }
+  }
+  
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    .tab-button {
+      border: 1px solid transparent;
+    }
+    
+    .tab-button.active {
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+    
+    .tab-button.active::after {
+      height: 4px;
+      background-color: var(--primary-color);
+    }
+    
+    .tab-button.active:hover::after {
+      height: 5px;
+    }
+  }
+  
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .tab-button,
+    .tab-button.active,
+    .tab-button.active::after {
+      transition: none;
+      animation: none;
     }
   }
 </style>

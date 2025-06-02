@@ -17,6 +17,7 @@
   import CommentSection from '$components/CommentSection.svelte';
   import CollectionsSection from '$components/CollectionsSection.svelte';
   import ReprocessButton from '$components/ReprocessButton.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -53,6 +54,10 @@
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
   let reprocessing = false;
+
+  // Confirmation modal state
+  let showExportConfirmation = false;
+  let pendingExportFormat = '';
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
@@ -568,8 +573,43 @@
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
     
-    // Prompt user to include comments
-    const includeComments = confirm('Would you like to include comments in the exported transcript?');
+    // Check if there are any comments for this file
+    let hasComments = false;
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const headers = {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+        const numericFileId = Number(file.id);
+        const endpoint = `/comments/files/${numericFileId}/comments`;
+        const response = await axiosInstance.get(endpoint, { headers });
+        const fileComments = response.data || [];
+        hasComments = fileComments.length > 0;
+      }
+    } catch (error) {
+      console.error('Error checking for comments:', error);
+      // If we can't check comments, assume no comments
+      hasComments = false;
+    }
+    
+    // If no comments, export directly without modal
+    if (!hasComments) {
+      pendingExportFormat = format;
+      processExportWithComments(false);
+      return;
+    }
+    
+    // If comments exist, show confirmation modal
+    pendingExportFormat = format;
+    showExportConfirmation = true;
+  }
+
+  async function processExportWithComments(includeComments: boolean) {
+    const format = pendingExportFormat;
+    let transcriptData = file?.transcript_segments;
+    if (!file || !transcriptData) return;
     // Fetch comments if user wants to include them
     let fileComments: any[] = [];
     if (includeComments) {
@@ -843,6 +883,20 @@
     } catch (error) {
       console.error('Error exporting transcript:', error);
     }
+  }
+
+  // Confirmation modal handlers
+  function handleExportConfirm() {
+    processExportWithComments(true);
+  }
+
+  function handleExportCancel() {
+    processExportWithComments(false);
+  }
+
+  function handleExportModalClose() {
+    // Just close the modal without doing anything
+    showExportConfirmation = false;
   }
   
   /**
@@ -1225,7 +1279,7 @@
     <div class="main-content-grid">
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
-        <h4>Video</h4>
+        <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
         <VideoPlayer 
           {videoUrl} 
           {file} 
@@ -1310,6 +1364,18 @@
     </div>
   {/if}
 </div>
+
+<!-- Export Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showExportConfirmation}
+  title="Include Comments in Export?"
+  message="Would you like to include user comments in the exported transcript? Comments will be inserted at their respective timestamps."
+  confirmText="Include Comments"
+  cancelText="Export Without Comments"
+  on:confirm={handleExportConfirm}
+  on:cancel={handleExportCancel}
+  on:close={handleExportModalClose}
+/>
 
 <style>
   .file-detail-page {
