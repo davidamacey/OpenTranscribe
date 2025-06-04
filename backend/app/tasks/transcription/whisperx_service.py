@@ -4,24 +4,50 @@ from pathlib import Path
 from typing import Dict, Any
 import torch
 
+from app.utils.hardware_detection import detect_hardware
+
 logger = logging.getLogger(__name__)
 
 
 class WhisperXService:
-    """Service for handling WhisperX transcription operations."""
+    """Service for handling WhisperX transcription operations with cross-platform support."""
     
-    def __init__(self, model_name: str = "medium.en", models_dir: str = None):
-        self.model_name = model_name
+    def __init__(self, model_name: str = None, models_dir: str = None):
+        # Initialize hardware detection
+        self.hardware_config = detect_hardware()
+        
+        # Model configuration
+        self.model_name = model_name or os.getenv("WHISPER_MODEL", "medium.en")
         self.models_dir = models_dir or Path.cwd() / "models"
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.compute_type = "float16" if self.device == "cuda" else "float32"
-        self.batch_size = 16
+        
+        # Hardware-optimized settings
+        whisperx_config = self.hardware_config.get_whisperx_config()
+        self.device = whisperx_config["device"]
+        self.compute_type = whisperx_config["compute_type"]
+        self.batch_size = whisperx_config["batch_size"]
+        
+        # Additional optimizations
+        self._apply_environment_optimizations()
         
         # Ensure models directory exists
         self.whisperx_model_directory = os.path.join(self.models_dir, "whisperx")
         os.makedirs(self.whisperx_model_directory, exist_ok=True)
         
-        logger.info(f"WhisperX initialized: model={model_name}, device={self.device}")
+        # Validate configuration
+        is_valid, validation_msg = self.hardware_config.validate_configuration()
+        if not is_valid:
+            logger.warning(f"Hardware validation failed: {validation_msg}")
+        
+        logger.info(f"WhisperX initialized: model={self.model_name}, device={self.device}, "
+                   f"compute_type={self.compute_type}, batch_size={self.batch_size}")
+    
+    def _apply_environment_optimizations(self):
+        """Apply environment variable optimizations for the detected hardware."""
+        env_vars = self.hardware_config.get_environment_variables()
+        for key, value in env_vars.items():
+            if key not in os.environ:  # Don't override existing settings
+                os.environ[key] = value
+                logger.debug(f"Set environment variable: {key}={value}")
     
     def transcribe_audio(self, audio_file_path: str) -> Dict[str, Any]:
         """
@@ -39,15 +65,22 @@ class WhisperXService:
         except ImportError:
             raise ImportError("WhisperX is not installed. Please install it with 'pip install whisperx'.")
         
-        # Load model
-        logger.info(f"Loading WhisperX model: {self.model_name}")
-        model = whisperx.load_model(
-            self.model_name,
-            self.device,
-            compute_type=self.compute_type,
-            download_root=self.whisperx_model_directory,
-            language="en"
-        )
+        # Load model with hardware-specific configuration
+        logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
+        
+        load_options = {
+            "whisper_arch": self.model_name,
+            "device": self.device,
+            "compute_type": self.compute_type,
+            "download_root": self.whisperx_model_directory,
+            "language": "en"
+        }
+        
+        # Add device-specific options
+        if self.device == "cuda":
+            load_options["device_index"] = int(os.getenv("GPU_DEVICE_ID", "0"))
+        
+        model = whisperx.load_model(**load_options)
         
         # Load and transcribe audio
         logger.info(f"Transcribing audio file: {audio_file_path}")
@@ -61,11 +94,9 @@ class WhisperXService:
         
         logger.info(f"Initial transcription completed with {len(transcription_result['segments'])} segments")
         
-        # Free GPU memory
-        if self.device == "cuda":
-            gc.collect()
-            torch.cuda.empty_cache()
-            del model
+        # Optimize memory usage based on device
+        self.hardware_config.optimize_memory_usage()
+        del model
         
         return transcription_result, audio
     
@@ -103,11 +134,9 @@ class WhisperXService:
             return_char_alignments=False
         )
         
-        # Free GPU memory
-        if self.device == "cuda":
-            gc.collect()
-            torch.cuda.empty_cache()
-            del align_model
+        # Optimize memory usage based on device
+        self.hardware_config.optimize_memory_usage()
+        del align_model
         
         return aligned_result
     
@@ -137,9 +166,12 @@ class WhisperXService:
             "min_speakers": min_speakers
         }
         
+        # Use PyAnnote-compatible device configuration
+        pyannote_config = self.hardware_config.get_pyannote_config()
+        
         diarize_model = whisperx.DiarizationPipeline(
             use_auth_token=hf_token,
-            device=self.device
+            device=pyannote_config["device"]
         )
         
         diarize_segments = diarize_model(audio, **diarize_params)

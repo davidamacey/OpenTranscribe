@@ -51,6 +51,64 @@ show_help() {
   echo ""
 }
 
+# Function to detect and configure hardware
+detect_and_configure_hardware() {
+  echo "🔍 Detecting hardware configuration..."
+  
+  # Detect platform
+  PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
+  ARCH=$(uname -m)
+  
+  # Initialize default values
+  export TORCH_DEVICE="auto"
+  export COMPUTE_TYPE="auto"
+  export USE_GPU="auto"
+  export DOCKER_RUNTIME=""
+  export BACKEND_DOCKERFILE="Dockerfile.multiplatform"
+  export BUILD_ENV="development"
+  
+  # Check for NVIDIA GPU
+  if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+    echo "✅ NVIDIA GPU detected"
+    export DOCKER_RUNTIME="nvidia"
+    export TORCH_DEVICE="cuda"
+    export COMPUTE_TYPE="float16"
+    export USE_GPU="true"
+    
+    # Check for NVIDIA Container Toolkit
+    if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi &> /dev/null 2>&1; then
+      echo "✅ NVIDIA Container Toolkit available"
+    else
+      echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"
+      echo "   Falling back to CPU mode"
+      export DOCKER_RUNTIME=""
+      export TORCH_DEVICE="cpu"
+      export COMPUTE_TYPE="int8"
+      export USE_GPU="false"
+    fi
+  elif [[ "$PLATFORM" == "darwin" && "$ARCH" == "arm64" ]]; then
+    echo "✅ Apple Silicon detected"
+    export TORCH_DEVICE="mps"
+    export COMPUTE_TYPE="float32"
+    export USE_GPU="false"
+  else
+    echo "ℹ️  Using CPU processing"
+    export TORCH_DEVICE="cpu"
+    export COMPUTE_TYPE="int8"
+    export USE_GPU="false"
+  fi
+  
+  # Set additional environment variables
+  export TARGETPLATFORM="linux/$([[ "$ARCH" == "arm64" ]] && echo "arm64" || echo "amd64")"
+  
+  echo "📋 Hardware Configuration:"
+  echo "  Platform: $PLATFORM"
+  echo "  Architecture: $ARCH"
+  echo "  Device: $TORCH_DEVICE"
+  echo "  Compute Type: $COMPUTE_TYPE"
+  echo "  Docker Runtime: ${DOCKER_RUNTIME:-default}"
+}
+
 # Function to start the environment
 start_app() {
   ENVIRONMENT=${1:-dev}
@@ -60,16 +118,28 @@ start_app() {
   # Ensure Docker is running
   check_docker
   
+  # Detect and configure hardware
+  detect_and_configure_hardware
+  
+  # Set build environment
+  export BUILD_ENV="$ENVIRONMENT"
+  
   # Create necessary directories
   create_required_dirs
   
-  # Start environment and get frontend service name
-  echo "🔄 Rebuilding and starting services in ${ENVIRONMENT} mode..."
-  FRONTEND_SERVICE=$(start_environment $ENVIRONMENT)
+  # Use unified docker-compose configuration
+  COMPOSE_FILE="docker-compose.unified.yml"
+  if [[ "$ENVIRONMENT" == "dev" ]]; then
+    COMPOSE_FILE="$COMPOSE_FILE:docker-compose.override.yml"
+  fi
+  
+  # Start environment
+  echo "🔄 Starting services with hardware-optimized configuration..."
+  docker compose -f $COMPOSE_FILE up -d --build
   
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  docker compose -f $COMPOSE_FILE ps
   
   # Print access information
   echo "✅ Services are starting up."
@@ -79,7 +149,7 @@ start_app() {
   echo "📋 To view logs, run:"
   echo "- All logs: docker compose logs -f"
   echo "- Backend logs: docker compose logs -f backend"
-  echo "- Frontend logs: docker compose logs -f $FRONTEND_SERVICE"
+  echo "- Frontend logs: docker compose logs -f frontend"
   echo "- Celery worker logs: docker compose logs -f celery-worker"
   
   # Print help information
@@ -95,30 +165,35 @@ reset_and_init() {
   # Ensure Docker is running
   check_docker
   
+  # Detect and configure hardware
+  detect_and_configure_hardware
+  
+  # Set build environment
+  export BUILD_ENV="$ENVIRONMENT"
+  
+  # Use unified docker-compose configuration
+  COMPOSE_FILE="docker-compose.unified.yml"
+  if [[ "$ENVIRONMENT" == "dev" ]]; then
+    COMPOSE_FILE="$COMPOSE_FILE:docker-compose.override.yml"
+  fi
+  
   echo "🛑 Stopping all containers and removing volumes..."
-  docker compose down -v
+  docker compose -f $COMPOSE_FILE down -v
   
   # Create necessary directories
   create_required_dirs
   
   # Start infrastructure services in a single command for efficiency
   echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
-  docker compose up -d --build postgres redis minio opensearch
+  docker compose -f $COMPOSE_FILE up -d --build postgres redis minio opensearch
   
   # Wait a bit for infrastructure services to be ready - reduced from multiple sleeps
   echo "⏳ Waiting for infrastructure services to initialize..."
   sleep 5
   
   # Start application services
-  if [ "$ENVIRONMENT" == "prod" ]; then
-    echo "🚀 Starting application services (backend, celery-worker, frontend-prod, flower)..."
-    docker compose up -d --build backend celery-worker frontend-prod flower
-    FRONTEND_SERVICE="frontend-prod"
-  else
-    echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."
-    docker compose up -d --build backend celery-worker frontend flower
-    FRONTEND_SERVICE="frontend"
-  fi
+  echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."
+  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend flower
   
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."
@@ -126,15 +201,15 @@ reset_and_init() {
   
   echo "🗄️ Setting up database..."
   # Execute SQL dump file to initialize the database
-  docker compose exec -T postgres psql -U postgres -d opentranscribe < ./database/init_db.sql
+  docker compose -f $COMPOSE_FILE exec -T postgres psql -U postgres -d opentranscribe < ./database/init_db.sql
   
   echo "👤 Creating admin user..."
-  docker compose exec backend python -m app.initial_data
+  docker compose -f $COMPOSE_FILE exec backend python -m app.initial_data
   
   echo "✅ Setup complete!"
   
   # Start log tailing
-  start_logs $FRONTEND_SERVICE
+  start_logs frontend
   
   echo "📊 Log tailing started in background. You can now test the application."
   # Print access information
@@ -336,7 +411,9 @@ case "$1" in
     
   stop)
     echo "🛑 Stopping all containers..."
-    docker compose down
+    # Use unified compose files
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE down
     echo "✅ All containers stopped."
     ;;
     
@@ -353,24 +430,27 @@ case "$1" in
     
   logs)
     SERVICE=${2:-}
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
     if [ -z "$SERVICE" ]; then
       echo "📋 Showing logs for all services... (press Ctrl+C to exit)"
-      docker compose logs -f
+      docker compose -f $COMPOSE_FILE logs -f
     else
       echo "📋 Showing logs for $SERVICE... (press Ctrl+C to exit)"
-      docker compose logs -f $SERVICE
+      docker compose -f $COMPOSE_FILE logs -f $SERVICE
     fi
     ;;
     
   status)
     echo "📊 Container status:"
-    docker compose ps
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE ps
     ;;
     
   shell)
     SERVICE=${2:-backend}
     echo "🔧 Opening shell in $SERVICE container..."
-    docker compose exec $SERVICE /bin/bash || docker compose exec $SERVICE /bin/sh
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE exec $SERVICE /bin/bash || docker compose -f $COMPOSE_FILE exec $SERVICE /bin/sh
     ;;
     
   backup)
@@ -395,22 +475,16 @@ case "$1" in
     
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
-    docker compose up -d --build backend celery-worker flower
+    detect_and_configure_hardware
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE up -d --build backend celery-worker flower
     echo "✅ Backend services rebuilt successfully."
     ;;
     
   rebuild-frontend)
-    # Determine environment
-    if docker compose ps | grep -q "frontend-prod"; then
-      ENV="prod"
-      FRONTEND_SERVICE="frontend-prod"
-    else
-      ENV="dev"
-      FRONTEND_SERVICE="frontend"
-    fi
-    
     echo "🔨 Rebuilding frontend service..."
-    docker compose up -d --build $FRONTEND_SERVICE
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE up -d --build frontend
     echo "✅ Frontend service rebuilt successfully."
     ;;
     
@@ -428,7 +502,9 @@ case "$1" in
     
   build)
     echo "🔨 Rebuilding containers..."
-    docker compose build
+    detect_and_configure_hardware
+    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    docker compose -f $COMPOSE_FILE build
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
     
