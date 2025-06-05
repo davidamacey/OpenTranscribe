@@ -596,7 +596,9 @@ configure_environment() {
     echo ""
     
     while true; do
-        read -p "Enter your HuggingFace token (or 'skip' to continue without speaker diarization): " HUGGINGFACE_TOKEN
+        echo -n "Enter your HuggingFace token (or 'skip' to continue without speaker diarization): "
+        read -s HUGGINGFACE_TOKEN
+        echo  # Add newline after hidden input
         
         if [[ "$HUGGINGFACE_TOKEN" == "skip" ]]; then
             echo -e "${YELLOW}⚠️  Skipping HuggingFace token - speaker diarization will be disabled${NC}"
