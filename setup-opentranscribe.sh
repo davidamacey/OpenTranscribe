@@ -156,16 +156,8 @@ configure_docker_runtime() {
             echo "2. Restart Docker daemon after installation"
             echo "3. Check NVIDIA driver installation with: nvidia-smi"
             echo ""
-            
-            read -p "Continue with CPU mode instead? (Y/n): " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Nn]$ ]]; then
-                echo "Exiting setup. Please fix GPU issues and try again."
-                exit 1
-            else
-                echo "Falling back to CPU mode..."
-                fallback_to_cpu
-            fi
+            echo -e "${YELLOW}⚠️  Automatically falling back to CPU mode...${NC}"
+            fallback_to_cpu
         fi
     else
         DOCKER_RUNTIME="default"
@@ -609,70 +601,46 @@ configure_environment() {
 }
 
 select_whisper_model() {
-    echo -e "${YELLOW}🎤 Whisper Model Selection${NC}"
-    echo "Recommended model based on your hardware ($DETECTED_DEVICE):"
+    echo -e "${YELLOW}🎤 Auto-selecting Whisper Model based on hardware...${NC}"
     
+    # Auto-select optimal model based on hardware with GPU memory detection
     case "$DETECTED_DEVICE" in
         "cuda")
-            echo "1) large-v2 - Best quality (recommended for CUDA, requires 10GB+ VRAM)"
-            echo "2) medium   - Good quality (requires 5GB+ VRAM)"
-            echo "3) small    - Decent quality (requires 2GB+ VRAM)"
-            echo "4) base     - Basic quality"
-            DEFAULT_MODEL="large-v2"
+            # Try to detect GPU memory for better model selection
+            if command -v nvidia-smi &> /dev/null; then
+                GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+                if [[ $GPU_MEMORY -gt 16000 ]]; then
+                    WHISPER_MODEL="large-v2"
+                    echo "✓ High-end GPU detected (${GPU_MEMORY}MB) - selecting large-v2 model"
+                elif [[ $GPU_MEMORY -gt 8000 ]]; then
+                    WHISPER_MODEL="large-v2"
+                    echo "✓ Mid-range GPU detected (${GPU_MEMORY}MB) - selecting large-v2 model"
+                elif [[ $GPU_MEMORY -gt 4000 ]]; then
+                    WHISPER_MODEL="medium"
+                    echo "✓ Entry-level GPU detected (${GPU_MEMORY}MB) - selecting medium model"
+                else
+                    WHISPER_MODEL="small"
+                    echo "✓ Low-memory GPU detected (${GPU_MEMORY}MB) - selecting small model"
+                fi
+            else
+                # Fallback if nvidia-smi fails
+                WHISPER_MODEL="medium"
+                echo "✓ CUDA detected - selecting medium model (safe default)"
+            fi
             ;;
         "mps")
-            echo "1) medium   - Good quality (recommended for Apple Silicon)"
-            echo "2) small    - Decent quality (faster)"
-            echo "3) base     - Basic quality (fastest)"
-            echo "4) large-v2 - Best quality (may be slow)"
-            DEFAULT_MODEL="medium"
+            WHISPER_MODEL="medium"
+            echo "✓ Apple Silicon detected - selecting medium model (optimized for MPS)"
             ;;
         "cpu")
-            echo "1) base     - Basic quality (recommended for CPU)"
-            echo "2) small    - Decent quality (slower)"
-            echo "3) medium   - Good quality (much slower)"
-            echo "4) large-v2 - Best quality (very slow)"
-            DEFAULT_MODEL="base"
-            ;;
-    esac
-    
-    read -p "Select model (1-4) [default: $DEFAULT_MODEL]: " MODEL_CHOICE
-    
-    case "$MODEL_CHOICE" in
-        1)
-            case "$DETECTED_DEVICE" in
-                "cuda") WHISPER_MODEL="large-v2" ;;
-                "mps") WHISPER_MODEL="medium" ;;
-                "cpu") WHISPER_MODEL="base" ;;
-            esac
-            ;;
-        2)
-            case "$DETECTED_DEVICE" in
-                "cuda") WHISPER_MODEL="medium" ;;
-                "mps") WHISPER_MODEL="small" ;;
-                "cpu") WHISPER_MODEL="small" ;;
-            esac
-            ;;
-        3)
-            case "$DETECTED_DEVICE" in
-                "cuda") WHISPER_MODEL="small" ;;
-                "mps") WHISPER_MODEL="base" ;;
-                "cpu") WHISPER_MODEL="medium" ;;
-            esac
-            ;;
-        4)
-            case "$DETECTED_DEVICE" in
-                "cuda") WHISPER_MODEL="base" ;;
-                "mps") WHISPER_MODEL="large-v2" ;;
-                "cpu") WHISPER_MODEL="large-v2" ;;
-            esac
-            ;;
-        *)
-            WHISPER_MODEL="$DEFAULT_MODEL"
+            WHISPER_MODEL="base"
+            echo "✓ CPU processing - selecting base model (fastest for CPU)"
             ;;
     esac
     
     echo "✓ Selected model: $WHISPER_MODEL"
+    echo "💡 You can change this later by editing WHISPER_MODEL in the .env file"
+    echo "   Available options: tiny, base, small, medium, large-v2"
 }
 
 create_env_file() {
