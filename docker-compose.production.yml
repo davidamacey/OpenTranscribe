@@ -1,0 +1,288 @@
+version: '3.8'
+
+# OpenTranscribe Production Docker Compose
+# Uses pre-built images from Docker Hub for easy deployment
+# Supports automatic hardware detection and runtime selection
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    restart: always
+    volumes:
+      - minio_data:/data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "9091:9001"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+
+  opensearch:
+    image: opensearchproject/opensearch:2.5.0
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "${OPENSEARCH_PORT:-9200}:9200"
+      - "9600:9600"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # Production Backend - Cross-platform pre-built image
+  backend:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    volumes:
+      - backend_models:/app/models
+      - backend_temp:/app/temp
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    environment:
+      # Database Configuration
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      
+      # Storage Configuration
+      - MINIO_HOST=${MINIO_HOST:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
+      
+      # Cache Configuration
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      
+      # Search Configuration
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      
+      # Security Configuration
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev_secret_key_change_in_production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      
+      # Model Configuration
+      - MODELS_DIRECTORY=${MODEL_BASE_DIR:-/app/models}
+      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
+      - TEMP_DIR=${TEMP_DIR:-/app/temp}
+      
+      # Hardware Detection (auto-detected but can be overridden)
+      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
+      - USE_GPU=${USE_GPU:-auto}
+      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
+      
+      # AI Model Configuration
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
+      - BATCH_SIZE=${BATCH_SIZE:-auto}
+      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
+      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
+      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
+      
+      # Environment Detection
+      - BUILD_ENV=production
+    
+    # Conditional GPU configuration - only applied when NVIDIA GPU is available
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+    
+    # Runtime configuration for NVIDIA (will be set by setup script)
+    runtime: ${DOCKER_RUNTIME:-}
+
+  # Production Celery Worker - Uses same image as backend
+  celery-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    command: celery -A app.core.celery worker --loglevel=info --concurrency=1
+    volumes:
+      - backend_models:/app/models
+      - backend_temp:/app/temp
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+    environment:
+      # Inherit all environment variables from backend
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      - MINIO_HOST=${MINIO_HOST:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      - MODELS_DIRECTORY=${MODEL_BASE_DIR:-/app/models}
+      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
+      - TEMP_DIR=${TEMP_DIR:-/app/temp}
+      
+      # Hardware Detection
+      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
+      - USE_GPU=${USE_GPU:-auto}
+      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
+      
+      # AI Model Configuration
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
+      - BATCH_SIZE=${BATCH_SIZE:-auto}
+      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
+      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
+      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
+    
+    # Conditional GPU configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+    
+    runtime: ${DOCKER_RUNTIME:-}
+
+  # Production Frontend - Pre-built image
+  frontend:
+    image: davidamacey/opentranscribe-frontend:latest
+    restart: always
+    ports:
+      - "5173:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8080/api}
+      - VITE_WS_BASE_URL=${VITE_WS_BASE_URL:-ws://localhost:8080/ws}
+      - VITE_FLOWER_PORT=${VITE_FLOWER_PORT:-5555}
+      - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Flower Task Monitor
+  flower:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    command: >
+      python -m celery -A app.core.celery flower
+      --port=5555
+      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
+      --persistent=True
+      --db=/app/flower.db
+      --broker=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    environment:
+      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+    volumes:
+      - flower_data:/app
+
+# Volume definitions
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  redis_data:
+    driver: local
+  opensearch_data:
+    driver: local
+  backend_models:
+    driver: local
+  backend_temp:
+    driver: local
+  flower_data:
+    driver: local
+
+# Network configuration for cross-platform compatibility
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: opentranscribe0

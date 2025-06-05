@@ -193,20 +193,21 @@ setup_project_directory() {
 download_configuration_files() {
     echo -e "${BLUE}📥 Downloading configuration files...${NC}"
     
-    # Base URL for raw files
-    BASE_URL="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master"
+    # Base URL for raw files - use the cross-platform branch
+    BASE_URL="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/feat/cross-platform-compatibility"
     
-    # Download unified docker-compose configuration
-    if curl -fsSL "$BASE_URL/docker-compose.unified.yml" -o docker-compose.yml; then
-        echo "✓ Downloaded unified docker-compose.yml"
+    # Download production docker-compose configuration
+    if curl -fsSL "$BASE_URL/docker-compose.production.yml" -o docker-compose.yml; then
+        echo "✓ Downloaded production docker-compose.yml"
     else
-        echo -e "${RED}❌ Failed to download docker-compose.yml${NC}"
-        echo "Falling back to production compose file..."
-        if curl -fsSL "$BASE_URL/docker-compose.prod.yml" -o docker-compose.yml; then
+        echo -e "${RED}❌ Failed to download docker-compose.yml from branch${NC}"
+        echo "Trying master branch as fallback..."
+        if curl -fsSL "https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/docker-compose.prod.yml" -o docker-compose.yml; then
             echo "✓ Downloaded fallback docker-compose.yml"
         else
             echo -e "${RED}❌ Failed to download any docker-compose configuration${NC}"
-            exit 1
+            echo "Creating minimal configuration..."
+            create_minimal_compose
         fi
     fi
     
@@ -214,16 +215,147 @@ download_configuration_files() {
     if curl -fsSL "$BASE_URL/.env.example" -o .env.example; then
         echo "✓ Downloaded .env.example"
     else
-        echo -e "${RED}❌ Failed to download .env.example${NC}"
-        exit 1
+        echo -e "${RED}❌ Failed to download .env.example from branch${NC}"
+        echo "Trying master branch as fallback..."
+        if curl -fsSL "https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/.env.example" -o .env.example; then
+            echo "✓ Downloaded fallback .env.example"
+        else
+            echo -e "${RED}❌ Failed to download .env.example${NC}"
+            echo "Creating minimal .env.example..."
+            create_minimal_env_example
+        fi
     fi
-    
-    # Download override configuration for development
-    if curl -fsSL "$BASE_URL/docker-compose.override.yml" -o docker-compose.override.yml; then
-        echo "✓ Downloaded docker-compose.override.yml"
-    else
-        echo "⚠️  Could not download override file (optional)"
-    fi
+}
+
+create_minimal_compose() {
+    cat > docker-compose.yml << 'EOF'
+version: '3.8'
+services:
+  postgres:
+    image: postgres:14-alpine
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+    ports:
+      - "5432:5432"
+
+  minio:
+    image: minio/minio
+    restart: always
+    volumes:
+      - minio_data:/data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9091:9001"
+    command: server /data --console-address ":9001"
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.5.0
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+    ports:
+      - "9200:9200"
+
+  backend:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - POSTGRES_HOST=postgres
+      - MINIO_HOST=minio
+      - REDIS_HOST=redis
+      - OPENSEARCH_HOST=opensearch
+      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
+      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
+    depends_on:
+      - postgres
+      - minio
+      - redis
+      - opensearch
+
+  celery-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    command: celery -A app.core.celery worker --loglevel=info
+    environment:
+      - POSTGRES_HOST=postgres
+      - MINIO_HOST=minio
+      - REDIS_HOST=redis
+      - OPENSEARCH_HOST=opensearch
+      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
+      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+    depends_on:
+      - postgres
+      - minio
+      - redis
+      - opensearch
+
+  frontend:
+    image: davidamacey/opentranscribe-frontend:latest
+    restart: always
+    ports:
+      - "5173:80"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080/api
+      - VITE_WS_BASE_URL=ws://localhost:8080/ws
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  minio_data:
+EOF
+    echo "✓ Created minimal docker-compose.yml"
+}
+
+create_minimal_env_example() {
+    cat > .env.example << 'EOF'
+# Database Configuration
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=opentranscribe
+
+# Storage Configuration
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+
+# Hardware Detection (auto-detected by default)
+TORCH_DEVICE=auto
+COMPUTE_TYPE=auto
+GPU_DEVICE_ID=0
+
+# AI Models
+WHISPER_MODEL=medium
+BATCH_SIZE=4
+
+# HuggingFace Token (required for speaker diarization)
+HUGGINGFACE_TOKEN=your_token_here
+
+# JWT Configuration
+JWT_SECRET_KEY=change_this_in_production
+EOF
+    echo "✓ Created minimal .env.example"
 }
 
 configure_environment() {
@@ -369,35 +501,26 @@ configure_docker_compose() {
     # The unified docker-compose.yml already handles all platforms automatically
     # Just ensure environment variables are properly set for Docker Compose
     
+    echo "" >> .env
+    echo "# Hardware Configuration (Auto-detected)" >> .env
+    
     if [[ "$DETECTED_DEVICE" == "cuda" && "$USE_GPU_RUNTIME" == "true" ]]; then
-        # Create additional environment variables for GPU configuration
-        cat >> .env << EOF
-
-# GPU Configuration (Auto-detected)
-DOCKER_RUNTIME=nvidia
-TARGETPLATFORM=linux/amd64
-BACKEND_DOCKERFILE=Dockerfile.multiplatform
-EOF
+        # GPU configuration
+        echo "DOCKER_RUNTIME=nvidia" >> .env
+        echo "TARGETPLATFORM=linux/amd64" >> .env
+        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
         echo "✓ Docker Compose configured for NVIDIA GPU runtime"
     elif [[ "$DETECTED_DEVICE" == "mps" ]]; then
-        # Apple Silicon configuration
-        cat >> .env << EOF
-
-# Apple Silicon Configuration (Auto-detected)
-DOCKER_RUNTIME=
-TARGETPLATFORM=linux/arm64
-BACKEND_DOCKERFILE=Dockerfile.multiplatform
-EOF
+        # Apple Silicon configuration  
+        echo "DOCKER_RUNTIME=" >> .env
+        echo "TARGETPLATFORM=linux/arm64" >> .env
+        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
         echo "✓ Docker Compose configured for Apple Silicon"
     else
         # CPU configuration
-        cat >> .env << EOF
-
-# CPU Configuration (Auto-detected)
-DOCKER_RUNTIME=
-TARGETPLATFORM=linux/amd64
-BACKEND_DOCKERFILE=Dockerfile.multiplatform
-EOF
+        echo "DOCKER_RUNTIME=" >> .env
+        echo "TARGETPLATFORM=linux/amd64" >> .env
+        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
         echo "✓ Docker Compose configured for CPU processing"
     fi
 }
