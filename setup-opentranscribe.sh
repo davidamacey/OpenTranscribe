@@ -251,7 +251,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -267,8 +267,8 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9091:9001"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9091}:9001"
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -280,7 +280,7 @@ services:
     image: redis:7-alpine
     restart: always
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -304,8 +304,8 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "9200:9200"
-      - "9600:9600"
+      - "${OPENSEARCH_PORT:-9200}:9200"
+      - "${OPENSEARCH_ADMIN_PORT:-9600}:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
@@ -319,7 +319,7 @@ services:
       - backend_models:/app/models
       - backend_temp:/app/temp
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     environment:
       # Database
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
@@ -436,12 +436,12 @@ services:
     image: davidamacey/opentranscribe-frontend:latest
     restart: always
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:80"
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8080/api}
-      - VITE_WS_BASE_URL=${VITE_WS_BASE_URL:-ws://localhost:8080/ws}
-      - VITE_FLOWER_PORT=${VITE_FLOWER_PORT:-5555}
+      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-8080}/api
+      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-8080}/ws
+      - VITE_FLOWER_PORT=${FLOWER_PORT:-5555}
       - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
     depends_on:
       backend:
@@ -464,7 +464,7 @@ services:
       --db=/app/flower.db
       --broker=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
     ports:
-      - "5555:5555"
+      - "${FLOWER_PORT:-5555}:5555"
     depends_on:
       - redis
       - celery-worker
@@ -505,6 +505,7 @@ POSTGRES_DB=opentranscribe
 # MinIO Object Storage Configuration
 MINIO_HOST=minio
 MINIO_PORT=9000
+MINIO_CONSOLE_PORT=9091
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
 MEDIA_BUCKET_NAME=opentranscribe
@@ -516,6 +517,7 @@ REDIS_PORT=6379
 # OpenSearch Configuration
 OPENSEARCH_HOST=opensearch
 OPENSEARCH_PORT=9200
+OPENSEARCH_ADMIN_PORT=9600
 
 # JWT Authentication
 JWT_SECRET_KEY=change_this_in_production
@@ -543,11 +545,13 @@ MAX_SPEAKERS=10
 # Get your token at: https://huggingface.co/settings/tokens
 HUGGINGFACE_TOKEN=your_huggingface_token_here
 
+# External Port Configuration (change if ports are already in use)
+BACKEND_PORT=8080
+FRONTEND_PORT=5173
+FLOWER_PORT=5555
+
 # Frontend Configuration
 NODE_ENV=production
-VITE_API_BASE_URL=http://localhost:8080/api
-VITE_WS_BASE_URL=ws://localhost:8080/ws
-VITE_FLOWER_PORT=5555
 VITE_FLOWER_URL_PREFIX=flower
 EOF
     echo "✓ Created production .env.example"
@@ -984,9 +988,9 @@ display_summary() {
     fi
     
     echo -e "${GREEN}🌐 Access URLs (after starting):${NC}"
-    echo "  • Web Interface: http://localhost:5173"
-    echo "  • API Documentation: http://localhost:8080/docs"
-    echo "  • Task Monitor: http://localhost:5555/flower"
+    echo "  • Web Interface: http://localhost:${FRONTEND_PORT:-5173}"
+    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-8080}/docs"
+    echo "  • Task Monitor: http://localhost:${FLOWER_PORT:-5555}/flower"
     echo ""
     echo -e "${GREEN}📚 Management Commands:${NC}"
     echo "  • ./opentranscribe.sh help    # Show all commands"
