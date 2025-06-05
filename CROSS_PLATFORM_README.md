@@ -12,34 +12,33 @@ The system automatically detects available hardware and optimizes configuration 
 
 ## Quick Start
 
-### 1. One-Command Installation
+### 1. Download and Run Setup Script
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
-```
+# Get the setup script
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/feat/cross-platform-compatibility/setup-opentranscribe.sh -o setup-opentranscribe.sh
 
-### 2. Manual Installation
-
-```bash
-# Clone or download the setup script
-wget https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh
+# Make it executable and run
 chmod +x setup-opentranscribe.sh
 ./setup-opentranscribe.sh
 ```
 
 The setup script will:
 - Detect your hardware (CUDA/MPS/CPU)
-- Configure optimal settings automatically
-- Set up Docker with proper runtime
+- Test NVIDIA Container Toolkit (if GPU detected)
+- Configure optimal precision and batch sizes
+- Create production docker-compose.yml
+- Generate secure .env configuration
 - Create management scripts
-- Generate secure configuration
 
-### 3. Start OpenTranscribe
+### 2. Start OpenTranscribe (Manual)
 
 ```bash
 cd opentranscribe
 ./opentranscribe.sh start
 ```
+
+This approach gives you control over when Docker images are downloaded and containers are started.
 
 ## Hardware Support
 
@@ -96,12 +95,12 @@ The system automatically detects and configures:
 - Memory-appropriate batch sizes
 - Docker runtime configuration
 
-### ✅ Unified Backend Container
+### ✅ Production Docker Images
 
-- Single Docker image supports all platforms
-- Multi-stage builds for optimal size
-- Platform-specific PyTorch installations
-- Automatic fallback mechanisms
+- Pre-built images from Docker Hub
+- Single backend image supports all platforms
+- Single frontend image for all deployments
+- Automatic hardware detection at runtime
 
 ### ✅ Smart Configuration
 
@@ -151,17 +150,17 @@ The system automatically detects and configures:
 | `WHISPER_MODEL` | `tiny`, `base`, `small`, `medium`, `large-v2` | Platform-optimized | AI model size |
 | `GPU_DEVICE_ID` | `0`, `1`, `2`, etc. | `0` | GPU selection |
 
-### Docker Compose Profiles
+### Docker Compose Usage
 
 ```bash
-# Development with auto-detection
-docker compose -f docker-compose.unified.yml up
+# Production deployment (recommended)
+./opentranscribe.sh start
 
-# Development with overrides
-docker compose -f docker-compose.unified.yml -f docker-compose.override.yml up
+# Direct Docker Compose usage
+docker compose up -d
 
-# Production deployment
-BUILD_ENV=production docker compose -f docker-compose.unified.yml up
+# Check configuration
+docker compose config
 ```
 
 ## Management Commands
@@ -295,9 +294,9 @@ docker_config = config.get_docker_runtime_config()
 ### Adding New Platforms
 
 1. Update `detect_hardware_acceleration()` in `hardware_detection.py`
-2. Add platform-specific Docker configuration
-3. Update PyTorch installation in `Dockerfile.multiplatform`
-4. Test with the validation script
+2. Add platform-specific configuration in `setup-opentranscribe.sh`
+3. Update docker-compose template in setup script
+4. Test with the validation workflow
 
 ### Testing
 
@@ -306,7 +305,7 @@ docker_config = config.get_docker_runtime_config()
 python3 -c "from backend.app.utils.hardware_detection import detect_hardware; print(detect_hardware().get_summary())"
 
 # Validate Docker configuration
-docker compose -f docker-compose.unified.yml config
+docker compose config
 
 # End-to-end test
 ./opentranscribe.sh health

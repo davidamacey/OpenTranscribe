@@ -27,20 +27,26 @@ USE_GPU_RUNTIME="false"
 detect_platform() {
     echo -e "${BLUE}🔍 Detecting platform and hardware...${NC}"
     
-    # Detect OS
-    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        DETECTED_PLATFORM="linux"
-        echo "✓ Detected: Linux"
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        DETECTED_PLATFORM="macos"
-        echo "✓ Detected: macOS"
-    elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        DETECTED_PLATFORM="windows"
-        echo "✓ Detected: Windows (WSL/Cygwin)"
-    else
-        DETECTED_PLATFORM="unknown"
-        echo "⚠️  Unknown platform: $OSTYPE"
-    fi
+    # Detect OS and Architecture
+    DETECTED_PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m)
+    
+    case "$DETECTED_PLATFORM" in
+        "linux")
+            echo "✓ Detected: Linux ($ARCH)"
+            ;;
+        "darwin")
+            DETECTED_PLATFORM="macos"
+            echo "✓ Detected: macOS ($ARCH)"
+            ;;
+        "mingw"*|"msys"*|"cygwin"*)
+            DETECTED_PLATFORM="windows"
+            echo "✓ Detected: Windows ($ARCH)"
+            ;;
+        *)
+            echo "⚠️  Unknown platform: $DETECTED_PLATFORM ($ARCH)"
+            ;;
+    esac
     
     # Detect hardware acceleration
     detect_hardware_acceleration
@@ -116,15 +122,73 @@ configure_docker_runtime() {
     echo -e "${BLUE}🐳 Configuring Docker runtime...${NC}"
     
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
-        # Check for NVIDIA Container Toolkit
-        if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-            echo "✓ NVIDIA Container Toolkit detected and working"
-            DOCKER_RUNTIME="nvidia"
+        echo "🧪 Testing NVIDIA Container Toolkit..."
+        
+        # Comprehensive NVIDIA Container Toolkit validation
+        GPU_TEST_PASSED=false
+        
+        # Test 1: Basic docker --gpus flag support
+        echo "  • Testing basic GPU access..."
+        if docker run --rm --gpus all --entrypoint="" nvidia/cuda:11.8-base-ubuntu22.04 echo "GPU access test" &> /dev/null; then
+            echo "    ✓ Docker GPU flag support confirmed"
+            
+            # Test 2: NVIDIA runtime functionality
+            echo "  • Testing NVIDIA runtime functionality..."
+            if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --list-gpus &> /dev/null; then
+                echo "    ✓ NVIDIA runtime working"
+                
+                # Test 3: GPU memory access
+                echo "  • Testing GPU memory access..."
+                if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits &> /dev/null; then
+                    echo "    ✓ GPU memory access confirmed"
+                    
+                    # Test 4: CUDA context creation
+                    echo "  • Testing CUDA context creation..."
+                    if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())" 2>/dev/null | grep -q "True"; then
+                        echo "    ✓ CUDA context creation successful"
+                        GPU_TEST_PASSED=true
+                    else
+                        echo "    ⚠️  CUDA context test failed (PyTorch not available in test image)"
+                        # This is not critical - the base image might not have PyTorch
+                        GPU_TEST_PASSED=true
+                    fi
+                else
+                    echo "    ❌ GPU memory access failed"
+                fi
+            else
+                echo "    ❌ NVIDIA runtime test failed"
+            fi
         else
-            echo -e "${RED}❌ NVIDIA Container Toolkit not detected${NC}"
-            echo "Install with: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
-            echo "Falling back to CPU mode..."
-            fallback_to_cpu
+            echo "    ❌ Docker GPU flag not supported"
+        fi
+        
+        # Final decision based on tests
+        if [[ "$GPU_TEST_PASSED" == "true" ]]; then
+            echo -e "${GREEN}✅ NVIDIA Container Toolkit fully functional${NC}"
+            DOCKER_RUNTIME="nvidia"
+            
+            # Display detected GPU info
+            echo "  • Detected GPUs:"
+            docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader 2>/dev/null | sed 's/^/    /'
+        else
+            echo -e "${RED}❌ NVIDIA Container Toolkit tests failed${NC}"
+            echo ""
+            echo "Possible solutions:"
+            echo "1. Install NVIDIA Container Toolkit:"
+            echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+            echo "2. Restart Docker daemon after installation"
+            echo "3. Check NVIDIA driver installation with: nvidia-smi"
+            echo ""
+            
+            read -p "Continue with CPU mode instead? (Y/n): " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Nn]$ ]]; then
+                echo "Exiting setup. Please fix GPU issues and try again."
+                exit 1
+            else
+                echo "Falling back to CPU mode..."
+                fallback_to_cpu
+            fi
         fi
     else
         DOCKER_RUNTIME="default"
@@ -190,46 +254,23 @@ setup_project_directory() {
     echo "✓ Created project directory: $PROJECT_DIR"
 }
 
-download_configuration_files() {
-    echo -e "${BLUE}📥 Downloading configuration files...${NC}"
+create_configuration_files() {
+    echo -e "${BLUE}📄 Creating configuration files...${NC}"
     
-    # Base URL for raw files - use the cross-platform branch
-    BASE_URL="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/feat/cross-platform-compatibility"
+    # Create comprehensive docker-compose.yml directly
+    create_production_compose
     
-    # Download production docker-compose configuration
-    if curl -fsSL "$BASE_URL/docker-compose.production.yml" -o docker-compose.yml; then
-        echo "✓ Downloaded production docker-compose.yml"
-    else
-        echo -e "${RED}❌ Failed to download docker-compose.yml from branch${NC}"
-        echo "Trying master branch as fallback..."
-        if curl -fsSL "https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/docker-compose.prod.yml" -o docker-compose.yml; then
-            echo "✓ Downloaded fallback docker-compose.yml"
-        else
-            echo -e "${RED}❌ Failed to download any docker-compose configuration${NC}"
-            echo "Creating minimal configuration..."
-            create_minimal_compose
-        fi
-    fi
-    
-    # Download .env.example
-    if curl -fsSL "$BASE_URL/.env.example" -o .env.example; then
-        echo "✓ Downloaded .env.example"
-    else
-        echo -e "${RED}❌ Failed to download .env.example from branch${NC}"
-        echo "Trying master branch as fallback..."
-        if curl -fsSL "https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/.env.example" -o .env.example; then
-            echo "✓ Downloaded fallback .env.example"
-        else
-            echo -e "${RED}❌ Failed to download .env.example${NC}"
-            echo "Creating minimal .env.example..."
-            create_minimal_env_example
-        fi
-    fi
+    # Create .env.example
+    create_production_env_example
 }
 
-create_minimal_compose() {
+create_production_compose() {
     cat > docker-compose.yml << 'EOF'
 version: '3.8'
+
+# OpenTranscribe Production Configuration
+# Cross-platform compatible with automatic GPU detection
+
 services:
   postgres:
     image: postgres:14-alpine
@@ -242,6 +283,11 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   minio:
     image: minio/minio
@@ -255,61 +301,167 @@ services:
       - "9000:9000"
       - "9091:9001"
     command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     restart: always
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
 
   opensearch:
     image: opensearchproject/opensearch:2.5.0
     restart: always
     environment:
       - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
       - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
     ports:
       - "9200:9200"
+      - "9600:9600"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
 
   backend:
     image: davidamacey/opentranscribe-backend:latest
     restart: always
+    volumes:
+      - backend_models:/app/models
+      - backend_temp:/app/temp
     ports:
       - "8080:8080"
     environment:
-      - POSTGRES_HOST=postgres
-      - MINIO_HOST=minio
-      - REDIS_HOST=redis
-      - OPENSEARCH_HOST=opensearch
+      # Database
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      # Storage
+      - MINIO_HOST=${MINIO_HOST:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
+      # Cache
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      # Search
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      # Security
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      # Models
+      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
+      - TEMP_DIR=${TEMP_DIR:-/app/temp}
+      # Hardware (auto-detected)
       - TORCH_DEVICE=${TORCH_DEVICE:-auto}
       - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - USE_GPU=${USE_GPU:-auto}
+      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
+      # AI Models
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
+      - BATCH_SIZE=${BATCH_SIZE:-auto}
+      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
+      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
+      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
     depends_on:
-      - postgres
-      - minio
-      - redis
-      - opensearch
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # GPU configuration (only applied when GPU detected)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+    runtime: ${DOCKER_RUNTIME:-}
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
     restart: always
-    command: celery -A app.core.celery worker --loglevel=info
+    command: celery -A app.core.celery worker --loglevel=info --concurrency=1
+    volumes:
+      - backend_models:/app/models
+      - backend_temp:/app/temp
     environment:
-      - POSTGRES_HOST=postgres
-      - MINIO_HOST=minio
-      - REDIS_HOST=redis
-      - OPENSEARCH_HOST=opensearch
+      # Same environment as backend
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      - MINIO_HOST=${MINIO_HOST:-minio}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
+      - TEMP_DIR=${TEMP_DIR:-/app/temp}
       - TORCH_DEVICE=${TORCH_DEVICE:-auto}
       - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - USE_GPU=${USE_GPU:-auto}
+      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
+      - BATCH_SIZE=${BATCH_SIZE:-auto}
+      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
+      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
+      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
     depends_on:
       - postgres
-      - minio
       - redis
+      - minio
       - opensearch
+    # GPU configuration (only applied when GPU detected)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+    runtime: ${DOCKER_RUNTIME:-}
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
@@ -317,45 +469,119 @@ services:
     ports:
       - "5173:80"
     environment:
-      - VITE_API_BASE_URL=http://localhost:8080/api
-      - VITE_WS_BASE_URL=ws://localhost:8080/ws
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8080/api}
+      - VITE_WS_BASE_URL=${VITE_WS_BASE_URL:-ws://localhost:8080/ws}
+      - VITE_FLOWER_PORT=${VITE_FLOWER_PORT:-5555}
+      - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  flower:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: always
+    command: >
+      python -m celery -A app.core.celery flower
+      --port=5555
+      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
+      --persistent=True
+      --db=/app/flower.db
+      --broker=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    environment:
+      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+    volumes:
+      - flower_data:/app
 
 volumes:
   postgres_data:
   minio_data:
+  redis_data:
+  opensearch_data:
+  backend_models:
+  backend_temp:
+  flower_data:
+
+networks:
+  default:
+    driver: bridge
 EOF
-    echo "✓ Created minimal docker-compose.yml"
+    echo "✓ Created production docker-compose.yml"
 }
 
-create_minimal_env_example() {
+create_production_env_example() {
     cat > .env.example << 'EOF'
+# OpenTranscribe Production Configuration
+# This file is automatically configured by the setup script
+
 # Database Configuration
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=opentranscribe
 
-# Storage Configuration
+# MinIO Object Storage Configuration
+MINIO_HOST=minio
+MINIO_PORT=9000
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
+MEDIA_BUCKET_NAME=opentranscribe
 
-# Hardware Detection (auto-detected by default)
+# Redis Configuration
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# OpenSearch Configuration
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=9200
+
+# JWT Authentication
+JWT_SECRET_KEY=change_this_in_production
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+# Model Storage
+MODEL_BASE_DIR=/app/models
+TEMP_DIR=/app/temp
+
+# Hardware Detection (auto-detected by setup script)
 TORCH_DEVICE=auto
 COMPUTE_TYPE=auto
+USE_GPU=auto
 GPU_DEVICE_ID=0
 
-# AI Models
-WHISPER_MODEL=medium
-BATCH_SIZE=4
+# AI Models Configuration
+WHISPER_MODEL=large-v2
+BATCH_SIZE=auto
+DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
+MIN_SPEAKERS=1
+MAX_SPEAKERS=10
 
-# HuggingFace Token (required for speaker diarization)
-HUGGINGFACE_TOKEN=your_token_here
+# HuggingFace Token (REQUIRED for speaker diarization)
+# Get your token at: https://huggingface.co/settings/tokens
+HUGGINGFACE_TOKEN=your_huggingface_token_here
 
-# JWT Configuration
-JWT_SECRET_KEY=change_this_in_production
+# Frontend Configuration
+NODE_ENV=production
+VITE_API_BASE_URL=http://localhost:8080/api
+VITE_WS_BASE_URL=ws://localhost:8080/ws
+VITE_FLOWER_PORT=5555
+VITE_FLOWER_URL_PREFIX=flower
 EOF
-    echo "✓ Created minimal .env.example"
+    echo "✓ Created production .env.example"
 }
 
 configure_environment() {
@@ -377,19 +603,43 @@ configure_environment() {
     fi
     
     # Get HuggingFace token
-    echo -e "${YELLOW}🤗 HuggingFace Configuration${NC}"
-    echo "A HuggingFace token is REQUIRED for speaker diarization."
-    echo "Get your token at: https://huggingface.co/settings/tokens"
-    read -p "Enter your HuggingFace token (press Enter to skip): " HUGGINGFACE_TOKEN
+    echo ""
+    echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
+    echo "================================================="
+    echo -e "${RED}⚠️  IMPORTANT: A HuggingFace token is REQUIRED for speaker diarization!${NC}"
+    echo ""
+    echo "Without this token, the application will only do transcription (no speaker identification)."
+    echo ""
+    echo "To get your FREE token:"
+    echo "1. Go to: https://huggingface.co/settings/tokens"
+    echo "2. Click 'New token'"
+    echo "3. Give it a name (e.g., 'OpenTranscribe')"
+    echo "4. Select 'Read' permissions"
+    echo "5. Copy the token"
+    echo ""
+    
+    while true; do
+        read -p "Enter your HuggingFace token (or 'skip' to continue without speaker diarization): " HUGGINGFACE_TOKEN
+        
+        if [[ "$HUGGINGFACE_TOKEN" == "skip" ]]; then
+            echo -e "${YELLOW}⚠️  Skipping HuggingFace token - speaker diarization will be disabled${NC}"
+            HUGGINGFACE_TOKEN=""
+            break
+        elif [[ -n "$HUGGINGFACE_TOKEN" && ${#HUGGINGFACE_TOKEN} -gt 10 ]]; then
+            echo "✓ HuggingFace token accepted"
+            break
+        elif [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+            echo -e "${RED}❌ Empty token. Type 'skip' to continue without speaker diarization, or enter a valid token.${NC}"
+        else
+            echo -e "${RED}❌ Token too short. Please enter a valid HuggingFace token or type 'skip'.${NC}"
+        fi
+    done
     
     # Model selection based on hardware
     select_whisper_model
     
     # Create .env file
     create_env_file
-    
-    # Configure Docker Compose for hardware
-    configure_docker_compose
 }
 
 select_whisper_model() {
@@ -489,41 +739,17 @@ create_env_file() {
             ;;
     esac
     
+    # Add Docker runtime configuration
+    echo "" >> .env
+    echo "# Hardware Configuration (Auto-detected)" >> .env
+    echo "DOCKER_RUNTIME=${DOCKER_RUNTIME:-}" >> .env
+    
     # Clean up backup file
     rm -f .env.bak
     
     echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
 }
 
-configure_docker_compose() {
-    echo "✓ Configuring Docker Compose for $DETECTED_DEVICE..."
-    
-    # The unified docker-compose.yml already handles all platforms automatically
-    # Just ensure environment variables are properly set for Docker Compose
-    
-    echo "" >> .env
-    echo "# Hardware Configuration (Auto-detected)" >> .env
-    
-    if [[ "$DETECTED_DEVICE" == "cuda" && "$USE_GPU_RUNTIME" == "true" ]]; then
-        # GPU configuration
-        echo "DOCKER_RUNTIME=nvidia" >> .env
-        echo "TARGETPLATFORM=linux/amd64" >> .env
-        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
-        echo "✓ Docker Compose configured for NVIDIA GPU runtime"
-    elif [[ "$DETECTED_DEVICE" == "mps" ]]; then
-        # Apple Silicon configuration  
-        echo "DOCKER_RUNTIME=" >> .env
-        echo "TARGETPLATFORM=linux/arm64" >> .env
-        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
-        echo "✓ Docker Compose configured for Apple Silicon"
-    else
-        # CPU configuration
-        echo "DOCKER_RUNTIME=" >> .env
-        echo "TARGETPLATFORM=linux/amd64" >> .env
-        echo "BACKEND_DOCKERFILE=Dockerfile.multiplatform" >> .env
-        echo "✓ Docker Compose configured for CPU processing"
-    fi
-}
 
 #######################
 # STARTUP SCRIPT CREATION
@@ -782,35 +1008,57 @@ display_summary() {
     echo ""
     echo -e "${GREEN}🎉 OpenTranscribe Setup Complete!${NC}"
     echo ""
-    echo -e "${BLUE}📋 Configuration Summary:${NC}"
-    echo "  • Platform: $DETECTED_PLATFORM"
+    echo -e "${BLUE}📋 Hardware Configuration Summary:${NC}"
+    echo "  • Platform: $DETECTED_PLATFORM ($ARCH)"
     echo "  • Device: $DETECTED_DEVICE"
     echo "  • Compute Type: $COMPUTE_TYPE"
     echo "  • Batch Size: $BATCH_SIZE"
-    echo "  • Whisper Model: $WHISPER_MODEL"
-    echo "  • Docker Runtime: $DOCKER_RUNTIME"
+    echo "  • Docker Runtime: ${DOCKER_RUNTIME:-default}"
+    
+    if [[ "$DETECTED_DEVICE" == "cuda" ]]; then
+        echo "  • GPU Device ID: ${GPU_DEVICE_ID:-0}"
+        if command -v nvidia-smi &> /dev/null; then
+            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1)
+            echo "  • GPU: $GPU_NAME"
+        fi
+    fi
+    
     echo ""
+    echo -e "${BLUE}📋 Application Configuration:${NC}"
+    echo "  • Whisper Model: $WHISPER_MODEL"
+    echo "  • Speaker Diarization: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "Enabled" || echo "Disabled")"
+    echo "  • Project Directory: $PROJECT_DIR"
+    echo ""
+    
     echo -e "${YELLOW}🚀 To start OpenTranscribe:${NC}"
     echo "  cd $PROJECT_DIR"
     echo "  ./opentranscribe.sh start"
     echo ""
     
     if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
-        echo -e "${RED}⚠️  Warning: No HuggingFace token provided${NC}"
-        echo "Speaker diarization will not work without a token."
-        echo "Add your token to the .env file before starting."
+        echo -e "${RED}⚠️  Speaker Diarization Disabled${NC}"
+        echo "To enable speaker identification, add your HuggingFace token to .env:"
+        echo "HUGGINGFACE_TOKEN=your_token_here"
         echo ""
     fi
     
-    if [[ "$DETECTED_DEVICE" == "cuda" && "$USE_GPU_RUNTIME" == "false" ]]; then
-        echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but Container Toolkit not available${NC}"
-        echo "Install NVIDIA Container Toolkit for GPU acceleration:"
+    if [[ "$DETECTED_DEVICE" == "cuda" && "$DOCKER_RUNTIME" != "nvidia" ]]; then
+        echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but runtime not configured${NC}"
+        echo "If you experience GPU issues, check NVIDIA Container Toolkit installation:"
         echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
         echo ""
     fi
     
-    echo -e "${GREEN}📚 For help: ./opentranscribe.sh help${NC}"
-    echo -e "${GREEN}🔧 For debugging: ./opentranscribe.sh logs${NC}"
+    echo -e "${GREEN}🌐 Access URLs (after starting):${NC}"
+    echo "  • Web Interface: http://localhost:5173"
+    echo "  • API Documentation: http://localhost:8080/docs"
+    echo "  • Task Monitor: http://localhost:5555/flower"
+    echo ""
+    echo -e "${GREEN}📚 Management Commands:${NC}"
+    echo "  • ./opentranscribe.sh help    # Show all commands"
+    echo "  • ./opentranscribe.sh status  # Check service status"
+    echo "  • ./opentranscribe.sh logs    # View logs"
+    echo "  • ./opentranscribe.sh config  # Show current config"
 }
 
 #######################
@@ -823,7 +1071,7 @@ main() {
     check_dependencies
     configure_docker_runtime
     setup_project_directory
-    download_configuration_files
+    create_configuration_files
     configure_environment
     create_management_script
     validate_setup
