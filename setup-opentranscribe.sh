@@ -818,12 +818,15 @@ check_environment() {
 }
 
 show_access_info() {
+    # Source .env to get port values
+    source .env 2>/dev/null || true
+    
     echo -e "${GREEN}🌐 Access Information:${NC}"
-    echo "  • Web Interface:     http://localhost:5173"
-    echo "  • API Documentation: http://localhost:8080/docs"
-    echo "  • API Endpoint:      http://localhost:8080/api"
-    echo "  • Flower Dashboard:  http://localhost:5555/flower"
-    echo "  • MinIO Console:     http://localhost:9091"
+    echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
+    echo "  • API Endpoint:      http://localhost:${BACKEND_PORT:-5174}/api"
+    echo "  • Flower Dashboard:  http://localhost:${FLOWER_PORT:-5175}/flower"
+    echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
     echo ""
     echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
 }
@@ -930,13 +933,12 @@ case "${1:-help}" in
         echo "Environment file (.env):"
         grep -E "^[A-Z]" .env | head -20
         echo ""
-        echo "Hardware Detection:"
-        docker compose exec backend python -c "
-from app.utils.hardware_detection import detect_hardware
-config = detect_hardware()
-for key, value in config.get_summary().items():
-    print(f'  {key}: {value}')
-" 2>/dev/null || echo "  Backend not running - start services first"
+        echo "Docker Compose configuration:"
+        if docker compose config > /dev/null 2>&1; then
+            echo "  ✅ Valid"
+        else
+            echo "  ❌ Invalid"
+        fi
         ;;
     health)
         check_environment
@@ -949,15 +951,18 @@ for key, value in config.get_summary().items():
         echo ""
         echo "Service Health:"
         
+        # Source .env to get port values
+        source .env 2>/dev/null || true
+        
         # Backend health
-        if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+        if curl -s http://localhost:${BACKEND_PORT:-5174}/health > /dev/null 2>&1; then
             echo "  ✅ Backend: Healthy"
         else
             echo "  ❌ Backend: Unhealthy"
         fi
         
         # Frontend health  
-        if curl -s http://localhost:5173 > /dev/null 2>&1; then
+        if curl -s http://localhost:${FRONTEND_PORT:-5173} > /dev/null 2>&1; then
             echo "  ✅ Frontend: Healthy"
         else
             echo "  ❌ Frontend: Unhealthy"
