@@ -517,16 +517,16 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
       # Storage
       - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_PORT=9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
       # Cache
       - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PORT=6379
       # Search
       - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      - OPENSEARCH_PORT=9200
       # Security
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
@@ -586,13 +586,13 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
       - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_PORT=9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PORT=6379
       - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-9200}
+      - OPENSEARCH_PORT=9200
       - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
       - TEMP_DIR=${TEMP_DIR:-/app/temp}
       - TORCH_DEVICE=${TORCH_DEVICE:-auto}
