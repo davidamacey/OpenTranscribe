@@ -2,6 +2,9 @@
   import { useNavigate } from "svelte-navigator";
   import { register, login } from "../stores/auth";
   
+  // Import logo asset for proper Vite processing
+  import logoBanner from '../assets/logo-banner.png';
+  
   // Explicitly declare props to prevent warnings
   export let location = null;
   export let navigate = null;
@@ -81,7 +84,7 @@
   <div class="auth-card">
     <div class="auth-header">
       <div class="auth-logo">
-        <img src="/src/assets/logo-banner.png" alt="OpenTranscribe" class="logo-banner" />
+        <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
       <h1>Register</h1>
       <p>Create a new account</p>

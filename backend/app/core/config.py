@@ -70,12 +70,67 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
     
+    # Hardware Detection Settings (auto-detected by default)
+    TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
+    COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
+    USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
+    GPU_DEVICE_ID: int = int(os.getenv("GPU_DEVICE_ID", "0"))
+    BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
+    
     # AI Models settings
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
-    USE_GPU: bool = os.getenv("USE_GPU", "True").lower() == "true"  # Default to True as we have a powerful GPU
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mistral-7b-instruct-v0.2.Q4_K_M")  # For summarization
     HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
+    
+    # Performance optimization properties
+    @property
+    def effective_use_gpu(self) -> bool:
+        """Determine if GPU should be used based on hardware detection."""
+        if self.USE_GPU.lower() == "auto":
+            try:
+                from app.utils.hardware_detection import detect_hardware
+                config = detect_hardware()
+                return config.device in ["cuda", "mps"]
+            except ImportError:
+                return False
+        return self.USE_GPU.lower() == "true"
+    
+    @property
+    def effective_torch_device(self) -> str:
+        """Get the effective torch device."""
+        if self.TORCH_DEVICE.lower() == "auto":
+            try:
+                from app.utils.hardware_detection import detect_hardware
+                config = detect_hardware()
+                return config.device
+            except ImportError:
+                return "cpu"
+        return self.TORCH_DEVICE.lower()
+    
+    @property
+    def effective_compute_type(self) -> str:
+        """Get the effective compute type."""
+        if self.COMPUTE_TYPE.lower() == "auto":
+            try:
+                from app.utils.hardware_detection import detect_hardware
+                config = detect_hardware()
+                return config.compute_type
+            except ImportError:
+                return "int8"
+        return self.COMPUTE_TYPE.lower()
+    
+    @property
+    def effective_batch_size(self) -> int:
+        """Get the effective batch size."""
+        if self.BATCH_SIZE.lower() == "auto":
+            try:
+                from app.utils.hardware_detection import detect_hardware
+                config = detect_hardware()
+                return config.batch_size
+            except ImportError:
+                return 1
+        return int(self.BATCH_SIZE)
     
     # Storage paths
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/mnt/nvm/repos/transcribe-app/data"))

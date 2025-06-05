@@ -96,9 +96,8 @@ def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
-# Mount static files (for production deployment)
-if os.path.exists("../frontend/dist") and settings.ENVIRONMENT != "development":
-    app.mount("/", StaticFiles(directory="../frontend/dist", html=True), name="static")
+# Static files are served by nginx in production, not by FastAPI
+# Removed conflicting static file mounting to prevent nginx conflicts
 
 # Run the application if executed directly
 if __name__ == "__main__":
