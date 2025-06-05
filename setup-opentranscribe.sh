@@ -579,7 +579,7 @@ configure_environment() {
         echo "⚠️  Using basic JWT secret - consider generating a secure one"
     fi
     
-    # Get HuggingFace token
+    # Display HuggingFace token instructions
     echo ""
     echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
     echo "================================================="
@@ -593,26 +593,13 @@ configure_environment() {
     echo "3. Give it a name (e.g., 'OpenTranscribe')"
     echo "4. Select 'Read' permissions"
     echo "5. Copy the token"
+    echo "6. Edit the .env file after setup and add: HUGGINGFACE_TOKEN=your_token_here"
+    echo ""
+    echo -e "${YELLOW}💡 You can add your token later by editing the .env file${NC}"
     echo ""
     
-    while true; do
-        echo -n "Enter your HuggingFace token (or 'skip' to continue without speaker diarization): "
-        read -s HUGGINGFACE_TOKEN
-        echo  # Add newline after hidden input
-        
-        if [[ "$HUGGINGFACE_TOKEN" == "skip" ]]; then
-            echo -e "${YELLOW}⚠️  Skipping HuggingFace token - speaker diarization will be disabled${NC}"
-            HUGGINGFACE_TOKEN=""
-            break
-        elif [[ -n "$HUGGINGFACE_TOKEN" && ${#HUGGINGFACE_TOKEN} -gt 10 ]]; then
-            echo "✓ HuggingFace token accepted"
-            break
-        elif [[ -z "$HUGGINGFACE_TOKEN" ]]; then
-            echo -e "${RED}❌ Empty token. Type 'skip' to continue without speaker diarization, or enter a valid token.${NC}"
-        else
-            echo -e "${RED}❌ Token too short. Please enter a valid HuggingFace token or type 'skip'.${NC}"
-        fi
-    done
+    # Set empty token for now - user will add it manually
+    HUGGINGFACE_TOKEN=""
     
     # Model selection based on hardware
     select_whisper_model
@@ -1014,12 +1001,12 @@ display_summary() {
     echo "  ./opentranscribe.sh start"
     echo ""
     
-    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
-        echo -e "${RED}⚠️  Speaker Diarization Disabled${NC}"
-        echo "To enable speaker identification, add your HuggingFace token to .env:"
-        echo "HUGGINGFACE_TOKEN=your_token_here"
-        echo ""
-    fi
+    echo -e "${RED}⚠️  Speaker Diarization Setup Required${NC}"
+    echo "To enable speaker identification:"
+    echo "1. Get a free token at: https://huggingface.co/settings/tokens"
+    echo "2. Edit the .env file and add: HUGGINGFACE_TOKEN=your_token_here"
+    echo "3. Restart the application: ./opentranscribe.sh restart"
+    echo ""
     
     if [[ "$DETECTED_DEVICE" == "cuda" && "$DOCKER_RUNTIME" != "nvidia" ]]; then
         echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but runtime not configured${NC}"
