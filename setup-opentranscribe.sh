@@ -223,8 +223,179 @@ setup_project_directory() {
     echo "✓ Created project directory: $PROJECT_DIR"
 }
 
+create_database_files() {
+    echo "✓ Creating database initialization files..."
+    
+    # Create init_db.sql file
+    cat > init_db.sql << 'EOF'
+-- Initialize database tables for OpenTranscribe
+
+-- Users table
+CREATE TABLE IF NOT EXISTS "user" (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
+    role VARCHAR(50) DEFAULT 'user',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Media files table
+CREATE TABLE IF NOT EXISTS media_file (
+    id SERIAL PRIMARY KEY,
+    filename VARCHAR(255) NOT NULL,
+    storage_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    duration FLOAT,
+    upload_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE NULL,
+    content_type VARCHAR(100) NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    is_public BOOLEAN DEFAULT FALSE,
+    language VARCHAR(10) NULL,
+    summary TEXT NULL,
+    translated_text TEXT NULL,
+    file_hash VARCHAR(255) NULL,
+    thumbnail_path VARCHAR(500) NULL,
+    -- Detailed metadata fields
+    metadata_raw JSONB NULL,
+    metadata_important JSONB NULL,
+    -- Media technical specs
+    media_format VARCHAR(50) NULL,
+    codec VARCHAR(50) NULL,
+    frame_rate FLOAT NULL,
+    frame_count INTEGER NULL,
+    resolution_width INTEGER NULL,
+    resolution_height INTEGER NULL,
+    aspect_ratio VARCHAR(20) NULL,
+    -- Audio specs
+    audio_channels INTEGER NULL,
+    audio_sample_rate INTEGER NULL,
+    audio_bit_depth INTEGER NULL,
+    -- Creation information
+    creation_date TIMESTAMP WITH TIME ZONE NULL,
+    last_modified_date TIMESTAMP WITH TIME ZONE NULL,
+    -- Device information
+    device_make VARCHAR(100) NULL,
+    device_model VARCHAR(100) NULL,
+    -- Content information
+    title VARCHAR(255) NULL,
+    author VARCHAR(255) NULL,
+    description TEXT NULL,
+    user_id INTEGER NOT NULL REFERENCES "user" (id)
+);
+
+-- Create the Tag table
+CREATE TABLE IF NOT EXISTS tag (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create the FileTag join table
+CREATE TABLE IF NOT EXISTS file_tag (
+    id SERIAL PRIMARY KEY,
+    media_file_id INTEGER NOT NULL REFERENCES media_file (id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (media_file_id, tag_id)
+);
+
+-- Speakers table
+CREATE TABLE IF NOT EXISTS speaker (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES "user"(id),
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    display_name VARCHAR(255) NULL,
+    uuid VARCHAR(255) NOT NULL,
+    verified BOOLEAN NOT NULL DEFAULT FALSE,
+    embedding_vector JSONB NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, media_file_id, name)
+);
+
+-- Transcript segments table
+CREATE TABLE IF NOT EXISTS transcript_segment (
+    id SERIAL PRIMARY KEY,
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id),
+    speaker_id INTEGER NULL REFERENCES speaker(id),
+    start_time FLOAT NOT NULL,
+    end_time FLOAT NOT NULL,
+    text TEXT NOT NULL
+);
+
+-- Comments table
+CREATE TABLE IF NOT EXISTS comment (
+    id SERIAL PRIMARY KEY,
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id),
+    user_id INTEGER NOT NULL REFERENCES "user"(id),
+    text TEXT NOT NULL,
+    timestamp FLOAT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tasks table
+CREATE TABLE IF NOT EXISTS task (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES "user"(id),
+    media_file_id INTEGER NULL REFERENCES media_file(id),
+    task_type VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    progress FLOAT DEFAULT 0.0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE NULL,
+    error_message TEXT NULL
+);
+
+-- Analytics table
+CREATE TABLE IF NOT EXISTS analytics (
+    id SERIAL PRIMARY KEY,
+    media_file_id INTEGER UNIQUE REFERENCES media_file(id),
+    speaker_stats JSONB NULL,
+    sentiment JSONB NULL,
+    keywords JSONB NULL
+);
+
+-- Collections table
+CREATE TABLE IF NOT EXISTS collection (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT NULL,
+    user_id INTEGER NOT NULL REFERENCES "user"(id),
+    is_public BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
+);
+
+-- Collection members join table
+CREATE TABLE IF NOT EXISTS collection_member (
+    id SERIAL PRIMARY KEY,
+    collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
+    added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(collection_id, media_file_id)
+);
+
+-- Insert admin user
+INSERT INTO "user" (email, full_name, hashed_password, is_active, is_superuser, role) 
+VALUES ('admin@example.com', 'Admin User', '$2b$12$VVtvMYmKcDrOkUEBeGm9luACJNDxPw.eAcTShleJS1gmh5ARHBFpm', true, true, 'admin') 
+ON CONFLICT (email) DO NOTHING;
+EOF
+
+    echo "✓ Created init_db.sql"
+}
+
 create_configuration_files() {
     echo -e "${BLUE}📄 Creating configuration files...${NC}"
+    
+    # Create database initialization files
+    create_database_files
     
     # Create comprehensive docker-compose.yml directly
     create_production_compose
@@ -313,69 +484,20 @@ services:
       retries: 20
 
   db-init:
-    image: davidamacey/opentranscribe-backend:latest
+    image: postgres:14-alpine
     restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./init_db.sql:/init_db.sql:ro
     environment:
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
-      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
     command: >
       sh -c "
-        echo '🗄️  Initializing database...' &&
-        python -c \"
-import asyncio
-import sys
-import os
-sys.path.append('/app')
-from app.db.base import Base
-from app.models.user import User
-from app.models.media import MediaFile, MediaCollection, UserMediaFile, Tag, Comment, SpeakerSegment
-from app.core.security import get_password_hash
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-
-async def init_db():
-    DATABASE_URL = f'postgresql+asyncpg://{os.getenv(\\\"POSTGRES_USER\\\")}:{os.getenv(\\\"POSTGRES_PASSWORD\\\")}@{os.getenv(\\\"POSTGRES_HOST\\\")}:5432/{os.getenv(\\\"POSTGRES_DB\\\")}'
-    engine = create_async_engine(DATABASE_URL)
-    
-    # Create all tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    # Create admin user
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with async_session() as session:
-        from sqlalchemy import select
-        result = await session.execute(select(User).where(User.email == 'admin@opentranscribe.local'))
-        admin_user = result.scalars().first()
-        
-        if not admin_user:
-            admin_user = User(
-                email='admin@opentranscribe.local',
-                username='admin',
-                hashed_password=get_password_hash('admin123'),
-                is_active=True,
-                is_superuser=True
-            )
-            session.add(admin_user)
-            await session.commit()
-            print('✅ Admin user created: admin@opentranscribe.local / admin123')
-        else:
-            print('✅ Admin user already exists')
-    
-    await engine.dispose()
-    print('✅ Database initialization complete')
-
-asyncio.run(init_db())
-        \" &&
-        echo '🎉 Database setup completed successfully!'
+        echo '🗄️  Initializing database schema...' &&
+        psql -h postgres -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-opentranscribe} -f /init_db.sql &&
+        echo '✅ Database schema initialized!'
       "
 
   backend:
@@ -1071,8 +1193,8 @@ display_summary() {
     echo "  • MinIO Console: http://localhost:${MINIO_CONSOLE_PORT:-5179}"
     echo ""
     echo -e "${GREEN}🔐 Default Admin Login:${NC}"
-    echo "  • Email: admin@opentranscribe.local"
-    echo "  • Password: admin123"
+    echo "  • Email: admin@example.com"
+    echo "  • Password: password"
     echo "  • Change password after first login!"
     echo ""
     echo -e "${GREEN}📚 Management Commands:${NC}"
