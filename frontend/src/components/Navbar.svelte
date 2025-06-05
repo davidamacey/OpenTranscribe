@@ -9,6 +9,9 @@
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
   import { unreadCount } from '../stores/websocket';
   
+  // Import logo asset for proper Vite processing
+  import logoBanner from '../assets/logo-banner.png';
+  
   // Location for active state detection
   const location = useLocation();
   
@@ -102,7 +105,7 @@
         to="/"
         title="Go to OpenTranscribe home page"
       >
-        <img src="/src/assets/logo-banner.png" alt="OpenTranscribe" class="logo-banner" />
+        <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </Link>
     </div>
     

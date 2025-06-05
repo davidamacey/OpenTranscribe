@@ -3,6 +3,9 @@
   import { login, authStore, isAuthenticated } from "../stores/auth";
   import { onMount } from 'svelte';
   
+  // Import logo asset for proper Vite processing
+  import logoBanner from '../assets/logo-banner.png';
+  
   // Explicitly declare props to prevent warnings
   export let location = null;
   export let navigate = null;
@@ -92,7 +95,7 @@
   <div class="auth-card">
     <div class="auth-header">
       <div class="auth-logo">
-        <img src="/src/assets/logo-banner.png" alt="OpenTranscribe" class="logo-banner" />
+        <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
       <h1>Login</h1>
       <p>Sign in to your account</p>

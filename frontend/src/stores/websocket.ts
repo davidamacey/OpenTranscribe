@@ -73,9 +73,19 @@ function createWebSocketStore() {
       
       try {
         // Construct WebSocket URL with token
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const baseUrl = window.location.host;
-        const wsUrl = `${protocol}//${baseUrl}/api/ws?token=${token}`;
+        // Use environment variable if available, otherwise fall back to dynamic construction
+        const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
+        let wsUrl;
+        
+        if (wsBaseUrl) {
+          // Use configured WebSocket base URL
+          wsUrl = `${wsBaseUrl}?token=${token}`;
+        } else {
+          // Fall back to dynamic construction for development
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const baseUrl = window.location.host;
+          wsUrl = `${protocol}//${baseUrl}/api/ws?token=${token}`;
+        }
         
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);

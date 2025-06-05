@@ -127,11 +127,8 @@ start_app() {
   # Create necessary directories
   create_required_dirs
   
-  # Use unified docker-compose configuration
-  COMPOSE_FILE="docker-compose.unified.yml"
-  if [[ "$ENVIRONMENT" == "dev" ]]; then
-    COMPOSE_FILE="$COMPOSE_FILE:docker-compose.override.yml"
-  fi
+  # Use docker-compose configuration
+  COMPOSE_FILE="docker-compose.yml"
   
   # Start environment
   echo "🔄 Starting services with hardware-optimized configuration..."
@@ -171,11 +168,8 @@ reset_and_init() {
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
   
-  # Use unified docker-compose configuration
-  COMPOSE_FILE="docker-compose.unified.yml"
-  if [[ "$ENVIRONMENT" == "dev" ]]; then
-    COMPOSE_FILE="$COMPOSE_FILE:docker-compose.override.yml"
-  fi
+  # Use docker-compose configuration
+  COMPOSE_FILE="docker-compose.yml"
   
   echo "🛑 Stopping all containers and removing volumes..."
   docker compose -f $COMPOSE_FILE down -v
@@ -412,7 +406,7 @@ case "$1" in
   stop)
     echo "🛑 Stopping all containers..."
     # Use unified compose files
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE down
     echo "✅ All containers stopped."
     ;;
@@ -430,7 +424,7 @@ case "$1" in
     
   logs)
     SERVICE=${2:-}
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     if [ -z "$SERVICE" ]; then
       echo "📋 Showing logs for all services... (press Ctrl+C to exit)"
       docker compose -f $COMPOSE_FILE logs -f
@@ -442,14 +436,14 @@ case "$1" in
     
   status)
     echo "📊 Container status:"
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE ps
     ;;
     
   shell)
     SERVICE=${2:-backend}
     echo "🔧 Opening shell in $SERVICE container..."
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE exec $SERVICE /bin/bash || docker compose -f $COMPOSE_FILE exec $SERVICE /bin/sh
     ;;
     
@@ -476,14 +470,14 @@ case "$1" in
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE up -d --build backend celery-worker flower
     echo "✅ Backend services rebuilt successfully."
     ;;
     
   rebuild-frontend)
     echo "🔨 Rebuilding frontend service..."
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE up -d --build frontend
     echo "✅ Frontend service rebuilt successfully."
     ;;
@@ -503,7 +497,7 @@ case "$1" in
   build)
     echo "🔨 Rebuilding containers..."
     detect_and_configure_hardware
-    COMPOSE_FILE="docker-compose.unified.yml:docker-compose.override.yml"
+    COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE build
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
