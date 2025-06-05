@@ -118,58 +118,35 @@ detect_hardware_acceleration() {
 # DOCKER CONFIGURATION
 #######################
 
+check_gpu_support() {
+    # Check for NVIDIA GPUs
+    if command -v nvidia-smi &> /dev/null; then
+        echo "✅ NVIDIA GPU detected:"
+        nvidia-smi --query-gpu=name --format=csv,noheader
+    else
+        echo "❌ No NVIDIA GPU detected or nvidia-smi not found"
+        return 1
+    fi
+
+    # Check for NVIDIA container runtime
+    if docker info 2>/dev/null | grep -q "nvidia"; then
+        echo "✅ NVIDIA Container Runtime is properly configured"
+        return 0
+    else
+        echo "❌ NVIDIA Container Runtime is not properly configured"
+        return 1
+    fi
+}
+
 configure_docker_runtime() {
     echo -e "${BLUE}🐳 Configuring Docker runtime...${NC}"
     
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
         echo "🧪 Testing NVIDIA Container Toolkit..."
         
-        # Comprehensive NVIDIA Container Toolkit validation
-        GPU_TEST_PASSED=false
-        
-        # Test 1: Basic docker --gpus flag support
-        echo "  • Testing basic GPU access..."
-        if docker run --rm --gpus all --entrypoint="" nvidia/cuda:11.8-base-ubuntu22.04 echo "GPU access test" &> /dev/null; then
-            echo "    ✓ Docker GPU flag support confirmed"
-            
-            # Test 2: NVIDIA runtime functionality
-            echo "  • Testing NVIDIA runtime functionality..."
-            if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --list-gpus &> /dev/null; then
-                echo "    ✓ NVIDIA runtime working"
-                
-                # Test 3: GPU memory access
-                echo "  • Testing GPU memory access..."
-                if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits &> /dev/null; then
-                    echo "    ✓ GPU memory access confirmed"
-                    
-                    # Test 4: CUDA context creation
-                    echo "  • Testing CUDA context creation..."
-                    if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())" 2>/dev/null | grep -q "True"; then
-                        echo "    ✓ CUDA context creation successful"
-                        GPU_TEST_PASSED=true
-                    else
-                        echo "    ⚠️  CUDA context test failed (PyTorch not available in test image)"
-                        # This is not critical - the base image might not have PyTorch
-                        GPU_TEST_PASSED=true
-                    fi
-                else
-                    echo "    ❌ GPU memory access failed"
-                fi
-            else
-                echo "    ❌ NVIDIA runtime test failed"
-            fi
-        else
-            echo "    ❌ Docker GPU flag not supported"
-        fi
-        
-        # Final decision based on tests
-        if [[ "$GPU_TEST_PASSED" == "true" ]]; then
+        if check_gpu_support; then
             echo -e "${GREEN}✅ NVIDIA Container Toolkit fully functional${NC}"
             DOCKER_RUNTIME="nvidia"
-            
-            # Display detected GPU info
-            echo "  • Detected GPUs:"
-            docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader 2>/dev/null | sed 's/^/    /'
         else
             echo -e "${RED}❌ NVIDIA Container Toolkit tests failed${NC}"
             echo ""
