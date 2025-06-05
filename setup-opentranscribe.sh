@@ -251,7 +251,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5176}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
@@ -267,8 +267,8 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9091}:9001"
+      - "${MINIO_PORT:-5178}:9000"
+      - "${MINIO_CONSOLE_PORT:-5179}:9001"
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -280,7 +280,7 @@ services:
     image: redis:7-alpine
     restart: always
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-5177}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -304,13 +304,79 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "${OPENSEARCH_PORT:-9200}:9200"
-      - "${OPENSEARCH_ADMIN_PORT:-9600}:9600"
+      - "${OPENSEARCH_PORT:-5180}:9200"
+      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 20
+
+  db-init:
+    image: davidamacey/opentranscribe-backend:latest
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+    command: >
+      sh -c "
+        echo '🗄️  Initializing database...' &&
+        python -c \"
+import asyncio
+import sys
+import os
+sys.path.append('/app')
+from app.db.base import Base
+from app.models.user import User
+from app.models.media import MediaFile, MediaCollection, UserMediaFile, Tag, Comment, SpeakerSegment
+from app.core.security import get_password_hash
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
+async def init_db():
+    DATABASE_URL = f'postgresql+asyncpg://{os.getenv(\\\"POSTGRES_USER\\\")}:{os.getenv(\\\"POSTGRES_PASSWORD\\\")}@{os.getenv(\\\"POSTGRES_HOST\\\")}:5432/{os.getenv(\\\"POSTGRES_DB\\\")}'
+    engine = create_async_engine(DATABASE_URL)
+    
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Create admin user
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        from sqlalchemy import select
+        result = await session.execute(select(User).where(User.email == 'admin@opentranscribe.local'))
+        admin_user = result.scalars().first()
+        
+        if not admin_user:
+            admin_user = User(
+                email='admin@opentranscribe.local',
+                username='admin',
+                hashed_password=get_password_hash('admin123'),
+                is_active=True,
+                is_superuser=True
+            )
+            session.add(admin_user)
+            await session.commit()
+            print('✅ Admin user created: admin@opentranscribe.local / admin123')
+        else:
+            print('✅ Admin user already exists')
+    
+    await engine.dispose()
+    print('✅ Database initialization complete')
+
+asyncio.run(init_db())
+        \" &&
+        echo '🎉 Database setup completed successfully!'
+      "
 
   backend:
     image: davidamacey/opentranscribe-backend:latest
@@ -319,11 +385,11 @@ services:
       - backend_models:/app/models
       - backend_temp:/app/temp
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${BACKEND_PORT:-5174}:8080"
     environment:
       # Database
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
@@ -359,8 +425,8 @@ services:
       - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       minio:
@@ -393,7 +459,7 @@ services:
     environment:
       # Same environment as backend
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
@@ -439,9 +505,9 @@ services:
       - "${FRONTEND_PORT:-5173}:80"
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-8080}/api
-      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-8080}/ws
-      - VITE_FLOWER_PORT=${FLOWER_PORT:-5555}
+      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-5174}/api
+      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-5174}/ws
+      - VITE_FLOWER_PORT=${FLOWER_PORT:-5175}
       - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
     depends_on:
       backend:
@@ -462,14 +528,14 @@ services:
       --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/flower.db
-      --broker=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+      --broker=redis://${REDIS_HOST:-redis}:6379/0
     ports:
-      - "${FLOWER_PORT:-5555}:5555"
+      - "${FLOWER_PORT:-5175}:5555"
     depends_on:
       - redis
       - celery-worker
     environment:
-      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}/0
+      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
       - flower_data:/app
@@ -497,27 +563,27 @@ create_production_env_example() {
 
 # Database Configuration
 POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
+POSTGRES_PORT=5176
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=opentranscribe
 
 # MinIO Object Storage Configuration
 MINIO_HOST=minio
-MINIO_PORT=9000
-MINIO_CONSOLE_PORT=9091
+MINIO_PORT=5178
+MINIO_CONSOLE_PORT=5179
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin
 MEDIA_BUCKET_NAME=opentranscribe
 
 # Redis Configuration
 REDIS_HOST=redis
-REDIS_PORT=6379
+REDIS_PORT=5177
 
 # OpenSearch Configuration
 OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=9200
-OPENSEARCH_ADMIN_PORT=9600
+OPENSEARCH_PORT=5180
+OPENSEARCH_ADMIN_PORT=5181
 
 # JWT Authentication
 JWT_SECRET_KEY=change_this_in_production
@@ -545,10 +611,16 @@ MAX_SPEAKERS=10
 # Get your token at: https://huggingface.co/settings/tokens
 HUGGINGFACE_TOKEN=your_huggingface_token_here
 
-# External Port Configuration (change if ports are already in use)
-BACKEND_PORT=8080
+# External Port Configuration (sequential ports to avoid conflicts)
 FRONTEND_PORT=5173
-FLOWER_PORT=5555
+BACKEND_PORT=5174
+FLOWER_PORT=5175
+POSTGRES_PORT=5176
+REDIS_PORT=5177
+MINIO_PORT=5178
+MINIO_CONSOLE_PORT=5179
+OPENSEARCH_PORT=5180
+OPENSEARCH_ADMIN_PORT=5181
 
 # Frontend Configuration
 NODE_ENV=production
@@ -989,8 +1061,14 @@ display_summary() {
     
     echo -e "${GREEN}🌐 Access URLs (after starting):${NC}"
     echo "  • Web Interface: http://localhost:${FRONTEND_PORT:-5173}"
-    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-8080}/docs"
-    echo "  • Task Monitor: http://localhost:${FLOWER_PORT:-5555}/flower"
+    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
+    echo "  • Task Monitor: http://localhost:${FLOWER_PORT:-5175}/flower"
+    echo "  • MinIO Console: http://localhost:${MINIO_CONSOLE_PORT:-5179}"
+    echo ""
+    echo -e "${GREEN}🔐 Default Admin Login:${NC}"
+    echo "  • Email: admin@opentranscribe.local"
+    echo "  • Password: admin123"
+    echo "  • Change password after first login!"
     echo ""
     echo -e "${GREEN}📚 Management Commands:${NC}"
     echo "  • ./opentranscribe.sh help    # Show all commands"
