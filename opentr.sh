@@ -20,6 +20,7 @@ show_help() {
   echo "Basic Commands:"
   echo "  start [dev|prod|dev-nginx] - Start the application (dev mode by default)"
   echo "  stop                        - Stop all containers"
+  echo "  remove                      - Stop all containers and remove volumes"
   echo "  status                      - Show container status"
   echo "  logs [service]              - View logs (all services by default)"
   echo ""
@@ -421,6 +422,14 @@ case "$1" in
     COMPOSE_FILE="docker-compose.yml"
     docker compose -f $COMPOSE_FILE down
     echo "✅ All containers stopped."
+    ;;
+    
+  remove)
+    echo "🛑 Stopping all containers and removing volumes..."
+    # Use unified compose files
+    COMPOSE_FILE="docker-compose.yml"
+    docker compose -f $COMPOSE_FILE down -v
+    echo "✅ All containers stopped and volumes removed."
     ;;
     
   reset)
