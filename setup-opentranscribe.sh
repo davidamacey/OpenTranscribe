@@ -19,6 +19,7 @@ COMPUTE_TYPE=""
 BATCH_SIZE=""
 DOCKER_RUNTIME=""
 USE_GPU_RUNTIME="false"
+DOCKER_COMPOSE_CMD="docker compose"
 
 #######################
 # HARDWARE DETECTION
@@ -34,17 +35,23 @@ detect_platform() {
     case "$DETECTED_PLATFORM" in
         "linux")
             echo "✓ Detected: Linux ($ARCH)"
+            DOCKER_COMPOSE_CMD="docker compose"
             ;;
         "darwin")
             DETECTED_PLATFORM="macos"
             echo "✓ Detected: macOS ($ARCH)"
+            # macOS typically uses docker-compose (hyphenated) command
+            DOCKER_COMPOSE_CMD="docker-compose"
             ;;
         "mingw"*|"msys"*|"cygwin"*)
             DETECTED_PLATFORM="windows"
             echo "✓ Detected: Windows ($ARCH)"
+            DOCKER_COMPOSE_CMD="docker-compose"
             ;;
         *)
             echo "⚠️  Unknown platform: $DETECTED_PLATFORM ($ARCH)"
+            # Default to docker compose with space
+            DOCKER_COMPOSE_CMD="docker compose"
             ;;
     esac
     
@@ -183,21 +190,49 @@ check_dependencies() {
     # Check for Docker
     if ! command -v docker &> /dev/null; then
         echo -e "${RED}❌ Docker is not installed${NC}"
-        echo "Visit https://docs.docker.com/get-docker/ for installation instructions."
+        case "$DETECTED_PLATFORM" in
+            "macos")
+                echo "For macOS, install Docker Desktop from https://docs.docker.com/desktop/install/mac/"
+                echo "Or install via Homebrew: brew install --cask docker"
+                ;;
+            "windows")
+                echo "For Windows, install Docker Desktop from https://docs.docker.com/desktop/install/windows/"
+                ;;
+            *)
+                echo "Visit https://docs.docker.com/get-docker/ for installation instructions."
+                ;;
+        esac
         exit 1
     else
         docker_version=$(docker --version | cut -d' ' -f3 | cut -d',' -f1)
         echo "✓ Docker $docker_version detected"
     fi
     
-    # Check for Docker Compose
-    if ! docker compose version &> /dev/null; then
-        echo -e "${RED}❌ Docker Compose is not installed or not in PATH${NC}"
-        echo "Visit https://docs.docker.com/compose/install/ for installation instructions."
-        exit 1
+    # Check for Docker Compose - try both 'docker compose' and 'docker-compose' formats
+    if docker compose version &> /dev/null; then
+        compose_version=$(docker compose version --short 2>/dev/null || docker compose version 2>/dev/null)
+        echo "✓ Docker Compose $compose_version detected (docker compose format)"
+        DOCKER_COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        compose_version=$(docker-compose version --short 2>/dev/null || docker-compose --version 2>/dev/null)
+        echo "✓ Docker Compose detected (docker-compose format)"
+        DOCKER_COMPOSE_CMD="docker-compose"
     else
-        compose_version=$(docker compose version --short)
-        echo "✓ Docker Compose $compose_version detected"
+        echo -e "${RED}❌ Docker Compose is not installed or not in PATH${NC}"
+        
+        case "$DETECTED_PLATFORM" in
+            "macos")
+                echo "For macOS, Docker Compose is included in Docker Desktop."
+                echo "Or install via Homebrew: brew install docker-compose"
+                ;;
+            "windows")
+                echo "For Windows, Docker Compose is included in Docker Desktop."
+                ;;
+            *)
+                echo "Visit https://docs.docker.com/compose/install/ for installation instructions."
+                ;;
+        esac
+        exit 1
     fi
     
     # Check if Docker daemon is running
@@ -405,6 +440,9 @@ create_configuration_files() {
 }
 
 create_production_compose() {
+    echo "✓ Creating production docker-compose.yml with hardware-specific configuration..."
+    
+    # Create base compose file
     cat > docker-compose.yml << 'EOF'
 version: '3.8'
 
@@ -561,15 +599,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
@@ -610,15 +639,6 @@ services:
       - redis
       - minio
       - opensearch
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
@@ -627,8 +647,8 @@ services:
       - "${FRONTEND_PORT:-5173}:80"
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-5174}/api
-      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-5174}/ws
+      - VITE_API_BASE_URL=/api
+      - VITE_WS_BASE_URL=auto
       - VITE_FLOWER_PORT=${FLOWER_PORT:-5175}
       - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
     depends_on:
@@ -675,6 +695,39 @@ networks:
   default:
     driver: bridge
 EOF
+
+    # Add GPU configuration if CUDA is detected
+    if [[ "$DETECTED_DEVICE" == "cuda" && "$USE_GPU_RUNTIME" == "true" ]]; then
+        echo "✓ Adding NVIDIA GPU runtime configuration..."
+        
+        # Add GPU override file for CUDA systems
+        cat > docker-compose.gpu.yml << 'EOF'
+version: '3.8'
+
+services:
+  backend:
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+
+  celery-worker:
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['${GPU_DEVICE_ID:-0}']
+              capabilities: [gpu]
+EOF
+        echo "✓ Created GPU override configuration (docker-compose.gpu.yml)"
+    fi
+    
     echo "✓ Created production docker-compose.yml"
 }
 
@@ -953,58 +1006,66 @@ show_access_info() {
     echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
 }
 
+get_compose_command() {
+    # Build compose command with all available override files
+    COMPOSE_FILES="-f docker-compose.yml"
+    if [ -f docker-compose.gpu.yml ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+    fi
+    if [ -f docker-compose.override.yml ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.override.yml"
+    fi
+    # Use the platform-specific docker compose command
+    local platform=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local compose_cmd="docker compose"
+    
+    if [[ "$platform" == "darwin" ]]; then
+        # Check which docker compose command format works
+        if command -v docker-compose &> /dev/null; then
+            compose_cmd="docker-compose"
+        fi
+    elif [[ "$platform" == *"mingw"* || "$platform" == *"msys"* || "$platform" == *"cygwin"* ]]; then
+        compose_cmd="docker-compose"
+    fi
+    
+    echo "$compose_cmd $COMPOSE_FILES"
+}
+
 case "${1:-help}" in
     start)
         check_environment
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        # Use override file if it exists for development features
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose up -d
-        fi
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
         show_access_info
         ;;
     stop)
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-        else
-            docker compose down
-        fi
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD down
         echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
         ;;
     restart)
         check_environment
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose down
-            docker compose up -d
-        fi
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD down
+        $COMPOSE_CMD up -d
         echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
         show_access_info
         ;;
     status)
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml ps
-        else
-            docker compose ps
-        fi
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD ps
         ;;
     logs)
         check_environment
         service=${2:-}
-        COMPOSE_CMD="docker compose"
-        if [ -f docker-compose.override.yml ]; then
-            COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
-        fi
+        COMPOSE_CMD=$(get_compose_command)
         
         if [ -z "$service" ]; then
             echo -e "${BLUE}📋 Showing all logs (Ctrl+C to exit):${NC}"
@@ -1017,15 +1078,10 @@ case "${1:-help}" in
     update)
         check_environment
         echo -e "${YELLOW}📥 Updating to latest images...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-            docker compose -f docker-compose.yml -f docker-compose.override.yml pull
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose down
-            docker compose pull
-            docker compose up -d
-        fi
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD down
+        $COMPOSE_CMD pull
+        $COMPOSE_CMD up -d
         echo -e "${GREEN}✅ OpenTranscribe updated!${NC}"
         show_access_info
         ;;
@@ -1036,7 +1092,8 @@ case "${1:-help}" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            docker compose down -v
+            COMPOSE_CMD=$(get_compose_command)
+            $COMPOSE_CMD down -v
             docker system prune -f
             echo -e "${GREEN}✅ All data removed${NC}"
         else
@@ -1047,7 +1104,8 @@ case "${1:-help}" in
         check_environment
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        docker compose exec "$service" /bin/bash || docker compose exec "$service" /bin/sh
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD exec "$service" /bin/bash || $COMPOSE_CMD exec "$service" /bin/sh
         ;;
     config)
         check_environment
@@ -1056,7 +1114,8 @@ case "${1:-help}" in
         grep -E "^[A-Z]" .env | head -20
         echo ""
         echo "Docker Compose configuration:"
-        if docker compose config > /dev/null 2>&1; then
+        COMPOSE_CMD=$(get_compose_command)
+        if $COMPOSE_CMD config > /dev/null 2>&1; then
             echo "  ✅ Valid"
         else
             echo "  ❌ Invalid"
@@ -1068,7 +1127,8 @@ case "${1:-help}" in
         
         # Check container status
         echo "Container Status:"
-        docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+        COMPOSE_CMD=$(get_compose_command)
+        $COMPOSE_CMD ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
         
         echo ""
         echo "Service Health:"
@@ -1091,7 +1151,8 @@ case "${1:-help}" in
         fi
         
         # Database health
-        if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+        COMPOSE_CMD=$(get_compose_command)
+        if $COMPOSE_CMD exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
             echo "  ✅ Database: Healthy"
         else
             echo "  ❌ Database: Unhealthy"
@@ -1131,7 +1192,7 @@ validate_setup() {
     done
     
     # Validate Docker Compose
-    if docker compose config &> /dev/null; then
+    if $DOCKER_COMPOSE_CMD config &> /dev/null; then
         echo "✓ Docker Compose configuration valid"
     else
         echo -e "${RED}❌ Docker Compose configuration invalid${NC}"

@@ -25,8 +25,10 @@ OpenTranscribe is a containerized AI-powered transcription application with thes
 Use `./opentr.sh` for all development operations:
 
 ```bash
-# Start development environment
-./opentr.sh start dev
+# Start development environment (multiple options)
+./opentr.sh start dev           # Vite dev server with proxy
+./opentr.sh start dev-nginx     # nginx proxy (production-like)
+./opentr.sh start prod          # Full production mode
 
 # Stop all services
 ./opentr.sh stop
@@ -49,12 +51,28 @@ Use `./opentr.sh` for all development operations:
 ```
 
 ### Frontend Development
+
+**Standard Development (Vite dev server with proxy):**
 ```bash
-# From frontend/ directory
-npm run dev          # Start dev server
-npm run build        # Production build
-npm run check        # Type checking
+# From frontend/ directory or root
+./opentr.sh start dev        # Start full dev environment
+npm run dev                  # Start only frontend dev server
+npm run build               # Production build
+npm run check               # Type checking
 ```
+
+**Production-like Development (nginx with full routing):**
+```bash
+# Test with production-like nginx routing (supports 100GB uploads)
+./opentr.sh start dev-nginx
+# Access at: http://localhost:5174 (nginx proxy like production)
+```
+
+**Routing Architecture:**
+- All URLs are relative - works with localhost, IP addresses, or domain names
+- WebSocket: `ws://[host]:[port]/ws`
+- API: `http://[host]:[port]/api/*`
+- File uploads: Up to 100GB supported in both dev and production
 
 ### Backend Development
 ```bash

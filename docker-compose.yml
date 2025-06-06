@@ -188,8 +188,8 @@ services:
       - "5173:5173"
     environment:
       - NODE_ENV=development
-      - VITE_API_BASE_URL=http://backend:8080/api
-      - VITE_WS_BASE_URL=ws://backend:8080/ws
+      - VITE_API_BASE_URL=/api
+      - VITE_WS_BASE_URL=auto
       - VITE_FLOWER_PORT=5555
       - VITE_FLOWER_URL_PREFIX=flower
     healthcheck:
@@ -211,13 +211,32 @@ services:
       - "5173:80"
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=http://backend:8080/api
-      - VITE_WS_BASE_URL=ws://backend:8080/ws
+      - VITE_API_BASE_URL=/api
+      - VITE_WS_BASE_URL=auto
       - VITE_FLOWER_PORT=5555
       - VITE_FLOWER_URL_PREFIX=flower
     depends_on:
       backend:
         condition: service_healthy
+
+  frontend-dev-nginx:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    restart: unless-stopped
+    ports:
+      - "5174:80"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_BASE_URL=/api
+      - VITE_WS_BASE_URL=auto
+      - VITE_FLOWER_PORT=5555
+      - VITE_FLOWER_URL_PREFIX=flower
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles:
+      - dev-nginx
 
   flower:
     build: 

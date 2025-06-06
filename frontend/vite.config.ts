@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     port: 5173,
+    host: '0.0.0.0', // Allow external connections (not just localhost)
     proxy: {
       '/api': {
         target: 'http://backend:8080',
@@ -46,7 +47,7 @@ export default defineConfig(({ mode }) => {
           });
         }
       },
-      '/api/ws': {
+      '/ws': {
         target: 'ws://backend:8080',
         ws: true,
         changeOrigin: true,

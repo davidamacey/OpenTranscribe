@@ -18,10 +18,10 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod]    - Start the application (dev mode by default)"
-  echo "  stop                - Stop all containers"
-  echo "  status              - Show container status"
-  echo "  logs [service]      - View logs (all services by default)"
+  echo "  start [dev|prod|dev-nginx] - Start the application (dev mode by default)"
+  echo "  stop                        - Stop all containers"
+  echo "  status                      - Show container status"
+  echo "  logs [service]              - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
   echo "  reset [dev|prod]    - Reset and reinitialize (deletes all data!)"
@@ -44,10 +44,11 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Examples:"
-  echo "  ./opentr.sh start           # Start in development mode"
-  echo "  ./opentr.sh start prod      # Start in production mode"
-  echo "  ./opentr.sh logs backend    # View backend logs"
-  echo "  ./opentr.sh restart-backend # Restart backend services only"
+  echo "  ./opentr.sh start               # Start in development mode (Vite)"
+  echo "  ./opentr.sh start dev-nginx     # Start in development mode (nginx proxy)"
+  echo "  ./opentr.sh start prod          # Start in production mode"
+  echo "  ./opentr.sh logs backend        # View backend logs"
+  echo "  ./opentr.sh restart-backend     # Restart backend services only"
   echo ""
 }
 
@@ -130,17 +131,22 @@ start_app() {
   # Use docker-compose configuration
   COMPOSE_FILE="docker-compose.yml"
   
-  # Start environment
-  echo "🔄 Starting services with hardware-optimized configuration..."
-  docker compose -f $COMPOSE_FILE up -d --build
+  # Determine compose command based on environment
+  if [ "$ENVIRONMENT" = "dev-nginx" ]; then
+    echo "🔄 Starting services with nginx proxy (production-like routing)..."
+    docker compose -f $COMPOSE_FILE --profile dev-nginx up -d --build
+    echo "🌐 Frontend available at: http://localhost:5174 (nginx proxy)"
+    echo "📋 API documentation: http://localhost:8080/docs"
+  else
+    echo "🔄 Starting services with hardware-optimized configuration..."
+    docker compose -f $COMPOSE_FILE up -d --build
+    # Print access information
+    print_access_info
+  fi
   
   # Display container status
   echo "📊 Container status:"
   docker compose -f $COMPOSE_FILE ps
-  
-  # Print access information
-  echo "✅ Services are starting up."
-  print_access_info
   
   # Display log commands
   echo "📋 To view logs, run:"
@@ -281,10 +287,13 @@ restart_backend() {
 restart_frontend() {
   echo "🔄 Restarting frontend service..."
   
-  # Determine environment
+  # Determine environment and frontend service
   if docker compose ps | grep -q "frontend-prod"; then
     ENV="prod"
     FRONTEND_SERVICE="frontend-prod"
+  elif docker compose ps | grep -q "frontend-dev-nginx"; then
+    ENV="dev-nginx"
+    FRONTEND_SERVICE="frontend-dev-nginx"
   else
     ENV="dev"
     FRONTEND_SERVICE="frontend"
@@ -293,7 +302,7 @@ restart_frontend() {
   # Restart frontend in place
   docker compose restart $FRONTEND_SERVICE
   
-  echo "✅ Frontend service restarted successfully."
+  echo "✅ Frontend service ($FRONTEND_SERVICE) restarted successfully."
   
   # Display container status
   echo "📊 Container status:"
@@ -304,10 +313,13 @@ restart_frontend() {
 restart_all() {
   echo "🔄 Restarting all services without database reset..."
   
-  # Determine environment
+  # Determine environment and frontend service
   if docker compose ps | grep -q "frontend-prod"; then
     ENV="prod"
     FRONTEND_SERVICE="frontend-prod"
+  elif docker compose ps | grep -q "frontend-dev-nginx"; then
+    ENV="dev-nginx"
+    FRONTEND_SERVICE="frontend-dev-nginx"
   else
     ENV="dev"
     FRONTEND_SERVICE="frontend"

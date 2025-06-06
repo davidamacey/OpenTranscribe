@@ -73,19 +73,22 @@ function createWebSocketStore() {
       
       try {
         // Construct WebSocket URL with token
-        // Use environment variable if available, otherwise fall back to dynamic construction
         const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
         let wsUrl;
         
-        if (wsBaseUrl) {
-          // Use configured WebSocket base URL
+        // Check if we're in development mode with Vite (has import.meta.env.DEV)
+        if (import.meta.env.DEV && wsBaseUrl && wsBaseUrl.startsWith('ws://localhost:8080')) {
+          // Development mode: connect directly to backend
           wsUrl = `${wsBaseUrl}?token=${token}`;
         } else {
-          // Fall back to dynamic construction for development
+          // Production mode or auto: use relative URL through proxy
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const baseUrl = window.location.host;
-          wsUrl = `${protocol}//${baseUrl}/api/ws?token=${token}`;
+          const host = window.location.host; // includes port if non-standard
+          wsUrl = `${protocol}//${host}/ws?token=${token}`;
         }
+        
+        console.log(`WebSocket mode: ${import.meta.env.DEV ? 'development' : 'production'}`);
+        console.log(`Connecting to WebSocket: ${wsUrl}`);
         
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);
