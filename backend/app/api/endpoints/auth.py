@@ -1,9 +1,13 @@
 from datetime import timedelta
 import os
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.core.security import authenticate_user, create_access_token, get_password_hash

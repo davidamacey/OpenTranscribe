@@ -1,8 +1,12 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Union, ClassVar
 from pydantic import AnyHttpUrl, validator
 from pydantic_settings import BaseSettings
 import os
+import logging
 from pathlib import Path
+
+# Configure logger
+logger = logging.getLogger("app")
 
 class Settings(BaseSettings):
     # API configuration
@@ -14,9 +18,13 @@ class Settings(BaseSettings):
     DEBUG: bool = ENVIRONMENT == "development"
     
     # JWT Token settings
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
+    JWT_SECRET_KEY: str = os.getenv(
+        "JWT_SECRET_KEY", "dev_secret_key_change_in_production")
+    # Print which JWT_SECRET_KEY is being used (dev or custom) for debugging
+    if os.getenv("JWT_SECRET_KEY") is None:
+        logger.warning("Using default development JWT_SECRET_KEY. This is insecure for production.")
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 3  # 3 days
     
     # Database settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")

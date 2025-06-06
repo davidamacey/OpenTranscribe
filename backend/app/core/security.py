@@ -70,15 +70,33 @@ def verify_token(token: str) -> Dict[str, Any]:
     Verify a JWT token and return its payload
     """
     try:
+        # Decode the token using the secret key and algorithm from settings
         payload = jwt.decode(
             token, 
             settings.JWT_SECRET_KEY, 
             algorithms=[settings.JWT_ALGORITHM]
         )
+        
+        # Check for token expiration manually to provide better error message
+        if 'exp' in payload:
+            expiration = datetime.fromtimestamp(payload['exp'])
+            if expiration < datetime.utcnow():
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Token expired: {expiration} < {datetime.utcnow()}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has expired",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        
         return payload
-    except JWTError:
+    except JWTError as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"JWT verification error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail=f"Invalid authentication credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )

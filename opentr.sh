@@ -18,38 +18,37 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod|dev-nginx] - Start the application (dev mode by default)"
-  echo "  stop                        - Stop all containers"
-  echo "  remove                      - Stop all containers and remove volumes"
-  echo "  status                      - Show container status"
-  echo "  logs [service]              - View logs (all services by default)"
+  echo "  start [dev|prod]  - Start the application (dev mode by default)"
+  echo "  stop              - Stop all containers"
+  echo "  remove            - Stop all containers and remove volumes"
+  echo "  status            - Show container status"
+  echo "  logs [service]    - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod]    - Reset and reinitialize (deletes all data!)"
-  echo "  backup              - Create a database backup"
-  echo "  restore [file]      - Restore database from backup"
+  echo "  reset [dev|prod]  - Reset and reinitialize (deletes all data!)"
+  echo "  backup            - Create a database backup"
+  echo "  restore [file]    - Restore database from backup"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, celery & flower without database reset"
-  echo "  restart-frontend    - Restart frontend without affecting backend services"
-  echo "  restart-all         - Restart all services without resetting database"
-  echo "  rebuild-backend     - Rebuild and update backend services with code changes"
-  echo "  rebuild-frontend    - Rebuild and update frontend with code changes"
-  echo "  shell [service]     - Open a shell in a container"
-  echo "  build               - Rebuild all containers without starting"
+  echo "  restart-backend   - Restart backend, celery & flower without database reset"
+  echo "  restart-frontend  - Restart frontend without affecting backend services"
+  echo "  restart-all       - Restart all services without resetting database"
+  echo "  rebuild-backend   - Rebuild and update backend services with code changes"
+  echo "  rebuild-frontend  - Rebuild and update frontend with code changes"
+  echo "  shell [service]   - Open a shell in a container"
+  echo "  build             - Rebuild all containers without starting"
   echo ""
   echo "Advanced Commands:"
-  echo "  clean               - Clean up unused containers, images, volumes"
-  echo "  init-db             - Initialize the database without resetting containers"
-  echo "  health              - Check health status of all services"
-  echo "  help                - Show this help menu"
+  echo "  clean             - Clean up unused containers, images, volumes"
+  echo "  init-db           - Initialize the database without resetting containers"
+  echo "  health            - Check health status of all services"
+  echo "  help              - Show this help menu"
   echo ""
   echo "Examples:"
-  echo "  ./opentr.sh start               # Start in development mode (Vite)"
-  echo "  ./opentr.sh start dev-nginx     # Start in development mode (nginx proxy)"
-  echo "  ./opentr.sh start prod          # Start in production mode"
-  echo "  ./opentr.sh logs backend        # View backend logs"
-  echo "  ./opentr.sh restart-backend     # Restart backend services only"
+  echo "  ./opentr.sh start          # Start in development mode (Node.js)"
+  echo "  ./opentr.sh start prod     # Start in production mode (Nginx)"
+  echo "  ./opentr.sh logs backend   # View backend logs"
+  echo "  ./opentr.sh restart-all    # Restart all services without resetting data"
   echo ""
 }
 
@@ -133,13 +132,14 @@ start_app() {
   COMPOSE_FILE="docker-compose.yml"
   
   # Determine compose command based on environment
-  if [ "$ENVIRONMENT" = "dev-nginx" ]; then
-    echo "🔄 Starting services with nginx proxy (production-like routing)..."
-    docker compose -f $COMPOSE_FILE --profile dev-nginx up -d --build
-    echo "🌐 Frontend available at: http://localhost:5174 (nginx proxy)"
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    echo "🔄 Starting services in PRODUCTION mode (with Nginx)..."
+    # In production, ensure we start the frontend-prod service
+    docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend-prod flower
+    echo "🌐 Frontend available at: http://localhost:5173 (Nginx production build)"
     echo "📋 API documentation: http://localhost:8080/docs"
   else
-    echo "🔄 Starting services with hardware-optimized configuration..."
+    echo "🔄 Starting services in DEVELOPMENT mode (with Node.js)..."
     docker compose -f $COMPOSE_FILE up -d --build
     # Print access information
     print_access_info
@@ -192,9 +192,14 @@ reset_and_init() {
   echo "⏳ Waiting for infrastructure services to initialize..."
   sleep 5
   
-  # Start application services
-  echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."
-  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend flower
+  # Start application services - use correct frontend based on environment
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    echo "🚀 Starting application services in PRODUCTION mode (backend, celery-worker, frontend-prod, flower)..."
+    docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend-prod flower
+  else
+    echo "🚀 Starting application services in DEVELOPMENT mode (backend, celery-worker, frontend, flower)..."
+    docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend flower
+  fi
   
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."

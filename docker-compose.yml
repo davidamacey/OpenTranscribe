@@ -112,7 +112,7 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - JWT_SECRET_KEY=dev_secret_key_change_in_production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev_secret_key_change_in_production}
       - JWT_ALGORITHM=HS256
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
       - MODELS_DIRECTORY=/app/models
@@ -212,31 +212,14 @@ services:
     environment:
       - NODE_ENV=production
       - VITE_API_BASE_URL=/api
-      - VITE_WS_BASE_URL=auto
+      - VITE_WS_BASE_URL=/ws
       - VITE_FLOWER_PORT=5555
       - VITE_FLOWER_URL_PREFIX=flower
     depends_on:
       backend:
         condition: service_healthy
 
-  frontend-dev-nginx:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
-    restart: unless-stopped
-    ports:
-      - "5174:80"
-    environment:
-      - NODE_ENV=development
-      - VITE_API_BASE_URL=/api
-      - VITE_WS_BASE_URL=auto
-      - VITE_FLOWER_PORT=5555
-      - VITE_FLOWER_URL_PREFIX=flower
-    depends_on:
-      backend:
-        condition: service_healthy
-    profiles:
-      - dev-nginx
+
 
   flower:
     build: 

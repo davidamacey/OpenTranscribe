@@ -72,23 +72,39 @@ function createWebSocketStore() {
       }
       
       try {
-        // Construct WebSocket URL with token
-        const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
+        // Determine WebSocket URL based on environment configuration
         let wsUrl;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host; // includes port if non-standard
         
-        // Check if we're in development mode with Vite (has import.meta.env.DEV)
-        if (import.meta.env.DEV && wsBaseUrl && wsBaseUrl.startsWith('ws://localhost:8080')) {
-          // Development mode: connect directly to backend
-          wsUrl = `${wsBaseUrl}?token=${token}`;
-        } else {
-          // Production mode or auto: use relative URL through proxy
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const host = window.location.host; // includes port if non-standard
+        // In production mode, always use the relative path to the WebSocket on the same host
+        // This ensures it works with Nginx reverse proxy
+        if (import.meta.env.PROD) {
           wsUrl = `${protocol}//${host}/ws?token=${token}`;
+        } else {
+          // In development mode, check for configured URL
+          const configuredWsUrl = import.meta.env.VITE_WS_BASE_URL;
+          if (configuredWsUrl && configuredWsUrl !== 'auto') {
+            // Use explicitly configured WebSocket URL if provided
+            // Check if it's an absolute URL (with protocol) or a relative path
+            if (configuredWsUrl.startsWith('ws://') || configuredWsUrl.startsWith('wss://')) {
+              wsUrl = `${configuredWsUrl}?token=${token}`;
+            } else {
+              // It's a relative path like '/ws', so prepend protocol and host
+              wsUrl = `${protocol}//${host}${configuredWsUrl}?token=${token}`;
+            }
+          } else {
+            // Default for development: use current host with /ws endpoint
+            wsUrl = `${protocol}//${host}/ws?token=${token}`;
+          }
         }
         
+        // Log connection details
         console.log(`WebSocket mode: ${import.meta.env.DEV ? 'development' : 'production'}`);
+        console.log(`WebSocket protocol: ${protocol}`);
+        console.log(`WebSocket host: ${host}`);
         console.log(`Connecting to WebSocket: ${wsUrl}`);
+        console.log(`Token: ${token.substring(0, 15)}...`); // Log part of the token for debugging
         
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);
