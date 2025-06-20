@@ -18,9 +18,11 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 👥 **Smart Speaker Management**
 - **Automatic Speaker Diarization**: Identify different speakers using PyAnnote.audio
-- **Cross-Recording Recognition**: Voice fingerprinting to recognize speakers across files
-- **Custom Speaker Labels**: Edit and manage speaker names and information
-- **Speaker Analytics**: View speaking time distribution and interaction patterns
+- **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
+- **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
+- **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scores and verification workflow
+- **Custom Speaker Labels**: Edit and manage speaker names and information with intelligent suggestions
+- **Speaker Analytics**: View speaking time distribution, cross-media appearances, and interaction patterns
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
@@ -244,11 +246,13 @@ The `opentr.sh` script provides comprehensive management for all application ope
 
 #### **Speaker Management**
 ```
-👥 Automatic Detection → 🏷️ Custom Labels → 🔍 Cross-File Recognition
+👥 Automatic Detection → 🤖 AI Recognition → 🏷️ Profile Management → 🔍 Cross-Media Tracking
 ```
-- Speakers are automatically detected and assigned labels
-- Edit speaker names for better organization
-- System learns to recognize speakers across different files
+- Speakers are automatically detected and assigned labels using advanced AI diarization
+- AI suggests speaker identities based on voice fingerprinting across your media library
+- Create global speaker profiles that persist across all your transcriptions
+- Accept or reject AI suggestions with confidence scores to improve accuracy over time
+- Track speaker appearances across multiple media files with detailed analytics
 
 #### **Search and Discovery**
 ```
@@ -326,7 +330,7 @@ MINIO_BUCKET_NAME=transcribe-app
 
 #### **AI Processing**
 ```bash
-# Required for speaker diarization
+# Required for speaker diarization - see setup instructions below
 HUGGINGFACE_TOKEN=your_huggingface_token_here
 
 # Model configuration
@@ -338,6 +342,37 @@ BATCH_SIZE=16                       # Reduce if GPU memory limited
 MIN_SPEAKERS=1                      # Minimum speakers to detect
 MAX_SPEAKERS=10                     # Maximum speakers to detect
 ```
+
+### **🔑 HuggingFace Token Setup**
+
+OpenTranscribe requires a HuggingFace token for speaker diarization and voice fingerprinting features. Follow these steps:
+
+#### **1. Generate HuggingFace Token**
+1. Visit [HuggingFace Settings > Access Tokens](https://huggingface.co/settings/tokens)
+2. Click "New token" and select "Read" access
+3. Copy the generated token
+
+#### **2. Accept Model User Agreements**
+You must accept the user agreements for these models:
+- [Segmentation Model](https://huggingface.co/pyannote/segmentation-3.0) - Click "Agree and access repository"
+- [Speaker Diarization Model](https://huggingface.co/pyannote/speaker-diarization-3.1) - Click "Agree and access repository"
+
+#### **3. Configure Token**
+Add your token to the environment configuration:
+
+**For Production Installation:**
+```bash
+# The setup script will prompt you for your token
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+**For Manual Installation:**
+```bash
+# Add to .env file
+echo "HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" >> .env
+```
+
+**Note:** Without a valid HuggingFace token, speaker diarization will be disabled and speakers will not be automatically detected or identified across different media files.
 
 #### **Performance Tuning**
 ```bash

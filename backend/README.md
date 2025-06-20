@@ -59,13 +59,17 @@ OpenTranscribe backend is built with modern Python technologies:
 
 ### AI/ML Stack
 - **WhisperX** - Advanced speech recognition with word-level alignment
-- **PyAnnote** - Speaker diarization and voice fingerprinting
+- **PyAnnote** - Speaker diarization, voice fingerprinting, and cross-video speaker matching
 - **FFmpeg** - Media processing and conversion
+- **OpenSearch Vector Search** - Embedding-based speaker similarity matching
 
-#### WhisperX Transcription Features
+#### Enhanced AI Processing Features
 - **Fast Batch Processing**: WhisperX leverages faster-whisper for batched inference (70x realtime with large-v2)
 - **Accurate Word-level Timestamps**: Uses wav2vec2 alignment for precise word timing
-- **Speaker Diarization**: Identifies different speakers in the audio using pyannote.audio
+- **Advanced Speaker Diarization**: Identifies different speakers using PyAnnote.audio with voice fingerprinting
+- **Cross-Video Speaker Recognition**: AI-powered matching of speakers across different media files using embedding similarity
+- **Speaker Profile Management**: Global speaker profiles that persist across all transcriptions
+- **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scoring and verification workflow
 - **Automatic Translation**: Always converts audio to English transcripts
 - **Video Metadata Extraction**: Extracts detailed metadata from video files using ExifTool (resolution, frame rate, codec, etc.)
 
@@ -208,7 +212,8 @@ backend/
 ├── /users         # User management
 ├── /comments      # Comment system
 ├── /tags          # Tag management
-├── /speakers      # Speaker management
+├── /speakers      # Speaker management and cross-video matching
+├── /speaker-profiles # Global speaker profile management
 ├── /tasks         # Task monitoring
 ├── /search        # Search functionality
 └── /admin         # Admin operations
@@ -270,7 +275,8 @@ alembic revision --autogenerate    # Generate migration
 - **Async processing** for CPU-intensive operations
 
 ### Available Tasks
-- **Transcription**: WhisperX + speaker diarization
+- **Transcription**: WhisperX + speaker diarization with voice fingerprinting
+- **Speaker Matching**: Cross-video speaker identification and profile matching
 - **Analysis**: Transcript analysis and metrics
 - **Summarization**: Automated transcript summaries
 
