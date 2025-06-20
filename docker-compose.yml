@@ -188,10 +188,6 @@ services:
       - "5173:5173"
     environment:
       - NODE_ENV=development
-      - VITE_API_BASE_URL=http://backend:8080/api
-      - VITE_WS_BASE_URL=ws://backend:8080/ws
-      - VITE_FLOWER_PORT=5555
-      - VITE_FLOWER_URL_PREFIX=flower
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5173"]
       interval: 10s
@@ -211,10 +207,6 @@ services:
       - "5173:80"
     environment:
       - NODE_ENV=production
-      - VITE_API_BASE_URL=http://backend:8080/api
-      - VITE_WS_BASE_URL=ws://backend:8080/ws
-      - VITE_FLOWER_PORT=5555
-      - VITE_FLOWER_URL_PREFIX=flower
     depends_on:
       backend:
         condition: service_healthy

@@ -10,6 +10,8 @@
    * @property {string} [display_name]
    * @property {string} uuid
    * @property {boolean} verified
+   * @property {number} [confidence]
+   * @property {string} [suggested_name]
    */
 
   // Props
@@ -28,7 +30,7 @@
   let errorMessage = null;
   /** @type {string|null} */
   let successMessage = null;
-  /** @type {Array<{id: number, name: string, display_name: string|null, verified: boolean, changed: boolean}>} */
+  /** @type {Array<{id: number, name: string, display_name: string|null, verified: boolean, changed: boolean, confidence?: number, suggested_name?: string}>} */
   let editableSpeakers = [];
 
   onMount(() => {
@@ -59,9 +61,11 @@
     editableSpeakers = speakers.map(speaker => ({
       id: speaker.id,
       name: speaker.name,
-      display_name: speaker.display_name || '',
+      display_name: speaker.display_name || speaker.suggested_name || '',
       verified: speaker.verified,
-      changed: false
+      changed: false,
+      confidence: speaker.confidence,
+      suggested_name: speaker.suggested_name
     }));
   }
 
@@ -142,13 +146,25 @@
               {speaker.name}
             </div>
             <div class="speaker-edit">
-              <input 
-                type="text" 
-                placeholder="Enter real name" 
-                bind:value={speaker.display_name}
-                on:input={() => handleInputChange(speaker.id)}
-                title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
-              />
+              <div class="input-wrapper">
+                <input 
+                  type="text" 
+                  placeholder="Enter real name" 
+                  bind:value={speaker.display_name}
+                  on:input={() => handleInputChange(speaker.id)}
+                  title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
+                  class:suggested={speaker.confidence && speaker.confidence >= 0.5}
+                />
+                {#if speaker.confidence && speaker.confidence >= 0.5 && speaker.suggested_name && !speaker.changed}
+                  <div class="suggestion-info">
+                    <span class="confidence-badge" 
+                          style="background-color: {speaker.confidence >= 0.75 ? 'var(--success-color)' : 'var(--warning-color)'}">
+                      {Math.round(speaker.confidence * 100)}% match
+                    </span>
+                    <span class="suggested-label">Suggested: {speaker.suggested_name}</span>
+                  </div>
+                {/if}
+              </div>
               {#if speaker.verified}
                 <span class="verified-badge" title="This speaker has been verified">✓</span>
               {/if}
@@ -213,14 +229,44 @@
     flex: 1;
     display: flex;
     align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .input-wrapper {
+    flex: 1;
+    position: relative;
   }
   
   input {
-    flex: 1;
+    width: 100%;
     padding: 0.5rem;
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-sm);
     background-color: var(--background-main);
+  }
+  
+  input.suggested {
+    border-color: var(--warning-color);
+  }
+  
+  .suggestion-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+  }
+  
+  .confidence-badge {
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    font-size: 0.75rem;
+  }
+  
+  .suggested-label {
+    color: var(--text-color-secondary);
   }
   
   .verified-badge {

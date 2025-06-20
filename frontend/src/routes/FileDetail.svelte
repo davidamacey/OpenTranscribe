@@ -54,6 +54,7 @@
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
   let reprocessing = false;
+  
 
   // Confirmation modal state
   let showExportConfirmation = false;
@@ -244,10 +245,15 @@
             id: speaker.id,
             name: speaker.name,
             display_name: speaker.display_name || speaker.name,
+            suggested_name: speaker.suggested_name,
             uuid: speaker.uuid,
-            verified: speaker.verified
+            verified: speaker.verified,
+            confidence: speaker.confidence,
+            profile: speaker.profile,
+            cross_video_matches: speaker.cross_video_matches || []
           }))
           .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
+        
       } else {
         // Fallback: extract from transcript data
         const transcriptData = file?.transcript_segments;
@@ -1079,6 +1085,9 @@
     seekToTime(time);
   }
 
+
+  // Speaker verification event handlers
+
   function seekToTime(time: number) {
     if (player) {
       // Add 0.5 second padding before the target time for better context
@@ -1343,6 +1352,7 @@
           on:speakerUpdate={handleSpeakerUpdate}
           on:reprocess={handleReprocess}
         />
+
       {:else}
         <section class="transcript-column">
           <div class="transcript-header">
@@ -1376,6 +1386,7 @@
   on:cancel={handleExportCancel}
   on:close={handleExportModalClose}
 />
+
 
 <style>
   .file-detail-page {
@@ -1518,5 +1529,85 @@
   :global(.plyr--show-controls .plyr__controls) {
     opacity: 1 !important;
     transform: translateY(0) !important;
+  }
+
+  /* Speaker verification section */
+  .speaker-verification-section {
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .speaker-verification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+
+  .speaker-verification-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .verify-speakers-btn {
+    background: var(--warning-color);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .verify-speakers-btn:hover {
+    background: var(--warning-hover);
+  }
+
+  .manage-profiles-btn {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .manage-profiles-btn:hover {
+    background: var(--primary-hover);
+  }
+
+  .verification-notice {
+    padding: 12px;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 6px;
+  }
+
+  .notice-text {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  @media (max-width: 768px) {
+    .speaker-verification-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .speaker-verification-header button {
+      width: 100%;
+    }
   }
 </style>

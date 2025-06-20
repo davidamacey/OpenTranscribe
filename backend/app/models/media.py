@@ -90,22 +90,44 @@ class TranscriptSegment(Base):
     speaker = relationship("Speaker", back_populates="transcript_segments")
 
 
+class SpeakerProfile(Base):
+    """Global speaker profile that can be identified across multiple media files"""
+    __tablename__ = "speaker_profile"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    name = Column(String, nullable=False)  # User-assigned name (e.g., "John Doe")
+    description = Column(Text, nullable=True)  # Optional description or notes
+    uuid = Column(String, nullable=False, unique=True, index=True)  # Unique identifier
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="speaker_profiles")
+    speaker_instances = relationship("Speaker", back_populates="profile", cascade="all, delete-orphan")
+    speaker_collections = relationship("SpeakerCollectionMember", back_populates="speaker_profile", cascade="all, delete-orphan")
+
+
 class Speaker(Base):
+    """Speaker instance within a specific media file"""
     __tablename__ = "speaker"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
+    profile_id = Column(Integer, ForeignKey("speaker_profile.id", ondelete="SET NULL"), nullable=True)
     name = Column(String, nullable=False)  # Original name from diarization (e.g., "SPEAKER_01")
-    display_name = Column(String, nullable=True)  # User-assigned name (e.g., "John Doe")
-    uuid = Column(String, nullable=False, index=True)  # Unique identifier for the speaker
-    embedding_vector = Column(JSON, nullable=True)  # Speaker embedding as JSON array
-    verified = Column(Boolean, default=False)  # Flag to indicate if the speaker has been verified by a user
+    display_name = Column(String, nullable=True)  # User-assigned display name
+    suggested_name = Column(String, nullable=True)  # AI-suggested name based on embedding match
+    uuid = Column(String, nullable=False, index=True)  # Unique identifier for the speaker instance
+    verified = Column(Boolean, default=False)  # Flag to indicate if the speaker has been verified
+    confidence = Column(Float, nullable=True)  # Confidence score if auto-matched
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     user = relationship("User", back_populates="speakers")
     media_file = relationship("MediaFile", back_populates="speakers")
+    profile = relationship("SpeakerProfile", back_populates="speaker_instances")
     transcript_segments = relationship("TranscriptSegment", back_populates="speaker")
 
 
@@ -207,3 +229,56 @@ class CollectionMember(Base):
     # Relationships
     collection = relationship("Collection", back_populates="collection_members")
     media_file = relationship("MediaFile", back_populates="collection_memberships")
+
+
+class SpeakerCollection(Base):
+    """Collection of speaker profiles for organization"""
+    __tablename__ = "speaker_collection"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Unique constraint
+    __table_args__ = (UniqueConstraint('user_id', 'name', name='_user_speaker_collection_uc'),)
+    
+    # Relationships
+    user = relationship("User", back_populates="speaker_collections")
+    collection_members = relationship("SpeakerCollectionMember", back_populates="collection", cascade="all, delete-orphan")
+
+
+class SpeakerCollectionMember(Base):
+    """Members of a speaker collection"""
+    __tablename__ = "speaker_collection_member"
+
+    id = Column(Integer, primary_key=True, index=True)
+    collection_id = Column(Integer, ForeignKey("speaker_collection.id", ondelete="CASCADE"), nullable=False)
+    speaker_profile_id = Column(Integer, ForeignKey("speaker_profile.id", ondelete="CASCADE"), nullable=False)
+    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Unique constraint
+    __table_args__ = (UniqueConstraint('collection_id', 'speaker_profile_id', name='_speaker_collection_member_uc'),)
+    
+    # Relationships
+    collection = relationship("SpeakerCollection", back_populates="collection_members")
+    speaker_profile = relationship("SpeakerProfile", back_populates="speaker_collections")
+
+
+class SpeakerMatch(Base):
+    """Cross-references between similar speakers across different media files"""
+    __tablename__ = "speaker_match"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    speaker1_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    speaker2_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
+    confidence = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    speaker1 = relationship("Speaker", foreign_keys=[speaker1_id])
+    speaker2 = relationship("Speaker", foreign_keys=[speaker2_id])

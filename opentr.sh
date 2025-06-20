@@ -19,7 +19,7 @@ show_help() {
   echo ""
   echo "Basic Commands:"
   echo "  start [dev|prod]    - Start the application (dev mode by default)"
-  echo "  stop                - Stop all containers"
+  echo "  stop                - Stop OpenTranscribe containers"
   echo "  status              - Show container status"
   echo "  logs [service]      - View logs (all services by default)"
   echo ""
@@ -38,7 +38,7 @@ show_help() {
   echo "  build               - Rebuild all containers without starting"
   echo ""
   echo "Advanced Commands:"
-  echo "  clean               - Clean up unused containers, images, volumes"
+  echo "  clean               - Clean up OpenTranscribe containers and images"
   echo "  init-db             - Initialize the database without resetting containers"
   echo "  health              - Check health status of all services"
   echo "  help                - Show this help menu"
@@ -130,9 +130,22 @@ start_app() {
   # Use docker-compose configuration
   COMPOSE_FILE="docker-compose.yml"
   
-  # Start environment
-  echo "🔄 Starting services with hardware-optimized configuration..."
-  docker compose -f $COMPOSE_FILE up -d --build
+  # Determine which frontend service to use
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    FRONTEND_SERVICE="frontend-prod"
+    echo "🔄 Starting services in PRODUCTION mode..."
+  else
+    FRONTEND_SERVICE="frontend"
+    echo "🔄 Starting services in DEVELOPMENT mode..."
+  fi
+  
+  # Start infrastructure services first
+  echo "🚀 Starting infrastructure services..."
+  docker compose -f $COMPOSE_FILE up -d --build postgres redis minio opensearch
+  
+  # Start application services with correct frontend
+  echo "🚀 Starting application services..."
+  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker $FRONTEND_SERVICE flower
   
   # Display container status
   echo "📊 Container status:"
@@ -146,7 +159,7 @@ start_app() {
   echo "📋 To view logs, run:"
   echo "- All logs: docker compose logs -f"
   echo "- Backend logs: docker compose logs -f backend"
-  echo "- Frontend logs: docker compose logs -f frontend"
+  echo "- Frontend logs: docker compose logs -f $FRONTEND_SERVICE"
   echo "- Celery worker logs: docker compose logs -f celery-worker"
   
   # Print help information
@@ -171,6 +184,15 @@ reset_and_init() {
   # Use docker-compose configuration
   COMPOSE_FILE="docker-compose.yml"
   
+  # Determine which frontend service to use
+  if [ "$ENVIRONMENT" = "prod" ]; then
+    FRONTEND_SERVICE="frontend-prod"
+    echo "🔄 Resetting in PRODUCTION mode..."
+  else
+    FRONTEND_SERVICE="frontend"
+    echo "🔄 Resetting in DEVELOPMENT mode..."
+  fi
+  
   echo "🛑 Stopping all containers and removing volumes..."
   docker compose -f $COMPOSE_FILE down -v
   
@@ -185,9 +207,9 @@ reset_and_init() {
   echo "⏳ Waiting for infrastructure services to initialize..."
   sleep 5
   
-  # Start application services
-  echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."
-  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker frontend flower
+  # Start application services with correct frontend
+  echo "🚀 Starting application services (backend, celery-worker, $FRONTEND_SERVICE, flower)..."
+  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker $FRONTEND_SERVICE flower
   
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."
@@ -203,7 +225,7 @@ reset_and_init() {
   echo "✅ Setup complete!"
   
   # Start log tailing
-  start_logs frontend
+  start_logs $FRONTEND_SERVICE
   
   echo "📊 Log tailing started in background. You can now test the application."
   # Print access information
@@ -341,20 +363,26 @@ init_db() {
   echo "✅ Database initialization complete."
 }
 
-# Function to clean up unused containers, images, and volumes
+# Function to clean up OpenTranscribe-specific resources
 clean_system() {
-  echo "🧹 Cleaning up the system..."
+  echo "🧹 Cleaning up OpenTranscribe resources..."
   
-  echo "🗑️ Removing unused containers..."
-  docker container prune -f
+  COMPOSE_FILE="docker-compose.yml"
   
-  echo "🗑️ Removing unused images..."
-  docker image prune -f
+  # Stop and remove OpenTranscribe containers
+  echo "🗑️ Stopping and removing OpenTranscribe containers..."
+  docker compose -f $COMPOSE_FILE down --rmi local
   
-  echo "🗑️ Removing unused volumes..."
-  docker volume prune -f
+  # Remove OpenTranscribe images specifically
+  echo "🗑️ Removing OpenTranscribe images..."
+  docker images --filter "reference=transcribe-app*" -q | xargs -r docker rmi -f
+  docker images --filter "reference=*opentranscribe*" -q | xargs -r docker rmi -f
   
-  echo "✅ System cleanup complete."
+  # Remove OpenTranscribe volumes (if not in use)
+  echo "🗑️ Removing OpenTranscribe volumes..."
+  docker volume ls --filter "name=transcribe-app" -q | xargs -r docker volume rm
+  
+  echo "✅ OpenTranscribe cleanup complete."
 }
 
 # Function to check health of all services
