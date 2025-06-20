@@ -30,6 +30,13 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
             (re.compile(f"^{api_prefix}/tasks/?$"), self.handle_tasks_endpoint),
         ]
         
+        # Patterns that should bypass middleware handling (let FastAPI handle them)
+        self.bypass_patterns = [
+            re.compile(f"^{api_prefix}/files/\\d+/?$"),  # Files with ID (GET, PUT, DELETE)
+            re.compile(f"^{api_prefix}/tags/\\d+/?$"),   # Tags with ID
+            re.compile(f"^{api_prefix}/speakers/\\d+/?$"), # Speakers with ID
+        ]
+        
         # Also handle with or without trailing slash
         logger.info(f"Router will match {api_prefix}/tags/ and {api_prefix}/tags")
         logger.info(f"Router will match {api_prefix}/speakers/ and {api_prefix}/speakers")
@@ -66,6 +73,12 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
         # If we got a 404, it might be due to a route mismatch
         if response.status_code == 404 and original_path.startswith(self.api_prefix):
             logger.warning(f"404 for path {request.method} {original_path} - attempting to fix")
+            
+            # First check if this path should bypass middleware handling
+            for bypass_pattern in self.bypass_patterns:
+                if bypass_pattern.match(original_path):
+                    logger.info(f"Path {original_path} matches bypass pattern, not handling in middleware")
+                    return response  # Return the original 404, let FastAPI handle it
             
             # Check if any of our route patterns match
             for pattern, handler in self.route_patterns:

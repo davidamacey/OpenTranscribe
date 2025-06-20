@@ -72,20 +72,11 @@ function createWebSocketStore() {
       }
       
       try {
-        // Construct WebSocket URL with token
-        // Use environment variable if available, otherwise fall back to dynamic construction
-        const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL;
-        let wsUrl;
-        
-        if (wsBaseUrl) {
-          // Use configured WebSocket base URL
-          wsUrl = `${wsBaseUrl}?token=${token}`;
-        } else {
-          // Fall back to dynamic construction for development
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const baseUrl = window.location.host;
-          wsUrl = `${protocol}//${baseUrl}/api/ws?token=${token}`;
-        }
+        // Always construct WebSocket URL dynamically based on current location
+        // This ensures it works in dev, production, and when accessed from different computers
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const wsUrl = `${protocol}//${host}/api/ws?token=${token}`;
         
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);
@@ -109,8 +100,12 @@ function createWebSocketStore() {
             s.status = 'disconnected';
             s.socket = null;
             
-            // Don't attempt to reconnect if closed cleanly
-            if (event.code !== 1000 && event.code !== 1001) {
+            // Don't attempt to reconnect if closed cleanly or if page is hidden
+            const shouldReconnect = event.code !== 1000 && 
+                                  event.code !== 1001 && 
+                                  !document.hidden;
+            
+            if (shouldReconnect) {
               tryReconnect(token);
             }
             
@@ -293,3 +288,19 @@ authStore.token.subscribe((token: string | null) => {
     websocketStore.disconnect();
   }
 });
+
+// Handle page visibility changes to reconnect when page becomes visible
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      // Page became visible, check if we need to reconnect
+      const currentState = getState();
+      if (currentState.status === 'disconnected' || currentState.status === 'error') {
+        const token = localStorage.getItem('token');
+        if (token) {
+          websocketStore.connect(token);
+        }
+      }
+    }
+  });
+}

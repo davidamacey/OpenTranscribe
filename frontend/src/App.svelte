@@ -98,7 +98,9 @@
       <main class="content {!$isAuthenticated ? 'no-navbar' : ''}">
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
-        <Route path="/" component={MediaLibrary} condition={authGuard} />
+        <Route path="/" condition={authGuard}>
+          <MediaLibrary />
+        </Route>
         <Route path="/files/:id" let:params primary={false}>
           <FileDetail id={params.id} />
         </Route>

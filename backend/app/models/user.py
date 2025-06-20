@@ -25,4 +25,6 @@ class User(Base):
     media_files = relationship("MediaFile", back_populates="user")
     comments = relationship("Comment", back_populates="user")
     speakers = relationship("Speaker", back_populates="user")
+    speaker_profiles = relationship("SpeakerProfile", back_populates="user")
+    speaker_collections = relationship("SpeakerCollection", back_populates="user")
     collections = relationship("Collection", back_populates="user")

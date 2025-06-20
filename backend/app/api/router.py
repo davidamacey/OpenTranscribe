@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, Response
 from fastapi.routing import APIRoute
-from .endpoints import auth, files, search, speakers, comments, tags, users, tasks, admin, collections, user_files
+from .endpoints import auth, search, speakers, speaker_profiles, comments, tags, users, tasks, admin, collections, user_files
+from .endpoints.files import router as files_router
 from . import websockets
 import logging
 
@@ -46,9 +47,10 @@ def include_router_with_consistency(router, prefix, tags=None):
 
 # Include routers from different endpoints with consistent path handling
 include_router_with_consistency(auth.router, prefix="/auth", tags=["auth"])
-include_router_with_consistency(files.router, prefix="/files", tags=["files"])
+include_router_with_consistency(files_router, prefix="/files", tags=["files"])
 include_router_with_consistency(search.router, prefix="/search", tags=["search"])
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
+include_router_with_consistency(speaker_profiles.router, prefix="/speaker-profiles", tags=["speaker-profiles"])
 include_router_with_consistency(comments.router, prefix="/comments", tags=["comments"])
 include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])

@@ -65,8 +65,8 @@
     'video/x-m4v', 'video/mpeg', 'video/x-ms-asf', 'video/x-ms-wvx', 'video/avi'
   ];
   
-  // Max file size (50GB in bytes)
-  const MAX_FILE_SIZE = 50 * 1024 * 1024 * 1024; // 50GB
+  // Max file size (15GB in bytes) - matches nginx client_max_body_size
+  const MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024; // 15GB
   
   // Initialize drag and drop
   function initDragAndDrop() {
@@ -180,14 +180,16 @@
     
     // Check file size
     if (selectedFile.size > MAX_FILE_SIZE) {
-      error = `File too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}.`;
+      const fileSizeFormatted = formatFileSize(selectedFile.size);
+      const maxSizeFormatted = formatFileSize(MAX_FILE_SIZE);
+      error = `File too large (${fileSizeFormatted}). Maximum file size is ${maxSizeFormatted}. Please try:\n• Compressing the video/audio file\n• Using a different format with better compression\n• Splitting large files into smaller parts`;
       return;
     }
     
     // Additional checks for very large files
     if (selectedFile.size > 2 * 1024 * 1024 * 1024) { // > 2GB
       // Warn about potential upload time for very large files
-      error = `Warning: This is a large file (${formatFileSize(selectedFile.size)}). Upload may take a while. Click upload again to proceed.`;
+      error = `Warning: This is a large file (${formatFileSize(selectedFile.size)}). Upload may take a while and requires stable internet connection. Click upload again to proceed.`;
       file = selectedFile;
       return;
     }
@@ -393,7 +395,8 @@
         
         // Server responded with an error status code
         if (response.status === 413) {
-          error = 'File too large. The server rejected the upload due to size limits.';
+          const fileSizeGB = file ? (file.size / (1024 * 1024 * 1024)).toFixed(1) : 'unknown';
+          error = `File too large (${fileSizeGB}GB). This file exceeds the current server upload limit of 15GB. Please try:\n• Compressing the video/audio file\n• Using a different format with better compression\n• Splitting large files into smaller parts\n• Contacting your administrator to increase limits`;
         } else if (response.status === 401) {
           error = 'Session expired. Please log in again.';
         } else {

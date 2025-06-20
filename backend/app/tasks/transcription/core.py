@@ -24,6 +24,8 @@ from .notifications import (
     send_processing_notification, send_completion_notification, send_error_notification,
     send_progress_notification
 )
+from app.services.speaker_embedding_service import SpeakerEmbeddingService
+from app.services.speaker_matching_service import SpeakerMatchingService
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +145,30 @@ def transcribe_audio_task(self, file_id: int):
                     update_media_file_transcription_status(
                         db, file_id, processed_segments, result.get("language", "en")
                     )
+                    update_task_status(db, task_id, "in_progress", progress=0.78)
+                
+                # Step 9.5: Extract speaker embeddings and match profiles
+                send_progress_notification(user_id, file_id, 0.78, "Processing speaker identification")
+                try:
+                    embedding_service = SpeakerEmbeddingService()
+                    
+                    with session_scope() as db:
+                        matching_service = SpeakerMatchingService(db, embedding_service)
+                        
+                        # Process speaker embeddings and matching
+                        speaker_results = matching_service.process_speaker_segments(
+                            audio_file_path, file_id, user_id, processed_segments, speaker_mapping
+                        )
+                        
+                        update_task_status(db, task_id, "in_progress", progress=0.82)
+                        
+                    logger.info(f"Speaker identification completed: {len(speaker_results)} speakers processed")
+                    
+                except Exception as e:
+                    logger.warning(f"Error in speaker identification: {e}")
+                    # Continue with transcription even if speaker matching fails
+                
+                with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.85)
                 
                 send_progress_notification(user_id, file_id, 0.85, "Indexing for search")

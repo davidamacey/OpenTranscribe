@@ -39,6 +39,7 @@ class PrepareUploadRequest(BaseModel):
 class SpeakerBase(BaseModel):
     name: str
     display_name: Optional[str] = None
+    suggested_name: Optional[str] = None
     uuid: str  # Non-optional to match database NOT NULL constraint
     verified: bool = False
 
@@ -52,6 +53,7 @@ class SpeakerCreate(SpeakerBase):
 class SpeakerUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
+    suggested_name: Optional[str] = None
     verified: Optional[bool] = None
     embedding_vector: Optional[List[float]] = None
 
@@ -60,7 +62,62 @@ class Speaker(SpeakerBase):
     id: int
     user_id: int
     media_file_id: int
+    profile_id: Optional[int] = None
+    confidence: Optional[float] = None
     created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Speaker Profile schemas
+class SpeakerProfileBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class SpeakerProfileCreate(SpeakerProfileBase):
+    pass
+
+
+class SpeakerProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SpeakerProfile(SpeakerProfileBase):
+    id: int
+    user_id: int
+    uuid: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Speaker Collection schemas
+class SpeakerCollectionBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_public: bool = False
+
+
+class SpeakerCollectionCreate(SpeakerCollectionBase):
+    pass
+
+
+class SpeakerCollectionUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_public: Optional[bool] = None
+
+
+class SpeakerCollection(SpeakerCollectionBase):
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
