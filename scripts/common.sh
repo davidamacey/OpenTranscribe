@@ -40,10 +40,10 @@ create_required_dirs() {
 print_access_info() {
   echo "🌐 Access the application at:"
   echo "   - Frontend: http://localhost:5173"
-  echo "   - API: http://localhost:8080/api"
-  echo "   - API Documentation: http://localhost:8080/docs"
-  echo "   - MinIO Console: http://localhost:9091"
-  echo "   - Flower Dashboard: http://localhost:5555/flower"
+  echo "   - API: http://localhost:5174/api"
+  echo "   - API Documentation: http://localhost:5174/docs"
+  echo "   - MinIO Console: http://localhost:5179"
+  echo "   - Flower Dashboard: http://localhost:5175/flower"
 }
 
 #######################

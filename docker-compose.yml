@@ -11,7 +11,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=opentranscribe
     ports:
-      - "5432:5432"
+      - "5176:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -27,8 +27,8 @@ services:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin
     ports:
-      - "9090:9000"
-      - "9091:9001"
+      - "5178:9000"
+      - "5179:9001"
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -40,7 +40,7 @@ services:
     image: redis:7-alpine
     restart: always
     ports:
-      - "6379:6379"
+      - "5177:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -64,8 +64,8 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "9200:9200"
-      - "9600:9600"
+      - "5180:9200"
+      - "5181:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
@@ -82,7 +82,7 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "8080:8080"
+      - "5174:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -224,7 +224,7 @@ services:
       --db=/app/flower.db
       --broker=redis://redis:6379/0
     ports:
-      - "5555:5555"
+      - "5175:5555"
     depends_on:
       - redis
       - celery-worker
