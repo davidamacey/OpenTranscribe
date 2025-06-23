@@ -199,26 +199,26 @@ check_network_connectivity() {
 validate_downloaded_files() {
     echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
     
-    # Validate init_db.sql
-    if [ ! -f "init_db.sql" ]; then
-        echo -e "${RED}❌ init_db.sql file not found${NC}"
+    # Validate init_db_complete.sql
+    if [ ! -f "init_db_complete.sql" ]; then
+        echo -e "${RED}❌ init_db_complete.sql file not found${NC}"
         return 1
     fi
     
     # Check file size (should be substantial)
-    local db_size=$(wc -c < init_db.sql)
-    if [ "$db_size" -lt 1000 ]; then
-        echo -e "${RED}❌ init_db.sql file too small ($db_size bytes)${NC}"
+    local db_size=$(wc -c < init_db_complete.sql)
+    if [ "$db_size" -lt 10000 ]; then
+        echo -e "${RED}❌ init_db_complete.sql file too small ($db_size bytes)${NC}"
         return 1
     fi
     
-    # Check for essential database content
-    if ! grep -q "CREATE TABLE.*user" init_db.sql || ! grep -q "CREATE TABLE.*media_file" init_db.sql; then
-        echo -e "${RED}❌ init_db.sql missing essential database tables${NC}"
+    # Check for essential database content including admin user
+    if ! grep -q "CREATE TABLE.*user" init_db_complete.sql || ! grep -q "CREATE TABLE.*media_file" init_db_complete.sql || ! grep -q "admin@example.com" init_db_complete.sql; then
+        echo -e "${RED}❌ init_db_complete.sql missing essential database tables or admin user${NC}"
         return 1
     fi
     
-    echo "✓ init_db.sql validated ($db_size bytes)"
+    echo "✓ init_db_complete.sql validated ($db_size bytes)"
     
     # Validate docker-compose.yml
     if [ ! -f "docker-compose.yml" ]; then
@@ -331,17 +331,17 @@ create_database_files() {
     local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db_complete.sql"
     
     while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db.sql; then
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db_complete.sql; then
             # Validate downloaded file
-            if [ -s init_db.sql ] && grep -q "CREATE TABLE" init_db.sql; then
-                echo "✓ Downloaded and validated init_db.sql"
+            if [ -s init_db_complete.sql ] && grep -q "CREATE TABLE" init_db_complete.sql && grep -q "admin@example.com" init_db_complete.sql; then
+                echo "✓ Downloaded and validated init_db_complete.sql"
                 return 0
             else
                 echo "⚠️  Downloaded file appears invalid, retrying..."
-                rm -f init_db.sql
+                rm -f init_db_complete.sql
             fi
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
@@ -420,76 +420,42 @@ create_production_compose() {
 }
 
 create_production_env_example() {
-    cat > .env.example << 'EOF'
-# OpenTranscribe Production Configuration
-# This file is automatically configured by the setup script
-
-# Database Configuration
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5176
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=opentranscribe
-
-# MinIO Object Storage Configuration
-MINIO_HOST=minio
-MINIO_PORT=5178
-MINIO_CONSOLE_PORT=5179
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-MEDIA_BUCKET_NAME=opentranscribe
-
-# Redis Configuration
-REDIS_HOST=redis
-REDIS_PORT=5177
-
-# OpenSearch Configuration
-OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=5180
-OPENSEARCH_ADMIN_PORT=5181
-
-# JWT Authentication
-JWT_SECRET_KEY=change_this_in_production
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# Model Storage
-MODEL_BASE_DIR=/app/models
-TEMP_DIR=/app/temp
-
-# Hardware Detection (auto-detected by setup script)
-TORCH_DEVICE=auto
-COMPUTE_TYPE=auto
-USE_GPU=auto
-GPU_DEVICE_ID=0
-
-# AI Models Configuration
-WHISPER_MODEL=large-v2
-BATCH_SIZE=auto
-DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
-MIN_SPEAKERS=1
-MAX_SPEAKERS=10
-
-# HuggingFace Token (REQUIRED for speaker diarization)
-# Get your token at: https://huggingface.co/settings/tokens
-HUGGINGFACE_TOKEN=your_huggingface_token_here
-
-# External Port Configuration (sequential ports to avoid conflicts)
-FRONTEND_PORT=5173
-BACKEND_PORT=5174
-FLOWER_PORT=5175
-POSTGRES_PORT=5176
-REDIS_PORT=5177
-MINIO_PORT=5178
-MINIO_CONSOLE_PORT=5179
-OPENSEARCH_PORT=5180
-OPENSEARCH_ADMIN_PORT=5181
-
-# Frontend Configuration
-NODE_ENV=production
-VITE_FLOWER_URL_PREFIX=flower
-EOF
-    echo "✓ Created production .env.example"
+    echo "✓ Downloading environment configuration template..."
+    
+    # Download the official .env.example from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then
+            # Validate downloaded file
+            if [ -s .env.example ] && grep -q "POSTGRES_HOST" .env.example && grep -q "HUGGINGFACE_TOKEN" .env.example; then
+                echo "✓ Downloaded and validated .env.example"
+                return 0
+            else
+                echo "⚠️  Downloaded env file appears invalid, retrying..."
+                rm -f .env.example
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+    
+    echo -e "${RED}❌ Failed to download .env.example file after $max_retries attempts${NC}"
+    echo "Please check your internet connection and try again."
+    echo "Alternative: You can manually download from:"
+    echo "$download_url"
+    exit 1
 }
 
 configure_environment() {
