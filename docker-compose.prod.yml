@@ -94,6 +94,7 @@ services:
 
   backend:
     image: davidamacey/opentranscribe-backend:latest
+    pull_policy: always
     restart: always
     volumes:
       - backend_models:/app/models
@@ -165,6 +166,7 @@ services:
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
+    pull_policy: always
     restart: always
     command: celery -A app.core.celery worker --loglevel=info --concurrency=1
     volumes:
@@ -214,6 +216,7 @@ services:
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
+    pull_policy: always
     restart: always
     ports:
       - "${FRONTEND_PORT:-5173}:80"
@@ -235,6 +238,7 @@ services:
 
   flower:
     image: davidamacey/opentranscribe-backend:latest
+    pull_policy: always
     restart: always
     command: >
       python -m celery -A app.core.celery flower
