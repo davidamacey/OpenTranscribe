@@ -328,8 +328,10 @@ create_database_files() {
     # Download the official init_db.sql from the repository
     local max_retries=3
     local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${branch}/database/init_db.sql"
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
     
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db.sql; then
@@ -384,7 +386,10 @@ create_production_compose() {
     # Download the official production compose file from the repository
     local max_retries=3
     local retry_count=0
-    local download_url="https://raw.githubusercontent.com/davidamacey/transcribe-app/main/docker-compose.prod.yml"
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)  
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
     
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.yml; then
