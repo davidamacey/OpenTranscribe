@@ -92,6 +92,27 @@ services:
         echo '✅ Database schema initialized!'
       "
 
+  admin-init:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: always
+    restart: "no"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Database connection for admin user creation
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
+    command: >
+      sh -c "
+        echo '👤 Creating default admin user...' &&
+        python -m app.initial_data &&
+        echo '✅ Admin user created!'
+      "
+
   backend:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: always
