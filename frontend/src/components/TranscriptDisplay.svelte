@@ -192,7 +192,8 @@
         <p class="error-message small">{transcriptError}</p>
       {/if}
     {:else}
-      <div bind:this={transcriptContainer} class="transcript-display">
+      <div bind:this={transcriptContainer} class="transcript-display-container">
+        <div class="transcript-display">
         {#each file.transcript_segments as segment}
           <div 
             class="transcript-segment" 
@@ -252,18 +253,20 @@
             {/if}
           </div>
         {/each}
+        </div>
+        
+        <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
+        {#if scrollbarIndicatorEnabled}
+          <ScrollbarIndicator 
+            {currentTime}
+            {transcriptSegments}
+            containerElement={transcriptContainer?.querySelector('.transcript-display')}
+            disabled={isEditingTranscript || !file?.transcript_segments?.length}
+            on:seekToPlayhead={handleSeekToPlayhead}
+          />
+        {/if}
       </div>
       
-      <!-- Scrollbar Position Indicator - Outside but aligned with transcript-display -->
-      {#if scrollbarIndicatorEnabled}
-        <ScrollbarIndicator 
-          {currentTime}
-          {transcriptSegments}
-          containerElement={transcriptContainer}
-          disabled={isEditingTranscript || !file?.transcript_segments?.length}
-          on:seekToPlayhead={handleSeekToPlayhead}
-        />
-      {/if}
       
       <div class="transcript-actions">
         <div class="export-dropdown">
@@ -703,13 +706,17 @@
     border-color: var(--border-hover, #9ca3af);
   }
 
-  .transcript-display {
+  .transcript-display-container {
+    position: relative;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--surface-color);
+  }
+
+  .transcript-display {
     max-height: 600px;
     overflow-y: auto;
-    position: relative; /* Enable absolute positioning for scrollbar indicator */
+    position: relative;
   }
 
   .transcript-segment {

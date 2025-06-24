@@ -12,7 +12,7 @@
   // Props
   export let currentTime: number = 0;
   export let transcriptSegments: TranscriptSegment[] = [];
-  export let containerElement: HTMLElement | null = null;
+  export let containerElement: HTMLElement | Element | null = null;
   export let disabled: boolean = false;
   export let showTooltip: boolean = true;
 
@@ -64,21 +64,17 @@
       const rect = containerElement.getBoundingClientRect();
       containerHeight = rect.height || 600; // Use actual height or fallback to 600px
       
-      // Get the position of transcript-display relative to its parent (transcript-column)
-      const parentElement = containerElement.parentElement;
-      if (parentElement) {
-        const parentRect = parentElement.getBoundingClientRect();
-        const topOffset = rect.top - parentRect.top;
-        
-        // Position the overlay to align with the transcript-display
-        overlayElement.style.setProperty('--transcript-height', `${containerHeight}px`);
-        overlayElement.style.setProperty('--transcript-top-offset', `${topOffset}px`);
-      }
+      // Position the overlay to match the exact height of transcript-display
+      overlayElement.style.setProperty('--transcript-height', `${containerHeight}px`);
       
       // Detect scrollbar width dynamically
-      const hasVerticalScrollbar = containerElement.scrollHeight > containerElement.clientHeight;
-      scrollbarWidth = hasVerticalScrollbar ? 
-        containerElement.offsetWidth - containerElement.clientWidth : 16; // Default scrollbar width
+      if (containerElement instanceof HTMLElement) {
+        const hasVerticalScrollbar = containerElement.scrollHeight > containerElement.clientHeight;
+        scrollbarWidth = hasVerticalScrollbar ? 
+          containerElement.offsetWidth - containerElement.clientWidth : 16; // Default scrollbar width
+      } else {
+        scrollbarWidth = 16; // Default scrollbar width for Element
+      }
     }
   }
 
@@ -181,10 +177,10 @@
 <style>
   .scrollbar-indicator-overlay {
     position: absolute;
-    top: var(--transcript-top-offset, 0px); /* Dynamically positioned to align with transcript-display */
-    right: -32px; /* Position outside the transcript-column */
-    width: 24px;
-    height: var(--transcript-height, 600px); /* Dynamic height matching transcript-display */
+    top: 0; /* Align with the top of transcript-display */
+    right: -24px; /* Position just outside the transcript-display */
+    width: 20px;
+    height: var(--transcript-height, 600px); /* Dynamic height matching transcript-display exactly */
     pointer-events: none;
     z-index: 200; /* Higher z-index to appear above other elements */
     overflow: visible;
