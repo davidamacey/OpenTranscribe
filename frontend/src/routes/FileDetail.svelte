@@ -1333,6 +1333,7 @@
       {#if file && file.transcript_segments}
         <TranscriptDisplay 
           {file}
+          {currentTime}
           {isEditingTranscript}
           {editedTranscript}
           {savingTranscript}
@@ -1351,6 +1352,7 @@
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}
           on:reprocess={handleReprocess}
+          on:seekToPlayhead={handleSeekTo}
         />
 
       {:else}
