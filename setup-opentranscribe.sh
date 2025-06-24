@@ -174,11 +174,107 @@ fallback_to_cpu() {
 }
 
 #######################
-# DEPENDENCY CHECKS
+# NETWORK AND DEPENDENCY CHECKS
 #######################
+
+check_network_connectivity() {
+    echo -e "${BLUE}🌐 Checking network connectivity...${NC}"
+    
+    # Test GitHub connectivity
+    if ! curl -s --connect-timeout 5 --max-time 10 https://raw.githubusercontent.com > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  GitHub may not be accessible for downloading files${NC}"
+        echo "This could affect the setup process. Please check your internet connection."
+        echo ""
+        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled by user."
+            exit 1
+        fi
+    else
+        echo "✓ Network connectivity verified"
+    fi
+}
+
+validate_downloaded_files() {
+    echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
+    
+    # Validate init_db_complete.sql
+    if [ ! -f "init_db_complete.sql" ]; then
+        echo -e "${RED}❌ init_db_complete.sql file not found${NC}"
+        return 1
+    fi
+    
+    # Check file size (should be substantial)
+    local db_size=$(wc -c < init_db_complete.sql)
+    if [ "$db_size" -lt 10000 ]; then
+        echo -e "${RED}❌ init_db_complete.sql file too small ($db_size bytes)${NC}"
+        return 1
+    fi
+    
+    # Check for essential database content including admin user
+    if ! grep -q "CREATE TABLE.*user" init_db_complete.sql || ! grep -q "CREATE TABLE.*media_file" init_db_complete.sql || ! grep -q "admin@example.com" init_db_complete.sql; then
+        echo -e "${RED}❌ init_db_complete.sql missing essential database tables or admin user${NC}"
+        return 1
+    fi
+    
+    echo "✓ init_db_complete.sql validated ($db_size bytes)"
+    
+    # Validate docker-compose.yml
+    if [ ! -f "docker-compose.yml" ]; then
+        echo -e "${RED}❌ docker-compose.yml file not found${NC}"
+        return 1
+    fi
+    
+    # Check docker-compose syntax
+    if ! docker compose -f docker-compose.yml config > /dev/null 2>&1; then
+        echo -e "${RED}❌ docker-compose.yml syntax validation failed${NC}"
+        return 1
+    fi
+    
+    # Check for essential services
+    if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
+        echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
+        return 1
+    fi
+    
+    echo "✓ docker-compose.yml validated"
+    echo "✓ All downloaded files validated successfully"
+    return 0
+}
+
+check_network_connectivity() {
+    echo "🌐 Checking network connectivity..."
+    
+    # Test connectivity to GitHub
+    if ! curl -fsSL --connect-timeout 5 --max-time 10 "https://api.github.com" > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Warning: Unable to connect to GitHub${NC}"
+        echo "Please check your internet connection before proceeding."
+        echo "The setup script requires internet access to download configuration files."
+        echo ""
+        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled. Please check your network connection and try again."
+            exit 1
+        fi
+    else
+        echo "✓ Network connectivity verified"
+    fi
+}
 
 check_dependencies() {
     echo -e "${BLUE}📋 Checking dependencies...${NC}"
+    
+    # Check for curl
+    if ! command -v curl &> /dev/null; then
+        echo -e "${RED}❌ curl is not installed${NC}"
+        echo "curl is required to download configuration files."
+        echo "Please install curl and try again."
+        exit 1
+    else
+        echo "✓ curl detected"
+    fi
     
     # Check for Docker
     if ! command -v docker &> /dev/null; then
@@ -208,6 +304,9 @@ check_dependencies() {
     else
         echo "✓ Docker daemon is running"
     fi
+    
+    # Check network connectivity
+    check_network_connectivity
 }
 
 #######################
@@ -224,171 +323,42 @@ setup_project_directory() {
 }
 
 create_database_files() {
-    echo "✓ Creating database initialization files..."
+    echo "✓ Downloading database initialization files..."
     
-    # Create init_db.sql file
-    cat > init_db.sql << 'EOF'
--- Initialize database tables for OpenTranscribe
-
--- Users table
-CREATE TABLE IF NOT EXISTS "user" (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    full_name VARCHAR(255) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
-    role VARCHAR(50) DEFAULT 'user',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Media files table
-CREATE TABLE IF NOT EXISTS media_file (
-    id SERIAL PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    storage_path VARCHAR(500) NOT NULL,
-    file_size BIGINT NOT NULL,
-    duration FLOAT,
-    upload_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP WITH TIME ZONE NULL,
-    content_type VARCHAR(100) NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending',
-    is_public BOOLEAN DEFAULT FALSE,
-    language VARCHAR(10) NULL,
-    summary TEXT NULL,
-    translated_text TEXT NULL,
-    file_hash VARCHAR(255) NULL,
-    thumbnail_path VARCHAR(500) NULL,
-    -- Detailed metadata fields
-    metadata_raw JSONB NULL,
-    metadata_important JSONB NULL,
-    -- Media technical specs
-    media_format VARCHAR(50) NULL,
-    codec VARCHAR(50) NULL,
-    frame_rate FLOAT NULL,
-    frame_count INTEGER NULL,
-    resolution_width INTEGER NULL,
-    resolution_height INTEGER NULL,
-    aspect_ratio VARCHAR(20) NULL,
-    -- Audio specs
-    audio_channels INTEGER NULL,
-    audio_sample_rate INTEGER NULL,
-    audio_bit_depth INTEGER NULL,
-    -- Creation information
-    creation_date TIMESTAMP WITH TIME ZONE NULL,
-    last_modified_date TIMESTAMP WITH TIME ZONE NULL,
-    -- Device information
-    device_make VARCHAR(100) NULL,
-    device_model VARCHAR(100) NULL,
-    -- Content information
-    title VARCHAR(255) NULL,
-    author VARCHAR(255) NULL,
-    description TEXT NULL,
-    user_id INTEGER NOT NULL REFERENCES "user" (id)
-);
-
--- Create the Tag table
-CREATE TABLE IF NOT EXISTS tag (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create the FileTag join table
-CREATE TABLE IF NOT EXISTS file_tag (
-    id SERIAL PRIMARY KEY,
-    media_file_id INTEGER NOT NULL REFERENCES media_file (id) ON DELETE CASCADE,
-    tag_id INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (media_file_id, tag_id)
-);
-
--- Speakers table
-CREATE TABLE IF NOT EXISTS speaker (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES "user"(id),
-    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    display_name VARCHAR(255) NULL,
-    uuid VARCHAR(255) NOT NULL,
-    verified BOOLEAN NOT NULL DEFAULT FALSE,
-    embedding_vector JSONB NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, media_file_id, name)
-);
-
--- Transcript segments table
-CREATE TABLE IF NOT EXISTS transcript_segment (
-    id SERIAL PRIMARY KEY,
-    media_file_id INTEGER NOT NULL REFERENCES media_file(id),
-    speaker_id INTEGER NULL REFERENCES speaker(id),
-    start_time FLOAT NOT NULL,
-    end_time FLOAT NOT NULL,
-    text TEXT NOT NULL
-);
-
--- Comments table
-CREATE TABLE IF NOT EXISTS comment (
-    id SERIAL PRIMARY KEY,
-    media_file_id INTEGER NOT NULL REFERENCES media_file(id),
-    user_id INTEGER NOT NULL REFERENCES "user"(id),
-    text TEXT NOT NULL,
-    timestamp FLOAT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Tasks table
-CREATE TABLE IF NOT EXISTS task (
-    id VARCHAR(255) PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES "user"(id),
-    media_file_id INTEGER NULL REFERENCES media_file(id),
-    task_type VARCHAR(50) NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    progress FLOAT DEFAULT 0.0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP WITH TIME ZONE NULL,
-    error_message TEXT NULL
-);
-
--- Analytics table
-CREATE TABLE IF NOT EXISTS analytics (
-    id SERIAL PRIMARY KEY,
-    media_file_id INTEGER UNIQUE REFERENCES media_file(id),
-    speaker_stats JSONB NULL,
-    sentiment JSONB NULL,
-    keywords JSONB NULL
-);
-
--- Collections table
-CREATE TABLE IF NOT EXISTS collection (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT NULL,
-    user_id INTEGER NOT NULL REFERENCES "user"(id),
-    is_public BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, name)
-);
-
--- Collection members join table
-CREATE TABLE IF NOT EXISTS collection_member (
-    id SERIAL PRIMARY KEY,
-    collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
-    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
-    added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(collection_id, media_file_id)
-);
-
--- Insert admin user
-INSERT INTO "user" (email, full_name, hashed_password, is_active, is_superuser, role) 
-VALUES ('admin@example.com', 'Admin User', '$2b$12$VVtvMYmKcDrOkUEBeGm9luACJNDxPw.eAcTShleJS1gmh5ARHBFpm', true, true, 'admin') 
-ON CONFLICT (email) DO NOTHING;
-EOF
-
-    echo "✓ Created init_db.sql"
+    # Download the official init_db.sql from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db_complete.sql"
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db_complete.sql; then
+            # Validate downloaded file
+            if [ -s init_db_complete.sql ] && grep -q "CREATE TABLE" init_db_complete.sql && grep -q "admin@example.com" init_db_complete.sql; then
+                echo "✓ Downloaded and validated init_db_complete.sql"
+                return 0
+            else
+                echo "⚠️  Downloaded file appears invalid, retrying..."
+                rm -f init_db_complete.sql
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+    
+    echo -e "${RED}❌ Failed to download database initialization file after $max_retries attempts${NC}"
+    echo "Please check your internet connection and try again."
+    echo "Alternative: You can manually download from:"
+    echo "$download_url"
+    exit 1
 }
 
 create_configuration_files() {
@@ -400,355 +370,92 @@ create_configuration_files() {
     # Create comprehensive docker-compose.yml directly
     create_production_compose
     
+    # Validate all downloaded files
+    if ! validate_downloaded_files; then
+        echo -e "${RED}❌ File validation failed${NC}"
+        exit 1
+    fi
+    
     # Create .env.example
     create_production_env_example
 }
 
 create_production_compose() {
-    cat > docker-compose.yml << 'EOF'
-version: '3.8'
-
-# OpenTranscribe Production Configuration
-# Cross-platform compatible with automatic GPU detection
-
-services:
-  postgres:
-    image: postgres:14-alpine
-    restart: always
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-    ports:
-      - "${POSTGRES_PORT:-5176}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio
-    restart: always
-    volumes:
-      - minio_data:/data
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "${MINIO_PORT:-5178}:9000"
-      - "${MINIO_CONSOLE_PORT:-5179}:9001"
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    restart: always
-    ports:
-      - "${REDIS_PORT:-5177}:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 30s
-      retries: 50
-
-  opensearch:
-    image: opensearchproject/opensearch:2.5.0
-    restart: always
-    environment:
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - DISABLE_SECURITY_PLUGIN=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    ports:
-      - "${OPENSEARCH_PORT:-5180}:9200"
-      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
-      interval: 5s
-      timeout: 10s
-      retries: 20
-
-  db-init:
-    image: postgres:14-alpine
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./init_db.sql:/init_db.sql:ro
-    environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
-    command: >
-      sh -c "
-        echo '🗄️  Initializing database schema...' &&
-        psql -h postgres -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-opentranscribe} -f /init_db.sql &&
-        echo '✅ Database schema initialized!'
-      "
-
-  backend:
-    image: davidamacey/opentranscribe-backend:latest
-    restart: always
-    volumes:
-      - backend_models:/app/models
-      - backend_temp:/app/temp
-    ports:
-      - "${BACKEND_PORT:-5174}:8080"
-    environment:
-      # Database
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-      # Storage
-      - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
-      # Cache
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=6379
-      # Search
-      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=9200
-      # Security
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
-      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
-      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      # Models
-      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
-      - TEMP_DIR=${TEMP_DIR:-/app/temp}
-      # Hardware (auto-detected)
-      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
-      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - USE_GPU=${USE_GPU:-auto}
-      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
-      # AI Models
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=${BATCH_SIZE:-auto}
-      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
-      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
-      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      opensearch:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
-
-  celery-worker:
-    image: davidamacey/opentranscribe-backend:latest
-    restart: always
-    command: celery -A app.core.celery worker --loglevel=info --concurrency=1
-    volumes:
-      - backend_models:/app/models
-      - backend_temp:/app/temp
-    environment:
-      # Same environment as backend
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-      - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=6379
-      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=9200
-      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
-      - TEMP_DIR=${TEMP_DIR:-/app/temp}
-      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
-      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - USE_GPU=${USE_GPU:-auto}
-      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=${BATCH_SIZE:-auto}
-      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
-      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
-      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
-    depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
-
-  frontend:
-    image: davidamacey/opentranscribe-frontend:latest
-    restart: always
-    ports:
-      - "${FRONTEND_PORT:-5173}:80"
-    environment:
-      - NODE_ENV=production
-      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-5174}/api
-      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-5174}/ws
-      - VITE_FLOWER_PORT=${FLOWER_PORT:-5175}
-      - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  flower:
-    image: davidamacey/opentranscribe-backend:latest
-    restart: always
-    command: >
-      python -m celery -A app.core.celery flower
-      --port=5555
-      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
-      --persistent=True
-      --db=/app/flower.db
-      --broker=redis://${REDIS_HOST:-redis}:6379/0
-    ports:
-      - "${FLOWER_PORT:-5175}:5555"
-    depends_on:
-      - redis
-      - celery-worker
-    environment:
-      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-    volumes:
-      - flower_data:/app
-
-volumes:
-  postgres_data:
-  minio_data:
-  redis_data:
-  opensearch_data:
-  backend_models:
-  backend_temp:
-  flower_data:
-
-networks:
-  default:
-    driver: bridge
-EOF
-    echo "✓ Created production docker-compose.yml"
+    echo "✓ Downloading production docker-compose configuration..."
+    
+    # Download the official production compose file from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)  
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.yml; then
+            # Validate downloaded file
+            if [ -s docker-compose.yml ] && grep -q "version:" docker-compose.yml && grep -q "services:" docker-compose.yml; then
+                echo "✓ Downloaded and validated production docker-compose.yml"
+                return 0
+            else
+                echo "⚠️  Downloaded compose file appears invalid, retrying..."
+                rm -f docker-compose.yml
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+    
+    echo -e "${RED}❌ Failed to download docker-compose configuration after $max_retries attempts${NC}"
+    echo "Please check your internet connection and try again."
+    echo "Alternative: You can manually download from:"
+    echo "$download_url"
+    exit 1
 }
 
 create_production_env_example() {
-    cat > .env.example << 'EOF'
-# OpenTranscribe Production Configuration
-# This file is automatically configured by the setup script
-
-# Database Configuration
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5176
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=opentranscribe
-
-# MinIO Object Storage Configuration
-MINIO_HOST=minio
-MINIO_PORT=5178
-MINIO_CONSOLE_PORT=5179
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-MEDIA_BUCKET_NAME=opentranscribe
-
-# Redis Configuration
-REDIS_HOST=redis
-REDIS_PORT=5177
-
-# OpenSearch Configuration
-OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=5180
-OPENSEARCH_ADMIN_PORT=5181
-
-# JWT Authentication
-JWT_SECRET_KEY=change_this_in_production
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-# Model Storage
-MODEL_BASE_DIR=/app/models
-TEMP_DIR=/app/temp
-
-# Hardware Detection (auto-detected by setup script)
-TORCH_DEVICE=auto
-COMPUTE_TYPE=auto
-USE_GPU=auto
-GPU_DEVICE_ID=0
-
-# AI Models Configuration
-WHISPER_MODEL=large-v2
-BATCH_SIZE=auto
-DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
-MIN_SPEAKERS=1
-MAX_SPEAKERS=10
-
-# HuggingFace Token (REQUIRED for speaker diarization)
-# Get your token at: https://huggingface.co/settings/tokens
-HUGGINGFACE_TOKEN=your_huggingface_token_here
-
-# External Port Configuration (sequential ports to avoid conflicts)
-FRONTEND_PORT=5173
-BACKEND_PORT=5174
-FLOWER_PORT=5175
-POSTGRES_PORT=5176
-REDIS_PORT=5177
-MINIO_PORT=5178
-MINIO_CONSOLE_PORT=5179
-OPENSEARCH_PORT=5180
-OPENSEARCH_ADMIN_PORT=5181
-
-# Frontend Configuration
-NODE_ENV=production
-VITE_FLOWER_URL_PREFIX=flower
-EOF
-    echo "✓ Created production .env.example"
+    echo "✓ Downloading environment configuration template..."
+    
+    # Download the official .env.example from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then
+            # Validate downloaded file
+            if [ -s .env.example ] && grep -q "POSTGRES_HOST" .env.example && grep -q "HUGGINGFACE_TOKEN" .env.example; then
+                echo "✓ Downloaded and validated .env.example"
+                return 0
+            else
+                echo "⚠️  Downloaded env file appears invalid, retrying..."
+                rm -f .env.example
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+    
+    echo -e "${RED}❌ Failed to download .env.example file after $max_retries attempts${NC}"
+    echo "Please check your internet connection and try again."
+    echo "Alternative: You can manually download from:"
+    echo "$download_url"
+    exit 1
 }
 
 configure_environment() {
@@ -1212,6 +919,7 @@ main() {
     # Run setup steps
     detect_platform
     check_dependencies
+    check_network_connectivity
     configure_docker_runtime
     setup_project_directory
     create_configuration_files

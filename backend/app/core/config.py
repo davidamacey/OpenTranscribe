@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     MINIO_HOST: str = os.getenv("MINIO_HOST", "localhost")
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
     MINIO_SECURE: bool = False  # Use HTTPS for MinIO
-    MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "media")
+    MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
     
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")

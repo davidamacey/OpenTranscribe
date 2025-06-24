@@ -121,11 +121,11 @@ For production deployments, migrations will be handled differently.
 
 ### Development URLs
 - Frontend: http://localhost:5173
-- Backend API: http://localhost:8080/api
-- API Docs: http://localhost:8080/docs
-- MinIO Console: http://localhost:9091
-- Flower Dashboard: http://localhost:5555/flower
-- OpenSearch: http://localhost:9200
+- Backend API: http://localhost:5174/api
+- API Docs: http://localhost:5174/docs
+- MinIO Console: http://localhost:5179
+- Flower Dashboard: http://localhost:5175/flower
+- OpenSearch: http://localhost:5180
 
 ### Important File Locations
 - Environment config: `.env` (never overwrite without confirmation)
