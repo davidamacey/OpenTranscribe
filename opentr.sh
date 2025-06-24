@@ -75,8 +75,8 @@ detect_and_configure_hardware() {
     export COMPUTE_TYPE="float16"
     export USE_GPU="true"
     
-    # Check for NVIDIA Container Toolkit
-    if docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu22.04 nvidia-smi &> /dev/null 2>&1; then
+    # Check for NVIDIA Container Toolkit (efficient method)
+    if docker info 2>/dev/null | grep -q nvidia; then
       echo "✅ NVIDIA Container Toolkit available"
     else
       echo "⚠️  NVIDIA GPU detected but Container Toolkit not available"

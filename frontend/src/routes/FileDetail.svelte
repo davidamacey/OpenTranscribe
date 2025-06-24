@@ -55,9 +55,6 @@
   let speakerList: any[] = [];
   let reprocessing = false;
   
-  // Subtitle display preferences
-  let useEmbeddedSubtitles = true; // Default to embedded subtitles for videos
-  let subtitleToggleAvailable = false; // Whether toggle is available for this file
 
   // Confirmation modal state
   let showExportConfirmation = false;
@@ -65,6 +62,9 @@
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
+  
+  // Debounce timer for subtitle refresh
+  let subtitleRefreshTimer: number;
 
   /**
    * Fetches file details from the API
@@ -304,16 +304,8 @@
     const isVideo = file?.content_type && file.content_type.startsWith('video/');
     const hasTranscript = file?.status === 'completed';
     
-    // Set subtitle toggle availability
-    subtitleToggleAvailable = isVideo && hasTranscript;
-    
-    if (isVideo && hasTranscript && useEmbeddedSubtitles) {
-      // Use the video with embedded subtitles endpoint for video files with transcripts
-      videoUrl = `${apiBaseUrl}/api/files/${fileId}/video-with-subtitles/stream?include_speakers=true`;
-    } else {
-      // Fall back to simple video endpoint for audio files, videos without transcripts, or when user prefers external transcript
-      videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
-    }
+    // Always use the original video for playback - we'll add subtitles via WebVTT tracks
+    videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
     
     // Ensure URL has proper formatting
     if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
@@ -324,44 +316,77 @@
     videoElementChecked = false;
   }
 
+
   /**
-   * Toggle between embedded subtitles and external transcript view
+   * Add subtitle track to video element dynamically
    */
-  function toggleSubtitleMode() {
-    if (!subtitleToggleAvailable) return;
+  async function addSubtitleTrack() {
+    if (!file || !player) return;
     
-    useEmbeddedSubtitles = !useEmbeddedSubtitles;
-    
-    // Reinitialize player with new video source
-    if (player) {
-      const currentTime = player.currentTime;
-      const wasPlaying = !player.paused;
+    try {
+      // Get the video element from Plyr
+      const videoElement = player.media;
+      if (!videoElement) return;
       
-      // Destroy current player
-      player.destroy();
-      player = null;
-      playerInitialized = false;
+      // Create subtitle track element
+      const track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.label = 'English (Auto-generated)';
+      track.srclang = 'en';
+      track.default = true;
       
-      // Set up new video URL
-      setupVideoUrl(fileId);
+      // Set the source to our subtitle endpoint with cache-busting timestamp
+      const timestamp = Date.now();
+      track.src = `${apiBaseUrl}/api/files/${file.id}/subtitles?format=webvtt&include_speakers=true&t=${timestamp}`;
       
-      // Wait a moment then reinitialize
-      setTimeout(() => {
-        initializePlayer();
-        
-        // Restore playback state after player is ready
-        if (player) {
-          player.on('ready', () => {
-            if (currentTime > 0) {
-              player.currentTime = currentTime;
-            }
-            if (wasPlaying) {
-              player.play();
-            }
-          });
+      // Add track to video element
+      videoElement.appendChild(track);
+      
+      // Enable the track
+      track.addEventListener('load', () => {
+        if (videoElement.textTracks && videoElement.textTracks.length > 0) {
+          const textTrack = videoElement.textTracks[videoElement.textTracks.length - 1];
+          textTrack.mode = 'showing';
+          
+          // Enable captions in Plyr
+          if (player && player.captions) {
+            player.captions.active = true;
+          }
+          
+          console.log('Subtitle track loaded and enabled');
         }
-      }, 100);
+      });
+      
+    } catch (error) {
+      console.error('Error adding subtitle track:', error);
     }
+  }
+
+  /**
+   * Refresh subtitle track when transcript changes (debounced)
+   */
+  function refreshSubtitleTrack() {
+    // Clear existing timer
+    if (subtitleRefreshTimer) {
+      clearTimeout(subtitleRefreshTimer);
+    }
+    
+    // Set new timer for 1 second debounce
+    subtitleRefreshTimer = setTimeout(() => {
+      if (!player || !file) return;
+      
+      const videoElement = player.media;
+      if (!videoElement) return;
+      
+      // Remove existing subtitle tracks
+      const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
+      tracks.forEach(track => track.remove());
+      
+      // Add updated subtitle track with cache-busting timestamp
+      addSubtitleTrack();
+      
+      console.log('Subtitle track refreshed due to transcript changes');
+    }, 1000);
   }
 
   /**
@@ -387,7 +412,7 @@
       // Check if this video has embedded subtitles
       const isVideo = file?.content_type && file.content_type.startsWith('video/');
       const hasTranscript = file?.status === 'completed';
-      const hasEmbeddedSubtitles = isVideo && hasTranscript && useEmbeddedSubtitles;
+      const hasEmbeddedSubtitles = isVideo && hasTranscript;
 
       // Initialize Plyr with subtitle support
       const plyrControls = ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'];
@@ -407,7 +432,7 @@
         ratio: '16:9',
         fullscreen: { enabled: true, fallback: true, iosNative: true },
         captions: { 
-          active: hasEmbeddedSubtitles, // Enable captions by default if available
+          active: true, // Enable captions by default if available
           language: 'auto',
           update: true
         }
@@ -417,17 +442,9 @@
       player.on('ready', () => {
         playerInitialized = true;
         
-        // Enable subtitle tracks if available
-        if (hasEmbeddedSubtitles && videoElement.textTracks && videoElement.textTracks.length > 0) {
-          // Enable the first subtitle track
-          for (let i = 0; i < videoElement.textTracks.length; i++) {
-            const track = videoElement.textTracks[i];
-            if (track.kind === 'subtitles' || track.kind === 'captions') {
-              track.mode = 'showing';
-              console.log('Enabled subtitle track:', track.label || track.language || 'default');
-              break;
-            }
-          }
+        // Add subtitle tracks dynamically if video has completed transcription
+        if (hasEmbeddedSubtitles) {
+          addSubtitleTrack();
         }
       });
 
@@ -527,6 +544,9 @@
       file.transcript_segments = [...transcriptData];
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
+      
+      // Refresh subtitle track with debounce since speaker labels changed
+      refreshSubtitleTrack();
     }
     
     // Persist to database
@@ -611,6 +631,9 @@
               transcript_segments: updatedSegments 
             };
             reactiveFile.set(file);
+            
+            // Refresh subtitle track with debounce
+            refreshSubtitleTrack();
           }
         }
         
@@ -1377,26 +1400,7 @@
     <div class="main-content-grid">
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
-        <div class="video-header">
-          <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
-          
-          <!-- Subtitle toggle for videos with transcripts -->
-          {#if subtitleToggleAvailable}
-            <div class="subtitle-toggle">
-              <button 
-                class="toggle-button {useEmbeddedSubtitles ? 'active' : ''}"
-                on:click={toggleSubtitleMode}
-                title={useEmbeddedSubtitles ? 'Switch to external transcript view' : 'Switch to embedded subtitles'}
-              >
-                {#if useEmbeddedSubtitles}
-                  📺 Embedded Subtitles
-                {:else}
-                  📋 External Transcript
-                {/if}
-              </button>
-            </div>
-          {/if}
-        </div>
+        <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
         
         <VideoPlayer 
           {videoUrl} 
@@ -1597,41 +1601,6 @@
   }
 
 
-  .subtitle-toggle {
-    display: flex;
-    align-items: center;
-  }
-
-  .toggle-button {
-    background: var(--surface-color, #f8f9fa);
-    border: 2px solid var(--border-color, #dee2e6);
-    color: var(--text-secondary, #6c757d);
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .toggle-button:hover {
-    background: var(--surface-hover, #e9ecef);
-    border-color: var(--primary-color, #0066cc);
-    color: var(--text-primary, #212529);
-  }
-
-  .toggle-button.active {
-    background: var(--primary-color, #0066cc);
-    border-color: var(--primary-color, #0066cc);
-    color: white;
-  }
-
-  .toggle-button.active:hover {
-    background: var(--primary-hover, #0052a3);
-  }
 
   .comments-section {
     margin-top: 20px;

@@ -45,14 +45,9 @@ router = APIRouter()
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
 
-# Import and include subtitle router (conditional import to prevent startup issues)
-try:
-    from .subtitles import router as subtitles_router
-    router.include_router(subtitles_router, prefix="", tags=["subtitles"])
-except ImportError as e:
-    print(f"Warning: Subtitle functionality not available due to import error: {e}")
-except Exception as e:
-    print(f"Warning: Error loading subtitle router: {e}")
+# Import and include subtitle router
+from .subtitles import router as subtitles_router
+router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 
 @router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
@@ -329,17 +324,7 @@ def update_transcript_segment(
     # Update the transcript segment
     result = update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
     
-    # TODO: Re-enable cache clearing once subtitle service is stable
-    # Clear video cache since transcript has changed
-    # try:
-    #     from app.services.minio_service import MinIOService
-    #     from app.services.video_processing_service import VideoProcessingService
-    #     
-    #     minio_service = MinIOService()
-    #     video_processing_service = VideoProcessingService(minio_service)
-    #     video_processing_service.clear_cache_for_media_file(file_id)
-    # except Exception as e:
-    #     print(f"Warning: Failed to clear video cache after transcript update: {e}")
+    # Transcript has been updated - subtitles will be regenerated on-demand
     
     return result
 

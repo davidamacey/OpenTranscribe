@@ -174,6 +174,43 @@ class SubtitleService:
         return subtitle_parts
     
     @staticmethod
+    def generate_webvtt_content(
+        db: Session, 
+        media_file_id: int,
+        include_speakers: bool = True
+    ) -> str:
+        """Generate WebVTT subtitle content from transcript segments."""
+        # Get the SRT content first
+        srt_content = SubtitleService.generate_srt_content(db, media_file_id, include_speakers)
+        
+        if not srt_content.strip():
+            return "WEBVTT\n\n"
+        
+        # Convert SRT to WebVTT
+        webvtt_content = "WEBVTT\n\n"
+        
+        # Split SRT into blocks
+        srt_blocks = srt_content.strip().split('\n\n')
+        
+        for block in srt_blocks:
+            lines = block.strip().split('\n')
+            if len(lines) >= 3:
+                # Skip the sequence number (first line)
+                timestamp_line = lines[1]
+                text_lines = lines[2:]
+                
+                # Convert SRT timestamp format to WebVTT format
+                # SRT: 00:00:01,000 --> 00:00:03,000
+                # WebVTT: 00:00:01.000 --> 00:00:03.000
+                webvtt_timestamp = timestamp_line.replace(',', '.')
+                
+                # Add to WebVTT content
+                webvtt_content += f"{webvtt_timestamp}\n"
+                webvtt_content += "\n".join(text_lines) + "\n\n"
+        
+        return webvtt_content
+
+    @staticmethod
     def generate_srt_content(
         db: Session, 
         media_file_id: int,
