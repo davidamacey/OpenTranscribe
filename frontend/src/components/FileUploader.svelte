@@ -35,6 +35,8 @@
   // Upload speed calculation variables
   let lastLoaded = 0;
   let lastTime = Date.now();
+  let estimatedTimeRemaining = '';
+  let uploadStartTime = 0;
   
   // Get token from localStorage on component mount
   onMount(() => {
@@ -235,6 +237,8 @@
     isCancelling = false;
     currentFileId = null; // Reset file ID at the start of upload
     statusMessage = ''; // Clear any status messages
+    estimatedTimeRemaining = '';
+    uploadStartTime = Date.now();
     
     // Create a cancel token
     cancelTokenSource = axios.CancelToken.source();
@@ -350,8 +354,13 @@
             if (file && file.size > LARGE_FILE_THRESHOLD) { 
               const loadedMB = (progressEvent.loaded / MB).toFixed(2);
               const totalMB = (progressEvent.total / MB).toFixed(2);
-              const speedMBps = calculateUploadSpeed(progressEvent);
-              statusMessage = `Uploaded ${loadedMB}MB of ${totalMB}MB (${speedMBps} MB/s)`;
+              const { speed, timeRemaining } = calculateUploadStats(progressEvent);
+              estimatedTimeRemaining = timeRemaining;
+              statusMessage = `Uploaded ${loadedMB}MB of ${totalMB}MB (${speed} MB/s) • ${timeRemaining} remaining`;
+            } else {
+              // For smaller files, still calculate time remaining but don't show detailed MB info
+              const { speed, timeRemaining } = calculateUploadStats(progressEvent);
+              estimatedTimeRemaining = timeRemaining;
             }
           }
         }
@@ -527,27 +536,48 @@
     // Reset upload speed calculation variables
     lastLoaded = 0;
     lastTime = Date.now();
+    estimatedTimeRemaining = '';
+    uploadStartTime = 0;
   }
   
-  // Calculate upload speed in MB/s
-  function calculateUploadSpeed(progressEvent: AxiosProgressEvent): string {
+  // Format time remaining into readable units
+  function formatTimeRemaining(seconds: number): string {
+    if (seconds < 60) {
+      return `${Math.ceil(seconds)}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = Math.ceil(seconds % 60);
+      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const remainingMinutes = Math.floor((seconds % 3600) / 60);
+      return `${hours}h ${remainingMinutes}m`;
+    }
+  }
+
+  // Calculate upload speed and estimated time remaining
+  function calculateUploadStats(progressEvent: AxiosProgressEvent): { speed: string; timeRemaining: string } {
     const now = Date.now();
     const timeElapsed = (now - lastTime) / 1000; // in seconds
     
-    if (timeElapsed > 0) {
+    if (timeElapsed > 0 && progressEvent.total) {
       const loadedSinceLastUpdate = progressEvent.loaded - lastLoaded;
       const speedBps = loadedSinceLastUpdate / timeElapsed;
       const speedMBps = (speedBps / MB).toFixed(1);
+      
+      // Calculate estimated time remaining
+      const remainingBytes = progressEvent.total - progressEvent.loaded;
+      const estimatedSeconds = speedBps > 0 ? remainingBytes / speedBps : 0;
+      const timeRemaining = formatTimeRemaining(estimatedSeconds);
       
       // Update values for next calculation
       lastLoaded = progressEvent.loaded;
       lastTime = now;
       
-      return speedMBps;
+      return { speed: speedMBps, timeRemaining };
     }
     
-    return '0.0';
-
+    return { speed: '0.0', timeRemaining: 'Calculating...' };
   }
   
   // Calculate file hash using imohash package
@@ -753,10 +783,15 @@
     
     {#if uploading}
       <div class="progress-container">
+        <div class="progress-header">
+          <span class="progress-text">{progress}%</span>
+          {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
+            <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+          {/if}
+        </div>
         <div class="progress-bar">
           <div class="progress-fill" style="width: {progress}%"></div>
         </div>
-        <p class="progress-text">{progress}%</p>
         {#if statusMessage}
           <p class="status-message">{statusMessage}</p>
         {/if}
@@ -895,6 +930,19 @@
   .progress-container {
     margin-top: 0.5rem;
   }
+
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .time-remaining {
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    font-weight: 500;
+  }
   
   .progress-bar {
     width: 100%;
@@ -911,9 +959,9 @@
   }
   
   .progress-text {
-    margin-top: 4px;
     font-size: 0.8rem;
-    color: var(--color-text);
+    color: var(--text-color);
+    font-weight: 500;
   }
   
   .status-message {

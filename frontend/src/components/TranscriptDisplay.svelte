@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount, afterUpdate } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import ReprocessButton from './ReprocessButton.svelte';
+  import ScrollbarIndicator from './ScrollbarIndicator.svelte';
+  import { findCurrentSegment, type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import axiosInstance from '$lib/axios';
   
   export let file: any = null;
@@ -15,8 +17,47 @@
   export let isEditingSpeakers: boolean = false;
   export let speakerList: any[] = [];
   export let reprocessing: boolean = false;
+  export let currentTime: number = 0;
 
   const dispatch = createEventDispatcher();
+
+  // Scrollbar indicator state
+  let transcriptContainer: HTMLElement | null = null;
+  let scrollbarIndicatorEnabled: boolean = true;
+
+  // Reactive transcript segments for scrollbar calculations
+  $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
+
+  // Handle scrollbar indicator click to seek to playhead
+  function handleSeekToPlayhead(event: CustomEvent) {
+    const { currentTime: seekTime, targetSegment } = event.detail;
+    
+    if (targetSegment) {
+      // Scroll to the current segment
+      const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.id || `${targetSegment.start_time}-${targetSegment.end_time}`}"]`);
+      if (segmentElement) {
+        segmentElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center',
+          inline: 'nearest'
+        });
+      }
+    }
+    
+    // Also dispatch to parent for potential video seeking
+    dispatch('seekToPlayhead', { time: seekTime, segment: targetSegment });
+  }
+
+  // Check if scrollbar indicator should be enabled
+  $: {
+    scrollbarIndicatorEnabled = !!(
+      transcriptSegments && 
+      transcriptSegments.length > 10 && // Only show for transcripts with substantial content
+      currentTime >= 0 &&
+      !isEditingTranscript && // Hide during transcript editing
+      !isEditingSpeakers // Hide during speaker editing for cleaner UX
+    );
+  }
 
   // Helper function to get consistent speaker name for color mapping
   function getSpeakerNameForColor(segment: any): string {
@@ -151,7 +192,7 @@
         <p class="error-message small">{transcriptError}</p>
       {/if}
     {:else}
-      <div class="transcript-display">
+      <div bind:this={transcriptContainer} class="transcript-display">
         {#each file.transcript_segments as segment}
           <div 
             class="transcript-segment" 
@@ -212,6 +253,17 @@
           </div>
         {/each}
       </div>
+      
+      <!-- Scrollbar Position Indicator - Outside but aligned with transcript-display -->
+      {#if scrollbarIndicatorEnabled}
+        <ScrollbarIndicator 
+          {currentTime}
+          {transcriptSegments}
+          containerElement={transcriptContainer}
+          disabled={isEditingTranscript || !file?.transcript_segments?.length}
+          on:seekToPlayhead={handleSeekToPlayhead}
+        />
+      {/if}
       
       <div class="transcript-actions">
         <div class="export-dropdown">
@@ -575,6 +627,7 @@
   .transcript-column {
     flex: 1;
     min-width: 0;
+    position: relative; /* Enable positioning for external indicator */
   }
 
   .transcript-header {
@@ -656,6 +709,7 @@
     background: var(--surface-color);
     max-height: 600px;
     overflow-y: auto;
+    position: relative; /* Enable absolute positioning for scrollbar indicator */
   }
 
   .transcript-segment {
