@@ -158,6 +158,7 @@ services:
       - MINIO_HOST=minio
       - MINIO_PORT=9000
       - MINIO_ROOT_USER=minioadmin
+      - MEDIA_BUCKET_NAME=opentranscribe
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
       - WHISPER_MODEL=large-v2
       - BATCH_SIZE=16

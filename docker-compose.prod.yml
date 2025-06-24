@@ -167,6 +167,7 @@ services:
       - MINIO_PORT=9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
       - REDIS_HOST=${REDIS_HOST:-redis}
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}

@@ -9,6 +9,7 @@ services:
     restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data/
+      - ./init_db_complete.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -75,25 +76,9 @@ services:
       timeout: 10s
       retries: 20
 
-  db-init:
-    image: postgres:14-alpine
-    restart: "no"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./init_db.sql:/init_db.sql:ro
-    environment:
-      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
-    command: >
-      sh -c "
-        echo '🗄️  Initializing database schema...' &&
-        psql -h postgres -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-opentranscribe} -f /init_db.sql &&
-        echo '✅ Database schema initialized!'
-      "
-
   backend:
     image: davidamacey/opentranscribe-backend:latest
+    # pull_policy: always
     restart: always
     volumes:
       - backend_models:/app/models
@@ -139,8 +124,8 @@ services:
       - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
     depends_on:
-      db-init:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       minio:
@@ -165,6 +150,7 @@ services:
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
+    # pull_policy: always
     restart: always
     command: celery -A app.core.celery worker --loglevel=info --concurrency=1
     volumes:
@@ -214,6 +200,7 @@ services:
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
+    # pull_policy: always
     restart: always
     ports:
       - "${FRONTEND_PORT:-5173}:80"
@@ -235,6 +222,7 @@ services:
 
   flower:
     image: davidamacey/opentranscribe-backend:latest
+    # pull_policy: always
     restart: always
     command: >
       python -m celery -A app.core.celery flower
