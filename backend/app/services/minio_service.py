@@ -312,3 +312,99 @@ def delete_file(object_name: str):
         )
     except S3Error as e:
         raise Exception(f"Error deleting file: {e}")
+
+
+class MinIOService:
+    """
+    Class-based wrapper for MinIO operations.
+    Provides an object-oriented interface to the existing functional API.
+    """
+    
+    def __init__(self):
+        self.client = minio_client
+    
+    def upload_file(self, file_path: str, bucket_name: str, object_name: str, content_type: str = None):
+        """Upload a file to MinIO bucket."""
+        try:
+            with open(file_path, 'rb') as file_data:
+                file_size = os.path.getsize(file_path)
+                self.client.put_object(
+                    bucket_name=bucket_name,
+                    object_name=object_name,
+                    data=file_data,
+                    length=file_size,
+                    content_type=content_type
+                )
+        except Exception as e:
+            raise Exception(f"Error uploading file: {e}")
+    
+    def download_file(self, object_name: str, file_path: str, bucket_name: str = None):
+        """Download a file from MinIO to local path."""
+        bucket = bucket_name or settings.MEDIA_BUCKET_NAME
+        try:
+            self.client.fget_object(bucket, object_name, file_path)
+        except Exception as e:
+            raise Exception(f"Error downloading file: {e}")
+    
+    def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
+        """Get a presigned URL for object access."""
+        try:
+            url = self.client.presigned_get_object(
+                bucket_name=bucket_name,
+                object_name=object_name,
+                expires=datetime.timedelta(seconds=expires)
+            )
+            # Fix hostname for external access
+            if url.startswith("http://minio:9000"):
+                from app.core.config import settings
+                if settings.ENVIRONMENT == "development":
+                    url = url.replace("http://minio:9000", "http://localhost:5178")
+                else:
+                    # For production, use environment variable for external MinIO URL
+                    external_url = os.getenv("EXTERNAL_MINIO_URL", "http://localhost:5178")
+                    url = url.replace("http://minio:9000", external_url)
+            return url
+        except Exception as e:
+            raise Exception(f"Error getting presigned URL: {e}")
+    
+    def delete_object(self, bucket_name: str, object_name: str):
+        """Delete an object from MinIO."""
+        try:
+            self.client.remove_object(bucket_name, object_name)
+        except Exception as e:
+            raise Exception(f"Error deleting object: {e}")
+    
+    def list_objects(self, bucket_name: str, prefix: str = None, recursive: bool = False):
+        """List objects in a bucket."""
+        try:
+            return self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
+        except Exception as e:
+            raise Exception(f"Error listing objects: {e}")
+    
+    def stat_object(self, bucket_name: str, object_name: str):
+        """Get object statistics."""
+        try:
+            return self.client.stat_object(bucket_name, object_name)
+        except Exception as e:
+            raise Exception(f"Error getting object stats: {e}")
+    
+    def get_object(self, bucket_name: str, object_name: str):
+        """Get object from MinIO."""
+        try:
+            return self.client.get_object(bucket_name, object_name)
+        except Exception as e:
+            raise Exception(f"Error getting object: {e}")
+    
+    def bucket_exists(self, bucket_name: str) -> bool:
+        """Check if bucket exists."""
+        try:
+            return self.client.bucket_exists(bucket_name)
+        except Exception as e:
+            raise Exception(f"Error checking bucket existence: {e}")
+    
+    def make_bucket(self, bucket_name: str):
+        """Create a new bucket."""
+        try:
+            self.client.make_bucket(bucket_name)
+        except Exception as e:
+            raise Exception(f"Error creating bucket: {e}")

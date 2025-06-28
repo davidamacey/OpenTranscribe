@@ -62,6 +62,9 @@
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
+  
+  // Debounce timer for subtitle refresh
+  let subtitleRefreshTimer: number;
 
   /**
    * Fetches file details from the API
@@ -297,6 +300,11 @@
    * Set up the video URL for streaming
    */
   function setupVideoUrl(fileId: string) {
+    // Check if this is a video file with completed transcription
+    const isVideo = file?.content_type && file.content_type.startsWith('video/');
+    const hasTranscript = file?.status === 'completed';
+    
+    // Always use the original video for playback - we'll add subtitles via WebVTT tracks
     videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
     
     // Ensure URL has proper formatting
@@ -306,6 +314,102 @@
     
     // Reset video element check flag to prompt afterUpdate to try initialization
     videoElementChecked = false;
+  }
+
+
+  /**
+   * Add subtitle track to video element dynamically
+   */
+  async function addSubtitleTrack() {
+    if (!file || !player) return;
+    
+    try {
+      // Get the video element from Plyr
+      const videoElement = player.media;
+      if (!videoElement) return;
+      
+      // Fetch subtitles using axios to include authentication
+      const timestamp = Date.now();
+      const response = await axiosInstance.get(`/files/${file.id}/subtitles`, {
+        params: {
+          format: 'webvtt',
+          include_speakers: true,
+          t: timestamp
+        },
+        responseType: 'text'
+      });
+      
+      // Create a blob URL from the subtitle content
+      const blob = new Blob([response.data], { type: 'text/vtt' });
+      const subtitleUrl = URL.createObjectURL(blob);
+      
+      // Create subtitle track element
+      const track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.label = 'English (Auto-generated)';
+      track.srclang = 'en';
+      track.default = true;
+      track.src = subtitleUrl;
+      
+      // Add track to video element
+      videoElement.appendChild(track);
+      
+      // Enable the track
+      track.addEventListener('load', () => {
+        if (videoElement.textTracks && videoElement.textTracks.length > 0) {
+          const textTrack = videoElement.textTracks[videoElement.textTracks.length - 1];
+          textTrack.mode = 'showing';
+          
+          // Enable captions in Plyr
+          if (player && player.captions) {
+            player.captions.active = true;
+          }
+          
+          console.log('Subtitle track loaded and enabled');
+        }
+      });
+      
+      // Clean up blob URL when track is removed
+      track.addEventListener('error', () => {
+        URL.revokeObjectURL(subtitleUrl);
+      });
+      
+    } catch (error) {
+      console.error('Error adding subtitle track:', error);
+    }
+  }
+
+  /**
+   * Refresh subtitle track when transcript changes (debounced)
+   */
+  function refreshSubtitleTrack() {
+    // Clear existing timer
+    if (subtitleRefreshTimer) {
+      clearTimeout(subtitleRefreshTimer);
+    }
+    
+    // Set new timer for 1 second debounce
+    subtitleRefreshTimer = setTimeout(() => {
+      if (!player || !file) return;
+      
+      const videoElement = player.media;
+      if (!videoElement) return;
+      
+      // Remove existing subtitle tracks and clean up blob URLs
+      const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
+      tracks.forEach(track => {
+        // Clean up blob URL if it's a blob URL
+        if (track.src && track.src.startsWith('blob:')) {
+          URL.revokeObjectURL(track.src);
+        }
+        track.remove();
+      });
+      
+      // Add updated subtitle track with cache-busting timestamp
+      addSubtitleTrack();
+      
+      console.log('Subtitle track refreshed due to transcript changes');
+    }, 1000);
   }
 
   /**
@@ -328,19 +432,43 @@
       videoElement.crossOrigin = 'anonymous';
       videoElement.playsInline = true;
 
-      // Initialize Plyr
+      // Check if this video has embedded subtitles
+      const isVideo = file?.content_type && file.content_type.startsWith('video/');
+      const hasTranscript = file?.status === 'completed';
+      const hasEmbeddedSubtitles = isVideo && hasTranscript;
+
+      // Initialize Plyr with subtitle support
+      const plyrControls = ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'];
+      const plyrSettings = ['quality', 'speed'];
+      
+      // Add captions/subtitles controls if the video has embedded subtitles
+      if (hasEmbeddedSubtitles) {
+        plyrControls.splice(-1, 0, 'captions'); // Add captions button before fullscreen
+        plyrSettings.push('captions'); // Add captions to settings menu
+      }
+
       player = new Plyr(videoElement, {
-        controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
-        settings: ['quality', 'speed'],
+        controls: plyrControls,
+        settings: plyrSettings,
         quality: { default: 720, options: [1080, 720, 480, 360] },
         speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
         ratio: '16:9',
-        fullscreen: { enabled: true, fallback: true, iosNative: true }
+        fullscreen: { enabled: true, fallback: true, iosNative: true },
+        captions: { 
+          active: true, // Enable captions by default if available
+          language: 'auto',
+          update: true
+        }
       });
 
       // Set up event listeners
       player.on('ready', () => {
         playerInitialized = true;
+        
+        // Add subtitle tracks dynamically if video has completed transcription
+        if (hasEmbeddedSubtitles) {
+          addSubtitleTrack();
+        }
       });
 
       player.on('timeupdate', () => {
@@ -439,6 +567,9 @@
       file.transcript_segments = [...transcriptData];
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
+      
+      // Refresh subtitle track with debounce since speaker labels changed
+      refreshSubtitleTrack();
     }
     
     // Persist to database
@@ -523,6 +654,9 @@
               transcript_segments: updatedSegments 
             };
             reactiveFile.set(file);
+            
+            // Refresh subtitle track with debounce
+            refreshSubtitleTrack();
           }
         }
         
@@ -573,6 +707,7 @@
       savingTranscript = false;
     }
   }
+
 
   async function handleExportTranscript(event: any) {
     const format = event.detail.format;
@@ -1040,6 +1175,18 @@
         await fetchAnalytics(file.id.toString());
       }
       
+      // Refresh video subtitles with updated speaker names
+      refreshSubtitleTrack();
+      
+      // Clear cached processed videos so downloads will use updated speaker names
+      try {
+        await axiosInstance.delete(`/api/files/${file.id}/cache`);
+        console.log('Cleared video cache to ensure downloads use updated speaker names');
+        // Note: No user notification needed - this is automatic background cleanup
+      } catch (error) {
+        console.warn('Could not clear video cache:', error);
+      }
+      
       // Speaker names saved to database and updated locally
     } catch (error) {
       console.error('Error saving speaker names:', error);
@@ -1073,6 +1220,17 @@
         // Regenerate analytics with updated speaker names
         if (file?.id) {
           await fetchAnalytics(file.id.toString());
+        }
+        
+        // Refresh video subtitles with updated speaker names (fallback)
+        refreshSubtitleTrack();
+        
+        // Clear cached processed videos so downloads will use updated speaker names (fallback)
+        try {
+          await axiosInstance.delete(`/api/files/${file.id}/cache`);
+          console.log('Cleared video cache to ensure downloads use updated speaker names (fallback)');
+        } catch (error) {
+          console.warn('Could not clear video cache (fallback):', error);
         }
         
         // Speaker names updated locally only (database update failed)
@@ -1218,12 +1376,28 @@
   onDestroy(() => {
     if (player) {
       try {
+        // Clean up any subtitle blob URLs before destroying player
+        const videoElement = player.media;
+        if (videoElement) {
+          const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
+          tracks.forEach(track => {
+            if (track.src && track.src.startsWith('blob:')) {
+              URL.revokeObjectURL(track.src);
+            }
+          });
+        }
+        
         player.destroy();
         player = null;
         playerInitialized = false;
       } catch (err) {
         console.error('Error destroying player:', err);
       }
+    }
+    
+    // Clear any pending subtitle refresh timer
+    if (subtitleRefreshTimer) {
+      clearTimeout(subtitleRefreshTimer);
     }
     
     // Clean up WebSocket subscription
@@ -1289,6 +1463,7 @@
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
         <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+        
         <VideoPlayer 
           {videoUrl} 
           {file} 
@@ -1473,12 +1648,21 @@
     gap: 20px;
   }
 
+  .video-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
   .video-column h4 {
-    margin: 0 0 16px 0;
+    margin: 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
   }
+
+
 
   .comments-section {
     margin-top: 20px;

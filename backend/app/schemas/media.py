@@ -369,3 +369,46 @@ class CollectionMemberAdd(BaseModel):
 
 class CollectionMemberRemove(BaseModel):
     media_file_ids: List[int]
+
+
+# Subtitle-related schemas
+class SubtitleFormat(str, Enum):
+    SRT = "srt"
+    WEBVTT = "webvtt"
+    MOV_TEXT = "mov_text"
+
+
+class VideoFormat(str, Enum):
+    MP4 = "mp4"
+    MKV = "mkv"
+    WEBM = "webm"
+
+
+class SubtitleRequest(BaseModel):
+    """Request schema for generating subtitles."""
+    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
+    format: SubtitleFormat = Field(SubtitleFormat.SRT, description="Subtitle format")
+
+
+class VideoWithSubtitlesRequest(BaseModel):
+    """Request schema for video with embedded subtitles."""
+    output_format: Optional[VideoFormat] = Field(None, description="Output video format (auto-detect if not specified)")
+    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
+    force_regenerate: bool = Field(False, description="Force regeneration even if cached version exists")
+
+
+class VideoWithSubtitlesResponse(BaseModel):
+    """Response schema for video with embedded subtitles."""
+    download_url: str = Field(..., description="URL to download the video with embedded subtitles")
+    format: str = Field(..., description="Video format")
+    cache_key: str = Field(..., description="Cache key for the processed video")
+    expires_at: datetime = Field(..., description="When the download URL expires")
+    file_size: Optional[int] = Field(None, description="Size of the processed video file")
+
+
+class SubtitleValidationResult(BaseModel):
+    """Result of subtitle validation."""
+    is_valid: bool = Field(..., description="Whether subtitles are valid")
+    issues: List[str] = Field(default_factory=list, description="List of validation issues found")
+    total_segments: int = Field(..., description="Total number of subtitle segments")
+    total_duration: float = Field(..., description="Total duration of subtitles in seconds")

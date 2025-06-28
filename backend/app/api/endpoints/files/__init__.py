@@ -45,6 +45,10 @@ router = APIRouter()
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
 
+# Import and include subtitle router
+from .subtitles import router as subtitles_router
+router.include_router(subtitles_router, prefix="", tags=["subtitles"])
+
 @router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
 async def upload_media_file(
@@ -192,11 +196,87 @@ def get_media_file_content(
 def download_media_file(
     file_id: int,
     token: str = None,
+    original: bool = Query(False, description="Download original file without subtitles"),
+    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Download a media file"""
+    """Download a media file (with embedded subtitles for videos by default)"""
     db_file = get_media_file_by_id(db, file_id, current_user.id)
+    
+    # Check if this is a video file with available subtitles
+    is_video = db_file.content_type and db_file.content_type.startswith('video/')
+    has_transcript = db_file.status == "completed"
+    
+    # Always embed subtitles for videos when available, unless user explicitly requests original
+    if is_video and has_transcript and not original:
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Processing video download with subtitles for file {file_id}")
+            
+            from app.services.minio_service import MinIOService
+            from app.services.video_processing_service import VideoProcessingService
+            
+            # Initialize services
+            minio_service = MinIOService()
+            video_service = VideoProcessingService(minio_service)
+            
+            # Check if ffmpeg is available
+            if not video_service.check_ffmpeg_availability():
+                # Fall back to original file if ffmpeg is not available
+                logger.warning(f"ffmpeg not available, serving original file for {file_id}")
+                return get_content_streaming_response(db_file)
+            
+            logger.info(f"ffmpeg available, processing video {file_id} with subtitles")
+            
+            # Process video with embedded subtitles
+            cache_key = video_service.process_video_with_subtitles(
+                db=db,
+                file_id=file_id,
+                original_object_name=db_file.storage_path,
+                user_id=current_user.id,
+                include_speakers=include_speakers,
+                output_format="mp4"
+            )
+            
+            logger.info(f"Video processing complete, streaming processed video: {cache_key}")
+            
+            # Stream the processed video through backend
+            from fastapi.responses import StreamingResponse
+            
+            # Get range header for video streaming support
+            range_header = None
+            # Note: request object not available here, will handle basic streaming
+            
+            file_stream, _, _, total_length = video_service._get_cache_file_stream(cache_key, range_header)
+            
+            # Generate proper filename for download
+            base_name = db_file.filename.rsplit('.', 1)[0] if '.' in db_file.filename else db_file.filename
+            download_filename = f"{base_name}_with_subtitles.mp4"
+            
+            headers = {
+                'Content-Disposition': f'attachment; filename="{download_filename}"',
+                'Content-Type': 'video/mp4',
+                'Accept-Ranges': 'bytes',
+            }
+            
+            if total_length:
+                headers['Content-Length'] = str(total_length)
+            
+            return StreamingResponse(
+                content=file_stream,
+                media_type='video/mp4',
+                headers=headers
+            )
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to process video with subtitles for file {file_id}: {e}", exc_info=True)
+            # Fall back to original file on error
+    
+    # Return original file
     return get_content_streaming_response(db_file)
 
 
@@ -204,6 +284,8 @@ def download_media_file(
 def download_media_file_with_token(
     file_id: int,
     token: str,
+    original: bool = Query(False, description="Download original file without subtitles"),
+    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     db: Session = Depends(get_db)
 ):
     """
@@ -212,7 +294,6 @@ def download_media_file_with_token(
     """
     from jose import JWTError, jwt
     from app.core.config import settings
-    from app.schemas.user import TokenPayload
     import logging
     
     logger = logging.getLogger(__name__)
@@ -234,6 +315,76 @@ def download_media_file_with_token(
         # Get file and check ownership
         is_admin = user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, user.id, is_admin=is_admin)
+        
+        # Check if this is a video file with available subtitles
+        is_video = db_file.content_type and db_file.content_type.startswith('video/')
+        has_transcript = db_file.status == "completed"
+        
+        # Always embed subtitles for videos when available, unless user explicitly requests original
+        if is_video and has_transcript and not original:
+            try:
+                logger.info(f"Processing video download with subtitles for file {file_id} (token endpoint)")
+                
+                from app.services.minio_service import MinIOService
+                from app.services.video_processing_service import VideoProcessingService
+                
+                # Initialize services
+                minio_service = MinIOService()
+                video_service = VideoProcessingService(minio_service)
+                
+                # Check if ffmpeg is available
+                if not video_service.check_ffmpeg_availability():
+                    # Fall back to original file if ffmpeg is not available
+                    logger.warning(f"ffmpeg not available, serving original file for {file_id} (token endpoint)")
+                    return get_content_streaming_response(db_file)
+                
+                logger.info(f"ffmpeg available, processing video {file_id} with subtitles (token endpoint)")
+                
+                # Process video with embedded subtitles
+                cache_key = video_service.process_video_with_subtitles(
+                    db=db,
+                    file_id=file_id,
+                    original_object_name=db_file.storage_path,
+                    user_id=user.id,
+                    include_speakers=include_speakers,
+                    output_format="mp4"
+                )
+                
+                logger.info(f"Video processing complete, streaming processed video: {cache_key}")
+                
+                # Stream the processed video through backend
+                from fastapi.responses import StreamingResponse
+                
+                # Get range header for video streaming support
+                range_header = None
+                # Note: request object not available here, will handle basic streaming
+                
+                file_stream, _, _, total_length = video_service._get_cache_file_stream(cache_key, range_header)
+                
+                # Generate proper filename for download
+                base_name = db_file.filename.rsplit('.', 1)[0] if '.' in db_file.filename else db_file.filename
+                download_filename = f"{base_name}_with_subtitles.mp4"
+                
+                headers = {
+                    'Content-Disposition': f'attachment; filename="{download_filename}"',
+                    'Content-Type': 'video/mp4',
+                    'Accept-Ranges': 'bytes',
+                }
+                
+                if total_length:
+                    headers['Content-Length'] = str(total_length)
+                
+                return StreamingResponse(
+                    content=file_stream,
+                    media_type='video/mp4',
+                    headers=headers
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to process video with subtitles for file {file_id} (token endpoint): {e}", exc_info=True)
+                # Fall back to original file on error
+        
+        # Return original file
         return get_content_streaming_response(db_file)
         
     except JWTError:
@@ -241,6 +392,7 @@ def download_media_file_with_token(
     except Exception as e:
         logger.error(f"Error in download with token: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
 
 
 @router.get("/{file_id}/video")
@@ -298,7 +450,13 @@ def update_transcript_segment(
 ):
     """Update a specific transcript segment"""
     from .crud import update_single_transcript_segment
-    return update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
+    
+    # Update the transcript segment
+    result = update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
+    
+    # Transcript has been updated - subtitles will be regenerated on-demand
+    
+    return result
 
 
 @router.post("/{file_id}/reprocess", response_model=MediaFileSchema)
@@ -309,6 +467,43 @@ async def reprocess_media_file(
 ):
     """Reprocess a media file for transcription"""
     return await process_file_reprocess(file_id, db, current_user)
+
+
+@router.delete("/{file_id}/cache", status_code=204)
+def clear_video_cache(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Clear cached processed videos for a file (e.g., after speaker name updates)"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Verify user owns the file or is admin
+        is_admin = current_user.role == "admin"
+        get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        
+        # Clear the cache using video processing service
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+        
+        minio_service = MinIOService()
+        video_service = VideoProcessingService(minio_service)
+        
+        # Clear cached videos for this file
+        video_service.clear_cache_for_media_file(db, file_id)
+        
+        logger.info(f"Cleared video cache for file {file_id} after speaker updates")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error clearing video cache for file {file_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error clearing video cache: {str(e)}"
+        )
 
 
 __all__ = [

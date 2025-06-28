@@ -6,6 +6,8 @@
   import ScrollbarIndicator from './ScrollbarIndicator.svelte';
   import { findCurrentSegment, type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import axiosInstance from '$lib/axios';
+  import { downloadStore } from '$stores/downloads';
+  import { toastStore } from '$stores/toast';
   
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -20,6 +22,12 @@
   export let currentTime: number = 0;
 
   const dispatch = createEventDispatcher();
+  
+  // Download state management
+  let downloadState = $downloadStore;
+  $: downloadState = $downloadStore;
+  $: currentDownload = downloadState[file?.id];
+  $: isDownloading = currentDownload && ['preparing', 'processing', 'downloading'].includes(currentDownload.status);
 
   // Scrollbar indicator state
   let transcriptContainer: HTMLElement | null = null;
@@ -111,31 +119,81 @@
     dispatch('reprocess', event.detail);
   }
 
-  function downloadFile() {
-    if (!file || !file.id) return;
+  async function downloadFile() {
+    if (!file || !file.id) {
+      toastStore.error('File information not available');
+      return;
+    }
+    
+    const fileId = file.id.toString();
+    const filename = file.filename;
+    
+    // Check if download is already in progress
+    if (isDownloading) {
+      toastStore.warning(`${filename} is already being processed. Please wait for it to complete.`);
+      return;
+    }
+    
+    // Start download tracking
+    const canStart = downloadStore.startDownload(fileId, filename);
+    if (!canStart) return;
     
     try {
-      // Get the auth token from localStorage
+      // Get auth token from localStorage
       const token = localStorage.getItem('token');
+      
       if (!token) {
-        console.error('No authentication token found');
+        downloadStore.updateStatus(fileId, 'error', undefined, 'No authentication token found. Please log in again.');
         return;
       }
-
-      // Create a direct download link with token parameter
-      // This will use the browser's native download with progress bar
-      const downloadUrl = `/api/files/${file.id}/download-with-token?token=${encodeURIComponent(token)}`;
       
-      // Create a temporary link and click it
+      downloadStore.updateStatus(fileId, 'processing');
+      
+      // Determine if this is a video with subtitles for enhanced processing
+      const isVideo = file.content_type?.startsWith('video/');
+      const hasSubtitles = file.status === 'completed' && file.transcript_segments?.length > 0;
+      
+      // Build download URL
+      let downloadUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}`;
+      let downloadFilename = filename;
+      
+      // For videos with subtitles, include subtitle embedding parameters
+      if (isVideo && hasSubtitles) {
+        downloadUrl += '&include_speakers=true';
+        // Generate filename with subtitles suffix
+        const baseName = filename.includes('.') ? filename.substring(0, filename.lastIndexOf('.')) : filename;
+        const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
+        downloadFilename = `${baseName}_with_subtitles${extension}`;
+      }
+      
+      downloadStore.updateStatus(fileId, 'downloading');
+      
+      // Create download link
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = file.filename;
+      link.download = downloadFilename;
       link.style.display = 'none';
       document.body.appendChild(link);
+      
+      // Trigger download
       link.click();
+      
+      // Clean up
       document.body.removeChild(link);
+      
+      // For non-video files or videos without subtitles, mark as completed quickly
+      if (!isVideo || !hasSubtitles) {
+        setTimeout(() => {
+          downloadStore.updateStatus(fileId, 'completed');
+        }, 2000);
+      }
+      // For videos with subtitles, progress will be tracked via WebSocket messages
+      // No need for timeout-based tracking anymore!
+      
     } catch (error) {
-      console.error('Error downloading file:', error);
+      console.error('Download error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Download failed';
+      downloadStore.updateStatus(fileId, 'error', undefined, errorMessage);
     }
   }
 
@@ -330,25 +388,49 @@
         {#if file && file.download_url}
           <button 
             class="action-button download-button" 
+            class:downloading={isDownloading}
+            class:processing={currentDownload?.status === 'processing'}
+            disabled={isDownloading}
             on:click={downloadFile}
-            title="Download the original media file"
+            title={isDownloading ? 
+              `Processing video with subtitles (may take 1-2 minutes for large files)...` : 
+              (file.content_type?.startsWith('video/') && file.status === 'completed' ? 'Download video (subtitles will be embedded if transcript exists)' : 'Download media file')}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Download
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-              <line x1="7" y1="2" x2="7" y2="22"></line>
-              <line x1="17" y1="2" x2="17" y2="22"></line>
-              <line x1="2" y1="12" x2="22" y2="12"></line>
-              <line x1="2" y1="7" x2="7" y2="7"></line>
-              <line x1="2" y1="17" x2="7" y2="17"></line>
-              <line x1="17" y1="17" x2="22" y2="17"></line>
-              <line x1="17" y1="7" x2="22" y2="7"></line>
-            </svg>
+            {#if isDownloading}
+              {#if currentDownload?.status === 'preparing'}
+                <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+                Preparing...
+              {:else if currentDownload?.status === 'processing'}
+                <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+                Processing...
+              {:else if currentDownload?.status === 'downloading'}
+                <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+                Processing...
+              {/if}
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Download
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                <line x1="7" y1="2" x2="7" y2="22"></line>
+                <line x1="17" y1="2" x2="17" y2="22"></line>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <line x1="2" y1="7" x2="7" y2="7"></line>
+                <line x1="2" y1="17" x2="7" y2="17"></line>
+                <line x1="17" y1="17" x2="22" y2="17"></line>
+                <line x1="17" y1="7" x2="22" y2="7"></line>
+              </svg>
+            {/if}
           </button>
         {/if}
 
@@ -1583,6 +1665,37 @@
 
     .speaker-original {
       min-width: auto;
+    }
+  }
+  
+  /* Enhanced download button styles */
+  .download-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+  
+  .download-button.downloading {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+  
+  .download-button.processing {
+    background: var(--warning-color, #f59e0b);
+    color: white;
+    border-color: var(--warning-color, #f59e0b);
+  }
+  
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
     }
   }
 </style>

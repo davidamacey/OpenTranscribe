@@ -223,7 +223,6 @@
     gap: 4px;
   }
 
-
   @media (max-width: 768px) {
     .metadata-grid.four-columns {
       grid-template-columns: 1fr;
