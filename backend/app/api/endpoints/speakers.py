@@ -285,17 +285,16 @@ def update_speaker(
         from app.api.endpoints.speaker_update import trigger_retroactive_matching
         trigger_retroactive_matching(speaker, db)
     
-    # TODO: Re-enable cache clearing once subtitle service is stable
     # Clear video cache since speaker labels have changed (affects subtitles)
-    # try:
-    #     from app.services.minio_service import MinIOService
-    #     from app.services.video_processing_service import VideoProcessingService
-    #     
-    #     minio_service = MinIOService()
-    #     video_processing_service = VideoProcessingService(minio_service)
-    #     video_processing_service.clear_cache_for_media_file(speaker.media_file_id)
-    # except Exception as e:
-    #     logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
+    try:
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+        
+        minio_service = MinIOService()
+        video_processing_service = VideoProcessingService(minio_service)
+        video_processing_service.clear_cache_for_media_file(speaker.media_file_id)
+    except Exception as e:
+        logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
     
     return speaker
 
@@ -343,19 +342,18 @@ def merge_speakers(
     db.commit()
     db.refresh(target_speaker)
     
-    # TODO: Re-enable cache clearing once subtitle service is stable
     # Clear video cache for affected media files since speaker associations changed
-    # try:
-    #     from app.services.minio_service import MinIOService
-    #     from app.services.video_processing_service import VideoProcessingService
-    #     
-    #     minio_service = MinIOService()
-    #     video_processing_service = VideoProcessingService(minio_service)
-    #     
-    #     for media_file_id in affected_media_files:
-    #         video_processing_service.clear_cache_for_media_file(media_file_id)
-    # except Exception as e:
-    #     logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
+    try:
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+        
+        minio_service = MinIOService()
+        video_processing_service = VideoProcessingService(minio_service)
+        
+        for media_file_id in affected_media_files:
+            video_processing_service.clear_cache_for_media_file(media_file_id)
+    except Exception as e:
+        logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
     
     # In a real implementation, we would also need to update the OpenSearch index
     # to remove the source speaker and update/merge the embeddings

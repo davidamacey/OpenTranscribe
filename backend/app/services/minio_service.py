@@ -349,11 +349,21 @@ class MinIOService:
     def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
         """Get a presigned URL for object access."""
         try:
-            return self.client.presigned_get_object(
+            url = self.client.presigned_get_object(
                 bucket_name=bucket_name,
                 object_name=object_name,
                 expires=datetime.timedelta(seconds=expires)
             )
+            # Fix hostname for external access
+            if url.startswith("http://minio:9000"):
+                from app.core.config import settings
+                if settings.ENVIRONMENT == "development":
+                    url = url.replace("http://minio:9000", "http://localhost:5178")
+                else:
+                    # For production, use environment variable for external MinIO URL
+                    external_url = os.getenv("EXTERNAL_MINIO_URL", "http://localhost:5178")
+                    url = url.replace("http://minio:9000", external_url)
+            return url
         except Exception as e:
             raise Exception(f"Error getting presigned URL: {e}")
     

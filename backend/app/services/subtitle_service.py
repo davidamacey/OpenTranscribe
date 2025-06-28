@@ -40,19 +40,26 @@ class SubtitleService:
         return min(optimal_time, SubtitleService.MAX_DISPLAY_TIME)
     
     @staticmethod
-    def format_text_for_subtitles(text: str, speaker_name: Optional[str] = None) -> List[str]:
+    def format_text_for_subtitles(text: str, speaker_name: Optional[str] = None, format_type: str = "srt") -> List[str]:
         """Format text for movie-style subtitles with proper line breaks and speaker continuity."""
         # Clean the text
         text = text.strip()
         text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
         
-        # Format speaker name once
+        # Format speaker name
         speaker_prefix = ""
         if speaker_name and speaker_name.upper() != "UNKNOWN":
-            # Format speaker name (remove SPEAKER_ prefix if present)
-            clean_name = re.sub(r'^SPEAKER_\d+', '', speaker_name).strip()
+            # Use the speaker name as-is, or clean it if it's a generic SPEAKER_XX format
+            clean_name = speaker_name.strip()
+            
+            # If it's still a generic SPEAKER_XX format, keep it as-is for now
+            # Users can update display names which will override this
             if clean_name:
-                speaker_prefix = f"{clean_name}: "
+                # For WebVTT, we want speaker names on every subtitle chunk for clarity
+                if format_type.lower() == "webvtt":
+                    speaker_prefix = f"{clean_name}: "
+                else:
+                    speaker_prefix = f"{clean_name}: "
         
         # If text with speaker prefix fits in one line, return as single subtitle
         full_text = f"{speaker_prefix}{text}"
@@ -89,8 +96,11 @@ class SubtitleService:
                         break_on_hyphens=False
                     )
                     
-                    # Add speaker prefix only to first subtitle
-                    if not formatted_subtitles and speaker_prefix:
+                    # For WebVTT, add speaker prefix to every subtitle chunk for clarity
+                    if format_type.lower() == "webvtt" and speaker_prefix:
+                        subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
+                    # For SRT, add speaker prefix only to first subtitle
+                    elif not formatted_subtitles and speaker_prefix:
                         subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
                     
                     formatted_subtitles.append('\n'.join(subtitle_lines[:SubtitleService.MAX_LINES_PER_SUBTITLE]))
@@ -109,13 +119,19 @@ class SubtitleService:
                 break_on_hyphens=False
             )
             
-            # Add speaker prefix only to first subtitle if no previous subtitles
-            if not formatted_subtitles and speaker_prefix:
+            # For WebVTT, add speaker prefix to every subtitle chunk for clarity
+            if format_type.lower() == "webvtt" and speaker_prefix:
+                subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
+            # For SRT, add speaker prefix only to first subtitle if no previous subtitles
+            elif not formatted_subtitles and speaker_prefix:
                 subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
             
             # Split into multiple subtitles if needed
             for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
                 subtitle_chunk = subtitle_lines[i:i + SubtitleService.MAX_LINES_PER_SUBTITLE]
+                # For WebVTT multi-line chunks, add speaker prefix to each chunk
+                if format_type.lower() == "webvtt" and speaker_prefix and i > 0:
+                    subtitle_chunk[0] = f"{speaker_prefix}{subtitle_chunk[0]}"
                 formatted_subtitles.append('\n'.join(subtitle_chunk))
         
         return formatted_subtitles if formatted_subtitles else [full_text]
@@ -123,14 +139,15 @@ class SubtitleService:
     @staticmethod
     def split_long_segment(
         segment: TranscriptSegment, 
-        speaker_name: Optional[str] = None
+        speaker_name: Optional[str] = None,
+        format_type: str = "srt"
     ) -> List[Tuple[float, float, str]]:
         """Split long transcript segments into properly timed subtitle chunks with speaker continuity."""
         text = segment.text.strip()
         duration = segment.end_time - segment.start_time
         
         # Format text and handle multi-part subtitles
-        formatted_subtitles = SubtitleService.format_text_for_subtitles(text, speaker_name)
+        formatted_subtitles = SubtitleService.format_text_for_subtitles(text, speaker_name, format_type)
         
         # If only one subtitle, return as-is
         if len(formatted_subtitles) == 1:
@@ -180,33 +197,40 @@ class SubtitleService:
         include_speakers: bool = True
     ) -> str:
         """Generate WebVTT subtitle content from transcript segments."""
-        # Get the SRT content first
-        srt_content = SubtitleService.generate_srt_content(db, media_file_id, include_speakers)
+        # Get media file and transcript segments
+        media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        if not media_file:
+            raise ValueError(f"Media file with ID {media_file_id} not found")
         
-        if not srt_content.strip():
-            return "WEBVTT\n\n"
+        # Get all transcript segments ordered by start time
+        segments = db.query(TranscriptSegment).filter(
+            TranscriptSegment.media_file_id == media_file_id
+        ).order_by(TranscriptSegment.start_time).all()
         
-        # Convert SRT to WebVTT
+        if not segments:
+            raise ValueError("No transcript segments found for this media file")
+        
+        # Start WebVTT content
         webvtt_content = "WEBVTT\n\n"
         
-        # Split SRT into blocks
-        srt_blocks = srt_content.strip().split('\n\n')
-        
-        for block in srt_blocks:
-            lines = block.strip().split('\n')
-            if len(lines) >= 3:
-                # Skip the sequence number (first line)
-                timestamp_line = lines[1]
-                text_lines = lines[2:]
+        for segment in segments:
+            speaker_name = None
+            if include_speakers and segment.speaker_id:
+                speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
+                if speaker:
+                    # Use display name if available, otherwise use original name
+                    speaker_name = speaker.display_name or speaker.name
+            
+            # Split long segments into properly formatted subtitles for WebVTT
+            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
+            
+            for start_time, end_time, text in subtitle_parts:
+                # Format WebVTT timestamps (using dots instead of commas)
+                start_timestamp = SubtitleService.format_timestamp(start_time).replace(',', '.')
+                end_timestamp = SubtitleService.format_timestamp(end_time).replace(',', '.')
                 
-                # Convert SRT timestamp format to WebVTT format
-                # SRT: 00:00:01,000 --> 00:00:03,000
-                # WebVTT: 00:00:01.000 --> 00:00:03.000
-                webvtt_timestamp = timestamp_line.replace(',', '.')
-                
-                # Add to WebVTT content
-                webvtt_content += f"{webvtt_timestamp}\n"
-                webvtt_content += "\n".join(text_lines) + "\n\n"
+                # Add WebVTT cue
+                webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
         
         return webvtt_content
 
@@ -242,7 +266,7 @@ class SubtitleService:
                     speaker_name = speaker.display_name or speaker.name
             
             # Split long segments into properly formatted subtitles
-            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name)
+            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
             
             for start_time, end_time, text in subtitle_parts:
                 # Format SRT entry

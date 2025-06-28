@@ -1,11 +1,13 @@
 import { writable, derived, type Writable } from 'svelte/store';
 import * as authStore from './auth';
+import { downloadStore } from './downloads';
 
 // Define notification types
 export type NotificationType = 
   | 'transcription_status' 
   | 'summarization_status'
   | 'analytics_status'
+  | 'download_progress'
   | 'connection_established'
   | 'echo';
 
@@ -132,6 +134,10 @@ function createWebSocketStore() {
             } else if (data.type === 'echo') {
               // Echo messages are just for debugging/heartbeat
               return;
+            } else if (data.type === 'download_progress') {
+              // Handle download progress messages specially
+              handleDownloadProgress(data);
+              return;
             }
             
             // Create a notification for other message types
@@ -246,6 +252,15 @@ function createWebSocketStore() {
     });
   };
   
+  // Handle download progress messages
+  const handleDownloadProgress = (data: any) => {
+    const { file_id, status, progress, error } = data.data;
+    
+    if (file_id) {
+      downloadStore.updateStatus(file_id, status, progress, error);
+    }
+  };
+  
   // Get a suitable title based on notification type
   const getNotificationTitle = (type: string): string => {
     switch (type) {
@@ -255,6 +270,8 @@ function createWebSocketStore() {
         return 'Summarization Update';
       case 'analytics_status':
         return 'Analytics Update';
+      case 'download_progress':
+        return 'Download Progress';
       default:
         return 'Notification';
     }

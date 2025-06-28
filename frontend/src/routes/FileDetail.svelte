@@ -328,16 +328,28 @@
       const videoElement = player.media;
       if (!videoElement) return;
       
+      // Fetch subtitles using axios to include authentication
+      const timestamp = Date.now();
+      const response = await axiosInstance.get(`/files/${file.id}/subtitles`, {
+        params: {
+          format: 'webvtt',
+          include_speakers: true,
+          t: timestamp
+        },
+        responseType: 'text'
+      });
+      
+      // Create a blob URL from the subtitle content
+      const blob = new Blob([response.data], { type: 'text/vtt' });
+      const subtitleUrl = URL.createObjectURL(blob);
+      
       // Create subtitle track element
       const track = document.createElement('track');
       track.kind = 'subtitles';
       track.label = 'English (Auto-generated)';
       track.srclang = 'en';
       track.default = true;
-      
-      // Set the source to our subtitle endpoint with cache-busting timestamp
-      const timestamp = Date.now();
-      track.src = `${apiBaseUrl}/api/files/${file.id}/subtitles?format=webvtt&include_speakers=true&t=${timestamp}`;
+      track.src = subtitleUrl;
       
       // Add track to video element
       videoElement.appendChild(track);
@@ -355,6 +367,11 @@
           
           console.log('Subtitle track loaded and enabled');
         }
+      });
+      
+      // Clean up blob URL when track is removed
+      track.addEventListener('error', () => {
+        URL.revokeObjectURL(subtitleUrl);
       });
       
     } catch (error) {
@@ -378,9 +395,15 @@
       const videoElement = player.media;
       if (!videoElement) return;
       
-      // Remove existing subtitle tracks
+      // Remove existing subtitle tracks and clean up blob URLs
       const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
-      tracks.forEach(track => track.remove());
+      tracks.forEach(track => {
+        // Clean up blob URL if it's a blob URL
+        if (track.src && track.src.startsWith('blob:')) {
+          URL.revokeObjectURL(track.src);
+        }
+        track.remove();
+      });
       
       // Add updated subtitle track with cache-busting timestamp
       addSubtitleTrack();
@@ -1152,6 +1175,18 @@
         await fetchAnalytics(file.id.toString());
       }
       
+      // Refresh video subtitles with updated speaker names
+      refreshSubtitleTrack();
+      
+      // Clear cached processed videos so downloads will use updated speaker names
+      try {
+        await axiosInstance.delete(`/api/files/${file.id}/cache`);
+        console.log('Cleared video cache to ensure downloads use updated speaker names');
+        // Note: No user notification needed - this is automatic background cleanup
+      } catch (error) {
+        console.warn('Could not clear video cache:', error);
+      }
+      
       // Speaker names saved to database and updated locally
     } catch (error) {
       console.error('Error saving speaker names:', error);
@@ -1185,6 +1220,17 @@
         // Regenerate analytics with updated speaker names
         if (file?.id) {
           await fetchAnalytics(file.id.toString());
+        }
+        
+        // Refresh video subtitles with updated speaker names (fallback)
+        refreshSubtitleTrack();
+        
+        // Clear cached processed videos so downloads will use updated speaker names (fallback)
+        try {
+          await axiosInstance.delete(`/api/files/${file.id}/cache`);
+          console.log('Cleared video cache to ensure downloads use updated speaker names (fallback)');
+        } catch (error) {
+          console.warn('Could not clear video cache (fallback):', error);
         }
         
         // Speaker names updated locally only (database update failed)
@@ -1330,12 +1376,28 @@
   onDestroy(() => {
     if (player) {
       try {
+        // Clean up any subtitle blob URLs before destroying player
+        const videoElement = player.media;
+        if (videoElement) {
+          const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
+          tracks.forEach(track => {
+            if (track.src && track.src.startsWith('blob:')) {
+              URL.revokeObjectURL(track.src);
+            }
+          });
+        }
+        
         player.destroy();
         player = null;
         playerInitialized = false;
       } catch (err) {
         console.error('Error destroying player:', err);
       }
+    }
+    
+    // Clear any pending subtitle refresh timer
+    if (subtitleRefreshTimer) {
+      clearTimeout(subtitleRefreshTimer);
     }
     
     // Clean up WebSocket subscription
