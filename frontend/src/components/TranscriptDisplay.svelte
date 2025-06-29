@@ -62,8 +62,7 @@
       transcriptSegments && 
       transcriptSegments.length > 10 && // Only show for transcripts with substantial content
       currentTime >= 0 &&
-      !isEditingTranscript && // Hide during transcript editing
-      !isEditingSpeakers // Hide during speaker editing for cleaner UX
+      !isEditingTranscript // Hide during transcript editing
     );
   }
 
@@ -153,6 +152,12 @@
       const isVideo = file.content_type?.startsWith('video/');
       const hasSubtitles = file.status === 'completed' && file.transcript_segments?.length > 0;
       
+      // For cached videos, add a small delay to ensure download state is properly initialized
+      // before WebSocket 'completed' message arrives
+      if (isVideo && hasSubtitles) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
       // Build download URL
       let downloadUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}`;
       let downloadFilename = filename;
@@ -186,9 +191,37 @@
         setTimeout(() => {
           downloadStore.updateStatus(fileId, 'completed');
         }, 2000);
+      } else {
+        // For videos with subtitles, monitor the download progress
+        // Set up an interval to check if the browser has started downloading
+        let checkCount = 0;
+        const checkInterval = setInterval(() => {
+          checkCount++;
+          const currentStatus = downloadStore.getDownloadStatus(fileId);
+          
+          // If status changed to completed or error, clear the interval
+          if (!currentStatus || currentStatus.status === 'completed' || currentStatus.status === 'error') {
+            clearInterval(checkInterval);
+            return;
+          }
+          
+          // For cached videos, the download starts almost immediately
+          // If we're still in processing after 3 seconds, it's likely done
+          if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
+            downloadStore.updateStatus(fileId, 'completed');
+            console.log('Download completed (cached video detected)');
+            clearInterval(checkInterval);
+            return;
+          }
+          
+          // For actual processing, give it more time (up to 60 seconds)
+          if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
+            downloadStore.updateStatus(fileId, 'completed');
+            console.log('Download completed (timeout)');
+            clearInterval(checkInterval);
+          }
+        }, 1000); // Check every second
       }
-      // For videos with subtitles, progress will be tracked via WebSocket messages
-      // No need for timeout-based tracking anymore!
       
     } catch (error) {
       console.error('Download error:', error);

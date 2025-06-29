@@ -657,6 +657,14 @@
             
             // Refresh subtitle track with debounce
             refreshSubtitleTrack();
+            
+            // Clear cached processed videos so downloads will use updated transcript
+            try {
+              await axiosInstance.delete(`/api/files/${file.id}/cache`);
+              console.log('Cleared video cache to ensure downloads use updated transcript');
+            } catch (error) {
+              console.warn('Could not clear video cache:', error);
+            }
           }
         }
         
