@@ -376,6 +376,11 @@ create_configuration_files() {
         exit 1
     fi
     
+    # Download NVIDIA override file if GPU detected
+    if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
+        download_nvidia_override
+    fi
+    
     # Create .env.example
     create_production_env_example
 }
@@ -417,6 +422,43 @@ create_production_compose() {
     echo "Alternative: You can manually download from:"
     echo "$download_url"
     exit 1
+}
+
+download_nvidia_override() {
+    echo "✓ Downloading NVIDIA GPU override configuration..."
+    
+    # Download the NVIDIA override file from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nvidia.yml"
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.nvidia.yml; then
+            # Validate downloaded file
+            if [ -s docker-compose.nvidia.yml ] && grep -q "runtime: nvidia" docker-compose.nvidia.yml; then
+                echo "✓ Downloaded and validated docker-compose.nvidia.yml"
+                return 0
+            else
+                echo "⚠️  Downloaded NVIDIA override file appears invalid, retrying..."
+                rm -f docker-compose.nvidia.yml
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+    
+    echo -e "${YELLOW}⚠️  Failed to download NVIDIA override file after $max_retries attempts${NC}"
+    echo "GPU acceleration may not work optimally, but CPU processing will still function."
+    echo "You can manually download from: $download_url"
 }
 
 create_production_env_example() {
@@ -581,7 +623,8 @@ create_env_file() {
     # Add Docker runtime configuration
     echo "" >> .env
     echo "# Hardware Configuration (Auto-detected)" >> .env
-    echo "DOCKER_RUNTIME=${DOCKER_RUNTIME:-}" >> .env
+    echo "DETECTED_DEVICE=${DETECTED_DEVICE}" >> .env
+    echo "USE_NVIDIA_RUNTIME=${USE_GPU_RUNTIME}" >> .env
     
     # Clean up backup file
     rm -f .env.bak
@@ -646,6 +689,25 @@ check_environment() {
     fi
 }
 
+get_compose_files() {
+    local compose_files="-f docker-compose.yml"
+    
+    # Add NVIDIA override if it exists and GPU is detected
+    if [ -f docker-compose.nvidia.yml ] && [ -f .env ]; then
+        source .env 2>/dev/null || true
+        if [[ "${USE_NVIDIA_RUNTIME:-false}" == "true" ]]; then
+            compose_files="$compose_files -f docker-compose.nvidia.yml"
+        fi
+    fi
+    
+    # Add development override if it exists
+    if [ -f docker-compose.override.yml ]; then
+        compose_files="$compose_files -f docker-compose.override.yml"
+    fi
+    
+    echo "$compose_files"
+}
+
 show_access_info() {
     # Source .env to get port values
     source .env 2>/dev/null || true
@@ -664,75 +726,53 @@ case "${1:-help}" in
     start)
         check_environment
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        # Use override file if it exists for development features
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose up -d
-        fi
+        compose_files=$(get_compose_files)
+        docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
         show_access_info
         ;;
     stop)
         check_environment
         echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-        else
-            docker compose down
-        fi
+        compose_files=$(get_compose_files)
+        docker compose $compose_files down
         echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
         ;;
     restart)
         check_environment
         echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose down
-            docker compose up -d
-        fi
+        compose_files=$(get_compose_files)
+        docker compose $compose_files down
+        docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
         show_access_info
         ;;
     status)
         check_environment
         echo -e "${BLUE}📊 Container Status:${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml ps
-        else
-            docker compose ps
-        fi
+        compose_files=$(get_compose_files)
+        docker compose $compose_files ps
         ;;
     logs)
         check_environment
         service=${2:-}
-        COMPOSE_CMD="docker compose"
-        if [ -f docker-compose.override.yml ]; then
-            COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.override.yml"
-        fi
+        compose_files=$(get_compose_files)
         
         if [ -z "$service" ]; then
             echo -e "${BLUE}📋 Showing all logs (Ctrl+C to exit):${NC}"
-            $COMPOSE_CMD logs -f
+            docker compose $compose_files logs -f
         else
             echo -e "${BLUE}📋 Showing logs for $service (Ctrl+C to exit):${NC}"
-            $COMPOSE_CMD logs -f "$service"
+            docker compose $compose_files logs -f "$service"
         fi
         ;;
     update)
         check_environment
         echo -e "${YELLOW}📥 Updating to latest images...${NC}"
-        if [ -f docker-compose.override.yml ]; then
-            docker compose -f docker-compose.yml -f docker-compose.override.yml down
-            docker compose -f docker-compose.yml -f docker-compose.override.yml pull
-            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
-        else
-            docker compose down
-            docker compose pull
-            docker compose up -d
-        fi
+        compose_files=$(get_compose_files)
+        docker compose $compose_files down
+        docker compose $compose_files pull
+        docker compose $compose_files up -d
         echo -e "${GREEN}✅ OpenTranscribe updated!${NC}"
         show_access_info
         ;;
@@ -743,7 +783,8 @@ case "${1:-help}" in
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            docker compose down -v
+            compose_files=$(get_compose_files)
+            docker compose $compose_files down -v
             docker system prune -f
             echo -e "${GREEN}✅ All data removed${NC}"
         else
@@ -754,7 +795,8 @@ case "${1:-help}" in
         check_environment
         service=${2:-backend}
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        docker compose exec "$service" /bin/bash || docker compose exec "$service" /bin/sh
+        compose_files=$(get_compose_files)
+        docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
     config)
         check_environment
@@ -775,7 +817,8 @@ case "${1:-help}" in
         
         # Check container status
         echo "Container Status:"
-        docker compose ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+        compose_files=$(get_compose_files)
+        docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
         
         echo ""
         echo "Service Health:"
@@ -798,7 +841,7 @@ case "${1:-help}" in
         fi
         
         # Database health
-        if docker compose exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+        if docker compose $compose_files exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
             echo "  ✅ Database: Healthy"
         else
             echo "  ❌ Database: Unhealthy"

@@ -146,7 +146,6 @@ services:
             - driver: nvidia
               device_ids: ['${GPU_DEVICE_ID:-0}']
               capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
@@ -197,7 +196,6 @@ services:
             - driver: nvidia
               device_ids: ['${GPU_DEVICE_ID:-0}']
               capabilities: [gpu]
-    runtime: ${DOCKER_RUNTIME:-}
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
