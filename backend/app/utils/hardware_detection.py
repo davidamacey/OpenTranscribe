@@ -134,7 +134,8 @@ class HardwareConfig:
                 
         elif self.device == "mps":
             # Apple Silicon - conservative due to unified memory
-            return 4
+            # Increase batch size since WhisperX will use CPU
+            return 8
             
         else:  # CPU
             # CPU processing - very conservative
@@ -188,17 +189,24 @@ class HardwareConfig:
         import torch
         import gc
         
-        if self.device == "cuda":
-            # Clear CUDA cache
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
+        # Check what devices actually have allocated memory
+        try:
+            if self.device == "cuda" and torch.cuda.is_available():
+                # Clear CUDA cache
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        except Exception as e:
+            logger.debug(f"CUDA memory cleanup skipped: {e}")
             
-        elif self.device == "mps":
-            # Clear MPS cache if available
-            if hasattr(torch.mps, 'empty_cache'):
-                torch.mps.empty_cache()
+        try:
+            if self.device == "mps" and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                # Clear MPS cache only if MPS is actually being used
+                if hasattr(torch.mps, 'empty_cache'):
+                    torch.mps.empty_cache()
+        except Exception as e:
+            logger.debug(f"MPS memory cleanup skipped: {e}")
         
-        # Python garbage collection
+        # Python garbage collection (always safe)
         gc.collect()
     
     def get_environment_variables(self) -> Dict[str, str]:
