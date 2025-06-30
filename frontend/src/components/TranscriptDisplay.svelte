@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, afterUpdate } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import ReprocessButton from './ReprocessButton.svelte';
   import ScrollbarIndicator from './ScrollbarIndicator.svelte';
-  import { findCurrentSegment, type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
-  import axiosInstance from '$lib/axios';
+  import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { downloadStore } from '$stores/downloads';
   import { toastStore } from '$stores/toast';
   
@@ -230,37 +229,12 @@
     }
   }
 
-  function labelAllSimilarSpeakers(speaker) {
-    // Focus the input field for this speaker so user can enter a name
-    // Once they save, the retroactive matching will handle updating all similar speakers
-    const inputElement = document.querySelector(`input[data-speaker-id="${speaker.id}"]`);
-    if (inputElement) {
-      inputElement.focus();
-      inputElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    
-    // Show a helpful message
-    console.log(`Please enter a name for ${speaker.name} to label all similar speakers across videos`);
-  }
-
-  function applySuggestion(speaker, suggestedName) {
-    // Apply the suggested name to the speaker
-    speaker.display_name = suggestedName;
-    
-    // Trigger the save speakers action to propagate the changes
-    dispatch('saveSpeakerNames');
-    
-    // Update the UI immediately
-    speakerList = speakerList.map(s => 
-      s.id === speaker.id ? { ...s, display_name: suggestedName, verified: true } : s
-    );
-  }
 </script>
 
 <section class="transcript-column">
   <div class="transcript-header">
     <h4>Transcript</h4>
-    <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} class="reprocess-button" />
+    <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
   </div>
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
@@ -517,10 +491,10 @@
                     <input 
                       type="text" 
                       bind:value={speaker.display_name} 
-                      placeholder={speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name ? speaker.suggested_name : (speaker.suggested_name ? `Suggested: ${speaker.suggested_name}` : "Enter display name")}
+                      placeholder={speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name ? speaker.suggested_name : (speaker.suggested_name ? `Suggested: ${speaker.suggested_name}` : `Label ${speaker.name}`)}
                       title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
-                      class:suggested-high={speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name}
-                      class:suggested-medium={speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name}
+                      class:suggested-high={speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name}
+                      class:suggested-medium={speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name && !speaker.display_name}
                       data-speaker-id={speaker.id}
                       on:focus={() => {
                         if (speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name) {
@@ -539,7 +513,7 @@
                     {/if}
                     
                     <!-- Manual verification needed for medium confidence -->
-                    {#if speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name}
+                    {#if speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name && !speaker.display_name}
                       <div class="suggestion-info">
                         <span class="suggestion-text">
                           {!speaker.display_name ? 'Suggested:' : 'Matches:'} "{speaker.suggested_name}"
@@ -548,12 +522,22 @@
                           {Math.round(speaker.confidence * 100)}% match - {!speaker.display_name ? 'verify' : 'verified'}
                         </span>
                         {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                          {#each speaker.cross_video_matches as match}
-                            {#if match.display_name === speaker.suggested_name}
-                              <span class="from-video">from "{match.media_file_title.length > 25 ? match.media_file_title.substring(0, 25) + '...' : match.media_file_title}"</span>
-                            {/if}
-                          {/each}
+                          <span class="cross-video-reference">See cross-video matches below for details</span>
                         {/if}
+                        <div class="suggestion-help-text">
+                          {#if speaker.confidence >= 0.75}
+                            🎯 <strong>High confidence match:</strong> This speaker appears very similar to "{speaker.suggested_name}" from other videos. Consider using this label.
+                          {:else if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
+                            {@const maxCrossVideoConfidence = Math.max(...speaker.cross_video_matches.map(m => m.confidence))}
+                            {#if maxCrossVideoConfidence > speaker.confidence + 0.2}
+                              ⚖️ <strong>Mixed signals:</strong> Moderate match to "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}%), but check cross-video matches below for potentially stronger unlabeled matches.
+                            {:else}
+                              💡 <strong>Moderate match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). Cross-video matches below show similar confidence levels.
+                            {/if}
+                          {:else}
+                            💡 <strong>Possible match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). No other cross-video matches found.
+                          {/if}
+                        </div>
                       </div>
                     {/if}
                     
@@ -563,7 +547,7 @@
                         <div class="suggestion-label">Quick select:</div>
                         <button 
                           class="suggestion-pill"
-                          on:click={() => applySuggestion(speaker, speaker.suggested_name)}
+                          on:click={() => { speaker.display_name = speaker.suggested_name; }}
                           title="Click to apply this suggestion"
                         >
                           {speaker.suggested_name}
@@ -582,139 +566,119 @@
                       </div>
                     {/if}
                     
-                    <!-- Cross-video speaker detection for unlabeled speakers -->
-                    {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0 && !speaker.suggested_name && !speaker.verified}
-                      <div class="cross-video-suggestion-card">
-                        <div class="suggestion-header">
-                          <svg class="suggestion-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                          </svg>
-                          <span class="suggestion-title">Similar Speaker Detected</span>
-                          <button 
-                            class="expand-toggle"
-                            on:click={() => speaker.showMatches = !speaker.showMatches}
-                            title="Click to see details"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class:rotated={speaker.showMatches}>
-                              <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
-                          </button>
-                        </div>
-                        
-                        <div class="suggestion-summary">
-                          {speaker.name} appears to be the same speaker in 
-                          <strong>{speaker.cross_video_matches.length}</strong> 
-                          other video{speaker.cross_video_matches.length > 1 ? 's' : ''}
-                          {#if speaker.confidence}
-                            <span class="confidence-pill" style="background-color: {speaker.confidence >= 0.75 ? 'var(--success-color)' : 'var(--warning-color)'};">
-                              up to {Math.round(speaker.confidence * 100)}%
-                            </span>
-                          {/if}
+                    <!-- Cross-video speaker detection - Below text input -->
+                    {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
+                      <div class="cross-video-compact">
+                        <div class="compact-header" role="button" tabindex="0" on:click={() => speaker.showMatches = !speaker.showMatches} on:keydown={(e) => e.key === 'Enter' && (speaker.showMatches = !speaker.showMatches)}>
+                          <span class="compact-text">
+                            {#if speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')}
+                              "{speaker.display_name}" appears in {speaker.cross_video_matches.length + 1} video{speaker.cross_video_matches.length > 0 ? 's' : ''}
+                            {:else}
+                              {speaker.name} matches {speaker.cross_video_matches.length} other speaker{speaker.cross_video_matches.length > 1 ? 's' : ''}
+                            {/if}
+                          </span>
+                          <div class="compact-controls">
+                            <button 
+                              class="info-btn-consistent"
+                              title="Click for details"
+                              on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                              </svg>
+                            </button>
+                            <button 
+                              class="dropdown-arrow"
+                              title="Show/hide matches"
+                              on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showMatches}>
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         
                         {#if speaker.showMatches}
-                          <div class="matches-dropdown" transition:slide={{ duration: 200 }}>
-                            {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                              {@const highConfidenceMatches = speaker.cross_video_matches.filter(m => m.confidence >= 0.75)}
-                              {@const mediumConfidenceMatches = speaker.cross_video_matches.filter(m => m.confidence >= 0.5 && m.confidence < 0.75)}
+                          <div class="compact-dropdown" transition:slide={{ duration: 200 }}>
+                            {#if speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')}
+                              {@const sortedMatches = speaker.cross_video_matches.sort((a, b) => b.confidence - a.confidence)}
+                              {@const highConfidence = sortedMatches.filter(m => m.confidence >= 0.90)}
+                              {@const mediumConfidence = sortedMatches.filter(m => m.confidence >= 0.75 && m.confidence < 0.90)}
+                              {@const visibleMatches = [...highConfidence.slice(0, 5), ...mediumConfidence.slice(0, 3)].slice(0, 8)}
+                              {@const remainingCount = sortedMatches.length - visibleMatches.length}
                               
-                              <div class="matches-summary">
-                                <div class="confidence-breakdown">
-                                  {#if highConfidenceMatches.length > 0}
-                                    <div class="confidence-group high">
-                                      <span class="confidence-count" style="color: var(--success-color);">
-                                        {highConfidenceMatches.length} high confidence (75%+)
-                                      </span>
-                                      <span class="auto-apply-note">Will auto-apply</span>
-                                    </div>
-                                  {/if}
-                                  
-                                  {#if mediumConfidenceMatches.length > 0}
-                                    <div class="confidence-group medium">
-                                      <span class="confidence-count" style="color: var(--warning-color);">
-                                        {mediumConfidenceMatches.length} medium confidence (50-74%)
-                                      </span>
-                                      <span class="suggest-note">Will suggest for review</span>
-                                    </div>
-                                  {/if}
+                              <!-- After labeling: Show file list -->
+                              <div class="matches-help">
+                                Files where "{speaker.display_name}" appears:
+                              </div>
+                              <div class="compact-matches">
+                                <!-- Current file -->
+                                <div class="compact-match current-file">
+                                  <span class="match-text">📄 This video (current)</span>
+                                  <span class="match-confidence">✓ Labeled</span>
                                 </div>
+                                
+                                <div class="matches-scroll-container">
+                                {#each visibleMatches as match}
+                                  <div class="compact-match" title={match.media_file_title}>
+                                    <span class="match-text">📄 {match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}</span>
+                                    <span class="match-confidence">
+                                      ✓ {Math.round(match.confidence * 100)}%
+                                    </span>
+                                  </div>
+                                {/each}
+                              </div>
+                                
+                                {#if remainingCount > 0}
+                                  <div class="more-matches-compact">
+                                    {#if remainingCount < 10}
+                                      +{remainingCount} more ({highConfidence.length} high confidence, {mediumConfidence.length} medium)
+                                    {:else if remainingCount < 50}
+                                      +{remainingCount} more matches (showing top by confidence)
+                                    {:else}
+                                      +{remainingCount} more matches (showing most relevant)
+                                    {/if}
+                                  </div>
+                                {/if}
+                              </div>
+                            {:else}
+                              {@const sortedMatches = speaker.cross_video_matches.sort((a, b) => b.confidence - a.confidence)}
+                              {@const topMatches = sortedMatches.slice(0, 5)}
+                              {@const remainingCount = sortedMatches.length - topMatches.length}
+                              
+                              <!-- Before labeling: Show matches to encourage labeling -->
+                              <div class="matches-help">
+                                Enter a name above to label across all matching videos:
+                              </div>
+                              <div class="compact-matches">
+                                <div class="matches-scroll-container">
+                                  {#each topMatches as match}
+                                    <div class="compact-match" title={match.media_file_title}>
+                                      <span class="match-text">{match.speaker_name} in "{match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}"</span>
+                                      <span class="match-confidence">
+                                        {Math.round(match.confidence * 100)}%
+                                      </span>
+                                    </div>
+                                  {/each}
+                                </div>
+                                {#if remainingCount > 0}
+                                  <div class="more-matches-compact">
+                                    {#if remainingCount < 10}
+                                      +{remainingCount} more matches
+                                    {:else if remainingCount < 50}
+                                      +{remainingCount} more (showing highest confidence)
+                                    {:else}
+                                      +{remainingCount} more matches (top confidence shown)
+                                    {/if}
+                                  </div>
+                                {/if}
                               </div>
                             {/if}
-                            
-                            <div class="matches-list">
-                              {#each speaker.cross_video_matches.slice(0, 5) as match}
-                                <div class="match-item">
-                                  <div class="match-info">
-                                    <span class="match-speaker-name">{match.speaker_name}</span>
-                                    <span class="match-video-title">in "{match.media_file_title.length > 30 ? match.media_file_title.substring(0, 30) + '...' : match.media_file_title}"</span>
-                                  </div>
-                                  <span class="match-confidence-badge" style="color: {match.confidence >= 0.75 ? 'var(--success-color)' : 'var(--warning-color)'};">
-                                    {Math.round(match.confidence * 100)}%
-                                    {#if match.confidence >= 0.75}
-                                      <small>auto</small>
-                                    {:else}
-                                      <small>suggest</small>
-                                    {/if}
-                                  </span>
-                                </div>
-                              {/each}
-                              
-                              {#if speaker.cross_video_matches.length > 5}
-                                <div class="more-matches-note">
-                                  and {speaker.cross_video_matches.length - 5} more matches...
-                                </div>
-                              {/if}
-                            </div>
-                            
-                            <div class="suggestion-actions">
-                              <button 
-                                class="label-all-btn"
-                                on:click={() => labelAllSimilarSpeakers(speaker)}
-                                title="Give this speaker a name and apply it to all similar matches"
-                              >
-                                Label This Speaker
-                                <small>({highConfidenceMatches.length} auto, {mediumConfidenceMatches.length} suggest)</small>
-                              </button>
-                            </div>
                           </div>
                         {/if}
-                      </div>
-                    {/if}
-                    
-                    <!-- Cross-video matches info icon (show when there are matches but no suggestion display) -->
-                    {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0 && (speaker.suggested_name || speaker.verified)}
-                      <div class="cross-video-info-wrapper">
-                        <button class="cross-video-info-icon" title="Click to see cross-video matches">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                          </svg>
-                        </button>
-                        <div class="cross-video-tooltip">
-                          <div class="tooltip-header">{speaker.name} also appears in:</div>
-                          {#each speaker.cross_video_matches.slice(0, 3) as match}
-                            <div class="match-detail">
-                              <span class="match-speaker">{match.speaker_name}</span> in 
-                              <span class="match-video">"{match.media_file_title.length > 25 ? match.media_file_title.substring(0, 25) + '...' : match.media_file_title}"</span>
-                              <span class="match-confidence" style="color: {match.confidence >= 0.75 ? 'var(--success-color)' : 'var(--warning-color)'}">
-                                ({Math.round(match.confidence * 100)}%)
-                              </span>
-                            </div>
-                          {/each}
-                          {#if speaker.cross_video_matches.length > 3}
-                            <div class="more-matches">and {speaker.cross_video_matches.length - 3} more...</div>
-                          {/if}
-                        </div>
-                      </div>
-                    {/if}
-                    
-                    <!-- Fallback explanation for any colored border without visible info -->
-                    {#if (speaker.confidence && speaker.confidence >= 0.5) && !speaker.suggested_name && speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                      <div class="fallback-info">
-                        <span class="info-icon-inline">ℹ️</span>
-                        <span class="fallback-text">This speaker matches speakers in other videos. Click the info icon above for details.</span>
                       </div>
                     {/if}
                   </div>
@@ -762,9 +726,6 @@
     color: var(--text-primary);
   }
   
-  .reprocess-button {
-    margin: 0;
-  }
 
   .transcript-textarea {
     width: 100%;
@@ -1214,9 +1175,6 @@
     font-size: 14px;
   }
 
-  .speaker-item input.suggested {
-    border-color: var(--warning-color);
-  }
 
   .speaker-item input.suggested-high {
     border-color: var(--success-color);
@@ -1265,62 +1223,8 @@
     font-weight: 500;
   }
   
-  .cross-video-info-wrapper {
-    position: relative;
-    display: inline-block;
-    margin-top: 0.75rem;
-    margin-bottom: 0.25rem;
-  }
   
-  .cross-video-info-icon {
-    background: none;
-    border: none;
-    color: var(--primary-color);
-    cursor: pointer;
-    padding: 2px;
-    border-radius: 50%;
-    transition: all 0.2s ease;
-  }
-  
-  .cross-video-info-icon:hover {
-    background-color: var(--surface-hover);
-  }
-  
-  .cross-video-info-wrapper:hover .cross-video-tooltip {
-    display: block;
-  }
-  
-  .cross-video-tooltip {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
-    padding: 0.75rem;
-    min-width: 300px;
-    margin-top: 4px;
-  }
-  
-  .tooltip-header {
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
-    font-size: 0.85rem;
-  }
-  
-  .match-speaker {
-    font-weight: 500;
-    color: var(--primary-color);
-  }
-  
-  .match-video {
-    font-style: italic;
-    color: var(--text-color-secondary);
-  }
+
 
   .confidence-badge {
     padding: 0.2rem 0.4rem;
@@ -1330,42 +1234,14 @@
     font-size: 0.75rem;
   }
 
-  .match-detail {
-    margin-bottom: 0.4rem;
-    font-size: 0.8rem;
-    line-height: 1.3;
-  }
 
   .match-confidence {
     font-size: 0.75rem;
     font-weight: normal;
   }
 
-  .more-matches {
-    font-style: italic;
-    color: var(--text-color-secondary);
-    font-size: 0.75rem;
-    margin-top: 0.25rem;
-  }
 
-  .from-video {
-    color: var(--text-color-secondary);
-    font-style: italic;
-    font-size: 0.75rem;
-  }
 
-  .fallback-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    margin-bottom: 0.25rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(156, 163, 175, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid var(--border-color);
-    font-size: 0.8rem;
-  }
 
   .info-icon-inline {
     font-size: 1rem;
@@ -1627,6 +1503,23 @@
     margin-top: 0.2rem;
   }
 
+  .suggestion-help-text {
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+    background: rgba(59, 130, 246, 0.05);
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin-top: 0.5rem;
+    border-left: 3px solid var(--primary-color);
+  }
+
+  .cross-video-reference {
+    font-size: 0.75rem;
+    color: var(--text-color-secondary);
+    font-style: italic;
+    margin-top: 0.25rem;
+  }
+
   .save-speakers-button {
     margin-top: 16px;
     padding: 10px 20px;
@@ -1730,5 +1623,149 @@
     to {
       transform: rotate(360deg);
     }
+  }
+  
+  /* Compact cross-video UI styles */
+  .cross-video-compact {
+    margin-top: 0.3rem;
+    padding: 0.5rem;
+    background-color: var(--background-main);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+  
+  .compact-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+  
+  .compact-text {
+    color: var(--text-color);
+    flex: 1;
+    font-size: 0.75rem;
+  }
+  
+  .compact-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  .info-btn-consistent, .dropdown-arrow {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.15rem;
+    border-radius: 3px;
+    color: var(--text-color-secondary);
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .info-btn-consistent:hover, .dropdown-arrow:hover {
+    background-color: var(--border-color-soft);
+  }
+  
+  .dropdown-arrow svg {
+    transition: transform 0.2s ease;
+  }
+  
+  .dropdown-arrow svg.rotated {
+    transform: rotate(180deg);
+  }
+  
+  .compact-dropdown {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color-soft);
+  }
+  
+  .matches-help {
+    font-size: 0.7rem;
+    color: var(--text-color-secondary);
+    margin-bottom: 0.4rem;
+    font-style: italic;
+  }
+  
+  .compact-matches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  
+  .compact-match {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.2rem 0.4rem;
+    background-color: var(--background-alt);
+    border: 1px solid var(--border-color-soft);
+    border-radius: 3px;
+    font-size: 0.7rem;
+    cursor: help;
+    transition: background-color 0.2s ease;
+  }
+  
+  .compact-match:hover {
+    background-color: var(--background-main);
+    border-color: var(--border-color);
+  }
+  
+  .compact-match.current-file {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: var(--success-color);
+    font-weight: 500;
+  }
+  
+  .match-text {
+    flex: 1;
+    color: var(--text-color);
+  }
+  
+  .match-confidence {
+    font-weight: 500;
+    font-size: 0.65rem;
+    color: var(--success-color);
+  }
+  
+  .more-matches-compact {
+    padding: 0.2rem 0.4rem;
+    text-align: center;
+    font-size: 0.65rem;
+    color: var(--text-color-secondary);
+    font-style: italic;
+  }
+  
+  /* Scrollable container for large match sets */
+  .matches-scroll-container {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color-soft);
+    border-radius: 3px;
+    padding: 0.2rem;
+  }
+  
+  .matches-scroll-container::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .matches-scroll-container::-webkit-scrollbar-track {
+    background: var(--background-alt);
+    border-radius: 3px;
+  }
+  
+  .matches-scroll-container::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+  
+  .matches-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: var(--text-color-secondary);
   }
 </style>

@@ -80,7 +80,7 @@ def create_speaker(
     return new_speaker
 
 
-@router.get("/", response_model=List[SpeakerSchema])
+@router.get("/")
 def list_speakers(
     verified_only: bool = False,
     file_id: Optional[int] = None,
@@ -155,7 +155,7 @@ def list_speakers(
                         np.array(embedding), 
                         current_user.id
                     )
-                    if match:
+                    if match and match['confidence'] >= 0.5:  # Show suggestions from 50% confidence
                         # Update the speaker with the suggestion
                         speaker.suggested_name = match['suggested_name']
                         speaker.confidence = match['confidence']
@@ -169,25 +169,59 @@ def list_speakers(
             
             # Get cross-video matches for this speaker
             cross_video_matches = matching_service.get_speaker_matches(speaker.id)
+            logger.info(f"Speaker {speaker.id}: get_speaker_matches returned {len(cross_video_matches)} matches")
             
-            # For unlabeled speakers, check if they have high-confidence matches that should be highlighted
-            if not speaker.suggested_name and not speaker.verified and cross_video_matches:
-                # Find the highest confidence match
-                highest_match = max(cross_video_matches, key=lambda x: x['confidence'])
-                if highest_match['confidence'] >= 0.5:
-                    # Set this as a potential suggestion for UI display
-                    speaker.confidence = highest_match['confidence']
-                    # Don't set suggested_name unless there's a verified speaker to suggest from
+            # For unlabeled speakers without suggestions, find potential cross-video matches
+            if not speaker.suggested_name and not speaker.verified:
+                embedding = get_speaker_embedding(speaker.id)
+                logger.info(f"Speaker {speaker.id} ({speaker.name}): embedding found = {embedding is not None}")
+                if embedding:
+                    import numpy as np
+                    # Find unlabeled speaker matches across videos
+                    unlabeled_matches = matching_service.find_unlabeled_speaker_matches(
+                        np.array(embedding), 
+                        current_user.id,
+                        speaker.id
+                    )
+                    logger.info(f"Speaker {speaker.id}: found {len(unlabeled_matches)} unlabeled matches")
                     
+                    # Add unlabeled matches to cross_video_matches
+                    if unlabeled_matches:
+                        # Merge with existing matches, avoiding duplicates
+                        existing_speaker_ids = {match.get('speaker_id') for match in cross_video_matches}
+                        for unlabeled_match in unlabeled_matches:
+                            if unlabeled_match['speaker_id'] not in existing_speaker_ids:
+                                cross_video_matches.append(unlabeled_match)
+                        
+                        # Set confidence to highest match for UI display
+                        if cross_video_matches:
+                            highest_match = max(cross_video_matches, key=lambda x: x['confidence'])
+                            speaker.confidence = highest_match['confidence']
+                else:
+                    logger.warning(f"No embedding found for speaker {speaker.id} ({speaker.name})")
+            
             # Add additional match context for UI
             for match in cross_video_matches:
                 match['is_cross_video_suggestion'] = True
+            
+            logger.info(f"Speaker {speaker.name} ({speaker.id}): Total cross_video_matches = {len(cross_video_matches)}")
+            
+            # Smart suggestion logic: show suggestions but let UI explain the context
+            suggested_name = speaker.suggested_name
+            if speaker.suggested_name and speaker.confidence and cross_video_matches:
+                # Find highest cross-video match confidence
+                highest_cross_video_confidence = max(match['confidence'] for match in cross_video_matches)
+                
+                # Only hide very low confidence suggestions (<50%) when much higher cross-video matches exist (>30% higher)
+                if (speaker.confidence < 0.5 and 
+                    highest_cross_video_confidence > speaker.confidence + 0.3):
+                    suggested_name = None
             
             speaker_dict = {
                 "id": speaker.id,
                 "name": speaker.name,
                 "display_name": speaker.display_name,
-                "suggested_name": speaker.suggested_name,
+                "suggested_name": suggested_name,
                 "uuid": speaker.uuid,
                 "verified": speaker.verified,
                 "user_id": speaker.user_id,
@@ -207,6 +241,10 @@ def list_speakers(
                 }
             
             result.append(speaker_dict)
+        
+        # Debug log to see what we're returning
+        for speaker_data in result:
+            logger.info(f"Returning speaker {speaker_data['name']} with {len(speaker_data.get('cross_video_matches', []))} cross_video_matches")
         
         return result
     except Exception as e:
