@@ -138,14 +138,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
@@ -188,14 +180,6 @@ services:
       - redis
       - minio
       - opensearch
-    # GPU configuration (only applied when GPU detected)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
