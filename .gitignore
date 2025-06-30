@@ -48,9 +48,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-# Python lib directories
+# Python lib directories (backend only)
 backend/lib/
-/lib/
 lib64/
 parts/
 sdist/
