@@ -243,17 +243,19 @@
       });
       
       if (response.data && Array.isArray(response.data)) {
+        console.log('Raw speaker data from API:', response.data);
         speakerList = response.data
           .map((speaker: any) => ({
             id: speaker.id,
             name: speaker.name,
-            display_name: speaker.display_name || speaker.name,
+            display_name: speaker.display_name || '',  // Empty for unlabeled speakers to show suggestions
             suggested_name: speaker.suggested_name,
             uuid: speaker.uuid,
             verified: speaker.verified,
             confidence: speaker.confidence,
             profile: speaker.profile,
-            cross_video_matches: speaker.cross_video_matches || []
+            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.75), // Only high-confidence matches (≥75%)
+            showMatches: false  // Add this for the collapsible UI
           }))
           .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
         

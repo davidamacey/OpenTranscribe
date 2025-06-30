@@ -85,6 +85,84 @@ class SpeakerMatchingService:
             'auto_accept': confidence >= ConfidenceLevel.HIGH
         }
     
+    def find_unlabeled_speaker_matches(self, embedding: np.ndarray, user_id: int, exclude_speaker_id: int) -> List[Dict[str, Any]]:
+        """
+        Find matches to unlabeled speakers across videos (for pre-labeling suggestions).
+        
+        Args:
+            embedding: Speaker embedding vector
+            user_id: User ID
+            exclude_speaker_id: Speaker ID to exclude from results
+            
+        Returns:
+            List of matched speakers with video source information
+        """
+        matches = []
+        logger.info(f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}")
+        
+        try:
+            from app.services.opensearch_service import opensearch_client, settings
+            
+            query = {
+                "size": 10,  # Get more potential matches for unlabeled speakers
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": embedding.tolist(),
+                            "k": 10,
+                            "filter": {
+                                "bool": {
+                                    "filter": [
+                                        {"term": {"user_id": user_id}},
+                                        {"bool": {"must_not": {"term": {"speaker_id": exclude_speaker_id}}}}
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            response = opensearch_client.search(
+                index=settings.OPENSEARCH_SPEAKER_INDEX,
+                body=query
+            )
+            
+            logger.info(f"OpenSearch response for speaker {exclude_speaker_id}: {len(response['hits']['hits'])} hits")
+            
+            # Process each match and get speaker details
+            for hit in response["hits"]["hits"]:
+                confidence = hit["_score"]
+                if confidence >= ConfidenceLevel.HIGH:  # 0.75 threshold for high-confidence matches only
+                    match_speaker_id = hit["_source"]["speaker_id"]
+                    
+                    # Get the matched speaker details
+                    matched_speaker = self.db.query(Speaker).filter(
+                        Speaker.id == match_speaker_id
+                    ).first()
+                    
+                    if matched_speaker and matched_speaker.media_file:
+                        matches.append({
+                            'speaker_id': match_speaker_id,
+                            'speaker_name': matched_speaker.name,
+                            'display_name': matched_speaker.display_name,
+                            'media_file_id': matched_speaker.media_file_id,
+                            'media_file_title': matched_speaker.media_file.title or matched_speaker.media_file.filename,
+                            'confidence': confidence,
+                            'confidence_level': self.get_confidence_level(confidence),
+                            'verified': matched_speaker.verified,
+                            'is_cross_video_suggestion': True
+                        })
+            
+            # Sort by confidence (highest first)
+            matches.sort(key=lambda x: x['confidence'], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Error finding unlabeled speaker matches: {e}")
+        
+        logger.info(f"Returning {len(matches)} unlabeled matches for speaker {exclude_speaker_id}")
+        return matches
+    
     def match_speaker_to_profile(self, embedding: np.ndarray, user_id: int) -> Optional[Dict[str, Any]]:
         """
         Match a speaker embedding to an existing profile.
@@ -229,9 +307,10 @@ class SpeakerMatchingService:
             match = self.match_speaker_to_known_speakers(aggregated_embedding, user_id)
             
             if match:
-                # Found a matching speaker - store the suggestion
+                # Found a matching speaker - store the suggestion only if high confidence
                 speaker.confidence = match['confidence']
-                speaker.suggested_name = match['suggested_name']
+                if match['confidence'] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
+                    speaker.suggested_name = match['suggested_name']
                 
                 # If high confidence, auto-apply the suggestion
                 if match['auto_accept']:
@@ -559,7 +638,7 @@ class SpeakerMatchingService:
                     Speaker.id == matched_speaker_id
                 ).first()
                 
-                if matched_speaker:
+                if matched_speaker and match.confidence >= ConfidenceLevel.HIGH:  # Only include high-confidence matches (≥75%)
                     matches.append({
                         'speaker_id': matched_speaker.id,
                         'speaker_name': matched_speaker.name,
