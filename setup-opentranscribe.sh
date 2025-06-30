@@ -577,7 +577,8 @@ select_whisper_model() {
             ;;
         "mps")
             WHISPER_MODEL="medium"
-            echo "✓ Apple Silicon detected - selecting medium model (optimized for MPS)"
+            echo "✓ Apple Silicon detected - selecting medium model"
+            echo "  Note: WhisperX will use CPU for compatibility, PyAnnote will use MPS acceleration"
             ;;
         "cpu")
             WHISPER_MODEL="base"

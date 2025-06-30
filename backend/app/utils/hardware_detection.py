@@ -155,9 +155,14 @@ class HardwareConfig:
     
     def get_whisperx_config(self) -> Dict[str, Any]:
         """Get configuration parameters for WhisperX."""
+        # WhisperX doesn't support MPS natively, so we use CPU for Apple Silicon
+        # but keep other optimizations
+        whisperx_device = "cpu" if self.device == "mps" else self.device
+        whisperx_compute_type = "int8" if self.device == "mps" else self.compute_type
+        
         config = {
-            "device": self.device,
-            "compute_type": self.compute_type,
+            "device": whisperx_device,
+            "compute_type": whisperx_compute_type,
             "batch_size": self.batch_size
         }
         

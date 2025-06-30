@@ -38,8 +38,15 @@ class WhisperXService:
         if not is_valid:
             logger.warning(f"Hardware validation failed: {validation_msg}")
         
-        logger.info(f"WhisperX initialized: model={self.model_name}, device={self.device}, "
-                   f"compute_type={self.compute_type}, batch_size={self.batch_size}")
+        # Log hardware details
+        detected_device = self.hardware_config.device
+        if detected_device == "mps" and self.device == "cpu":
+            logger.info(f"WhisperX initialized: model={self.model_name}, "
+                       f"detected_device={detected_device} (using CPU for WhisperX compatibility), "
+                       f"compute_type={self.compute_type}, batch_size={self.batch_size}")
+        else:
+            logger.info(f"WhisperX initialized: model={self.model_name}, device={self.device}, "
+                       f"compute_type={self.compute_type}, batch_size={self.batch_size}")
     
     def _apply_environment_optimizations(self):
         """Apply environment variable optimizations for the detected hardware."""
@@ -66,7 +73,12 @@ class WhisperXService:
             raise ImportError("WhisperX is not installed. Please install it with 'pip install whisperx'.")
         
         # Load model with hardware-specific configuration
-        logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
+        detected_device = self.hardware_config.device
+        if detected_device == "mps" and self.device == "cpu":
+            logger.info(f"Loading WhisperX model: {self.model_name} on {self.device} "
+                       f"(Apple Silicon detected, using CPU for WhisperX compatibility)")
+        else:
+            logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
         
         load_options = {
             "whisper_arch": self.model_name,
