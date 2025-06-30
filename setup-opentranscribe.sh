@@ -328,7 +328,7 @@ create_database_files() {
     # Download the official init_db.sql from the repository
     local max_retries=3
     local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db_complete.sql"
@@ -386,7 +386,7 @@ create_production_compose() {
     # Download the official production compose file from the repository
     local max_retries=3
     local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)  
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
@@ -425,7 +425,7 @@ create_production_env_example() {
     # Download the official .env.example from the repository
     local max_retries=3
     local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-fix/setup-scripts}"
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
