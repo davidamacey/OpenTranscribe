@@ -2,16 +2,6 @@
 # This file is automatically used when NVIDIA GPU is detected
 
 services:
-  backend:
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['${GPU_DEVICE_ID:-0}']
-              capabilities: [gpu]
-
   celery-worker:
     runtime: nvidia
     deploy:

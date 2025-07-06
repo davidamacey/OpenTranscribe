@@ -14,7 +14,6 @@ import os
 import platform
 import logging
 from typing import Tuple, Dict, Any, Optional
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +63,13 @@ class HardwareConfig:
             cuda_device_count = torch.cuda.device_count()
             logger.info(f"CUDA available with {cuda_device_count} device(s)")
             
-            # Get GPU device ID from environment
-            gpu_device_id = int(os.getenv("GPU_DEVICE_ID", "0"))
-            if gpu_device_id < cuda_device_count:
-                # Set the CUDA device
-                torch.cuda.set_device(gpu_device_id)
-                device_name = torch.cuda.get_device_name(gpu_device_id)
-                logger.info(f"Using CUDA device {gpu_device_id}: {device_name}")
-                return "cuda"
-            else:
-                logger.warning(f"Requested GPU {gpu_device_id} not available, falling back")
+            # In production, Docker maps the requested GPU (via GPU_DEVICE_ID) to device 0
+            # For simplicity, always use device 0 since celery-worker runs in Docker
+            torch.cuda.set_device(0)
+            device_name = torch.cuda.get_device_name(0)
+            gpu_requested = os.getenv("GPU_DEVICE_ID", "0")
+            logger.info(f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}")
+            return "cuda"
         
         # Check for MPS (Apple Silicon)
         if (self.system == "darwin" and 
@@ -149,8 +145,8 @@ class HardwareConfig:
         import torch
         
         if self.device == "cuda":
-            gpu_device_id = int(os.getenv("GPU_DEVICE_ID", "0"))
-            return torch.device(f"cuda:{gpu_device_id}")
+            # Always use device 0 (Docker maps selected GPU to index 0)
+            return torch.device("cuda:0")
         else:
             return torch.device(self.device)
     
@@ -169,7 +165,8 @@ class HardwareConfig:
         
         # Add device-specific configurations
         if self.device == "cuda":
-            config["device_index"] = int(os.getenv("GPU_DEVICE_ID", "0"))
+            # Always use device 0 (Docker maps selected GPU to index 0)
+            config["device_index"] = 0
             
         return config
     
@@ -235,9 +232,9 @@ class HardwareConfig:
         elif self.device == "cuda":
             # CUDA optimizations
             env_vars.update({
-                "CUDA_VISIBLE_DEVICES": os.getenv("GPU_DEVICE_ID", "0"),
                 "TORCH_CUDA_ARCH_LIST": "6.0 6.1 7.0 7.5 8.0 8.6+PTX"
             })
+            # Docker maps GPU_DEVICE_ID to container device 0
         
         return env_vars
     
