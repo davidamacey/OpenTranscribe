@@ -141,7 +141,7 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ['2']
+              device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
       - ./backend:/app
     depends_on:

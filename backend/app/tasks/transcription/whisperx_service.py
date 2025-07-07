@@ -90,7 +90,8 @@ class WhisperXService:
         
         # Add device-specific options
         if self.device == "cuda":
-            load_options["device_index"] = int(os.getenv("GPU_DEVICE_ID", "0"))
+            # Always use device 0 since Docker maps the selected GPU to index 0
+            load_options["device_index"] = 0
         
         model = whisperx.load_model(**load_options)
         

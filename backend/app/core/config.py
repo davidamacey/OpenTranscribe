@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
-    GPU_DEVICE_ID: int = int(os.getenv("GPU_DEVICE_ID", "0"))
+    GPU_DEVICE_ID: int = int(os.getenv("GPU_DEVICE_ID", "0"))  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
     
     # AI Models settings
