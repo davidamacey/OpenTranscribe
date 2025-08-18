@@ -379,6 +379,7 @@
   }
   
   .notifications-btn {
+    position: relative;
     background: none;
     border: none;
     padding: 8px;
