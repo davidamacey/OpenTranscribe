@@ -67,7 +67,7 @@ def start_reprocessing_task(file_id: int) -> None:
 
 async def process_file_reprocess(file_id: int, db: Session, current_user: User) -> MediaFile:
     """
-    Process file reprocessing request.
+    Process file reprocessing request with enhanced error handling.
     
     Args:
         file_id: ID of the file to reprocess
@@ -80,12 +80,16 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
     Raises:
         HTTPException: If file not found or user doesn't have permission
     """
+    from app.utils.task_utils import reset_file_for_retry, cancel_active_task
+    
     try:
-        # Get the file
-        media_file = db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == current_user.id
-        ).first()
+        # Get the file (allow admin to reprocess any file)
+        is_admin = current_user.role == "admin"
+        query = db.query(MediaFile).filter(MediaFile.id == file_id)
+        if not is_admin:
+            query = query.filter(MediaFile.user_id == current_user.id)
+        
+        media_file = query.first()
         
         if not media_file:
             raise HTTPException(
@@ -93,12 +97,11 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
                 detail="File not found or you don't have permission to access it"
             )
         
-        # Check if file is in a state that can be reprocessed
-        if media_file.status == FileStatus.PROCESSING:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File is currently being processed. Please wait for it to complete."
-            )
+        # Check if file is currently processing
+        if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:
+            # Cancel active task first
+            logger.info(f"Cancelling active task {media_file.active_task_id} before reprocessing file {file_id}")
+            cancel_active_task(db, file_id)
         
         # Check if file exists in storage
         if not media_file.storage_path:
@@ -107,21 +110,30 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
                 detail="File storage path not found. Cannot reprocess."
             )
         
+        # Check retry limits (unless admin)
+        if not is_admin and media_file.retry_count >= media_file.max_retries:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help."
+            )
+        
         logger.info(f"Starting reprocessing for file {file_id} by user {current_user.email}")
         
-        # Clear existing transcription data
-        clear_existing_transcription_data(db, media_file)
+        # Use the enhanced retry logic
+        success = reset_file_for_retry(db, file_id, reset_retry_count=False)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to reset file for reprocessing"
+            )
         
-        # Reset file status to pending
-        media_file.status = FileStatus.PENDING
-        
-        db.commit()
+        # Refresh the file object
         db.refresh(media_file)
         
         # Start background reprocessing task
         start_reprocessing_task(media_file.id)
         
-        logger.info(f"Reprocessing task started for file {file_id}")
+        logger.info(f"Reprocessing task started for file {file_id} (attempt {media_file.retry_count})")
         
         return media_file
         

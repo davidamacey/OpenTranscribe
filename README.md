@@ -31,6 +31,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Metadata Extraction**: Comprehensive file information using ExifTool
 - **Subtitle Export**: Generate SRT/VTT files for accessibility
 - **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
+- **Auto-Recovery System**: Intelligent detection and recovery of stuck or failed file processing
 
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
@@ -52,6 +53,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
 - **Enhanced Progress Tracking**: 13 granular processing stages with descriptive messages
 - **Collection Management**: Create, organize, and share collections of related media files
+- **Smart Error Recovery**: User-friendly error messages with specific guidance and auto-recovery options
 
 ## 🛠️ Technology Stack
 

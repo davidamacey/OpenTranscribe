@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS media_file (
     title VARCHAR(255) NULL,
     author VARCHAR(255) NULL,
     description TEXT NULL,
+    -- Task tracking and error handling fields
+    active_task_id VARCHAR(255) NULL,
+    task_started_at TIMESTAMP WITH TIME ZONE NULL,
+    task_last_update TIMESTAMP WITH TIME ZONE NULL,
+    cancellation_requested BOOLEAN DEFAULT FALSE,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    last_error_message TEXT NULL,
+    force_delete_eligible BOOLEAN DEFAULT FALSE,
+    recovery_attempts INTEGER DEFAULT 0,
+    last_recovery_attempt TIMESTAMP WITH TIME ZONE NULL,
     user_id INTEGER NOT NULL REFERENCES "user" (id)
 );
 
@@ -193,6 +204,10 @@ CREATE INDEX IF NOT EXISTS idx_media_file_user_id ON media_file(user_id);
 CREATE INDEX IF NOT EXISTS idx_media_file_status ON media_file(status);
 CREATE INDEX IF NOT EXISTS idx_media_file_upload_time ON media_file(upload_time);
 CREATE INDEX IF NOT EXISTS idx_media_file_hash ON media_file(file_hash);
+CREATE INDEX IF NOT EXISTS idx_media_file_active_task_id ON media_file(active_task_id);
+CREATE INDEX IF NOT EXISTS idx_media_file_task_last_update ON media_file(task_last_update);
+CREATE INDEX IF NOT EXISTS idx_media_file_force_delete_eligible ON media_file(force_delete_eligible);
+CREATE INDEX IF NOT EXISTS idx_media_file_retry_count ON media_file(retry_count);
 
 CREATE INDEX IF NOT EXISTS idx_speaker_user_id ON speaker(user_id);
 CREATE INDEX IF NOT EXISTS idx_speaker_media_file_id ON speaker(media_file_id);

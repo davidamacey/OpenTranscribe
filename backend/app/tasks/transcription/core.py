@@ -124,6 +124,50 @@ def transcribe_audio_task(self, file_id: int):
                     progress_callback=whisperx_progress_callback
                 )
                 
+                # Check if transcription produced any valid content
+                if not result or not result.get("segments") or len(result["segments"]) == 0:
+                    error_msg = ("No audio content could be detected in this file. "
+                               "The file may be corrupted, contain only silence, or be in an unsupported format. "
+                               "Please check the file and try uploading again.")
+                    logger.warning(f"No valid audio content found in file {file_id}: {file_name}")
+                    
+                    with session_scope() as db:
+                        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                        update_media_file_status(db, file_id, FileStatus.ERROR)
+                        # Store the specific error for user guidance
+                        media_file = get_refreshed_object(db, MediaFile, file_id)
+                        if media_file:
+                            media_file.last_error_message = error_msg
+                            db.commit()
+                    
+                    send_error_notification(user_id, file_id, error_msg)
+                    return {"status": "error", "message": error_msg, "error_type": "no_valid_audio"}
+                
+                # Check if segments contain actual transcribable content
+                has_content = False
+                for segment in result["segments"]:
+                    if segment.get("text", "").strip():
+                        has_content = True
+                        break
+                
+                if not has_content:
+                    error_msg = ("No speech could be detected in this file. "
+                               "The file may contain only music, background noise, or silence. "
+                               "Please verify the file contains clear speech and try again.")
+                    logger.warning(f"No speech content found in file {file_id}: {file_name}")
+                    
+                    with session_scope() as db:
+                        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                        update_media_file_status(db, file_id, FileStatus.ERROR)
+                        # Store the specific error for user guidance
+                        media_file = get_refreshed_object(db, MediaFile, file_id)
+                        if media_file:
+                            media_file.last_error_message = error_msg
+                            db.commit()
+                    
+                    send_error_notification(user_id, file_id, error_msg)
+                    return {"status": "error", "message": error_msg, "error_type": "no_speech_content"}
+                
                 # Step 8: Process speakers and segments (WhisperX callback handles 0.4->0.65)
                 send_progress_notification(user_id, file_id, 0.68, "Processing speaker segments")
                 unique_speakers = extract_unique_speakers(result["segments"])

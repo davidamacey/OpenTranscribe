@@ -15,7 +15,7 @@
   interface MediaFile {
     id: number;
     filename: string;
-    status: 'pending' | 'processing' | 'completed' | 'error';
+    status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelling' | 'cancelled' | 'orphaned';
     upload_time: string;
     duration?: number;
     file_size?: number;
@@ -24,6 +24,7 @@
     summary?: string;
     file_hash?: string;
     thumbnail_url?: string;
+    last_error_message?: string;
     
     // Technical metadata
     media_format?: string;
@@ -97,6 +98,7 @@
   import FilterSidebar from '../components/FilterSidebar.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
+  import AutoRecoverModal from '../components/AutoRecoverModal.svelte';
   
   // Media files state
   let files: MediaFile[] = [];
@@ -111,6 +113,10 @@
   let selectedCollectionId: number | null = null;
   let showCollectionsModal = false;
   let activeTab: 'gallery' | 'status' = 'gallery';
+  
+  // Auto-recover modal state
+  let showAutoRecoverModal = false;
+  let stuckFilesForRecovery = [];
   
   // Component refs
   let filterSidebarRef: any;
@@ -279,7 +285,7 @@
     isSelecting = false;
   }
   
-  // Delete selected files
+  // Delete selected files with enhanced error handling
   async function deleteSelectedFiles() {
     if (selectedFiles.size === 0) return;
     
@@ -290,26 +296,56 @@
     try {
       loading = true;
       
-      // Delete files in parallel
-      const deletePromises = Array.from(selectedFiles).map(async (fileId) => {
-        try {
-          await axiosInstance.delete(`/files/${fileId}`);
-          return { success: true, id: fileId } as DeleteResult;
-        } catch (err) {
-          console.error(`Error deleting file ${fileId}:`, err);
-          return { success: false, id: fileId } as DeleteResult;
-        }
+      // Use bulk action API for better error handling
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: Array.from(selectedFiles),
+        action: 'delete',
+        force: false
       });
       
-      const results = await Promise.all(deletePromises);
+      const results = response.data;
+      const successful = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
       
-      // Check for any failures
-      const failedDeletions = results.filter(result => !result.success);
+      // Handle conflicts (files that can't be deleted)
+      const conflicts = failed.filter(r => r.error === 'HTTP_ERROR' && r.message.includes('FILE_NOT_SAFE_TO_DELETE'));
       
-      if (failedDeletions.length > 0) {
-        toastStore.error(`Failed to delete ${failedDeletions.length} file(s). Please try again.`);
-      } else {
-        toastStore.success(`Successfully deleted ${selectedFiles.size} file(s).`);
+      if (conflicts.length > 0) {
+        const conflictFileIds = conflicts.map(c => c.file_id);
+        const proceed = confirm(
+          `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
+          `Would you like to cancel their processing and delete them? ` +
+          `(This action cannot be undone)`
+        );
+        
+        if (proceed) {
+          // Try force deletion for conflicted files
+          try {
+            const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
+              file_ids: conflictFileIds,
+              action: 'delete',
+              force: true
+            });
+            
+            const forceResults = forceResponse.data;
+            const forceSuccessful = forceResults.filter(r => r.success);
+            
+            toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
+          } catch (forceErr) {
+            console.error('Error force deleting files:', forceErr);
+            toastStore.error('Failed to force delete some files. They may require admin intervention.');
+          }
+        }
+      }
+      
+      // Report on regular deletion results
+      if (successful.length > 0) {
+        toastStore.success(`Successfully deleted ${successful.length} file(s).`);
+      }
+      
+      const regularFailures = failed.filter(r => !conflicts.some(c => c.file_id === r.file_id));
+      if (regularFailures.length > 0) {
+        toastStore.error(`Failed to delete ${regularFailures.length} file(s). Please try again.`);
       }
       
       // Refresh the file list
@@ -318,7 +354,8 @@
       
     } catch (err) {
       console.error('Error deleting files:', err);
-      toastStore.error('An error occurred while deleting files. Please try again.');
+      const errorMessage = err.response?.data?.detail || 'An error occurred while deleting files. Please try again.';
+      toastStore.error(errorMessage);
     } finally {
       loading = false;
     }
@@ -368,6 +405,195 @@
       showUploadModal = false;
     }
   }
+
+  // Bulk retry selected files
+  async function retrySelectedFiles() {
+    if (selectedFiles.size === 0) return;
+    
+    try {
+      loading = true;
+      
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: Array.from(selectedFiles),
+        action: 'retry',
+        reset_retry_count: false
+      });
+      
+      const results = response.data;
+      const successful = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
+      
+      if (successful.length > 0) {
+        toastStore.success(`Started retry for ${successful.length} file(s).`);
+      }
+      
+      if (failed.length > 0) {
+        const retryLimitFiles = failed.filter(r => r.message.includes('maximum retry'));
+        if (retryLimitFiles.length > 0) {
+          toastStore.warning(`${retryLimitFiles.length} file(s) have reached retry limits. Contact admin for help.`);
+        } else {
+          toastStore.error(`Failed to retry ${failed.length} file(s). Please try again.`);
+        }
+      }
+      
+      await fetchFiles();
+      clearSelection();
+      
+    } catch (err) {
+      console.error('Error retrying files:', err);
+      toastStore.error('An error occurred while retrying files. Please try again.');
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Bulk cancel selected files
+  async function cancelSelectedFiles() {
+    if (selectedFiles.size === 0) return;
+    
+    if (!confirm(`Cancel processing for ${selectedFiles.size} selected file(s)?`)) {
+      return;
+    }
+    
+    try {
+      loading = true;
+      
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: Array.from(selectedFiles),
+        action: 'cancel'
+      });
+      
+      const results = response.data;
+      const successful = results.filter(r => r.success);
+      const failed = results.filter(r => !r.success);
+      
+      if (successful.length > 0) {
+        toastStore.success(`Cancelled processing for ${successful.length} file(s).`);
+      }
+      
+      if (failed.length > 0) {
+        toastStore.error(`Failed to cancel ${failed.length} file(s). They may not have active tasks.`);
+      }
+      
+      await fetchFiles();
+      clearSelection();
+      
+    } catch (err) {
+      console.error('Error cancelling files:', err);
+      toastStore.error('An error occurred while cancelling files. Please try again.');
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Auto-recover stuck files
+  async function recoverStuckFiles() {
+    try {
+      loading = true;
+      
+      // First get stuck files (use 1 minute for immediate detection)
+      const stuckResponse = await axiosInstance.get('/files/management/stuck?threshold_hours=0.017');
+      const stuckFiles = stuckResponse.data.stuck_files;
+      
+      if (stuckFiles.length === 0) {
+        toastStore.info('No files need recovery. All files are processing normally.');
+        return;
+      }
+      
+      // Store the stuck files and show the professional modal
+      stuckFilesForRecovery = stuckFiles;
+      showAutoRecoverModal = true;
+      
+    } catch (err) {
+      console.error('Error checking for stuck files:', err);
+      toastStore.error('An error occurred while checking for stuck files.');
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function handleAutoRecoverConfirm() {
+    try {
+      loading = true;
+      
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: stuckFilesForRecovery.map(f => f.id),
+        action: 'recover'
+      });
+      
+      const results = response.data;
+      const successful = results.filter(r => r.success);
+      
+      if (successful.length > 0) {
+        toastStore.success(`Successfully recovered ${successful.length} file(s). Processing will restart automatically.`);
+      } else {
+        toastStore.warning('No files could be automatically recovered. Manual intervention may be required.');
+      }
+      
+      // Close modal and refresh files
+      showAutoRecoverModal = false;
+      stuckFilesForRecovery = [];
+      await fetchFiles();
+      
+    } catch (err) {
+      console.error('Error recovering stuck files:', err);
+      toastStore.error('An error occurred while recovering stuck files.');
+    } finally {
+      loading = false;
+    }
+  }
+
+  function handleAutoRecoverCancel() {
+    showAutoRecoverModal = false;
+    stuckFilesForRecovery = [];
+    loading = false; // Reset loading state if user cancels during processing
+  }
+
+  // Enhanced error notification for corrupted/invalid files
+  function showEnhancedErrorNotification(file: MediaFile) {
+    if (!file.last_error_message) {
+      toastStore.error(`Processing failed for "${file.filename}". Please try again.`);
+      return;
+    }
+
+    const errorMessage = file.last_error_message.toLowerCase();
+    
+    if (errorMessage.includes('no audio content') || errorMessage.includes('corrupted') || errorMessage.includes('unsupported format')) {
+      toastStore.error(
+        `❌ File Quality Issue: "${file.filename}"\n\n` +
+        `${file.last_error_message}\n\n` +
+        `💡 Suggestions:\n` +
+        `• Check if the file plays correctly on your device\n` +
+        `• Try converting to MP3, WAV, or MP4 format\n` +
+        `• Ensure the file isn't password protected or DRM-locked\n` +
+        `• Consider re-recording if the original source is problematic`,
+        { duration: 10000 }
+      );
+    } else if (errorMessage.includes('no speech') || errorMessage.includes('only music') || errorMessage.includes('background noise')) {
+      toastStore.error(
+        `🎵 No Speech Detected: "${file.filename}"\n\n` +
+        `${file.last_error_message}\n\n` +
+        `💡 This typically happens when:\n` +
+        `• The file contains only music or instrumental audio\n` +
+        `• Speech is too quiet or unclear\n` +
+        `• The file has excessive background noise\n` +
+        `• The audio quality is too poor for speech recognition\n\n` +
+        `Try uploading a file with clear, audible speech.`,
+        { duration: 8000 }
+      );
+    } else {
+      // Generic error with helpful guidance
+      toastStore.error(
+        `⚠️ Processing Failed: "${file.filename}"\n\n` +
+        `${file.last_error_message}\n\n` +
+        `💡 You can:\n` +
+        `• Use the "Retry" button to try processing again\n` +
+        `• Check the file format and quality\n` +
+        `• Contact support if the problem persists`,
+        { duration: 7000 }
+      );
+    }
+  }
   
   // Subscribe to WebSocket file status updates to update file status in real-time
   // Track last processed notification to avoid duplicate processing
@@ -388,15 +614,28 @@
             const status = latestNotification.data.status;
             
             // Update any files that match this notification
+            let updatedFile = null;
             files = files.map(file => {
               if (String(file.id) === fileId) {
-                return {
+                updatedFile = {
                   ...file,
                   status: status
                 };
+                return updatedFile;
               }
               return file;
             });
+            
+            // If the file status changed to error, refresh to get the latest error message and show enhanced notification
+            if (status === 'error') {
+              fetchFiles().then(() => {
+                // Find the updated file with error message
+                const errorFile = files.find(f => String(f.id) === fileId);
+                if (errorFile) {
+                  showEnhancedErrorNotification(errorFile);
+                }
+              });
+            }
             
             console.log('MediaLibrary updated from WebSocket notification for file:', fileId, 'Status:', status);
           } 
@@ -485,6 +724,20 @@
               Add to Collection
             </button>
             <button 
+              class="retry-selected-btn" 
+              on:click={retrySelectedFiles}
+              title="Retry processing for selected failed files"
+            >
+              Retry {selectedFiles.size} selected
+            </button>
+            <button 
+              class="cancel-selected-btn" 
+              on:click={cancelSelectedFiles}
+              title="Cancel processing for selected files"
+            >
+              Cancel Processing
+            </button>
+            <button 
               class="delete-selected-btn" 
               on:click={deleteSelectedFiles}
               title="Permanently delete the {selectedFiles.size} selected file{selectedFiles.size === 1 ? '' : 's'} - this action cannot be undone"
@@ -496,7 +749,7 @@
               on:click={clearSelection}
               title="Exit selection mode and clear all selected files"
             >
-              Cancel
+              Cancel Selection
             </button>
           </div>
         {:else}
@@ -519,6 +772,17 @@
               title="Manage your collections"
             >
               Collections
+            </button>
+            <button 
+              class="recover-btn"
+              on:click={recoverStuckFiles}
+              title="Auto-recover stuck files"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              Auto-Recover
             </button>
             <button 
               class="select-files-btn" 
@@ -662,14 +926,36 @@
                     {/if}
                   </div>
                   
-                  <div class="file-status status-{file.status}">
+                  <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                     <span class="status-dot"></span>
-                    {#if file.status === 'pending' || file.status === 'processing'}
+                    {#if file.status === 'pending'}
+                      Pending
+                    {:else if file.status === 'processing'}
                       Processing
                     {:else if file.status === 'completed'}
                       Completed
                     {:else if file.status === 'error'}
-                      Error
+                      {#if file.last_error_message}
+                        <!-- svelte-ignore a11y-click-events-have-key-events -->
+                        <!-- svelte-ignore a11y-no-static-element-interactions -->
+                        <span 
+                          class="error-details-trigger" 
+                          on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
+                          title="Click for error details"
+                        >
+                          Error - Click for Details
+                        </span>
+                      {:else}
+                        Error
+                      {/if}
+                    {:else if file.status === 'cancelling'}
+                      Cancelling
+                    {:else if file.status === 'cancelled'}
+                      Cancelled
+                    {:else if file.status === 'orphaned'}
+                      Needs Recovery
+                    {:else}
+                      {file.status}
                     {/if}
                   </div>
                 </div>
@@ -777,6 +1063,15 @@
     </div>
   </div>
 {/if}
+
+<!-- Auto-Recover Modal -->
+<AutoRecoverModal
+  bind:isOpen={showAutoRecoverModal}
+  stuckFiles={stuckFilesForRecovery}
+  on:confirm={handleAutoRecoverConfirm}
+  on:cancel={handleAutoRecoverCancel}
+  on:close={handleAutoRecoverCancel}
+/>
 
 <style>
   /* Selection controls */
@@ -1112,6 +1407,26 @@
     background-color: #7c3aed;
   }
   
+  /* Recovery button */
+  .recover-btn {
+    background-color: #f59e0b;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .recover-btn:hover {
+    background-color: #d97706;
+  }
+  
   /* Add to collection button */
   .add-to-collection-btn {
     background-color: #10b981;
@@ -1127,6 +1442,40 @@
   
   .add-to-collection-btn:hover {
     background-color: #059669;
+  }
+  
+  /* Retry selected button */
+  .retry-selected-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .retry-selected-btn:hover {
+    background-color: #2563eb;
+  }
+  
+  /* Cancel selected button */
+  .cancel-selected-btn {
+    background-color: #f59e0b;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .cancel-selected-btn:hover {
+    background-color: #d97706;
   }
   
   /* File grid */
@@ -1302,6 +1651,44 @@
   .status-error {
     color: #ef4444;
     background-color: rgba(239, 68, 68, 0.1);
+  }
+
+  .clickable-error {
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .clickable-error:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .error-details-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+  }
+
+  .error-details-trigger:hover {
+    text-decoration-style: solid;
+  }
+
+  .status-cancelling {
+    color: #f59e0b;
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+
+  .status-cancelled {
+    color: #6b7280;
+    background-color: rgba(107, 114, 128, 0.1);
+  }
+
+  .status-orphaned {
+    color: #dc2626;
+    background-color: rgba(220, 38, 38, 0.1);
   }
   
   .status-dot {

@@ -95,7 +95,7 @@ def list_media_files(
     min_file_size: Optional[int] = None,  # In MB
     max_file_size: Optional[int] = None,  # In MB
     file_type: Optional[List[str]] = Query(None),  # ['audio', 'video']
-    status: Optional[List[str]] = Query(None),  # ['pending', 'processing', 'completed', 'error']
+    status: Optional[List[str]] = Query(None),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
     transcript_search: Optional[str] = None,  # Search in transcript content
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

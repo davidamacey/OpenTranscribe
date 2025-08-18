@@ -221,28 +221,75 @@ def update_media_file(db: Session, file_id: int, media_file_update: MediaFileUpd
     return db_file
 
 
-def delete_media_file(db: Session, file_id: int, current_user: User) -> None:
+def delete_media_file(db: Session, file_id: int, current_user: User, force: bool = False) -> None:
     """
-    Delete a media file and all associated data.
+    Delete a media file and all associated data with safety checks.
     
     Args:
         db: Database session
         file_id: File ID
         current_user: Current user
+        force: Force deletion even if processing is active (admin only)
     """
+    from app.utils.task_utils import is_file_safe_to_delete, cancel_active_task
+    
     is_admin = current_user.role == "admin"
     db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
     
+    # Check if file is safe to delete
+    is_safe, reason = is_file_safe_to_delete(db, file_id)
+    
+    if not is_safe and not force:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "FILE_NOT_SAFE_TO_DELETE",
+                "message": f"Cannot delete file: {reason}",
+                "file_id": file_id,
+                "active_task_id": db_file.active_task_id,
+                "status": db_file.status,
+                "options": {
+                    "cancel_and_delete": is_admin,
+                    "wait_for_completion": True,
+                    "force_delete": is_admin and db_file.force_delete_eligible
+                }
+            }
+        )
+    
+    # If force deletion and file has active task, cancel it first
+    if force and db_file.active_task_id:
+        logger.info(f"Force deleting file {file_id}, cancelling active task {db_file.active_task_id}")
+        cancel_active_task(db, file_id)
+        # Refresh the file object
+        db.refresh(db_file)
+    
     # Delete from MinIO (if exists)
+    storage_deleted = False
     try:
         delete_file(db_file.storage_path)
+        storage_deleted = True
+        logger.info(f"Successfully deleted file from storage: {db_file.storage_path}")
     except Exception as e:
         logger.warning(f"Error deleting file from storage: {e}")
-        # Continue with DB deletion even if storage deletion fails
+        # Don't fail the entire operation if storage deletion fails
     
-    # Delete from database (cascade will handle related records)
-    db.delete(db_file)
-    db.commit()
+    try:
+        # Delete from database (cascade will handle related records)
+        db.delete(db_file)
+        db.commit()
+        logger.info(f"Successfully deleted file {file_id} from database")
+    except Exception as e:
+        logger.error(f"Failed to delete file {file_id} from database: {e}")
+        db.rollback()
+        
+        # If we deleted from storage but DB deletion failed, that's a problem
+        if storage_deleted:
+            logger.error(f"File {file_id} deleted from storage but not from database - orphaned!")
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete file from database: {str(e)}"
+        )
 
 
 def update_single_transcript_segment(db: Session, file_id: int, segment_id: int, 
