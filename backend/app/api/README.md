@@ -23,6 +23,7 @@ api/
 │   ├── files/             # Modular file management
 │   │   ├── upload.py      # File upload processing
 │   │   ├── crud.py        # Basic CRUD operations
+│   │   ├── management.py  # Enhanced file management and recovery
 │   │   ├── filtering.py   # Advanced filtering logic
 │   │   └── streaming.py   # Video/audio streaming
 │   ├── admin.py           # Admin operations
@@ -119,6 +120,58 @@ GET    /files/{id}/content  # Download file content
 GET    /files/{id}/video    # Stream video (no auth)
 GET    /files/{id}/stream-url # Get streaming URL
 PUT    /files/{id}/transcript # Update transcript
+```
+
+### Enhanced File Management (`files/management.py`)
+New endpoints for file recovery, error handling, and system maintenance:
+
+```
+GET    /files/{id}/status-detail    # Detailed file status with recovery options
+POST   /files/{id}/cancel           # Cancel active file processing
+POST   /files/{id}/retry            # Retry failed file processing
+POST   /files/{id}/recover          # Attempt to recover stuck file
+DELETE /files/{id}/force            # Force delete file (admin only)
+GET    /files/management/stuck      # Get list of stuck files
+POST   /files/management/bulk-action # Perform bulk operations (delete, retry, cancel, recover)
+POST   /files/management/cleanup-orphaned # Clean up orphaned files (admin only)
+```
+
+**Enhanced File Safety Features:**
+- **Pre-deletion Safety Checks**: Prevents deletion of files with active processing
+- **Force Deletion**: Admin-only override for stuck/orphaned files
+- **Intelligent Retry Logic**: Retry with attempt limits and state cleanup
+- **Bulk Operations**: Process multiple files efficiently
+- **Auto-Recovery**: Detect and recover stuck files automatically
+- **Detailed Status Information**: Comprehensive file state with actionable recommendations
+
+**New File Status States:**
+- `PENDING` → File uploaded, waiting for processing
+- `PROCESSING` → AI transcription/diarization in progress  
+- `COMPLETED` → Successfully processed with transcript available
+- `ERROR` → Processing failed, can be retried
+- `CANCELLING` → User requested cancellation (NEW)
+- `CANCELLED` → Successfully cancelled (NEW)
+- `ORPHANED` → Task lost/stuck, needs recovery (NEW)
+
+**Status Detail Response Example:**
+```json
+{
+  "file_id": 123,
+  "filename": "interview.mp3",
+  "status": "error",
+  "can_delete": true,
+  "can_retry": true,
+  "can_cancel": false,
+  "is_stuck": false,
+  "retry_count": 1,
+  "max_retries": 3,
+  "last_error_message": "No speech detected in audio file",
+  "actions_available": ["delete", "retry"],
+  "recommendations": [
+    "This file can be retried for processing.",
+    "Check if the file contains clear speech content."
+  ]
+}
 ```
 
 ### Users (`users.py`)

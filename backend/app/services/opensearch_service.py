@@ -460,6 +460,9 @@ def find_matching_speaker(embedding: List[float], user_id: int,
         return None
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         # Build filter conditions
         filters = [{"term": {"user_id": user_id}}]
         
@@ -541,6 +544,9 @@ def batch_find_matching_speakers(embeddings: List[Dict[str, Any]], user_id: int,
         return []
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         # Use multi-search for efficient batch processing
         msearch_body = []
         
@@ -614,6 +620,9 @@ def find_speaker_across_media(speaker_id: int, user_id: int) -> List[Dict[str, A
         return []
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         # First, get the speaker's name from the speaker index
         speaker_doc = opensearch_client.get(
             index=settings.OPENSEARCH_SPEAKER_INDEX,
@@ -796,6 +805,9 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> List[Dict[st
         return []
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         query = {
             "query": {
                 "bool": {
@@ -890,6 +902,9 @@ def cleanup_orphaned_embeddings(user_id: int) -> int:
         return 0
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         # Find all embeddings for user
         query = {
             "query": {"term": {"user_id": user_id}},
@@ -929,6 +944,9 @@ def get_speaker_embedding(speaker_id: int) -> Optional[List[float]]:
         return None
     
     try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+        
         response = opensearch_client.get(
             index=settings.OPENSEARCH_SPEAKER_INDEX,
             id=str(speaker_id)

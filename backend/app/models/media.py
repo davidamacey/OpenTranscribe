@@ -11,6 +11,9 @@ class FileStatus(str, enum.Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     ERROR = "error"
+    CANCELLING = "cancelling"  # User requested cancellation
+    CANCELLED = "cancelled"    # Successfully cancelled
+    ORPHANED = "orphaned"      # Task lost/stuck, needs recovery
 
 
 class MediaFile(Base):
@@ -63,6 +66,18 @@ class MediaFile(Base):
     title = Column(String, nullable=True)  # Content title from metadata
     author = Column(String, nullable=True)  # Content author/artist
     description = Column(Text, nullable=True)  # Content description
+    
+    # Task tracking and error handling fields
+    active_task_id = Column(String, nullable=True, index=True)  # Current Celery task ID
+    task_started_at = Column(DateTime(timezone=True), nullable=True)  # When current task started
+    task_last_update = Column(DateTime(timezone=True), nullable=True)  # Last task progress update
+    cancellation_requested = Column(Boolean, default=False)  # User requested cancellation
+    retry_count = Column(Integer, default=0)  # Number of retry attempts
+    max_retries = Column(Integer, default=3)  # Maximum retry attempts allowed
+    last_error_message = Column(Text, nullable=True)  # Last error encountered
+    force_delete_eligible = Column(Boolean, default=False)  # Can be force deleted if orphaned
+    recovery_attempts = Column(Integer, default=0)  # Number of recovery attempts
+    last_recovery_attempt = Column(DateTime(timezone=True), nullable=True)  # Last recovery attempt time
     
     # Relationships
     user = relationship("User", back_populates="media_files")

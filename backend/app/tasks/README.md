@@ -37,6 +37,7 @@ tasks/
 │   ├── storage.py             # Database storage utilities
 │   └── notifications.py       # WebSocket notifications
 ├── analytics.py               # Analytics and insights processing
+├── cleanup.py                 # File recovery and cleanup tasks
 ├── summarization.py           # Text summarization tasks
 └── transcription.py           # Main transcription task router
 ```
@@ -255,6 +256,106 @@ def summarize_transcript_task(file_id: int):
 - **Configurable Length**: Adjustable summary length (sentences/words)
 - **Quality Filtering**: Stop word removal and frequency analysis
 - **Fallback Handling**: Graceful degradation when processing fails
+
+## 🧹 File Cleanup Tasks (`cleanup.py`)
+
+### Purpose
+Automated background tasks for system maintenance, file recovery, and health monitoring:
+
+```python
+@shared_task(bind=True, name="cleanup.run_periodic_cleanup")
+def run_periodic_cleanup(self):
+    """
+    Periodic task to clean up stuck files and maintain system health.
+    
+    This task should be run regularly (e.g., every 30 minutes) to:
+    - Detect and recover stuck files
+    - Mark orphaned files for cleanup
+    - Generate system health reports
+    """
+
+@shared_task(bind=True, name="cleanup.deep_cleanup")
+def run_deep_cleanup(self, dry_run: bool = False):
+    """
+    Deep cleanup task for removing orphaned files (admin-triggered).
+    
+    Args:
+        dry_run: If True, only preview what would be cleaned up
+    """
+
+@shared_task(bind=True, name="cleanup.health_check")
+def system_health_check(self):
+    """
+    Generate a system health report with file processing metrics.
+    """
+
+@shared_task(bind=True, name="cleanup.emergency_recovery")
+def emergency_file_recovery(self, file_ids: list):
+    """
+    Emergency recovery task for specific files (admin-triggered).
+    
+    Args:
+        file_ids: List of file IDs to attempt recovery on
+    """
+```
+
+### Auto-Recovery Features
+The cleanup tasks provide comprehensive file recovery capabilities:
+
+**Stuck File Detection:**
+- Files processing longer than threshold (default: 2 hours)
+- Files pending longer than threshold without starting
+- Files with failed tasks that can be retried
+- Files marked as orphaned needing recovery
+
+**Recovery Actions:**
+- Cancel stuck/failed Celery tasks
+- Reset file status and retry counters
+- Clear partial processing artifacts
+- Restart transcription with fresh task
+- Update recovery attempt tracking
+
+**System Health Monitoring:**
+- Calculate error rates and processing statistics
+- Generate actionable health recommendations
+- Monitor worker capacity and queue health
+- Track cleanup success/failure rates
+
+### Periodic Cleanup Configuration
+```python
+# Celery Beat configuration for automatic scheduling
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    'run-periodic-cleanup': {
+        'task': 'cleanup.run_periodic_cleanup',
+        'schedule': crontab(minute='*/30'),  # Every 30 minutes
+    },
+    'system-health-check': {
+        'task': 'cleanup.health_check',
+        'schedule': crontab(minute=0, hour='*/6'),  # Every 6 hours
+    },
+}
+```
+
+### Integration with Enhanced File Safety
+The cleanup tasks work with the enhanced file management system:
+
+**Enhanced Status States:**
+- `PENDING` → `PROCESSING` → `COMPLETED`/`ERROR`
+- New states: `CANCELLING`, `CANCELLED`, `ORPHANED`
+- Task tracking with `active_task_id` and timing metadata
+
+**Safe Operations:**
+- Pre-deletion safety checks for active processing
+- Force deletion options for admin users
+- Retry limits and intelligent recovery logic
+- Transaction safety with proper rollback handling
+
+**Real-time Monitoring:**
+- WebSocket notifications for recovery operations
+- Progress tracking for bulk operations
+- User-friendly error messages and recommendations
 
 ## 🔧 Task Configuration
 

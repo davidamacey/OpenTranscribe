@@ -28,6 +28,7 @@ API Endpoints → Service Layer → Data Layer (Models/External APIs)
 ```
 services/
 ├── file_service.py           # File management operations
+├── file_cleanup_service.py   # File recovery and cleanup operations
 ├── transcription_service.py  # Transcription workflow management
 ├── minio_service.py          # Object storage operations
 └── opensearch_service.py     # Search and indexing operations
@@ -216,6 +217,71 @@ def get_file_stream(object_name: str, range_header: str = None):
 - **Presigned URLs**: Secure temporary file access
 - **Error Handling**: Comprehensive MinIO error handling
 - **Metadata Management**: File metadata and content-type handling
+
+## 🧹 File Cleanup Service (`file_cleanup_service.py`)
+
+### Purpose
+Provides automated file recovery, cleanup operations, and system health monitoring for files stuck in processing or error states.
+
+### Key Operations
+```python
+class FileCleanupService:
+    def run_cleanup_cycle(self) -> Dict[str, Any]:
+        """Run a complete cleanup cycle detecting and recovering stuck files."""
+        
+    def force_cleanup_orphaned_files(self, db: Session, dry_run: bool = False) -> Dict[str, Any]:
+        """Force cleanup of orphaned files (admin operation)."""
+        
+    def get_cleanup_statistics(self, db: Session) -> Dict[str, Any]:
+        """Get current cleanup statistics and system health metrics."""
+```
+
+### Auto-Recovery Features
+```python
+def _attempt_file_recovery(self, db: Session, file_id: int) -> bool:
+    """Attempt to recover a single stuck file with intelligent retry logic."""
+    # Check recovery attempt limits
+    if media_file.recovery_attempts >= self.max_recovery_attempts:
+        # Mark as permanently orphaned and eligible for force deletion
+        media_file.status = FileStatus.ORPHANED
+        media_file.force_delete_eligible = True
+        return False
+    
+    # Use enhanced recovery logic from task_utils
+    return recover_stuck_file(db, file_id)
+```
+
+### Health Monitoring
+```python
+def _generate_health_recommendations(self, db: Session) -> List[str]:
+    """Generate system health recommendations based on file states."""
+    recommendations = []
+    
+    # Calculate error rates and health metrics
+    error_rate = status_counts.get('error', 0) / max(sum(status_counts.values()), 1)
+    if error_rate > 0.1:  # More than 10% error rate
+        recommendations.append(
+            f"High error rate detected: {error_rate:.1%} of files are in error state. "
+            "Consider investigating processing pipeline health."
+        )
+    
+    return recommendations
+```
+
+### Features
+- **Automatic Stuck File Detection**: Identifies files stuck in processing or pending states
+- **Intelligent Recovery**: Multi-step recovery process with retry limits
+- **Health Monitoring**: System health metrics and recommendations
+- **Force Cleanup**: Admin tools for removing orphaned files
+- **Statistics Tracking**: Comprehensive cleanup statistics and performance metrics
+- **Scheduled Operations**: Designed for periodic background execution
+
+### Integration with Task System
+The cleanup service works closely with the new cleanup tasks and enhanced task utilities:
+- Uses `check_for_stuck_files()` from `task_utils.py` for detection
+- Calls `recover_stuck_file()` for automated recovery
+- Integrates with `cancel_active_task()` for safe task cancellation
+- Provides statistics for monitoring and alerting systems
 
 ## 🔍 OpenSearch Service (`opensearch_service.py`)
 

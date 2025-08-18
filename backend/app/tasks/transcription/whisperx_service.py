@@ -97,13 +97,43 @@ class WhisperXService:
         
         # Load and transcribe audio
         logger.info(f"Transcribing audio file: {audio_file_path}")
-        audio = whisperx.load_audio(audio_file_path)
+        try:
+            audio = whisperx.load_audio(audio_file_path)
+            
+            # Check if audio was loaded successfully and has content
+            if audio is None or len(audio) == 0:
+                raise ValueError("Audio file appears to be empty or corrupted")
+                
+            # Check for audio duration (very short files might be corrupted)
+            # Use simple numpy-based duration calculation (no librosa needed)
+            import numpy as np
+            if isinstance(audio, np.ndarray):
+                # Assume 16kHz sample rate (WhisperX default)
+                duration = len(audio) / 16000
+                if duration < 0.1:  # Less than 100ms
+                    raise ValueError("Audio file is too short to contain meaningful content")
+                
+        except Exception as e:
+            logger.error(f"Failed to load audio from {audio_file_path}: {str(e)}")
+            if "No module named 'librosa'" in str(e):
+                # Don't expose internal dependency issues to users
+                raise ValueError("Audio file could not be processed. The file may be corrupted or in an unsupported format.")
+            raise ValueError(f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {str(e)}")
         
-        transcription_result = model.transcribe(
-            audio,
-            batch_size=self.batch_size,
-            task="translate"  # Always translate to English
-        )
+        try:
+            transcription_result = model.transcribe(
+                audio,
+                batch_size=self.batch_size,
+                task="translate"  # Always translate to English
+            )
+            
+            # Validate transcription result
+            if not transcription_result or "segments" not in transcription_result:
+                raise ValueError("Transcription failed to produce valid output")
+                
+        except Exception as e:
+            logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
+            raise ValueError(f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}")
         
         logger.info(f"Initial transcription completed with {len(transcription_result['segments'])} segments")
         

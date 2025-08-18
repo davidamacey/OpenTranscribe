@@ -9,6 +9,9 @@ class FileStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     ERROR = "error"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+    ORPHANED = "orphaned"
 
 
 class TaskStatus(str, Enum):
