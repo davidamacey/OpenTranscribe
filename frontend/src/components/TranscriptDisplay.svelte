@@ -4,9 +4,11 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import ReprocessButton from './ReprocessButton.svelte';
   import ScrollbarIndicator from './ScrollbarIndicator.svelte';
+  import TranscriptSearch from './TranscriptSearch.svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { downloadStore } from '$stores/downloads';
   import { toastStore } from '$stores/toast';
+  import { highlightTextWithMatches, highlightSpeakerName, type SearchMatch } from '$lib/utils/searchHighlight';
   
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -34,6 +36,12 @@
 
   // Reactive transcript segments for scrollbar calculations
   $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
+
+  // Search functionality state
+  let searchMatches: SearchMatch[] = [];
+  let currentMatchIndex = -1;
+  let totalMatches = 0;
+  let searchQuery = '';
 
   // Handle scrollbar indicator click to seek to playhead
   function handleSeekToPlayhead(event: CustomEvent) {
@@ -115,6 +123,27 @@
 
   function handleReprocess(event: any) {
     dispatch('reprocess', event.detail);
+  }
+
+  // Search event handlers
+  function handleSearchResults(event: CustomEvent) {
+    const { matches, currentMatch, totalMatches: total, query } = event.detail;
+    searchMatches = matches;
+    currentMatchIndex = currentMatch - 1; // Convert to 0-based index
+    totalMatches = total;
+    searchQuery = query;
+  }
+
+  function handleNavigateToMatch(event: CustomEvent) {
+    const { match, segment, segmentIndex, autoSeek } = event.detail;
+    
+    // Only seek if explicitly requested (e.g., user clicks on a segment)
+    // Don't auto-seek when just navigating through search results
+    if (autoSeek && match.type === 'text') {
+      handleSegmentClick(segment.start_time);
+    }
+    
+    // The scrolling and highlighting is handled by the search component
   }
 
   async function downloadFile() {
@@ -257,6 +286,15 @@
         <p class="error-message small">{transcriptError}</p>
       {/if}
     {:else}
+      <!-- Search component -->
+      <TranscriptSearch 
+        {transcriptSegments}
+        {speakerList}
+        disabled={!file?.transcript_segments?.length}
+        on:searchResults={handleSearchResults}
+        on:navigateToMatch={handleNavigateToMatch}
+      />
+      
       <div bind:this={transcriptContainer} class="transcript-display-container">
         <div class="transcript-display">
         {#each file.transcript_segments as segment}
@@ -303,9 +341,23 @@
                     class="segment-speaker" 
                     style="background-color: {getSpeakerColor(getSpeakerNameForColor(segment)).bg}; border-color: {getSpeakerColor(getSpeakerNameForColor(segment)).border}; --speaker-light: {getSpeakerColor(getSpeakerNameForColor(segment)).textLight}; --speaker-dark: {getSpeakerColor(getSpeakerNameForColor(segment)).textDark};"
                   >
-                    {segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}
+                    {@html highlightSpeakerName(
+                      segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown',
+                      searchQuery,
+                      file.transcript_segments.indexOf(segment),
+                      searchMatches,
+                      currentMatchIndex
+                    )}
                   </div>
-                  <div class="segment-text">{segment.text}</div>
+                  <div class="segment-text">
+                    {@html highlightTextWithMatches(
+                      segment.text,
+                      searchQuery,
+                      file.transcript_segments.indexOf(segment),
+                      searchMatches,
+                      currentMatchIndex
+                    )}
+                  </div>
                 </button>
                 <button 
                   class="edit-button" 
