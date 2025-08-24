@@ -135,7 +135,6 @@ class Settings(BaseSettings):
     # Storage paths
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/mnt/nvm/repos/transcribe-app/data"))
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
-    MODEL_CACHE_DIR: Path = DATA_DIR / "model_cache"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     
     # Initialization (CORS and directories)
@@ -143,7 +142,6 @@ class Settings(BaseSettings):
         super().__init__(**data)
         # Ensure directories exist
         self.UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
-        self.MODEL_CACHE_DIR.mkdir(exist_ok=True, parents=True)
     
     class Config:
         env_file = ".env"

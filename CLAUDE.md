@@ -144,6 +144,40 @@ For production deployments, migrations will be handled differently.
 6. Database storage and OpenSearch indexing
 7. WebSocket notification to frontend
 
+## Model Caching System
+
+OpenTranscribe uses a simple volume-based model caching system that automatically persists AI models between container restarts.
+
+### Configuration
+- Set `MODEL_CACHE_DIR` in `.env` to specify cache location (default: `./models`)
+- Models are automatically downloaded on first use
+- All models persist across container restarts and rebuilds
+
+### Directory Structure
+```
+${MODEL_CACHE_DIR}/
+├── huggingface/          # HuggingFace models cache
+│   ├── hub/             # WhisperX models (~1.5GB)
+│   └── transformers/    # PyAnnote transformer cache
+└── torch/               # PyTorch models cache
+    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
+    └── pyannote/        # PyAnnote speaker models (~500MB)
+```
+
+### Docker Volume Mappings
+The system uses simple volume mappings to cache models to their natural locations:
+```yaml
+volumes:
+  - ${MODEL_CACHE_DIR}/huggingface:/root/.cache/huggingface
+  - ${MODEL_CACHE_DIR}/torch:/root/.cache/torch
+```
+
+### Key Benefits
+- **No code complexity**: Models use their natural cache locations
+- **Persistent storage**: Models saved between container restarts
+- **User configurable**: Simple `.env` variable controls cache location
+- **No re-downloads**: Models cached after first download (2.5GB total)
+
 ## Common Tasks
 
 ### Adding New API Endpoints

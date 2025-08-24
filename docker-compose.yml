@@ -81,6 +81,8 @@ services:
     restart: always
     volumes:
       - ./backend:/app
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
     ports:
       - "5174:8080"
     healthcheck:
@@ -144,6 +146,8 @@ services:
               device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
       - ./backend:/app
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
     depends_on:
       - postgres
       - redis
@@ -235,6 +239,8 @@ services:
       # No authentication required as per user requirements
     volumes:
       - ./backend:/app
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
 
 volumes:
   postgres_data:

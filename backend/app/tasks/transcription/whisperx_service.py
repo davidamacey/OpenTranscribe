@@ -84,7 +84,6 @@ class WhisperXService:
             "whisper_arch": self.model_name,
             "device": self.device,
             "compute_type": self.compute_type,
-            "download_root": self.whisperx_model_directory,
             "language": "en"
         }
         

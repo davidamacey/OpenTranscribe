@@ -343,7 +343,47 @@ BATCH_SIZE=16                       # Reduce if GPU memory limited
 # Speaker detection
 MIN_SPEAKERS=1                      # Minimum speakers to detect
 MAX_SPEAKERS=10                     # Maximum speakers to detect
+
+# Model caching (recommended)
+MODEL_CACHE_DIR=./models            # Directory to store downloaded AI models
 ```
+
+#### **🗂️ Model Caching**
+
+OpenTranscribe automatically downloads and caches AI models for optimal performance. Models are saved locally and reused across container restarts.
+
+**Default Setup:**
+- All models are cached to `./models/` directory in your project folder
+- Models persist between Docker container restarts
+- No re-downloading required after initial setup
+
+**Directory Structure:**
+```
+./models/
+├── huggingface/          # PyAnnote + WhisperX models
+│   ├── hub/             # WhisperX transcription models (~1.5GB)
+│   └── transformers/    # PyAnnote transformer models
+└── torch/               # PyTorch cache
+    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)  
+    └── pyannote/        # PyAnnote diarization models (~500MB)
+```
+
+**Custom Cache Location:**
+```bash
+# Set custom directory in your .env file
+MODEL_CACHE_DIR=/path/to/your/models
+
+# Examples:
+MODEL_CACHE_DIR=~/ai-models          # Home directory
+MODEL_CACHE_DIR=/mnt/storage/models  # Network storage
+MODEL_CACHE_DIR=./cache              # Project subdirectory
+```
+
+**Storage Requirements:**
+- **WhisperX Models**: ~1.5GB (depends on model size)
+- **PyAnnote Models**: ~500MB (diarization + embedding)
+- **Alignment Model**: ~360MB (Wav2Vec2)
+- **Total**: ~2.5GB for complete setup```
 
 ### **🔑 HuggingFace Token Setup**
 
