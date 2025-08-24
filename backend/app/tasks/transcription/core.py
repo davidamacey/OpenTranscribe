@@ -24,6 +24,7 @@ from .notifications import (
     send_processing_notification, send_completion_notification, send_error_notification,
     send_progress_notification
 )
+from .waveform_generator import WaveformGenerator
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService
 
@@ -91,6 +92,26 @@ def transcribe_audio_task(self, file_id: int):
                             db.commit()
             except Exception as e:
                 logger.warning(f"Error extracting media metadata: {e}")
+            
+            # Step 5.5: Generate waveform data
+            with session_scope() as db:
+                update_task_status(db, task_id, "in_progress", progress=0.25)
+            
+            send_progress_notification(user_id, file_id, 0.25, "Generating waveform visualization")
+            try:
+                waveform_generator = WaveformGenerator()
+                waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
+                
+                if waveform_data:
+                    with session_scope() as db:
+                        media_file = get_refreshed_object(db, MediaFile, file_id)
+                        if media_file:
+                            media_file.waveform_data = waveform_data
+                            db.commit()
+                            logger.info(f"Waveform data cached for file {file_id}")
+            except Exception as e:
+                logger.warning(f"Error generating waveform data: {e}")
+                # Continue processing even if waveform generation fails
             
             # Step 6: Prepare audio for transcription
             with session_scope() as db:

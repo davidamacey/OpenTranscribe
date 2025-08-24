@@ -1,0 +1,484 @@
+<script lang="ts">
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import axiosInstance from '$lib/axios';
+
+  // Props
+  export let fileId: string | number;
+  export let duration: number = 0;
+  export let currentTime: number = 0;
+  export let height: number = 80;
+
+  // State
+  let canvas: HTMLCanvasElement;
+  let container: HTMLDivElement;
+  let ctx: CanvasRenderingContext2D;
+  let waveformData: number[] = [];
+  let isLoadingWaveform = false;
+  let waveformError: string = '';
+  let isDragging = false;
+  let animationFrameId: number | null = null;
+
+  const dispatch = createEventDispatcher();
+
+  // Waveform colors - using CSS custom properties for theming
+  const getWaveformColors = () => {
+    const computedStyle = getComputedStyle(document.documentElement);
+    return {
+      background: computedStyle.getPropertyValue('--surface-color').trim() || '#f8fafc',
+      waveform: computedStyle.getPropertyValue('--text-secondary').trim() || '#64748b',
+      progress: computedStyle.getPropertyValue('--primary-color').trim() || '#3b82f6',
+      playhead: computedStyle.getPropertyValue('--primary-color').trim() || '#3b82f6'
+    };
+  };
+
+  /**
+   * Determine optimal waveform resolution based on device and screen size
+   */
+  function getOptimalResolution() {
+    const containerWidth = container?.offsetWidth || 800;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const screenWidth = window.innerWidth;
+    
+    // Check for low bandwidth connections
+    const connection = (navigator as any).connection;
+    const isLowBandwidth = connection && (
+      connection.effectiveType === 'slow-2g' || 
+      connection.effectiveType === '2g' ||
+      connection.downlink < 1.5  // Less than 1.5 Mbps
+    );
+    
+    const isMobile = screenWidth < 768;
+    const isTablet = screenWidth >= 768 && screenWidth < 1024;
+    const isHighDPI = devicePixelRatio >= 2;
+    const isLargeContainer = containerWidth >= 1200;
+    
+    // Prioritize bandwidth and device constraints
+    if (isLowBandwidth) {
+      return 500;  // Always use smallest for poor connections
+    }
+    
+    // Choose resolution based on device and screen characteristics
+    if (isMobile || containerWidth < 600) {
+      return 500;  // Small: mobile devices, small containers
+    } else if (isTablet || (!isHighDPI && containerWidth < 1200)) {
+      return 1000; // Medium: tablets, standard desktop displays
+    } else if (isHighDPI || isLargeContainer) {
+      return 2000; // Large: high-DPI displays, large screens, detailed view
+    } else {
+      return 1000; // Default to medium for standard cases
+    }
+  }
+
+  /**
+   * Load waveform data from the backend API
+   */
+  async function loadWaveformData() {
+    if (!fileId || isLoadingWaveform) return;
+
+    try {
+      isLoadingWaveform = true;
+      waveformError = '';
+
+      // Choose optimal resolution for current device/screen
+      const targetSamples = getOptimalResolution();
+
+      const response = await axiosInstance.get(`/api/files/${fileId}/waveform`, {
+        params: { samples: targetSamples }
+      });
+
+      if (response.data && Array.isArray(response.data.waveform) && response.data.waveform.length > 0) {
+        waveformData = response.data.waveform;
+        console.log('WaveformPlayer: Loaded waveform data', {
+          fileId,
+          samples: targetSamples,
+          dataLength: waveformData.length,
+          firstFewValues: waveformData.slice(0, 5),
+          lastFewValues: waveformData.slice(-5),
+          maxValue: Math.max(...waveformData),
+          duration: response.data.duration,
+          expectedDuration: response.data.expected_duration,
+          extractedSamples: response.data.extracted_samples,
+          secondsPerPoint: response.data.seconds_per_point
+        });
+        
+        // Use the actual extracted duration from waveform if available
+        // This ensures waveform aligns with actual audio content
+        if (response.data.duration) {
+          // Only update if significantly different or not set
+          if (!duration || Math.abs(duration - response.data.duration) > 0.1) {
+            console.log(`WaveformPlayer: Updating duration from ${duration} to ${response.data.duration}`);
+            duration = response.data.duration;
+          }
+        }
+        
+        // Ensure canvas and context are ready
+        if (canvas && container) {
+          if (!ctx) {
+            ctx = canvas.getContext('2d')!;
+            handleResize();
+          }
+          drawWaveform();
+        }
+      } else {
+        throw new Error('No waveform data available');
+      }
+    } catch (error: any) {
+      console.error('Error loading waveform:', error);
+      waveformError = error.response?.data?.detail || 'Failed to load waveform visualization';
+    } finally {
+      isLoadingWaveform = false;
+    }
+  }
+
+  /**
+   * Draw the waveform visualization
+   */
+  function drawWaveform() {
+    if (!ctx || !canvas || waveformData.length === 0) {
+      return;
+    }
+
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    
+    if (canvasWidth === 0 || canvasHeight === 0) {
+      return;
+    }
+    
+    const colors = getWaveformColors();
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+    // Draw background
+    ctx.fillStyle = colors.background;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Calculate dimensions to fill entire width
+    const centerY = canvasHeight / 2;
+    const maxBarHeight = canvasHeight * 0.8;
+    const barWidth = canvasWidth / waveformData.length; // Use exact division, no floor
+    const actualBarWidth = Math.max(0.5, barWidth * 0.9); // Ensure bars are visible
+    const gapWidth = barWidth * 0.1; // Small gap between bars
+
+    // Calculate progress position - ensure it's within bounds
+    const progressX = duration > 0 ? Math.min((currentTime / duration) * canvasWidth, canvasWidth) : 0;
+
+    // Draw waveform bars
+    waveformData.forEach((sample, index) => {
+      const x = index * barWidth;
+      
+      // Ensure sample value is valid
+      const normalizedSample = Math.min(255, Math.max(0, sample));
+      const barHeight = Math.max(2, (normalizedSample / 255) * maxBarHeight);
+      const y = centerY - (barHeight / 2);
+
+      // Use different colors for played vs unplayed portions
+      // Check the center of the bar for more accurate coloring
+      const barCenterX = x + (barWidth / 2);
+      const isPlayed = barCenterX < progressX;
+      ctx.fillStyle = isPlayed ? colors.progress : colors.waveform;
+      
+      // Draw the bar - use exact positioning to fill width
+      ctx.fillRect(x + gapWidth/2, y, actualBarWidth, barHeight);
+    });
+
+    // Draw playhead indicator
+    if (progressX > 0 && progressX <= canvasWidth) {
+      ctx.strokeStyle = colors.playhead;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(progressX, 0);
+      ctx.lineTo(progressX, canvasHeight);
+      ctx.stroke();
+    }
+  }
+
+  /**
+   * Handle canvas resize
+   */
+  function handleResize() {
+    if (!container || !canvas) return;
+
+    const containerWidth = container.offsetWidth;
+
+    // Set canvas size to match container exactly
+    canvas.width = containerWidth;
+    canvas.height = height;
+
+    // Set display size to match container exactly
+    canvas.style.width = `${containerWidth}px`;
+    canvas.style.height = `${height}px`;
+
+    // Get fresh context
+    ctx = canvas.getContext('2d')!;
+
+    drawWaveform();
+  }
+
+  /**
+   * Handle click/seek on waveform
+   */
+  function handleInteraction(event: MouseEvent) {
+    if (!container || duration <= 0) return;
+
+    const rect = container.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const seekRatio = Math.min(Math.max(clickX / rect.width, 0), 1);
+    const seekTime = seekRatio * duration;
+
+    dispatch('seek', { time: seekTime });
+  }
+
+  /**
+   * Handle mouse down for dragging
+   */
+  function handleMouseDown(event: MouseEvent) {
+    isDragging = true;
+    handleInteraction(event);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (isDragging) {
+        handleInteraction(moveEvent);
+      }
+    };
+
+    const handleMouseUp = () => {
+      isDragging = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }
+
+  /**
+   * Handle keyboard navigation
+   */
+  function handleKeyDown(event: KeyboardEvent) {
+    if (duration <= 0) return;
+
+    let seekTime = currentTime;
+    const seekStep = duration * 0.01; // 1% of duration
+
+    switch (event.code) {
+      case 'ArrowLeft':
+        seekTime = Math.max(0, currentTime - seekStep);
+        break;
+      case 'ArrowRight':
+        seekTime = Math.min(duration, currentTime + seekStep);
+        break;
+      case 'Home':
+        seekTime = 0;
+        break;
+      case 'End':
+        seekTime = duration;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    dispatch('seek', { time: seekTime });
+  }
+
+  // Reactive updates - redraw when waveform data or playhead position changes
+  $: if (canvas && ctx && waveformData.length > 0) {
+    drawWaveform();
+  }
+  
+  // Redraw when currentTime changes (playhead movement)
+  $: if (canvas && ctx && waveformData.length > 0 && currentTime !== undefined) {
+    drawWaveform();
+  }
+
+  // Mount and cleanup
+  onMount(() => {
+    // Use setTimeout to ensure DOM is fully rendered
+    setTimeout(() => {
+      if (canvas && container) {
+        handleResize();
+      }
+      
+      // Load waveform data
+      loadWaveformData();
+    }, 100);
+      
+    // Cleanup function
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  });
+
+  onDestroy(() => {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+    }
+  });
+</script>
+
+<div class="waveform-container" bind:this={container}>
+  <!-- Always render canvas so binding works -->
+  <canvas
+    bind:this={canvas}
+    class="waveform-canvas"
+    class:hidden={isLoadingWaveform || waveformError || waveformData.length === 0}
+    on:click={handleInteraction}
+    on:mousedown={handleMouseDown}
+    on:keydown={handleKeyDown}
+    tabindex="0"
+    role="slider"
+    aria-label="Audio waveform scrubber"
+    aria-valuenow={currentTime}
+    aria-valuemin="0"
+    aria-valuemax={duration}
+    aria-valuetext={`${Math.floor(currentTime / 60)}:${(currentTime % 60).toFixed(0).padStart(2, '0')}`}
+  />
+  
+  <!-- Overlay states -->
+  {#if isLoadingWaveform}
+    <div class="waveform-overlay waveform-loading">
+      <div class="loading-spinner"></div>
+      <span>Loading waveform...</span>
+    </div>
+  {:else if waveformError}
+    <div class="waveform-overlay waveform-error">
+      <span>{waveformError}</span>
+      <button 
+        class="retry-button" 
+        on:click={loadWaveformData}
+        type="button"
+      >
+        Retry
+      </button>
+    </div>
+  {:else if waveformData.length === 0}
+    <div class="waveform-overlay waveform-placeholder">
+      <span>Waveform visualization not available</span>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .waveform-container {
+    position: relative;
+    width: 100%;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .waveform-canvas {
+    width: 100%;
+    display: block;
+    cursor: crosshair;
+  }
+  
+  .waveform-canvas.hidden {
+    visibility: hidden;
+  }
+
+  .waveform-canvas:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .waveform-canvas:hover {
+    background-color: var(--background-color);
+  }
+
+  .waveform-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    gap: 0.5rem;
+    background-color: var(--surface-color);
+  }
+
+  .waveform-loading,
+  .waveform-error,
+  .waveform-placeholder {
+    /* Styles handled by waveform-overlay */
+  }
+
+  .waveform-error {
+    flex-direction: column;
+    color: var(--error-color);
+  }
+
+  .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .retry-button {
+    padding: 0.25rem 0.75rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background-color 0.2s ease;
+  }
+
+  .retry-button:hover {
+    background-color: var(--primary-hover);
+  }
+
+  .retry-button:active {
+    transform: translateY(1px);
+  }
+
+  @keyframes spin {
+    to { 
+      transform: rotate(360deg); 
+    }
+  }
+
+  /* Dark mode support using theme attribute */
+  :global([data-theme='dark']) .waveform-container {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+  }
+
+  :global([data-theme='dark']) .waveform-canvas:hover {
+    background-color: var(--background-color);
+  }
+
+  :global([data-theme='dark']) .loading-spinner {
+    border-color: var(--border-color);
+    border-top-color: var(--primary-color);
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .waveform-container {
+      border-radius: 4px;
+    }
+    
+    .waveform-loading,
+    .waveform-error,
+    .waveform-placeholder {
+      font-size: 13px;
+      height: 60px;
+    }
+  }
+</style>

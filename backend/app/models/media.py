@@ -40,6 +40,9 @@ class MediaFile(Base):
     metadata_raw = Column(JSON, nullable=True)  # Complete raw metadata from extraction
     metadata_important = Column(JSON, nullable=True)  # Important metadata for display
     
+    # Waveform visualization data
+    waveform_data = Column(JSON, nullable=True)  # Cached waveform data for visualization
+    
     # Media technical specs
     media_format = Column(String, nullable=True)  # Container format (MP4, MOV, etc.)
     codec = Column(String, nullable=True)  # Codec used (H.264, AAC, etc.)

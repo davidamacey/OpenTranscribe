@@ -9,6 +9,7 @@
   
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
+  import WaveformPlayer from '$components/WaveformPlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
   import AnalyticsSection from '$components/AnalyticsSection.svelte';
   import TranscriptDisplay from '$components/TranscriptDisplay.svelte';
@@ -1305,6 +1306,11 @@
     fetchFileDetails();
   }
 
+  function handleWaveformSeek(event: CustomEvent) {
+    const seekTime = event.detail.time;
+    seekToTime(seekTime);
+  }
+
   async function handleReprocess(event: CustomEvent) {
     const { fileId } = event.detail;
     
@@ -1482,6 +1488,19 @@
           {errorMessage}
           on:retry={handleVideoRetry}
         />
+        
+        <!-- Waveform visualization -->
+        {#if file && file.id && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
+          <div class="waveform-section">
+            <WaveformPlayer
+              fileId={file.id}
+              duration={file.duration_seconds || file.duration || 0}
+              {currentTime}
+              height={80}
+              on:seek={handleWaveformSeek}
+            />
+          </div>
+        {/if}
         
         <TagsSection 
           {file} 
@@ -1673,6 +1692,11 @@
   }
 
 
+
+  .waveform-section {
+    margin-top: 12px;
+    width: 100%;
+  }
 
   .comments-section {
     margin-top: 20px;

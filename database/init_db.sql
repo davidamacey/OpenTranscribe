@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS media_file (
     -- Detailed metadata fields
     metadata_raw JSONB NULL,
     metadata_important JSONB NULL,
+    -- Waveform visualization data
+    waveform_data JSONB NULL,
     -- Media technical specs
     media_format VARCHAR(50) NULL,
     codec VARCHAR(50) NULL,
