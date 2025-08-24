@@ -21,6 +21,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         # Clear transcript-related fields that exist on the MediaFile model
         media_file.summary = None
         media_file.translated_text = None
+        media_file.waveform_data = None  # Clear waveform data for regeneration
         
         # Clear existing transcript segments 
         from app.models.media import TranscriptSegment, Speaker, Analytics
