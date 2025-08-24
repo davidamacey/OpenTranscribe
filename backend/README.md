@@ -85,7 +85,17 @@ Required environment variables for AI processing:
 | `MIN_SPEAKERS` | Minimum number of speakers to detect (optional) | `1` |
 | `MAX_SPEAKERS` | Maximum number of speakers to detect (optional) | `10` |
 | `HUGGINGFACE_TOKEN` | HuggingFace API token for diarization models | Required |
-| `MODELS_DIRECTORY` | Directory to store downloaded models | `/app/models` |
+| `MODEL_CACHE_DIR` | Host directory to cache downloaded models | `./models` |
+
+#### Model Caching
+OpenTranscribe automatically caches AI models for persistence across container restarts:
+
+- **WhisperX Models**: Cached via HuggingFace Hub (~1.5GB)
+- **PyAnnote Models**: Cached via PyTorch/HuggingFace (~500MB)  
+- **Alignment Models**: Cached via PyTorch Hub (~360MB)
+- **Total Storage**: ~2.5GB for complete model cache
+
+Models are downloaded once on first use and automatically reused. Set `MODEL_CACHE_DIR` in your `.env` to specify the host directory for model storage.
 
 #### HuggingFace Authentication
 You must obtain a HuggingFace API token to use the speaker diarization functionality. Create an account at [HuggingFace](https://huggingface.co/) and generate a token at https://huggingface.co/settings/tokens.
