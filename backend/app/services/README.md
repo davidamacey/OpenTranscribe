@@ -27,11 +27,13 @@ API Endpoints → Service Layer → Data Layer (Models/External APIs)
 
 ```
 services/
-├── file_service.py           # File management operations
-├── file_cleanup_service.py   # File recovery and cleanup operations
-├── transcription_service.py  # Transcription workflow management
-├── minio_service.py          # Object storage operations
-└── opensearch_service.py     # Search and indexing operations
+├── file_service.py                    # File management operations
+├── file_cleanup_service.py            # File recovery and cleanup operations
+├── transcription_service.py           # Transcription workflow management
+├── llm_service.py                     # Multi-provider LLM integration with intelligent context processing
+├── opensearch_summary_service.py      # AI summary search and indexing operations
+├── minio_service.py                   # Object storage operations
+└── opensearch_service.py              # Search and indexing operations
 ```
 
 ## 🔧 Service Design Patterns
@@ -177,6 +179,48 @@ def start_transcription(self, file_id: int, user: User):
 - **Segment Editing**: Transcript text and timing modifications
 - **Cross-file Analytics**: Speaker consistency across multiple files
 - **Error Recovery**: Robust error handling and retry mechanisms
+
+## 🤖 LLM Service (`llm_service.py`)
+
+### Purpose
+Provides unified interface for multiple LLM providers with intelligent context processing for transcript summarization and speaker identification.
+
+### Key Features
+```python
+async def generate_summary(transcript: str, speaker_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate BLUF format summary with intelligent section processing."""
+    
+    # Automatic context detection and chunking
+    context_length = await self.get_model_context_length()
+    chunks = self._chunk_transcript_intelligently(transcript, context_length)
+    
+    if len(chunks) == 1:
+        # Single-pass processing for short transcripts
+        return await self._process_single_section(chunks[0])
+    else:
+        # Multi-section processing for long transcripts
+        section_summaries = []
+        for chunk in chunks:
+            section_summary = await self._summarize_transcript_section(chunk)
+            section_summaries.append(section_summary)
+        
+        # Stitch sections into comprehensive final summary
+        return await self._stitch_section_summaries(section_summaries)
+```
+
+### Supported Providers
+- **vLLM**: Local high-performance inference
+- **OpenAI**: GPT-4, GPT-3.5-turbo
+- **Ollama**: Local consumer GPU inference
+- **Anthropic**: Claude models
+- **OpenRouter**: Multi-provider gateway
+
+### Intelligent Context Processing
+- **Automatic Detection**: Queries model endpoints for actual context limits
+- **Smart Chunking**: Splits at natural boundaries (speakers, topics, sentences)
+- **Section Analysis**: Each chunk processed with full context awareness
+- **Summary Stitching**: Combines sections into comprehensive BLUF format
+- **Universal Compatibility**: Works with 4K to 200K+ token models
 
 ## 🗄️ MinIO Service (`minio_service.py`)
 

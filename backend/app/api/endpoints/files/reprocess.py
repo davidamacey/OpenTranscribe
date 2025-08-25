@@ -20,6 +20,8 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
     try:
         # Clear transcript-related fields that exist on the MediaFile model
         media_file.summary = None
+        media_file.summary_opensearch_id = None  # Clear OpenSearch summary ID for regeneration
+        media_file.summary_status = 'pending'  # Reset summary status for regeneration
         media_file.translated_text = None
         media_file.waveform_data = None  # Clear waveform data for regeneration
         

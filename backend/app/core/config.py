@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     OPENSEARCH_VERIFY_CERTS: bool = False
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
+    OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
     
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL
@@ -82,6 +83,33 @@ class Settings(BaseSettings):
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mistral-7b-instruct-v0.2.Q4_K_M")  # For summarization
     HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
+    
+    # LLM Configuration for AI Summarization and Speaker Identification
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "vllm")
+    
+    # vLLM Configuration
+    VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")
+    VLLM_API_KEY: Optional[str] = os.getenv("VLLM_API_KEY")
+    VLLM_MODEL_NAME: str = os.getenv("VLLM_MODEL_NAME", "gpt-oss")
+    
+    # OpenAI Configuration
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    OPENAI_MODEL_NAME: str = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+    OPENAI_BASE_URL: Optional[str] = os.getenv("OPENAI_BASE_URL")
+    
+    # Ollama Configuration
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
+    
+    # Anthropic Claude Configuration
+    ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+    ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
+    ANTHROPIC_BASE_URL: Optional[str] = os.getenv("ANTHROPIC_BASE_URL")
+    
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
+    OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     
     # Performance optimization properties
     @property

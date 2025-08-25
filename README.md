@@ -44,7 +44,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Content Analysis**: Word count, speaking time, and conversation flow
 - **Speaker Statistics**: Individual speaker metrics and participation
 - **Sentiment Analysis**: Understand tone and emotional content
-- **Automated Summaries**: Generate concise summaries using local LLMs
+- **AI-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with meeting insights
+- **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
+- **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
 
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
@@ -73,7 +75,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **WhisperX** - Advanced speech recognition with alignment
 - **PyAnnote.audio** - Speaker diarization and voice analysis
 - **Faster-Whisper** - Optimized inference engine
-- **Local LLMs** - Privacy-focused text processing
+- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
+- **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
+- **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
+- **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database
@@ -347,6 +352,65 @@ MAX_SPEAKERS=10                     # Maximum speakers to detect
 # Model caching (recommended)
 MODEL_CACHE_DIR=./models            # Directory to store downloaded AI models
 ```
+
+#### **LLM Configuration (AI Features)**
+OpenTranscribe offers flexible AI deployment options. Choose the approach that best fits your infrastructure:
+
+**🔧 Quick Setup Options:**
+
+1. **Cloud-Only (Recommended for Most Users)**
+   ```bash
+   # Configure for OpenAI in .env
+   LLM_PROVIDER=openai
+   OPENAI_API_KEY=your_openai_key
+   OPENAI_MODEL_NAME=gpt-4o-mini
+   
+   # Start without local LLM
+   ./opentr.sh start dev
+   ```
+
+2. **Local vLLM (High-Performance GPUs)**
+   ```bash
+   # Configure for vLLM in .env
+   LLM_PROVIDER=vllm
+   VLLM_MODEL_NAME=gpt-oss-20b
+   
+   # Start with vLLM service (requires 16GB+ VRAM)
+   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   ```
+
+3. **Local Ollama (Consumer GPUs)**
+   ```bash
+   # Configure for Ollama in .env
+   LLM_PROVIDER=ollama
+   OLLAMA_MODEL_NAME=llama3.2:3b-instruct-q4_K_M
+   
+   # Edit docker-compose.vllm.yml and uncomment ollama service
+   # Then start with both compose files
+   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   ```
+
+**📋 Complete Provider Configuration:**
+```bash
+# Cloud Providers (configure in .env)
+LLM_PROVIDER=openai                  # openai, anthropic, custom (openrouter)
+OPENAI_API_KEY=your_openai_key       # OpenAI GPT models
+ANTHROPIC_API_KEY=your_claude_key    # Anthropic Claude models  
+OPENROUTER_API_KEY=your_or_key       # OpenRouter (multi-provider)
+
+# Local Providers (requires additional Docker services)
+LLM_PROVIDER=vllm                    # Local vLLM server
+LLM_PROVIDER=ollama                  # Local Ollama server
+```
+
+**🎯 Deployment Scenarios:**
+- **💰 Cost-Effective**: OpenRouter with Claude Haiku (~$0.25/1M tokens)
+- **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)  
+- **⚡ Performance**: OpenAI GPT-4o-mini (fastest cloud option)
+- **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
+- **🚫 No LLM**: Leave `LLM_PROVIDER` empty for transcription-only mode
+
+See [LLM_DEPLOYMENT_OPTIONS.md](LLM_DEPLOYMENT_OPTIONS.md) for detailed setup instructions.
 
 #### **🗂️ Model Caching**
 

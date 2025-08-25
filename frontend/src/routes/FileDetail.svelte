@@ -19,6 +19,7 @@
   import CollectionsSection from '$components/CollectionsSection.svelte';
   import ReprocessButton from '$components/ReprocessButton.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import SummaryModal from '$components/SummaryModal.svelte';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -55,6 +56,10 @@
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
   let reprocessing = false;
+  let summaryData: any = null;
+  let showSummaryModal = false;
+  let generatingSummary = false;
+  let summaryError = '';
   
 
   // Confirmation modal state
@@ -1330,6 +1335,62 @@
     }
   }
 
+  /**
+   * Generate summary for the transcript
+   */
+  async function handleGenerateSummary() {
+    if (!file?.id) return;
+    
+    try {
+      generatingSummary = true;
+      summaryError = '';
+      
+      const response = await axiosInstance.post(`/api/files/${file.id}/summarize`);
+      
+      // Refresh file details to show updated status
+      await fetchFileDetails(file.id);
+      
+      console.log('Summary generation started:', response.data);
+    } catch (error: any) {
+      console.error('Error generating summary:', error);
+      summaryError = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
+    } finally {
+      generatingSummary = false;
+    }
+  }
+
+  /**
+   * Load summary data from the backend
+   */
+  async function loadSummary() {
+    if (!file?.id) return;
+    
+    try {
+      const response = await axiosInstance.get(`/api/files/${file.id}/summary`);
+      summaryData = response.data.summary_data;
+    } catch (error: any) {
+      console.error('Error loading summary:', error);
+      if (error.response?.status !== 404) {
+        summaryError = 'Failed to load summary.';
+      }
+    }
+  }
+
+  /**
+   * Show the summary modal
+   */
+  function handleShowSummary() {
+    if (summaryData) {
+      showSummaryModal = true;
+    } else {
+      loadSummary().then(() => {
+        if (summaryData) {
+          showSummaryModal = true;
+        }
+      });
+    }
+  }
+
   // WebSocket subscription for real-time updates
   let wsUnsubscribe: () => void;
 
@@ -1366,22 +1427,30 @@
           
           // Check if this notification is for our current file
           // Convert both to strings for comparison since notification sends file_id as string
-          if (String(latestNotification.data?.file_id) === String(fileId) && 
-              latestNotification.type === 'transcription_status') {
+          if (String(latestNotification.data?.file_id) === String(fileId)) {
             
-            // Update progress in real-time without full refresh for progress updates
-            if (latestNotification.data?.status === 'processing' && latestNotification.data?.progress !== undefined) {
-              if (file) {
-                file.progress = latestNotification.data.progress;
-                file.status = 'processing';
-                file = { ...file }; // Trigger reactivity
-                reactiveFile.set(file);
+            // Handle transcription status updates
+            if (latestNotification.type === 'transcription_status') {
+              // Update progress in real-time without full refresh for progress updates
+              if (latestNotification.data?.status === 'processing' && latestNotification.data?.progress !== undefined) {
+                if (file) {
+                  file.progress = latestNotification.data.progress;
+                  file.status = 'processing';
+                  file = { ...file }; // Trigger reactivity
+                  reactiveFile.set(file);
+                }
+                console.log('Progress update for file:', fileId, 'Progress:', latestNotification.data.progress + '%', 'Message:', latestNotification.data.message);
+              } else {
+                // For status changes (completed, error), do a full refresh
+                console.log('Status change for file:', fileId, 'Status:', latestNotification.data?.status);
+                fetchFileDetails();
               }
-              console.log('Progress update for file:', fileId, 'Progress:', latestNotification.data.progress + '%', 'Message:', latestNotification.data.message);
-            } else {
-              // For status changes (completed, error), do a full refresh
-              console.log('Status change for file:', fileId, 'Status:', latestNotification.data?.status);
-              fetchFileDetails();
+            }
+            
+            // Handle summarization status updates
+            if (latestNotification.type === 'summary_status') {
+              console.log('Summary status update for file:', fileId, 'Status:', latestNotification.data?.status);
+              fetchFileDetails(); // Refresh to get updated summary status
             }
           }
         }
@@ -1469,6 +1538,7 @@
     <div class="file-header">
       <FileHeader {file} />
       
+      
       <MetadataDisplay 
         {file} 
         bind:showMetadata 
@@ -1478,7 +1548,19 @@
     <div class="main-content-grid">
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
-        <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+        <div class="video-header">
+          <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+          <!-- AI Summary Button - right aligned above video -->
+          {#if file?.summary || file?.summary_opensearch_id}
+            <button 
+              class="view-summary-btn"
+              on:click={handleShowSummary}
+              title="View AI-generated summary in BLUF format"
+            >
+              View AI Summary
+            </button>
+          {/if}
+        </div>
         
         <VideoPlayer 
           {videoUrl} 
@@ -1533,9 +1615,10 @@
         </div>
       </section>
       
-      <!-- Transcript section - right side -->
+      <!-- Right column: Transcript -->
       {#if file && file.transcript_segments}
-        <TranscriptDisplay 
+        <section class="transcript-column">
+          <TranscriptDisplay 
           {file}
           {currentTime}
           {isEditingTranscript}
@@ -1558,7 +1641,7 @@
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
         />
-
+        </section>
       {:else}
         <section class="transcript-column">
           <div class="transcript-header">
@@ -1592,6 +1675,15 @@
   on:cancel={handleExportCancel}
   on:close={handleExportModalClose}
 />
+
+<!-- Summary Modal -->
+{#if file?.id}
+  <SummaryModal
+    bind:isOpen={showSummaryModal}
+    fileId={file.id}
+    fileName={file?.filename || 'Unknown File'}
+  />
+{/if}
 
 
 <style>
@@ -1664,6 +1756,7 @@
     margin-bottom: 24px;
   }
 
+
   .main-content-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1674,14 +1767,14 @@
   .video-column {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
   }
 
   .video-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
   }
 
   .video-column h4 {
@@ -1691,10 +1784,31 @@
     color: var(--text-primary);
   }
 
+  .transcript-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .view-summary-btn {
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .view-summary-btn:hover {
+    background: var(--accent-hover-color);
+  }
 
 
   .waveform-section {
-    margin-top: 12px;
+    margin-top: 6px;
     width: 100%;
   }
 
@@ -1714,6 +1828,43 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 20px;
+  }
+
+  .ai-summary-section {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  .summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .summary-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .view-summary-btn {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+  }
+
+  .view-summary-btn:hover {
+    background: var(--primary-hover);
   }
 
   @media (max-width: 1024px) {
@@ -1751,83 +1902,4 @@
     transform: translateY(0) !important;
   }
 
-  /* Speaker verification section */
-  .speaker-verification-section {
-    margin-top: 20px;
-    padding: 16px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-  }
-
-  .speaker-verification-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    gap: 12px;
-  }
-
-  .speaker-verification-header h4 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .verify-speakers-btn {
-    background: var(--warning-color);
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .verify-speakers-btn:hover {
-    background: var(--warning-hover);
-  }
-
-  .manage-profiles-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .manage-profiles-btn:hover {
-    background: var(--primary-hover);
-  }
-
-  .verification-notice {
-    padding: 12px;
-    background: rgba(251, 191, 36, 0.1);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    border-radius: 6px;
-  }
-
-  .notice-text {
-    margin: 0;
-    font-size: 14px;
-    color: var(--text-secondary);
-  }
-
-  @media (max-width: 768px) {
-    .speaker-verification-header {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    
-    .speaker-verification-header button {
-      width: 100%;
-    }
-  }
 </style>

@@ -1,0 +1,169 @@
+version: "3.8"
+
+# Local LLM Services for OpenTranscribe
+# 
+# USAGE:
+#   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+#
+# CONFIGURATION:
+#   1. Set your .env file: LLM_PROVIDER=vllm or LLM_PROVIDER=ollama  
+#   2. Uncomment the model/service you want to use below
+#   3. Default: vllm-gptoss-20b is ready to go (requires 16GB VRAM)
+#
+# MODELS AVAILABLE:
+#   - vllm-gptoss-20b (DEFAULT - uncommented, 16GB VRAM)
+#   - vllm-gptoss-120b (commented out, 96GB VRAM) 
+#   - ollama (commented out, 8GB+ VRAM)
+
+x-common-env: &common_env
+  HF_HUB_ENABLE_HF_TRANSFER: "1"     # faster downloads
+  VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+  VLLM_LOGGING_LEVEL: "INFO"
+  TRANSFORMERS_OFFLINE: "0"          # set to 1 after first pull if you want fully offline
+  CUDA_DEVICE_ORDER: "PCI_BUS_ID"
+  OMP_NUM_THREADS: "1"
+  VLLM_ATTENTION_BACKEND: "TRITON_ATTN_VLLM_V1"
+  PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+  TORCH_CUDA_ARCH_LIST: "8.6"
+  CUDA_CACHE_MAXSIZE: "2147483648"               # 2 GiB (bump if you want)
+
+x-common-volumes: &common_volumes
+  - /mnt/nas/hf_vllm_models/:/root/.cache/huggingface
+  - /mnt/nas/vllm_compile_cache/:/root/.cache/vllm/torch_compile_cache
+  - /mnt/nas/gpt-oss-cache/torchinductor/:/root/.cache/torchinductor
+  - /mnt/nas/gpt-oss-cache/torch_extensions/:/root/.cache/torch_extensions
+  - /mnt/nas/gpt-oss-cache/triton_cache/:/root/.triton
+  - /mnt/nas/gpt-oss-cache/nvrtc_cache/:/root/.cache/nvrtc
+
+services:
+
+#######################################
+#####    GPT-OSS Models - Text only
+#######################################
+  # UNCOMMENT THE MODEL YOU WANT TO USE:
+  
+  # 120B Requires two (2) A6000s with 48 GB VRAM each
+  # vllm-gptoss-120b:
+  #   image: vllm/vllm-openai:gptoss
+  #   container_name: vllm-gptoss-120b
+  #   pull_policy: always
+  #   runtime: nvidia
+  #   shm_size: "64g"
+  #   ulimits: { memlock: -1, stack: 67108864 }
+  #   environment:
+  #     <<: *common_env
+  #     CUDA_VISIBLE_DEVICES: "0,2"
+  #     TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gptoss-120b"
+  #     TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gptoss-120b"
+  #     TRITON_CACHE_DIR: "/root/.triton/gptoss-120b"
+  #     CUDA_CACHE_PATH: "/root/.cache/nvrtc/gptoss-120b"
+  #   command: >
+  #     --model openai/gpt-oss-120b
+  #     --served-model-name gpt-oss-120b
+  #     --tensor-parallel-size 2
+  #     --max-model-len 131072
+  #     --gpu-memory-utilization 0.95
+  #     --async-scheduling
+  #     --swap-space 64
+  #     --max-num-seqs 8
+  #   ports:
+  #     - 8011:8000
+  #   volumes: *common_volumes
+  #   networks:
+  #     - oi_net
+
+  # 20B requires at least 16GB VRAM, running on one (1) A6000
+  vllm-gptoss-20b:
+    image: vllm/vllm-openai:gptoss
+    container_name: vllm-gptoss-20b
+    pull_policy: always
+    runtime: nvidia
+    shm_size: "64g"
+    ulimits: { memlock: -1, stack: 67108864 }
+    environment:
+      <<: *common_env
+      CUDA_VISIBLE_DEVICES: "2"
+      TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gptoss-20b"
+      TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gptoss-20b"
+      TRITON_CACHE_DIR: "/root/.triton/gptoss-20b"
+      CUDA_CACHE_PATH: "/root/.cache/nvrtc/gptoss-20b"
+    command: >
+      --model openai/gpt-oss-20b
+      --served-model-name gpt-oss-20b
+      --max-model-len 131000
+      --gpu-memory-utilization 0.95
+      --async-scheduling
+      --swap-space 32
+      --max-num-seqs 2
+    ports:
+      - 8012:8000
+    volumes: *common_volumes
+    networks:
+      - oi_net
+
+#######################################
+##### Llama 3.2 Model - Vision/Text
+#######################################
+  # 11B model with 32K Context requires one (1) A6000
+  # vllm-llama32-11b-vision:
+  #   image: vllm/vllm-openai:latest
+  #   container_name: vllm-llama32-11b-vision
+  #   pull_policy: always
+  #   runtime: nvidia
+  #   shm_size: "24g"
+  #   ulimits: { memlock: -1, stack: 67108864 }
+  #   environment:
+  #     <<: *common_env
+  #     CUDA_VISIBLE_DEVICES: "0"
+  #     TORCH_CUDA_ARCH_LIST: "8.6"
+  #   command: >
+  #     --model meta-llama/Llama-3.2-11B-Vision-Instruct
+  #     --served-model-name llama-3.2-11b-vision
+  #     --max-model-len 32000
+  #     --gpu-memory-utilization 0.95
+  #     --max-num-seqs 2
+  #   ports: [ "8015:8000" ]
+  #   volumes: *common_volumes
+  #   networks: [ oi_net ]
+
+
+#######################################
+##### Ollama - Alternative to vLLM (UNCOMMENT TO USE)
+#######################################
+  # ollama:
+  #   image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+  #   container_name: ollama
+  #   pull_policy: always
+  #   restart: unless-stopped
+  #   tty: true
+  #   runtime: nvidia
+  #   shm_size: "16g"
+  #   environment:
+  #     - OLLAMA_HOST=0.0.0.0
+  #     - OLLAMA_ORIGINS=*
+  #     - NVIDIA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: ['${GPU_DEVICE_ID:-1}']
+  #             capabilities: [gpu]
+  #   volumes:
+  #     - ${MODEL_CACHE_DIR:-./models}/ollama:/root/.ollama
+  #   ports:
+  #     - "${OLLAMA_WEBAPI_PORT-11434}:11434"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 60s
+  #   networks:
+  #     - oi_net
+
+
+
+networks:
+  oi_net:
+    driver: bridge

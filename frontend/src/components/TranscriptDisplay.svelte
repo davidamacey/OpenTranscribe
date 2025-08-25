@@ -554,27 +554,55 @@
                         }
                       }}
                     />
-                    <!-- Auto-suggestion for high confidence matches when user hasn't manually edited -->
+                    <!-- LLM suggestions for high confidence matches -->
                     {#if speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name}
-                      <div class="auto-suggestion-info">
-                        <span class="auto-suggestion-text">Auto-suggested: "{speaker.suggested_name}"</span>
-                        <span class="confidence-badge" style="background-color: var(--success-color);">
-                          {Math.round(speaker.confidence * 100)}% match
-                        </span>
+                      <div class="llm-suggestion-info">
+                        <div class="llm-badge">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                          </svg>
+                          AI Suggested
+                        </div>
+                        <button 
+                          class="suggestion-button"
+                          class:high-confidence={speaker.confidence >= 0.85}
+                          class:medium-confidence={speaker.confidence >= 0.7 && speaker.confidence < 0.85}
+                          class:low-confidence={speaker.confidence < 0.7}
+                          on:click={() => {
+                            speaker.display_name = speaker.suggested_name;
+                          }}
+                          title="Click to use this AI suggestion: {speaker.suggested_name}"
+                        >
+                          "{speaker.suggested_name}"
+                          <span class="confidence-score">{Math.round(speaker.confidence * 100)}%</span>
+                        </button>
                       </div>
                     {/if}
                     
-                    <!-- Manual verification needed for medium confidence -->
+                    <!-- LLM suggestions for medium confidence matches -->
                     {#if speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name && !speaker.display_name}
-                      <div class="suggestion-info">
-                        <span class="suggestion-text">
-                          {!speaker.display_name ? 'Suggested:' : 'Matches:'} "{speaker.suggested_name}"
-                        </span>
-                        <span class="confidence-badge" style="background-color: var(--warning-color);">
-                          {Math.round(speaker.confidence * 100)}% match - {!speaker.display_name ? 'verify' : 'verified'}
-                        </span>
+                      <div class="llm-suggestion-info">
+                        <div class="llm-badge">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+                          </svg>
+                          AI Suggested (Review)
+                        </div>
+                        <button 
+                          class="suggestion-button"
+                          class:high-confidence={speaker.confidence >= 0.85}
+                          class:medium-confidence={speaker.confidence >= 0.7 && speaker.confidence < 0.85}
+                          class:low-confidence={speaker.confidence < 0.7}
+                          on:click={() => {
+                            speaker.display_name = speaker.suggested_name;
+                          }}
+                          title="Click to use this AI suggestion: {speaker.suggested_name}"
+                        >
+                          "{speaker.suggested_name}"
+                          <span class="confidence-score">{Math.round(speaker.confidence * 100)}%</span>
+                        </button>
                         {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                          <span class="cross-video-reference">See cross-video matches below for details</span>
+                          <div class="cross-video-note">See cross-video matches below for more details</div>
                         {/if}
                         <div class="suggestion-help-text">
                           {#if speaker.confidence >= 0.75}
@@ -701,33 +729,49 @@
                               {@const topMatches = sortedMatches.slice(0, 5)}
                               {@const remainingCount = sortedMatches.length - topMatches.length}
                               
-                              <!-- Before labeling: Show matches to encourage labeling -->
-                              <div class="matches-help">
-                                Enter a name above to label across all matching videos:
-                              </div>
-                              <div class="compact-matches">
-                                <div class="matches-scroll-container">
+                              <!-- Embedding-based Speaker Suggestions -->
+                              <div class="embedding-suggestion-info">
+                                <div class="embedding-badge">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                                  </svg>
+                                  Voice Embedding Matches
+                                </div>
+                                <div class="embedding-suggestions">
                                   {#each topMatches as match}
-                                    <div class="compact-match" title={match.media_file_title}>
-                                      <span class="match-text">{match.speaker_name} in "{match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}"</span>
-                                      <span class="match-confidence">
-                                        {Math.round(match.confidence * 100)}%
-                                      </span>
-                                    </div>
+                                    {#if match.speaker_name && match.speaker_name.trim() && !match.speaker_name.startsWith('SPEAKER_')}
+                                      <button 
+                                        class="embedding-suggestion-button"
+                                        class:high-confidence={match.confidence >= 0.85}
+                                        class:medium-confidence={match.confidence >= 0.7 && match.confidence < 0.85}
+                                        class:low-confidence={match.confidence < 0.7}
+                                        on:click={() => {
+                                          speaker.display_name = match.speaker_name;
+                                        }}
+                                        title="Use voice embedding match: {match.speaker_name} from {match.media_file_title}"
+                                      >
+                                        <span class="suggestion-name">"{match.speaker_name}"</span>
+                                        <span class="embedding-confidence">{Math.round(match.confidence * 100)}%</span>
+                                      </button>
+                                    {/if}
                                   {/each}
                                 </div>
-                                {#if remainingCount > 0}
-                                  <div class="more-matches-compact">
-                                    {#if remainingCount < 10}
-                                      +{remainingCount} more matches
-                                    {:else if remainingCount < 50}
-                                      +{remainingCount} more (showing highest confidence)
-                                    {:else}
-                                      +{remainingCount} more matches (top confidence shown)
-                                    {/if}
-                                  </div>
-                                {/if}
+                                <div class="embedding-help">
+                                  Click a name above to use voice-based speaker matching from other videos
+                                </div>
                               </div>
+                              
+                              {#if remainingCount > 0}
+                                <div class="more-matches-compact">
+                                  {#if remainingCount < 10}
+                                    +{remainingCount} more embedding matches available
+                                  {:else if remainingCount < 50}
+                                    +{remainingCount} more matches (showing highest confidence)
+                                  {:else}
+                                    +{remainingCount} more matches (top confidence shown)
+                                  {/if}
+                                </div>
+                              {/if}
                             {/if}
                           </div>
                         {/if}
@@ -1238,41 +1282,192 @@
     border-width: 2px;
   }
 
-  .auto-suggestion-info {
+  /* LLM Suggestion Interface */
+  .llm-suggestion-info {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 0.5rem;
     margin-top: 0.5rem;
-    margin-bottom: 0.25rem;
-    font-size: 0.8rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(34, 197, 94, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid var(--success-color);
+    padding: 0.75rem;
+    background: var(--surface-color, #f8fafc);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color, #3b82f6);
   }
-  
-  .auto-suggestion-text {
-    color: var(--text-primary);
-    font-weight: 500;
+
+  :global(.dark) .llm-suggestion-info {
+    background: var(--surface-color, #1e293b);
+    border-color: var(--border-color, #475569);
   }
-  
-  .suggestion-info {
+
+  .llm-badge {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.25rem;
-    font-size: 0.8rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(245, 158, 11, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid var(--warning-color);
-    flex-wrap: wrap;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary-color, #3b82f6);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
   }
-  
-  .suggestion-text {
-    color: var(--text-primary);
+
+  .llm-badge svg {
+    color: var(--primary-color, #3b82f6);
+  }
+
+  .suggestion-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
     font-weight: 500;
+    transition: all 0.2s ease;
+    position: relative;
+    color: white;
+  }
+
+  .suggestion-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Color coding for LLM suggestions based on confidence */
+  .suggestion-button.high-confidence {
+    background: var(--success-color, #10b981);
+  }
+
+  .suggestion-button.high-confidence:hover {
+    background: #059669;
+  }
+
+  .suggestion-button.medium-confidence {
+    background: var(--warning-color, #f59e0b);
+  }
+
+  .suggestion-button.medium-confidence:hover {
+    background: #d97706;
+  }
+
+  .suggestion-button.low-confidence {
+    background: var(--error-color, #ef4444);
+  }
+
+  .suggestion-button.low-confidence:hover {
+    background: #dc2626;
+  }
+
+  .confidence-score {
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.125rem 0.375rem;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+
+  .cross-video-note {
+    font-size: 0.75rem;
+    color: var(--text-secondary-color, #6b7280);
+    font-style: italic;
+  }
+
+  /* Embedding Suggestion Interface */
+  .embedding-suggestion-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--surface-color, #f1f5f9);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    border-left: 4px solid var(--accent-color, #8b5cf6);
+  }
+
+  :global(.dark) .embedding-suggestion-info {
+    background: var(--surface-color, #1e293b);
+    border-color: var(--border-color, #475569);
+  }
+
+  .embedding-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-color, #8b5cf6);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .embedding-badge svg {
+    color: var(--accent-color, #8b5cf6);
+  }
+
+  .embedding-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .embedding-suggestion-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    color: white;
+  }
+
+  .embedding-suggestion-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Color coding based on confidence */
+  .embedding-suggestion-button.high-confidence {
+    background: var(--success-color, #10b981);
+  }
+
+  .embedding-suggestion-button.high-confidence:hover {
+    background: #059669;
+  }
+
+  .embedding-suggestion-button.medium-confidence {
+    background: var(--warning-color, #f59e0b);
+  }
+
+  .embedding-suggestion-button.medium-confidence:hover {
+    background: #d97706;
+  }
+
+  .embedding-suggestion-button.low-confidence {
+    background: var(--error-color, #ef4444);
+  }
+
+  .embedding-suggestion-button.low-confidence:hover {
+    background: #dc2626;
+  }
+
+  .embedding-confidence {
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.125rem 0.375rem;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+
+  .embedding-help {
+    font-size: 0.75rem;
+    color: var(--text-secondary-color, #6b7280);
+    text-align: center;
+    font-style: italic;
   }
   
   

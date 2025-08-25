@@ -30,6 +30,22 @@ from app.services.speaker_matching_service import SpeakerMatchingService
 
 logger = logging.getLogger(__name__)
 
+# Import for automatic summarization and speaker identification
+def trigger_automatic_summarization(file_id: int):
+    """Trigger automatic summarization and speaker identification after transcription completes"""
+    try:
+        # First trigger speaker identification
+        from app.tasks.summarization_helpers import identify_speakers_llm_task
+        speaker_task = identify_speakers_llm_task.delay(file_id=file_id)
+        logger.info(f"Automatic speaker identification task {speaker_task.id} started for file {file_id}")
+        
+        # Then trigger summarization (this will use the speaker suggestions when available)
+        from app.tasks.summarization import summarize_transcript_task
+        summary_task = summarize_transcript_task.delay(file_id=file_id)
+        logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+    except Exception as e:
+        logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
+
 
 @celery_app.task(bind=True, name="transcribe_audio")
 def transcribe_audio_task(self, file_id: int):
@@ -258,7 +274,10 @@ def transcribe_audio_task(self, file_id: int):
                 # Send completion notification
                 send_completion_notification(user_id, file_id)
                 
-                logger.info(f"Transcription completed successfully for file {file_id}")
+                # Trigger automatic summarization
+                logger.info(f"Transcription completed successfully for file {file_id}, triggering automatic summarization")
+                trigger_automatic_summarization(file_id)
+                
                 return {"status": "success", "file_id": file_id, "segments": len(processed_segments)}
                 
             except Exception as e:

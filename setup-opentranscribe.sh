@@ -543,6 +543,9 @@ configure_environment() {
     # Model selection based on hardware
     select_whisper_model
     
+    # LLM configuration for AI features
+    configure_llm_settings
+    
     # Create .env file
     create_env_file
 }
@@ -592,6 +595,109 @@ select_whisper_model() {
     echo "   Available options: tiny, base, small, medium, large-v2"
 }
 
+configure_llm_settings() {
+    echo ""
+    echo -e "${YELLOW}🤖 LLM Configuration for AI Features${NC}"
+    echo "=================================================="
+    echo "OpenTranscribe includes AI features that require an LLM (Large Language Model):"
+    echo "  • AI-powered transcript summarization with BLUF format"
+    echo "  • Speaker identification suggestions"
+    echo ""
+    echo -e "${BLUE}Supported LLM Providers:${NC}"
+    echo "1. vLLM (Default) - Local server with OpenAI-compatible API"
+    echo "2. OpenAI - Official OpenAI API (requires API key)"
+    echo "3. Ollama - Local Ollama server"
+    echo "4. Anthropic Claude - Claude API (requires API key)"
+    echo "5. OpenRouter - Multi-provider API service"
+    echo ""
+    echo -e "${YELLOW}💡 Configuration Options:${NC}"
+    echo "• Configure now (recommended for vLLM users)"
+    echo "• Skip configuration (you can set up later in .env file)"
+    echo ""
+    
+    read -p "Do you want to configure LLM settings now? (y/N) " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Select your LLM provider:"
+        echo "1) vLLM (Local server - recommended)"
+        echo "2) OpenAI"
+        echo "3) Ollama"
+        echo "4) Anthropic Claude"
+        echo "5) OpenRouter"
+        echo "6) Skip (configure manually later)"
+        
+        read -p "Enter your choice (1-6): " -n 1 -r llm_choice
+        echo
+        echo
+        
+        case $llm_choice in
+            1)
+                echo "✓ Configuring vLLM (Local server)"
+                LLM_PROVIDER="vllm"
+                read -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url
+                VLLM_BASE_URL=${vllm_url:-"http://localhost:8000/v1"}
+                read -p "Enter your vLLM API key (optional): " vllm_key
+                VLLM_API_KEY=${vllm_key:-""}
+                read -p "Enter your model name [gpt-oss]: " vllm_model
+                VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
+                echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
+                ;;
+            2)
+                echo "✓ Configuring OpenAI"
+                LLM_PROVIDER="openai"
+                read -p "Enter your OpenAI API key: " openai_key
+                OPENAI_API_KEY=$openai_key
+                read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model
+                OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
+                echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
+                ;;
+            3)
+                echo "✓ Configuring Ollama"
+                LLM_PROVIDER="ollama"
+                read -p "Enter your Ollama server URL [http://localhost:11434]: " ollama_url
+                OLLAMA_BASE_URL=${ollama_url:-"http://localhost:11434"}
+                read -p "Enter Ollama model [llama2:7b-chat]: " ollama_model
+                OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
+                echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
+                ;;
+            4)
+                echo "✓ Configuring Anthropic Claude"
+                LLM_PROVIDER="anthropic"
+                read -p "Enter your Anthropic API key: " anthropic_key
+                ANTHROPIC_API_KEY=$anthropic_key
+                read -p "Enter Claude model [claude-3-haiku-20240307]: " anthropic_model
+                ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-3-haiku-20240307"}
+                echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
+                ;;
+            5)
+                echo "✓ Configuring OpenRouter"
+                LLM_PROVIDER="openrouter"
+                read -p "Enter your OpenRouter API key: " openrouter_key
+                OPENROUTER_API_KEY=$openrouter_key
+                read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model
+                OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
+                echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
+                ;;
+            6|*)
+                echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
+                LLM_PROVIDER="vllm"  # Default
+                ;;
+        esac
+    else
+        echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
+        echo "💡 Edit the LLM_* variables in .env file to enable AI features"
+        LLM_PROVIDER="vllm"  # Default
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}💡 LLM Configuration Notes:${NC}"
+    echo "• AI features require a working LLM endpoint"
+    echo "• You can change providers anytime by editing .env file"
+    echo "• See .env.example for all available configuration options"
+}
+
 create_env_file() {
     echo "✓ Creating .env file with optimized settings..."
     
@@ -604,6 +710,42 @@ create_env_file() {
     sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env
     sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
     sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
+    
+    # Update LLM configuration
+    if [[ -n "$LLM_PROVIDER" ]]; then
+        sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
+    fi
+    
+    # Provider-specific configurations
+    if [[ "$LLM_PROVIDER" == "vllm" && -n "$VLLM_BASE_URL" ]]; then
+        sed -i.bak "s|VLLM_BASE_URL=.*|VLLM_BASE_URL=$VLLM_BASE_URL|g" .env
+        if [[ -n "$VLLM_API_KEY" ]]; then
+            sed -i.bak "s|VLLM_API_KEY=.*|VLLM_API_KEY=$VLLM_API_KEY|g" .env
+        fi
+        if [[ -n "$VLLM_MODEL_NAME" ]]; then
+            sed -i.bak "s|VLLM_MODEL_NAME=.*|VLLM_MODEL_NAME=$VLLM_MODEL_NAME|g" .env
+        fi
+    elif [[ "$LLM_PROVIDER" == "openai" && -n "$OPENAI_API_KEY" ]]; then
+        sed -i.bak "s|# OPENAI_API_KEY=.*|OPENAI_API_KEY=$OPENAI_API_KEY|g" .env
+        if [[ -n "$OPENAI_MODEL_NAME" ]]; then
+            sed -i.bak "s|# OPENAI_MODEL_NAME=.*|OPENAI_MODEL_NAME=$OPENAI_MODEL_NAME|g" .env
+        fi
+    elif [[ "$LLM_PROVIDER" == "ollama" && -n "$OLLAMA_BASE_URL" ]]; then
+        sed -i.bak "s|# OLLAMA_BASE_URL=.*|OLLAMA_BASE_URL=$OLLAMA_BASE_URL|g" .env
+        if [[ -n "$OLLAMA_MODEL_NAME" ]]; then
+            sed -i.bak "s|# OLLAMA_MODEL_NAME=.*|OLLAMA_MODEL_NAME=$OLLAMA_MODEL_NAME|g" .env
+        fi
+    elif [[ "$LLM_PROVIDER" == "anthropic" && -n "$ANTHROPIC_API_KEY" ]]; then
+        sed -i.bak "s|# ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY|g" .env
+        if [[ -n "$ANTHROPIC_MODEL_NAME" ]]; then
+            sed -i.bak "s|# ANTHROPIC_MODEL_NAME=.*|ANTHROPIC_MODEL_NAME=$ANTHROPIC_MODEL_NAME|g" .env
+        fi
+    elif [[ "$LLM_PROVIDER" == "openrouter" && -n "$OPENROUTER_API_KEY" ]]; then
+        sed -i.bak "s|# OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=$OPENROUTER_API_KEY|g" .env
+        if [[ -n "$OPENROUTER_MODEL_NAME" ]]; then
+            sed -i.bak "s|# OPENROUTER_MODEL_NAME=.*|OPENROUTER_MODEL_NAME=$OPENROUTER_MODEL_NAME|g" .env
+        fi
+    fi
     
     # Hardware-specific configurations
     case "$DETECTED_DEVICE" in
@@ -916,6 +1058,7 @@ display_summary() {
     echo -e "${BLUE}📋 Application Configuration:${NC}"
     echo "  • Whisper Model: $WHISPER_MODEL"
     echo "  • Speaker Diarization: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "Enabled" || echo "Disabled")"
+    echo "  • LLM Provider: ${LLM_PROVIDER:-vllm} (for AI summarization)"
     echo "  • Project Directory: $PROJECT_DIR"
     echo ""
     
@@ -930,6 +1073,15 @@ display_summary() {
     echo "2. Edit the .env file and add: HUGGINGFACE_TOKEN=your_token_here"
     echo "3. Restart the application: ./opentranscribe.sh restart"
     echo ""
+    
+    if [[ -z "$VLLM_BASE_URL" && "$LLM_PROVIDER" == "vllm" ]]; then
+        echo -e "${YELLOW}🤖 LLM Setup for AI Features${NC}"
+        echo "To enable AI summarization and speaker identification:"
+        echo "1. Set up your LLM server (vLLM, Ollama, etc.)"
+        echo "2. Edit the .env file and configure LLM_* variables"
+        echo "3. Restart the application: ./opentranscribe.sh restart"
+        echo ""
+    fi
     
     if [[ "$DETECTED_DEVICE" == "cuda" && "$DOCKER_RUNTIME" != "nvidia" ]]; then
         echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but runtime not configured${NC}"

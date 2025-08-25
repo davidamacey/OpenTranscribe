@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS media_file (
     is_public BOOLEAN DEFAULT FALSE,
     language VARCHAR(10) NULL,
     summary TEXT NULL,
+    summary_opensearch_id VARCHAR(255) NULL, -- OpenSearch document ID for summary
+    summary_status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed
     translated_text TEXT NULL,
     file_hash VARCHAR(255) NULL,
     thumbnail_path VARCHAR(500) NULL,

@@ -60,6 +60,8 @@ OpenTranscribe backend is built with modern Python technologies:
 ### AI/ML Stack
 - **WhisperX** - Advanced speech recognition with word-level alignment
 - **PyAnnote** - Speaker diarization, voice fingerprinting, and cross-video speaker matching
+- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Claude, OpenRouter
+- **Intelligent Context Processing** - Section-by-section analysis for unlimited transcript lengths
 - **FFmpeg** - Media processing and conversion
 - **OpenSearch Vector Search** - Embedding-based speaker similarity matching
 
@@ -70,6 +72,9 @@ OpenTranscribe backend is built with modern Python technologies:
 - **Cross-Video Speaker Recognition**: AI-powered matching of speakers across different media files using embedding similarity
 - **Speaker Profile Management**: Global speaker profiles that persist across all transcriptions
 - **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scoring and verification workflow
+- **LLM-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with action items, decisions, and speaker analysis
+- **Intelligent Section Processing**: Automatically handles transcripts of any length using context-aware chunking and summary stitching
+- **Universal Model Compatibility**: Works with models from 3B parameters (Ollama) to 200B+ parameters (Claude) via adaptive processing
 - **Automatic Translation**: Always converts audio to English transcripts
 - **Video Metadata Extraction**: Extracts detailed metadata from video files using ExifTool (resolution, frame rate, codec, etc.)
 

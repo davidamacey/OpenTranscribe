@@ -8,6 +8,7 @@
     <h1>{file?.filename || 'Unknown File'}</h1>
   </div>
 
+  <!-- Processing Status Display -->
   {#if file?.status === 'error' && file?.error_message}
     <div class="status-message error">
       <p><strong>Processing Status:</strong> {file.error_message}</p>
@@ -16,12 +17,14 @@
 
   {#if file?.status === 'processing'}
     <div class="processing-info">
-      <p>File is processing... Progress: {file.progress || 0}%</p>
+      <h5>Transcription Progress</h5>
+      <p>Processing file... Progress: {file.progress || 0}%</p>
       <div class="progress-bar">
         <div class="progress-bar-inner" style="width: {file.progress || 0}%;"></div>
       </div>
     </div>
   {/if}
+
 
   {#if file?.description}
     <div class="file-summary">
@@ -78,6 +81,13 @@
     color: var(--info-dark);
   }
 
+  .processing-info h5 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--info-dark);
+  }
+
   .progress-bar {
     width: 100%;
     height: 8px;
@@ -105,6 +115,7 @@
     line-height: 1.5;
   }
 
+
   @media (max-width: 768px) {
     .file-title h1 {
       font-size: 24px;
@@ -113,5 +124,6 @@
     .file-summary p {
       font-size: 14px;
     }
+
   }
 </style>

@@ -1,22 +1,72 @@
 import logging
-from typing import List, Dict, Any, Optional
+import asyncio
+import time
 import json
+import redis
+from typing import Optional
 
 from app.core.celery import celery_app
 from app.db.base import SessionLocal
-from app.models.media import MediaFile, TranscriptSegment, Task
+from app.models.media import MediaFile, TranscriptSegment
+from app.tasks.summarization_helpers import generate_llm_summary
+from app.services.opensearch_summary_service import OpenSearchSummaryService
 from app.core.config import settings
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
-@celery_app.task(bind=True, name="summarize_transcript")
-def summarize_transcript_task(self, file_id: int):
+
+def send_summary_notification(user_id: int, file_id: int, status: str, message: str, progress: int = 0) -> bool:
     """
-    Generate a summary of a transcript using a local LLM
+    Send summary status notification via Redis pub/sub from synchronous context (like Celery worker).
+    
+    Args:
+        user_id: User ID
+        file_id: File ID
+        status: Summary status ('processing', 'completed', 'failed')
+        message: Status message
+        progress: Progress percentage
+        
+    Returns:
+        True if notification was sent successfully, False otherwise
+    """
+    try:
+        # Create Redis client
+        redis_client = redis.from_url(settings.REDIS_URL)
+        
+        # Prepare notification data
+        notification = {
+            "user_id": user_id,
+            "type": "summary_status",
+            "data": {
+                "file_id": str(file_id),
+                "status": status,
+                "message": message,
+                "progress": progress
+            }
+        }
+        
+        # Publish to Redis
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published summary notification via Redis for user {user_id}, file {file_id}: {status}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send summary notification via Redis for file {file_id}: {e}")
+        return False
+
+@celery_app.task(bind=True, name="summarize_transcript")
+def summarize_transcript_task(self, file_id: int, provider: Optional[str] = None, model: Optional[str] = None):
+    """
+    Generate a comprehensive summary of a transcript using LLM with structured BLUF format
+    
+    This task runs AFTER speaker embedding matching has been completed to ensure
+    accurate speaker information is available for summarization.
     
     Args:
         file_id: Database ID of the MediaFile to summarize
+        provider: Optional LLM provider override (openai, vllm, ollama, etc.)
+        model: Optional model override
     """
     task_id = self.request.id
     db = SessionLocal()
@@ -28,11 +78,18 @@ def summarize_transcript_task(self, file_id: int):
             raise ValueError(f"Media file with ID {file_id} not found")
         
         # Create task record
-        from app.tasks.transcription import create_task_record, update_task_status
+        from app.utils.task_utils import create_task_record, update_task_status
         create_task_record(db, task_id, media_file.user_id, file_id, "summarization")
         
         # Update task status
         update_task_status(db, task_id, "in_progress", progress=0.1)
+        
+        # Set summary status to processing
+        media_file.summary_status = 'processing'
+        db.commit()
+        
+        # Send processing notification
+        send_summary_notification(media_file.user_id, file_id, 'processing', 'AI summary generation started', 10)
         
         # Get transcript segments from database
         transcript_segments = db.query(TranscriptSegment).filter(
@@ -42,71 +99,164 @@ def summarize_transcript_task(self, file_id: int):
         if not transcript_segments:
             raise ValueError(f"No transcript segments found for file {file_id}")
         
-        # Build full transcript text with speaker labels
+        # Build full transcript text with proper speaker identification
+        # Use display names from speaker embedding matching when available
         full_transcript = ""
         current_speaker = None
+        speaker_stats = {}  # Track speaker statistics
         
         for segment in transcript_segments:
-            speaker_name = segment.speaker.name if segment.speaker else "Unknown Speaker"
+            # Get the best available speaker name
+            if segment.speaker:
+                speaker = segment.speaker
+                # Use display_name if verified, otherwise use suggested_name or fallback to original name
+                if speaker.display_name and speaker.verified:
+                    speaker_name = speaker.display_name
+                elif speaker.suggested_name and speaker.confidence and speaker.confidence >= 0.75:
+                    speaker_name = f"{speaker.suggested_name} (suggested)"
+                else:
+                    speaker_name = speaker.name  # Original diarization label
+            else:
+                speaker_name = "Unknown Speaker"
+            
+            # Track speaker statistics
+            segment_duration = segment.end_time - segment.start_time
+            if speaker_name not in speaker_stats:
+                speaker_stats[speaker_name] = {
+                    "total_time": 0,
+                    "segment_count": 0,
+                    "word_count": 0
+                }
+            speaker_stats[speaker_name]["total_time"] += segment_duration
+            speaker_stats[speaker_name]["segment_count"] += 1
+            speaker_stats[speaker_name]["word_count"] += len(segment.text.split())
             
             # Add speaker name if speaker changes
             if speaker_name != current_speaker:
-                full_transcript += f"\n{speaker_name}: "
+                full_transcript += f"\n\n{speaker_name}: "
                 current_speaker = speaker_name
             else:
                 # Continue with same speaker
                 full_transcript += " "
             
-            # Add segment text
-            full_transcript += segment.text
+            # Add segment text with timestamp for reference
+            timestamp = f"[{int(segment.start_time//60):02d}:{int(segment.start_time%60):02d}]"
+            full_transcript += f"{timestamp} {segment.text}"
+        
+        # Calculate speaker percentages
+        total_time = sum(stats["total_time"] for stats in speaker_stats.values())
+        for speaker_name, stats in speaker_stats.items():
+            stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
         
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.3)
+        send_summary_notification(media_file.user_id, file_id, 'processing', 'Analyzing speakers and content', 30)
         
-        # Process the transcript in chunks if it's too long
-        # For now, we'll use a simplified approach that works on the entire transcript
+        # Generate comprehensive structured summary using LLM
+        logger.info(f"Generating LLM summary for file {media_file.filename} (length: {len(full_transcript)} chars)")
+        send_summary_notification(media_file.user_id, file_id, 'processing', 'Generating AI summary with LLM', 50)
         
-        # In a real implementation, we would:
-        # 1. Load a local LLM model (e.g., using transformers or vLLM)
-        # 2. Split the transcript into manageable chunks if it's too long
-        # 3. Summarize each chunk 
-        # 4. Combine the summaries
+        # Use asyncio to run the async LLM service
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
-        # Simulated LLM summarization (placeholder)
-        logger.info(f"Generating summary for file {media_file.filename}")
+        start_time = time.time()
         
-        # Simulate progress
+        try:
+            # Run LLM summarization - fail if LLM is not available
+            summary_data = loop.run_until_complete(
+                generate_llm_summary(full_transcript, speaker_stats, provider, model)
+            )
+            
+            processing_time = int((time.time() - start_time) * 1000)
+            summary_data["metadata"]["processing_time_ms"] = processing_time
+            
+        except Exception as e:
+            logger.error(f"LLM summarization failed: {e}")
+            # Set summary status to failed for graceful handling
+            media_file.summary_status = 'failed'
+            db.commit()
+            # Send failed notification
+            send_summary_notification(media_file.user_id, file_id, 'failed', f'AI summary generation failed: {str(e)}', 0)
+            # Don't use fallback - let the task fail if LLM is unavailable
+            raise Exception(f"LLM summarization failed: {str(e)}. No fallback summary will be generated.")
+            
+        finally:
+            try:
+                loop.close()
+            except:
+                pass
+        
+        # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.7)
         
-        # In production, replace with actual LLM code:
-        # from transformers import pipeline
-        # summarizer = pipeline("summarization", model=settings.LLM_MODEL)
-        # summary = summarizer(full_transcript, max_length=200, min_length=50)[0]["summary_text"]
+        # Store summary in PostgreSQL (for backward compatibility)
+        media_file.summary = summary_data.get("brief_summary", "Summary generation failed")
         
-        # Generate a simulated summary based on the first few segments
-        word_count = sum(len(segment.text.split()) for segment in transcript_segments[:5])
-        sample_text = " ".join([s.text for s in transcript_segments[:3]])
+        # Store structured summary in OpenSearch
+        try:
+            summary_service = OpenSearchSummaryService()
+            # Add file and user information to summary data
+            summary_data.update({
+                "file_id": file_id,
+                "user_id": media_file.user_id,
+                "summary_version": 1,
+                "provider": summary_data["metadata"].get("provider", "unknown"),
+                "model": summary_data["metadata"].get("model", "unknown")
+            })
+            
+            # Index in OpenSearch
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            document_id = loop.run_until_complete(
+                summary_service.index_summary(summary_data)
+            )
+            loop.close()
+            
+            if document_id:
+                # Store OpenSearch document ID reference
+                media_file.summary_opensearch_id = document_id
+                logger.info(f"Summary indexed in OpenSearch: {document_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to store summary in OpenSearch: {e}")
         
-        simulated_summary = (
-            f"This is a simulated summary of a {word_count}+ word transcript. "
-            f"The conversation begins with: {sample_text[:100]}... "
-            f"Multiple speakers discussed various topics over approximately "
-            f"{int(transcript_segments[-1].end_time / 60)} minutes."
-        )
-        
-        # Update the media file with the summary
-        media_file.summary = simulated_summary
+        # Set summary status to completed
+        media_file.summary_status = 'completed'
         db.commit()
+        
+        # Send completion notification
+        send_summary_notification(media_file.user_id, file_id, 'completed', 'AI summary generation completed successfully', 100)
         
         # Update task as completed
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
         
-        logger.info(f"Successfully generated summary for file {media_file.filename}")
-        return {"status": "success", "file_id": file_id}
+        logger.info(f"Successfully generated comprehensive summary for file {media_file.filename}")
+        return {
+            "status": "success", 
+            "file_id": file_id,
+            "summary_data": {
+                "bluf": summary_data.get("bluf", ""),
+                "speakers_analyzed": len(speaker_stats),
+                "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
+                "opensearch_document_id": getattr(media_file, 'summary_opensearch_id', None)
+            }
+        }
     
     except Exception as e:
         # Handle errors
         logger.error(f"Error summarizing file {file_id}: {str(e)}")
+        
+        # Set summary status to failed if not already set
+        try:
+            if media_file and media_file.summary_status != 'failed':
+                # Send failed notification
+                send_summary_notification(media_file.user_id, file_id, 'failed', f'AI summary generation failed: {str(e)}', 0)
+                media_file.summary_status = 'failed'
+                db.commit()
+        except Exception:
+            pass  # Don't fail on cleanup
+            
         update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
         return {"status": "error", "message": str(e)}
     
