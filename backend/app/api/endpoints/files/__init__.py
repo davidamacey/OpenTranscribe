@@ -53,6 +53,10 @@ router.include_router(subtitles_router, prefix="", tags=["subtitles"])
 from .waveform import router as waveform_router
 router.include_router(waveform_router, prefix="", tags=["waveform"])
 
+# Import and include URL processing router
+from .url_processing import router as url_processing_router
+router.include_router(url_processing_router, prefix="", tags=["url-processing"])
+
 @router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
 async def upload_media_file(

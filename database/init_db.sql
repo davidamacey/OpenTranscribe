@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS media_file (
     title VARCHAR(255) NULL,
     author VARCHAR(255) NULL,
     description TEXT NULL,
+    source_url VARCHAR(2048) NULL, -- Original source URL (e.g., YouTube URL)
     -- Task tracking and error handling fields
     active_task_id VARCHAR(255) NULL,
     task_started_at TIMESTAMP WITH TIME ZONE NULL,

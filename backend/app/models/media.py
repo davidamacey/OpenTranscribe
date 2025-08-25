@@ -69,6 +69,7 @@ class MediaFile(Base):
     title = Column(String, nullable=True)  # Content title from metadata
     author = Column(String, nullable=True)  # Content author/artist
     description = Column(Text, nullable=True)  # Content description
+    source_url = Column(String(2048), nullable=True)  # Original source URL (e.g., YouTube URL)
     
     # Task tracking and error handling fields
     active_task_id = Column(String, nullable=True, index=True)  # Current Celery task ID

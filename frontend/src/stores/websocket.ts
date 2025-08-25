@@ -34,11 +34,42 @@ interface WebSocketState {
   error: string | null;
 }
 
+// Load notifications from localStorage if available
+const loadNotificationsFromStorage = (): Notification[] => {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('notifications');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Convert timestamp strings back to Date objects
+        return parsed.map((n: any) => ({
+          ...n,
+          timestamp: new Date(n.timestamp)
+        }));
+      }
+    } catch (error) {
+      console.warn('Failed to load notifications from localStorage:', error);
+    }
+  }
+  return [];
+};
+
+// Save notifications to localStorage
+const saveNotificationsToStorage = (notifications: Notification[]) => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('notifications', JSON.stringify(notifications));
+    } catch (error) {
+      console.warn('Failed to save notifications to localStorage:', error);
+    }
+  }
+};
+
 // Initial state
 const initialState: WebSocketState = {
   socket: null,
   status: 'disconnected',
-  notifications: [],
+  notifications: loadNotificationsFromStorage(),
   reconnectAttempts: 0,
   error: null
 };
@@ -53,6 +84,16 @@ function createWebSocketStore() {
   // Generate notification ID
   const generateId = () => {
     return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  };
+
+  // Get current state without subscribing
+  const getState = (): WebSocketState => {
+    let currentState: WebSocketState = initialState;
+    const unsubscribe = subscribe(state => {
+      currentState = state;
+    });
+    unsubscribe();
+    return currentState;
   };
   
   // Connect to WebSocket server
@@ -154,6 +195,7 @@ function createWebSocketStore() {
             // Add notification
             update((s: WebSocketState) => {
               s.notifications = [notification, ...s.notifications.slice(0, 99)]; // Keep max 100 notifications
+              saveNotificationsToStorage(s.notifications);
               return s;
             });
           } catch (error) {
@@ -183,16 +225,6 @@ function createWebSocketStore() {
     reconnectTimeout = setTimeout(() => {
       connect(token);
     }, backoffTime);
-  };
-  
-  // Get current state without subscribing
-  const getState = (): WebSocketState => {
-    let currentState: WebSocketState = initialState;
-    const unsubscribe = subscribe(state => {
-      currentState = state;
-    });
-    unsubscribe();
-    return currentState;
   };
   
   // Disconnect
@@ -231,6 +263,7 @@ function createWebSocketStore() {
       const index = state.notifications.findIndex((n: Notification) => n.id === id);
       if (index !== -1) {
         state.notifications[index].read = true;
+        saveNotificationsToStorage(state.notifications);
       }
       return state;
     });
@@ -240,6 +273,7 @@ function createWebSocketStore() {
   const markAllAsRead = () => {
     update((state: WebSocketState) => {
       state.notifications = state.notifications.map((n: Notification) => ({ ...n, read: true }));
+      saveNotificationsToStorage(state.notifications);
       return state;
     });
   };
@@ -248,6 +282,7 @@ function createWebSocketStore() {
   const clearAll = () => {
     update((state: WebSocketState) => {
       state.notifications = [];
+      saveNotificationsToStorage(state.notifications);
       return state;
     });
   };
@@ -311,12 +346,21 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       // Page became visible, check if we need to reconnect
-      const currentState = getState();
-      if (currentState.status === 'disconnected' || currentState.status === 'error') {
-        const token = localStorage.getItem('token');
-        if (token) {
-          websocketStore.connect(token);
+      let shouldReconnect = false;
+      let token: string | null = null;
+      
+      const unsubscribe = websocketStore.subscribe((state: WebSocketState) => {
+        if (state.status === 'disconnected' || state.status === 'error') {
+          token = localStorage.getItem('token');
+          if (token) {
+            shouldReconnect = true;
+          }
         }
+      });
+      unsubscribe();
+      
+      if (shouldReconnect && token) {
+        websocketStore.connect(token);
       }
     }
   });
