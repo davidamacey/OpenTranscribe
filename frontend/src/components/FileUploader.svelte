@@ -16,8 +16,10 @@
   interface FileWithSize extends File {
     size: number;
   }
+
   
   // State
+  let activeTab: 'file' | 'url' = 'file';
   let file: FileWithSize | null = null;
   let fileInput: HTMLInputElement;
   let drag = false;
@@ -31,6 +33,13 @@
   let isCancelling = false;
   let currentFileId: number | null = null; // Track the current file ID for cancellation
   let token = ''; // Store the auth token
+
+  // URL processing state
+  let youtubeUrl = '';
+  let processingUrl = false;
+  let urlProgress = 0;
+  let urlError = '';
+  let urlStatusMessage = '';
   
   // Upload speed calculation variables
   let lastLoaded = 0;
@@ -52,6 +61,9 @@
     uploadComplete: { fileId: number; isDuplicate?: boolean };
     uploadError: { error: string };
   }>();
+
+  // URL validation regex for YouTube
+  const YOUTUBE_URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.*$/;
   
   // Track allowed file types with more comprehensive list
   const allowedTypes = [
@@ -359,7 +371,7 @@
               statusMessage = `Uploaded ${loadedMB}MB of ${totalMB}MB (${speed} MB/s) • ${timeRemaining} remaining`;
             } else {
               // For smaller files, still calculate time remaining but don't show detailed MB info
-              const { speed, timeRemaining } = calculateUploadStats(progressEvent);
+              const { timeRemaining } = calculateUploadStats(progressEvent);
               estimatedTimeRemaining = timeRemaining;
             }
           }
@@ -539,6 +551,153 @@
     estimatedTimeRemaining = '';
     uploadStartTime = 0;
   }
+
+  // Reset URL processing state
+  function resetUrlState() {
+    youtubeUrl = '';
+    processingUrl = false;
+    urlProgress = 0;
+    urlError = '';
+    urlStatusMessage = '';
+    currentFileId = null;
+  }
+
+  // Switch tabs and reset states
+  function switchTab(tab: 'file' | 'url') {
+    if (tab === activeTab) return;
+    
+    activeTab = tab;
+    
+    if (tab === 'file') {
+      resetUrlState();
+    } else {
+      resetUploadState();
+    }
+  }
+
+  // Validate YouTube URL
+  function isValidYouTubeUrl(url: string): boolean {
+    return YOUTUBE_URL_REGEX.test(url.trim());
+  }
+
+  // Process YouTube URL
+  async function processYouTubeUrl() {
+    if (!youtubeUrl.trim()) {
+      urlError = 'Please enter a YouTube URL';
+      return;
+    }
+
+    if (!isValidYouTubeUrl(youtubeUrl)) {
+      urlError = 'Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=...)';  
+      return;
+    }
+
+    urlError = '';
+    processingUrl = true;
+    urlProgress = 0;
+    urlStatusMessage = 'Processing YouTube URL...';
+    currentFileId = null;
+
+    // Create cancel token
+    cancelTokenSource = axios.CancelToken.source();
+
+    try {
+      const response = await axiosInstance.post('/api/files/process-url', {
+        url: youtubeUrl.trim()
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        timeout: 300000, // 5 minutes for URL processing
+        cancelToken: cancelTokenSource.token,
+        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+          if (progressEvent.total) {
+            urlProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          }
+        }
+      });
+
+      const result = response.data;
+      currentFileId = result.id;
+      urlProgress = 100;
+      urlStatusMessage = 'YouTube video processed successfully!';
+      
+      // Dispatch success event
+      dispatch('uploadComplete', { fileId: result.id });
+      
+    } catch (err: unknown) {
+      if (axios.isCancel(err)) {
+        return; // Expected cancellation
+      }
+      
+      // Handle different types of errors
+      if (err && typeof err === 'object' && 'response' in err && err.response &&
+          typeof err.response === 'object' && err.response !== null) {
+        const response = err.response as {
+          status?: number;
+          data?: { detail?: string; message?: string };
+        };
+        
+        if (response.status === 400) {
+          urlError = response.data?.detail || 'Invalid YouTube URL';
+        } else if (response.status === 401) {
+          urlError = 'Session expired. Please log in again.';
+        } else if (response.status === 429) {
+          urlError = 'Too many requests. Please wait a moment and try again.';
+        } else {
+          urlError = response.data?.detail || response.data?.message || 'Failed to process YouTube URL';
+        }
+      } else {
+        urlError = 'Network error. Please check your connection and try again.';
+      }
+      
+      dispatch('uploadError', { error: urlError });
+      
+    } finally {
+      processingUrl = false;
+      cancelTokenSource = null;
+    }
+  }
+
+  // Cancel URL processing
+  async function cancelUrlProcessing() {
+    if (processingUrl && !isCancelling) {
+      isCancelling = true;
+      urlStatusMessage = 'Cancelling URL processing...';
+      
+      try {
+        if (cancelTokenSource) {
+          cancelTokenSource.cancel('URL processing cancelled by user');
+        }
+
+        if (currentFileId) {
+          try {
+            await axiosInstance.delete(`/api/files/${currentFileId}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            urlStatusMessage = 'URL processing cancelled successfully';
+          } catch (err) {
+            urlStatusMessage = 'URL processing cancelled but cleanup may be incomplete';
+          }
+        } else {
+          urlStatusMessage = 'URL processing cancelled';
+        }
+
+        setTimeout(() => {
+          resetUrlState();
+        }, 2000);
+      } catch (err) {
+        urlStatusMessage = 'Error during cancellation';
+        setTimeout(() => {
+          resetUrlState();
+        }, 2000);
+      }
+    } else {
+      resetUrlState();
+    }
+  }
   
   // Format time remaining into readable units
   function formatTimeRemaining(seconds: number): string {
@@ -669,6 +828,30 @@
 </script>
 
 <div class="uploader-container">
+  <!-- Tab Navigation -->
+  <div class="tab-navigation">
+    <button 
+      class="tab-button {activeTab === 'file' ? 'active' : ''}"
+      on:click={() => switchTab('file')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      Upload File
+    </button>
+    <button 
+      class="tab-button {activeTab === 'url' ? 'active' : ''}"
+      on:click={() => switchTab('url')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+      </svg>
+      YouTube URL
+    </button>
+  </div>
   <!-- Display duplicate notification - made more prominent with !important -->
   {#if isDuplicateFile}
     <div class="message duplicate-message" id="duplicate-notification">
@@ -715,7 +898,9 @@
     </div>
   {/if}
   
-  {#if !file}
+  <!-- File Upload Tab -->
+  {#if activeTab === 'file'}
+    {#if !file}
     <div 
       id="drop-zone" 
       class="drop-zone {drag ? 'active' : ''}" 
@@ -746,8 +931,8 @@
     <div class="supported-formats">
       <p>Supported formats: MP3, WAV, OGG, FLAC, AAC, M4A, MP4, WEBM</p>
     </div>
-  {:else}
-    <div class="selected-file">
+    {:else}
+      <div class="selected-file">
       <div class="file-info">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
@@ -779,24 +964,102 @@
           {uploading ? 'Uploading...' : 'Upload'}
         </button>
       </div>
-    </div>
-    
-    {#if uploading}
-      <div class="progress-container">
-        <div class="progress-header">
-          <span class="progress-text">{progress}%</span>
-          {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
-            <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+      </div>
+      
+      {#if uploading}
+        <div class="progress-container">
+          <div class="progress-header">
+            <span class="progress-text">{progress}%</span>
+            {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
+              <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+            {/if}
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: {progress}%"></div>
+          </div>
+          {#if statusMessage}
+            <p class="status-message">{statusMessage}</p>
           {/if}
         </div>
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {progress}%"></div>
-        </div>
-        {#if statusMessage}
-          <p class="status-message">{statusMessage}</p>
-        {/if}
-      </div>
+      {/if}
     {/if}
+  {:else}
+    <!-- YouTube URL Tab -->
+    <div class="url-input-container">
+      <div class="url-input-section">
+        <label for="youtube-url" class="url-label">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
+            <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+          </svg>
+          YouTube URL
+        </label>
+        <input
+          id="youtube-url"
+          type="url"
+          placeholder="https://www.youtube.com/watch?v=..."
+          class="url-input"
+          bind:value={youtubeUrl}
+          disabled={processingUrl}
+        />
+        <div class="url-actions">
+          <button
+            type="button"
+            class="cancel-url-button"
+            on:click={cancelUrlProcessing}
+            disabled={isCancelling}
+            title={isCancelling ? 'Cancelling...' : (processingUrl ? 'Cancel processing' : 'Clear URL')}
+          >
+            {isCancelling ? 'Cancelling...' : (processingUrl ? 'Cancel' : 'Clear')}
+          </button>
+          <button 
+            class="process-url-button" 
+            on:click={processYouTubeUrl}
+            disabled={processingUrl || !youtubeUrl.trim()}
+            title="Process YouTube video for transcription"
+          >
+            {processingUrl ? 'Processing...' : 'Process Video'}
+          </button>
+        </div>
+      </div>
+
+      {#if urlError}
+        <div class="message error-message">
+          <div class="message-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+          <div class="message-content">{urlError}</div>
+        </div>
+      {/if}
+      
+      {#if processingUrl}
+        <div class="progress-container">
+          <div class="progress-header">
+            <span class="progress-text">{urlProgress}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: {urlProgress}%"></div>
+          </div>
+          {#if urlStatusMessage}
+            <p class="status-message">{urlStatusMessage}</p>
+          {/if}
+        </div>
+      {/if}
+      
+      <div class="url-info">
+        <p class="url-description">
+          Enter a YouTube video URL to download and transcribe the video automatically.
+          The video will be processed and available in your media library just like uploaded files.
+        </p>
+        <div class="supported-formats">
+          <p>Supported: YouTube videos and playlists</p>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -809,6 +1072,51 @@
     max-width: 500px;
     margin: 0 auto;
     padding: 0;
+  }
+  
+  .tab-navigation {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+  }
+  
+  .tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: 6px 6px 0 0;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  
+  .tab-button:hover {
+    color: var(--primary-color);
+    background-color: var(--hover-color, rgba(59, 130, 246, 0.05));
+  }
+  
+  .tab-button.active {
+    color: var(--primary-color);
+    background-color: transparent;
+    border-bottom: 2px solid var(--primary-color);
+  }
+  
+  .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: var(--primary-color);
+    border-radius: 2px 2px 0 0;
   }
   
   .drop-zone {
@@ -1051,5 +1359,133 @@
     opacity: 0.9;
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* URL Input Styles */
+  .url-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .url-input-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .url-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  
+  .url-label svg {
+    color: #ff0000; /* YouTube red */
+  }
+  
+  .url-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
+  }
+  
+  .url-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  
+  .url-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .url-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+  
+  .cancel-url-button {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+  }
+  
+  .cancel-url-button:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+  
+  .cancel-url-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .process-url-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+  
+  .process-url-button:hover:not(:disabled) {
+    background-color: var(--primary-hover, #2563eb);
+    transform: translateY(-1px);
+  }
+  
+  .process-url-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .url-info {
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  
+  .url-description {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  
+  /* Dark mode adjustments for URL components */
+  :global(.dark) .url-input {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+  
+  :global(.dark) .url-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+  
+  :global(.dark) .url-info {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
   }
 </style>

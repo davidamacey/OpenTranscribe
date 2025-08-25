@@ -34,7 +34,7 @@ def ensure_indices_exist():
     
     try:
         # Create transcript index if it doesn't exist
-        if not opensearch_client.indices.exists(settings.OPENSEARCH_TRANSCRIPT_INDEX):
+        if not opensearch_client.indices.exists(index=settings.OPENSEARCH_TRANSCRIPT_INDEX):
             transcript_index_config = {
                 "settings": {
                     "index": {
@@ -74,7 +74,7 @@ def ensure_indices_exist():
             logger.info(f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}")
         
         # Create speaker index if it doesn't exist
-        if not opensearch_client.indices.exists(settings.OPENSEARCH_SPEAKER_INDEX):
+        if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
             speaker_index_config = {
                 "settings": {
                     "index": {

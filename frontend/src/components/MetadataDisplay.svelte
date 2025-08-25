@@ -49,6 +49,17 @@
           <span class="metadata-value">{file && 'content_type' in file ? file.content_type : 'Unknown'}</span>
         </div>
         
+        {#if file && 'source_url' in file && file.source_url}
+          <div class="metadata-item">
+            <span class="metadata-label">Source:</span>
+            <span class="metadata-value">
+              <a href={file.source_url} target="_blank" rel="noopener noreferrer" class="source-link">
+                {file.source_url.length > 50 ? file.source_url.substring(0, 47) + '...' : file.source_url}
+              </a>
+            </span>
+          </div>
+        {/if}
+        
         <div class="metadata-item">
           <span class="metadata-label">Duration:</span>
           <span class="metadata-value">
@@ -221,6 +232,18 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+
+  .source-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    word-break: break-all;
+    transition: color 0.2s ease;
+  }
+
+  .source-link:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
   }
 
   @media (max-width: 768px) {

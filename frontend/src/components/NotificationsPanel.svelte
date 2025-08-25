@@ -14,6 +14,17 @@
   const unsubscribePanel = showNotificationsPanel.subscribe(value => {
     showPanel = value;
   });
+
+  // Reactive statement to manage body scroll when panel state changes
+  $: {
+    if (typeof document !== 'undefined') {
+      if (showPanel) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = 'auto';
+      }
+    }
+  }
   
   /** @type {Date} */
   let lastRead = new Date();
@@ -31,13 +42,7 @@
   // Close the notifications panel
   function closePanel() {
     showNotificationsPanel.set(false);
-    lastRead = new Date();
-    
-    // Mark all notifications as read
-    markAllNotificationsAsRead();
-    if (websocketStore.markAllAsRead) {
-      websocketStore.markAllAsRead();
-    }
+    // Don't automatically mark as read - let user do it manually
   }
   
   /**
@@ -65,6 +70,13 @@
   // Clear all notifications
   function clearAllNotifications() {
     websocketStore.clearAll();
+  }
+
+  // Mark all notifications as read
+  function markAllWebSocketNotificationsAsRead() {
+    if (websocketStore.markAllAsRead) {
+      websocketStore.markAllAsRead();
+    }
   }
   
   /**
@@ -124,7 +136,7 @@
 
   /**
    * Get status color for notification type
-   * @param {string} type - The notification type
+   * @param {Object} notification - The notification object
    * @returns {string} - CSS class for status
    */
   function getNotificationStatus(notification) {
@@ -155,6 +167,11 @@
     // Remove event listener when component is destroyed
     document.removeEventListener('click', handleClickOutside);
     unsubscribePanel();
+    
+    // Restore body scroll when component is destroyed
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = 'auto';
+    }
   });
 </script>
 
@@ -172,6 +189,18 @@
         {/if}
       </div>
       <div class="header-actions">
+        {#if $wsUnreadCount > 0}
+          <button 
+            class="action-btn mark-read-btn" 
+            on:click={markAllWebSocketNotificationsAsRead}
+            title="Mark all notifications as read"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Mark read
+          </button>
+        {/if}
         {#if $websocketStore.notifications.length > 0}
           <button 
             class="action-btn clear-btn" 
@@ -252,7 +281,13 @@
                     <Link 
                       to={getFileLink(notification) || ''} 
                       class="notification-action" 
-                      on:click={() => showPanel = false}
+                      on:click={() => {
+                        showPanel = false;
+                        // Mark this specific notification as read when navigating to file
+                        if (!notification.read) {
+                          websocketStore.markAsRead(notification.id);
+                        }
+                      }}
                     >
                       View File →
                     </Link>
@@ -385,6 +420,15 @@
     color: var(--text-color);
   }
   
+  .mark-read-btn {
+    color: var(--success-color);
+  }
+  
+  .mark-read-btn:hover {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success-color);
+  }
+
   .clear-btn {
     color: var(--error-color);
   }

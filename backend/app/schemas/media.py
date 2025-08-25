@@ -218,6 +218,7 @@ class MediaFile(MediaFileBase):
     title: Optional[str] = None
     author: Optional[str] = None
     description: Optional[str] = None
+    source_url: Optional[str] = None
     
     class Config:
         from_attributes = True
