@@ -819,8 +819,37 @@ class LLMService:
             }
 
     @staticmethod
-    def create_from_settings() -> 'LLMService':
-        """Create LLMService from application settings"""
+    def create_from_settings(user_id: Optional[int] = None) -> 'LLMService':
+        """
+        Create LLMService from application settings or user-specific settings
+        
+        Args:
+            user_id: If provided, attempts to load user-specific settings first
+        
+        Returns:
+            LLMService configured with user settings or system defaults
+        """
+        # Try to load user-specific settings first
+        if user_id:
+            try:
+                user_service = LLMService.create_from_user_settings(user_id)
+                if user_service:
+                    return user_service
+            except Exception as e:
+                logger.warning(f"Failed to load user LLM settings for user {user_id}, falling back to system defaults: {e}")
+
+        # Fall back to system defaults
+        return LLMService.create_from_system_settings()
+
+    @staticmethod
+    def create_from_system_settings() -> 'LLMService':
+        """
+        Create LLMService from system application settings
+        
+        This method creates an LLM service using the system-wide default configuration
+        from environment variables. It's used as a fallback when users haven't 
+        configured their own LLM settings or when user settings fail to load.
+        """
         provider = LLMProvider(settings.LLM_PROVIDER)
 
         # Provider-specific configuration mapping
@@ -858,6 +887,63 @@ class LLMService:
         )
 
         return LLMService(config)
+
+    @staticmethod
+    def create_from_user_settings(user_id: int) -> Optional['LLMService']:
+        """
+        Create LLMService from user-specific database settings
+        
+        Args:
+            user_id: User ID to load settings for
+            
+        Returns:
+            LLMService configured with user settings, or None if no settings found
+        """
+        from app.db.base import SessionLocal
+        from app.models.user_llm_settings import UserLLMSettings
+        from app.utils.encryption import decrypt_api_key
+
+        db = SessionLocal()
+        try:
+            # Get user's LLM settings
+            user_settings = db.query(UserLLMSettings).filter(
+                UserLLMSettings.user_id == user_id,
+                UserLLMSettings.is_active == True
+            ).first()
+
+            if not user_settings:
+                return None
+
+            # Decrypt API key if present
+            api_key = None
+            if user_settings.api_key:
+                api_key = decrypt_api_key(user_settings.api_key)
+                if not api_key and user_settings.api_key:  # Decryption failed
+                    logger.error(f"Failed to decrypt API key for user {user_id}")
+                    return None
+
+            # Create LLM config from user settings
+            provider = LLMProvider(user_settings.provider)
+            temperature_float = float(user_settings.temperature)
+
+            config = LLMConfig(
+                provider=provider,
+                model=user_settings.model_name,
+                api_key=api_key,
+                base_url=user_settings.base_url,
+                max_tokens=user_settings.max_tokens,
+                temperature=temperature_float,
+                timeout=user_settings.timeout
+            )
+
+            logger.info(f"Created LLMService for user {user_id} with provider {provider} and model {user_settings.model_name}")
+            return LLMService(config)
+
+        except Exception as e:
+            logger.error(f"Error creating LLMService from user settings for user {user_id}: {e}")
+            return None
+        finally:
+            db.close()
 
     @staticmethod
     def get_supported_providers() -> list[str]:
@@ -946,9 +1032,12 @@ async def create_llm_service_with_fallback() -> LLMService:
 
         try:
             provider = LLMProvider(provider_name)
+            # Get provider-specific model name
+            model = getattr(settings, f'{provider_name.upper()}_MODEL_NAME', f'{provider_name}-default')
+
             fallback_config = LLMConfig(
                 provider=provider,
-                model=settings.LLM_MODEL,  # May need provider-specific defaults
+                model=model,
                 api_key=getattr(settings, f'{provider_name.upper()}_API_KEY', None),
                 base_url=getattr(settings, f'{provider_name.upper()}_BASE_URL', None),
             )
@@ -976,13 +1065,14 @@ async def create_llm_service_with_fallback() -> LLMService:
 class LLMServiceContext:
     """Context manager for LLM service with proper cleanup"""
 
-    def __init__(self, service: Optional[LLMService] = None):
+    def __init__(self, service: Optional[LLMService] = None, user_id: Optional[int] = None):
         self.service = service
+        self.user_id = user_id
         self._created_service = service is None
 
     async def __aenter__(self) -> LLMService:
         if self.service is None:
-            self.service = LLMService.create_from_settings()
+            self.service = LLMService.create_from_settings(user_id=self.user_id)
         return self.service
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

@@ -103,12 +103,12 @@ def get_disk_usage():
         logger.error(f"Error getting disk usage: {e}")
         return {"total": "Unknown", "used": "Unknown", "free": "Unknown", "percent": "Unknown"}
 
-def format_bytes(bytes):
+def format_bytes(byte_count):
     """Format bytes to a human-readable string"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes < 1024 or unit == 'TB':
-            return f"{bytes:.2f} {unit}"
-        bytes /= 1024
+        if byte_count < 1024 or unit == 'TB':
+            return f"{byte_count:.2f} {unit}"
+        byte_count /= 1024
 
 
 @router.get("/stats", response_model=dict[str, Any])
@@ -250,7 +250,7 @@ async def get_admin_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving admin statistics: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/users", response_model=list[UserSchema])
@@ -271,7 +271,7 @@ def get_admin_users(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving users: {str(e)}"
-        )
+        ) from e
 
 
 @router.post("/users", response_model=UserSchema)
@@ -298,7 +298,7 @@ def create_admin_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating user: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/users/{user_id}", response_model=dict[str, str])
@@ -369,12 +369,16 @@ def delete_admin_user(
                 # Delete other related records
                 try:
                     if media_ids:
-                        file_tag_sql = f"DELETE FROM file_tag WHERE media_file_id IN ({','.join(map(str, media_ids))})"
-                        db.execute(text(file_tag_sql))
+                        # Use parameterized query to prevent SQL injection
+                        media_ids_str = ','.join([':id' + str(i) for i in range(len(media_ids))])
+                        media_ids_params = {f'id{i}': media_id for i, media_id in enumerate(media_ids)}
+                        
+                        file_tag_sql = text(f"DELETE FROM file_tag WHERE media_file_id IN ({media_ids_str})")
+                        db.execute(file_tag_sql, media_ids_params)
                         logger.info("File tags deleted successfully")
 
-                        analytics_sql = f"DELETE FROM analytics WHERE media_file_id IN ({','.join(map(str, media_ids))})"
-                        db.execute(text(analytics_sql))
+                        analytics_sql = text(f"DELETE FROM analytics WHERE media_file_id IN ({media_ids_str})")
+                        db.execute(analytics_sql, media_ids_params)
                         logger.info("Analytics deleted successfully")
                 except Exception as related_error:
                     logger.error(f"Error deleting file_tag or analytics: {related_error}")
@@ -411,4 +415,4 @@ def delete_admin_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
-        )
+        ) from e

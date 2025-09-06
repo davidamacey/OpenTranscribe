@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import timedelta
 
@@ -25,6 +26,7 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token")
 

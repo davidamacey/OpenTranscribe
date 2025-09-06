@@ -21,6 +21,7 @@ from .media import TranscriptSegment
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
 from .user import User
+from .user_llm_settings import UserLLMSettings
 
 __all__ = [
     "User",
@@ -39,5 +40,6 @@ __all__ = [
     "SpeakerCollection",
     "SpeakerCollectionMember",
     "SummaryPrompt",
-    "UserSetting"
+    "UserSetting",
+    "UserLLMSettings"
 ]

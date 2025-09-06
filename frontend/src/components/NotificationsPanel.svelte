@@ -7,7 +7,7 @@
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
   
   // Prop to control whether to show the notification bell button
-  export let hideButton = false;
+  export const hideButton = false;
   
   // Subscribe to the showNotificationsPanel store
   let showPanel = false;
@@ -140,8 +140,9 @@
    * @returns {string} - CSS class for status
    */
   function getNotificationStatus(notification) {
-    if (notification.data?.status) {
-      const status = notification.data.status;
+    const notificationData = notification.data || {};
+    if (notificationData.status) {
+      const status = notificationData.status;
       switch (status) {
         case 'completed':
           return 'success';
@@ -177,7 +178,7 @@
 
 {#if showPanel}
   <!-- Backdrop for mobile/tablet -->
-  <div class="notifications-backdrop" on:click={closePanel}></div>
+  <div class="notifications-backdrop" on:click={closePanel} on:keydown={closePanel} role="button" tabindex="0" aria-label="Close notifications panel"></div>
   
   <div class="notifications-panel">
     <!-- Header -->

@@ -9,6 +9,7 @@ from .endpoints import admin
 from .endpoints import auth
 from .endpoints import collections
 from .endpoints import comments
+from .endpoints import llm_settings
 from .endpoints import prompts
 from .endpoints import search
 from .endpoints import speaker_profiles
@@ -77,6 +78,7 @@ include_router_with_consistency(collections.router, prefix="/collections", tags=
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])
+include_router_with_consistency(llm_settings.router, prefix="/llm-settings", tags=["llm-settings"])
 
 # Include WebSocket router without prefix since it handles its own paths
 api_router.include_router(websockets.router, tags=["websockets"])

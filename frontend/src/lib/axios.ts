@@ -83,12 +83,19 @@ axiosInstance.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response) {
-      console.error(`Error response for ${error.config?.url}: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-    } else if (error.request) {
-      console.error(`No response received for ${error.config?.url}:`, error.request);
-    } else {
-      console.error(`Error setting up request for ${error.config?.url}:`, error.message);
+    // Skip logging expected 404s for optional resources
+    const expectedNotFoundEndpoints = ['/llm-settings/'];
+    const isExpected404 = error.response?.status === 404 && 
+      expectedNotFoundEndpoints.some(endpoint => error.config?.url?.includes(endpoint));
+    
+    if (!isExpected404) {
+      if (error.response) {
+        console.error(`Error response for ${error.config?.url}: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      } else if (error.request) {
+        console.error(`No response received for ${error.config?.url}:`, error.request);
+      } else {
+        console.error(`Error setting up request for ${error.config?.url}:`, error.message);
+      }
     }
     return Promise.reject(error);
   }
@@ -129,9 +136,14 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Log detailed error information for debugging
+    // Skip logging expected 404s for optional resources
+    const expectedNotFoundEndpoints = ['/llm-settings/'];
+    const isExpected404 = error.response?.status === 404 && 
+      expectedNotFoundEndpoints.some(endpoint => error.config?.url?.includes(endpoint));
+    
+    // Log detailed error information for debugging (except expected 404s)
     const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-    if (isDevMode) {
+    if (isDevMode && !isExpected404) {
       console.error('API Error:', {
         url: error.config?.url,
         method: error.config?.method,

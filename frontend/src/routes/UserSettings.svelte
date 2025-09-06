@@ -3,6 +3,8 @@
   import axios from 'axios';
   import axiosInstance from '../lib/axios';
   import { authStore, fetchUserInfo } from '../stores/auth';
+  import LLMSettings from '../components/settings/LLMSettings.svelte';
+  import PromptSettings from '../components/settings/PromptSettings.svelte';
   
   // Explicitly declare router props to prevent warnings
   export let location = null;
@@ -23,6 +25,15 @@
   let profileChanged = false;
   let passwordChanged = false;
   
+  // Tab management
+  let activeTab = 'profile';
+  const tabs = [
+    { id: 'profile', label: 'Profile' },
+    { id: 'password', label: 'Password' },
+    { id: 'ai-prompts', label: 'AI Prompts' },
+    { id: 'llm-provider', label: 'LLM Provider' }
+  ];
+  
   onMount(() => {
     // Initialize form data
     if ($authStore.user) {
@@ -30,6 +41,22 @@
       email = $authStore.user.email || '';
     }
   });
+  
+  // Handle tab changes
+  function switchTab(tabId: string) {
+    activeTab = tabId;
+    // Clear messages when switching tabs
+    success = '';
+    error = '';
+  }
+  
+  // Handle AI settings changes
+  function onAISettingsChange() {
+    // This can be used to refresh data or show notifications
+    // Currently just clearing any existing messages
+    success = '';
+    error = '';
+  }
   
   // Update profile info
   async function updateProfile() {
@@ -111,20 +138,68 @@
 <div class="settings-container">
   <h1>User Settings</h1>
   
-  {#if success}
-    <div class="success-message">
-      {success}
-    </div>
-  {/if}
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <button 
+      class="tab-button {activeTab === 'profile' ? 'active' : ''}"
+      on:click={() => switchTab('profile')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+        <circle cx="12" cy="7" r="4"></circle>
+      </svg>
+      Profile
+    </button>
+    <button 
+      class="tab-button {activeTab === 'password' ? 'active' : ''}"
+      on:click={() => switchTab('password')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <circle cx="12" cy="16" r="1"></circle>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      Password
+    </button>
+    <button 
+      class="tab-button {activeTab === 'ai-prompts' ? 'active' : ''}"
+      on:click={() => switchTab('ai-prompts')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+      </svg>
+      AI Prompts
+    </button>
+    <button 
+      class="tab-button {activeTab === 'llm-provider' ? 'active' : ''}"
+      on:click={() => switchTab('llm-provider')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+        <line x1="8" y1="21" x2="16" y2="21"></line>
+        <line x1="12" y1="17" x2="12" y2="21"></line>
+      </svg>
+      LLM Provider
+    </button>
+  </div>
   
-  {#if error}
-    <div class="error-message">
-      {error}
-    </div>
-  {/if}
-  
-  <div class="settings-section">
-    <h2>Profile Information</h2>
+  <!-- Tab Content -->
+  <div class="tab-content">
+    {#if activeTab === 'profile'}
+      <div class="settings-section">
+        <h2>Profile Information</h2>
+        
+        {#if success}
+          <div class="success-message">
+            {success}
+          </div>
+        {/if}
+        
+        {#if error}
+          <div class="error-message">
+            {error}
+          </div>
+        {/if}
     
     <form on:submit|preventDefault={updateProfile} class="settings-form">
       <div class="form-group">
@@ -160,14 +235,28 @@
         >
           {loading ? 'Saving...' : 'Save Changes'}
         </button>
+        </div>
+      </form>
       </div>
-    </form>
-  </div>
-  
-  <div class="settings-section">
-    <h2>Change Password</h2>
+    {/if}
     
-    <form on:submit|preventDefault={changePassword} class="settings-form">
+    {#if activeTab === 'password'}
+      <div class="settings-section">
+        <h2>Change Password</h2>
+        
+        {#if success}
+          <div class="success-message">
+            {success}
+          </div>
+        {/if}
+        
+        {#if error}
+          <div class="error-message">
+            {error}
+          </div>
+        {/if}
+        
+        <form on:submit|preventDefault={changePassword} class="settings-form">
       <div class="form-group">
         <label for="currentPassword">Current Password</label>
         <input 
@@ -211,16 +300,83 @@
         >
           {loading ? 'Changing...' : 'Change Password'}
         </button>
+        </div>
+      </form>
       </div>
-    </form>
+    {/if}
+    
+    {#if activeTab === 'ai-prompts'}
+      <div class="settings-section">
+        <PromptSettings onSettingsChange={onAISettingsChange} />
+      </div>
+    {/if}
+    
+    {#if activeTab === 'llm-provider'}
+      <div class="settings-section">
+        <LLMSettings onSettingsChange={onAISettingsChange} />
+      </div>
+    {/if}
   </div>
 </div>
 
 <style>
   .settings-container {
-    max-width: 800px;
+    max-width: 1000px;
     margin: 0 auto;
     padding: 1rem;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .tab-button {
+    color: var(--text-color);
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+    position: relative;
+    font-weight: 500;
+  }
+
+  .tab-button:hover {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
+  }
+
+  /* Active state styling - matches navbar */
+  .tab-button.active {
+    color: var(--primary-color, #3b82f6);
+    font-weight: 600;
+    background-color: transparent;
+    position: relative;
+  }
+
+  .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 1rem);
+    height: 3px;
+    background-color: var(--primary-color, #3b82f6);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+  }
+
+  .tab-content {
+    min-height: 400px;
   }
   
   h1 {
@@ -345,7 +501,39 @@
     margin-bottom: 1rem;
   }
   
-  @media (min-width: 768px) {
+  @media (max-width: 768px) {
+    .tabs-nav {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .tabs-nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab-button {
+      padding: 0.6rem 1rem;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+    }
+
+    .tab-icon {
+      font-size: 0.9rem;
+    }
+
+    .tab-label {
+      font-size: 0.8rem;
+    }
+
+    .tab-content {
+      min-height: 300px;
+    }
+  }
+
+  @media (min-width: 769px) {
     .settings-container {
       padding: 2rem;
     }

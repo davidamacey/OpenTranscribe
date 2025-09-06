@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 
 from sqlalchemy import and_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
@@ -80,7 +81,7 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
 
 def get_system_default_prompt(db: Session) -> str:
     """
-    Get the system default prompt from database
+    Get the system default prompt from database with intelligent fallback
 
     Args:
         db: Database session
@@ -89,8 +90,26 @@ def get_system_default_prompt(db: Session) -> str:
         System default prompt text
     """
     try:
-        # Log the query for debugging
-        logger.info("Querying for system default prompt with content_type='general'")
+        # First try to find a universal/general prompt
+        logger.info("Querying for universal/general system prompt")
+        default_prompt = db.query(SummaryPrompt).filter(
+            and_(
+                SummaryPrompt.is_system_default,
+                SummaryPrompt.content_type == "general",
+                SummaryPrompt.is_active,
+                or_(
+                    SummaryPrompt.name.ilike("%universal%"),
+                    SummaryPrompt.name.ilike("%general%")
+                )
+            )
+        ).first()
+
+        if default_prompt:
+            logger.info(f"Found universal system prompt: {default_prompt.name}")
+            return default_prompt.prompt_text
+
+        # If no universal prompt found, fallback to any general system prompt
+        logger.info("No universal prompt found, trying any general system prompt")
         default_prompt = db.query(SummaryPrompt).filter(
             and_(
                 SummaryPrompt.is_system_default,
@@ -100,21 +119,24 @@ def get_system_default_prompt(db: Session) -> str:
         ).first()
 
         if default_prompt:
-            logger.info(f"Found system default prompt: {default_prompt.name}")
+            logger.info(f"Found general system prompt: {default_prompt.name}")
             return default_prompt.prompt_text
-        else:
-            # Check if there are any system prompts at all
-            any_system_prompt = db.query(SummaryPrompt).filter(
-                SummaryPrompt.is_system_default
-            ).first()
 
-            if any_system_prompt:
-                logger.warning(f"System prompt exists but not 'general' type: {any_system_prompt.content_type}")
-                logger.info("Using the available system prompt instead")
-                return any_system_prompt.prompt_text
-            else:
-                logger.error("No system default prompts found in database at all!")
-                raise ValueError("System default prompt not found in database")
+        # Final fallback: any active system prompt
+        logger.warning("No general system prompt found, using any available system prompt")
+        any_system_prompt = db.query(SummaryPrompt).filter(
+            and_(
+                SummaryPrompt.is_system_default,
+                SummaryPrompt.is_active
+            )
+        ).first()
+
+        if any_system_prompt:
+            logger.warning(f"Using fallback system prompt: {any_system_prompt.name} (type: {any_system_prompt.content_type})")
+            return any_system_prompt.prompt_text
+        else:
+            logger.error("No active system default prompts found in database at all!")
+            raise ValueError("No active system default prompt found in database")
 
     except Exception as e:
         logger.error(f"Error getting system default prompt: {e}")

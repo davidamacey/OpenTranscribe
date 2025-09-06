@@ -4,6 +4,17 @@ Pydantic schemas for OpenTranscribe API.
 This package contains validation schemas for request/response models.
 """
 
+from .llm_settings import ConnectionStatus
+from .llm_settings import ConnectionTestRequest
+from .llm_settings import ConnectionTestResponse
+from .llm_settings import LLMProvider
+from .llm_settings import LLMSettingsStatus
+from .llm_settings import ProviderDefaults
+from .llm_settings import SupportedProvidersResponse
+from .llm_settings import UserLLMSettings
+from .llm_settings import UserLLMSettingsCreate
+from .llm_settings import UserLLMSettingsPublic
+from .llm_settings import UserLLMSettingsUpdate
 from .media import Comment
 from .media import CommentCreate
 from .media import CommentUpdate
@@ -52,5 +63,9 @@ __all__ = [
     "SummaryPromptBase", "SummaryPromptCreate", "SummaryPromptUpdate", "SummaryPrompt",
     "SummaryPromptList", "UserSettingBase", "UserSettingCreate", "UserSettingUpdate",
     "UserSetting", "UserSettingsList", "ActivePromptSelection", "ActivePromptResponse",
-    "ContentTypePromptsResponse"
+    "ContentTypePromptsResponse",
+    "LLMProvider", "ConnectionStatus", "UserLLMSettings", "UserLLMSettingsCreate",
+    "UserLLMSettingsUpdate", "UserLLMSettingsPublic", "ConnectionTestRequest",
+    "ConnectionTestResponse", "ProviderDefaults", "SupportedProvidersResponse",
+    "LLMSettingsStatus"
 ]

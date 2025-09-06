@@ -33,8 +33,7 @@ class UserInDB(UserBase):
     is_active: bool
     is_superuser: bool
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class User(UserInDB):

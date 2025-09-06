@@ -7,7 +7,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic import validator
+from pydantic import field_validator
 
 
 class SummaryPromptBase(BaseModel):
@@ -18,10 +18,11 @@ class SummaryPromptBase(BaseModel):
     content_type: Optional[str] = Field(None, description="Content type: meeting, interview, podcast, documentary, general")
     is_active: bool = Field(True, description="Whether the prompt is available for use")
 
-    @validator('content_type')
-    def validate_content_type(self, v):
+    @field_validator('content_type')
+    @classmethod
+    def validate_content_type(cls, v):
         if v is not None:
-            valid_types = {'meeting', 'interview', 'podcast', 'documentary', 'general'}
+            valid_types = {'meeting', 'interview', 'podcast', 'documentary', 'general', 'speaker_identification'}
             if v not in valid_types:
                 raise ValueError(f'content_type must be one of: {valid_types}')
         return v
@@ -39,10 +40,11 @@ class SummaryPromptUpdate(BaseModel):
     content_type: Optional[str] = None
     is_active: Optional[bool] = None
 
-    @validator('content_type')
-    def validate_content_type(self, v):
+    @field_validator('content_type')
+    @classmethod
+    def validate_content_type(cls, v):
         if v is not None:
-            valid_types = {'meeting', 'interview', 'podcast', 'documentary', 'general'}
+            valid_types = {'meeting', 'interview', 'podcast', 'documentary', 'general', 'speaker_identification'}
             if v not in valid_types:
                 raise ValueError(f'content_type must be one of: {valid_types}')
         return v
@@ -56,8 +58,7 @@ class SummaryPrompt(SummaryPromptBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class SummaryPromptList(BaseModel):
@@ -93,8 +94,7 @@ class UserSetting(UserSettingBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class UserSettingsList(BaseModel):

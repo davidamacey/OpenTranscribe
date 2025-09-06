@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
-from typing import Optional
 from typing import Union
 
-from pydantic import validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +19,9 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+
+    # Encryption settings for sensitive data (API keys, etc.)
+    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption")
 
     # Database settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
@@ -66,8 +68,9 @@ class Settings(BaseSettings):
     # CORS settings
     CORS_ORIGINS: list[str] = ["*", "http://localhost:5173", "http://127.0.0.1:5173"]
 
-    @validator("CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(self, v: Union[str, list[str]]) -> Union[list[str], str]:
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, list[str]]) -> Union[list[str], str]:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
@@ -84,33 +87,25 @@ class Settings(BaseSettings):
     # AI Models settings
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "mistral-7b-instruct-v0.2.Q4_K_M")  # For summarization
     HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
 
-    # LLM Configuration for AI Summarization and Speaker Identification
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "vllm")
+    # LLM Configuration - Users configure through web UI, stored in database
+    # These are system fallbacks for quick access when no user settings exist
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "")
 
-    # vLLM Configuration
+    # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")
-    VLLM_API_KEY: Optional[str] = os.getenv("VLLM_API_KEY")
     VLLM_MODEL_NAME: str = os.getenv("VLLM_MODEL_NAME", "gpt-oss")
 
-    # OpenAI Configuration
-    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL_NAME: str = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
-    OPENAI_BASE_URL: Optional[str] = os.getenv("OPENAI_BASE_URL")
+    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
-    # Ollama Configuration
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
 
-    # Anthropic Claude Configuration
-    ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
-    ANTHROPIC_BASE_URL: Optional[str] = os.getenv("ANTHROPIC_BASE_URL")
+    ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
-    # OpenRouter Configuration
-    OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
     OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 

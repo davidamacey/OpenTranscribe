@@ -69,7 +69,7 @@ def get_prompts(
         ownership_conditions.append(
             and_(
                 models.SummaryPrompt.user_id == current_user.id,
-                not models.SummaryPrompt.is_system_default
+                ~models.SummaryPrompt.is_system_default
             )
         )
 
@@ -340,13 +340,38 @@ def get_active_prompt(
 
     # If no active prompt or prompt not found, get default system prompt
     if not active_prompt:
+        # First try to find a universal/general prompt
         active_prompt = db.query(models.SummaryPrompt).filter(
             and_(
                 models.SummaryPrompt.is_system_default,
                 models.SummaryPrompt.content_type == "general",
-                models.SummaryPrompt.is_active
+                models.SummaryPrompt.is_active,
+                or_(
+                    models.SummaryPrompt.name.ilike("%universal%"),
+                    models.SummaryPrompt.name.ilike("%general%")
+                )
             )
         ).first()
+
+        # If no universal prompt found, fallback to any general system prompt
+        if not active_prompt:
+            active_prompt = db.query(models.SummaryPrompt).filter(
+                and_(
+                    models.SummaryPrompt.is_system_default,
+                    models.SummaryPrompt.content_type == "general",
+                    models.SummaryPrompt.is_active
+                )
+            ).first()
+
+        # Final fallback: any active system prompt
+        if not active_prompt:
+            active_prompt = db.query(models.SummaryPrompt).filter(
+                and_(
+                    models.SummaryPrompt.is_system_default,
+                    models.SummaryPrompt.is_active
+                )
+            ).first()
+
         active_prompt_id = active_prompt.id if active_prompt else None
 
     return schemas.ActivePromptResponse(

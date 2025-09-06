@@ -282,12 +282,37 @@ CREATE TABLE IF NOT EXISTS user_setting (
     UNIQUE(user_id, setting_key)
 );
 
+-- User LLM settings table for storing user-specific LLM provider configurations
+CREATE TABLE IF NOT EXISTS user_llm_settings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    provider VARCHAR(50) NOT NULL, -- openai, vllm, ollama, claude, custom
+    model_name VARCHAR(100) NOT NULL,
+    api_key TEXT, -- Encrypted API key
+    base_url VARCHAR(500), -- Custom endpoint URL
+    max_tokens INTEGER NOT NULL DEFAULT 2000,
+    temperature VARCHAR(10) NOT NULL DEFAULT '0.3', -- Store as string to avoid float precision issues
+    timeout INTEGER NOT NULL DEFAULT 60,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_tested TIMESTAMP WITH TIME ZONE,
+    test_status VARCHAR(20), -- success, failed, pending
+    test_message TEXT, -- Error message or success details
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id) -- Only one LLM setting per user (user can change provider/config)
+);
+
 -- Indexes for prompt and settings queries
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_user_id ON summary_prompt(user_id);
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_is_system_default ON summary_prompt(is_system_default);
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_content_type ON summary_prompt(content_type);
 CREATE INDEX IF NOT EXISTS idx_user_setting_user_id ON user_setting(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_setting_key ON user_setting(setting_key);
+
+-- Indexes for user LLM settings queries
+CREATE INDEX IF NOT EXISTS idx_user_llm_settings_user_id ON user_llm_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_llm_settings_provider ON user_llm_settings(provider);
+CREATE INDEX IF NOT EXISTS idx_user_llm_settings_active ON user_llm_settings(is_active);
 
 -- Insert system prompts with comprehensive guidance and properly escaped JSON
 INSERT INTO summary_prompt (name, description, prompt_text, is_system_default, content_type, is_active) VALUES

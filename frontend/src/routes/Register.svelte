@@ -6,8 +6,8 @@
   import logoBanner from '../assets/logo-banner.png';
   
   // Explicitly declare props to prevent warnings
-  export let location = null;
-  export let navigate = null;
+  export const location = null;
+  export const navigate = null;
   const navigateHook = useNavigate();
   
   // Form data

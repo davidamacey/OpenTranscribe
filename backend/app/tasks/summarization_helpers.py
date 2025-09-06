@@ -30,14 +30,15 @@ async def generate_llm_summary(transcript: str, speaker_stats: dict[str, Any],
         speaker_stats: Speaker statistics
         provider: Optional LLM provider override
         model: Optional model override
-        user_id: Optional user ID for custom prompt selection
+        user_id: Optional user ID for custom prompt selection and LLM settings
 
     Returns:
         Structured summary data
     """
     try:
-        async with LLMServiceContext() as llm_service:
-            # Override provider/model if specified
+        # Use user-specific LLM settings if available
+        async with LLMServiceContext(user_id=user_id) as llm_service:
+            # Override provider/model if specified (for backwards compatibility)
             if provider:
                 llm_service.config.provider = provider
             if model:
@@ -139,7 +140,7 @@ def identify_speakers_llm_task(self, file_id: int):
 
         # Generate LLM speaker predictions
         async def _run_speaker_identification():
-            async with LLMServiceContext() as llm_service:
+            async with LLMServiceContext(user_id=media_file.user_id) as llm_service:
                 return await llm_service.identify_speakers(
                     transcript=full_transcript,
                     speaker_segments=speaker_segments,

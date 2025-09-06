@@ -72,8 +72,7 @@ class Speaker(SpeakerBase):
     confidence: Optional[float] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # Speaker Profile schemas
@@ -98,8 +97,7 @@ class SpeakerProfile(SpeakerProfileBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # Speaker Collection schemas
@@ -125,8 +123,7 @@ class SpeakerCollection(SpeakerCollectionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TranscriptSegmentBase(BaseModel):
@@ -152,8 +149,7 @@ class TranscriptSegment(TranscriptSegmentBase):
     media_file_id: int
     speaker: Optional[Speaker] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class MediaFileBase(BaseModel):
@@ -223,8 +219,7 @@ class MediaFile(MediaFileBase):
     description: Optional[str] = None
     source_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class MediaFileDetail(MediaFile):
@@ -232,8 +227,7 @@ class MediaFileDetail(MediaFile):
     tags: list[str] = []
     collections: list["Collection"] = []
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TagBase(BaseModel):
@@ -243,8 +237,7 @@ class TagBase(BaseModel):
 class Tag(TagBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class CommentBase(BaseModel):
@@ -268,8 +261,7 @@ class Comment(CommentBase):
     user_id: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class MediaFileInfo(BaseModel):
@@ -313,8 +305,7 @@ class Task(TaskBase):
     error_message: Optional[str] = None
     media_file: Optional[MediaFileInfo] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AnalyticsBase(BaseModel):
@@ -331,8 +322,7 @@ class Analytics(AnalyticsBase):
     id: int
     media_file_id: int
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # Collection schemas
@@ -358,8 +348,7 @@ class Collection(CollectionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class CollectionWithCount(Collection):
