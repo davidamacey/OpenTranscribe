@@ -1,20 +1,35 @@
-from fastapi import APIRouter, Request, Response
+import logging
+
+from fastapi import APIRouter
+from fastapi import Request
 from fastapi.routing import APIRoute
-from .endpoints import auth, search, speakers, speaker_profiles, comments, tags, users, tasks, admin, collections, user_files, summarization
+
+from . import websockets
+from .endpoints import admin
+from .endpoints import auth
+from .endpoints import collections
+from .endpoints import comments
+from .endpoints import prompts
+from .endpoints import search
+from .endpoints import speaker_profiles
+from .endpoints import speakers
+from .endpoints import summarization
+from .endpoints import tags
+from .endpoints import tasks
+from .endpoints import user_files
+from .endpoints import users
 from .endpoints.files import router as files_router
 from .endpoints.files.management import router as file_management_router
-from . import websockets
-import logging
 
 logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
 
-# Custom route class that logs request details 
+# Custom route class that logs request details
 class LoggingRoute(APIRoute):
     def get_route_handler(self):
         original_route_handler = super().get_route_handler()
-        
+
         async def custom_route_handler(request: Request):
             try:
                 logger.debug(f"Processing route: {request.method} {request.url.path}")
@@ -22,16 +37,16 @@ class LoggingRoute(APIRoute):
             except Exception as exc:
                 logger.error(f"Error processing route {request.url.path}: {exc}")
                 raise
-        
+
         return custom_route_handler
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
 def include_router_with_consistency(router, prefix, tags=None):
     """Include a router with consistent route handling that works both with and without trailing slashes
-    
+
     This ensures consistent API behavior regardless of whether the frontend sends requests
     with or without trailing slashes, which is important for production with nginx.
-    
+
     Args:
         router: The router to include
         prefix: The prefix for the router (e.g., '/users')
@@ -39,10 +54,10 @@ def include_router_with_consistency(router, prefix, tags=None):
     """
     if tags is None:
         tags = [prefix.strip('/')]  # Default tag based on prefix
-        
+
     # Ensure prefix starts with / but doesn't end with one
     normalized_prefix = '/' + prefix.strip('/')
-    
+
     # Include the router with the normalized prefix
     api_router.include_router(router, prefix=normalized_prefix, tags=tags)
 
@@ -61,6 +76,7 @@ include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(collections.router, prefix="/collections", tags=["collections"])
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
+include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])
 
 # Include WebSocket router without prefix since it handles its own paths
 api_router.include_router(websockets.router, tags=["websockets"])

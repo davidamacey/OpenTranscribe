@@ -3,8 +3,9 @@
 Direct database inspection script to check tag tables
 """
 import logging
-import os
-from sqlalchemy import create_engine, text
+
+from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 # Configure logging
@@ -13,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 # Import from app directly - since we're running inside the container
 from app.core.config import settings
-from app.models.media import Tag, FileTag, MediaFile
-from app.models.user import User
+from app.models.media import FileTag
+from app.models.media import MediaFile
+from app.models.media import Tag
 
 # Create direct connection to database
 DATABASE_URL = settings.DATABASE_URL
@@ -29,19 +31,19 @@ def inspect_database():
         # Test connection
         db.execute(text("SELECT 1"))
         logger.info("Database connection successful")
-        
+
         # Query tags
         tags = db.query(Tag).all()
         logger.info("\n=== TAGS ===")
         for tag in tags:
             logger.info(f"ID: {tag.id}, Name: {tag.name}")
-        
+
         # Query file tags
         file_tags = db.query(FileTag).all()
         logger.info("\n=== FILE TAGS ===")
         for ft in file_tags:
             logger.info(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
-            
+
         # Get more details about file tags with join
         logger.info("\n=== DETAILED FILE TAGS ===")
         try:
@@ -52,12 +54,12 @@ def inspect_database():
             ).join(
                 MediaFile, FileTag.media_file_id == MediaFile.id
             ).all()
-            
+
             for ft, tag_name, filename in detailed:
                 logger.info(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
         except Exception as e:
             logger.error(f"Error querying detailed file tags: {e}")
-        
+
         # Check for any tags with NULL name
         logger.info("\n=== CHECKING FOR INVALID TAGS ===")
         invalid_tags = db.query(Tag).filter(Tag.name.is_(None)).all()
@@ -67,7 +69,7 @@ def inspect_database():
                 logger.warning(f"Invalid tag ID: {tag.id}, Name: {tag.name}")
         else:
             logger.info("No invalid tags found with NULL name")
-        
+
     except Exception as e:
         logger.error(f"Error inspecting database: {e}")
     finally:

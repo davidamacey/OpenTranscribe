@@ -6,35 +6,34 @@ monitoring thresholds, and recovery policies.
 """
 
 from dataclasses import dataclass
-from typing import Dict
 
 
 @dataclass
 class TaskRecoveryConfig:
     """Configuration for task recovery operations."""
-    
+
     # Maximum allowed duration for different task types (in seconds)
-    MAX_TASK_DURATIONS: Dict[str, int] = None
-    
+    MAX_TASK_DURATIONS: dict[str, int] = None
+
     # Time before considering a task stale (in seconds)
     STALENESS_THRESHOLD: int = 300  # 5 minutes
-    
+
     # Time to wait before startup recovery kicks in (in seconds)
     STARTUP_RECOVERY_DELAY: int = 10
-    
+
     # Periodic health check interval (in minutes)
     HEALTH_CHECK_INTERVAL: int = 10
-    
+
     # Maximum runtime for health check task (in seconds)
     HEALTH_CHECK_MAX_RUNTIME: int = 480  # 8 minutes, less than 10 min interval
-    
+
     # Task execution overlap prevention
     PREVENT_TASK_OVERLAP: bool = True
-    
+
     # File age thresholds for recovery (in hours)
     FILE_RECOVERY_AGE_THRESHOLD: int = 2
     PENDING_FILE_RETRY_THRESHOLD: int = 6
-    
+
     # Orphaned task threshold (in hours)
     ORPHANED_TASK_THRESHOLD: int = 1
 

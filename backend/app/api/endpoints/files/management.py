@@ -2,24 +2,28 @@
 Enhanced file management endpoints for error handling and recovery.
 """
 import logging
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from typing import Optional
 
-from app.db.base import get_db
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import Query
+from fastapi import status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from app.api.endpoints.auth import get_current_user
+from app.api.endpoints.files.crud import delete_media_file
+from app.api.endpoints.files.crud import get_media_file_by_id
+from app.db.base import get_db
+from app.models.media import FileStatus
 from app.models.user import User
-from app.models.media import MediaFile, FileStatus
-from app.api.endpoints.files.crud import get_media_file_by_id, delete_media_file
-from app.utils.task_utils import (
-    cancel_active_task, 
-    check_for_stuck_files, 
-    recover_stuck_file,
-    reset_file_for_retry,
-    is_file_safe_to_delete
-)
 from app.tasks.transcription import transcribe_audio_task
+from app.utils.task_utils import cancel_active_task
+from app.utils.task_utils import check_for_stuck_files
+from app.utils.task_utils import is_file_safe_to_delete
+from app.utils.task_utils import recover_stuck_file
+from app.utils.task_utils import reset_file_for_retry
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -42,13 +46,13 @@ class FileStatusDetail(BaseModel):
     last_error_message: Optional[str] = None
     recovery_attempts: int = 0
     force_delete_eligible: bool = False
-    actions_available: List[str] = []
-    recommendations: List[str] = []
+    actions_available: list[str] = []
+    recommendations: list[str] = []
 
 
 class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
-    file_ids: List[int]
+    file_ids: list[int]
     action: str  # "delete", "retry", "cancel", "recover"
     force: bool = False
     reset_retry_count: bool = False
@@ -72,40 +76,40 @@ async def get_file_status_detail(
     try:
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
-        
+
         # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
-        
+
         # Determine if file is stuck
         stuck_files = check_for_stuck_files(db, stuck_threshold_hours=1)
         is_stuck = file_id in stuck_files
-        
+
         # Determine available actions
         actions = []
         recommendations = []
-        
+
         if db_file.status == FileStatus.PROCESSING:
             if db_file.active_task_id:
                 actions.append("cancel")
                 if is_stuck:
                     recommendations.append("This file appears stuck. Consider cancelling and retrying.")
-        
+
         if db_file.status in [FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]:
             actions.append("retry")
             if db_file.retry_count < db_file.max_retries:
                 recommendations.append("This file can be retried for processing.")
             else:
                 recommendations.append("This file has reached maximum retry attempts. Consider force deletion or admin intervention.")
-        
+
         if is_safe or db_file.force_delete_eligible:
             actions.append("delete")
         elif is_admin:
             actions.append("force_delete")
-            
+
         if is_stuck:
             actions.append("recover")
             recommendations.append("Auto-recovery may help resolve stuck processing.")
-        
+
         return FileStatusDetail(
             file_id=db_file.id,
             filename=db_file.filename,
@@ -125,7 +129,7 @@ async def get_file_status_detail(
             actions_available=actions,
             recommendations=recommendations
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -146,28 +150,28 @@ async def cancel_file_processing(
     try:
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
-        
+
         if db_file.status != FileStatus.PROCESSING:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="File is not currently processing"
             )
-        
+
         if not db_file.active_task_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No active task found for this file"
             )
-        
+
         success = cancel_active_task(db, file_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to cancel file processing"
             )
-        
+
         return {"message": "File processing cancelled successfully", "file_id": file_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -189,21 +193,21 @@ async def retry_file_processing(
     try:
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
-        
+
         # Check if file can be retried
         if db_file.status not in [FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File cannot be retried in current status: {db_file.status}"
             )
-        
+
         # Check retry limits
         if db_file.retry_count >= db_file.max_retries and not reset_retry_count and not is_admin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File has reached maximum retry attempts ({db_file.max_retries}). Contact admin for help."
             )
-        
+
         # Reset file for retry
         success = reset_file_for_retry(db, file_id, reset_retry_count)
         if not success:
@@ -211,14 +215,14 @@ async def retry_file_processing(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to reset file for retry"
             )
-        
+
         # Start new transcription task
         import os
         if os.environ.get('SKIP_CELERY', 'False').lower() != 'true':
             task = transcribe_audio_task.delay(file_id)
             logger.info(f"Started retry task {task.id} for file {file_id}")
             return {
-                "message": "File retry initiated successfully", 
+                "message": "File retry initiated successfully",
                 "file_id": file_id,
                 "task_id": task.id,
                 "retry_attempt": db_file.retry_count
@@ -226,11 +230,11 @@ async def retry_file_processing(
         else:
             logger.info("Skipping Celery task in test environment")
             return {
-                "message": "File retry prepared (test mode)", 
+                "message": "File retry prepared (test mode)",
                 "file_id": file_id,
                 "retry_attempt": db_file.retry_count
             }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -251,24 +255,24 @@ async def recover_file(
     try:
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
-        
+
         success = recover_stuck_file(db, file_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to recover file"
             )
-        
+
         # Refresh file to get updated status
         db.refresh(db_file)
-        
+
         return {
-            "message": "File recovery completed", 
+            "message": "File recovery completed",
             "file_id": file_id,
             "new_status": db_file.status,
             "recovery_attempts": db_file.recovery_attempts
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -291,11 +295,11 @@ async def force_delete_file(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can force delete files"
         )
-    
+
     try:
         delete_media_file(db, file_id, current_user, force=True)
         return {"message": "File force deleted successfully", "file_id": file_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -315,11 +319,11 @@ async def get_stuck_files(
     """Get list of files that appear to be stuck in processing."""
     try:
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
-        
+
         # Get file details for user's files only (unless admin)
         is_admin = current_user.role == "admin"
         stuck_files = []
-        
+
         for file_id in stuck_file_ids:
             try:
                 db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
@@ -335,13 +339,13 @@ async def get_stuck_files(
             except HTTPException:
                 # User doesn't have access to this file, skip it
                 continue
-        
+
         return {
             "stuck_files": stuck_files,
             "total_count": len(stuck_files),
             "threshold_hours": threshold_hours
         }
-        
+
     except Exception as e:
         logger.error(f"Error getting stuck files: {e}")
         raise HTTPException(
@@ -350,7 +354,7 @@ async def get_stuck_files(
         )
 
 
-@router.post("/management/bulk-action", response_model=List[BulkActionResult])
+@router.post("/management/bulk-action", response_model=list[BulkActionResult])
 async def bulk_file_action(
     request: BulkActionRequest,
     db: Session = Depends(get_db),
@@ -360,12 +364,12 @@ async def bulk_file_action(
     try:
         results = []
         is_admin = current_user.role == "admin"
-        
+
         for file_id in request.file_ids:
             try:
                 # Verify user has access to this file
-                db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
-                
+                get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+
                 if request.action == "delete":
                     delete_media_file(db, file_id, current_user, force=request.force)
                     results.append(BulkActionResult(
@@ -373,7 +377,7 @@ async def bulk_file_action(
                         success=True,
                         message="File deleted successfully"
                     ))
-                    
+
                 elif request.action == "retry":
                     success = reset_file_for_retry(db, file_id, request.reset_retry_count)
                     if success:
@@ -384,7 +388,7 @@ async def bulk_file_action(
                             message = f"Retry started (task: {task.id})"
                         else:
                             message = "Retry prepared (test mode)"
-                            
+
                         results.append(BulkActionResult(
                             file_id=file_id,
                             success=True,
@@ -397,7 +401,7 @@ async def bulk_file_action(
                             message="Failed to reset file for retry",
                             error="RESET_FAILED"
                         ))
-                        
+
                 elif request.action == "cancel":
                     success = cancel_active_task(db, file_id)
                     results.append(BulkActionResult(
@@ -406,7 +410,7 @@ async def bulk_file_action(
                         message="Task cancelled successfully" if success else "Failed to cancel task",
                         error=None if success else "CANCEL_FAILED"
                     ))
-                    
+
                 elif request.action == "recover":
                     success = recover_stuck_file(db, file_id)
                     results.append(BulkActionResult(
@@ -415,7 +419,7 @@ async def bulk_file_action(
                         message="File recovered successfully" if success else "Failed to recover file",
                         error=None if success else "RECOVERY_FAILED"
                     ))
-                    
+
                 else:
                     results.append(BulkActionResult(
                         file_id=file_id,
@@ -423,7 +427,7 @@ async def bulk_file_action(
                         message=f"Unknown action: {request.action}",
                         error="UNKNOWN_ACTION"
                     ))
-                    
+
             except HTTPException as e:
                 results.append(BulkActionResult(
                     file_id=file_id,
@@ -439,9 +443,9 @@ async def bulk_file_action(
                     message=f"Unexpected error: {str(e)}",
                     error="UNEXPECTED_ERROR"
                 ))
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"Error in bulk file action: {e}")
         raise HTTPException(
@@ -462,11 +466,11 @@ async def cleanup_orphaned_files(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can cleanup orphaned files"
         )
-    
+
     try:
         # Find stuck files
         stuck_file_ids = check_for_stuck_files(db, stuck_threshold_hours=6)
-        
+
         cleanup_results = {
             "stuck_files_found": len(stuck_file_ids),
             "recovered": 0,
@@ -474,7 +478,7 @@ async def cleanup_orphaned_files(
             "errors": [],
             "dry_run": dry_run
         }
-        
+
         if not dry_run:
             for file_id in stuck_file_ids:
                 try:
@@ -485,9 +489,9 @@ async def cleanup_orphaned_files(
                         cleanup_results["errors"].append(f"Failed to recover file {file_id}")
                 except Exception as e:
                     cleanup_results["errors"].append(f"Error processing file {file_id}: {str(e)}")
-        
+
         return cleanup_results
-        
+
     except Exception as e:
         logger.error(f"Error in cleanup orphaned files: {e}")
         raise HTTPException(

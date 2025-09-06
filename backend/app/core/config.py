@@ -1,23 +1,26 @@
-from typing import List, Optional, Union
-from pydantic import AnyHttpUrl, validator
-from pydantic_settings import BaseSettings
 import os
 from pathlib import Path
+from typing import Optional
+from typing import Union
+
+from pydantic import validator
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
-    
+
     # Environment configuration
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = ENVIRONMENT == "development"
-    
+
     # JWT Token settings
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
-    
+
     # Database settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -28,7 +31,7 @@ class Settings(BaseSettings):
         "DATABASE_URL",
         f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
     )
-    
+
     # MinIO / S3 settings
     MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
     MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
@@ -36,16 +39,16 @@ class Settings(BaseSettings):
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
     MINIO_SECURE: bool = False  # Use HTTPS for MinIO
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
-    
+
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_URL: str = os.getenv(
-        "REDIS_URL", 
+        "REDIS_URL",
         f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0"
     )
-    
+
     # OpenSearch settings
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
     OPENSEARCH_PORT: str = os.getenv("OPENSEARCH_PORT", "9200")
@@ -55,62 +58,62 @@ class Settings(BaseSettings):
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
-    
+
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL
     CELERY_RESULT_BACKEND: str = REDIS_URL
-    
+
     # CORS settings
-    CORS_ORIGINS: List[str] = ["*", "http://localhost:5173", "http://127.0.0.1:5173"]
-    
+    CORS_ORIGINS: list[str] = ["*", "http://localhost:5173", "http://127.0.0.1:5173"]
+
     @validator("CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
+    def assemble_cors_origins(self, v: Union[str, list[str]]) -> Union[list[str], str]:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
-    
+
     # Hardware Detection Settings (auto-detected by default)
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
     GPU_DEVICE_ID: int = int(os.getenv("GPU_DEVICE_ID", "0"))  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
-    
+
     # AI Models settings
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "mistral-7b-instruct-v0.2.Q4_K_M")  # For summarization
     HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
-    
+
     # LLM Configuration for AI Summarization and Speaker Identification
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "vllm")
-    
+
     # vLLM Configuration
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")
     VLLM_API_KEY: Optional[str] = os.getenv("VLLM_API_KEY")
     VLLM_MODEL_NAME: str = os.getenv("VLLM_MODEL_NAME", "gpt-oss")
-    
+
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL_NAME: str = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
     OPENAI_BASE_URL: Optional[str] = os.getenv("OPENAI_BASE_URL")
-    
+
     # Ollama Configuration
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
-    
+
     # Anthropic Claude Configuration
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
     ANTHROPIC_BASE_URL: Optional[str] = os.getenv("ANTHROPIC_BASE_URL")
-    
+
     # OpenRouter Configuration
     OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
     OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-    
+
     # Performance optimization properties
     @property
     def effective_use_gpu(self) -> bool:
@@ -123,7 +126,7 @@ class Settings(BaseSettings):
             except ImportError:
                 return False
         return self.USE_GPU.lower() == "true"
-    
+
     @property
     def effective_torch_device(self) -> str:
         """Get the effective torch device."""
@@ -135,7 +138,7 @@ class Settings(BaseSettings):
             except ImportError:
                 return "cpu"
         return self.TORCH_DEVICE.lower()
-    
+
     @property
     def effective_compute_type(self) -> str:
         """Get the effective compute type."""
@@ -147,7 +150,7 @@ class Settings(BaseSettings):
             except ImportError:
                 return "int8"
         return self.COMPUTE_TYPE.lower()
-    
+
     @property
     def effective_batch_size(self) -> int:
         """Get the effective batch size."""
@@ -159,18 +162,18 @@ class Settings(BaseSettings):
             except ImportError:
                 return 1
         return int(self.BATCH_SIZE)
-    
+
     # Storage paths
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/mnt/nvm/repos/transcribe-app/data"))
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
-    
+
     # Initialization (CORS and directories)
     def __init__(self, **data):
         super().__init__(**data)
         # Ensure directories exist
         self.UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True

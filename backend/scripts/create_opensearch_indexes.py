@@ -2,8 +2,10 @@
 Script to create required OpenSearch indexes for our transcription application.
 """
 import os
+
 from dotenv import load_dotenv
-from opensearchpy import OpenSearch, RequestsHttpConnection
+from opensearchpy import OpenSearch
+from opensearchpy import RequestsHttpConnection
 
 # Load environment variables
 load_dotenv()
@@ -62,7 +64,7 @@ def create_transcript_index(client):
             }
         }
     }
-    
+
     # Check if index exists
     if not client.indices.exists(index=TRANSCRIPT_INDEX):
         print(f"Creating index: {TRANSCRIPT_INDEX}")
@@ -92,7 +94,7 @@ def create_speaker_index(client):
             }
         }
     }
-    
+
     # Check if index exists
     if not client.indices.exists(index=SPEAKER_INDEX):
         print(f"Creating index: {SPEAKER_INDEX}")
@@ -104,16 +106,16 @@ def create_speaker_index(client):
 def main():
     # Create OpenSearch client
     client = create_client()
-    
+
     # Check if OpenSearch is running
     try:
         health = client.cluster.health()
         print(f"OpenSearch cluster status: {health['status']}")
-        
+
         # Create indexes
         create_transcript_index(client)
         create_speaker_index(client)
-        
+
     except Exception as e:
         print(f"Error connecting to OpenSearch: {e}")
 

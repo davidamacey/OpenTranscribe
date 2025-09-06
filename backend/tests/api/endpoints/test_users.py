@@ -1,5 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
 
 def test_get_users(client, admin_token_headers):
     """Test listing all users (admin only endpoint)"""
@@ -8,7 +6,7 @@ def test_get_users(client, admin_token_headers):
     users = response.json()
     assert isinstance(users, list)
     assert len(users) > 0
-    
+
     # Basic schema validation
     assert "id" in users[0]
     assert "email" in users[0]
@@ -94,7 +92,7 @@ def test_delete_user(client, admin_token_headers, normal_user, db_session):
         headers=admin_token_headers
     )
     assert response.status_code == 204
-    
+
     # Verify the user is deleted from the database
     from app.models.user import User
     deleted_user = db_session.query(User).filter(User.id == normal_user.id).first()

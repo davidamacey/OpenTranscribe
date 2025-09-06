@@ -2,11 +2,11 @@
 """
 Database query script to check tag tables for debugging
 """
+import logging
 import os
 import sys
-import logging
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+
+from sqlalchemy import text
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,8 +16,11 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import models after adding to path
-from app.models.media import Tag, FileTag, MediaFile
-from app.db.base import engine, SessionLocal
+from app.db.base import SessionLocal
+from app.models.media import FileTag
+from app.models.media import MediaFile
+from app.models.media import Tag
+
 
 def query_tags():
     """Query all tags and file_tags from the database"""
@@ -27,19 +30,19 @@ def query_tags():
         # Test connection
         db.execute(text("SELECT 1"))
         logger.info("Database connection successful")
-        
+
         # Query tags
         tags = db.query(Tag).all()
         print("\n=== TAGS ===")
         for tag in tags:
             print(f"ID: {tag.id}, Name: {tag.name}")
-        
+
         # Query file tags
         file_tags = db.query(FileTag).all()
         print("\n=== FILE TAGS ===")
         for ft in file_tags:
             print(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
-            
+
         # Get more details about file tags with join
         print("\n=== DETAILED FILE TAGS ===")
         detailed = db.query(
@@ -49,10 +52,10 @@ def query_tags():
         ).join(
             MediaFile, FileTag.media_file_id == MediaFile.id
         ).all()
-        
+
         for ft, tag_name, filename in detailed:
             print(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
-        
+
     except Exception as e:
         print(f"Error querying database: {e}")
     finally:

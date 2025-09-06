@@ -5,9 +5,9 @@ Revises:
 Create Date: 2025-05-04 19:55:00.000000
 
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '001'
@@ -32,7 +32,7 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('email')
     )
-    
+
     # Create speaker table
     op.create_table(
         'speaker',
@@ -44,7 +44,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create media_file table
     op.create_table(
         'media_file',
@@ -62,7 +62,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create transcript_segment table
     op.create_table(
         'transcript_segment',
@@ -79,7 +79,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['speaker_id'], ['speaker.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create tag table
     op.create_table(
         'tag',
@@ -89,7 +89,7 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('name')
     )
-    
+
     # Create file_tag junction table
     op.create_table(
         'file_tag',
@@ -100,7 +100,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['tag_id'], ['tag.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('file_id', 'tag_id')
     )
-    
+
     # Create comment table
     op.create_table(
         'comment',
@@ -115,7 +115,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create task table
     op.create_table(
         'task',
@@ -133,7 +133,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create analytics table
     op.create_table(
         'analytics',
@@ -150,7 +150,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['file_id'], ['media_file.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id')
     )
-    
+
     # Create indexes
     op.create_index('ix_user_email', 'user', ['email'], unique=True)
     op.create_index('ix_media_file_user_id', 'media_file', ['user_id'], unique=False)
@@ -171,7 +171,7 @@ def downgrade():
     op.drop_index('ix_transcript_segment_media_file_id', table_name='transcript_segment')
     op.drop_index('ix_media_file_user_id', table_name='media_file')
     op.drop_index('ix_user_email', table_name='user')
-    
+
     op.drop_table('analytics')
     op.drop_table('task')
     op.drop_table('comment')

@@ -18,6 +18,13 @@ export interface ContentSection {
   key_points: string[];
 }
 
+export interface MajorTopic {
+  topic: string;
+  importance: 'high' | 'medium' | 'low';
+  key_points: string[];
+  participants: string[];
+}
+
 export interface ActionItem {
   text: string;
   assigned_to: string | null;
@@ -41,8 +48,7 @@ export interface SummaryMetadata {
 export interface SummaryData {
   bluf: string;
   brief_summary: string;
-  speakers: SpeakerInfo[];
-  content_sections: ContentSection[];
+  major_topics: MajorTopic[];
   action_items: ActionItem[];
   key_decisions: string[];
   follow_up_items: string[];
@@ -64,7 +70,6 @@ export interface SummarySearchHit {
   file_id: number;
   bluf: string;
   brief_summary: string;
-  speakers: SpeakerInfo[];
   created_at: string;
   provider: string;
   model: string;

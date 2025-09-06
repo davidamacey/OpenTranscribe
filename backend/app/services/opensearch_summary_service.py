@@ -5,30 +5,30 @@ Handles indexing, searching, and analytics for AI-generated summaries
 stored in OpenSearch for advanced search capabilities.
 """
 
-import logging
-import json
 import datetime
+import logging
 import uuid
-from typing import Dict, Any, List, Optional
-from opensearchpy import OpenSearch
-from opensearchpy.exceptions import NotFoundError, RequestError
+from typing import Any
+from typing import Optional
+
+from opensearchpy.exceptions import NotFoundError
 
 from app.core.config import settings
-from app.services.opensearch_service import opensearch_client, ensure_indices_exist
+from app.services.opensearch_service import opensearch_client
 
 logger = logging.getLogger(__name__)
 
 
 class OpenSearchSummaryService:
     """Service for managing summaries in OpenSearch"""
-    
+
     def __init__(self):
         self.client = opensearch_client
         self.index_name = getattr(settings, 'OPENSEARCH_SUMMARY_INDEX', 'transcript_summaries')
-        
+
         # Ensure the summary index exists
         self._ensure_summary_index_exists()
-    
+
     def _ensure_summary_index_exists(self):
         """
         Create the summary index if it doesn't exist
@@ -36,7 +36,7 @@ class OpenSearchSummaryService:
         if not self.client:
             logger.warning("OpenSearch client not initialized")
             return
-        
+
         try:
             if not self.client.indices.exists(index=self.index_name):
                 # Define the mapping for summary documents
@@ -65,32 +65,22 @@ class OpenSearchSummaryService:
                             "model": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
-                            
+
                             # Core summary content
                             "bluf": {"type": "text", "analyzer": "summary_analyzer"},
                             "brief_summary": {"type": "text", "analyzer": "summary_analyzer"},
-                            
-                            # Speakers (nested objects)
-                            "speakers": {
+
+                            # Major topics (nested objects)
+                            "major_topics": {
                                 "type": "nested",
                                 "properties": {
-                                    "name": {"type": "keyword"},
-                                    "talk_time_seconds": {"type": "integer"},
-                                    "percentage": {"type": "float"},
-                                    "key_points": {"type": "text", "analyzer": "summary_analyzer"}
-                                }
-                            },
-                            
-                            # Content sections (nested objects)
-                            "content_sections": {
-                                "type": "nested",
-                                "properties": {
-                                    "time_range": {"type": "keyword"},
                                     "topic": {"type": "text", "analyzer": "summary_analyzer"},
-                                    "key_points": {"type": "text", "analyzer": "summary_analyzer"}
+                                    "importance": {"type": "keyword"},
+                                    "key_points": {"type": "text", "analyzer": "summary_analyzer"},
+                                    "participants": {"type": "keyword"}
                                 }
                             },
-                            
+
                             # Action items (nested objects)
                             "action_items": {
                                 "type": "nested",
@@ -103,13 +93,13 @@ class OpenSearchSummaryService:
                                     "status": {"type": "keyword"}  # pending, completed, cancelled
                                 }
                             },
-                            
+
                             # Key decisions
                             "key_decisions": {"type": "text", "analyzer": "summary_analyzer"},
-                            
+
                             # Follow-up items
                             "follow_up_items": {"type": "text", "analyzer": "summary_analyzer"},
-                            
+
                             # Metadata
                             "metadata": {
                                 "properties": {
@@ -121,103 +111,103 @@ class OpenSearchSummaryService:
                                     "error": {"type": "text"}
                                 }
                             },
-                            
+
                             # Full-text searchable combined content
                             "searchable_content": {"type": "text", "analyzer": "summary_analyzer"}
                         }
                     }
                 }
-                
+
                 self.client.indices.create(
                     index=self.index_name,
                     body=index_config
                 )
-                
+
                 logger.info(f"Created summary index: {self.index_name}")
-        
+
         except Exception as e:
             logger.error(f"Error creating summary index: {e}")
-    
-    async def index_summary(self, summary_data: Dict[str, Any]) -> str:
+
+    async def index_summary(self, summary_data: dict[str, Any]) -> str:
         """
         Index a summary document in OpenSearch
-        
+
         Args:
             summary_data: Summary data dictionary containing all summary information
-            
+
         Returns:
             Document ID of the indexed summary
         """
         if not self.client:
             logger.warning("OpenSearch client not initialized")
             return None
-        
+
         try:
             # Generate a unique document ID
             doc_id = str(uuid.uuid4())
-            
+
             # Prepare the document for indexing
             doc = self._prepare_summary_document(summary_data)
             doc["created_at"] = datetime.datetime.now().isoformat()
             doc["updated_at"] = datetime.datetime.now().isoformat()
-            
+
             # Index the document
-            response = self.client.index(
+            self.client.index(
                 index=self.index_name,
                 id=doc_id,
                 body=doc,
                 refresh=True  # Make document immediately searchable
             )
-            
+
             logger.info(f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}")
             return doc_id
-            
+
         except Exception as e:
             logger.error(f"Error indexing summary: {e}")
             return None
-    
-    async def get_summary(self, document_id: str) -> Optional[Dict[str, Any]]:
+
+    async def get_summary(self, document_id: str) -> Optional[dict[str, Any]]:
         """
         Retrieve a summary document by ID
-        
+
         Args:
             document_id: OpenSearch document ID
-            
+
         Returns:
             Summary document or None if not found
         """
         if not self.client:
             return None
-        
+
         try:
             response = self.client.get(
                 index=self.index_name,
                 id=document_id
             )
-            
+
             return response["_source"]
-            
+
         except NotFoundError:
             logger.warning(f"Summary document not found: {document_id}")
             return None
         except Exception as e:
             logger.error(f"Error retrieving summary: {e}")
             return None
-    
-    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+
+    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[dict[str, Any]]:
         """
         Get the latest summary for a specific file
-        
+
         Args:
             file_id: Media file ID
             user_id: User ID for security
-            
+
         Returns:
             Latest summary document or None if not found
         """
         if not self.client:
             return None
-        
+
         try:
             # Search for summaries for this file, get the latest version
             query = {
@@ -232,16 +222,16 @@ class OpenSearchSummaryService:
                 "sort": [{"summary_version": {"order": "desc"}}],
                 "size": 1
             }
-            
+
             response = self.client.search(
                 index=self.index_name,
                 body=query
             )
-            
+
             if response["hits"]["hits"]:
                 hit = response["hits"]["hits"][0]
                 summary_data = hit["_source"]
-                
+
                 # Ensure metadata has all required fields for backward compatibility
                 if "metadata" in summary_data:
                     metadata = summary_data["metadata"]
@@ -251,40 +241,40 @@ class OpenSearchSummaryService:
                         transcript_length = len(summary_data.get("brief_summary", ""))
                         metadata["transcript_length"] = transcript_length
                         logger.warning(f"Added missing transcript_length ({transcript_length}) to summary metadata for file {file_id}")
-                    
+
                     # Ensure other required fields exist
                     if "usage_tokens" not in metadata:
                         metadata["usage_tokens"] = None
                     if "processing_time_ms" not in metadata:
                         metadata["processing_time_ms"] = None
-                
+
                 return {
                     "document_id": hit["_id"],
                     **summary_data
                 }
-            
+
             return None
-            
+
         except Exception as e:
             logger.error(f"Error getting summary for file {file_id}: {e}")
             return None
-    
-    async def search_summaries(self, query: Dict[str, Any], user_id: int, size: int = 20, from_: int = 0) -> Dict[str, Any]:
+
+    async def search_summaries(self, query: dict[str, Any], user_id: int, size: int = 20, from_: int = 0) -> dict[str, Any]:
         """
         Search across all summaries with complex queries
-        
+
         Args:
             query: Search query parameters
             user_id: User ID for security filtering
             size: Number of results to return
             from_: Offset for pagination
-            
+
         Returns:
             Search results with metadata
         """
         if not self.client:
             return {"hits": [], "total": 0}
-        
+
         try:
             # Base query - always filter by user
             search_body = {
@@ -308,7 +298,7 @@ class OpenSearchSummaryService:
                     "post_tags": ["</mark>"]
                 }
             }
-            
+
             # Add text search if provided
             if query.get("text"):
                 text_query = {
@@ -318,9 +308,8 @@ class OpenSearchSummaryService:
                             "bluf^3",  # Boost BLUF content
                             "brief_summary^2",
                             "searchable_content",
-                            "speakers.key_points",
-                            "content_sections.topic^2",
-                            "content_sections.key_points",
+                            "major_topics.topic^2",
+                            "major_topics.key_points",
                             "action_items.text",
                             "key_decisions^2"
                         ],
@@ -329,19 +318,8 @@ class OpenSearchSummaryService:
                 }
                 search_body["query"]["bool"]["should"].append(text_query)
                 search_body["query"]["bool"]["minimum_should_match"] = 1
-            
-            # Add speaker filter
-            if query.get("speakers"):
-                speaker_filter = {
-                    "nested": {
-                        "path": "speakers",
-                        "query": {
-                            "terms": {"speakers.name": query["speakers"]}
-                        }
-                    }
-                }
-                search_body["query"]["bool"]["filter"].append(speaker_filter)
-            
+
+
             # Add date range filter
             if query.get("date_from") or query.get("date_to"):
                 date_filter = {"range": {"created_at": {}}}
@@ -350,7 +328,7 @@ class OpenSearchSummaryService:
                 if query.get("date_to"):
                     date_filter["range"]["created_at"]["lte"] = query["date_to"]
                 search_body["query"]["bool"]["filter"].append(date_filter)
-            
+
             # Add action item filter
             if query.get("has_pending_actions"):
                 action_filter = {
@@ -364,13 +342,13 @@ class OpenSearchSummaryService:
                     }
                 }
                 search_body["query"]["bool"]["filter"].append(action_filter)
-            
+
             # Execute search
             response = self.client.search(
                 index=self.index_name,
                 body=search_body
             )
-            
+
             # Process results
             hits = []
             for hit in response["hits"]["hits"]:
@@ -381,42 +359,41 @@ class OpenSearchSummaryService:
                     "file_id": source["file_id"],
                     "bluf": source.get("bluf", ""),
                     "brief_summary": source.get("brief_summary", ""),
-                    "speakers": source.get("speakers", []),
                     "created_at": source.get("created_at"),
                     "provider": source.get("provider"),
                     "model": source.get("model"),
                 }
-                
+
                 # Add highlights if available
                 if "highlight" in hit:
                     result["highlights"] = hit["highlight"]
-                
+
                 hits.append(result)
-            
+
             return {
                 "hits": hits,
                 "total": response["hits"]["total"]["value"],
                 "max_score": response["hits"]["max_score"]
             }
-            
+
         except Exception as e:
             logger.error(f"Error searching summaries: {e}")
             return {"hits": [], "total": 0}
-    
-    async def get_summary_analytics(self, user_id: int, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+
+    async def get_summary_analytics(self, user_id: int, filters: dict[str, Any] = None) -> dict[str, Any]:
         """
         Get analytics and aggregations for summaries
-        
+
         Args:
             user_id: User ID
             filters: Optional filters to apply
-            
+
         Returns:
             Analytics data
         """
         if not self.client:
             return {}
-        
+
         try:
             # Base query with user filter
             agg_query = {
@@ -427,24 +404,7 @@ class OpenSearchSummaryService:
                     }
                 },
                 "aggs": {
-                    # Speaker participation across all summaries
-                    "speaker_participation": {
-                        "nested": {"path": "speakers"},
-                        "aggs": {
-                            "by_speaker": {
-                                "terms": {
-                                    "field": "speakers.name",
-                                    "size": 20
-                                },
-                                "aggs": {
-                                    "avg_talk_time": {"avg": {"field": "speakers.talk_time_seconds"}},
-                                    "total_appearances": {"value_count": {"field": "speakers.name"}},
-                                    "avg_percentage": {"avg": {"field": "speakers.percentage"}}
-                                }
-                            }
-                        }
-                    },
-                    
+
                     # Action items over time
                     "action_items_trend": {
                         "date_histogram": {
@@ -472,131 +432,131 @@ class OpenSearchSummaryService:
                             }
                         }
                     },
-                    
+
                     # Most common topics
                     "common_topics": {
-                        "nested": {"path": "content_sections"},
+                        "nested": {"path": "major_topics"},
                         "aggs": {
                             "topics": {
                                 "terms": {
-                                    "field": "content_sections.topic.keyword",
+                                    "field": "major_topics.topic.keyword",
                                     "size": 15
                                 }
                             }
                         }
                     },
-                    
+
                     # Summary statistics
                     "summary_stats": {
                         "stats": {"field": "metadata.transcript_length"}
                     },
-                    
+
                     # Provider usage
                     "provider_usage": {
                         "terms": {"field": "provider", "size": 10}
                     }
                 }
             }
-            
+
             # Apply date filter if provided
             if filters and filters.get("date_from"):
                 date_filter = {"range": {"created_at": {"gte": filters["date_from"]}}}
                 if filters.get("date_to"):
                     date_filter["range"]["created_at"]["lte"] = filters["date_to"]
                 agg_query["query"]["bool"]["must"].append(date_filter)
-            
+
             response = self.client.search(
                 index=self.index_name,
                 body=agg_query
             )
-            
+
             # Process aggregations
             aggs = response["aggregations"]
-            
+
             analytics = {
                 "total_summaries": response["hits"]["total"]["value"],
-                "speaker_stats": self._process_speaker_aggregation(aggs["speaker_participation"]),
+                "speaker_stats": [],  # No longer tracking speaker stats
                 "action_items_trend": self._process_trend_aggregation(aggs["action_items_trend"]),
                 "common_topics": self._process_topics_aggregation(aggs["common_topics"]),
                 "summary_statistics": aggs["summary_stats"],
                 "provider_usage": self._process_terms_aggregation(aggs["provider_usage"])
             }
-            
+
             return analytics
-            
+
         except Exception as e:
             logger.error(f"Error getting summary analytics: {e}")
             return {}
-    
-    async def update_summary(self, document_id: str, updates: Dict[str, Any]) -> bool:
+
+    async def update_summary(self, document_id: str, updates: dict[str, Any]) -> bool:
         """
         Update a summary document
-        
+
         Args:
             document_id: OpenSearch document ID
             updates: Fields to update
-            
+
         Returns:
             Success status
         """
         if not self.client:
             return False
-        
+
         try:
             # Add updated timestamp
             updates["updated_at"] = datetime.datetime.now().isoformat()
-            
-            response = self.client.update(
+
+            self.client.update(
                 index=self.index_name,
                 id=document_id,
                 body={"doc": updates},
                 refresh=True
             )
-            
+
             logger.info(f"Updated summary document: {document_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error updating summary: {e}")
             return False
-    
+
     async def delete_summary(self, document_id: str) -> bool:
         """
         Delete a summary document
-        
+
         Args:
             document_id: OpenSearch document ID
-            
+
         Returns:
             Success status
         """
         if not self.client:
             return False
-        
+
         try:
             self.client.delete(
                 index=self.index_name,
                 id=document_id,
                 refresh=True
             )
-            
+
             logger.info(f"Deleted summary document: {document_id}")
             return True
-            
+
         except NotFoundError:
             logger.warning(f"Summary document not found for deletion: {document_id}")
             return False
         except Exception as e:
             logger.error(f"Error deleting summary: {e}")
             return False
-    
-    def _prepare_summary_document(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _prepare_summary_document(self, summary_data: dict[str, Any]) -> dict[str, Any]:
         """
         Prepare summary data for indexing
-        
+
         Args:
             summary_data: Raw summary data
-            
+
         Returns:
             Processed document ready for indexing
         """
@@ -605,53 +565,38 @@ class OpenSearchSummaryService:
             summary_data.get("bluf", ""),
             summary_data.get("brief_summary", ""),
         ]
-        
-        # Add speaker key points
-        for speaker in summary_data.get("speakers", []):
-            searchable_parts.extend(speaker.get("key_points", []))
-        
-        # Add content sections
-        for section in summary_data.get("content_sections", []):
-            searchable_parts.append(section.get("topic", ""))
-            searchable_parts.extend(section.get("key_points", []))
-        
+
+        # Add major topics
+        for topic in summary_data.get("major_topics", []):
+            searchable_parts.append(topic.get("topic", ""))
+            searchable_parts.extend(topic.get("key_points", []))
+
         # Add action items
         for item in summary_data.get("action_items", []):
             searchable_parts.extend([
                 item.get("text", ""),
                 item.get("context", "")
             ])
-        
+
         # Add decisions and follow-ups
         searchable_parts.extend(summary_data.get("key_decisions", []))
         searchable_parts.extend(summary_data.get("follow_up_items", []))
-        
+
         # Create the document
         doc = {
             **summary_data,
             "searchable_content": " ".join(filter(None, searchable_parts))
         }
-        
+
         # Ensure action items have status field
         for item in doc.get("action_items", []):
             if "status" not in item:
                 item["status"] = "pending"
-        
+
         return doc
-    
-    def _process_speaker_aggregation(self, agg: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Process speaker participation aggregation"""
-        speakers = []
-        for bucket in agg["by_speaker"]["buckets"]:
-            speakers.append({
-                "name": bucket["key"],
-                "appearances": bucket["doc_count"],
-                "avg_talk_time": bucket["avg_talk_time"]["value"],
-                "avg_percentage": bucket["avg_percentage"]["value"]
-            })
-        return speakers
-    
-    def _process_trend_aggregation(self, agg: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+
+    def _process_trend_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process time-based trend aggregation"""
         trends = []
         for bucket in agg["buckets"]:
@@ -661,8 +606,8 @@ class OpenSearchSummaryService:
                 "pending_actions": bucket["pending_actions"]["pending"]["doc_count"]
             })
         return trends
-    
-    def _process_topics_aggregation(self, agg: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+    def _process_topics_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process topics aggregation"""
         topics = []
         for bucket in agg["topics"]["buckets"]:
@@ -671,8 +616,8 @@ class OpenSearchSummaryService:
                 "count": bucket["doc_count"]
             })
         return topics
-    
-    def _process_terms_aggregation(self, agg: Dict[str, Any]) -> List[Dict[str, Any]]:
+
+    def _process_terms_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process simple terms aggregation"""
         terms = []
         for bucket in agg["buckets"]:

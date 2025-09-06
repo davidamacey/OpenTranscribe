@@ -1,19 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta, timezone
 import logging
+from datetime import datetime
+from datetime import timezone
+from typing import Any
 
+from fastapi import APIRouter
+from fastapi import BackgroundTasks
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import status
+from sqlalchemy.orm import Session
+
+from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
+from app.models.media import FileStatus
+from app.models.media import MediaFile
+from app.models.media import Task as TaskModel
 from app.models.user import User
-from app.models.media import MediaFile, Task as TaskModel, FileStatus
-from app.schemas.media import Task, TaskStatus, FileStatus as FileStatusSchema
-from app.api.endpoints.auth import get_current_active_user, get_current_admin_user
+from app.schemas.media import Task
 from app.services.task_detection_service import task_detection_service
 from app.services.task_recovery_service import task_recovery_service
-from app.utils.task_utils import get_task_summary_for_media_file
-from app.core.celery import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +30,14 @@ def calculate_age_seconds(timestamp):
     """Calculate seconds between now and a timestamp, handling timezone differences safely"""
     if not timestamp:
         return None
-        
+
     # Get current time with timezone
     now = datetime.now(timezone.utc)
-    
+
     # Make timestamp timezone-aware if it's not
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
-        
+
     # Calculate the difference
     return (now - timestamp).total_seconds()
 
@@ -42,7 +48,7 @@ TASK_STATUS_COMPLETED = "completed"
 TASK_STATUS_FAILED = "failed"
 
 
-@router.get("/", response_model=List[Task])
+@router.get("/", response_model=list[Task])
 def list_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -54,7 +60,7 @@ def list_tasks(
         # Query tasks from the database
         # In a real implementation, we would have a Task model
         # Here we're simulating tasks based on MediaFile statuses
-        
+
         # Admin users can see all files/tasks, regular users only see their own
         if current_user.role == "admin":
             media_files = db.query(MediaFile).all()
@@ -62,7 +68,7 @@ def list_tasks(
             media_files = db.query(MediaFile).filter(
                 MediaFile.user_id == current_user.id
             ).all()
-        
+
         # Convert them to tasks
         tasks = []
         for file in media_files:
@@ -76,13 +82,13 @@ def list_tasks(
                 task_status = "completed"
             elif file.status == FileStatus.ERROR:
                 task_status = "failed"
-                
+
             # Use the actual completed_at time stored in the database
             completed_at = getattr(file, "completed_at", None)
             if file.status == FileStatus.COMPLETED and not completed_at:
                 # Fall back to upload_time for older records without completed_at
                 completed_at = file.upload_time
-            
+
             # Extract file format from content_type or use extension
             file_format = None
             if file.content_type:
@@ -92,7 +98,7 @@ def list_tasks(
             if not file_format and file.filename and "." in file.filename:
                 # Fall back to filename extension
                 file_format = file.filename.split(".")[-1]
-            
+
             # Create a task for each file based on its status
             task = Task(
                 id=f"task_{file.id}",
@@ -119,7 +125,7 @@ def list_tasks(
                 }
             )
             tasks.append(task)
-        
+
         return tasks
     except Exception as e:
         logger.error(f"Error in list_tasks: {e}")
@@ -148,7 +154,7 @@ def get_task(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid task ID format"
             )
-        
+
         # Admin users can access any file/task, regular users only their own
         if current_user.role == "admin":
             media_file = db.query(MediaFile).filter(
@@ -159,13 +165,13 @@ def get_task(
                 MediaFile.id == file_id,
                 MediaFile.user_id == current_user.id
             ).first()
-        
+
         if not media_file:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
-        
+
         # Map file status to task status
         task_status = TASK_STATUS_PENDING
         if media_file.status == FileStatus.PENDING:
@@ -176,13 +182,13 @@ def get_task(
             task_status = TASK_STATUS_COMPLETED
         elif media_file.status == FileStatus.ERROR:
             task_status = TASK_STATUS_FAILED
-        
+
         # Use the actual completed_at time stored in the database
         completed_at = getattr(media_file, "completed_at", None)
         if media_file.status == FileStatus.COMPLETED and not completed_at:
             # Fall back to upload_time for older records without completed_at
             completed_at = media_file.upload_time
-        
+
         # Extract file format from content_type or use extension
         file_format = None
         if media_file.content_type:
@@ -192,7 +198,7 @@ def get_task(
         if not file_format and media_file.filename and "." in media_file.filename:
             # Fall back to filename extension
             file_format = media_file.filename.split(".")[-1]
-        
+
         # Convert to task
         task = Task(
             id=task_id,
@@ -217,7 +223,7 @@ def get_task(
                 "codec": getattr(media_file, "codec", None)
             }
         )
-        
+
         return task
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -230,23 +236,23 @@ def get_task(
         )
 
 
-@router.get("/system/health", response_model=Dict[str, Any])
+@router.get("/system/health", response_model=dict[str, Any])
 async def task_system_health(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user)  # Only admins can access this endpoint
 ):
     """
     Get health information about the task system
-    
+
     Returns information about stuck tasks and inconsistent media files
     """
     try:
         # Identify stuck tasks
         stuck_tasks = task_detection_service.identify_stuck_tasks(db)
-        
+
         # Identify inconsistent media files
         inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
-        
+
         # Count actual tasks by status
         task_counts = {
             TASK_STATUS_PENDING: db.query(TaskModel).filter(TaskModel.status == TASK_STATUS_PENDING).count(),
@@ -255,7 +261,7 @@ async def task_system_health(
             TASK_STATUS_FAILED: db.query(TaskModel).filter(TaskModel.status == TASK_STATUS_FAILED).count(),
             "total": db.query(TaskModel).count()
         }
-        
+
         # Count media files by status
         file_counts = {
             "pending": db.query(MediaFile).filter(MediaFile.status == FileStatus.PENDING).count(),
@@ -264,7 +270,7 @@ async def task_system_health(
             "error": db.query(MediaFile).filter(MediaFile.status == FileStatus.ERROR).count(),
             "total": db.query(MediaFile).count()
         }
-        
+
         # Format stuck tasks for response
         stuck_task_data = []
         for task in stuck_tasks:
@@ -277,7 +283,7 @@ async def task_system_health(
                 "updated_at": task.updated_at,
                 "age_seconds": calculate_age_seconds(task.created_at)
             })
-        
+
         # Format inconsistent files for response
         inconsistent_file_data = []
         for file in inconsistent_files:
@@ -289,7 +295,7 @@ async def task_system_health(
                 "upload_time": file.upload_time,
                 "age_seconds": calculate_age_seconds(file.upload_time)
             })
-        
+
         return {
             "task_counts": task_counts,
             "file_counts": file_counts,
@@ -311,7 +317,7 @@ async def task_system_health(
         )
 
 
-@router.post("/recover-stuck-tasks", response_model=Dict[str, Any])
+@router.post("/recover-stuck-tasks", response_model=dict[str, Any])
 async def recover_all_stuck_tasks(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -319,7 +325,7 @@ async def recover_all_stuck_tasks(
 ):
     """
     Attempt to recover all stuck tasks
-    
+
     This endpoint will identify and recover all stuck tasks in the system.
     """
     try:
@@ -331,14 +337,14 @@ async def recover_all_stuck_tasks(
                 "count": 0,
                 "message": "No stuck tasks found"
             }
-            
+
         # Try to recover each task
         recovered_count = 0
         for task in stuck_tasks:
             success = task_recovery_service.recover_stuck_task(db, task)
             if success:
                 recovered_count += 1
-                
+
                 # If it's a transcription task, retry it
                 if task.task_type == "transcription" and task.media_file_id:
                     # Schedule a retry in the background for each recovered task
@@ -350,7 +356,7 @@ async def recover_all_stuck_tasks(
                             logger.info(f"Retrying transcription for file {file_id}, new task ID: {result.id}")
                         except Exception as e:
                             logger.error(f"Error retrying transcription: {e}")
-                    
+
                     background_tasks.add_task(retry_transcription, task.media_file_id)
 
         return {
@@ -366,7 +372,7 @@ async def recover_all_stuck_tasks(
             detail=f"Internal server error: {str(e)}"
         )
 
-@router.post("/system/recover-task/{task_id}", response_model=Dict[str, Any])
+@router.post("/system/recover-task/{task_id}", response_model=dict[str, Any])
 async def recover_task(
     task_id: str,
     background_tasks: BackgroundTasks,
@@ -375,7 +381,7 @@ async def recover_task(
 ):
     """
     Attempt to recover a stuck task
-    
+
     This endpoint will mark a stuck task as failed and retry it if appropriate.
     """
     try:
@@ -386,10 +392,10 @@ async def recover_task(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
-        
+
         # Attempt recovery
         success = task_recovery_service.recover_stuck_task(db, task)
-        
+
         # If successful and appropriate, retry the task
         if success and task.task_type == "transcription" and task.media_file_id:
             # Schedule a retry in the background
@@ -402,9 +408,9 @@ async def recover_task(
                     logger.info(f"Retrying transcription for file {task.media_file_id}, new task ID: {result.id}")
                 except Exception as e:
                     logger.error(f"Error retrying transcription: {e}")
-            
+
             background_tasks.add_task(retry_transcription)
-        
+
         return {
             "success": success,
             "task_id": task_id,
@@ -421,7 +427,7 @@ async def recover_task(
         )
 
 
-@router.post("/system/fix-file/{file_id}", response_model=Dict[str, Any])
+@router.post("/system/fix-file/{file_id}", response_model=dict[str, Any])
 async def fix_inconsistent_file(
     file_id: int,
     db: Session = Depends(get_db),
@@ -438,10 +444,10 @@ async def fix_inconsistent_file(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Media file not found"
             )
-        
+
         # Attempt to fix the file
         success = task_recovery_service.fix_inconsistent_media_file(db, media_file)
-        
+
         return {
             "success": success,
             "file_id": file_id,
@@ -458,7 +464,7 @@ async def fix_inconsistent_file(
         )
 
 
-@router.post("/retry/{file_id}", response_model=Dict[str, Any])
+@router.post("/retry/{file_id}", response_model=dict[str, Any])
 async def retry_file_processing(
     file_id: int,
     background_tasks: BackgroundTasks,
@@ -477,37 +483,37 @@ async def retry_file_processing(
                 MediaFile.id == file_id,
                 MediaFile.user_id == current_user.id
             ).first()
-        
+
         if not media_file:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Media file not found"
             )
-        
+
         # Check if the file is in a state where retry makes sense
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot retry file in {media_file.status.value} status"
             )
-        
+
         # Reset the file status to PENDING
         from app.utils.task_utils import update_media_file_status
         update_media_file_status(db, file_id, FileStatus.PENDING)
-        
+
         # Clear old tasks or mark them as failed
         old_tasks = db.query(TaskModel).filter(
             TaskModel.media_file_id == file_id,
             TaskModel.status.in_([TASK_STATUS_PENDING, TASK_STATUS_IN_PROGRESS])
         ).all()
-        
+
         for task in old_tasks:
             task.status = TASK_STATUS_FAILED
             task.error_message = "Task marked as failed for retry"
             task.completed_at = datetime.now()
-        
+
         db.commit()
-        
+
         # Schedule a new transcription in the background
         async def start_new_transcription():
             try:
@@ -517,9 +523,9 @@ async def retry_file_processing(
                 logger.info(f"Started new transcription for file {file_id}, task ID: {result.id}")
             except Exception as e:
                 logger.error(f"Error starting new transcription: {e}")
-        
+
         background_tasks.add_task(start_new_transcription)
-        
+
         return {
             "success": True,
             "file_id": file_id,
@@ -535,7 +541,7 @@ async def retry_file_processing(
         )
 
 
-@router.post("/system/startup-recovery", response_model=Dict[str, Any])
+@router.post("/system/startup-recovery", response_model=dict[str, Any])
 async def trigger_startup_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -543,7 +549,7 @@ async def trigger_startup_recovery(
 ):
     """
     Manually trigger startup recovery for files interrupted by system crashes.
-    
+
     This endpoint allows admins to manually run the startup recovery process
     that would normally run automatically when the system starts.
     """
@@ -556,9 +562,9 @@ async def trigger_startup_recovery(
                 logger.info(f"Manual startup recovery triggered: {result.id}")
             except Exception as e:
                 logger.error(f"Error in manual startup recovery: {e}")
-        
+
         background_tasks.add_task(run_recovery)
-        
+
         return {
             "success": True,
             "message": "Startup recovery task scheduled successfully"
@@ -571,7 +577,7 @@ async def trigger_startup_recovery(
         )
 
 
-@router.post("/system/recover-user-files/{user_id}", response_model=Dict[str, Any])
+@router.post("/system/recover-user-files/{user_id}", response_model=dict[str, Any])
 async def trigger_user_file_recovery(
     user_id: int,
     background_tasks: BackgroundTasks,
@@ -580,7 +586,7 @@ async def trigger_user_file_recovery(
 ):
     """
     Manually trigger file recovery for a specific user.
-    
+
     This is useful when a user reports stuck or missing files.
     """
     try:
@@ -591,7 +597,7 @@ async def trigger_user_file_recovery(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-        
+
         # Schedule user file recovery in background
         async def run_user_recovery():
             try:
@@ -600,9 +606,9 @@ async def trigger_user_file_recovery(
                 logger.info(f"User file recovery triggered for user {user_id}: {result.id}")
             except Exception as e:
                 logger.error(f"Error in user file recovery: {e}")
-        
+
         background_tasks.add_task(run_user_recovery)
-        
+
         return {
             "success": True,
             "message": f"File recovery scheduled for user {target_user.email}",
@@ -618,7 +624,7 @@ async def trigger_user_file_recovery(
         )
 
 
-@router.post("/system/recover-all-user-files", response_model=Dict[str, Any])
+@router.post("/system/recover-all-user-files", response_model=dict[str, Any])
 async def trigger_all_user_file_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -626,7 +632,7 @@ async def trigger_all_user_file_recovery(
 ):
     """
     Manually trigger file recovery for all users.
-    
+
     This is useful for system-wide recovery after major issues.
     """
     try:
@@ -638,9 +644,9 @@ async def trigger_all_user_file_recovery(
                 logger.info(f"All user file recovery triggered: {result.id}")
             except Exception as e:
                 logger.error(f"Error in all user file recovery: {e}")
-        
+
         background_tasks.add_task(run_all_user_recovery)
-        
+
         return {
             "success": True,
             "message": "File recovery scheduled for all users"

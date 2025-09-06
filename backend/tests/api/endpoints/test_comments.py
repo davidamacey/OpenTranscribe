@@ -1,6 +1,7 @@
-import pytest
-from fastapi.testclient import TestClient
 import io
+
+import pytest
+
 
 @pytest.fixture
 def test_file_with_comment(client, user_token_headers, db_session):
@@ -17,7 +18,7 @@ def test_list_comments(client, user_token_headers, test_file_with_comment):
     response = client.get(f"/api/comments/?media_file_id={test_file_with_comment}", headers=user_token_headers)
     assert response.status_code == 200
     assert isinstance(response.json(), list)
-    
+
 def test_create_comment(client, user_token_headers, test_file_with_comment, db_session):
     """Test creating a comment for a file"""
     comment_data = {
@@ -32,7 +33,7 @@ def test_create_comment(client, user_token_headers, test_file_with_comment, db_s
     assert comment["text"] == "This is a test comment"
     assert comment["media_file_id"] == test_file_with_comment
     assert comment["timestamp"] == 30.5
-    
+
     # Verify comment exists in the database
     from app.models.media import Comment
     db_comment = db_session.query(Comment).filter(
@@ -53,7 +54,7 @@ def test_get_comment(client, user_token_headers, test_file_with_comment, db_sess
     }
     create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
-    
+
     # Now get the comment
     response = client.get(f"/api/comments/{comment_id}", headers=user_token_headers)
     assert response.status_code == 200
@@ -72,7 +73,7 @@ def test_update_comment(client, user_token_headers, test_file_with_comment, db_s
     }
     create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
-    
+
     # Now update the comment
     update_data = {
         "text": "Updated comment text",
@@ -84,7 +85,7 @@ def test_update_comment(client, user_token_headers, test_file_with_comment, db_s
     assert comment["id"] == comment_id
     assert comment["text"] == "Updated comment text"
     assert comment["timestamp"] == 65.5
-    
+
     # Verify changes in the database
     from app.models.media import Comment
     db_comment = db_session.query(Comment).filter(Comment.id == comment_id).first()
@@ -101,11 +102,11 @@ def test_delete_comment(client, user_token_headers, test_file_with_comment, db_s
     }
     create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
-    
+
     # Now delete the comment
     response = client.delete(f"/api/comments/{comment_id}", headers=user_token_headers)
     assert response.status_code == 204  # No content
-    
+
     # Verify comment is deleted from the database
     from app.models.media import Comment
     db_comment = db_session.query(Comment).filter(Comment.id == comment_id).first()

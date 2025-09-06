@@ -1,9 +1,9 @@
-import pytest
 import os
-import unittest.mock as mock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, clear_mappers
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Set testing environment flag and disable external services in tests
@@ -14,11 +14,11 @@ os.environ['SKIP_REDIS'] = 'True'
 os.environ['SKIP_WEBSOCKET'] = 'True'
 os.environ['SKIP_OPENSEARCH'] = 'True'
 
-from app.main import app
-from app.db.base import Base, get_db
-from app.models.user import User
 from app.core.security import get_password_hash
-
+from app.db.base import Base
+from app.db.base import get_db
+from app.main import app
+from app.models.user import User
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -53,11 +53,11 @@ def client(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
-    
+
     # Create test client
     with TestClient(app) as test_client:
         yield test_client
-        
+
     # Reset dependency overrides after test
     app.dependency_overrides = {}
 
@@ -101,7 +101,7 @@ def user_token_headers(client, normal_user):
     """Fixture that returns auth headers for a regular user"""
     # Using form-encoded data for OAuth2 password flow
     response = client.post(
-        "/api/auth/token", 
+        "/api/auth/token",
         data={"username": normal_user.email, "password": "password123"},
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
@@ -115,7 +115,7 @@ def admin_token_headers(client, admin_user):
     """Fixture that returns auth headers for an admin user"""
     # Using form-encoded data for OAuth2 password flow
     response = client.post(
-        "/api/auth/token", 
+        "/api/auth/token",
         data={"username": admin_user.email, "password": "adminpass"},
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )

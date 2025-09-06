@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+
 from app.core.config import settings
 
 # Initialize Celery
@@ -8,8 +9,8 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
-        "app.tasks.transcription", 
-        "app.tasks.summarization", 
+        "app.tasks.transcription",
+        "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.utility",
         "app.tasks.recovery"

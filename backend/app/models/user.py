@@ -1,11 +1,14 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Enum
-from sqlalchemy.sql import func
+from sqlalchemy import Boolean
+from sqlalchemy import Column
+from sqlalchemy import DateTime
+from sqlalchemy import Integer
+from sqlalchemy import String
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 
 # Import models at module level to avoid circular imports
-from app.models import media
 
 
 class User(Base):
@@ -28,3 +31,5 @@ class User(Base):
     speaker_profiles = relationship("SpeakerProfile", back_populates="user")
     speaker_collections = relationship("SpeakerCollection", back_populates="user")
     collections = relationship("Collection", back_populates="user")
+    summary_prompts = relationship("SummaryPrompt", back_populates="user")
+    settings = relationship("UserSetting", back_populates="user")

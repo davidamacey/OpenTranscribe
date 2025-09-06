@@ -1550,14 +1550,26 @@
       <section class="video-column">
         <div class="video-header">
           <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
-          <!-- AI Summary Button - right aligned above video -->
+          <!-- AI Summary Buttons - right aligned above video -->
           {#if file?.summary || file?.summary_opensearch_id}
             <button 
               class="view-summary-btn"
               on:click={handleShowSummary}
               title="View AI-generated summary in BLUF format"
             >
-              View AI Summary
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
+                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
+              </svg>
+              Summary
+            </button>
+          {:else if file?.status === 'completed'}
+            <button 
+              class="generate-summary-btn"
+              on:click={handleGenerateSummary}
+              disabled={generatingSummary}
+              title="Generate AI-powered summary with key insights and action items"
+            >
+              {generatingSummary ? 'Generating...' : 'Generate AI Summary'}
             </button>
           {/if}
         </div>
@@ -1682,6 +1694,7 @@
     bind:isOpen={showSummaryModal}
     fileId={file.id}
     fileName={file?.filename || 'Unknown File'}
+    on:close={() => showSummaryModal = false}
   />
 {/if}
 
@@ -1791,19 +1804,50 @@
   }
 
   .view-summary-btn {
-    background: var(--accent-color);
+    background-color: var(--primary-color, #3b82f6);
     color: white;
     border: none;
     border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 14px;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .view-summary-btn:hover {
-    background: var(--accent-hover-color);
+    background-color: var(--primary-color-dark, #2563eb);
+    transform: translateY(-1px);
+  }
+
+  .view-summary-btn .ai-icon {
+    flex-shrink: 0;
+    opacity: 0.9;
+  }
+
+  .generate-summary-btn {
+    background-color: var(--primary-color, #3b82f6);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .generate-summary-btn:hover:not(:disabled) {
+    background-color: var(--primary-color-dark, #2563eb);
+    transform: translateY(-1px);
+  }
+
+  .generate-summary-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
 
@@ -1851,21 +1895,6 @@
     color: var(--text-primary);
   }
 
-  .view-summary-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    transition: background-color 0.2s;
-  }
-
-  .view-summary-btn:hover {
-    background: var(--primary-hover);
-  }
 
   @media (max-width: 1024px) {
     .main-content-grid {

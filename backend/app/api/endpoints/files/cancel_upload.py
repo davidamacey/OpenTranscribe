@@ -1,13 +1,17 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import Optional
 
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import status
+from sqlalchemy.orm import Session
+
+from app.api.endpoints.auth import get_current_user
 from app.db.base import get_db
-from app.models.media import MediaFile, FileStatus
+from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import delete_file
-from app.api.endpoints.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 

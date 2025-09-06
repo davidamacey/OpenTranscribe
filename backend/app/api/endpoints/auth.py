@@ -1,17 +1,28 @@
-from datetime import timedelta
 import os
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from jose import JWTError, jwt
+from datetime import timedelta
 
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import status
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm
+from jose import JWTError
+from jose import jwt
+from sqlalchemy.orm import Session
+
+from app.auth.direct_auth import create_access_token as direct_create_token
+from app.auth.direct_auth import direct_authenticate_user
 from app.core.config import settings
-from app.core.security import authenticate_user, create_access_token, get_password_hash
-from app.auth.direct_auth import direct_authenticate_user, create_access_token as direct_create_token
+from app.core.security import authenticate_user
+from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, User as UserSchema, Token, TokenPayload
+from app.schemas.user import Token
+from app.schemas.user import TokenPayload
 from app.schemas.user import User as UserOut
+from app.schemas.user import User as UserSchema
+from app.schemas.user import UserCreate
 
 router = APIRouter()
 
@@ -30,7 +41,7 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         payload = jwt.decode(
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
@@ -42,21 +53,21 @@ def get_current_user(
         token_data = TokenPayload(sub=user_id)
     except JWTError:
         raise credentials_exception
-    
+
     try:
         user = db.query(User).filter(User.id == token_data.sub).first()
         if user is None:
             raise credentials_exception
         if not user.is_active:
             raise HTTPException(status_code=400, detail="Inactive user")
-        
+
         # If role in token differs from DB, prioritize token's role
         # This ensures newly granted admin rights take effect immediately
         if user_role and user.role != user_role:
             logger.info(f"Updating user {user.id} role from {user.role} to {user_role} based on token")
             user.role = user_role
             db.commit()
-        
+
         return user
     except Exception as e:
         # Handle database connection errors or other issues
@@ -122,19 +133,19 @@ def login_for_access_token(
     """
     import logging
     logger = logging.getLogger(__name__)
-    
+
     logger.info(f"Login attempt for user: {form_data.username}")
-    
+
     try:
         # During testing, we might not have access to direct auth
         # So we'll try ORM auth first in test environments
         testing_environment = os.environ.get('TESTING', 'False').lower() == 'true'
-        
+
         if testing_environment:
             # For testing, use ORM auth directly
             logger.info(f"Testing environment detected, using ORM auth for: {form_data.username}")
             user = authenticate_user(db, form_data.username, form_data.password)
-            
+
             if not user:
                 logger.warning(f"Failed login attempt for user: {form_data.username}")
                 raise HTTPException(
@@ -142,24 +153,24 @@ def login_for_access_token(
                     detail="Incorrect username or password",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-                
+
             if not user.is_active:
                 logger.warning(f"Login attempt for inactive user: {form_data.username}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Inactive user account"
                 )
-                
+
             user_id = user.id
         else:
             # In production, try direct auth first, then fall back to ORM
             user_data = direct_authenticate_user(form_data.username, form_data.password)
-            
+
             if user_data:
                 logger.info(f"Direct authentication successful for user: {form_data.username}")
                 user_id = user_data["id"]
                 is_active = user_data.get("is_active", True)
-                
+
                 # Check if user is active
                 if not is_active:
                     logger.warning(f"Login attempt for inactive user: {form_data.username}")
@@ -171,7 +182,7 @@ def login_for_access_token(
                 # Fall back to ORM-based auth
                 logger.info(f"Direct auth failed, trying ORM auth for: {form_data.username}")
                 user = authenticate_user(db, form_data.username, form_data.password)
-                
+
                 if not user:
                     logger.warning(f"Failed login attempt for user: {form_data.username}")
                     raise HTTPException(
@@ -179,16 +190,16 @@ def login_for_access_token(
                         detail="Incorrect username or password",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-                    
+
                 if not user.is_active:
                     logger.warning(f"Login attempt for inactive user: {form_data.username}")
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Inactive user account"
                     )
-                    
+
                 user_id = user.id
-        
+
         # Get user's role for inclusion in the token
         user_role = None
         if 'user_data' in locals() and user_data and 'role' in user_data:
@@ -198,20 +209,20 @@ def login_for_access_token(
             user_db = db.query(User).filter(User.id == user_id).first()
             if user_db:
                 user_role = user_db.role
-        
+
         # Generate the JWT token with role information
         access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
         token_data = {"sub": str(user_id)}
         if user_role:
             token_data["role"] = user_role
-        
+
         access_token = direct_create_token(
             data=token_data, expires_delta=access_token_expires
         )
-        
+
         logger.info(f"Login successful for user: {form_data.username}")
         return {"access_token": access_token, "token_type": "bearer"}
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they're already formatted correctly
         raise
@@ -234,13 +245,13 @@ def register(
     """
     # Check if email already exists
     user_exists = db.query(User).filter(User.email == user_in.email).first()
-    
+
     if user_exists:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    
+
     # Create new user
     db_user = User(
         email=user_in.email,
@@ -250,11 +261,11 @@ def register(
         is_active=True,
         is_superuser=False
     )
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+
     return db_user
 
 

@@ -1,10 +1,18 @@
 import logging
-from typing import Optional, List, Any, Type, TypeVar
-from sqlalchemy.orm import Session, Query
-from sqlalchemy import func, and_, or_
-from sqlalchemy.exc import SQLAlchemyError
+from typing import Optional
+from typing import TypeVar
 
-from app.models.media import MediaFile, TranscriptSegment, Speaker, Tag, FileTag
+from sqlalchemy import and_
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Query
+from sqlalchemy.orm import Session
+
+from app.models.media import FileTag
+from app.models.media import MediaFile
+from app.models.media import Speaker
+from app.models.media import Tag
+from app.models.media import TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
@@ -14,28 +22,28 @@ T = TypeVar('T')
 def get_user_files_query(db: Session, user_id: int) -> Query:
     """
     Standard query for user's files.
-    
+
     Args:
         db: Database session
         user_id: User ID
-        
+
     Returns:
         Base query for user's media files
     """
     return db.query(MediaFile).filter(MediaFile.user_id == user_id)
 
 
-def get_or_create(db: Session, model: Type[T], defaults: Optional[dict] = None, 
+def get_or_create(db: Session, model: type[T], defaults: Optional[dict] = None,
                   **kwargs) -> tuple[T, bool]:
     """
     Get an object or create it if it doesn't exist.
-    
+
     Args:
         db: Database session
         model: SQLAlchemy model class
         defaults: Default values for creation
         **kwargs: Filter criteria
-        
+
     Returns:
         Tuple of (object, created_flag)
     """
@@ -58,44 +66,44 @@ def get_or_create(db: Session, model: Type[T], defaults: Optional[dict] = None,
         raise
 
 
-def safe_get_by_id(db: Session, model: Type[T], obj_id: int, 
+def safe_get_by_id(db: Session, model: type[T], obj_id: int,
                    user_id: Optional[int] = None) -> Optional[T]:
     """
     Safely get an object by ID with optional user filtering.
-    
+
     Args:
         db: Database session
         model: SQLAlchemy model class
         obj_id: Object ID
         user_id: Optional user ID for ownership filtering
-        
+
     Returns:
         Object if found, None otherwise
     """
     try:
         query = db.query(model).filter(model.id == obj_id)
-        
+
         # Add user filtering if specified and model has user_id field
         if user_id and hasattr(model, 'user_id'):
             query = query.filter(model.user_id == user_id)
-        
+
         return query.first()
     except SQLAlchemyError as e:
         logger.error(f"Error getting {model.__name__} by ID {obj_id}: {e}")
         return None
 
 
-def bulk_update(db: Session, model: Type[T], updates: List[dict], 
+def bulk_update(db: Session, model: type[T], updates: list[dict],
                 id_field: str = 'id') -> bool:
     """
     Perform bulk updates efficiently.
-    
+
     Args:
         db: Database session
         model: SQLAlchemy model class
         updates: List of update dictionaries with ID and field values
         id_field: Name of the ID field
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -103,7 +111,7 @@ def bulk_update(db: Session, model: Type[T], updates: List[dict],
         for update_data in updates:
             obj_id = update_data.pop(id_field)
             db.query(model).filter(getattr(model, id_field) == obj_id).update(update_data)
-        
+
         db.commit()
         return True
     except SQLAlchemyError as e:
@@ -115,48 +123,48 @@ def bulk_update(db: Session, model: Type[T], updates: List[dict],
 def get_file_with_transcript_count(db: Session, file_id: int, user_id: int) -> tuple[MediaFile, int]:
     """
     Get a file with its transcript segment count.
-    
+
     Args:
         db: Database session
         file_id: File ID
         user_id: User ID
-        
+
     Returns:
         Tuple of (MediaFile, segment_count)
     """
     file_obj = safe_get_by_id(db, MediaFile, file_id, user_id)
     if not file_obj:
         return None, 0
-    
+
     segment_count = db.query(func.count(TranscriptSegment.id)).filter(
         TranscriptSegment.media_file_id == file_id
     ).scalar()
-    
+
     return file_obj, segment_count or 0
 
 
-def get_user_speakers(db: Session, user_id: int) -> List[Speaker]:
+def get_user_speakers(db: Session, user_id: int) -> list[Speaker]:
     """
     Get all speakers for a user.
-    
+
     Args:
         db: Database session
         user_id: User ID
-        
+
     Returns:
         List of Speaker objects
     """
     return db.query(Speaker).filter(Speaker.user_id == user_id).all()
 
 
-def get_unique_speakers_for_file(db: Session, file_id: int) -> List[Speaker]:
+def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
     """
     Get unique speakers that appear in a specific file.
-    
+
     Args:
         db: Database session
         file_id: File ID
-        
+
     Returns:
         List of unique Speaker objects
     """
@@ -165,14 +173,14 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> List[Speaker]:
     ).distinct().all()
 
 
-def get_file_tags(db: Session, file_id: int) -> List[str]:
+def get_file_tags(db: Session, file_id: int) -> list[str]:
     """
     Get tag names for a file.
-    
+
     Args:
         db: Database session
         file_id: File ID
-        
+
     Returns:
         List of tag names
     """
@@ -186,15 +194,15 @@ def get_file_tags(db: Session, file_id: int) -> List[str]:
         return []
 
 
-def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
+def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> bool:
     """
     Add tags to a file, creating tags if they don't exist.
-    
+
     Args:
         db: Database session
         file_id: File ID
         tag_names: List of tag names to add
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -202,16 +210,16 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
         for tag_name in tag_names:
             # Get or create tag
             tag, created = get_or_create(db, Tag, name=tag_name)
-            
+
             # Check if file-tag association already exists
             existing = db.query(FileTag).filter(
                 and_(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
             ).first()
-            
+
             if not existing:
                 file_tag = FileTag(media_file_id=file_id, tag_id=tag.id)
                 db.add(file_tag)
-        
+
         db.commit()
         return True
     except SQLAlchemyError as e:
@@ -220,15 +228,15 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
         return False
 
 
-def remove_tags_from_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
+def remove_tags_from_file(db: Session, file_id: int, tag_names: list[str]) -> bool:
     """
     Remove tags from a file.
-    
+
     Args:
         db: Database session
         file_id: File ID
         tag_names: List of tag names to remove
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -236,12 +244,12 @@ def remove_tags_from_file(db: Session, file_id: int, tag_names: List[str]) -> bo
         # Get tag IDs
         tag_ids = db.query(Tag.id).filter(Tag.name.in_(tag_names)).all()
         tag_ids = [tag_id[0] for tag_id in tag_ids]
-        
+
         # Remove file-tag associations
         db.query(FileTag).filter(
             and_(FileTag.media_file_id == file_id, FileTag.tag_id.in_(tag_ids))
         ).delete(synchronize_session=False)
-        
+
         db.commit()
         return True
     except SQLAlchemyError as e:
@@ -250,15 +258,15 @@ def remove_tags_from_file(db: Session, file_id: int, tag_names: List[str]) -> bo
         return False
 
 
-def get_files_by_status(db: Session, user_id: int, status: str) -> List[MediaFile]:
+def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFile]:
     """
     Get files by status for a user.
-    
+
     Args:
         db: Database session
         user_id: User ID
         status: File status
-        
+
     Returns:
         List of MediaFile objects
     """
@@ -270,11 +278,11 @@ def get_files_by_status(db: Session, user_id: int, status: str) -> List[MediaFil
 def get_user_file_stats(db: Session, user_id: int) -> dict:
     """
     Get comprehensive file statistics for a user.
-    
+
     Args:
         db: Database session
         user_id: User ID
-        
+
     Returns:
         Dictionary with file statistics
     """
@@ -283,22 +291,22 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
         status_counts = db.query(
             MediaFile.status, func.count(MediaFile.id)
         ).filter(MediaFile.user_id == user_id).group_by(MediaFile.status).all()
-        
+
         # Total file size
         total_size = db.query(func.sum(MediaFile.file_size)).filter(
             MediaFile.user_id == user_id
         ).scalar() or 0
-        
+
         # Total duration
         total_duration = db.query(func.sum(MediaFile.duration)).filter(
             MediaFile.user_id == user_id
         ).scalar() or 0
-        
+
         # File type distribution
         type_counts = db.query(
             MediaFile.content_type, func.count(MediaFile.id)
         ).filter(MediaFile.user_id == user_id).group_by(MediaFile.content_type).all()
-        
+
         return {
             'total_files': sum(count for _, count in status_counts),
             'status_distribution': dict(status_counts),

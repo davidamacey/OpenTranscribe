@@ -2,6 +2,7 @@
 Simple script to create a MinIO bucket for our application.
 """
 import os
+
 from dotenv import load_dotenv
 from minio import Minio
 from minio.error import S3Error
@@ -25,12 +26,12 @@ def main():
             secret_key=MINIO_ROOT_PASSWORD,
             secure=MINIO_SECURE
         )
-        
+
         # Check if bucket exists, if not create it
         if not client.bucket_exists(MINIO_BUCKET_NAME):
             client.make_bucket(MINIO_BUCKET_NAME)
             print(f"Bucket '{MINIO_BUCKET_NAME}' created successfully")
-            
+
             # Set public read policy for the bucket
             import json
             policy = {
@@ -44,14 +45,14 @@ def main():
                     }
                 ]
             }
-            
+
             # Convert policy dict to JSON string
             policy_str = json.dumps(policy)
             client.set_bucket_policy(MINIO_BUCKET_NAME, policy_str)
             print(f"Public read policy set for bucket '{MINIO_BUCKET_NAME}'")
         else:
             print(f"Bucket '{MINIO_BUCKET_NAME}' already exists")
-    
+
     except S3Error as e:
         print(f"Error creating bucket: {e}")
 

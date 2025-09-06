@@ -4,19 +4,30 @@ SQLAlchemy ORM models for OpenTranscribe.
 This package contains database models for all entities in the system.
 """
 
+from .media import Analytics
+from .media import Collection
+from .media import CollectionMember
+from .media import Comment
+from .media import FileStatus
+from .media import FileTag
+from .media import MediaFile
+from .media import Speaker
+from .media import SpeakerCollection
+from .media import SpeakerCollectionMember
+from .media import SpeakerProfile
+from .media import Tag
+from .media import Task
+from .media import TranscriptSegment
+from .prompt import SummaryPrompt
+from .prompt import UserSetting
 from .user import User
-from .media import (
-    MediaFile, TranscriptSegment, FileTag, Tag, Speaker, SpeakerProfile,
-    Comment, Task, FileStatus, Analytics, Collection, CollectionMember,
-    SpeakerCollection, SpeakerCollectionMember
-)
 
 __all__ = [
     "User",
-    "MediaFile", 
+    "MediaFile",
     "TranscriptSegment",
     "FileTag",
-    "Tag", 
+    "Tag",
     "Speaker",
     "SpeakerProfile",
     "Comment",
@@ -26,5 +37,7 @@ __all__ = [
     "Collection",
     "CollectionMember",
     "SpeakerCollection",
-    "SpeakerCollectionMember"
+    "SpeakerCollectionMember",
+    "SummaryPrompt",
+    "UserSetting"
 ]

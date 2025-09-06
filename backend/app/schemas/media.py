@@ -1,7 +1,10 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any
+from typing import Optional
+
+from pydantic import BaseModel
+from pydantic import Field
 
 
 class FileStatus(str, Enum):
@@ -23,9 +26,9 @@ class TaskStatus(str, Enum):
 
 class PrepareUploadRequest(BaseModel):
     """Request schema for preparing a file upload.
-    
+
     This schema is used to create a file record before the actual upload starts.
-    
+
     Attributes:
         filename: Name of the file to be uploaded
         file_size: Size of the file in bytes
@@ -50,7 +53,7 @@ class SpeakerBase(BaseModel):
 class SpeakerCreate(SpeakerBase):
     user_id: int
     media_file_id: int
-    embedding_vector: Optional[List[float]] = None
+    embedding_vector: Optional[list[float]] = None
 
 
 class SpeakerUpdate(BaseModel):
@@ -58,7 +61,7 @@ class SpeakerUpdate(BaseModel):
     display_name: Optional[str] = None
     suggested_name: Optional[str] = None
     verified: Optional[bool] = None
-    embedding_vector: Optional[List[float]] = None
+    embedding_vector: Optional[list[float]] = None
 
 
 class Speaker(SpeakerBase):
@@ -193,7 +196,7 @@ class MediaFile(MediaFileBase):
     file_hash: Optional[str] = None
     thumbnail_path: Optional[str] = None
     thumbnail_url: Optional[str] = None
-    
+
     # Technical metadata
     media_format: Optional[str] = None
     codec: Optional[str] = None
@@ -202,32 +205,32 @@ class MediaFile(MediaFileBase):
     frame_rate: Optional[float] = None
     frame_count: Optional[int] = None
     aspect_ratio: Optional[str] = None
-    
+
     # Audio specs
     audio_channels: Optional[int] = None
     audio_sample_rate: Optional[int] = None
     audio_bit_depth: Optional[int] = None
-    
+
     # Creation and device information
     creation_date: Optional[datetime] = None
     last_modified_date: Optional[datetime] = None
     device_make: Optional[str] = None
     device_model: Optional[str] = None
-    
+
     # Content information
     title: Optional[str] = None
     author: Optional[str] = None
     description: Optional[str] = None
     source_url: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
 
 
 class MediaFileDetail(MediaFile):
-    transcript_segments: List[TranscriptSegment] = []
-    tags: List[str] = []
-    collections: List["Collection"] = []
+    transcript_segments: list[TranscriptSegment] = []
+    tags: list[str] = []
+    collections: list["Collection"] = []
 
     class Config:
         from_attributes = True
@@ -315,9 +318,9 @@ class Task(TaskBase):
 
 
 class AnalyticsBase(BaseModel):
-    speaker_stats: Optional[Dict[str, Any]] = None
-    sentiment: Optional[Dict[str, Any]] = None
-    keywords: Optional[List[str]] = None
+    speaker_stats: Optional[dict[str, Any]] = None
+    sentiment: Optional[dict[str, Any]] = None
+    keywords: Optional[list[str]] = None
 
 
 class AnalyticsCreate(AnalyticsBase):
@@ -364,15 +367,15 @@ class CollectionWithCount(Collection):
 
 
 class CollectionResponse(Collection):
-    media_files: Optional[List[MediaFile]] = []
+    media_files: Optional[list[MediaFile]] = []
 
 
 class CollectionMemberAdd(BaseModel):
-    media_file_ids: List[int]
+    media_file_ids: list[int]
 
 
 class CollectionMemberRemove(BaseModel):
-    media_file_ids: List[int]
+    media_file_ids: list[int]
 
 
 # Subtitle-related schemas
@@ -413,6 +416,6 @@ class VideoWithSubtitlesResponse(BaseModel):
 class SubtitleValidationResult(BaseModel):
     """Result of subtitle validation."""
     is_valid: bool = Field(..., description="Whether subtitles are valid")
-    issues: List[str] = Field(default_factory=list, description="List of validation issues found")
+    issues: list[str] = Field(default_factory=list, description="List of validation issues found")
     total_segments: int = Field(..., description="Total number of subtitle segments")
     total_duration: float = Field(..., description="Total duration of subtitles in seconds")

@@ -1,12 +1,10 @@
-import pytest
-from fastapi.testclient import TestClient
 
 def test_list_speakers(client, user_token_headers):
     """Test listing all speakers for the user"""
     response = client.get("/api/speakers/", headers=user_token_headers)
     assert response.status_code == 200
     assert isinstance(response.json(), list)
-    
+
 def test_list_speakers_unauthorized(client):
     """Test that unauthorized users cannot list speakers"""
     response = client.get("/api/speakers/")
@@ -22,7 +20,7 @@ def test_create_speaker(client, user_token_headers, db_session):
     speaker = response.json()
     assert "id" in speaker
     assert speaker["name"] == "Test Speaker"
-    
+
     # Verify speaker exists in the database
     from app.models.media import Speaker
     db_speaker = db_session.query(Speaker).filter(Speaker.name == "Test Speaker").first()
@@ -37,7 +35,7 @@ def test_get_speaker(client, user_token_headers, db_session):
     }
     create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
-    
+
     # Now get the speaker
     response = client.get(f"/api/speakers/{speaker_id}", headers=user_token_headers)
     assert response.status_code == 200
@@ -53,7 +51,7 @@ def test_update_speaker(client, user_token_headers, db_session):
     }
     create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
-    
+
     # Now update the speaker
     update_data = {
         "name": "Updated Speaker Name"
@@ -63,7 +61,7 @@ def test_update_speaker(client, user_token_headers, db_session):
     speaker = response.json()
     assert speaker["id"] == speaker_id
     assert speaker["name"] == "Updated Speaker Name"
-    
+
     # Verify changes in the database
     from app.models.media import Speaker
     db_speaker = db_session.query(Speaker).filter(Speaker.id == speaker_id).first()
@@ -77,11 +75,11 @@ def test_delete_speaker(client, user_token_headers, db_session):
     }
     create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
-    
+
     # Now delete the speaker
     response = client.delete(f"/api/speakers/{speaker_id}", headers=user_token_headers)
     assert response.status_code == 204  # No content
-    
+
     # Verify speaker is deleted from the database
     from app.models.media import Speaker
     db_speaker = db_session.query(Speaker).filter(Speaker.id == speaker_id).first()

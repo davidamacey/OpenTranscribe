@@ -12,8 +12,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Import models and config
 from app.db.base import Base
-from app.models.user import User
-from app.models.media import MediaFile, TranscriptSegment, Speaker, Comment, Tag, FileTag, Task, Analytics
 
 # NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema
 # until the application reaches releases. After that, we will use Alembic migrations.
@@ -24,6 +22,7 @@ config = context.config
 
 # Setup the connection string
 from dotenv import load_dotenv
+
 load_dotenv()
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
