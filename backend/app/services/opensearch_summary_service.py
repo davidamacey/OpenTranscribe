@@ -241,7 +241,10 @@ class OpenSearchSummaryService:
                         ]
                     }
                 },
-                "sort": [{"summary_version": {"order": "desc"}}],
+                "sort": [
+                    {"summary_version": {"order": "desc"}},
+                    {"created_at": {"order": "desc"}}
+                ],
                 "size": 1,
             }
 

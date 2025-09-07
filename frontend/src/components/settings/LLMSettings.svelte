@@ -225,6 +225,75 @@
     }
   }
 
+  async function testSavedSettings() {
+    if (!hasSettings) {
+      toastStore.error('No saved settings to test. Please save settings first.');
+      return;
+    }
+
+    testing = true;
+    error = '';
+    testResult = null;
+
+    try {
+      testResult = await LLMSettingsApi.testCurrentSettings();
+
+      if (testResult.success) {
+        toastStore.success(`Saved settings test successful! Response time: ${testResult.response_time_ms}ms`, 5000);
+        
+        // Update connection status and global store
+        connectionStatus = 'connected';
+        statusMessage = testResult.message;
+        statusLastChecked = new Date();
+        
+        // Update the centralized LLM status store
+        llmStatusStore.setStatus({
+          available: true,
+          user_id: 0,
+          provider: currentSettings?.provider || null,
+          model: currentSettings?.model_name || null,
+          message: testResult.message
+        });
+      } else {
+        toastStore.error(testResult.message, 5000);
+        
+        // Update connection status and global store
+        connectionStatus = 'disconnected';
+        statusMessage = testResult.message;
+        statusLastChecked = new Date();
+        
+        // Update the centralized store with error state
+        llmStatusStore.setStatus({
+          available: false,
+          user_id: 0,
+          provider: null,
+          model: null,
+          message: testResult.message
+        });
+      }
+    } catch (err: any) {
+      console.error('Saved settings test failed:', err);
+      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      toastStore.error(errorMsg, 5000);
+      
+      // Update connection status and global store
+      connectionStatus = 'disconnected';
+      statusMessage = errorMsg;
+      statusLastChecked = new Date();
+      
+      // Update the centralized store with error state
+      llmStatusStore.setStatus({
+        available: false,
+        user_id: 0,
+        provider: null,
+        model: null,
+        message: errorMsg
+      });
+    } finally {
+      testing = false;
+    }
+  }
+
   async function saveSettings() {
     saving = true;
     error = '';
@@ -460,39 +529,79 @@
         {#if supportedProviders.find(p => p.provider === formData.provider)?.supports_custom_url}
           <div class="form-group">
             <label for="base_url">Base URL</label>
-            <div class="input-with-test">
-              <input
-                type="url"
-                id="base_url"
-                bind:value={formData.base_url}
-                on:input={markDirty}
-                disabled={saving}
-                class="form-control"
-                placeholder="e.g., http://localhost:8012/v1"
-              />
+            <input
+              type="url"
+              id="base_url"
+              bind:value={formData.base_url}
+              on:input={markDirty}
+              disabled={saving}
+              class="form-control"
+              placeholder="e.g., http://localhost:8012/v1"
+            />
+            <small class="form-text">Custom endpoint URL for your LLM provider</small>
+          </div>
+        {/if}
+
+        <!-- Test Connection Buttons (for all providers) -->
+        <div class="form-group">
+          <div class="test-section">
+            <div class="test-buttons">
               <button
                 type="button"
-                class="test-icon-button"
+                class="test-button"
                 on:click={testConnection}
                 disabled={testing || saving || !isFormValid()}
-                title="Test Connection"
               >
                 {#if testing}
                   <svg class="spinner-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 12a9 9 0 11-6.219-8.56"/>
                   </svg>
+                  Testing Connection...
                 {:else}
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <polyline points="1 20 1 14 7 14"></polyline>
                     <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                   </svg>
+                  Test Connection
                 {/if}
               </button>
+
+              {#if hasSettings}
+                <button
+                  type="button"
+                  class="test-button secondary"
+                  on:click={testSavedSettings}
+                  disabled={testing || saving}
+                  title="Test using your saved settings"
+                >
+                  {#if testing}
+                    <svg class="spinner-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                    </svg>
+                    Testing Saved...
+                  {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Test Saved Settings
+                  {/if}
+                </button>
+              {/if}
             </div>
-            <small class="form-text">Custom endpoint URL for your LLM provider</small>
+
+            {#if testResult}
+              <div class="test-result {testResult.success ? 'success' : 'error'}">
+                {testResult.message}
+                {#if testResult.success && testResult.response_time_ms}
+                  <div class="response-time">Response time: {testResult.response_time_ms}ms</div>
+                {/if}
+              </div>
+            {/if}
           </div>
-        {/if}
+        </div>
 
         <!-- Advanced Settings -->
         <details class="advanced-settings">
@@ -807,6 +916,12 @@
     border: 1px solid var(--border-color);
   }
 
+  .test-buttons {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
   .test-button {
     display: flex;
     align-items: center;
@@ -829,6 +944,17 @@
   .test-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .test-button.secondary {
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+  }
+
+  .test-button.secondary:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
   }
 
   .test-result {
@@ -929,6 +1055,10 @@
     }
 
     .api-key-input {
+      flex-direction: column;
+    }
+
+    .test-buttons {
       flex-direction: column;
     }
   }

@@ -268,7 +268,7 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      # No authentication required as per user requirements
+    # No authentication required as per user requirements
     volumes:
       - ./backend:/app
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface

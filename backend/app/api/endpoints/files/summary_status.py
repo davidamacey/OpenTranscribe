@@ -51,8 +51,8 @@ async def get_summary_status(
         )
 
     try:
-        # Check LLM availability
-        llm_available = await is_llm_available()
+        # Check LLM availability for current user
+        llm_available = await is_llm_available(user_id=current_user.id)
     except Exception as e:
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
@@ -110,9 +110,9 @@ async def retry_summary(
             detail="Cannot generate summary until transcription is completed",
         )
 
-    # Check LLM availability
+    # Check LLM availability for current user
     try:
-        llm_available = await is_llm_available()
+        llm_available = await is_llm_available(user_id=current_user.id)
     except Exception as e:
         logger.error(
             f"Failed to check LLM availability for retry of file {file_id}: {e}"

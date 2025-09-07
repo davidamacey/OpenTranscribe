@@ -26,6 +26,8 @@ class LLMProvider(str, Enum):
     VLLM = "vllm"
     OLLAMA = "ollama"
     CLAUDE = "claude"
+    ANTHROPIC = "anthropic" 
+    OPENROUTER = "openrouter"
     CUSTOM = "custom"
 
 
@@ -81,6 +83,9 @@ class LLMService:
             LLMProvider.OLLAMA: build_endpoint(config.base_url)
             if config.base_url
             else "http://localhost:11434/v1/chat/completions",
+            LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
+            LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages", 
+            LLMProvider.OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
             LLMProvider.CUSTOM: build_endpoint(config.base_url)
             if config.base_url
             else None,
@@ -117,6 +122,15 @@ class LLMService:
         elif self.config.provider == LLMProvider.OLLAMA:
             # Ollama typically doesn't require auth
             pass
+        elif self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            # Claude/Anthropic uses different header format
+            if self.config.api_key:
+                headers["x-api-key"] = self.config.api_key
+                headers["anthropic-version"] = "2023-06-01"
+        elif self.config.provider == LLMProvider.OPENROUTER and self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+            headers["HTTP-Referer"] = "https://opentranscribe.ai"  # Required by OpenRouter
+            headers["X-Title"] = "OpenTranscribe"
         elif self.config.provider == LLMProvider.CUSTOM and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
@@ -126,6 +140,35 @@ class LLMService:
         self, messages: list[dict[str, str]], **kwargs
     ) -> dict[str, Any]:
         """Prepare request payload for the API"""
+        
+        # Claude/Anthropic uses a different API format
+        if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            # Convert OpenAI format messages to Claude format
+            system_message = ""
+            user_messages = []
+            
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system_message = msg.get("content", "")
+                elif msg.get("role") in ["user", "assistant"]:
+                    user_messages.append({
+                        "role": msg["role"], 
+                        "content": msg["content"]
+                    })
+            
+            payload = {
+                "model": self.config.model,
+                "messages": user_messages,
+                "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
+                "temperature": kwargs.get("temperature", self.config.temperature),
+            }
+            
+            if system_message:
+                payload["system"] = system_message
+                
+            return payload
+        
+        # Standard OpenAI-compatible format for other providers
         payload = {
             "model": self.config.model,
             "messages": messages,
@@ -187,20 +230,43 @@ class LLMService:
                     logger.error(f"Failed to parse LLM response: {response_text}")
                     raise Exception(f"Invalid JSON response: {e}")
 
-                # Extract content from response
-                if "choices" not in data or not data["choices"]:
-                    raise Exception("No choices in LLM response")
+                # Extract content from response based on provider
+                content = ""
+                usage_tokens = None
+                finish_reason = None
+                
+                if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+                    # Claude response format
+                    if "content" not in data or not data["content"]:
+                        raise Exception("No content in Claude response")
+                    
+                    # Claude returns content as array of text blocks
+                    content_blocks = data["content"]
+                    if isinstance(content_blocks, list) and content_blocks:
+                        content = content_blocks[0].get("text", "")
+                    else:
+                        content = str(content_blocks)
+                        
+                    # Claude usage format
+                    if "usage" in data:
+                        usage_tokens = data["usage"].get("output_tokens", 0) + data["usage"].get("input_tokens", 0)
+                        
+                    finish_reason = data.get("stop_reason")
+                else:
+                    # OpenAI-compatible response format
+                    if "choices" not in data or not data["choices"]:
+                        raise Exception("No choices in LLM response")
 
-                choice = data["choices"][0]
-                content = choice.get("message", {}).get("content", "")
+                    choice = data["choices"][0]
+                    content = choice.get("message", {}).get("content", "")
+                    finish_reason = choice.get("finish_reason")
+
+                    # Extract usage information if available
+                    if "usage" in data:
+                        usage_tokens = data["usage"].get("total_tokens")
 
                 if not content:
                     raise Exception("Empty content in LLM response")
-
-                # Extract usage information if available
-                usage_tokens = None
-                if "usage" in data:
-                    usage_tokens = data["usage"].get("total_tokens")
 
                 logger.debug(
                     f"LLM request completed in {request_time:.2f}s, tokens: {usage_tokens}"
@@ -209,7 +275,7 @@ class LLMService:
                 return LLMResponse(
                     content=content,
                     usage_tokens=usage_tokens,
-                    finish_reason=choice.get("finish_reason"),
+                    finish_reason=finish_reason,
                     model=self.config.model,
                     provider=self.config.provider.value,
                 )
@@ -1110,68 +1176,99 @@ class LLMService:
 
     async def validate_connection(self) -> tuple[bool, str]:
         """
-        Validate connection to LLM provider using models endpoint first
+        Validate connection to LLM provider
 
         Returns:
             Tuple of (success, message)
         """
         try:
-            # First, check if we can reach the models endpoint
             session = await self._get_session()
             headers = self._get_headers()
-
-            # Build models endpoint URL
-            base_url = (
-                self.config.base_url.strip().rstrip("/")
-                if self.config.base_url
-                else None
-            )
-            if not base_url:
-                return False, "No base URL configured"
-
-            if base_url.endswith("/v1"):
-                models_url = f"{base_url}/models"
+            
+            # Claude/Anthropic providers don't have a models endpoint, test with a simple request
+            if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+                # Test with a simple message
+                test_payload = {
+                    "model": self.config.model,
+                    "messages": [{"role": "user", "content": "test"}],
+                    "max_tokens": 10
+                }
+                
+                url = self.endpoints[self.config.provider]
+                logger.debug(f"Testing Claude connection with message endpoint: {url}")
+                
+                async with session.post(url, json=test_payload, headers=headers) as response:
+                    if response.status == 200:
+                        return True, f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available."
+                    elif response.status == 401:
+                        return False, "Authentication failed. Please check your API key."
+                    elif response.status == 403:
+                        return False, "Access forbidden. Please check your API key permissions."
+                    elif response.status == 429:
+                        return False, "Rate limit exceeded. Connection test successful but quota reached."
+                    else:
+                        response_text = await response.text()
+                        return False, f"API error ({response.status}): {response_text}"
+            
+            # For OpenAI-compatible providers, use models endpoint
             else:
-                models_url = f"{base_url}/v1/models"
+                # Build models endpoint URL
+                if self.config.provider == LLMProvider.OPENAI:
+                    base_url = "https://api.openai.com"
+                elif self.config.provider == LLMProvider.OPENROUTER:
+                    base_url = "https://openrouter.ai/api"
+                else:
+                    base_url = (
+                        self.config.base_url.strip().rstrip("/")
+                        if self.config.base_url
+                        else None
+                    )
+                    if not base_url:
+                        return False, "No base URL configured"
 
-            logger.debug(f"Testing connection to models endpoint: {models_url}")
+                if base_url.endswith("/v1"):
+                    models_url = f"{base_url}/models"
+                else:
+                    models_url = f"{base_url}/v1/models"
 
-            async with session.get(models_url, headers=headers) as response:
-                if response.status == 200:
-                    # Check if our model is available
-                    try:
-                        data = await response.json()
-                        if "data" in data:
-                            model_ids = [model.get("id") for model in data["data"]]
-                            if self.config.model in model_ids:
+                logger.debug(f"Testing connection to models endpoint: {models_url}")
+
+                async with session.get(models_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Check if our model is available
+                        try:
+                            data = await response.json()
+                            if "data" in data:
+                                model_ids = [model.get("id") for model in data["data"]]
+                                if self.config.model in model_ids:
+                                    return (
+                                        True,
+                                        f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available.",
+                                    )
+                                else:
+                                    available_models = ", ".join(
+                                        model_ids[:3]
+                                    )  # Show first 3 models
+                                    return (
+                                        False,
+                                        f"Model '{self.config.model}' not found. Available models: {available_models}...",
+                                    )
+                            else:
                                 return (
                                     True,
-                                    f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available.",
+                                    f"Successfully connected to {self.config.provider} (could not verify model list)",
                                 )
-                            else:
-                                available_models = ", ".join(
-                                    model_ids[:3]
-                                )  # Show first 3 models
-                                return (
-                                    False,
-                                    f"Model '{self.config.model}' not found. Available models: {available_models}...",
-                                )
-                        else:
+                        except Exception as e:
                             return (
                                 True,
-                                f"Successfully connected to {self.config.provider} (could not verify model list)",
+                                f"Successfully connected to {self.config.provider} (model verification failed: {str(e)})",
                             )
-                    except Exception as e:
+                    else:
+                        response_text = await response.text()
                         return (
-                            True,
-                            f"Successfully connected to {self.config.provider} (model verification failed: {str(e)})",
+                            False,
+                            f"Models endpoint failed with status {response.status}: {response_text}",
                         )
-                else:
-                    response_text = await response.text()
-                    return (
-                        False,
-                        f"Models endpoint failed with status {response.status}: {response_text}",
-                    )
 
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
