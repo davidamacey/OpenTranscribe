@@ -2,6 +2,7 @@
 Initial data setup script for the transcribe app.
 Creates a test user and sets up initial database values.
 """
+
 import logging
 
 from sqlalchemy.orm import Session
@@ -36,7 +37,7 @@ def init_db(db: Session) -> None:
         logger.info("Test admin user already exists")
 
     # Create default tags if they don't exist
-    default_tags = ['Important', 'Meeting', 'Interview', 'Personal']
+    default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
     for tag_name in default_tags:
         tag = db.query(Tag).filter(Tag.name == tag_name).first()

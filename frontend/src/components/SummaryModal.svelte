@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
+  import { isLLMAvailable } from '../stores/llmStatus';
   
   // Import smaller components
   import SummaryDisplay from './SummaryDisplay.svelte';
@@ -15,6 +16,7 @@
   const dispatch = createEventDispatcher<{
     close: void;
     generateSummary: { fileId: number };
+    reprocessSummary: { fileId: number };
   }>();
   
   let summary: SummaryData | null = null;
@@ -22,8 +24,10 @@
   let error: string | null = null;
   let generating = false;
   let summaryStatus: string = 'pending';
-  let llmAvailable: boolean = false;
   let canRetry: boolean = false;
+  
+  // Get LLM availability from centralized store
+  $: llmAvailable = $isLLMAvailable;
   
   // Search within summary
   let searchQuery = '';
@@ -152,6 +156,13 @@
     } finally {
       generating = false;
     }
+  }
+
+  function reprocessSummary() {
+    if (!fileId) return;
+    
+    // Simply dispatch event to parent - parent handles everything
+    dispatch('reprocessSummary', { fileId });
   }
   
   function countMatches(query: string, summaryData: SummaryData): number {
@@ -403,6 +414,27 @@
                 Copy
               {/if}
             </button>
+            
+            <!-- Reprocess button when summary exists and LLM is available -->
+            {#if llmAvailable}
+              <button 
+                class="reprocess-button-header"
+                on:click={reprocessSummary}
+                disabled={generating}
+                aria-label="Reprocess summary"
+                title="Regenerate summary with current speaker names and transcript text"
+              >
+                {#if generating}
+                  <div class="spinner-small"></div>
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
+                    <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
+                  </svg>
+                {/if}
+                Reprocess
+              </button>
+            {/if}
           {/if}
           <button class="close-button" on:click={handleCloseButton} aria-label="Close modal" title="Close modal (Esc)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -534,6 +566,42 @@
     background-color: var(--success-bg);
     border-color: var(--success-color);
     color: var(--success-color);
+  }
+
+  .reprocess-button-header {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .reprocess-button-header:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  .reprocess-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .reprocess-button-header .spinner-small {
+    border: 2px solid rgba(128, 128, 128, 0.3);
+    border-top: 2px solid var(--primary-color);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
   }
 
   .modal-title {

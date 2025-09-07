@@ -8,7 +8,7 @@ the matching system was implemented.
 import sys
 
 # Add the app directory to Python path
-sys.path.insert(0, '/app')
+sys.path.insert(0, "/app")
 
 import logging
 
@@ -49,21 +49,24 @@ def batch_process_speaker_matches():
             if embedding:
                 # Find and store matches
                 found_matches = matching_service.find_and_store_speaker_matches(
-                    speaker.id,
-                    np.array(embedding),
-                    speaker.user_id,
-                    threshold=0.5
+                    speaker.id, np.array(embedding), speaker.user_id, threshold=0.5
                 )
 
                 if found_matches:
                     matches_found += len(found_matches)
-                    logger.info(f"Found {len(found_matches)} matches for speaker {speaker.id} ({speaker.name})")
+                    logger.info(
+                        f"Found {len(found_matches)} matches for speaker {speaker.id} ({speaker.name})"
+                    )
 
                     # Update suggested name if high confidence match found
                     for match in found_matches:
-                        if match['confidence'] >= 0.75 and match['display_name'] and not speaker.suggested_name:
-                            speaker.suggested_name = match['display_name']
-                            speaker.confidence = match['confidence']
+                        if (
+                            match["confidence"] >= 0.75
+                            and match["display_name"]
+                            and not speaker.suggested_name
+                        ):
+                            speaker.suggested_name = match["display_name"]
+                            speaker.confidence = match["confidence"]
                             db.flush()
                             break
 

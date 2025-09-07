@@ -18,7 +18,9 @@ from app.models import UserSetting
 logger = logging.getLogger(__name__)
 
 
-def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] = None) -> str:
+def get_user_active_prompt(
+    user_id: Optional[int] = None, db: Optional[Session] = None
+) -> str:
     """
     Get the active summary prompt for a user, falling back to system default
 
@@ -39,25 +41,32 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
             return get_system_default_prompt(db)
 
         # Get user's active prompt setting
-        active_setting = db.query(UserSetting).filter(
-            and_(
-                UserSetting.user_id == user_id,
-                UserSetting.setting_key == "active_summary_prompt_id"
+        active_setting = (
+            db.query(UserSetting)
+            .filter(
+                and_(
+                    UserSetting.user_id == user_id,
+                    UserSetting.setting_key == "active_summary_prompt_id",
+                )
             )
-        ).first()
+            .first()
+        )
 
         active_prompt = None
         if active_setting and active_setting.setting_value:
             try:
                 prompt_id = int(active_setting.setting_value)
-                active_prompt = db.query(SummaryPrompt).filter(
-                    and_(
-                        SummaryPrompt.id == prompt_id,
-                        SummaryPrompt.is_active
+                active_prompt = (
+                    db.query(SummaryPrompt)
+                    .filter(
+                        and_(SummaryPrompt.id == prompt_id, SummaryPrompt.is_active)
                     )
-                ).first()
+                    .first()
+                )
             except (ValueError, TypeError):
-                logger.warning(f"Invalid prompt ID in user setting: {active_setting.setting_value}")
+                logger.warning(
+                    f"Invalid prompt ID in user setting: {active_setting.setting_value}"
+                )
 
         # If no active prompt or prompt not found, get system default from database
         if not active_prompt:
@@ -65,7 +74,9 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
 
         # Verify user has access to this prompt
         if not active_prompt.is_system_default and active_prompt.user_id != user_id:
-            logger.warning(f"User {user_id} attempted to use inaccessible prompt {active_prompt.id}")
+            logger.warning(
+                f"User {user_id} attempted to use inaccessible prompt {active_prompt.id}"
+            )
             return get_system_default_prompt(db)
 
         return active_prompt.prompt_text
@@ -92,17 +103,21 @@ def get_system_default_prompt(db: Session) -> str:
     try:
         # First try to find a universal/general prompt
         logger.info("Querying for universal/general system prompt")
-        default_prompt = db.query(SummaryPrompt).filter(
-            and_(
-                SummaryPrompt.is_system_default,
-                SummaryPrompt.content_type == "general",
-                SummaryPrompt.is_active,
-                or_(
-                    SummaryPrompt.name.ilike("%universal%"),
-                    SummaryPrompt.name.ilike("%general%")
+        default_prompt = (
+            db.query(SummaryPrompt)
+            .filter(
+                and_(
+                    SummaryPrompt.is_system_default,
+                    SummaryPrompt.content_type == "general",
+                    SummaryPrompt.is_active,
+                    or_(
+                        SummaryPrompt.name.ilike("%universal%"),
+                        SummaryPrompt.name.ilike("%general%"),
+                    ),
                 )
             )
-        ).first()
+            .first()
+        )
 
         if default_prompt:
             logger.info(f"Found universal system prompt: {default_prompt.name}")
@@ -110,29 +125,36 @@ def get_system_default_prompt(db: Session) -> str:
 
         # If no universal prompt found, fallback to any general system prompt
         logger.info("No universal prompt found, trying any general system prompt")
-        default_prompt = db.query(SummaryPrompt).filter(
-            and_(
-                SummaryPrompt.is_system_default,
-                SummaryPrompt.content_type == "general",
-                SummaryPrompt.is_active
+        default_prompt = (
+            db.query(SummaryPrompt)
+            .filter(
+                and_(
+                    SummaryPrompt.is_system_default,
+                    SummaryPrompt.content_type == "general",
+                    SummaryPrompt.is_active,
+                )
             )
-        ).first()
+            .first()
+        )
 
         if default_prompt:
             logger.info(f"Found general system prompt: {default_prompt.name}")
             return default_prompt.prompt_text
 
         # Final fallback: any active system prompt
-        logger.warning("No general system prompt found, using any available system prompt")
-        any_system_prompt = db.query(SummaryPrompt).filter(
-            and_(
-                SummaryPrompt.is_system_default,
-                SummaryPrompt.is_active
-            )
-        ).first()
+        logger.warning(
+            "No general system prompt found, using any available system prompt"
+        )
+        any_system_prompt = (
+            db.query(SummaryPrompt)
+            .filter(and_(SummaryPrompt.is_system_default, SummaryPrompt.is_active))
+            .first()
+        )
 
         if any_system_prompt:
-            logger.warning(f"Using fallback system prompt: {any_system_prompt.name} (type: {any_system_prompt.content_type})")
+            logger.warning(
+                f"Using fallback system prompt: {any_system_prompt.name} (type: {any_system_prompt.content_type})"
+            )
             return any_system_prompt.prompt_text
         else:
             logger.error("No active system default prompts found in database at all!")
@@ -143,7 +165,9 @@ def get_system_default_prompt(db: Session) -> str:
         raise
 
 
-def get_prompt_for_content_type(content_type: str, user_id: Optional[int] = None, db: Optional[Session] = None) -> str:
+def get_prompt_for_content_type(
+    content_type: str, user_id: Optional[int] = None, db: Optional[Session] = None
+) -> str:
     """
     Get the best prompt for a specific content type
 
@@ -168,13 +192,17 @@ def get_prompt_for_content_type(content_type: str, user_id: Optional[int] = None
                 return user_prompt
 
         # Try to get system prompt specific to content type
-        content_type_prompt = db.query(SummaryPrompt).filter(
-            and_(
-                SummaryPrompt.is_system_default,
-                SummaryPrompt.content_type == content_type,
-                SummaryPrompt.is_active
+        content_type_prompt = (
+            db.query(SummaryPrompt)
+            .filter(
+                and_(
+                    SummaryPrompt.is_system_default,
+                    SummaryPrompt.content_type == content_type,
+                    SummaryPrompt.is_active,
+                )
             )
-        ).first()
+            .first()
+        )
 
         if content_type_prompt:
             return content_type_prompt.prompt_text
@@ -197,7 +225,7 @@ def create_user_prompt(
     prompt_text: str,
     description: Optional[str] = None,
     content_type: Optional[str] = None,
-    db: Optional[Session] = None
+    db: Optional[Session] = None,
 ) -> Optional[SummaryPrompt]:
     """
     Create a new custom prompt for a user
@@ -219,12 +247,11 @@ def create_user_prompt(
 
     try:
         # Check user's prompt count limit
-        user_prompt_count = db.query(SummaryPrompt).filter(
-            and_(
-                SummaryPrompt.user_id == user_id,
-                SummaryPrompt.is_active
-            )
-        ).count()
+        user_prompt_count = (
+            db.query(SummaryPrompt)
+            .filter(and_(SummaryPrompt.user_id == user_id, SummaryPrompt.is_active))
+            .count()
+        )
 
         if user_prompt_count >= 50:  # Same limit as in API
             logger.warning(f"User {user_id} has reached prompt limit")
@@ -238,7 +265,7 @@ def create_user_prompt(
             description=description,
             content_type=content_type,
             is_system_default=False,
-            is_active=True
+            is_active=True,
         )
 
         db.add(prompt)
@@ -257,7 +284,9 @@ def create_user_prompt(
             db.close()
 
 
-def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] = None) -> bool:
+def set_user_active_prompt(
+    user_id: int, prompt_id: int, db: Optional[Session] = None
+) -> bool:
     """
     Set a user's active summary prompt
 
@@ -284,12 +313,16 @@ def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] =
             return False
 
         # Update or create setting
-        setting = db.query(UserSetting).filter(
-            and_(
-                UserSetting.user_id == user_id,
-                UserSetting.setting_key == "active_summary_prompt_id"
+        setting = (
+            db.query(UserSetting)
+            .filter(
+                and_(
+                    UserSetting.user_id == user_id,
+                    UserSetting.setting_key == "active_summary_prompt_id",
+                )
             )
-        ).first()
+            .first()
+        )
 
         if setting:
             setting.setting_value = str(prompt_id)
@@ -297,7 +330,7 @@ def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] =
             setting = UserSetting(
                 user_id=user_id,
                 setting_key="active_summary_prompt_id",
-                setting_value=str(prompt_id)
+                setting_value=str(prompt_id),
             )
             db.add(setting)
 

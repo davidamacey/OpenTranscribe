@@ -33,11 +33,13 @@ router = APIRouter()
 def list_speaker_profiles(
     collection_id: Optional[int] = Query(None, description="Filter by collection ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """List all speaker profiles for the current user."""
     try:
-        query = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id)
+        query = db.query(SpeakerProfile).filter(
+            SpeakerProfile.user_id == current_user.id
+        )
 
         if collection_id:
             # Filter by collection
@@ -50,24 +52,26 @@ def list_speaker_profiles(
         result = []
         for profile in profiles:
             # Count speaker instances
-            instance_count = db.query(Speaker).filter(
-                Speaker.profile_id == profile.id
-            ).count()
+            instance_count = (
+                db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
+            )
 
             # Get media files where this speaker appears
             media_files = find_speaker_across_media(profile.id, current_user.id)
 
-            result.append({
-                "id": profile.id,
-                "name": profile.name,
-                "description": profile.description,
-                "uuid": profile.uuid,
-                "created_at": profile.created_at.isoformat(),
-                "updated_at": profile.updated_at.isoformat(),
-                "instance_count": instance_count,
-                "media_count": len(media_files),
-                "media_files": media_files[:5]  # Show first 5 media files
-            })
+            result.append(
+                {
+                    "id": profile.id,
+                    "name": profile.name,
+                    "description": profile.description,
+                    "uuid": profile.uuid,
+                    "created_at": profile.created_at.isoformat(),
+                    "updated_at": profile.updated_at.isoformat(),
+                    "instance_count": instance_count,
+                    "media_count": len(media_files),
+                    "media_files": media_files[:5],  # Show first 5 media files
+                }
+            )
 
         return result
 
@@ -81,27 +85,29 @@ def create_speaker_profile(
     name: str,
     description: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create a new speaker profile."""
     try:
         # Check if profile with same name exists
-        existing = db.query(SpeakerProfile).filter(
-            SpeakerProfile.user_id == current_user.id,
-            SpeakerProfile.name == name
-        ).first()
+        existing = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.user_id == current_user.id, SpeakerProfile.name == name
+            )
+            .first()
+        )
 
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail="Speaker profile with this name already exists"
+                status_code=400, detail="Speaker profile with this name already exists"
             )
 
         profile = SpeakerProfile(
             user_id=current_user.id,
             name=name,
             description=description,
-            uuid=str(uuid.uuid4())
+            uuid=str(uuid.uuid4()),
         )
 
         db.add(profile)
@@ -114,7 +120,7 @@ def create_speaker_profile(
             "description": profile.description,
             "uuid": profile.uuid,
             "created_at": profile.created_at.isoformat(),
-            "updated_at": profile.updated_at.isoformat()
+            "updated_at": profile.updated_at.isoformat(),
         }
 
     except HTTPException:
@@ -131,30 +137,38 @@ def update_speaker_profile(
     name: Optional[str] = None,
     description: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update a speaker profile."""
     try:
-        profile = db.query(SpeakerProfile).filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id
-        ).first()
+        profile = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.id == profile_id,
+                SpeakerProfile.user_id == current_user.id,
+            )
+            .first()
+        )
 
         if not profile:
             raise HTTPException(status_code=404, detail="Speaker profile not found")
 
         if name:
             # Check for name conflicts
-            existing = db.query(SpeakerProfile).filter(
-                SpeakerProfile.user_id == current_user.id,
-                SpeakerProfile.name == name,
-                SpeakerProfile.id != profile_id
-            ).first()
+            existing = (
+                db.query(SpeakerProfile)
+                .filter(
+                    SpeakerProfile.user_id == current_user.id,
+                    SpeakerProfile.name == name,
+                    SpeakerProfile.id != profile_id,
+                )
+                .first()
+            )
 
             if existing:
                 raise HTTPException(
                     status_code=400,
-                    detail="Speaker profile with this name already exists"
+                    detail="Speaker profile with this name already exists",
                 )
 
             profile.name = name
@@ -170,7 +184,7 @@ def update_speaker_profile(
             "name": profile.name,
             "description": profile.description,
             "uuid": profile.uuid,
-            "updated_at": profile.updated_at.isoformat()
+            "updated_at": profile.updated_at.isoformat(),
         }
 
     except HTTPException:
@@ -187,24 +201,29 @@ def assign_speaker_to_profile(
     profile_id: int,
     confidence: Optional[float] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Assign a speaker instance to a profile."""
     try:
         # Verify speaker exists and belongs to user
-        speaker = db.query(Speaker).filter(
-            Speaker.id == speaker_id,
-            Speaker.user_id == current_user.id
-        ).first()
+        speaker = (
+            db.query(Speaker)
+            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
+            .first()
+        )
 
         if not speaker:
             raise HTTPException(status_code=404, detail="Speaker not found")
 
         # Verify profile exists and belongs to user
-        profile = db.query(SpeakerProfile).filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id
-        ).first()
+        profile = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.id == profile_id,
+                SpeakerProfile.user_id == current_user.id,
+            )
+            .first()
+        )
 
         if not profile:
             raise HTTPException(status_code=404, detail="Speaker profile not found")
@@ -230,7 +249,7 @@ def assign_speaker_to_profile(
             "profile_name": profile.name,
             "confidence": confidence,
             "verified": updated_speaker.verified,
-            "status": "assigned"
+            "status": "assigned",
         }
 
     except HTTPException:
@@ -246,15 +265,16 @@ def get_speaker_profile_suggestions(
     speaker_id: int,
     threshold: float = Query(ConfidenceLevel.MEDIUM, ge=0.0, le=1.0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get profile suggestions for a speaker based on embeddings."""
     try:
         # Verify speaker exists and belongs to user
-        speaker = db.query(Speaker).filter(
-            Speaker.id == speaker_id,
-            Speaker.user_id == current_user.id
-        ).first()
+        speaker = (
+            db.query(Speaker)
+            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
+            .first()
+        )
 
         if not speaker:
             raise HTTPException(status_code=404, detail="Speaker not found")
@@ -264,9 +284,9 @@ def get_speaker_profile_suggestions(
             return []
 
         # Get media file for audio processing
-        media_file = db.query(MediaFile).filter(
-            MediaFile.id == speaker.media_file_id
-        ).first()
+        media_file = (
+            db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
+        )
 
         if not media_file:
             return []
@@ -277,21 +297,26 @@ def get_speaker_profile_suggestions(
         suggestions = []
 
         # Get existing profiles for comparison
-        profiles = db.query(SpeakerProfile).filter(
-            SpeakerProfile.user_id == current_user.id
-        ).limit(5).all()
+        profiles = (
+            db.query(SpeakerProfile)
+            .filter(SpeakerProfile.user_id == current_user.id)
+            .limit(5)
+            .all()
+        )
 
         for profile in profiles:
             # This would normally involve embedding comparison
             # For now, return basic profile info
-            suggestions.append({
-                "profile_id": profile.id,
-                "profile_name": profile.name,
-                "confidence": 0.5,  # Placeholder confidence
-                "confidence_level": "medium",
-                "auto_accept": False,
-                "reason": "Based on voice characteristics"
-            })
+            suggestions.append(
+                {
+                    "profile_id": profile.id,
+                    "profile_name": profile.name,
+                    "confidence": 0.5,  # Placeholder confidence
+                    "confidence_level": "medium",
+                    "auto_accept": False,
+                    "reason": "Based on voice characteristics",
+                }
+            )
 
         return suggestions
 
@@ -306,15 +331,19 @@ def get_speaker_profile_suggestions(
 def get_speaker_profile_occurrences(
     profile_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get all media files where a speaker profile appears."""
     try:
         # Verify profile exists and belongs to user
-        profile = db.query(SpeakerProfile).filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id
-        ).first()
+        profile = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.id == profile_id,
+                SpeakerProfile.user_id == current_user.id,
+            )
+            .first()
+        )
 
         if not profile:
             raise HTTPException(status_code=404, detail="Speaker profile not found")
@@ -324,7 +353,9 @@ def get_speaker_profile_occurrences(
         matching_service = SpeakerMatchingService(db, embedding_service)
 
         # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(profile_id, current_user.id)
+        occurrences = matching_service.find_speaker_occurrences(
+            profile_id, current_user.id
+        )
 
         return occurrences
 
@@ -339,14 +370,18 @@ def get_speaker_profile_occurrences(
 def delete_speaker_profile(
     profile_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Delete a speaker profile."""
     try:
-        profile = db.query(SpeakerProfile).filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id
-        ).first()
+        profile = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.id == profile_id,
+                SpeakerProfile.user_id == current_user.id,
+            )
+            .first()
+        )
 
         if not profile:
             raise HTTPException(status_code=404, detail="Speaker profile not found")
@@ -373,31 +408,36 @@ def delete_speaker_profile(
 
 @router.get("/collections", response_model=list[dict[str, Any]])
 def list_speaker_collections(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """List all speaker collections for the current user."""
     try:
-        collections = db.query(SpeakerCollection).filter(
-            SpeakerCollection.user_id == current_user.id
-        ).all()
+        collections = (
+            db.query(SpeakerCollection)
+            .filter(SpeakerCollection.user_id == current_user.id)
+            .all()
+        )
 
         result = []
         for collection in collections:
             # Count members
-            member_count = db.query(SpeakerCollectionMember).filter(
-                SpeakerCollectionMember.collection_id == collection.id
-            ).count()
+            member_count = (
+                db.query(SpeakerCollectionMember)
+                .filter(SpeakerCollectionMember.collection_id == collection.id)
+                .count()
+            )
 
-            result.append({
-                "id": collection.id,
-                "name": collection.name,
-                "description": collection.description,
-                "is_public": collection.is_public,
-                "created_at": collection.created_at.isoformat(),
-                "updated_at": collection.updated_at.isoformat(),
-                "member_count": member_count
-            })
+            result.append(
+                {
+                    "id": collection.id,
+                    "name": collection.name,
+                    "description": collection.description,
+                    "is_public": collection.is_public,
+                    "created_at": collection.created_at.isoformat(),
+                    "updated_at": collection.updated_at.isoformat(),
+                    "member_count": member_count,
+                }
+            )
 
         return result
 
@@ -412,27 +452,30 @@ def create_speaker_collection(
     description: Optional[str] = None,
     is_public: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create a new speaker collection."""
     try:
         # Check for name conflicts
-        existing = db.query(SpeakerCollection).filter(
-            SpeakerCollection.user_id == current_user.id,
-            SpeakerCollection.name == name
-        ).first()
+        existing = (
+            db.query(SpeakerCollection)
+            .filter(
+                SpeakerCollection.user_id == current_user.id,
+                SpeakerCollection.name == name,
+            )
+            .first()
+        )
 
         if existing:
             raise HTTPException(
-                status_code=400,
-                detail="Collection with this name already exists"
+                status_code=400, detail="Collection with this name already exists"
             )
 
         collection = SpeakerCollection(
             user_id=current_user.id,
             name=name,
             description=description,
-            is_public=is_public
+            is_public=is_public,
         )
 
         db.add(collection)
@@ -445,7 +488,7 @@ def create_speaker_collection(
             "description": collection.description,
             "is_public": collection.is_public,
             "created_at": collection.created_at.isoformat(),
-            "updated_at": collection.updated_at.isoformat()
+            "updated_at": collection.updated_at.isoformat(),
         }
 
     except HTTPException:

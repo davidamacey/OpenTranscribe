@@ -18,10 +18,10 @@ logger = logging.getLogger(__name__)
 def _get_encryption_key() -> bytes:
     """
     Get or generate encryption key from settings.
-    
+
     Returns:
         bytes: Encryption key for Fernet cipher
-        
+
     Raises:
         ValueError: If encryption key is invalid
     """
@@ -35,10 +35,10 @@ def _get_encryption_key() -> bytes:
         except Exception:
             # If not a valid base64 key, derive from string
             # This creates a consistent key from the string
-            key_material = key_string.encode('utf-8')
+            key_material = key_string.encode("utf-8")
             # Pad or truncate to 32 bytes
             if len(key_material) < 32:
-                key_material = key_material.ljust(32, b'\0')
+                key_material = key_material.ljust(32, b"\0")
             else:
                 key_material = key_material[:32]
 
@@ -52,10 +52,10 @@ def _get_encryption_key() -> bytes:
 def encrypt_api_key(api_key: str) -> Optional[str]:
     """
     Encrypt an API key for secure storage.
-    
+
     Args:
         api_key: Plain text API key to encrypt
-        
+
     Returns:
         Encrypted API key as base64 string, or None if encryption fails
     """
@@ -67,10 +67,10 @@ def encrypt_api_key(api_key: str) -> Optional[str]:
         fernet = Fernet(key)
 
         # Encrypt the API key
-        encrypted_data = fernet.encrypt(api_key.encode('utf-8'))
+        encrypted_data = fernet.encrypt(api_key.encode("utf-8"))
 
         # Return as base64 string for storage
-        return base64.urlsafe_b64encode(encrypted_data).decode('ascii')
+        return base64.urlsafe_b64encode(encrypted_data).decode("ascii")
 
     except Exception as e:
         logger.error(f"Failed to encrypt API key: {e}")
@@ -80,10 +80,10 @@ def encrypt_api_key(api_key: str) -> Optional[str]:
 def decrypt_api_key(encrypted_api_key: str) -> Optional[str]:
     """
     Decrypt an API key from storage.
-    
+
     Args:
         encrypted_api_key: Encrypted API key from database
-        
+
     Returns:
         Decrypted API key as plain text, or None if decryption fails
     """
@@ -95,11 +95,11 @@ def decrypt_api_key(encrypted_api_key: str) -> Optional[str]:
         fernet = Fernet(key)
 
         # Decode from base64
-        encrypted_data = base64.urlsafe_b64decode(encrypted_api_key.encode('ascii'))
+        encrypted_data = base64.urlsafe_b64decode(encrypted_api_key.encode("ascii"))
 
         # Decrypt and return as string
         decrypted_data = fernet.decrypt(encrypted_data)
-        return decrypted_data.decode('utf-8')
+        return decrypted_data.decode("utf-8")
 
     except Exception as e:
         logger.error(f"Failed to decrypt API key: {e}")
@@ -109,20 +109,20 @@ def decrypt_api_key(encrypted_api_key: str) -> Optional[str]:
 def generate_encryption_key() -> str:
     """
     Generate a new Fernet encryption key.
-    
+
     This can be used to generate a secure encryption key for production use.
-    
+
     Returns:
         Base64-encoded encryption key suitable for ENCRYPTION_KEY environment variable
     """
     key = Fernet.generate_key()
-    return key.decode('ascii')
+    return key.decode("ascii")
 
 
 def test_encryption() -> bool:
     """
     Test encryption/decryption functionality.
-    
+
     Returns:
         True if encryption is working correctly, False otherwise
     """
@@ -150,10 +150,10 @@ def test_encryption() -> bool:
 def encrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
     """
     Encrypt a value only if it's not empty.
-    
+
     Args:
         value: Value to encrypt (can be None or empty)
-        
+
     Returns:
         Encrypted value or None
     """
@@ -165,10 +165,10 @@ def encrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
 def decrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
     """
     Decrypt a value only if it's not empty.
-    
+
     Args:
         value: Encrypted value to decrypt (can be None or empty)
-        
+
     Returns:
         Decrypted value or None
     """

@@ -40,12 +40,16 @@ class WhisperXService:
         # Log hardware details
         detected_device = self.hardware_config.device
         if detected_device == "mps" and self.device == "cpu":
-            logger.info(f"WhisperX initialized: model={self.model_name}, "
-                       f"detected_device={detected_device} (using CPU for WhisperX compatibility), "
-                       f"compute_type={self.compute_type}, batch_size={self.batch_size}")
+            logger.info(
+                f"WhisperX initialized: model={self.model_name}, "
+                f"detected_device={detected_device} (using CPU for WhisperX compatibility), "
+                f"compute_type={self.compute_type}, batch_size={self.batch_size}"
+            )
         else:
-            logger.info(f"WhisperX initialized: model={self.model_name}, device={self.device}, "
-                       f"compute_type={self.compute_type}, batch_size={self.batch_size}")
+            logger.info(
+                f"WhisperX initialized: model={self.model_name}, device={self.device}, "
+                f"compute_type={self.compute_type}, batch_size={self.batch_size}"
+            )
 
     def _apply_environment_optimizations(self):
         """Apply environment variable optimizations for the detected hardware."""
@@ -70,13 +74,17 @@ class WhisperXService:
 
             import whisperx
         except ImportError:
-            raise ImportError("WhisperX is not installed. Please install it with 'pip install whisperx'.")
+            raise ImportError(
+                "WhisperX is not installed. Please install it with 'pip install whisperx'."
+            )
 
         # Load model with hardware-specific configuration
         detected_device = self.hardware_config.device
         if detected_device == "mps" and self.device == "cpu":
-            logger.info(f"Loading WhisperX model: {self.model_name} on {self.device} "
-                       f"(Apple Silicon detected, using CPU for WhisperX compatibility)")
+            logger.info(
+                f"Loading WhisperX model: {self.model_name} on {self.device} "
+                f"(Apple Silicon detected, using CPU for WhisperX compatibility)"
+            )
         else:
             logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
 
@@ -84,7 +92,7 @@ class WhisperXService:
             "whisper_arch": self.model_name,
             "device": self.device,
             "compute_type": self.compute_type,
-            "language": "en"
+            "language": "en",
         }
 
         # Add device-specific options
@@ -106,24 +114,31 @@ class WhisperXService:
             # Check for audio duration (very short files might be corrupted)
             # Use simple numpy-based duration calculation (no librosa needed)
             import numpy as np
+
             if isinstance(audio, np.ndarray):
                 # Assume 16kHz sample rate (WhisperX default)
                 duration = len(audio) / 16000
                 if duration < 0.1:  # Less than 100ms
-                    raise ValueError("Audio file is too short to contain meaningful content")
+                    raise ValueError(
+                        "Audio file is too short to contain meaningful content"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to load audio from {audio_file_path}: {str(e)}")
             if "No module named 'librosa'" in str(e):
                 # Don't expose internal dependency issues to users
-                raise ValueError("Audio file could not be processed. The file may be corrupted or in an unsupported format.")
-            raise ValueError(f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {str(e)}")
+                raise ValueError(
+                    "Audio file could not be processed. The file may be corrupted or in an unsupported format."
+                )
+            raise ValueError(
+                f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {str(e)}"
+            )
 
         try:
             transcription_result = model.transcribe(
                 audio,
                 batch_size=self.batch_size,
-                task="translate"  # Always translate to English
+                task="translate",  # Always translate to English
             )
 
             # Validate transcription result
@@ -132,9 +147,13 @@ class WhisperXService:
 
         except Exception as e:
             logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
-            raise ValueError(f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}")
+            raise ValueError(
+                f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}"
+            )
 
-        logger.info(f"Initial transcription completed with {len(transcription_result['segments'])} segments")
+        logger.info(
+            f"Initial transcription completed with {len(transcription_result['segments'])} segments"
+        )
 
         # Optimize memory usage based on device
         self.hardware_config.optimize_memory_usage()
@@ -142,7 +161,9 @@ class WhisperXService:
 
         return transcription_result, audio
 
-    def align_transcription(self, transcription_result: dict[str, Any], audio) -> dict[str, Any]:
+    def align_transcription(
+        self, transcription_result: dict[str, Any], audio
+    ) -> dict[str, Any]:
         """
         Align transcription with precise word-level timestamps.
 
@@ -164,7 +185,7 @@ class WhisperXService:
         align_model, align_metadata = whisperx.load_align_model(
             language_code=transcription_result["language"],
             device=self.device,
-            model_name=None
+            model_name=None,
         )
 
         logger.info("Aligning transcription for precise word timings...")
@@ -174,7 +195,7 @@ class WhisperXService:
             align_metadata,
             audio,
             self.device,
-            return_char_alignments=False
+            return_char_alignments=False,
         )
 
         # Optimize memory usage based on device
@@ -183,8 +204,9 @@ class WhisperXService:
 
         return aligned_result
 
-    def perform_speaker_diarization(self, audio, hf_token: str = None,
-                                  max_speakers: int = 10, min_speakers: int = 1) -> dict[str, Any]:
+    def perform_speaker_diarization(
+        self, audio, hf_token: str = None, max_speakers: int = 10, min_speakers: int = 1
+    ) -> dict[str, Any]:
         """
         Perform speaker diarization on audio.
 
@@ -204,23 +226,21 @@ class WhisperXService:
 
         logger.info("Performing speaker diarization...")
 
-        diarize_params = {
-            "max_speakers": max_speakers,
-            "min_speakers": min_speakers
-        }
+        diarize_params = {"max_speakers": max_speakers, "min_speakers": min_speakers}
 
         # Use PyAnnote-compatible device configuration
         pyannote_config = self.hardware_config.get_pyannote_config()
 
         diarize_model = whisperx.DiarizationPipeline(
-            use_auth_token=hf_token,
-            device=pyannote_config["device"]
+            use_auth_token=hf_token, device=pyannote_config["device"]
         )
 
         diarize_segments = diarize_model(audio, **diarize_params)
         return diarize_segments
 
-    def assign_speakers_to_words(self, diarize_segments, aligned_result: dict[str, Any]) -> dict[str, Any]:
+    def assign_speakers_to_words(
+        self, diarize_segments, aligned_result: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Assign speaker labels to words in the transcription.
 
@@ -240,7 +260,9 @@ class WhisperXService:
         result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
         return result
 
-    def process_full_pipeline(self, audio_file_path: str, hf_token: str = None, progress_callback=None) -> dict[str, Any]:
+    def process_full_pipeline(
+        self, audio_file_path: str, hf_token: str = None, progress_callback=None
+    ) -> dict[str, Any]:
         """
         Run the complete WhisperX pipeline: transcription, alignment, and diarization.
 

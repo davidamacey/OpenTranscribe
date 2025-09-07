@@ -43,7 +43,9 @@ class SpeakerEmbeddingService:
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
             if not hf_token:
-                logger.warning("No HUGGINGFACE_TOKEN found in settings. This may be required for gated models.")
+                logger.warning(
+                    "No HUGGINGFACE_TOKEN found in settings. This may be required for gated models."
+                )
 
             # Initialize the embedding model with authentication if available
             if hf_token:
@@ -52,14 +54,14 @@ class SpeakerEmbeddingService:
                     self.model_name,
                     window="whole",
                     device=self.device,
-                    use_auth_token=hf_token
+                    use_auth_token=hf_token,
                 )
             else:
-                logger.info("Initializing pyannote embedding model without authentication")
+                logger.info(
+                    "Initializing pyannote embedding model without authentication"
+                )
                 self.inference = Inference(
-                    self.model_name,
-                    window="whole",
-                    device=self.device
+                    self.model_name, window="whole", device=self.device
                 )
 
             logger.info(f"Initialized pyannote embedding model on {self.device}")
@@ -67,7 +69,9 @@ class SpeakerEmbeddingService:
             logger.error(f"Error initializing pyannote embedding model: {e}")
             raise
 
-    def extract_embedding_from_file(self, audio_path: str, segment: Optional[dict[str, float]] = None) -> Optional[np.ndarray]:
+    def extract_embedding_from_file(
+        self, audio_path: str, segment: Optional[dict[str, float]] = None
+    ) -> Optional[np.ndarray]:
         """
         Extract speaker embedding from an audio file or segment.
 
@@ -81,7 +85,7 @@ class SpeakerEmbeddingService:
         try:
             if segment:
                 # Extract embedding from a specific segment
-                excerpt = Segment(segment['start'], segment['end'])
+                excerpt = Segment(segment["start"], segment["end"])
                 embedding = self.inference.crop(audio_path, excerpt)
             else:
                 # Extract embedding from the whole file
@@ -93,8 +97,12 @@ class SpeakerEmbeddingService:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
             return None
 
-    def extract_embeddings_for_segments(self, audio_path: str, segments: list[dict[str, Any]],
-                                      speaker_mapping: dict[str, int]) -> dict[int, list[np.ndarray]]:
+    def extract_embeddings_for_segments(
+        self,
+        audio_path: str,
+        segments: list[dict[str, Any]],
+        speaker_mapping: dict[str, int],
+    ) -> dict[int, list[np.ndarray]]:
         """
         Extract embeddings for all speaker segments in a transcription.
 
@@ -111,7 +119,7 @@ class SpeakerEmbeddingService:
 
         # First, collect all segments for each speaker
         for segment in segments:
-            speaker_label = segment.get('speaker')
+            speaker_label = segment.get("speaker")
             if not speaker_label:
                 continue
 
@@ -120,7 +128,7 @@ class SpeakerEmbeddingService:
                 continue
 
             # Only process segments that are long enough (minimum 0.5 seconds)
-            duration = segment['end'] - segment['start']
+            duration = segment["end"] - segment["start"]
             if duration < 0.5:
                 continue
 
@@ -131,7 +139,7 @@ class SpeakerEmbeddingService:
         # Now extract embeddings for each speaker, using their longest segments
         for speaker_id, speaker_segs in speaker_segments.items():
             # Sort segments by duration (longest first)
-            speaker_segs.sort(key=lambda x: x['end'] - x['start'], reverse=True)
+            speaker_segs.sort(key=lambda x: x["end"] - x["start"], reverse=True)
 
             # Use up to 5 longest segments for this speaker (to avoid too much processing)
             selected_segments = speaker_segs[:5]
@@ -139,8 +147,7 @@ class SpeakerEmbeddingService:
             embeddings = []
             for segment in selected_segments:
                 embedding = self.extract_embedding_from_file(
-                    audio_path,
-                    {'start': segment['start'], 'end': segment['end']}
+                    audio_path, {"start": segment["start"], "end": segment["end"]}
                 )
 
                 if embedding is not None:
@@ -148,7 +155,9 @@ class SpeakerEmbeddingService:
 
             if embeddings:
                 speaker_embeddings[speaker_id] = embeddings
-                logger.info(f"Extracted {len(embeddings)} embeddings for speaker {speaker_id}")
+                logger.info(
+                    f"Extracted {len(embeddings)} embeddings for speaker {speaker_id}"
+                )
 
         return speaker_embeddings
 
@@ -172,7 +181,9 @@ class SpeakerEmbeddingService:
         stacked = np.vstack(embeddings)
         return np.mean(stacked, axis=0)
 
-    def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+    def compute_similarity(
+        self, embedding1: np.ndarray, embedding2: np.ndarray
+    ) -> float:
         """
         Compute cosine similarity between two embeddings.
 
@@ -193,7 +204,9 @@ class SpeakerEmbeddingService:
         # Ensure similarity is in [0, 1] range
         return float((similarity + 1) / 2)
 
-    def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
+    def extract_reference_embedding(
+        self, audio_paths: list[str]
+    ) -> Optional[np.ndarray]:
         """
         Extract a reference embedding from multiple audio samples of the same speaker.
 

@@ -12,7 +12,9 @@ from app.models.media import TranscriptSegment
 logger = logging.getLogger(__name__)
 
 
-def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str, Any]]) -> None:
+def save_transcript_segments(
+    db: Session, file_id: int, segments: list[dict[str, Any]]
+) -> None:
     """
     Save transcript segments to the database.
 
@@ -29,7 +31,7 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
             start_time=segment["start"],
             end_time=segment["end"],
             text=segment["text"],
-            speaker_id=segment["speaker_id"]
+            speaker_id=segment["speaker_id"],
         )
         db.add(db_segment)
 
@@ -37,8 +39,9 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
     logger.info(f"Successfully saved {len(segments)} segments")
 
 
-def update_media_file_transcription_status(db: Session, file_id: int, segments: list[dict[str, Any]],
-                                         language: str = "en") -> None:
+def update_media_file_transcription_status(
+    db: Session, file_id: int, segments: list[dict[str, Any]], language: str = "en"
+) -> None:
     """
     Update media file with transcription completion metadata.
 
@@ -50,7 +53,9 @@ def update_media_file_transcription_status(db: Session, file_id: int, segments: 
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
-        logger.error(f"Media file with ID {file_id} not found when updating transcription status")
+        logger.error(
+            f"Media file with ID {file_id} not found when updating transcription status"
+        )
         return
 
     # Calculate duration from segments
@@ -78,12 +83,14 @@ def create_search_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any
     """
     index_segments = []
     for segment in segments:
-        index_segments.append({
-            "start": segment["start"],
-            "end": segment["end"],
-            "text": segment["text"],
-            "speaker": segment["speaker"]
-        })
+        index_segments.append(
+            {
+                "start": segment["start"],
+                "end": segment["end"],
+                "text": segment["text"],
+                "speaker": segment["speaker"],
+            }
+        )
     return index_segments
 
 

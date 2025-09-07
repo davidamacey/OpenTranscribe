@@ -36,7 +36,7 @@ def startup_recovery_task(self):
         "abandoned_files_reset": 0,
         "orphaned_tasks_found": 0,
         "orphaned_tasks_failed": 0,
-        "files_retried": 0
+        "files_retried": 0,
     }
 
     try:
@@ -45,12 +45,16 @@ def startup_recovery_task(self):
             abandoned_files = task_detection_service.identify_abandoned_files(db)
             summary["abandoned_files_found"] = len(abandoned_files)
 
-            reset_count = task_recovery_service.reset_abandoned_files(db, abandoned_files)
+            reset_count = task_recovery_service.reset_abandoned_files(
+                db, abandoned_files
+            )
             summary["abandoned_files_reset"] = reset_count
 
             # Step 2: Retry abandoned files
             retry_count = 0
-            for media_file in abandoned_files[:reset_count]:  # Only retry successfully reset files
+            for media_file in abandoned_files[
+                :reset_count
+            ]:  # Only retry successfully reset files
                 if task_recovery_service.schedule_file_retry(media_file.id):
                     retry_count += 1
             summary["files_retried"] = retry_count
@@ -59,7 +63,9 @@ def startup_recovery_task(self):
             orphaned_tasks = task_detection_service.identify_orphaned_tasks(db)
             summary["orphaned_tasks_found"] = len(orphaned_tasks)
 
-            failed_count = task_recovery_service.recover_orphaned_tasks(db, orphaned_tasks)
+            failed_count = task_recovery_service.recover_orphaned_tasks(
+                db, orphaned_tasks
+            )
             summary["orphaned_tasks_failed"] = failed_count
 
             logger.info(
@@ -92,7 +98,7 @@ def recover_user_files_task(self, user_id: int = None):
         "users_processed": 1 if user_id else 0,
         "files_checked": 0,
         "files_recovered": 0,
-        "tasks_retried": 0
+        "tasks_retried": 0,
     }
 
     try:
@@ -100,6 +106,7 @@ def recover_user_files_task(self, user_id: int = None):
             if not user_id:
                 # Count unique users for all files
                 from app.models.media import MediaFile
+
                 user_count = db.query(MediaFile.user_id).distinct().count()
                 summary["users_processed"] = user_count
 
@@ -126,8 +133,14 @@ def recover_user_files_task(self, user_id: int = None):
     return summary
 
 
-@celery_app.task(name="periodic_health_check", bind=True, time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
-@with_task_lock("periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
+@celery_app.task(
+    name="periodic_health_check",
+    bind=True,
+    time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME,
+)
+@with_task_lock(
+    "periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME
+)
 def periodic_health_check_task(self):
     """
     Periodic task to check for stuck tasks and inconsistent media files.
@@ -146,7 +159,7 @@ def periodic_health_check_task(self):
         "inconsistent_files_found": 0,
         "inconsistent_files_fixed": 0,
         "stuck_files_without_celery_found": 0,
-        "stuck_files_without_celery_recovered": 0
+        "stuck_files_without_celery_recovered": 0,
     }
 
     try:
@@ -163,7 +176,9 @@ def periodic_health_check_task(self):
             summary["stuck_tasks_recovered"] = recovered_count
 
             # Step 2: Identify and fix inconsistent media files
-            inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
+            inconsistent_files = (
+                task_detection_service.identify_inconsistent_media_files(db)
+            )
             summary["inconsistent_files_found"] = len(inconsistent_files)
 
             fixed_count = 0
@@ -174,13 +189,27 @@ def periodic_health_check_task(self):
             summary["inconsistent_files_fixed"] = fixed_count
 
             # Step 3: Identify and recover files stuck without active Celery tasks
-            stuck_files_without_celery = task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
-            summary["stuck_files_without_celery_found"] = len(stuck_files_without_celery)
+            stuck_files_without_celery = (
+                task_detection_service.identify_stuck_files_without_active_celery_tasks(
+                    db
+                )
+            )
+            summary["stuck_files_without_celery_found"] = len(
+                stuck_files_without_celery
+            )
 
             if stuck_files_without_celery:
-                recovery_stats = task_recovery_service.recover_stuck_files_without_celery_tasks(db, stuck_files_without_celery)
-                summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
-                logger.info(f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks")
+                recovery_stats = (
+                    task_recovery_service.recover_stuck_files_without_celery_tasks(
+                        db, stuck_files_without_celery
+                    )
+                )
+                summary["stuck_files_without_celery_recovered"] = recovery_stats[
+                    "files_recovered"
+                ]
+                logger.info(
+                    f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
+                )
 
             # Log summary
             logger.info(

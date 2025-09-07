@@ -24,26 +24,30 @@ def require_file_ownership(func: Callable) -> Callable:
     Returns:
         Wrapped function with ownership check
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Extract parameters from kwargs
-        db = kwargs.get('db')
-        current_user = kwargs.get('current_user')
-        file_id = kwargs.get('file_id')
+        db = kwargs.get("db")
+        current_user = kwargs.get("current_user")
+        file_id = kwargs.get("file_id")
 
         if not all([db, current_user, file_id]):
-            raise ValueError("Function must have 'db', 'current_user', and 'file_id' parameters")
+            raise ValueError(
+                "Function must have 'db', 'current_user', and 'file_id' parameters"
+            )
 
         # Check if user owns the file
-        file_exists = db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == current_user.id
-        ).first()
+        file_exists = (
+            db.query(MediaFile)
+            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+            .first()
+        )
 
         if not file_exists:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found or access denied"
+                detail="File not found or access denied",
             )
 
         return func(*args, **kwargs)
@@ -51,8 +55,9 @@ def require_file_ownership(func: Callable) -> Callable:
     return wrapper
 
 
-def require_admin_or_ownership(resource_model, id_param: str = 'resource_id',
-                              user_id_field: str = 'user_id'):
+def require_admin_or_ownership(
+    resource_model, id_param: str = "resource_id", user_id_field: str = "user_id"
+):
     """
     Decorator factory to ensure user is admin or owns the specified resource.
 
@@ -64,34 +69,40 @@ def require_admin_or_ownership(resource_model, id_param: str = 'resource_id',
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            db = kwargs.get('db')
-            current_user = kwargs.get('current_user')
+            db = kwargs.get("db")
+            current_user = kwargs.get("current_user")
             resource_id = kwargs.get(id_param)
 
             if not all([db, current_user, resource_id]):
-                raise ValueError(f"Function must have 'db', 'current_user', and '{id_param}' parameters")
+                raise ValueError(
+                    f"Function must have 'db', 'current_user', and '{id_param}' parameters"
+                )
 
             # Check if user is admin
             if current_user.is_admin:
                 return func(*args, **kwargs)
 
             # Check if user owns the resource
-            resource = db.query(resource_model).filter(
-                resource_model.id == resource_id
-            ).first()
+            resource = (
+                db.query(resource_model)
+                .filter(resource_model.id == resource_id)
+                .first()
+            )
 
             if not resource or getattr(resource, user_id_field) != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Resource not found or access denied"
+                    detail="Resource not found or access denied",
                 )
 
             return func(*args, **kwargs)
 
         return wrapper
+
     return decorator
 
 
@@ -107,9 +118,10 @@ def require_admin(func: Callable) -> Callable:
     Returns:
         Wrapped function with admin check
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
-        current_user = kwargs.get('current_user')
+        current_user = kwargs.get("current_user")
 
         if not current_user:
             raise ValueError("Function must have 'current_user' parameter")
@@ -117,7 +129,7 @@ def require_admin(func: Callable) -> Callable:
         if not current_user.is_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin privileges required"
+                detail="Admin privileges required",
             )
 
         return func(*args, **kwargs)
@@ -137,9 +149,10 @@ def require_verified_user(func: Callable) -> Callable:
     Returns:
         Wrapped function with verification check
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
-        current_user = kwargs.get('current_user')
+        current_user = kwargs.get("current_user")
 
         if not current_user:
             raise ValueError("Function must have 'current_user' parameter")
@@ -147,7 +160,7 @@ def require_verified_user(func: Callable) -> Callable:
         if not current_user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account verification required"
+                detail="Account verification required",
             )
 
         return func(*args, **kwargs)
@@ -174,21 +187,24 @@ class AuthorizationHelper:
         Raises:
             HTTPException: If file not found or access denied
         """
-        file_obj = db.query(MediaFile).filter(
-            MediaFile.id == file_id,
-            MediaFile.user_id == user.id
-        ).first()
+        file_obj = (
+            db.query(MediaFile)
+            .filter(MediaFile.id == file_id, MediaFile.user_id == user.id)
+            .first()
+        )
 
         if not file_obj:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found or access denied"
+                detail="File not found or access denied",
             )
 
         return file_obj
 
     @staticmethod
-    def check_admin_or_owner(resource, user: User, owner_field: str = 'user_id') -> bool:
+    def check_admin_or_owner(
+        resource, user: User, owner_field: str = "user_id"
+    ) -> bool:
         """
         Check if user is admin or owns the resource.
 
@@ -206,8 +222,13 @@ class AuthorizationHelper:
         return getattr(resource, owner_field, None) == user.id
 
     @staticmethod
-    def require_resource_access(db: Session, model_class, resource_id: int,
-                               user: User, owner_field: str = 'user_id'):
+    def require_resource_access(
+        db: Session,
+        model_class,
+        resource_id: int,
+        user: User,
+        owner_field: str = "user_id",
+    ):
         """
         Generic function to check resource access.
 
@@ -224,20 +245,16 @@ class AuthorizationHelper:
         Raises:
             HTTPException: If resource not found or access denied
         """
-        resource = db.query(model_class).filter(
-            model_class.id == resource_id
-        ).first()
+        resource = db.query(model_class).filter(model_class.id == resource_id).first()
 
         if not resource:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Resource not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found"
             )
 
         if not AuthorizationHelper.check_admin_or_owner(resource, user, owner_field):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
             )
 
         return resource

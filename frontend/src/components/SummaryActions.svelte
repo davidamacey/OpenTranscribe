@@ -13,6 +13,7 @@
     generateSummary: void;
     retrySummary: void;
   }>();
+
   
 </script>
 

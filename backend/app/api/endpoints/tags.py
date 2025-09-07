@@ -29,7 +29,7 @@ router = APIRouter()
 def create_tag(
     tag_data: TagBase,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new tag
@@ -51,17 +51,21 @@ def create_tag(
 
 @router.get("/", response_model=list[TagSchema])
 def list_tags(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """
     List all available tags for the current user, including both used and unused tags
     """
     try:
         # First, get tags that are used in files owned by this user
-        used_tags = db.query(Tag).join(FileTag).join(MediaFile).filter(
-            MediaFile.user_id == current_user.id
-        ).distinct().all()
+        used_tags = (
+            db.query(Tag)
+            .join(FileTag)
+            .join(MediaFile)
+            .filter(MediaFile.user_id == current_user.id)
+            .distinct()
+            .all()
+        )
 
         # Get all unused tags (not associated with any files)
         used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
@@ -82,8 +86,7 @@ def list_tags(
 
 @router.get("/unused", response_model=list[TagSchema])
 def list_unused_tags(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """
     List unused tags that are not associated with any files
@@ -94,9 +97,7 @@ def list_unused_tags(
         used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
 
         # Then find all tags not in that list
-        unused_tags = db.query(Tag).filter(
-            ~Tag.id.in_(used_tag_ids)
-        ).all()
+        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()
 
         return unused_tags
     except Exception as e:
@@ -106,8 +107,7 @@ def list_unused_tags(
 
 @router.delete("/cleanup", response_model=dict[str, Any])
 def cleanup_unused_tags(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """
     Delete all unused tags to clean up the database
@@ -117,7 +117,7 @@ def cleanup_unused_tags(
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admin users can clean up unused tags"
+            detail="Only admin users can clean up unused tags",
         )
 
     try:
@@ -125,9 +125,7 @@ def cleanup_unused_tags(
         used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
 
         # Delete all tags not in use
-        delete_query = db.query(Tag).filter(
-            ~Tag.id.in_(used_tag_ids)
-        )
+        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids))
 
         # Get the count for the response
         count = delete_query.count()
@@ -138,13 +136,16 @@ def cleanup_unused_tags(
             db.commit()
             logger.info(f"Deleted {count} unused tags")
 
-        return {"deleted_count": count, "message": f"{count} unused tags deleted successfully"}
+        return {
+            "deleted_count": count,
+            "message": f"{count} unused tags deleted successfully",
+        }
     except Exception as e:
         logger.error(f"Error in cleanup_unused_tags: {e}")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error cleaning up unused tags: {str(e)}"
+            detail=f"Error cleaning up unused tags: {str(e)}",
         )
 
 
@@ -154,35 +155,37 @@ async def add_tag_to_file(
     file_id: int,
     tag_data: dict = Body(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     # Log detailed information about the request for debugging
-    logger.info(f"Received add_tag_to_file request for file_id={file_id}, tag_data={tag_data}")
+    logger.info(
+        f"Received add_tag_to_file request for file_id={file_id}, tag_data={tag_data}"
+    )
 
     # Handle the raw dictionary and extract the name
-    if not tag_data or 'name' not in tag_data:
+    if not tag_data or "name" not in tag_data:
         logger.error(f"Invalid tag data received: {tag_data}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tag name is required"
+            detail="Tag name is required",
         )
 
     # Convert to proper TagBase object
-    tag_base = TagBase(name=tag_data['name'])
+    tag_base = TagBase(name=tag_data["name"])
 
     """
     Add a tag to a media file
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Media file not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
         )
 
     # Check if tag exists, create if not
@@ -195,10 +198,11 @@ async def add_tag_to_file(
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag
-    existing_tag = db.query(FileTag).filter(
-        FileTag.media_file_id == file_id,
-        FileTag.tag_id == tag.id
-    ).first()
+    existing_tag = (
+        db.query(FileTag)
+        .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
+        .first()
+    )
 
     if not existing_tag:
         # Add tag to file
@@ -209,41 +213,43 @@ async def add_tag_to_file(
     return tag
 
 
-@router.delete("/files/{file_id}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/files/{file_id}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT
+)
 def remove_tag_from_file(
     file_id: int,
     tag_name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Remove a tag from a media file
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Media file not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
         )
 
     # Find the tag
     tag = db.query(Tag).filter(Tag.name == tag_name).first()
     if not tag:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tag not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found"
         )
 
     # Remove the association
-    file_tag = db.query(FileTag).filter(
-        FileTag.media_file_id == file_id,
-        FileTag.tag_id == tag.id
-    ).first()
+    file_tag = (
+        db.query(FileTag)
+        .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
+        .first()
+    )
 
     if file_tag:
         db.delete(file_tag)
@@ -251,7 +257,9 @@ def remove_tag_from_file(
 
     # Also check if this tag is now unused and should be removed
     # Count how many files still use this tag
-    tag_use_count = db.query(func.count(FileTag.tag_id)).filter(FileTag.tag_id == tag.id).scalar()
+    tag_use_count = (
+        db.query(func.count(FileTag.tag_id)).filter(FileTag.tag_id == tag.id).scalar()
+    )
 
     # If the tag is no longer used by any files, we can optionally delete it
     # We're choosing to keep unused tags in the database for now, as they may be useful for auto-completion
@@ -259,6 +267,8 @@ def remove_tag_from_file(
 
     # Log the tag usage status for monitoring
     if tag_use_count == 0:
-        logger.info(f"Tag '{tag_name}' (ID: {tag.id}) is now unused but still preserved in the database")
+        logger.info(
+            f"Tag '{tag_name}' (ID: {tag.id}) is now unused but still preserved in the database"
+        )
 
     return None

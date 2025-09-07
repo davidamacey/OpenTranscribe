@@ -4,6 +4,7 @@ Script to create the default admin user.
 This script initializes the database with a default admin user
 if one doesn't already exist.
 """
+
 import os
 import sys
 
@@ -11,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 # Add the parent directory to the path so we can import from app
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.core.config import settings
 from app.core.security import get_password_hash
@@ -21,10 +22,10 @@ from app.models.user import User
 def create_admin_user():
     """
     Create the default admin user if it doesn't exist.
-    
+
     Returns:
         None
-    
+
     Raises:
         Exception: If there's an error creating the admin user
     """
@@ -49,7 +50,7 @@ def create_admin_user():
             hashed_password=get_password_hash("admin"),
             is_active=True,
             is_superuser=True,
-            role="admin"
+            role="admin",
         )
 
         db.add(admin_user)
@@ -61,6 +62,7 @@ def create_admin_user():
         db.rollback()
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     create_admin_user()

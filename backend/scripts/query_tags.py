@@ -2,6 +2,7 @@
 """
 Database query script to check tag tables for debugging
 """
+
 import logging
 import os
 import sys
@@ -41,17 +42,18 @@ def query_tags():
         file_tags = db.query(FileTag).all()
         print("\n=== FILE TAGS ===")
         for ft in file_tags:
-            print(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
+            print(
+                f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}"
+            )
 
         # Get more details about file tags with join
         print("\n=== DETAILED FILE TAGS ===")
-        detailed = db.query(
-            FileTag, Tag.name, MediaFile.filename
-        ).join(
-            Tag, FileTag.tag_id == Tag.id
-        ).join(
-            MediaFile, FileTag.media_file_id == MediaFile.id
-        ).all()
+        detailed = (
+            db.query(FileTag, Tag.name, MediaFile.filename)
+            .join(Tag, FileTag.tag_id == Tag.id)
+            .join(MediaFile, FileTag.media_file_id == MediaFile.id)
+            .all()
+        )
 
         for ft, tag_name, filename in detailed:
             print(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
@@ -60,6 +62,7 @@ def query_tags():
         print(f"Error querying database: {e}")
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     query_tags()

@@ -23,8 +23,10 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
     try:
         # Clear transcript-related fields that exist on the MediaFile model
         media_file.summary = None
-        media_file.summary_opensearch_id = None  # Clear OpenSearch summary ID for regeneration
-        media_file.summary_status = 'pending'  # Reset summary status for regeneration
+        media_file.summary_opensearch_id = (
+            None  # Clear OpenSearch summary ID for regeneration
+        )
+        media_file.summary_status = "pending"  # Reset summary status for regeneration
         media_file.translated_text = None
         media_file.waveform_data = None  # Clear waveform data for regeneration
 
@@ -34,17 +36,25 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         from app.models.media import TranscriptSegment
 
         # Delete existing transcript segments (this will cascade and handle relationships)
-        existing_segments = db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == media_file.id).all()
+        existing_segments = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == media_file.id)
+            .all()
+        )
         for segment in existing_segments:
             db.delete(segment)
 
         # Clear any existing speaker data
-        existing_speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+        existing_speakers = (
+            db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+        )
         for speaker in existing_speakers:
             db.delete(speaker)
 
         # Clear any existing analytics data
-        existing_analytics = db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
+        existing_analytics = (
+            db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
+        )
         if existing_analytics:
             db.delete(existing_analytics)
 
@@ -66,14 +76,16 @@ def start_reprocessing_task(file_id: int) -> None:
     """
     import os
 
-    if os.environ.get('SKIP_CELERY', 'False').lower() != 'true':
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Use the same transcription task - it will handle reprocessing
         transcribe_audio_task.delay(file_id)
     else:
         logger.info("Skipping Celery task in test environment")
 
 
-async def process_file_reprocess(file_id: int, db: Session, current_user: User) -> MediaFile:
+async def process_file_reprocess(
+    file_id: int, db: Session, current_user: User
+) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
 
@@ -103,37 +115,41 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
         if not media_file:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found or you don't have permission to access it"
+                detail="File not found or you don't have permission to access it",
             )
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:
             # Cancel active task first
-            logger.info(f"Cancelling active task {media_file.active_task_id} before reprocessing file {file_id}")
+            logger.info(
+                f"Cancelling active task {media_file.active_task_id} before reprocessing file {file_id}"
+            )
             cancel_active_task(db, file_id)
 
         # Check if file exists in storage
         if not media_file.storage_path:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File storage path not found. Cannot reprocess."
+                detail="File storage path not found. Cannot reprocess.",
             )
 
         # Check retry limits (unless admin)
         if not is_admin and media_file.retry_count >= media_file.max_retries:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help."
+                detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
             )
 
-        logger.info(f"Starting reprocessing for file {file_id} by user {current_user.email}")
+        logger.info(
+            f"Starting reprocessing for file {file_id} by user {current_user.email}"
+        )
 
         # Use the enhanced retry logic
         success = reset_file_for_retry(db, file_id, reset_retry_count=False)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to reset file for reprocessing"
+                detail="Failed to reset file for reprocessing",
             )
 
         # Refresh the file object
@@ -142,7 +158,9 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
         # Start background reprocessing task
         start_reprocessing_task(media_file.id)
 
-        logger.info(f"Reprocessing task started for file {file_id} (attempt {media_file.retry_count})")
+        logger.info(
+            f"Reprocessing task started for file {file_id} (attempt {media_file.retry_count})"
+        )
 
         return media_file
 
@@ -153,5 +171,5 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
         logger.error(f"Error processing reprocess request for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing reprocess request"
+            detail="Error processing reprocess request",
         )

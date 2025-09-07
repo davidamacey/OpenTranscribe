@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
+  import { llmStatusStore } from '../../stores/llmStatus';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -31,10 +32,20 @@
   let showApiKey = false;
   let testResult: ConnectionTestResponse | null = null;
   let isDirty = false;
+  let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
+  let statusMessage = '';
+  let statusLastChecked: Date | null = null;
+  let statusTimer: NodeJS.Timeout;
+  let checkingStatus = false;
 
   // Load initial data
   onMount(async () => {
     await loadData();
+  });
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    // Cleanup is handled by the centralized store
   });
 
   async function loadData() {
@@ -69,6 +80,52 @@
       error = err.response?.data?.detail || 'Failed to load LLM settings';
     } finally {
       loading = false;
+    }
+    
+    // Check initial status if settings exist and update the central store
+    if (hasSettings) {
+      await checkCurrentStatus();
+    }
+  }
+
+  async function checkCurrentStatus() {
+    if (checkingStatus || !hasSettings) return;
+    
+    try {
+      checkingStatus = true;
+      
+      // Use the saved settings endpoint since it has access to the encrypted API key
+      const statusResult = await LLMSettingsApi.testCurrentSettings();
+      connectionStatus = statusResult.success ? 'connected' : 'disconnected';
+      statusMessage = statusResult.message;
+      statusLastChecked = new Date();
+      
+      // Update the global store
+      llmStatusStore.setStatus({
+        available: statusResult.success,
+        user_id: 0, // Will be set by the API response if needed
+        provider: statusResult.success ? formData.provider : null,
+        model: statusResult.success ? formData.model_name : null,
+        message: statusResult.message
+      });
+      
+      console.log('Settings page status check result:', statusResult);
+    } catch (err: any) {
+      console.error('Settings page status check error:', err);
+      connectionStatus = 'disconnected';
+      statusMessage = err.response?.data?.detail || 'Unable to check connection status';
+      statusLastChecked = new Date();
+      
+      // Update the global store with error state
+      llmStatusStore.setStatus({
+        available: false,
+        user_id: 0,
+        provider: null,
+        model: null,
+        message: statusMessage
+      });
+    } finally {
+      checkingStatus = false;
     }
   }
 
@@ -129,13 +186,40 @@
 
       if (testResult.success) {
         toastStore.success(`Connection test successful! Response time: ${testResult.response_time_ms}ms`, 5000);
+        
+        // Immediately update the centralized LLM status store
+        llmStatusStore.setStatus({
+          available: true,
+          user_id: 0,
+          provider: formData.provider,
+          model: formData.model_name,
+          message: testResult.message
+        });
       } else {
         toastStore.error(testResult.message, 5000);
+        
+        // Update the centralized store with error state
+        llmStatusStore.setStatus({
+          available: false,
+          user_id: 0,
+          provider: null,
+          model: null,
+          message: testResult.message
+        });
       }
     } catch (err: any) {
       console.error('Connection test failed:', err);
       const errorMsg = err.response?.data?.detail || 'Connection test failed';
       toastStore.error(errorMsg, 5000);
+      
+      // Update the centralized store with error state
+      llmStatusStore.setStatus({
+        available: false,
+        user_id: 0,
+        provider: null,
+        model: null,
+        message: errorMsg
+      });
     } finally {
       testing = false;
     }
@@ -164,6 +248,9 @@
       success = 'LLM settings saved successfully';
       isDirty = false;
       
+      // Check connection status after saving and update central store
+      await checkCurrentStatus();
+      
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -190,6 +277,14 @@
       hasSettings = false;
       isDirty = false;
       success = 'LLM settings deleted. Using system defaults.';
+      
+      // Reset status and global store
+      connectionStatus = 'unknown';
+      statusMessage = '';
+      statusLastChecked = null;
+      
+      // Reset global LLM status store
+      llmStatusStore.reset();
       
       // Reset form to defaults
       if (supportedProviders.length > 0) {
@@ -233,6 +328,39 @@
   {#if error}
     <div class="message error">
       {error}
+    </div>
+  {/if}
+
+  <!-- Connection Status Badge -->
+  {#if hasSettings && connectionStatus !== 'unknown'}
+    <div class="connection-status {connectionStatus}" title={statusMessage}>
+      <div class="status-indicator">
+        {#if checkingStatus}
+          <div class="spinner-mini"></div>
+        {:else if connectionStatus === 'connected'}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        {:else}
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+          </svg>
+        {/if}
+      </div>
+      <span class="status-text">
+        {#if checkingStatus}
+          Checking...
+        {:else if connectionStatus === 'connected'}
+          Connected
+        {:else}
+          Disconnected
+        {/if}
+      </span>
+      {#if statusLastChecked}
+        <span class="status-timestamp">
+          {statusLastChecked.toLocaleTimeString()}
+        </span>
+      {/if}
     </div>
   {/if}
 
@@ -803,5 +931,56 @@
     .api-key-input {
       flex-direction: column;
     }
+  }
+
+  /* Connection Status Badge */
+  .connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin: 1rem 0;
+    border: 1px solid;
+  }
+
+  .connection-status.connected {
+    background-color: var(--success-bg, #f0f9f0);
+    border-color: var(--success-border, #c6f6c6);
+    color: var(--success-text, #16a34a);
+  }
+
+  .connection-status.disconnected {
+    background-color: var(--error-bg, #fef2f2);
+    border-color: var(--error-border, #fecaca);
+    color: var(--error-text, #dc2626);
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .status-text {
+    font-weight: 500;
+    flex-grow: 1;
+  }
+
+  .status-timestamp {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    font-weight: normal;
+  }
+
+  .spinner-mini {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 </style>

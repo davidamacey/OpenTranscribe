@@ -2,6 +2,7 @@
 """
 Direct database inspection script to check tag tables
 """
+
 import logging
 
 from sqlalchemy import create_engine
@@ -23,6 +24,7 @@ DATABASE_URL = settings.DATABASE_URL
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 def inspect_database():
     """Inspect tag tables in the database"""
     db = SessionLocal()
@@ -42,18 +44,19 @@ def inspect_database():
         file_tags = db.query(FileTag).all()
         logger.info("\n=== FILE TAGS ===")
         for ft in file_tags:
-            logger.info(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
+            logger.info(
+                f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}"
+            )
 
         # Get more details about file tags with join
         logger.info("\n=== DETAILED FILE TAGS ===")
         try:
-            detailed = db.query(
-                FileTag, Tag.name, MediaFile.filename
-            ).join(
-                Tag, FileTag.tag_id == Tag.id
-            ).join(
-                MediaFile, FileTag.media_file_id == MediaFile.id
-            ).all()
+            detailed = (
+                db.query(FileTag, Tag.name, MediaFile.filename)
+                .join(Tag, FileTag.tag_id == Tag.id)
+                .join(MediaFile, FileTag.media_file_id == MediaFile.id)
+                .all()
+            )
 
             for ft, tag_name, filename in detailed:
                 logger.info(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
@@ -74,6 +77,7 @@ def inspect_database():
         logger.error(f"Error inspecting database: {e}")
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     inspect_database()

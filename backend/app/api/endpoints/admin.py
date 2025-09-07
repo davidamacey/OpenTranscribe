@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 # System statistics utility functions
 def get_system_uptime():
     """Get system uptime in a readable format"""
@@ -47,6 +48,7 @@ def get_system_uptime():
         logger.error(f"Error getting system uptime: {e}")
         return "Unknown"
 
+
 def get_memory_usage():
     """Get system memory usage"""
     try:
@@ -58,11 +60,17 @@ def get_memory_usage():
             "total": format_bytes(memory.total),
             "available": format_bytes(memory.available),
             "used": format_bytes(memory.used),
-            "percent": f"{memory.percent}%"
+            "percent": f"{memory.percent}%",
         }
     except Exception as e:
         logger.error(f"Error getting memory usage: {e}")
-        return {"total": "Unknown", "available": "Unknown", "used": "Unknown", "percent": "Unknown"}
+        return {
+            "total": "Unknown",
+            "available": "Unknown",
+            "used": "Unknown",
+            "percent": "Unknown",
+        }
+
 
 def get_cpu_usage():
     """Get CPU usage information"""
@@ -81,40 +89,51 @@ def get_cpu_usage():
             "total_percent": f"{cpu_percent}%",
             "per_cpu": [f"{p}%" for p in per_cpu],
             "logical_cores": cpu_count,
-            "physical_cores": physical_cores
+            "physical_cores": physical_cores,
         }
     except Exception as e:
         logger.error(f"Error getting CPU usage: {e}")
-        return {"total_percent": "Unknown", "per_cpu": [], "logical_cores": 0, "physical_cores": 0}
+        return {
+            "total_percent": "Unknown",
+            "per_cpu": [],
+            "logical_cores": 0,
+            "physical_cores": 0,
+        }
+
 
 def get_disk_usage():
     """Get disk usage information"""
     try:
         # Get disk usage for the root directory
-        disk = psutil.disk_usage('/')
+        disk = psutil.disk_usage("/")
 
         return {
             "total": format_bytes(disk.total),
             "used": format_bytes(disk.used),
             "free": format_bytes(disk.free),
-            "percent": f"{disk.percent}%"
+            "percent": f"{disk.percent}%",
         }
     except Exception as e:
         logger.error(f"Error getting disk usage: {e}")
-        return {"total": "Unknown", "used": "Unknown", "free": "Unknown", "percent": "Unknown"}
+        return {
+            "total": "Unknown",
+            "used": "Unknown",
+            "free": "Unknown",
+            "percent": "Unknown",
+        }
+
 
 def format_bytes(byte_count):
     """Format bytes to a human-readable string"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if byte_count < 1024 or unit == 'TB':
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if byte_count < 1024 or unit == "TB":
             return f"{byte_count:.2f} {unit}"
         byte_count /= 1024
 
 
 @router.get("/stats", response_model=dict[str, Any])
 async def get_admin_stats(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
     """
     Get admin statistics about the application and system
@@ -130,15 +149,30 @@ async def get_admin_stats(
                 "cpu": get_cpu_usage(),
                 "memory": get_memory_usage(),
                 "disk": get_disk_usage(),
-                "uptime": get_system_uptime()
+                "uptime": get_system_uptime(),
             }
         except Exception as e:
             logger.error(f"Error getting system stats: {e}")
             system_stats = {
-                "cpu": {"total_percent": "Unknown", "per_cpu": [], "logical_cores": 0, "physical_cores": 0},
-                "memory": {"total": "Unknown", "available": "Unknown", "used": "Unknown", "percent": "Unknown"},
-                "disk": {"total": "Unknown", "used": "Unknown", "free": "Unknown", "percent": "Unknown"},
-                "uptime": "Unknown"
+                "cpu": {
+                    "total_percent": "Unknown",
+                    "per_cpu": [],
+                    "logical_cores": 0,
+                    "physical_cores": 0,
+                },
+                "memory": {
+                    "total": "Unknown",
+                    "available": "Unknown",
+                    "used": "Unknown",
+                    "percent": "Unknown",
+                },
+                "disk": {
+                    "total": "Unknown",
+                    "used": "Unknown",
+                    "free": "Unknown",
+                    "percent": "Unknown",
+                },
+                "uptime": "Unknown",
             }
 
         # Get user statistics
@@ -151,27 +185,24 @@ async def get_admin_stats(
         total_files = db.query(MediaFile).count()
 
         # Count files by status
-        pending_files = db.query(MediaFile).filter(
-            MediaFile.status == "pending"
-        ).count()
+        pending_files = (
+            db.query(MediaFile).filter(MediaFile.status == "pending").count()
+        )
 
-        processing_files = db.query(MediaFile).filter(
-            MediaFile.status == "processing"
-        ).count()
+        processing_files = (
+            db.query(MediaFile).filter(MediaFile.status == "processing").count()
+        )
 
-        completed_files = db.query(MediaFile).filter(
-            MediaFile.status == "completed"
-        ).count()
+        completed_files = (
+            db.query(MediaFile).filter(MediaFile.status == "completed").count()
+        )
 
-        error_files = db.query(MediaFile).filter(
-            MediaFile.status == "error"
-        ).count()
+        error_files = db.query(MediaFile).filter(MediaFile.status == "error").count()
 
         # Get total file size
         from sqlalchemy.sql import func
-        total_size_result = db.query(
-            func.sum(MediaFile.file_size)
-        ).scalar()
+
+        total_size_result = db.query(func.sum(MediaFile.file_size)).scalar()
         total_size = total_size_result if total_size_result else 0
 
         # Get transcript statistics
@@ -182,6 +213,7 @@ async def get_admin_stats(
 
         # Get recent tasks (last 10)
         from app.models.media import Task
+
         recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(10).all()
         recent = []
         for task in recent_tasks:
@@ -191,6 +223,7 @@ async def get_admin_stats(
             elif task.created_at:
                 from datetime import datetime
                 from datetime import timezone
+
                 # Make sure both datetimes are timezone-aware
                 now = datetime.now(timezone.utc)
                 created_at = task.created_at
@@ -198,13 +231,17 @@ async def get_admin_stats(
                 if created_at and created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=timezone.utc)
                 elapsed = (now - created_at).total_seconds() if created_at else 0
-            recent.append({
-                "id": task.id,
-                "type": getattr(task, 'task_type', ''),
-                "status": task.status,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
-                "elapsed": int(elapsed) if elapsed else 0
-            })
+            recent.append(
+                {
+                    "id": task.id,
+                    "type": getattr(task, "task_type", ""),
+                    "status": task.status,
+                    "created_at": task.created_at.isoformat()
+                    if task.created_at
+                    else None,
+                    "elapsed": int(elapsed) if elapsed else 0,
+                }
+            )
 
         # Construct the response
         stats = {
@@ -212,7 +249,7 @@ async def get_admin_stats(
                 "total": total_users,
                 "active": active_users,
                 "inactive": inactive_users,
-                "superusers": superusers
+                "superusers": superusers,
             },
             "files": {
                 "total": total_files,
@@ -220,16 +257,12 @@ async def get_admin_stats(
                     "pending": pending_files,
                     "processing": processing_files,
                     "completed": completed_files,
-                    "error": error_files
+                    "error": error_files,
                 },
-                "total_size": total_size
+                "total_size": total_size,
             },
-            "transcripts": {
-                "total_segments": total_segments
-            },
-            "speakers": {
-                "total": total_speakers
-            },
+            "transcripts": {"total_segments": total_segments},
+            "speakers": {"total": total_speakers},
             "system": {
                 "version": "1.0.0",
                 "uptime": system_stats["uptime"],
@@ -237,11 +270,9 @@ async def get_admin_stats(
                 "cpu": system_stats["cpu"],
                 "disk": system_stats["disk"],
                 "platform": platform.platform(),
-                "python_version": platform.python_version()
+                "python_version": platform.python_version(),
             },
-            "tasks": {
-                "recent": recent
-            }
+            "tasks": {"recent": recent},
         }
 
         return stats
@@ -249,14 +280,13 @@ async def get_admin_stats(
         logger.error(f"Error getting admin stats: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving admin statistics: {str(e)}"
+            detail=f"Error retrieving admin statistics: {str(e)}",
         ) from e
 
 
 @router.get("/users", response_model=list[UserSchema])
 def get_admin_users(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
     """
     Get all users for admin
@@ -270,7 +300,7 @@ def get_admin_users(
         logger.error(f"Error getting admin users: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving users: {str(e)}"
+            detail=f"Error retrieving users: {str(e)}",
         ) from e
 
 
@@ -278,7 +308,7 @@ def get_admin_users(
 def create_admin_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Create a new user (admin only)
@@ -297,7 +327,7 @@ def create_admin_user(
         logger.error(f"Error creating user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating user: {str(e)}"
+            detail=f"Error creating user: {str(e)}",
         ) from e
 
 
@@ -305,7 +335,7 @@ def create_admin_user(
 def delete_admin_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Delete a user and all their data (admin only)
@@ -317,29 +347,34 @@ def delete_admin_user(
 
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         if user.id == current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete your own account"
+                detail="Cannot delete your own account",
             )
 
         # Check if user is a superuser
-        if user.is_superuser and current_user.id != 1:  # Only main admin can delete other superusers
+        if (
+            user.is_superuser and current_user.id != 1
+        ):  # Only main admin can delete other superusers
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot delete a superuser account"
+                detail="Cannot delete a superuser account",
             )
 
         # Delete speakers
         try:
-            speakers_count = db.query(Speaker).filter(Speaker.user_id == user_id).count()
+            speakers_count = (
+                db.query(Speaker).filter(Speaker.user_id == user_id).count()
+            )
             if speakers_count > 0:
                 logger.info(f"Deleting {speakers_count} speakers for user {user_id}")
-                db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
+                db.query(Speaker).filter(Speaker.user_id == user_id).delete(
+                    synchronize_session=False
+                )
                 logger.info("Speakers deleted successfully")
         except Exception as speaker_error:
             logger.error(f"Error deleting speakers: {speaker_error}")
@@ -355,12 +390,16 @@ def delete_admin_user(
                 media_ids = [m.id for m in media_files]
 
                 # Delete transcript segments for these media files
-                segments_count = db.query(TranscriptSegment).filter(
-                    TranscriptSegment.media_file_id.in_(media_ids)
-                ).count()
+                segments_count = (
+                    db.query(TranscriptSegment)
+                    .filter(TranscriptSegment.media_file_id.in_(media_ids))
+                    .count()
+                )
 
                 if segments_count > 0:
-                    logger.info(f"Deleting {segments_count} transcript segments for user's media files")
+                    logger.info(
+                        f"Deleting {segments_count} transcript segments for user's media files"
+                    )
                     db.query(TranscriptSegment).filter(
                         TranscriptSegment.media_file_id.in_(media_ids)
                     ).delete(synchronize_session=False)
@@ -370,22 +409,34 @@ def delete_admin_user(
                 try:
                     if media_ids:
                         # Use parameterized query to prevent SQL injection
-                        media_ids_str = ','.join([':id' + str(i) for i in range(len(media_ids))])
-                        media_ids_params = {f'id{i}': media_id for i, media_id in enumerate(media_ids)}
-                        
-                        file_tag_sql = text(f"DELETE FROM file_tag WHERE media_file_id IN ({media_ids_str})")
+                        media_ids_str = ",".join(
+                            [":id" + str(i) for i in range(len(media_ids))]
+                        )
+                        media_ids_params = {
+                            f"id{i}": media_id for i, media_id in enumerate(media_ids)
+                        }
+
+                        file_tag_sql = text(
+                            f"DELETE FROM file_tag WHERE media_file_id IN ({media_ids_str})"
+                        )
                         db.execute(file_tag_sql, media_ids_params)
                         logger.info("File tags deleted successfully")
 
-                        analytics_sql = text(f"DELETE FROM analytics WHERE media_file_id IN ({media_ids_str})")
+                        analytics_sql = text(
+                            f"DELETE FROM analytics WHERE media_file_id IN ({media_ids_str})"
+                        )
                         db.execute(analytics_sql, media_ids_params)
                         logger.info("Analytics deleted successfully")
                 except Exception as related_error:
-                    logger.error(f"Error deleting file_tag or analytics: {related_error}")
+                    logger.error(
+                        f"Error deleting file_tag or analytics: {related_error}"
+                    )
                     raise
 
                 # Now delete the media files
-                db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
+                db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(
+                    synchronize_session=False
+                )
                 logger.info(f"Deleted {media_count} media files for user {user_id}")
         except Exception as media_error:
             logger.error(f"Error deleting media files: {media_error}")
@@ -393,7 +444,9 @@ def delete_admin_user(
 
         # Now delete the user
         try:
-            logger.info(f"Final step: Deleting user with ID {user_id} and email {user.email}")
+            logger.info(
+                f"Final step: Deleting user with ID {user_id} and email {user.email}"
+            )
             db.delete(user)
             db.commit()
             logger.info("User deleted from database")
@@ -413,6 +466,5 @@ def delete_admin_user(
         logger.error(f"Error details: {str(e)}")
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         ) from e

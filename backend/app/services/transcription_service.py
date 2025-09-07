@@ -46,7 +46,7 @@ class TranscriptionService:
             file_obj = AuthorizationHelper.check_file_access(self.db, file_id, user)
 
             # Check if file is in a valid state for transcription
-            if file_obj.status.value not in ['pending', 'error']:
+            if file_obj.status.value not in ["pending", "error"]:
                 raise ErrorHandler.validation_error(
                     f"File is in {file_obj.status.value} status and cannot be transcribed"
                 )
@@ -58,7 +58,7 @@ class TranscriptionService:
                 "task_id": task.id,
                 "file_id": file_id,
                 "status": "started",
-                "message": "Transcription task started"
+                "message": "Transcription task started",
             }
 
         except Exception as e:
@@ -81,15 +81,21 @@ class TranscriptionService:
             file_obj = AuthorizationHelper.check_file_access(self.db, file_id, user)
 
             # Get latest task for this file
-            latest_task = self.db.query(Task).filter(
-                Task.media_file_id == file_id,
-                Task.task_type == "transcription"
-            ).order_by(Task.created_at.desc()).first()
+            latest_task = (
+                self.db.query(Task)
+                .filter(
+                    Task.media_file_id == file_id, Task.task_type == "transcription"
+                )
+                .order_by(Task.created_at.desc())
+                .first()
+            )
 
             # Get transcript segment count
-            segment_count = self.db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).count()
+            segment_count = (
+                self.db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .count()
+            )
 
             return {
                 "file_id": file_id,
@@ -99,14 +105,16 @@ class TranscriptionService:
                 "error_message": latest_task.error_message if latest_task else None,
                 "segment_count": segment_count,
                 "duration": file_obj.duration,
-                "language": file_obj.language
+                "language": file_obj.language,
             }
 
         except Exception as e:
             logger.error(f"Error getting transcription status: {e}")
             raise ErrorHandler.database_error("status retrieval", e)
 
-    def get_transcript_segments(self, file_id: int, user: User) -> list[TranscriptSegment]:
+    def get_transcript_segments(
+        self, file_id: int, user: User
+    ) -> list[TranscriptSegment]:
         """
         Get transcript segments for a file.
 
@@ -121,16 +129,20 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return self.db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).order_by(TranscriptSegment.start_time).all()
+            return (
+                self.db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
 
         except Exception as e:
             logger.error(f"Error getting transcript segments: {e}")
             raise ErrorHandler.database_error("segment retrieval", e)
 
-    def update_transcript_segments(self, file_id: int, updates: list[TranscriptSegmentUpdate],
-                                 user: User) -> list[TranscriptSegment]:
+    def update_transcript_segments(
+        self, file_id: int, updates: list[TranscriptSegmentUpdate], user: User
+    ) -> list[TranscriptSegment]:
         """
         Update transcript segments.
 
@@ -148,10 +160,14 @@ class TranscriptionService:
 
             # Update segments
             for update in updates:
-                segment = self.db.query(TranscriptSegment).filter(
-                    TranscriptSegment.id == update.id,
-                    TranscriptSegment.media_file_id == file_id
-                ).first()
+                segment = (
+                    self.db.query(TranscriptSegment)
+                    .filter(
+                        TranscriptSegment.id == update.id,
+                        TranscriptSegment.media_file_id == file_id,
+                    )
+                    .first()
+                )
 
                 if segment:
                     for field, value in update.model_dump(exclude_unset=True).items():
@@ -182,15 +198,21 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return self.db.query(Speaker).join(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).distinct().all()
+            return (
+                self.db.query(Speaker)
+                .join(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .distinct()
+                .all()
+            )
 
         except Exception as e:
             logger.error(f"Error getting file speakers: {e}")
             raise ErrorHandler.database_error("speaker retrieval", e)
 
-    def update_speaker_info(self, speaker_id: int, display_name: str, user: User) -> Speaker:
+    def update_speaker_info(
+        self, speaker_id: int, display_name: str, user: User
+    ) -> Speaker:
         """
         Update speaker display name.
 
@@ -203,10 +225,11 @@ class TranscriptionService:
             Updated Speaker object
         """
         try:
-            speaker = self.db.query(Speaker).filter(
-                Speaker.id == speaker_id,
-                Speaker.user_id == user.id
-            ).first()
+            speaker = (
+                self.db.query(Speaker)
+                .filter(Speaker.id == speaker_id, Speaker.user_id == user.id)
+                .first()
+            )
 
             if not speaker:
                 raise ErrorHandler.not_found_error("Speaker")
@@ -224,7 +247,9 @@ class TranscriptionService:
             self.db.rollback()
             raise ErrorHandler.database_error("speaker update", e)
 
-    def merge_speakers(self, primary_speaker_id: int, secondary_speaker_id: int, user: User) -> Speaker:
+    def merge_speakers(
+        self, primary_speaker_id: int, secondary_speaker_id: int, user: User
+    ) -> Speaker:
         """
         Merge two speakers by moving all segments from secondary to primary.
 
@@ -238,15 +263,17 @@ class TranscriptionService:
         """
         try:
             # Verify both speakers belong to user
-            primary = self.db.query(Speaker).filter(
-                Speaker.id == primary_speaker_id,
-                Speaker.user_id == user.id
-            ).first()
+            primary = (
+                self.db.query(Speaker)
+                .filter(Speaker.id == primary_speaker_id, Speaker.user_id == user.id)
+                .first()
+            )
 
-            secondary = self.db.query(Speaker).filter(
-                Speaker.id == secondary_speaker_id,
-                Speaker.user_id == user.id
-            ).first()
+            secondary = (
+                self.db.query(Speaker)
+                .filter(Speaker.id == secondary_speaker_id, Speaker.user_id == user.id)
+                .first()
+            )
 
             if not primary or not secondary:
                 raise ErrorHandler.not_found_error("Speaker")
@@ -282,9 +309,11 @@ class TranscriptionService:
             # Verify user access and that file has transcript
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            segment_count = self.db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).count()
+            segment_count = (
+                self.db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .count()
+            )
 
             if segment_count == 0:
                 raise ErrorHandler.validation_error("File has no transcript to analyze")
@@ -296,7 +325,7 @@ class TranscriptionService:
                 "task_id": task.id,
                 "file_id": file_id,
                 "status": "started",
-                "message": "Analysis task started"
+                "message": "Analysis task started",
             }
 
         except Exception as e:
@@ -318,12 +347,16 @@ class TranscriptionService:
             # Verify user access and that file has transcript
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            segment_count = self.db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).count()
+            segment_count = (
+                self.db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .count()
+            )
 
             if segment_count == 0:
-                raise ErrorHandler.validation_error("File has no transcript to summarize")
+                raise ErrorHandler.validation_error(
+                    "File has no transcript to summarize"
+                )
 
             # Start summarization task
             task = summarize_transcript_task.delay(file_id)
@@ -332,14 +365,16 @@ class TranscriptionService:
                 "task_id": task.id,
                 "file_id": file_id,
                 "status": "started",
-                "message": "Summarization task started"
+                "message": "Summarization task started",
             }
 
         except Exception as e:
             logger.error(f"Error starting summarization: {e}")
             raise ErrorHandler.file_processing_error("summarization start", e)
 
-    def search_transcript(self, file_id: int, query: str, user: User) -> list[TranscriptSegment]:
+    def search_transcript(
+        self, file_id: int, query: str, user: User
+    ) -> list[TranscriptSegment]:
         """
         Search within a transcript.
 
@@ -355,10 +390,15 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return self.db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id,
-                TranscriptSegment.text.ilike(f"%{query}%")
-            ).order_by(TranscriptSegment.start_time).all()
+            return (
+                self.db.query(TranscriptSegment)
+                .filter(
+                    TranscriptSegment.media_file_id == file_id,
+                    TranscriptSegment.text.ilike(f"%{query}%"),
+                )
+                .order_by(TranscriptSegment.start_time)
+                .all()
+            )
 
         except Exception as e:
             logger.error(f"Error searching transcript: {e}")

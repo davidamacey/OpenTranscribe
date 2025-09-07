@@ -26,7 +26,7 @@ router = APIRouter()
 async def get_summary_status(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get the summary status for a file and LLM availability
@@ -47,7 +47,7 @@ async def get_summary_status(
     if not media_file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found or you don't have permission to access it"
+            detail="File not found or you don't have permission to access it",
         )
 
     try:
@@ -59,19 +59,19 @@ async def get_summary_status(
 
     # Determine if retry is possible
     can_retry = (
-        media_file.summary_status == 'failed' and
-        llm_available and
-        media_file.status == 'completed'  # Transcription must be complete
+        media_file.summary_status == "failed"
+        and llm_available
+        and media_file.status == "completed"  # Transcription must be complete
     )
 
     return {
         "file_id": file_id,
-        "summary_status": media_file.summary_status or 'pending',
+        "summary_status": media_file.summary_status or "pending",
         "summary_exists": bool(media_file.summary or media_file.summary_opensearch_id),
         "llm_available": llm_available,
         "can_retry": can_retry,
         "transcription_status": media_file.status,
-        "filename": media_file.filename
+        "filename": media_file.filename,
     }
 
 
@@ -79,7 +79,7 @@ async def get_summary_status(
 async def retry_summary(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Retry failed summary generation for a file
@@ -94,36 +94,38 @@ async def retry_summary(
     if not media_file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found or you don't have permission to access it"
+            detail="File not found or you don't have permission to access it",
         )
 
     # Check if retry is needed and possible
-    if media_file.summary_status not in ['failed', 'pending']:
+    if media_file.summary_status not in ["failed", "pending"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot retry summary with status: {media_file.summary_status}"
+            detail=f"Cannot retry summary with status: {media_file.summary_status}",
         )
 
-    if media_file.status != 'completed':
+    if media_file.status != "completed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot generate summary until transcription is completed"
+            detail="Cannot generate summary until transcription is completed",
         )
 
     # Check LLM availability
     try:
         llm_available = await is_llm_available()
     except Exception as e:
-        logger.error(f"Failed to check LLM availability for retry of file {file_id}: {e}")
+        logger.error(
+            f"Failed to check LLM availability for retry of file {file_id}: {e}"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to verify LLM service availability. Please try again later."
+            detail="Unable to verify LLM service availability. Please try again later.",
         )
 
     if not llm_available:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="LLM service is not available. Please try again later."
+            detail="LLM service is not available. Please try again later.",
         )
 
     # Attempt to retry
@@ -131,7 +133,7 @@ async def retry_summary(
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to queue summary retry"
+            detail="Failed to queue summary retry",
         )
 
     logger.info(f"Summary retry queued for file {file_id} by user {current_user.email}")
@@ -139,5 +141,5 @@ async def retry_summary(
     return {
         "status": "success",
         "message": "Summary generation has been queued",
-        "file_id": file_id
+        "file_id": file_id,
     }

@@ -36,19 +36,26 @@ from .whisperx_service import WhisperXService
 
 logger = logging.getLogger(__name__)
 
+
 # Import for automatic summarization and speaker identification
 def trigger_automatic_summarization(file_id: int):
     """Trigger automatic summarization and speaker identification after transcription completes"""
     try:
         # First trigger speaker identification
         from app.tasks.summarization_helpers import identify_speakers_llm_task
+
         speaker_task = identify_speakers_llm_task.delay(file_id=file_id)
-        logger.info(f"Automatic speaker identification task {speaker_task.id} started for file {file_id}")
+        logger.info(
+            f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
+        )
 
         # Then trigger summarization (this will use the speaker suggestions when available)
         from app.tasks.summarization import summarize_transcript_task
+
         summary_task = summarize_transcript_task.delay(file_id=file_id)
-        logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+        logger.info(
+            f"Automatic summarization task {summary_task.id} started for file {file_id}"
+        )
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
 
@@ -70,7 +77,10 @@ def transcribe_audio_task(self, file_id: int):
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
-                return {"status": "error", "message": f"Media file with ID {file_id} not found"}
+                return {
+                    "status": "error",
+                    "message": f"Media file with ID {file_id} not found",
+                }
 
             user_id = media_file.user_id
             file_path = media_file.storage_path
@@ -109,7 +119,10 @@ def transcribe_audio_task(self, file_id: int):
                         media_file = get_refreshed_object(db, MediaFile, file_id)
                         if media_file:
                             update_media_file_metadata(
-                                media_file, extracted_metadata, content_type, temp_file_path
+                                media_file,
+                                extracted_metadata,
+                                content_type,
+                                temp_file_path,
                             )
                             db.commit()
             except Exception as e:
@@ -119,10 +132,14 @@ def transcribe_audio_task(self, file_id: int):
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.25)
 
-            send_progress_notification(user_id, file_id, 0.25, "Generating waveform visualization")
+            send_progress_notification(
+                user_id, file_id, 0.25, "Generating waveform visualization"
+            )
             try:
                 waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
+                waveform_data = waveform_generator.generate_waveform_data(
+                    temp_file_path
+                )
 
                 if waveform_data:
                     with session_scope() as db:
@@ -139,43 +156,64 @@ def transcribe_audio_task(self, file_id: int):
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.3)
 
-            send_progress_notification(user_id, file_id, 0.3, "Preparing audio for transcription")
-            audio_file_path = prepare_audio_for_transcription(temp_file_path, content_type, temp_dir)
+            send_progress_notification(
+                user_id, file_id, 0.3, "Preparing audio for transcription"
+            )
+            audio_file_path = prepare_audio_for_transcription(
+                temp_file_path, content_type, temp_dir
+            )
 
             # Step 7: Run WhisperX pipeline
             try:
                 whisperx_service = WhisperXService(
-                    model_name="medium.en",
-                    models_dir=settings.MODEL_BASE_DIR
+                    model_name="medium.en", models_dir=settings.MODEL_BASE_DIR
                 )
 
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.4)
 
-                send_progress_notification(user_id, file_id, 0.4, "Running AI transcription")
+                send_progress_notification(
+                    user_id, file_id, 0.4, "Running AI transcription"
+                )
 
                 # Create progress callback for detailed WhisperX updates
                 def whisperx_progress_callback(progress, message):
                     with session_scope() as db:
-                        update_task_status(db, task_id, "in_progress", progress=progress)
+                        update_task_status(
+                            db, task_id, "in_progress", progress=progress
+                        )
                     send_progress_notification(user_id, file_id, progress, message)
 
                 # Run full WhisperX pipeline with progress updates
                 result = whisperx_service.process_full_pipeline(
                     audio_file_path,
                     settings.HUGGINGFACE_TOKEN,
-                    progress_callback=whisperx_progress_callback
+                    progress_callback=whisperx_progress_callback,
                 )
 
                 # Check if transcription produced any valid content
-                if not result or not result.get("segments") or len(result["segments"]) == 0:
-                    error_msg = ("No audio content could be detected in this file. "
-                               "The file may be corrupted, contain only silence, or be in an unsupported format. "
-                               "Please check the file and try uploading again.")
-                    logger.warning(f"No valid audio content found in file {file_id}: {file_name}")
+                if (
+                    not result
+                    or not result.get("segments")
+                    or len(result["segments"]) == 0
+                ):
+                    error_msg = (
+                        "No audio content could be detected in this file. "
+                        "The file may be corrupted, contain only silence, or be in an unsupported format. "
+                        "Please check the file and try uploading again."
+                    )
+                    logger.warning(
+                        f"No valid audio content found in file {file_id}: {file_name}"
+                    )
 
                     with session_scope() as db:
-                        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                        update_task_status(
+                            db,
+                            task_id,
+                            "failed",
+                            error_message=error_msg,
+                            completed=True,
+                        )
                         update_media_file_status(db, file_id, FileStatus.ERROR)
                         # Store the specific error for user guidance
                         media_file = get_refreshed_object(db, MediaFile, file_id)
@@ -184,7 +222,11 @@ def transcribe_audio_task(self, file_id: int):
                             db.commit()
 
                     send_error_notification(user_id, file_id, error_msg)
-                    return {"status": "error", "message": error_msg, "error_type": "no_valid_audio"}
+                    return {
+                        "status": "error",
+                        "message": error_msg,
+                        "error_type": "no_valid_audio",
+                    }
 
                 # Check if segments contain actual transcribable content
                 has_content = False
@@ -194,13 +236,23 @@ def transcribe_audio_task(self, file_id: int):
                         break
 
                 if not has_content:
-                    error_msg = ("No speech could be detected in this file. "
-                               "The file may contain only music, background noise, or silence. "
-                               "Please verify the file contains clear speech and try again.")
-                    logger.warning(f"No speech content found in file {file_id}: {file_name}")
+                    error_msg = (
+                        "No speech could be detected in this file. "
+                        "The file may contain only music, background noise, or silence. "
+                        "Please verify the file contains clear speech and try again."
+                    )
+                    logger.warning(
+                        f"No speech content found in file {file_id}: {file_name}"
+                    )
 
                     with session_scope() as db:
-                        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+                        update_task_status(
+                            db,
+                            task_id,
+                            "failed",
+                            error_message=error_msg,
+                            completed=True,
+                        )
                         update_media_file_status(db, file_id, FileStatus.ERROR)
                         # Store the specific error for user guidance
                         media_file = get_refreshed_object(db, MediaFile, file_id)
@@ -209,23 +261,37 @@ def transcribe_audio_task(self, file_id: int):
                             db.commit()
 
                     send_error_notification(user_id, file_id, error_msg)
-                    return {"status": "error", "message": error_msg, "error_type": "no_speech_content"}
+                    return {
+                        "status": "error",
+                        "message": error_msg,
+                        "error_type": "no_speech_content",
+                    }
 
                 # Step 8: Process speakers and segments (WhisperX callback handles 0.4->0.65)
-                send_progress_notification(user_id, file_id, 0.68, "Processing speaker segments")
+                send_progress_notification(
+                    user_id, file_id, 0.68, "Processing speaker segments"
+                )
                 unique_speakers = extract_unique_speakers(result["segments"])
 
                 with session_scope() as db:
-                    speaker_mapping = create_speaker_mapping(db, user_id, file_id, unique_speakers)
+                    speaker_mapping = create_speaker_mapping(
+                        db, user_id, file_id, unique_speakers
+                    )
                     update_task_status(db, task_id, "in_progress", progress=0.72)
 
-                send_progress_notification(user_id, file_id, 0.72, "Organizing transcript segments")
-                processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
+                send_progress_notification(
+                    user_id, file_id, 0.72, "Organizing transcript segments"
+                )
+                processed_segments = process_segments_with_speakers(
+                    result["segments"], speaker_mapping
+                )
 
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.75)
 
-                send_progress_notification(user_id, file_id, 0.75, "Saving transcript to database")
+                send_progress_notification(
+                    user_id, file_id, 0.75, "Saving transcript to database"
+                )
                 # Step 9: Save to database
                 with session_scope() as db:
                     save_transcript_segments(db, file_id, processed_segments)
@@ -235,7 +301,9 @@ def transcribe_audio_task(self, file_id: int):
                     update_task_status(db, task_id, "in_progress", progress=0.78)
 
                 # Step 9.5: Extract speaker embeddings and match profiles
-                send_progress_notification(user_id, file_id, 0.78, "Processing speaker identification")
+                send_progress_notification(
+                    user_id, file_id, 0.78, "Processing speaker identification"
+                )
                 try:
                     embedding_service = SpeakerEmbeddingService()
 
@@ -244,12 +312,18 @@ def transcribe_audio_task(self, file_id: int):
 
                         # Process speaker embeddings and matching
                         speaker_results = matching_service.process_speaker_segments(
-                            audio_file_path, file_id, user_id, processed_segments, speaker_mapping
+                            audio_file_path,
+                            file_id,
+                            user_id,
+                            processed_segments,
+                            speaker_mapping,
                         )
 
                         update_task_status(db, task_id, "in_progress", progress=0.82)
 
-                    logger.info(f"Speaker identification completed: {len(speaker_results)} speakers processed")
+                    logger.info(
+                        f"Speaker identification completed: {len(speaker_results)} speakers processed"
+                    )
 
                 except Exception as e:
                     logger.warning(f"Error in speaker identification: {e}")
@@ -258,7 +332,9 @@ def transcribe_audio_task(self, file_id: int):
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.85)
 
-                send_progress_notification(user_id, file_id, 0.85, "Indexing for search")
+                send_progress_notification(
+                    user_id, file_id, 0.85, "Indexing for search"
+                )
                 # Step 10: Index in search
                 try:
                     full_transcript = generate_full_transcript(processed_segments)
@@ -266,30 +342,50 @@ def transcribe_audio_task(self, file_id: int):
 
                     with session_scope() as db:
                         media_file = get_refreshed_object(db, MediaFile, file_id)
-                        file_title = media_file.filename if media_file else f"File {file_id}"
+                        file_title = (
+                            media_file.filename if media_file else f"File {file_id}"
+                        )
 
-                    index_transcript(file_id, user_id, full_transcript, speaker_names, file_title)
+                    index_transcript(
+                        file_id, user_id, full_transcript, speaker_names, file_title
+                    )
                 except Exception as e:
                     logger.warning(f"Error indexing transcript: {e}")
 
                 # Step 11: Finalize
-                send_progress_notification(user_id, file_id, 0.95, "Finalizing transcription")
+                send_progress_notification(
+                    user_id, file_id, 0.95, "Finalizing transcription"
+                )
                 with session_scope() as db:
-                    update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+                    update_task_status(
+                        db, task_id, "completed", progress=1.0, completed=True
+                    )
 
                 # Send completion notification
                 send_completion_notification(user_id, file_id)
 
                 # Trigger automatic summarization
-                logger.info(f"Transcription completed successfully for file {file_id}, triggering automatic summarization")
+                logger.info(
+                    f"Transcription completed successfully for file {file_id}, triggering automatic summarization"
+                )
                 trigger_automatic_summarization(file_id)
 
-                return {"status": "success", "file_id": file_id, "segments": len(processed_segments)}
+                return {
+                    "status": "success",
+                    "file_id": file_id,
+                    "segments": len(processed_segments),
+                }
 
             except Exception as e:
                 logger.error(f"Error in WhisperX processing: {str(e)}")
                 with session_scope() as db:
-                    update_task_status(db, task_id, "failed", error_message=f"Processing error: {str(e)}", completed=True)
+                    update_task_status(
+                        db,
+                        task_id,
+                        "failed",
+                        error_message=f"Processing error: {str(e)}",
+                        completed=True,
+                    )
                     update_media_file_status(db, file_id, FileStatus.ERROR)
 
                 send_error_notification(user_id, file_id, str(e))
@@ -301,7 +397,9 @@ def transcribe_audio_task(self, file_id: int):
         try:
             with session_scope() as db:
                 update_media_file_status(db, file_id, FileStatus.ERROR)
-                update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+                update_task_status(
+                    db, task_id, "failed", error_message=str(e), completed=True
+                )
 
             if user_id:
                 send_error_notification(user_id, file_id, str(e))

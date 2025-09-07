@@ -16,7 +16,7 @@ from app.models.media import TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def get_user_files_query(db: Session, user_id: int) -> Query:
@@ -33,8 +33,9 @@ def get_user_files_query(db: Session, user_id: int) -> Query:
     return db.query(MediaFile).filter(MediaFile.user_id == user_id)
 
 
-def get_or_create(db: Session, model: type[T], defaults: Optional[dict] = None,
-                  **kwargs) -> tuple[T, bool]:
+def get_or_create(
+    db: Session, model: type[T], defaults: Optional[dict] = None, **kwargs
+) -> tuple[T, bool]:
     """
     Get an object or create it if it doesn't exist.
 
@@ -66,8 +67,9 @@ def get_or_create(db: Session, model: type[T], defaults: Optional[dict] = None,
         raise
 
 
-def safe_get_by_id(db: Session, model: type[T], obj_id: int,
-                   user_id: Optional[int] = None) -> Optional[T]:
+def safe_get_by_id(
+    db: Session, model: type[T], obj_id: int, user_id: Optional[int] = None
+) -> Optional[T]:
     """
     Safely get an object by ID with optional user filtering.
 
@@ -84,7 +86,7 @@ def safe_get_by_id(db: Session, model: type[T], obj_id: int,
         query = db.query(model).filter(model.id == obj_id)
 
         # Add user filtering if specified and model has user_id field
-        if user_id and hasattr(model, 'user_id'):
+        if user_id and hasattr(model, "user_id"):
             query = query.filter(model.user_id == user_id)
 
         return query.first()
@@ -93,8 +95,9 @@ def safe_get_by_id(db: Session, model: type[T], obj_id: int,
         return None
 
 
-def bulk_update(db: Session, model: type[T], updates: list[dict],
-                id_field: str = 'id') -> bool:
+def bulk_update(
+    db: Session, model: type[T], updates: list[dict], id_field: str = "id"
+) -> bool:
     """
     Perform bulk updates efficiently.
 
@@ -110,7 +113,9 @@ def bulk_update(db: Session, model: type[T], updates: list[dict],
     try:
         for update_data in updates:
             obj_id = update_data.pop(id_field)
-            db.query(model).filter(getattr(model, id_field) == obj_id).update(update_data)
+            db.query(model).filter(getattr(model, id_field) == obj_id).update(
+                update_data
+            )
 
         db.commit()
         return True
@@ -120,7 +125,9 @@ def bulk_update(db: Session, model: type[T], updates: list[dict],
         return False
 
 
-def get_file_with_transcript_count(db: Session, file_id: int, user_id: int) -> tuple[MediaFile, int]:
+def get_file_with_transcript_count(
+    db: Session, file_id: int, user_id: int
+) -> tuple[MediaFile, int]:
     """
     Get a file with its transcript segment count.
 
@@ -136,9 +143,11 @@ def get_file_with_transcript_count(db: Session, file_id: int, user_id: int) -> t
     if not file_obj:
         return None, 0
 
-    segment_count = db.query(func.count(TranscriptSegment.id)).filter(
-        TranscriptSegment.media_file_id == file_id
-    ).scalar()
+    segment_count = (
+        db.query(func.count(TranscriptSegment.id))
+        .filter(TranscriptSegment.media_file_id == file_id)
+        .scalar()
+    )
 
     return file_obj, segment_count or 0
 
@@ -168,9 +177,13 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
     Returns:
         List of unique Speaker objects
     """
-    return db.query(Speaker).join(TranscriptSegment).filter(
-        TranscriptSegment.media_file_id == file_id
-    ).distinct().all()
+    return (
+        db.query(Speaker)
+        .join(TranscriptSegment)
+        .filter(TranscriptSegment.media_file_id == file_id)
+        .distinct()
+        .all()
+    )
 
 
 def get_file_tags(db: Session, file_id: int) -> list[str]:
@@ -185,9 +198,12 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
         List of tag names
     """
     try:
-        tags = db.query(Tag.name).join(FileTag).filter(
-            FileTag.media_file_id == file_id
-        ).all()
+        tags = (
+            db.query(Tag.name)
+            .join(FileTag)
+            .filter(FileTag.media_file_id == file_id)
+            .all()
+        )
         return [tag[0] for tag in tags]
     except SQLAlchemyError as e:
         logger.error(f"Error getting tags for file {file_id}: {e}")
@@ -212,9 +228,13 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> bool:
             tag, created = get_or_create(db, Tag, name=tag_name)
 
             # Check if file-tag association already exists
-            existing = db.query(FileTag).filter(
-                and_(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
-            ).first()
+            existing = (
+                db.query(FileTag)
+                .filter(
+                    and_(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
+                )
+                .first()
+            )
 
             if not existing:
                 file_tag = FileTag(media_file_id=file_id, tag_id=tag.id)
@@ -270,9 +290,11 @@ def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFil
     Returns:
         List of MediaFile objects
     """
-    return db.query(MediaFile).filter(
-        and_(MediaFile.user_id == user_id, MediaFile.status == status)
-    ).all()
+    return (
+        db.query(MediaFile)
+        .filter(and_(MediaFile.user_id == user_id, MediaFile.status == status))
+        .all()
+    )
 
 
 def get_user_file_stats(db: Session, user_id: int) -> dict:
@@ -288,31 +310,43 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
     """
     try:
         # Count files by status
-        status_counts = db.query(
-            MediaFile.status, func.count(MediaFile.id)
-        ).filter(MediaFile.user_id == user_id).group_by(MediaFile.status).all()
+        status_counts = (
+            db.query(MediaFile.status, func.count(MediaFile.id))
+            .filter(MediaFile.user_id == user_id)
+            .group_by(MediaFile.status)
+            .all()
+        )
 
         # Total file size
-        total_size = db.query(func.sum(MediaFile.file_size)).filter(
-            MediaFile.user_id == user_id
-        ).scalar() or 0
+        total_size = (
+            db.query(func.sum(MediaFile.file_size))
+            .filter(MediaFile.user_id == user_id)
+            .scalar()
+            or 0
+        )
 
         # Total duration
-        total_duration = db.query(func.sum(MediaFile.duration)).filter(
-            MediaFile.user_id == user_id
-        ).scalar() or 0
+        total_duration = (
+            db.query(func.sum(MediaFile.duration))
+            .filter(MediaFile.user_id == user_id)
+            .scalar()
+            or 0
+        )
 
         # File type distribution
-        type_counts = db.query(
-            MediaFile.content_type, func.count(MediaFile.id)
-        ).filter(MediaFile.user_id == user_id).group_by(MediaFile.content_type).all()
+        type_counts = (
+            db.query(MediaFile.content_type, func.count(MediaFile.id))
+            .filter(MediaFile.user_id == user_id)
+            .group_by(MediaFile.content_type)
+            .all()
+        )
 
         return {
-            'total_files': sum(count for _, count in status_counts),
-            'status_distribution': dict(status_counts),
-            'total_size_bytes': total_size,
-            'total_duration_seconds': total_duration,
-            'type_distribution': dict(type_counts)
+            "total_files": sum(count for _, count in status_counts),
+            "status_distribution": dict(status_counts),
+            "total_size_bytes": total_size,
+            "total_duration_seconds": total_duration,
+            "type_distribution": dict(type_counts),
         }
     except SQLAlchemyError as e:
         logger.error(f"Error getting file stats for user {user_id}: {e}")

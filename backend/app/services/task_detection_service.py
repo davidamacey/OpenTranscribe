@@ -47,10 +47,14 @@ class TaskDetectionService:
         stale_time = now - timedelta(seconds=self.config.STALENESS_THRESHOLD)
 
         # Find potentially stuck tasks
-        potential_stuck_tasks = db.query(Task).filter(
-            Task.status.in_(["pending", "in_progress"]),
-            Task.updated_at < stale_time
-        ).all()
+        potential_stuck_tasks = (
+            db.query(Task)
+            .filter(
+                Task.status.in_(["pending", "in_progress"]),
+                Task.updated_at < stale_time,
+            )
+            .all()
+        )
 
         # Filter based on duration
         stuck_tasks = []
@@ -61,7 +65,9 @@ class TaskDetectionService:
         logger.info(f"Identified {len(stuck_tasks)} stuck tasks")
         return stuck_tasks
 
-    def identify_stuck_files_without_active_celery_tasks(self, db: Session) -> list[MediaFile]:
+    def identify_stuck_files_without_active_celery_tasks(
+        self, db: Session
+    ) -> list[MediaFile]:
         """
         Identify files that are stuck in PROCESSING state without any active Celery tasks.
 
@@ -80,26 +86,32 @@ class TaskDetectionService:
         stuck_threshold = now - timedelta(minutes=5)  # Files stuck for 5+ minutes
 
         # Get all files currently in PROCESSING state
-        processing_files = db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.PROCESSING
-        ).all()
+        processing_files = (
+            db.query(MediaFile).filter(MediaFile.status == FileStatus.PROCESSING).all()
+        )
 
         stuck_files = []
         for media_file in processing_files:
             # Check if file has been processing for too long
             if media_file.updated_at and media_file.updated_at < stuck_threshold:
                 # Check if there are any active tasks
-                active_tasks = db.query(Task).filter(
-                    Task.media_file_id == media_file.id,
-                    Task.status.in_(["pending", "in_progress"])
-                ).all()
+                active_tasks = (
+                    db.query(Task)
+                    .filter(
+                        Task.media_file_id == media_file.id,
+                        Task.status.in_(["pending", "in_progress"]),
+                    )
+                    .all()
+                )
 
                 if not active_tasks:
                     # File is in processing state but has no active tasks
                     stuck_files.append(media_file)
-                    logger.info(f"Found stuck file {media_file.id} ({media_file.filename}) - "
-                               f"processing for {(now - media_file.updated_at).total_seconds() / 60:.1f} minutes "
-                               f"with no active tasks")
+                    logger.info(
+                        f"Found stuck file {media_file.id} ({media_file.filename}) - "
+                        f"processing for {(now - media_file.updated_at).total_seconds() / 60:.1f} minutes "
+                        f"with no active tasks"
+                    )
                 else:
                     # Check if tasks are truly stuck (no recent updates)
                     all_tasks_stale = True
@@ -110,10 +122,14 @@ class TaskDetectionService:
 
                     if all_tasks_stale:
                         stuck_files.append(media_file)
-                        logger.info(f"Found stuck file {media_file.id} ({media_file.filename}) - "
-                                   f"has {len(active_tasks)} stale tasks")
+                        logger.info(
+                            f"Found stuck file {media_file.id} ({media_file.filename}) - "
+                            f"has {len(active_tasks)} stale tasks"
+                        )
 
-        logger.info(f"Identified {len(stuck_files)} stuck files without active Celery tasks")
+        logger.info(
+            f"Identified {len(stuck_files)} stuck files without active Celery tasks"
+        )
         return stuck_files
 
     def identify_inconsistent_media_files(self, db: Session) -> list[MediaFile]:
@@ -158,10 +174,14 @@ class TaskDetectionService:
             hours=self.config.ORPHANED_TASK_THRESHOLD
         )
 
-        orphaned_tasks = db.query(Task).filter(
-            Task.status.in_(["pending", "in_progress"]),
-            Task.updated_at < cutoff_time
-        ).all()
+        orphaned_tasks = (
+            db.query(Task)
+            .filter(
+                Task.status.in_(["pending", "in_progress"]),
+                Task.updated_at < cutoff_time,
+            )
+            .all()
+        )
 
         logger.info(f"Identified {len(orphaned_tasks)} orphaned tasks")
         return orphaned_tasks
@@ -176,17 +196,21 @@ class TaskDetectionService:
         Returns:
             List of abandoned files
         """
-        abandoned_files = db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.PROCESSING
-        ).all()
+        abandoned_files = (
+            db.query(MediaFile).filter(MediaFile.status == FileStatus.PROCESSING).all()
+        )
 
         # Filter to only include files with no active tasks
         truly_abandoned = []
         for media_file in abandoned_files:
-            active_tasks = db.query(Task).filter(
-                Task.media_file_id == media_file.id,
-                Task.status.in_(["pending", "in_progress"])
-            ).count()
+            active_tasks = (
+                db.query(Task)
+                .filter(
+                    Task.media_file_id == media_file.id,
+                    Task.status.in_(["pending", "in_progress"]),
+                )
+                .count()
+            )
 
             if active_tasks == 0:
                 truly_abandoned.append(media_file)
@@ -194,7 +218,9 @@ class TaskDetectionService:
         logger.info(f"Identified {len(truly_abandoned)} abandoned files")
         return truly_abandoned
 
-    def find_user_problem_files(self, db: Session, user_id: int = None) -> list[MediaFile]:
+    def find_user_problem_files(
+        self, db: Session, user_id: int = None
+    ) -> list[MediaFile]:
         """
         Find files that may need recovery for a specific user or all users.
 
@@ -222,7 +248,9 @@ class TaskDetectionService:
             if file_age > age_threshold:
                 aged_files.append(media_file)
 
-        logger.info(f"Found {len(aged_files)} problem files for user {user_id or 'all'}")
+        logger.info(
+            f"Found {len(aged_files)} problem files for user {user_id or 'all'}"
+        )
         return aged_files
 
     def _is_task_duration_exceeded(self, task: Task, now: datetime) -> bool:
@@ -232,24 +260,27 @@ class TaskDetectionService:
 
         duration = (now - task.created_at).total_seconds()
         max_duration = self.config.MAX_TASK_DURATIONS.get(
-            task.task_type,
-            self.config.MAX_TASK_DURATIONS["default"]
+            task.task_type, self.config.MAX_TASK_DURATIONS["default"]
         )
 
         return duration > max_duration
 
     def _find_processing_files_without_tasks(self, db: Session) -> list[MediaFile]:
         """Find files in PROCESSING state with no active tasks."""
-        processing_files = db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.PROCESSING
-        ).all()
+        processing_files = (
+            db.query(MediaFile).filter(MediaFile.status == FileStatus.PROCESSING).all()
+        )
 
         files_without_tasks = []
         for media_file in processing_files:
-            active_tasks = db.query(Task).filter(
-                Task.media_file_id == media_file.id,
-                Task.status.in_(["pending", "in_progress"])
-            ).count()
+            active_tasks = (
+                db.query(Task)
+                .filter(
+                    Task.media_file_id == media_file.id,
+                    Task.status.in_(["pending", "in_progress"]),
+                )
+                .count()
+            )
 
             if active_tasks == 0:
                 files_without_tasks.append(media_file)
@@ -260,10 +291,14 @@ class TaskDetectionService:
         """Find files that have been in PENDING state for too long."""
         stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
 
-        return db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.PENDING,
-            MediaFile.upload_time < stale_time
-        ).all()
+        return (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.PENDING,
+                MediaFile.upload_time < stale_time,
+            )
+            .all()
+        )
 
 
 # Service instance

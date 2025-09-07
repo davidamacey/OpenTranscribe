@@ -1,6 +1,7 @@
 """
 Celery tasks for file cleanup and system maintenance.
 """
+
 import logging
 
 from celery import shared_task
@@ -28,13 +29,17 @@ def run_periodic_cleanup(self):
         results = cleanup_service.run_cleanup_cycle()
 
         # Log results
-        logger.info(f"Periodic cleanup completed: "
-                   f"checked {results['stuck_files_checked']} files, "
-                   f"recovered {results['files_recovered']}, "
-                   f"marked {results['files_marked_orphaned']} as orphaned")
+        logger.info(
+            f"Periodic cleanup completed: "
+            f"checked {results['stuck_files_checked']} files, "
+            f"recovered {results['files_recovered']}, "
+            f"marked {results['files_marked_orphaned']} as orphaned"
+        )
 
         if results["cleanup_errors"]:
-            logger.warning(f"Cleanup had {len(results['cleanup_errors'])} errors: {results['cleanup_errors']}")
+            logger.warning(
+                f"Cleanup had {len(results['cleanup_errors'])} errors: {results['cleanup_errors']}"
+            )
 
         if results["recommendations"]:
             logger.info(f"System health recommendations: {results['recommendations']}")
@@ -62,10 +67,12 @@ def run_deep_cleanup(self, dry_run: bool = False):
             # Force cleanup of orphaned files
             results = cleanup_service.force_cleanup_orphaned_files(db, dry_run=dry_run)
 
-            logger.info(f"Deep cleanup completed: "
-                       f"eligible: {results['eligible_for_deletion']}, "
-                       f"deleted: {results['successfully_deleted']}, "
-                       f"errors: {len(results['deletion_errors'])}")
+            logger.info(
+                f"Deep cleanup completed: "
+                f"eligible: {results['eligible_for_deletion']}, "
+                f"deleted: {results['successfully_deleted']}, "
+                f"errors: {len(results['deletion_errors'])}"
+            )
 
             if results["deletion_errors"]:
                 logger.error(f"Deep cleanup errors: {results['deletion_errors']}")
@@ -88,15 +95,19 @@ def system_health_check(self):
         with session_scope() as db:
             stats = cleanup_service.get_cleanup_statistics(db)
 
-            logger.info(f"System health check completed: "
-                       f"health_score={stats['health_score']}, "
-                       f"stuck_files={stats['stuck_files_detected']}, "
-                       f"cleanup_eligible={stats['files_eligible_for_cleanup']}")
+            logger.info(
+                f"System health check completed: "
+                f"health_score={stats['health_score']}, "
+                f"stuck_files={stats['stuck_files_detected']}, "
+                f"cleanup_eligible={stats['files_eligible_for_cleanup']}"
+            )
 
             # Log warnings for poor health
             if stats["health_score"] in ["poor", "fair"]:
-                logger.warning(f"System health is {stats['health_score']}. "
-                              f"Consider running manual cleanup or investigating issues.")
+                logger.warning(
+                    f"System health is {stats['health_score']}. "
+                    f"Consider running manual cleanup or investigating issues."
+                )
 
             return stats
 
@@ -120,7 +131,7 @@ def emergency_file_recovery(self, file_ids: list):
             "files_processed": len(file_ids),
             "recovered": 0,
             "failed": 0,
-            "errors": []
+            "errors": [],
         }
 
         with session_scope() as db:
@@ -141,10 +152,12 @@ def emergency_file_recovery(self, file_ids: list):
                     results["errors"].append(error_msg)
                     logger.error(error_msg)
 
-            logger.info(f"Emergency recovery completed: "
-                       f"processed {results['files_processed']}, "
-                       f"recovered {results['recovered']}, "
-                       f"failed {results['failed']}")
+            logger.info(
+                f"Emergency recovery completed: "
+                f"processed {results['files_processed']}, "
+                f"recovered {results['recovered']}, "
+                f"failed {results['failed']}"
+            )
 
             return results
 

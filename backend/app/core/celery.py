@@ -13,8 +13,8 @@ celery_app = Celery(
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.utility",
-        "app.tasks.recovery"
-    ]
+        "app.tasks.recovery",
+    ],
 )
 
 # Configure Celery
@@ -30,14 +30,14 @@ celery_app.conf.update(
         "app.tasks.transcription.*": {"queue": "transcription"},
         "app.tasks.summarization.*": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
-        "app.tasks.utility.*": {"queue": "utility"}
+        "app.tasks.utility.*": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
-        'periodic-health-check': {
-            'task': 'periodic_health_check',
-            'schedule': crontab(minute='*/10'),  # Run every 10 minutes
-            'options': {'queue': 'utility'}
+        "periodic-health-check": {
+            "task": "periodic_health_check",
+            "schedule": crontab(minute="*/10"),  # Run every 10 minutes
+            "options": {"queue": "utility"},
         }
-    }
+    },
 )

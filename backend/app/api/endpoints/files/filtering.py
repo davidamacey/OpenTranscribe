@@ -31,7 +31,7 @@ def apply_search_filter(query: Query, search: Optional[str]) -> Query:
         query = query.filter(
             sa.or_(
                 MediaFile.filename.ilike(f"%{search}%"),
-                MediaFile.title.ilike(f"%{search}%") if MediaFile.title else False
+                MediaFile.title.ilike(f"%{search}%") if MediaFile.title else False,
             )
         )
     return query
@@ -50,9 +50,11 @@ def apply_tag_filter(query: Query, tag: Optional[list[str]]) -> Query:
     """
     if tag:
         for t in tag:
-            query = query.join(FileTag, FileTag.media_file_id == MediaFile.id)\
-                        .join(Tag, Tag.id == FileTag.tag_id)\
-                        .filter(Tag.name == t)
+            query = (
+                query.join(FileTag, FileTag.media_file_id == MediaFile.id)
+                .join(Tag, Tag.id == FileTag.tag_id)
+                .filter(Tag.name == t)
+            )
     return query
 
 
@@ -75,14 +77,20 @@ def apply_speaker_filter(query: Query, speaker: Optional[list[str]]) -> Query:
             )
 
         if speaker_or_conditions:
-            query = query.join(TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id)\
-                         .join(Speaker, Speaker.id == TranscriptSegment.speaker_id)\
-                         .filter(sa.or_(*speaker_or_conditions)).distinct()
+            query = (
+                query.join(
+                    TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id
+                )
+                .join(Speaker, Speaker.id == TranscriptSegment.speaker_id)
+                .filter(sa.or_(*speaker_or_conditions))
+                .distinct()
+            )
     return query
 
 
-def apply_date_filters(query: Query, from_date: Optional[datetime],
-                      to_date: Optional[datetime]) -> Query:
+def apply_date_filters(
+    query: Query, from_date: Optional[datetime], to_date: Optional[datetime]
+) -> Query:
     """
     Apply date range filters.
 
@@ -103,8 +111,9 @@ def apply_date_filters(query: Query, from_date: Optional[datetime],
     return query
 
 
-def apply_duration_filters(query: Query, min_duration: Optional[float],
-                          max_duration: Optional[float]) -> Query:
+def apply_duration_filters(
+    query: Query, min_duration: Optional[float], max_duration: Optional[float]
+) -> Query:
     """
     Apply duration range filters.
 
@@ -125,8 +134,9 @@ def apply_duration_filters(query: Query, min_duration: Optional[float],
     return query
 
 
-def apply_file_size_filters(query: Query, min_file_size: Optional[int],
-                           max_file_size: Optional[int]) -> Query:
+def apply_file_size_filters(
+    query: Query, min_file_size: Optional[int], max_file_size: Optional[int]
+) -> Query:
     """
     Apply file size range filters (MB to bytes conversion).
 
@@ -161,10 +171,10 @@ def apply_file_type_filter(query: Query, file_type: Optional[list[str]]) -> Quer
     if file_type:
         type_conditions = []
         for ft in file_type:
-            if ft == 'audio':
-                type_conditions.append(MediaFile.content_type.like('audio/%'))
-            elif ft == 'video':
-                type_conditions.append(MediaFile.content_type.like('video/%'))
+            if ft == "audio":
+                type_conditions.append(MediaFile.content_type.like("audio/%"))
+            elif ft == "video":
+                type_conditions.append(MediaFile.content_type.like("video/%"))
         if type_conditions:
             query = query.filter(sa.or_(*type_conditions))
 
@@ -192,7 +202,9 @@ def apply_status_filter(query: Query, status: Optional[list[str]]) -> Query:
     return query
 
 
-def apply_transcript_search_filter(query: Query, transcript_search: Optional[str]) -> Query:
+def apply_transcript_search_filter(
+    query: Query, transcript_search: Optional[str]
+) -> Query:
     """
     Apply transcript content search filter.
 
@@ -204,9 +216,13 @@ def apply_transcript_search_filter(query: Query, transcript_search: Optional[str
         Filtered query
     """
     if transcript_search:
-        query = query.join(TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id)\
-                     .filter(TranscriptSegment.text.ilike(f"%{transcript_search}%"))\
-                     .distinct()
+        query = (
+            query.join(
+                TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id
+            )
+            .filter(TranscriptSegment.text.ilike(f"%{transcript_search}%"))
+            .distinct()
+        )
 
     return query
 
@@ -222,15 +238,19 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
     Returns:
         Filtered query
     """
-    query = apply_search_filter(query, filters.get('search'))
-    query = apply_tag_filter(query, filters.get('tag'))
-    query = apply_speaker_filter(query, filters.get('speaker'))
-    query = apply_date_filters(query, filters.get('from_date'), filters.get('to_date'))
-    query = apply_duration_filters(query, filters.get('min_duration'), filters.get('max_duration'))
-    query = apply_file_size_filters(query, filters.get('min_file_size'), filters.get('max_file_size'))
-    query = apply_file_type_filter(query, filters.get('file_type'))
-    query = apply_status_filter(query, filters.get('status'))
-    query = apply_transcript_search_filter(query, filters.get('transcript_search'))
+    query = apply_search_filter(query, filters.get("search"))
+    query = apply_tag_filter(query, filters.get("tag"))
+    query = apply_speaker_filter(query, filters.get("speaker"))
+    query = apply_date_filters(query, filters.get("from_date"), filters.get("to_date"))
+    query = apply_duration_filters(
+        query, filters.get("min_duration"), filters.get("max_duration")
+    )
+    query = apply_file_size_filters(
+        query, filters.get("min_file_size"), filters.get("max_file_size")
+    )
+    query = apply_file_type_filter(query, filters.get("file_type"))
+    query = apply_status_filter(query, filters.get("status"))
+    query = apply_transcript_search_filter(query, filters.get("transcript_search"))
 
     return query
 
@@ -247,36 +267,52 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         Dictionary of available filter options
     """
     # Query for unique formats
-    formats_query = db.query(MediaFile.metadata_important['format'].astext.distinct())\
-                    .filter(MediaFile.user_id == user_id)\
-                    .filter(MediaFile.metadata_important['format'].astext != 'null')
+    formats_query = (
+        db.query(MediaFile.metadata_important["format"].astext.distinct())
+        .filter(MediaFile.user_id == user_id)
+        .filter(MediaFile.metadata_important["format"].astext != "null")
+    )
     formats = [fmt[0] for fmt in formats_query.all() if fmt[0]]
 
     # Query for unique codecs
-    codecs_query = db.query(MediaFile.metadata_important['codec'].astext.distinct())\
-                   .filter(MediaFile.user_id == user_id)\
-                   .filter(MediaFile.metadata_important['codec'].astext != 'null')
+    codecs_query = (
+        db.query(MediaFile.metadata_important["codec"].astext.distinct())
+        .filter(MediaFile.user_id == user_id)
+        .filter(MediaFile.metadata_important["codec"].astext != "null")
+    )
     codecs = [codec[0] for codec in codecs_query.all() if codec[0]]
 
     # Get min/max duration
-    duration_range = db.query(
-        func.min(cast(MediaFile.duration, Float)),
-        func.max(cast(MediaFile.duration, Float))
-    ).filter(MediaFile.user_id == user_id).first()
+    duration_range = (
+        db.query(
+            func.min(cast(MediaFile.duration, Float)),
+            func.max(cast(MediaFile.duration, Float)),
+        )
+        .filter(MediaFile.user_id == user_id)
+        .first()
+    )
 
     min_duration = duration_range[0] if duration_range[0] is not None else 0
     max_duration = duration_range[1] if duration_range[1] is not None else 0
 
     # Get resolution ranges
-    width_range = db.query(
-        func.min(cast(MediaFile.metadata_important['width'].astext, Integer)),
-        func.max(cast(MediaFile.metadata_important['width'].astext, Integer))
-    ).filter(MediaFile.user_id == user_id).first()
+    width_range = (
+        db.query(
+            func.min(cast(MediaFile.metadata_important["width"].astext, Integer)),
+            func.max(cast(MediaFile.metadata_important["width"].astext, Integer)),
+        )
+        .filter(MediaFile.user_id == user_id)
+        .first()
+    )
 
-    height_range = db.query(
-        func.min(cast(MediaFile.metadata_important['height'].astext, Integer)),
-        func.max(cast(MediaFile.metadata_important['height'].astext, Integer))
-    ).filter(MediaFile.user_id == user_id).first()
+    height_range = (
+        db.query(
+            func.min(cast(MediaFile.metadata_important["height"].astext, Integer)),
+            func.max(cast(MediaFile.metadata_important["height"].astext, Integer)),
+        )
+        .filter(MediaFile.user_id == user_id)
+        .first()
+    )
 
     min_width = width_range[0] if width_range[0] is not None else 0
     max_width = width_range[1] if width_range[1] is not None else 0
@@ -286,18 +322,9 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
     return {
         "formats": formats,
         "codecs": codecs,
-        "duration": {
-            "min": min_duration,
-            "max": max_duration
-        },
+        "duration": {"min": min_duration, "max": max_duration},
         "resolution": {
-            "width": {
-                "min": min_width,
-                "max": max_width
-            },
-            "height": {
-                "min": min_height,
-                "max": max_height
-            }
-        }
+            "width": {"min": min_width, "max": max_width},
+            "height": {"min": min_height, "max": max_height},
+        },
     }

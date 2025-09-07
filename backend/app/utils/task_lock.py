@@ -34,7 +34,9 @@ class TaskLockManager:
         if self._redis_client is None:
             try:
                 # Parse Redis URL and create client
-                self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
+                self._redis_client = redis.from_url(
+                    self.redis_url, decode_responses=True
+                )
                 # Test connection
                 self._redis_client.ping()
             except Exception as e:
@@ -44,7 +46,9 @@ class TaskLockManager:
         return self._redis_client if self._redis_client is not False else None
 
     @contextmanager
-    def acquire_lock(self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
+    def acquire_lock(
+        self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0
+    ):
         """
         Acquire a distributed lock for task execution.
 
@@ -71,9 +75,7 @@ class TaskLockManager:
         try:
             # Create lock with expiration
             lock = self.redis_client.lock(
-                lock_key,
-                timeout=timeout,
-                blocking_timeout=blocking_timeout
+                lock_key, timeout=timeout, blocking_timeout=blocking_timeout
             )
 
             # Try to acquire lock
@@ -82,7 +84,9 @@ class TaskLockManager:
             if acquired:
                 logger.info(f"Acquired lock for {lock_key}")
             else:
-                logger.info(f"Could not acquire lock for {lock_key} - task may already be running")
+                logger.info(
+                    f"Could not acquire lock for {lock_key} - task may already be running"
+                )
 
             yield acquired
 
@@ -164,6 +168,7 @@ def with_task_lock(lock_key: str, timeout: int = 300):
             # Task code here
             pass
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             with task_lock_manager.acquire_lock(lock_key, timeout=timeout) as acquired:
@@ -174,7 +179,9 @@ def with_task_lock(lock_key: str, timeout: int = 300):
                     return {
                         "skipped": True,
                         "reason": "Task already running",
-                        "function": func.__name__
+                        "function": func.__name__,
                     }
+
         return wrapper
+
     return decorator

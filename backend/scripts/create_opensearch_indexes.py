@@ -1,6 +1,7 @@
 """
 Script to create required OpenSearch indexes for our transcription application.
 """
+
 import os
 
 from dotenv import load_dotenv
@@ -19,50 +20,54 @@ OPENSEARCH_PASSWORD = os.getenv("OPENSEARCH_PASSWORD", "admin")
 TRANSCRIPT_INDEX = "transcripts"
 SPEAKER_INDEX = "speakers"
 
+
 def create_client():
     """Create and return an OpenSearch client."""
     client = OpenSearch(
-        hosts=[{'host': OPENSEARCH_HOST, 'port': OPENSEARCH_PORT}],
-        http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD) if OPENSEARCH_USER and OPENSEARCH_PASSWORD else None,
+        hosts=[{"host": OPENSEARCH_HOST, "port": OPENSEARCH_PORT}],
+        http_auth=(OPENSEARCH_USER, OPENSEARCH_PASSWORD)
+        if OPENSEARCH_USER and OPENSEARCH_PASSWORD
+        else None,
         use_ssl=False,
         verify_certs=False,
-        connection_class=RequestsHttpConnection
+        connection_class=RequestsHttpConnection,
     )
     return client
+
 
 def create_transcript_index(client):
     """Create the transcript index for searching transcript segments."""
     index_body = {
-        'settings': {
-            'index': {
-                'number_of_shards': 1,
-                'number_of_replicas': 0
-            },
-            'analysis': {
-                'analyzer': {
-                    'default': {
-                        'tokenizer': 'standard',
-                        'filter': ['lowercase', 'stop', 'porter_stem']
+        "settings": {
+            "index": {"number_of_shards": 1, "number_of_replicas": 0},
+            "analysis": {
+                "analyzer": {
+                    "default": {
+                        "tokenizer": "standard",
+                        "filter": ["lowercase", "stop", "porter_stem"],
                     }
                 }
+            },
+        },
+        "mappings": {
+            "properties": {
+                "segment_id": {"type": "keyword"},
+                "file_id": {"type": "keyword"},
+                "user_id": {"type": "keyword"},
+                "speaker_id": {"type": "keyword"},
+                "speaker_name": {"type": "keyword"},
+                "text": {"type": "text", "analyzer": "default"},
+                "text_vector": {
+                    "type": "float",
+                    "index": False,
+                },  # Store embedding as array of floats
+                "start_time": {"type": "float"},
+                "end_time": {"type": "float"},
+                "confidence": {"type": "float"},
+                "created_at": {"type": "date"},
+                "updated_at": {"type": "date"},
             }
         },
-        'mappings': {
-            'properties': {
-                'segment_id': {'type': 'keyword'},
-                'file_id': {'type': 'keyword'},
-                'user_id': {'type': 'keyword'},
-                'speaker_id': {'type': 'keyword'},
-                'speaker_name': {'type': 'keyword'},
-                'text': {'type': 'text', 'analyzer': 'default'},
-                'text_vector': {'type': 'float', 'index': False},  # Store embedding as array of floats
-                'start_time': {'type': 'float'},
-                'end_time': {'type': 'float'},
-                'confidence': {'type': 'float'},
-                'created_at': {'type': 'date'},
-                'updated_at': {'type': 'date'}
-            }
-        }
     }
 
     # Check if index exists
@@ -73,26 +78,25 @@ def create_transcript_index(client):
     else:
         print(f"Index {TRANSCRIPT_INDEX} already exists")
 
+
 def create_speaker_index(client):
     """Create the speaker index for storing speaker embeddings."""
     index_body = {
-        'settings': {
-            'index': {
-                'number_of_shards': 1,
-                'number_of_replicas': 0
+        "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0}},
+        "mappings": {
+            "properties": {
+                "speaker_id": {"type": "keyword"},
+                "name": {"type": "keyword"},
+                "user_id": {"type": "keyword"},
+                "embedding": {
+                    "type": "float",
+                    "index": False,
+                },  # Store embedding as array of floats
+                "file_ids": {"type": "keyword"},
+                "created_at": {"type": "date"},
+                "updated_at": {"type": "date"},
             }
         },
-        'mappings': {
-            'properties': {
-                'speaker_id': {'type': 'keyword'},
-                'name': {'type': 'keyword'},
-                'user_id': {'type': 'keyword'},
-                'embedding': {'type': 'float', 'index': False},  # Store embedding as array of floats
-                'file_ids': {'type': 'keyword'},
-                'created_at': {'type': 'date'},
-                'updated_at': {'type': 'date'}
-            }
-        }
     }
 
     # Check if index exists
@@ -102,6 +106,7 @@ def create_speaker_index(client):
         print(f"Index {SPEAKER_INDEX} created successfully")
     else:
         print(f"Index {SPEAKER_INDEX} already exists")
+
 
 def main():
     # Create OpenSearch client
@@ -118,6 +123,7 @@ def main():
 
     except Exception as e:
         print(f"Error connecting to OpenSearch: {e}")
+
 
 if __name__ == "__main__":
     main()

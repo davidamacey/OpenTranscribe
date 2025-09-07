@@ -49,7 +49,9 @@ def extract_unique_speakers(segments: list[dict[str, Any]]) -> set[str]:
     return unique_speakers
 
 
-def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker_label: str) -> Speaker:
+def create_or_get_speaker(
+    db: Session, user_id: int, media_file_id: int, speaker_label: str
+) -> Speaker:
     """
     Create a new speaker or get existing one from database for a specific file.
 
@@ -63,11 +65,15 @@ def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker
         Speaker object
     """
     # Check if speaker already exists for this user and file
-    speaker = db.query(Speaker).filter(
-        Speaker.user_id == user_id,
-        Speaker.media_file_id == media_file_id,
-        Speaker.name == speaker_label
-    ).first()
+    speaker = (
+        db.query(Speaker)
+        .filter(
+            Speaker.user_id == user_id,
+            Speaker.media_file_id == media_file_id,
+            Speaker.name == speaker_label,
+        )
+        .first()
+    )
 
     if not speaker:
         try:
@@ -79,14 +85,18 @@ def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker
                 uuid=speaker_uuid,
                 user_id=user_id,
                 media_file_id=media_file_id,
-                verified=False
+                verified=False,
             )
             db.add(speaker)
             db.flush()  # Get the ID without committing
-            logger.info(f"Created new speaker: {speaker_label} with UUID: {speaker_uuid} for file: {media_file_id}")
+            logger.info(
+                f"Created new speaker: {speaker_label} with UUID: {speaker_uuid} for file: {media_file_id}"
+            )
 
         except Exception as e:
-            logger.error(f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}")
+            logger.error(
+                f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}"
+            )
             # Create a fallback speaker with guaranteed UUID
             speaker_uuid = str(uuid.uuid4())
             speaker = Speaker(
@@ -95,7 +105,7 @@ def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker
                 uuid=speaker_uuid,
                 user_id=user_id,
                 media_file_id=media_file_id,
-                verified=False
+                verified=False,
             )
             db.add(speaker)
             db.flush()
@@ -103,7 +113,9 @@ def create_or_get_speaker(db: Session, user_id: int, media_file_id: int, speaker
     return speaker
 
 
-def create_speaker_mapping(db: Session, user_id: int, media_file_id: int, unique_speakers: set[str]) -> dict[str, int]:
+def create_speaker_mapping(
+    db: Session, user_id: int, media_file_id: int, unique_speakers: set[str]
+) -> dict[str, int]:
     """
     Create a mapping of speaker labels to database IDs for a specific file.
 
@@ -125,8 +137,9 @@ def create_speaker_mapping(db: Session, user_id: int, media_file_id: int, unique
     return speaker_mapping
 
 
-def process_segments_with_speakers(segments: list[dict[str, Any]],
-                                 speaker_mapping: dict[str, int]) -> list[dict[str, Any]]:
+def process_segments_with_speakers(
+    segments: list[dict[str, Any]], speaker_mapping: dict[str, int]
+) -> list[dict[str, Any]]:
     """
     Process transcription segments and add speaker database IDs.
 
@@ -158,12 +171,14 @@ def process_segments_with_speakers(segments: list[dict[str, Any]],
         if "words" in segment:
             for word in segment["words"]:
                 if "start" in word and "end" in word:
-                    words_data.append({
-                        "word": word.get("word", ""),
-                        "start": word.get("start", 0.0),
-                        "end": word.get("end", 0.0),
-                        "score": word.get("score", 1.0)
-                    })
+                    words_data.append(
+                        {
+                            "word": word.get("word", ""),
+                            "start": word.get("start", 0.0),
+                            "end": word.get("end", 0.0),
+                            "score": word.get("score", 1.0),
+                        }
+                    )
 
         # Create processed segment
         processed_segment = {
@@ -173,7 +188,7 @@ def process_segments_with_speakers(segments: list[dict[str, Any]],
             "speaker": speaker_id,
             "speaker_id": speaker_db_id,
             "words": words_data,
-            "confidence": segment.get("confidence", 1.0)
+            "confidence": segment.get("confidence", 1.0),
         }
 
         processed_segments.append(processed_segment)

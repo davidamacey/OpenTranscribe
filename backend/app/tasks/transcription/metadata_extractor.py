@@ -32,40 +32,48 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         "MIMEType": ["File:MIMEType", "MIMEType"],
         "FileType": ["File:FileType", "FileType"],
         "FileTypeExtension": ["File:FileTypeExtension", "FileTypeExtension"],
-
         # Video specs
         "VideoFormat": ["QuickTime:VideoFormat", "VideoFormat", "Format"],
         "Duration": ["QuickTime:Duration", "Duration", "MediaDuration"],
         "FrameRate": ["QuickTime:FrameRate", "FrameRate"],
         "FrameCount": ["QuickTime:FrameCount", "FrameCount"],
         "VideoFrameRate": ["QuickTime:VideoFrameRate", "VideoFrameRate", "FrameRate"],
-        "VideoWidth": ["QuickTime:ImageWidth", "File:ImageWidth", "ImageWidth", "Width"],
-        "VideoHeight": ["QuickTime:ImageHeight", "File:ImageHeight", "ImageHeight", "Height"],
+        "VideoWidth": [
+            "QuickTime:ImageWidth",
+            "File:ImageWidth",
+            "ImageWidth",
+            "Width",
+        ],
+        "VideoHeight": [
+            "QuickTime:ImageHeight",
+            "File:ImageHeight",
+            "ImageHeight",
+            "Height",
+        ],
         "AspectRatio": ["QuickTime:AspectRatio", "AspectRatio"],
         "VideoCodec": ["QuickTime:CompressorID", "CompressorID", "VideoCodec", "Codec"],
-
         # Audio specs
         "AudioFormat": ["QuickTime:AudioFormat", "AudioFormat"],
         "AudioChannels": ["QuickTime:AudioChannels", "AudioChannels"],
         "AudioSampleRate": ["QuickTime:AudioSampleRate", "AudioSampleRate"],
         "AudioBitsPerSample": ["QuickTime:AudioBitsPerSample", "AudioBitsPerSample"],
-
         # Creation info
         "CreateDate": ["QuickTime:CreateDate", "CreateDate", "DateTimeOriginal"],
         "ModifyDate": ["QuickTime:ModifyDate", "ModifyDate"],
         "DateTimeOriginal": ["EXIF:DateTimeOriginal", "DateTimeOriginal"],
-
         # Device info
-        "DeviceManufacturer": ["QuickTime:Make", "EXIF:Make", "Make", "DeviceManufacturer"],
+        "DeviceManufacturer": [
+            "QuickTime:Make",
+            "EXIF:Make",
+            "Make",
+            "DeviceManufacturer",
+        ],
         "DeviceModel": ["QuickTime:Model", "EXIF:Model", "Model", "DeviceModel"],
-
         # GPS info
         "GPSLatitude": ["EXIF:GPSLatitude", "GPSLatitude"],
         "GPSLongitude": ["EXIF:GPSLongitude", "GPSLongitude"],
-
         # Software used
         "Software": ["EXIF:Software", "Software"],
-
         # Content information
         "Title": ["QuickTime:Title", "Title"],
         "Artist": ["QuickTime:Artist", "Artist"],
@@ -87,7 +95,10 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
     # Look for any additional fields that might be useful
     for key, value in metadata.items():
-        if any(term in key.lower() for term in ["creator", "copyright", "language", "genre"]):
+        if any(
+            term in key.lower()
+            for term in ["creator", "copyright", "language", "genre"]
+        ):
             important_fields[key] = value
 
     return important_fields
@@ -113,7 +124,9 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
                 metadata_list = et.get_metadata(file_path)
                 if metadata_list:
                     extracted_metadata = metadata_list[0]
-                    logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields")
+                    logger.info(
+                        f"Successfully extracted {len(extracted_metadata)} metadata fields"
+                    )
         except Exception as et_err:
             logger.warning(f"Error using Python ExifTool: {et_err}")
 
@@ -124,7 +137,7 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
                 ["exiftool", "-json", "-n", file_path],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
             if exif_process.stdout:
@@ -132,7 +145,9 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
                     metadata_list = json.loads(exif_process.stdout)
                     if metadata_list:
                         extracted_metadata = metadata_list[0]
-                        logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields via subprocess")
+                        logger.info(
+                            f"Successfully extracted {len(extracted_metadata)} metadata fields via subprocess"
+                        )
                 except json.JSONDecodeError as jde:
                     logger.warning(f"Error decoding ExifTool JSON output: {jde}")
         except (subprocess.SubprocessError, FileNotFoundError) as sp_err:
@@ -141,8 +156,9 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
     return extracted_metadata if extracted_metadata else None
 
 
-def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
-                              content_type: str, file_path: str) -> None:
+def update_media_file_metadata(
+    media_file, extracted_metadata: dict[str, Any], content_type: str, file_path: str
+) -> None:
     """
     Update a MediaFile object with extracted metadata.
 
@@ -164,10 +180,18 @@ def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
 
     # Video specific metadata
     if content_type.startswith(("video/", "image/")):
-        media_file.resolution_width = important_metadata.get("VideoWidth") or important_metadata.get("ImageWidth")
-        media_file.resolution_height = important_metadata.get("VideoHeight") or important_metadata.get("ImageHeight")
-        media_file.frame_rate = important_metadata.get("VideoFrameRate") or important_metadata.get("FrameRate")
-        media_file.codec = important_metadata.get("VideoCodec") or important_metadata.get("CompressorID")
+        media_file.resolution_width = important_metadata.get(
+            "VideoWidth"
+        ) or important_metadata.get("ImageWidth")
+        media_file.resolution_height = important_metadata.get(
+            "VideoHeight"
+        ) or important_metadata.get("ImageHeight")
+        media_file.frame_rate = important_metadata.get(
+            "VideoFrameRate"
+        ) or important_metadata.get("FrameRate")
+        media_file.codec = important_metadata.get(
+            "VideoCodec"
+        ) or important_metadata.get("CompressorID")
         media_file.frame_count = important_metadata.get("FrameCount")
 
         if important_metadata.get("AspectRatio"):
@@ -185,7 +209,9 @@ def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
             duration_value = float(important_metadata.get("Duration"))
             media_file.duration = duration_value
         except (ValueError, TypeError):
-            logger.warning(f"Could not parse duration: {important_metadata.get('Duration')}")
+            logger.warning(
+                f"Could not parse duration: {important_metadata.get('Duration')}"
+            )
 
     # Creation and modification dates
     if important_metadata.get("CreateDate"):
@@ -194,9 +220,13 @@ def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
             if ":" in create_date_str and len(create_date_str) >= 10:
                 if len(create_date_str) <= 19:  # No timezone
                     create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
-                media_file.creation_date = datetime.datetime.fromisoformat(create_date_str)
+                media_file.creation_date = datetime.datetime.fromisoformat(
+                    create_date_str
+                )
         except (ValueError, TypeError):
-            logger.warning(f"Could not parse creation date: {important_metadata.get('CreateDate')}")
+            logger.warning(
+                f"Could not parse creation date: {important_metadata.get('CreateDate')}"
+            )
 
     if important_metadata.get("ModifyDate"):
         try:
@@ -205,9 +235,13 @@ def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
                 modify_date_str = modify_date_str.replace(":", "-", 2)
                 if len(modify_date_str) <= 19:  # No timezone
                     modify_date_str += "+00:00"
-                media_file.last_modified_date = datetime.datetime.fromisoformat(modify_date_str)
+                media_file.last_modified_date = datetime.datetime.fromisoformat(
+                    modify_date_str
+                )
         except (ValueError, TypeError):
-            logger.warning(f"Could not parse modification date: {important_metadata.get('ModifyDate')}")
+            logger.warning(
+                f"Could not parse modification date: {important_metadata.get('ModifyDate')}"
+            )
 
     # Device information
     media_file.device_make = important_metadata.get("DeviceManufacturer")
@@ -215,10 +249,14 @@ def update_media_file_metadata(media_file, extracted_metadata: dict[str, Any],
 
     # Content information
     media_file.title = important_metadata.get("Title")
-    media_file.author = important_metadata.get("Author") or important_metadata.get("Artist")
-    media_file.description = (important_metadata.get("Description") or
-                             important_metadata.get("Comment") or
-                             important_metadata.get("LongDescription"))
+    media_file.author = important_metadata.get("Author") or important_metadata.get(
+        "Artist"
+    )
+    media_file.description = (
+        important_metadata.get("Description")
+        or important_metadata.get("Comment")
+        or important_metadata.get("LongDescription")
+    )
 
     # Store both important and full metadata
     media_file.important_metadata = important_metadata

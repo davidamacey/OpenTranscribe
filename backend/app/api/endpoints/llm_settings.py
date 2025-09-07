@@ -36,7 +36,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             requires_api_key=True,
             supports_custom_url=True,
             max_context_length=128000,
-            description="OpenAI's GPT models - reliable and well-supported"
+            description="OpenAI's GPT models - reliable and well-supported",
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.VLLM,
@@ -45,7 +45,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             requires_api_key=False,
             supports_custom_url=True,
             max_context_length=32768,
-            description="vLLM server for local or custom model deployment"
+            description="vLLM server for local or custom model deployment",
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OLLAMA,
@@ -54,7 +54,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             requires_api_key=False,
             supports_custom_url=True,
             max_context_length=4096,
-            description="Ollama for local model deployment"
+            description="Ollama for local model deployment",
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.CLAUDE,
@@ -63,7 +63,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             requires_api_key=True,
             supports_custom_url=False,
             max_context_length=200000,
-            description="Anthropic's Claude models - excellent for analysis"
+            description="Anthropic's Claude models - excellent for analysis",
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OPENROUTER,
@@ -72,8 +72,8 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             requires_api_key=True,
             supports_custom_url=False,
             max_context_length=200000,
-            description="OpenRouter provides access to many model providers"
-        )
+            description="OpenRouter provides access to many model providers",
+        ),
     ]
 
 
@@ -94,15 +94,14 @@ def get_llm_settings_status(
     """
     Get status information about user's LLM settings
     """
-    user_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    user_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if not user_settings:
-        return schemas.LLMSettingsStatus(
-            has_settings=False,
-            using_system_default=True
-        )
+        return schemas.LLMSettingsStatus(has_settings=False, using_system_default=True)
 
     return schemas.LLMSettingsStatus(
         has_settings=True,
@@ -111,7 +110,7 @@ def get_llm_settings_status(
         test_status=user_settings.test_status,
         last_tested=user_settings.last_tested,
         is_active=user_settings.is_active,
-        using_system_default=False
+        using_system_default=False,
     )
 
 
@@ -123,20 +122,21 @@ def get_user_llm_settings(
     """
     Get current user's LLM settings (without API key for security)
     """
-    user_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    user_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if not user_settings:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first."
+            detail="User LLM settings not found. Create settings first.",
         )
 
     # Convert to public schema (excludes API key)
     return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__,
-        has_api_key=bool(user_settings.api_key)
+        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
     )
 
 
@@ -151,21 +151,21 @@ def create_user_llm_settings(
     Create LLM settings for the current user
     """
     # Check if user already has settings
-    existing_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    existing_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if existing_settings:
         raise HTTPException(
-            status_code=400,
-            detail="User already has LLM settings. Use PUT to update."
+            status_code=400, detail="User already has LLM settings. Use PUT to update."
         )
 
     # Test encryption before proceeding
     if not test_encryption():
         raise HTTPException(
-            status_code=500,
-            detail="Encryption system is not working properly"
+            status_code=500, detail="Encryption system is not working properly"
         )
 
     # Encrypt API key if provided
@@ -173,17 +173,11 @@ def create_user_llm_settings(
     if settings_in.api_key:
         encrypted_api_key = encrypt_api_key(settings_in.api_key)
         if not encrypted_api_key:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to encrypt API key"
-            )
+            raise HTTPException(status_code=500, detail="Failed to encrypt API key")
 
     # Create new settings
-    settings_data = settings_in.model_dump(exclude={'api_key'})
-    settings_data.update({
-        "user_id": current_user.id,
-        "api_key": encrypted_api_key
-    })
+    settings_data = settings_in.model_dump(exclude={"api_key"})
+    settings_data.update({"user_id": current_user.id, "api_key": encrypted_api_key})
 
     user_settings = models.UserLLMSettings(**settings_data)
     db.add(user_settings)
@@ -191,8 +185,7 @@ def create_user_llm_settings(
     db.refresh(user_settings)
 
     return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__,
-        has_api_key=bool(user_settings.api_key)
+        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
     )
 
 
@@ -206,33 +199,31 @@ def update_user_llm_settings(
     """
     Update current user's LLM settings
     """
-    user_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    user_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if not user_settings:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first."
+            detail="User LLM settings not found. Create settings first.",
         )
 
     # Handle API key encryption
-    update_data = settings_in.model_dump(exclude_unset=True, exclude={'api_key'})
+    update_data = settings_in.model_dump(exclude_unset=True, exclude={"api_key"})
 
-    if 'api_key' in settings_in.model_fields_set and settings_in.api_key is not None:
+    if "api_key" in settings_in.model_fields_set and settings_in.api_key is not None:
         if settings_in.api_key.strip():  # Non-empty API key
             if not test_encryption():
                 raise HTTPException(
-                    status_code=500,
-                    detail="Encryption system is not working properly"
+                    status_code=500, detail="Encryption system is not working properly"
                 )
 
             encrypted_api_key = encrypt_api_key(settings_in.api_key)
             if not encrypted_api_key:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to encrypt API key"
-                )
+                raise HTTPException(status_code=500, detail="Failed to encrypt API key")
             update_data["api_key"] = encrypted_api_key
         else:  # Empty API key means remove it
             update_data["api_key"] = None
@@ -252,8 +243,7 @@ def update_user_llm_settings(
     db.refresh(user_settings)
 
     return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__,
-        has_api_key=bool(user_settings.api_key)
+        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
     )
 
 
@@ -265,15 +255,14 @@ def delete_user_llm_settings(
     """
     Delete current user's LLM settings (revert to system defaults)
     """
-    user_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    user_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if not user_settings:
-        raise HTTPException(
-            status_code=404,
-            detail="User LLM settings not found"
-        )
+        raise HTTPException(status_code=404, detail="User LLM settings not found")
 
     db.delete(user_settings)
     db.commit()
@@ -302,20 +291,28 @@ async def test_llm_connection(
             model=test_request.model_name,
             api_key=test_request.api_key,
             base_url=test_request.base_url,
-            timeout=test_request.timeout or 30
+            timeout=test_request.timeout or 30,
         )
 
         # Create and test LLM service
         llm_service = LLMService(config)
         try:
+            # Test the connection
+            actual_url = llm_service.endpoints[service_provider]
+            logger.debug(
+                f"Testing LLM connection to: {actual_url} (Provider: {service_provider}, Model: {test_request.model_name})"
+            )
+
             success, message = await llm_service.validate_connection()
             response_time = int((time.time() - start_time) * 1000)
 
             return schemas.ConnectionTestResponse(
                 success=success,
-                status=schemas.ConnectionStatus.SUCCESS if success else schemas.ConnectionStatus.FAILED,
-                message=message,
-                response_time_ms=response_time
+                status=schemas.ConnectionStatus.SUCCESS
+                if success
+                else schemas.ConnectionStatus.FAILED,
+                message=f"{message} (URL: {actual_url})",
+                response_time_ms=response_time,
             )
         finally:
             await llm_service.close()
@@ -328,7 +325,7 @@ async def test_llm_connection(
             success=False,
             status=schemas.ConnectionStatus.FAILED,
             message=f"Connection test failed: {str(e)}",
-            response_time_ms=response_time
+            response_time_ms=response_time,
         )
 
 
@@ -340,14 +337,16 @@ async def test_current_settings(
     """
     Test connection using current user's saved LLM settings
     """
-    user_settings = db.query(models.UserLLMSettings).filter(
-        models.UserLLMSettings.user_id == current_user.id
-    ).first()
+    user_settings = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .first()
+    )
 
     if not user_settings:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first."
+            detail="User LLM settings not found. Create settings first.",
         )
 
     # Decrypt API key
@@ -356,8 +355,7 @@ async def test_current_settings(
         api_key = decrypt_api_key(user_settings.api_key)
         if not api_key and user_settings.api_key:  # Decryption failed
             raise HTTPException(
-                status_code=500,
-                detail="Failed to decrypt stored API key"
+                status_code=500, detail="Failed to decrypt stored API key"
             )
 
     # Test connection
@@ -366,15 +364,19 @@ async def test_current_settings(
         model_name=user_settings.model_name,
         api_key=api_key,
         base_url=user_settings.base_url,
-        timeout=user_settings.timeout
+        timeout=user_settings.timeout,
     )
 
-    result = await test_llm_connection(test_request=test_request, current_user=current_user)
+    result = await test_llm_connection(
+        test_request=test_request, current_user=current_user
+    )
 
     # Update test status in database
+    from sqlalchemy import text
+
     user_settings.test_status = result.status.value
     user_settings.test_message = result.message
-    user_settings.last_tested = db.execute("SELECT NOW()").scalar()
+    user_settings.last_tested = db.execute(text("SELECT NOW()")).scalar()
 
     db.add(user_settings)
     db.commit()
@@ -391,8 +393,7 @@ def test_encryption_endpoint(
     """
     if not test_encryption():
         raise HTTPException(
-            status_code=500,
-            detail="Encryption system is not working properly"
+            status_code=500, detail="Encryption system is not working properly"
         )
 
     return {"status": "success", "message": "Encryption system is working correctly"}

@@ -21,7 +21,9 @@ from app.services.minio_service import delete_file
 logger = logging.getLogger(__name__)
 
 
-def get_media_file_by_id(db: Session, file_id: int, user_id: int, is_admin: bool = False) -> MediaFile:
+def get_media_file_by_id(
+    db: Session, file_id: int, user_id: int, is_admin: bool = False
+) -> MediaFile:
     """
     Get a media file by ID and user ID.
 
@@ -46,8 +48,7 @@ def get_media_file_by_id(db: Session, file_id: int, user_id: int, is_admin: bool
 
     if not db_file:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Media file not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
         )
 
     return db_file
@@ -68,10 +69,16 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
     try:
         # Check if tag table exists first
         inspector = inspect(db.bind)
-        if 'tag' in inspector.get_table_names() and 'file_tag' in inspector.get_table_names():
-            tags = db.query(Tag.name).join(FileTag).filter(
-                FileTag.media_file_id == file_id
-            ).all()
+        if (
+            "tag" in inspector.get_table_names()
+            and "file_tag" in inspector.get_table_names()
+        ):
+            tags = (
+                db.query(Tag.name)
+                .join(FileTag)
+                .filter(FileTag.media_file_id == file_id)
+                .all()
+            )
         else:
             logger.warning("Tag tables don't exist yet, skipping tag retrieval")
     except Exception as tag_error:
@@ -97,11 +104,19 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
     try:
         # Check if collection tables exist first
         inspector = inspect(db.bind)
-        if 'collection' in inspector.get_table_names() and 'collection_member' in inspector.get_table_names():
-            collection_objs = db.query(Collection).join(CollectionMember).filter(
-                CollectionMember.media_file_id == file_id,
-                Collection.user_id == user_id
-            ).all()
+        if (
+            "collection" in inspector.get_table_names()
+            and "collection_member" in inspector.get_table_names()
+        ):
+            collection_objs = (
+                db.query(Collection)
+                .join(CollectionMember)
+                .filter(
+                    CollectionMember.media_file_id == file_id,
+                    Collection.user_id == user_id,
+                )
+                .all()
+            )
 
             # Convert to dictionaries
             collections = [
@@ -110,13 +125,19 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
                     "name": col.name,
                     "description": col.description,
                     "is_public": col.is_public,
-                    "created_at": col.created_at.isoformat() if col.created_at else None,
-                    "updated_at": col.updated_at.isoformat() if col.updated_at else None
+                    "created_at": col.created_at.isoformat()
+                    if col.created_at
+                    else None,
+                    "updated_at": col.updated_at.isoformat()
+                    if col.updated_at
+                    else None,
                 }
                 for col in collection_objs
             ]
         else:
-            logger.warning("Collection tables don't exist yet, skipping collection retrieval")
+            logger.warning(
+                "Collection tables don't exist yet, skipping collection retrieval"
+            )
     except Exception as collection_error:
         logger.error(f"Error getting collections: {collection_error}")
         db.rollback()  # Important to roll back the failed transaction
@@ -133,7 +154,7 @@ def set_file_urls(db_file: MediaFile) -> None:
     """
     if db_file.storage_path:
         # Skip S3 operations in test environment
-        if os.environ.get('SKIP_S3', 'False').lower() == 'true':
+        if os.environ.get("SKIP_S3", "False").lower() == "true":
             db_file.download_url = f"/api/files/{db_file.id}/download"
             db_file.preview_url = f"/api/files/{db_file.id}/video"
             if db_file.thumbnail_path:
@@ -144,7 +165,7 @@ def set_file_urls(db_file: MediaFile) -> None:
         db_file.download_url = f"/api/files/{db_file.id}/download"  # Download endpoint
 
         # Video files use our video endpoint for optimized streaming
-        if db_file.content_type.startswith('video/'):
+        if db_file.content_type.startswith("video/"):
             db_file.preview_url = f"/api/files/{db_file.id}/video"
         else:
             # Audio files can use the download endpoint
@@ -155,7 +176,9 @@ def set_file_urls(db_file: MediaFile) -> None:
             db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
 
 
-def get_media_file_detail(db: Session, file_id: int, current_user: User) -> MediaFileDetail:
+def get_media_file_detail(
+    db: Session, file_id: int, current_user: User
+) -> MediaFileDetail:
     """
     Get detailed media file information including tags.
 
@@ -198,12 +221,13 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
         logger.error(f"Error in get_media_file_detail: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving media file: {str(e)}"
+            detail=f"Error retrieving media file: {str(e)}",
         )
 
 
-def update_media_file(db: Session, file_id: int, media_file_update: MediaFileUpdate,
-                     current_user: User) -> MediaFile:
+def update_media_file(
+    db: Session, file_id: int, media_file_update: MediaFileUpdate, current_user: User
+) -> MediaFile:
     """
     Update a media file's metadata.
 
@@ -229,7 +253,9 @@ def update_media_file(db: Session, file_id: int, media_file_update: MediaFileUpd
     return db_file
 
 
-def delete_media_file(db: Session, file_id: int, current_user: User, force: bool = False) -> None:
+def delete_media_file(
+    db: Session, file_id: int, current_user: User, force: bool = False
+) -> None:
     """
     Delete a media file and all associated data with safety checks.
 
@@ -260,14 +286,16 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
                 "options": {
                     "cancel_and_delete": is_admin,
                     "wait_for_completion": True,
-                    "force_delete": is_admin and db_file.force_delete_eligible
-                }
-            }
+                    "force_delete": is_admin and db_file.force_delete_eligible,
+                },
+            },
         )
 
     # If force deletion and file has active task, cancel it first
     if force and db_file.active_task_id:
-        logger.info(f"Force deleting file {file_id}, cancelling active task {db_file.active_task_id}")
+        logger.info(
+            f"Force deleting file {file_id}, cancelling active task {db_file.active_task_id}"
+        )
         cancel_active_task(db, file_id)
         # Refresh the file object
         db.refresh(db_file)
@@ -293,16 +321,23 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
 
         # If we deleted from storage but DB deletion failed, that's a problem
         if storage_deleted:
-            logger.error(f"File {file_id} deleted from storage but not from database - orphaned!")
+            logger.error(
+                f"File {file_id} deleted from storage but not from database - orphaned!"
+            )
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file from database: {str(e)}"
+            detail=f"Failed to delete file from database: {str(e)}",
         )
 
 
-def update_single_transcript_segment(db: Session, file_id: int, segment_id: int,
-                                   segment_update: TranscriptSegmentUpdate, current_user: User) -> TranscriptSegment:
+def update_single_transcript_segment(
+    db: Session,
+    file_id: int,
+    segment_id: int,
+    segment_update: TranscriptSegmentUpdate,
+    current_user: User,
+) -> TranscriptSegment:
     """
     Update a single transcript segment for a media file.
 
@@ -321,15 +356,18 @@ def update_single_transcript_segment(db: Session, file_id: int, segment_id: int,
     get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
 
     # Find the specific segment
-    segment = db.query(TranscriptSegment).filter(
-        TranscriptSegment.id == segment_id,
-        TranscriptSegment.media_file_id == file_id
-    ).first()
+    segment = (
+        db.query(TranscriptSegment)
+        .filter(
+            TranscriptSegment.id == segment_id,
+            TranscriptSegment.media_file_id == file_id,
+        )
+        .first()
+    )
 
     if not segment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transcript segment not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )
 
     # Update fields
@@ -358,13 +396,16 @@ def get_stream_url_info(db: Session, file_id: int, current_user: User) -> dict:
     db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
 
     # Skip S3 operations in test environment
-    if os.environ.get('SKIP_S3', 'False').lower() == 'true':
+    if os.environ.get("SKIP_S3", "False").lower() == "true":
         logger.info("Returning mock URL in test environment")
-        return {"url": f"/api/files/{file_id}/content", "content_type": db_file.content_type}
+        return {
+            "url": f"/api/files/{file_id}/content",
+            "content_type": db_file.content_type,
+        }
 
     # Return the URL to our video endpoint
     return {
         "url": f"/api/files/{file_id}/video",  # Video endpoint
         "content_type": db_file.content_type,
-        "requires_auth": False  # No auth required for video endpoint
+        "requires_auth": False,  # No auth required for video endpoint
     }

@@ -22,22 +22,26 @@ router = APIRouter()
 async def cancel_upload(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Cancel an in-progress file upload and clean up any uploaded data.
     """
     # Get the media file
-    db_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id,
-        MediaFile.status == FileStatus.PENDING
-    ).first()
+    db_file = (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.id == file_id,
+            MediaFile.user_id == current_user.id,
+            MediaFile.status == FileStatus.PENDING,
+        )
+        .first()
+    )
 
     if not db_file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No pending upload found with this ID"
+            detail="No pending upload found with this ID",
         )
 
     try:
@@ -60,7 +64,7 @@ async def cancel_upload(
         logger.error(f"Error cancelling upload {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel upload"
+            detail="Failed to cancel upload",
         )
 
     return None

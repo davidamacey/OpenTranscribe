@@ -8,6 +8,7 @@ from app.db.base import SessionLocal
 
 logger = logging.getLogger(__name__)
 
+
 @contextlib.contextmanager
 def session_scope():
     """Provide a transactional scope around a series of operations.
@@ -29,6 +30,7 @@ def session_scope():
     finally:
         session.close()
 
+
 def get_refreshed_object(db: Session, model_class, obj_id: int):
     """Get a fresh copy of an object from the database.
 
@@ -43,9 +45,12 @@ def get_refreshed_object(db: Session, model_class, obj_id: int):
         # If that fails, create a new session as a fallback
         temp_session = SessionLocal()
         try:
-            return temp_session.query(model_class).filter(model_class.id == obj_id).first()
+            return (
+                temp_session.query(model_class).filter(model_class.id == obj_id).first()
+            )
         finally:
             temp_session.close()
+
 
 def refresh_session_object(obj, session=None):
     """Refresh a detached object with a new session if needed.

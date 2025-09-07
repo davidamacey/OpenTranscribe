@@ -20,10 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def create_user(
-    user_data: UserCreate,
-    db: Session
-) -> User:
+def create_user(user_data: UserCreate, db: Session) -> User:
     """
     Create a new user
 
@@ -34,8 +31,7 @@ def create_user(
     db_user = db.query(User).filter(User.email == user_data.email).first()
     if db_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
     # Create new user
@@ -45,7 +41,7 @@ def create_user(
         full_name=user_data.full_name,
         is_active=True,
         is_superuser=False,  # Default to non-superuser
-        role="user"  # Default role
+        role="user",  # Default role
     )
 
     db.add(new_user)
@@ -57,8 +53,7 @@ def create_user(
 
 @router.get("/", response_model=list[UserSchema])
 def list_users(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
     """
     List all users (admin only)
@@ -68,9 +63,7 @@ def list_users(
 
 
 @router.get("/me", response_model=UserSchema)
-def get_current_user_info(
-    current_user: User = Depends(get_current_active_user)
-):
+def get_current_user_info(current_user: User = Depends(get_current_active_user)):
     """
     Get current user info
     """
@@ -81,7 +74,7 @@ def get_current_user_info(
 def update_current_user(
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Update current user info
@@ -92,7 +85,7 @@ def update_current_user(
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="Email already registered",
             )
 
     # This functionality was referring to a username field that doesn't exist in the model
@@ -118,7 +111,7 @@ def update_current_user(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Get user by ID (admin only)
@@ -126,8 +119,7 @@ def get_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
     return user
 
@@ -137,7 +129,7 @@ def update_user(
     user_id: int,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Update user by ID (admin only)
@@ -145,8 +137,7 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
     # Update fields
@@ -169,7 +160,7 @@ def update_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Delete user by ID (admin only)
@@ -178,14 +169,13 @@ def delete_user(
     if user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete own user account"
+            detail="Cannot delete own user account",
         )
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
 
     db.delete(user)

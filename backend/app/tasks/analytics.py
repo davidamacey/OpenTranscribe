@@ -12,6 +12,7 @@ from app.models.media import TranscriptSegment
 # Setup logging
 logger = logging.getLogger(__name__)
 
+
 @celery_app.task(bind=True, name="analyze_transcript")
 def analyze_transcript_task(self, file_id: int):
     """
@@ -35,15 +36,19 @@ def analyze_transcript_task(self, file_id: int):
         # Create task record
         from app.utils.task_utils import create_task_record
         from app.utils.task_utils import update_task_status
+
         create_task_record(db, task_id, media_file.user_id, file_id, "analytics")
 
         # Update task status
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
         # Get transcript segments from database
-        transcript_segments = db.query(TranscriptSegment).filter(
-            TranscriptSegment.media_file_id == file_id
-        ).order_by(TranscriptSegment.start_time).all()
+        transcript_segments = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .order_by(TranscriptSegment.start_time)
+            .all()
+        )
 
         if not transcript_segments:
             raise ValueError(f"No transcript segments found for file {file_id}")
@@ -64,7 +69,9 @@ def analyze_transcript_task(self, file_id: int):
         keywords = extract_keywords(transcript_segments)
 
         # Store analytics results
-        existing_analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+        existing_analytics = (
+            db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+        )
 
         if existing_analytics:
             # Update existing record
@@ -77,7 +84,7 @@ def analyze_transcript_task(self, file_id: int):
                 media_file_id=file_id,
                 speaker_stats=json.dumps(speaker_stats),
                 sentiment=json.dumps(sentiment),
-                keywords=json.dumps(keywords)
+                keywords=json.dumps(keywords),
             )
             db.add(analytics)
 
@@ -99,7 +106,9 @@ def analyze_transcript_task(self, file_id: int):
         db.close()
 
 
-def calculate_speaker_talk_time(transcript_segments: list[TranscriptSegment]) -> dict[str, Any]:
+def calculate_speaker_talk_time(
+    transcript_segments: list[TranscriptSegment],
+) -> dict[str, Any]:
     """
     Calculate talk time for each speaker in the transcript
 
@@ -123,19 +132,18 @@ def calculate_speaker_talk_time(transcript_segments: list[TranscriptSegment]) ->
         total_duration += duration
 
     # Calculate percentages and format the results
-    result = {
-        "total_duration": total_duration,
-        "speakers": []
-    }
+    result = {"total_duration": total_duration, "speakers": []}
 
     for speaker, duration in speaker_durations.items():
         percentage = (duration / total_duration * 100) if total_duration > 0 else 0
-        result["speakers"].append({
-            "name": speaker,
-            "talk_time_seconds": duration,
-            "talk_time_percentage": round(percentage, 2),
-            "word_count": speaker_word_counts[speaker]
-        })
+        result["speakers"].append(
+            {
+                "name": speaker,
+                "talk_time_seconds": duration,
+                "talk_time_percentage": round(percentage, 2),
+                "word_count": speaker_word_counts[speaker],
+            }
+        )
 
     # Sort speakers by talk time (descending)
     result["speakers"].sort(key=lambda x: x["talk_time_seconds"], reverse=True)
@@ -170,7 +178,9 @@ def analyze_sentiment(transcript_segments: list[TranscriptSegment]) -> dict[str,
         speaker_texts[speaker_name] += " " + segment.text
 
     # Generate simulated sentiment scores
-    overall_sentiment = random.choice(["positive", "neutral", "slightly_positive", "slightly_negative"])
+    overall_sentiment = random.choice(
+        ["positive", "neutral", "slightly_positive", "slightly_negative"]
+    )
     speaker_sentiments = {}
 
     for speaker, _text in speaker_texts.items():
@@ -180,17 +190,22 @@ def analyze_sentiment(transcript_segments: list[TranscriptSegment]) -> dict[str,
         elif overall_sentiment == "negative":
             sentiment = random.choice(["negative", "slightly_negative", "neutral"])
         else:
-            sentiment = random.choice(["positive", "negative", "neutral", "slightly_positive", "slightly_negative"])
+            sentiment = random.choice(
+                [
+                    "positive",
+                    "negative",
+                    "neutral",
+                    "slightly_positive",
+                    "slightly_negative",
+                ]
+            )
 
         speaker_sentiments[speaker] = {
             "sentiment": sentiment,
-            "score": round(random.uniform(0, 1), 2)  # Random score between 0 and 1
+            "score": round(random.uniform(0, 1), 2),  # Random score between 0 and 1
         }
 
-    result = {
-        "overall": overall_sentiment,
-        "by_speaker": speaker_sentiments
-    }
+    result = {"overall": overall_sentiment, "by_speaker": speaker_sentiments}
 
     return result
 
@@ -218,15 +233,50 @@ def extract_keywords(transcript_segments: list[TranscriptSegment]) -> list[str]:
     # In a real implementation, this would use NLP techniques
 
     # Simple stopwords to filter out common words
-    stopwords = set([
-        "the", "and", "a", "an", "in", "on", "at", "to", "for", "of", "with",
-        "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-        "do", "does", "did", "i", "you", "he", "she", "it", "we", "they",
-        "this", "that", "these", "those", "there", "here"
-    ])
+    stopwords = set(
+        [
+            "the",
+            "and",
+            "a",
+            "an",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "of",
+            "with",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+            "have",
+            "has",
+            "had",
+            "do",
+            "does",
+            "did",
+            "i",
+            "you",
+            "he",
+            "she",
+            "it",
+            "we",
+            "they",
+            "this",
+            "that",
+            "these",
+            "those",
+            "there",
+            "here",
+        ]
+    )
 
     # Split into words, filter common words, and count frequencies
-    words = [word.strip('.,!?()[]{}:;"\'').lower() for word in full_text.split()]
+    words = [word.strip(".,!?()[]{}:;\"'").lower() for word in full_text.split()]
     word_counts = defaultdict(int)
 
     for word in words:
@@ -240,6 +290,6 @@ def extract_keywords(transcript_segments: list[TranscriptSegment]) -> list[str]:
     # For demonstration, add some simulated domain-specific keywords
     if len(keywords) < 5:
         simulated_keywords = ["meeting", "project", "discussion", "analysis", "report"]
-        keywords.extend(simulated_keywords[:5 - len(keywords)])
+        keywords.extend(simulated_keywords[: 5 - len(keywords)])
 
     return keywords

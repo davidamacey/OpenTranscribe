@@ -28,6 +28,7 @@ class FileMetadata:
         content_type: MIME type of the file
         file_hash: Hash of the file for duplicate detection
     """
+
     def __init__(self, filename, content_type):
         self.filename = filename
         self.content_type = content_type
@@ -38,7 +39,7 @@ class FileMetadata:
 async def prepare_upload(
     request: PrepareUploadRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Prepare for a file upload by creating a MediaFile record and returning the file ID.
@@ -50,10 +51,14 @@ async def prepare_upload(
         # If file hash is provided, check for duplicates
         duplicate_id: Optional[int] = None
         if request.file_hash:
-            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
+            duplicate_id = await check_duplicate_by_hash(
+                db, request.file_hash, current_user.id
+            )
 
             if duplicate_id:
-                logger.info(f"Duplicate file found for {request.filename} (Duplicate ID: {duplicate_id})")
+                logger.info(
+                    f"Duplicate file found for {request.filename} (Duplicate ID: {duplicate_id})"
+                )
                 return {"file_id": duplicate_id, "is_duplicate": 1}
 
         # Create file metadata object with information needed for the record
@@ -61,7 +66,9 @@ async def prepare_upload(
         file_metadata.file_hash = request.file_hash
 
         # Create the database record
-        db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)
+        db_file = create_media_file_record(
+            db, file_metadata, current_user, request.file_size
+        )
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
 
         # Return the file ID
@@ -71,5 +78,5 @@ async def prepare_upload(
         logger.error(f"Error preparing upload: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error preparing upload: {str(e)}"
+            detail=f"Error preparing upload: {str(e)}",
         )

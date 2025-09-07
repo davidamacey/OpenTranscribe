@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
 # Connection manager to handle WebSocket connections
 class ConnectionManager:
     def __init__(self):
@@ -32,14 +33,18 @@ class ConnectionManager:
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
-        logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
+        logger.info(
+            f"User {user_id} connected. Total connections: {len(self.active_connections)}"
+        )
 
     def disconnect(self, websocket: WebSocket, user_id: int):
         if user_id in self.active_connections:
             self.active_connections[user_id].remove(websocket)
             if not self.active_connections[user_id]:
                 del self.active_connections[user_id]
-            logger.info(f"User {user_id} disconnected. Total connections: {len(self.active_connections)}")
+            logger.info(
+                f"User {user_id} disconnected. Total connections: {len(self.active_connections)}"
+            )
 
     async def send_personal_message(self, user_id: int, message: dict):
         if user_id in self.active_connections:
@@ -60,6 +65,7 @@ manager = ConnectionManager()
 # Redis client for pub/sub
 redis_client = None
 
+
 async def setup_redis():
     """Initialize Redis connection for pub/sub notifications."""
     global redis_client
@@ -67,6 +73,7 @@ async def setup_redis():
         redis_client = redis.from_url(settings.REDIS_URL)
         # Start Redis subscriber in background
         asyncio.create_task(redis_subscriber())
+
 
 async def redis_subscriber():
     """Subscribe to Redis notifications and forward to WebSocket connections."""
@@ -85,17 +92,21 @@ async def redis_subscriber():
                     data = notification_data.get("data", {})
 
                     if user_id and notification_type:
-                        await manager.send_personal_message(user_id, {
-                            "type": notification_type,
-                            "data": data
-                        })
-                        logger.info(f"Forwarded notification to user {user_id}: {notification_type}")
+                        await manager.send_personal_message(
+                            user_id, {"type": notification_type, "data": data}
+                        )
+                        logger.info(
+                            f"Forwarded notification to user {user_id}: {notification_type}"
+                        )
                     else:
-                        logger.warning(f"Invalid notification data: {notification_data}")
+                        logger.warning(
+                            f"Invalid notification data: {notification_data}"
+                        )
                 except Exception as e:
                     logger.error(f"Error processing Redis notification: {e}")
     except Exception as e:
         logger.error(f"Redis subscriber error: {e}")
+
 
 # Function to publish notification to Redis (for use from other processes)
 async def publish_notification(user_id: int, notification_type: str, data: dict):
@@ -103,23 +114,20 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
     if not redis_client:
         await setup_redis()
 
-    notification = {
-        "user_id": user_id,
-        "type": notification_type,
-        "data": data
-    }
+    notification = {"user_id": user_id, "type": notification_type, "data": data}
 
     try:
         await redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(f"Published notification to Redis for user {user_id}: {notification_type}")
+        logger.info(
+            f"Published notification to Redis for user {user_id}: {notification_type}"
+        )
     except Exception as e:
         logger.error(f"Failed to publish notification to Redis: {e}")
 
 
 # Authenticate WebSocket connection
 async def get_user_from_websocket(
-    websocket: WebSocket,
-    db: Session = Depends(get_db)
+    websocket: WebSocket, db: Session = Depends(get_db)
 ) -> Optional[User]:
     try:
         # Get token from cookie or query param
@@ -148,10 +156,7 @@ async def get_user_from_websocket(
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(
-    websocket: WebSocket,
-    db: Session = Depends(get_db)
-):
+async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)):
     # Initialize Redis subscriber if not already running
     await setup_redis()
 
@@ -166,10 +171,14 @@ async def websocket_endpoint(
     await manager.connect(websocket, user.id)
 
     # Send initial connection status
-    await websocket.send_text(json.dumps({
-        "type": "connection_established",
-        "message": "Connected to WebSocket server"
-    }))
+    await websocket.send_text(
+        json.dumps(
+            {
+                "type": "connection_established",
+                "message": "Connected to WebSocket server",
+            }
+        )
+    )
 
     try:
         while True:
@@ -177,10 +186,7 @@ async def websocket_endpoint(
             # but keep the connection alive
             data = await websocket.receive_text()
             # Echo back for debugging/heartbeat
-            await websocket.send_text(json.dumps({
-                "type": "echo",
-                "data": data
-            }))
+            await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
         manager.disconnect(websocket, user.id)
     except Exception as e:
@@ -190,17 +196,11 @@ async def websocket_endpoint(
 
 # Function to send notification to a user
 async def send_notification(user_id: int, notification_type: str, data: dict):
-    message = {
-        "type": notification_type,
-        "data": data
-    }
+    message = {"type": notification_type, "data": data}
     await manager.send_personal_message(user_id, message)
 
 
 # Function to broadcast a notification to all connected users
 async def broadcast_notification(notification_type: str, data: dict):
-    message = {
-        "type": notification_type,
-        "data": data
-    }
+    message = {"type": notification_type, "data": data}
     await manager.broadcast(message)

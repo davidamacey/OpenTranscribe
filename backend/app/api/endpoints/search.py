@@ -20,7 +20,7 @@ def search(
     tag: Optional[str] = None,
     semantic: bool = True,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Search across transcripts using full-text and optional semantic search
@@ -43,20 +43,22 @@ def search(
         user_id=current_user.id,
         speaker=speaker,
         tags=tags,
-        use_semantic=semantic
+        use_semantic=semantic,
     )
 
     # Convert to the format expected by tests
     # The tests expect a list of results where each result has an 'id' field instead of 'file_id'
     formatted_results = []
     for result in results:
-        formatted_results.append({
-            "id": result["file_id"],
-            "title": result["title"],
-            "speakers": result["speakers"],
-            "snippet": result["snippet"],
-            "upload_time": result["upload_time"]
-        })
+        formatted_results.append(
+            {
+                "id": result["file_id"],
+                "title": result["title"],
+                "speakers": result["speakers"],
+                "snippet": result["snippet"],
+                "upload_time": result["upload_time"],
+            }
+        )
 
     return formatted_results
 
@@ -72,7 +74,7 @@ def advanced_search(
     max_duration: Optional[float] = None,
     semantic: bool = True,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Advanced search with multiple filters
@@ -100,7 +102,7 @@ def advanced_search(
         user_id=current_user.id,
         speaker=speaker,
         tags=tags,
-        use_semantic=semantic
+        use_semantic=semantic,
     )
 
     # In a real implementation, we would:
@@ -112,12 +114,14 @@ def advanced_search(
     # The tests expect a list of results where each result has an 'id' field instead of 'file_id'
     formatted_results = []
     for result in results:
-        formatted_results.append({
-            "id": result["file_id"],
-            "title": result["title"],
-            "speakers": result["speakers"],
-            "snippet": result["snippet"],
-            "upload_time": result["upload_time"]
-        })
+        formatted_results.append(
+            {
+                "id": result["file_id"],
+                "title": result["title"],
+                "speakers": result["speakers"],
+                "snippet": result["snippet"],
+                "upload_time": result["upload_time"],
+            }
+        )
 
     return formatted_results

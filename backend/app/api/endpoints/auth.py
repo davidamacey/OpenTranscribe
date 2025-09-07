@@ -32,8 +32,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
     """
     Get the current user from the JWT token
@@ -66,7 +65,9 @@ def get_current_user(
         # If role in token differs from DB, prioritize token's role
         # This ensures newly granted admin rights take effect immediately
         if user_role and user.role != user_role:
-            logger.info(f"Updating user {user.id} role from {user.role} to {user_role} based on token")
+            logger.info(
+                f"Updating user {user.id} role from {user.role} to {user_role} based on token"
+            )
             user.role = user_role
             db.commit()
 
@@ -75,11 +76,16 @@ def get_current_user(
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
         # In testing environment, we can create a mock user with the ID from the token
-        testing_environment = os.environ.get('TESTING', 'False').lower() == 'true'
+        testing_environment = os.environ.get("TESTING", "False").lower() == "true"
         if testing_environment:
             logger.info(f"Creating mock user for testing with id {token_data.sub}")
             # For tests, create a basic user object with the ID from the token
-            user = User(id=int(token_data.sub), email="test@example.com", is_active=True, is_superuser=False)
+            user = User(
+                id=int(token_data.sub),
+                email="test@example.com",
+                is_active=True,
+                is_superuser=False,
+            )
             return user
         # Re-raise the exception in production
         raise
@@ -127,13 +133,13 @@ def get_current_active_superuser(
 @router.post("/token", response_model=Token)
 @router.post("/login", response_model=Token)  # Add alias for frontend compatibility
 def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
     """
     OAuth2 compatible token login, get an access token for future requests
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     logger.info(f"Login attempt for user: {form_data.username}")
@@ -141,11 +147,13 @@ def login_for_access_token(
     try:
         # During testing, we might not have access to direct auth
         # So we'll try ORM auth first in test environments
-        testing_environment = os.environ.get('TESTING', 'False').lower() == 'true'
+        testing_environment = os.environ.get("TESTING", "False").lower() == "true"
 
         if testing_environment:
             # For testing, use ORM auth directly
-            logger.info(f"Testing environment detected, using ORM auth for: {form_data.username}")
+            logger.info(
+                f"Testing environment detected, using ORM auth for: {form_data.username}"
+            )
             user = authenticate_user(db, form_data.username, form_data.password)
 
             if not user:
@@ -160,7 +168,7 @@ def login_for_access_token(
                 logger.warning(f"Login attempt for inactive user: {form_data.username}")
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Inactive user account"
+                    detail="Inactive user account",
                 )
 
             user_id = user.id
@@ -169,24 +177,32 @@ def login_for_access_token(
             user_data = direct_authenticate_user(form_data.username, form_data.password)
 
             if user_data:
-                logger.info(f"Direct authentication successful for user: {form_data.username}")
+                logger.info(
+                    f"Direct authentication successful for user: {form_data.username}"
+                )
                 user_id = user_data["id"]
                 is_active = user_data.get("is_active", True)
 
                 # Check if user is active
                 if not is_active:
-                    logger.warning(f"Login attempt for inactive user: {form_data.username}")
+                    logger.warning(
+                        f"Login attempt for inactive user: {form_data.username}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Inactive user account"
+                        detail="Inactive user account",
                     )
             else:
                 # Fall back to ORM-based auth
-                logger.info(f"Direct auth failed, trying ORM auth for: {form_data.username}")
+                logger.info(
+                    f"Direct auth failed, trying ORM auth for: {form_data.username}"
+                )
                 user = authenticate_user(db, form_data.username, form_data.password)
 
                 if not user:
-                    logger.warning(f"Failed login attempt for user: {form_data.username}")
+                    logger.warning(
+                        f"Failed login attempt for user: {form_data.username}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Incorrect username or password",
@@ -194,18 +210,20 @@ def login_for_access_token(
                     )
 
                 if not user.is_active:
-                    logger.warning(f"Login attempt for inactive user: {form_data.username}")
+                    logger.warning(
+                        f"Login attempt for inactive user: {form_data.username}"
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Inactive user account"
+                        detail="Inactive user account",
                     )
 
                 user_id = user.id
 
         # Get user's role for inclusion in the token
         user_role = None
-        if 'user_data' in locals() and user_data and 'role' in user_data:
-            user_role = user_data['role']
+        if "user_data" in locals() and user_data and "role" in user_data:
+            user_role = user_data["role"]
         else:
             # Get role from database if not available in direct auth
             user_db = db.query(User).filter(User.id == user_id).first()
@@ -213,7 +231,9 @@ def login_for_access_token(
                 user_role = user_db.role
 
         # Generate the JWT token with role information
-        access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token_expires = timedelta(
+            minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
         token_data = {"sub": str(user_id)}
         if user_role:
             token_data["role"] = user_role
@@ -238,10 +258,7 @@ def login_for_access_token(
 
 
 @router.post("/register", response_model=UserSchema)
-def register(
-    user_in: UserCreate,
-    db: Session = Depends(get_db)
-):
+def register(user_in: UserCreate, db: Session = Depends(get_db)):
     """
     Register a new user
     """
@@ -261,7 +278,7 @@ def register(
         hashed_password=get_password_hash(user_in.password),
         role="user",  # Default role
         is_active=True,
-        is_superuser=False
+        is_superuser=False,
     )
 
     db.add(db_user)
@@ -272,9 +289,7 @@ def register(
 
 
 @router.get("/me", response_model=UserOut, summary="Get current user")
-def read_users_me(
-    current_user: User = Depends(get_current_user)
-):
+def read_users_me(current_user: User = Depends(get_current_user)):
     """
     Get current user using the current_user dependency
     """

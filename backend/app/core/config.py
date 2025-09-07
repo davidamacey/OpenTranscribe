@@ -16,12 +16,16 @@ class Settings(BaseSettings):
     DEBUG: bool = ENVIRONMENT == "development"
 
     # JWT Token settings
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
+    JWT_SECRET_KEY: str = os.getenv(
+        "JWT_SECRET_KEY", "this_should_be_changed_in_production"
+    )
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # Encryption settings for sensitive data (API keys, etc.)
-    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption")
+    ENCRYPTION_KEY: str = os.getenv(
+        "ENCRYPTION_KEY", "this_should_be_changed_in_production_for_api_key_encryption"
+    )
 
     # Database settings
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
@@ -31,7 +35,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "transcribe_app")
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
     )
 
     # MinIO / S3 settings
@@ -48,7 +52,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
     REDIS_URL: str = os.getenv(
         "REDIS_URL",
-        f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0"
+        f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
     )
 
     # OpenSearch settings
@@ -79,9 +83,13 @@ class Settings(BaseSettings):
 
     # Hardware Detection Settings (auto-detected by default)
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
-    COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
+    COMPUTE_TYPE: str = os.getenv(
+        "COMPUTE_TYPE", "auto"
+    )  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
-    GPU_DEVICE_ID: int = int(os.getenv("GPU_DEVICE_ID", "0"))  # Host GPU index (Docker maps to device 0)
+    GPU_DEVICE_ID: int = int(
+        os.getenv("GPU_DEVICE_ID", "0")
+    )  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
@@ -96,18 +104,30 @@ class Settings(BaseSettings):
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")
     VLLM_MODEL_NAME: str = os.getenv("VLLM_MODEL_NAME", "gpt-oss")
+    VLLM_API_KEY: str = os.getenv("VLLM_API_KEY", "")
 
     OPENAI_MODEL_NAME: str = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
     OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
 
-    ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
-    ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    ANTHROPIC_MODEL_NAME: str = os.getenv(
+        "ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307"
+    )
+    ANTHROPIC_BASE_URL: str = os.getenv(
+        "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
+    )
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
-    OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    OPENROUTER_MODEL_NAME: str = os.getenv(
+        "OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku"
+    )
+    OPENROUTER_BASE_URL: str = os.getenv(
+        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+    )
+    OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 
     # Performance optimization properties
     @property
@@ -116,6 +136,7 @@ class Settings(BaseSettings):
         if self.USE_GPU.lower() == "auto":
             try:
                 from app.utils.hardware_detection import detect_hardware
+
                 config = detect_hardware()
                 return config.device in ["cuda", "mps"]
             except ImportError:
@@ -128,6 +149,7 @@ class Settings(BaseSettings):
         if self.TORCH_DEVICE.lower() == "auto":
             try:
                 from app.utils.hardware_detection import detect_hardware
+
                 config = detect_hardware()
                 return config.device
             except ImportError:
@@ -140,6 +162,7 @@ class Settings(BaseSettings):
         if self.COMPUTE_TYPE.lower() == "auto":
             try:
                 from app.utils.hardware_detection import detect_hardware
+
                 config = detect_hardware()
                 return config.compute_type
             except ImportError:
@@ -152,6 +175,7 @@ class Settings(BaseSettings):
         if self.BATCH_SIZE.lower() == "auto":
             try:
                 from app.utils.hardware_detection import detect_hardware
+
                 config = detect_hardware()
                 return config.batch_size
             except ImportError:
@@ -172,5 +196,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
 
 settings = Settings()

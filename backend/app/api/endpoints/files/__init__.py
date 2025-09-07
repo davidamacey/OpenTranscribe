@@ -85,13 +85,14 @@ from .summary_status import router as summary_status_router
 
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
+
 @router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
 async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    request: Request = None
+    request: Request = None,
 ):
     """Upload a media file for transcription"""
     # Check if we have a file_id from prepare step
@@ -106,7 +107,9 @@ async def upload_media_file(
         file_hash = request.headers.get("X-File-Hash")
 
     # Process the file upload
-    db_file = await process_file_upload(file, db, current_user, existing_file_id, file_hash)
+    db_file = await process_file_upload(
+        file, db, current_user, existing_file_id, file_hash
+    )
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
@@ -129,10 +132,12 @@ def list_media_files(
     min_file_size: Optional[int] = None,  # In MB
     max_file_size: Optional[int] = None,  # In MB
     file_type: Optional[list[str]] = Query(None),  # ['audio', 'video']
-    status: Optional[list[str]] = Query(None),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
+    status: Optional[list[str]] = Query(
+        None
+    ),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
     transcript_search: Optional[str] = None,  # Search in transcript content
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """List all media files for the current user with optional filters"""
     # Admin users can see all files, regular users only see their own files
@@ -143,18 +148,18 @@ def list_media_files(
 
     # Prepare filters dictionary
     filters = {
-        'search': search,
-        'tag': tag,
-        'speaker': speaker,
-        'from_date': from_date,
-        'to_date': to_date,
-        'min_duration': min_duration,
-        'max_duration': max_duration,
-        'min_file_size': min_file_size,
-        'max_file_size': max_file_size,
-        'file_type': file_type,
-        'status': status,
-        'transcript_search': transcript_search
+        "search": search,
+        "tag": tag,
+        "speaker": speaker,
+        "from_date": from_date,
+        "to_date": to_date,
+        "min_duration": min_duration,
+        "max_duration": max_duration,
+        "min_file_size": min_file_size,
+        "max_file_size": max_file_size,
+        "file_type": file_type,
+        "status": status,
+        "transcript_search": transcript_search,
     }
 
     # Apply all filters
@@ -177,7 +182,7 @@ def list_media_files(
 def get_media_file(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get a specific media file with transcript details"""
     return get_media_file_detail(db, file_id, current_user)
@@ -188,7 +193,7 @@ def update_media_file_endpoint(
     file_id: int,
     media_file_update: MediaFileUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update a media file's metadata"""
     return update_media_file(db, file_id, media_file_update, current_user)
@@ -198,7 +203,7 @@ def update_media_file_endpoint(
 def delete_media_file_endpoint(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Delete a media file and all associated data"""
     delete_media_file(db, file_id, current_user)
@@ -209,7 +214,7 @@ def delete_media_file_endpoint(
 def get_media_file_stream_url(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get a streaming URL for the media file that works from any client"""
     return get_stream_url_info(db, file_id, current_user)
@@ -219,7 +224,7 @@ def get_media_file_stream_url(
 def get_media_file_content(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get the content of a media file"""
     db_file = get_media_file_by_id(db, file_id, current_user.id)
@@ -230,22 +235,27 @@ def get_media_file_content(
 def download_media_file(
     file_id: int,
     token: str = None,
-    original: bool = Query(False, description="Download original file without subtitles"),
-    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    original: bool = Query(
+        False, description="Download original file without subtitles"
+    ),
+    include_speakers: bool = Query(
+        True, description="Include speaker labels in subtitles"
+    ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Download a media file (with embedded subtitles for videos by default)"""
     db_file = get_media_file_by_id(db, file_id, current_user.id)
 
     # Check if this is a video file with available subtitles
-    is_video = db_file.content_type and db_file.content_type.startswith('video/')
+    is_video = db_file.content_type and db_file.content_type.startswith("video/")
     has_transcript = db_file.status == "completed"
 
     # Always embed subtitles for videos when available, unless user explicitly requests original
     if is_video and has_transcript and not original:
         try:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.info(f"Processing video download with subtitles for file {file_id}")
 
@@ -259,7 +269,9 @@ def download_media_file(
             # Check if ffmpeg is available
             if not video_service.check_ffmpeg_availability():
                 # Fall back to original file if ffmpeg is not available
-                logger.warning(f"ffmpeg not available, serving original file for {file_id}")
+                logger.warning(
+                    f"ffmpeg not available, serving original file for {file_id}"
+                )
                 return get_content_streaming_response(db_file)
 
             logger.info(f"ffmpeg available, processing video {file_id} with subtitles")
@@ -271,10 +283,12 @@ def download_media_file(
                 original_object_name=db_file.storage_path,
                 user_id=current_user.id,
                 include_speakers=include_speakers,
-                output_format="mp4"
+                output_format="mp4",
             )
 
-            logger.info(f"Video processing complete, streaming processed video: {cache_key}")
+            logger.info(
+                f"Video processing complete, streaming processed video: {cache_key}"
+            )
 
             # Stream the processed video through backend
             from fastapi.responses import StreamingResponse
@@ -283,31 +297,39 @@ def download_media_file(
             range_header = None
             # Note: request object not available here, will handle basic streaming
 
-            file_stream, _, _, total_length = video_service._get_cache_file_stream(cache_key, range_header)
+            file_stream, _, _, total_length = video_service._get_cache_file_stream(
+                cache_key, range_header
+            )
 
             # Generate proper filename for download
-            base_name = db_file.filename.rsplit('.', 1)[0] if '.' in db_file.filename else db_file.filename
+            base_name = (
+                db_file.filename.rsplit(".", 1)[0]
+                if "." in db_file.filename
+                else db_file.filename
+            )
             download_filename = f"{base_name}_with_subtitles.mp4"
 
             headers = {
-                'Content-Disposition': f'attachment; filename="{download_filename}"',
-                'Content-Type': 'video/mp4',
-                'Accept-Ranges': 'bytes',
+                "Content-Disposition": f'attachment; filename="{download_filename}"',
+                "Content-Type": "video/mp4",
+                "Accept-Ranges": "bytes",
             }
 
             if total_length:
-                headers['Content-Length'] = str(total_length)
+                headers["Content-Length"] = str(total_length)
 
             return StreamingResponse(
-                content=file_stream,
-                media_type='video/mp4',
-                headers=headers
+                content=file_stream, media_type="video/mp4", headers=headers
             )
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to process video with subtitles for file {file_id}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to process video with subtitles for file {file_id}: {e}",
+                exc_info=True,
+            )
             # Fall back to original file on error
 
     # Return original file
@@ -318,9 +340,13 @@ def download_media_file(
 def download_media_file_with_token(
     file_id: int,
     token: str,
-    original: bool = Query(False, description="Download original file without subtitles"),
-    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
-    db: Session = Depends(get_db)
+    original: bool = Query(
+        False, description="Download original file without subtitles"
+    ),
+    include_speakers: bool = Query(
+        True, description="Include speaker labels in subtitles"
+    ),
+    db: Session = Depends(get_db),
 ):
     """
     Download a media file using token parameter (for native browser downloads)
@@ -354,13 +380,15 @@ def download_media_file_with_token(
         db_file = get_media_file_by_id(db, file_id, user.id, is_admin=is_admin)
 
         # Check if this is a video file with available subtitles
-        is_video = db_file.content_type and db_file.content_type.startswith('video/')
+        is_video = db_file.content_type and db_file.content_type.startswith("video/")
         has_transcript = db_file.status == "completed"
 
         # Always embed subtitles for videos when available, unless user explicitly requests original
         if is_video and has_transcript and not original:
             try:
-                logger.info(f"Processing video download with subtitles for file {file_id} (token endpoint)")
+                logger.info(
+                    f"Processing video download with subtitles for file {file_id} (token endpoint)"
+                )
 
                 from app.services.minio_service import MinIOService
                 from app.services.video_processing_service import VideoProcessingService
@@ -372,10 +400,14 @@ def download_media_file_with_token(
                 # Check if ffmpeg is available
                 if not video_service.check_ffmpeg_availability():
                     # Fall back to original file if ffmpeg is not available
-                    logger.warning(f"ffmpeg not available, serving original file for {file_id} (token endpoint)")
+                    logger.warning(
+                        f"ffmpeg not available, serving original file for {file_id} (token endpoint)"
+                    )
                     return get_content_streaming_response(db_file)
 
-                logger.info(f"ffmpeg available, processing video {file_id} with subtitles (token endpoint)")
+                logger.info(
+                    f"ffmpeg available, processing video {file_id} with subtitles (token endpoint)"
+                )
 
                 # Process video with embedded subtitles
                 cache_key = video_service.process_video_with_subtitles(
@@ -384,10 +416,12 @@ def download_media_file_with_token(
                     original_object_name=db_file.storage_path,
                     user_id=user.id,
                     include_speakers=include_speakers,
-                    output_format="mp4"
+                    output_format="mp4",
                 )
 
-                logger.info(f"Video processing complete, streaming processed video: {cache_key}")
+                logger.info(
+                    f"Video processing complete, streaming processed video: {cache_key}"
+                )
 
                 # Stream the processed video through backend
                 from fastapi.responses import StreamingResponse
@@ -396,29 +430,36 @@ def download_media_file_with_token(
                 range_header = None
                 # Note: request object not available here, will handle basic streaming
 
-                file_stream, _, _, total_length = video_service._get_cache_file_stream(cache_key, range_header)
+                file_stream, _, _, total_length = video_service._get_cache_file_stream(
+                    cache_key, range_header
+                )
 
                 # Generate proper filename for download
-                base_name = db_file.filename.rsplit('.', 1)[0] if '.' in db_file.filename else db_file.filename
+                base_name = (
+                    db_file.filename.rsplit(".", 1)[0]
+                    if "." in db_file.filename
+                    else db_file.filename
+                )
                 download_filename = f"{base_name}_with_subtitles.mp4"
 
                 headers = {
-                    'Content-Disposition': f'attachment; filename="{download_filename}"',
-                    'Content-Type': 'video/mp4',
-                    'Accept-Ranges': 'bytes',
+                    "Content-Disposition": f'attachment; filename="{download_filename}"',
+                    "Content-Type": "video/mp4",
+                    "Accept-Ranges": "bytes",
                 }
 
                 if total_length:
-                    headers['Content-Length'] = str(total_length)
+                    headers["Content-Length"] = str(total_length)
 
                 return StreamingResponse(
-                    content=file_stream,
-                    media_type='video/mp4',
-                    headers=headers
+                    content=file_stream, media_type="video/mp4", headers=headers
                 )
 
             except Exception as e:
-                logger.error(f"Failed to process video with subtitles for file {file_id} (token endpoint): {e}", exc_info=True)
+                logger.error(
+                    f"Failed to process video with subtitles for file {file_id} (token endpoint): {e}",
+                    exc_info=True,
+                )
                 # Fall back to original file on error
 
         # Return original file
@@ -429,7 +470,6 @@ def download_media_file_with_token(
     except Exception as e:
         logger.error(f"Error in download with token: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
-
 
 
 @router.get("/{file_id}/video")
@@ -470,26 +510,29 @@ async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
 
 @router.get("/metadata-filters", response_model=dict)
 def get_metadata_filters_endpoint(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """Get available metadata filters like formats, codecs, etc."""
     return get_metadata_filters(db, current_user.id)
 
 
-@router.put("/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment)
+@router.put(
+    "/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment
+)
 def update_transcript_segment(
     file_id: int,
     segment_id: int,
     segment_update: TranscriptSegmentUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Update a specific transcript segment"""
     from .crud import update_single_transcript_segment
 
     # Update the transcript segment
-    result = update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
+    result = update_single_transcript_segment(
+        db, file_id, segment_id, segment_update, current_user
+    )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
 
@@ -500,7 +543,7 @@ def update_transcript_segment(
 async def reprocess_media_file(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Reprocess a media file for transcription"""
     return await process_file_reprocess(file_id, db, current_user)
@@ -510,10 +553,11 @@ async def reprocess_media_file(
 def clear_video_cache(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     try:
@@ -539,7 +583,7 @@ def clear_video_cache(
         logger.error(f"Error clearing video cache for file {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error clearing video cache: {str(e)}"
+            detail=f"Error clearing video cache: {str(e)}",
         )
 
 
@@ -558,5 +602,5 @@ __all__ = [
     "get_video_streaming_response",
     "get_enhanced_video_streaming_response",
     "validate_file_exists",
-    "get_thumbnail_streaming_response"
+    "get_thumbnail_streaming_response",
 ]

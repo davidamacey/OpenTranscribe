@@ -7,12 +7,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 # Set testing environment flag and disable external services in tests
-os.environ['TESTING'] = 'True'
-os.environ['SKIP_CELERY'] = 'True'
-os.environ['SKIP_S3'] = 'True'
-os.environ['SKIP_REDIS'] = 'True'
-os.environ['SKIP_WEBSOCKET'] = 'True'
-os.environ['SKIP_OPENSEARCH'] = 'True'
+os.environ["TESTING"] = "True"
+os.environ["SKIP_CELERY"] = "True"
+os.environ["SKIP_S3"] = "True"
+os.environ["SKIP_REDIS"] = "True"
+os.environ["SKIP_WEBSOCKET"] = "True"
+os.environ["SKIP_OPENSEARCH"] = "True"
 
 from app.core.security import get_password_hash
 from app.db.base import Base
@@ -25,7 +25,7 @@ SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
 engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
     connect_args={"check_same_thread": False},
-    poolclass=StaticPool
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -45,6 +45,7 @@ def db_session():
 @pytest.fixture(scope="function")
 def client(db_session):
     """Fixture that provides a FastAPI TestClient with test DB session"""
+
     # Override the get_db dependency to use test DB session
     def override_get_db():
         try:
@@ -71,7 +72,7 @@ def normal_user(db_session):
         hashed_password=get_password_hash("password123"),
         is_active=True,
         is_superuser=False,
-        role="user"
+        role="user",
     )
     db_session.add(user)
     db_session.commit()
@@ -88,7 +89,7 @@ def admin_user(db_session):
         hashed_password=get_password_hash("adminpass"),
         is_active=True,
         is_superuser=True,
-        role="admin"
+        role="admin",
     )
     db_session.add(user)
     db_session.commit()
@@ -103,7 +104,7 @@ def user_token_headers(client, normal_user):
     response = client.post(
         "/api/auth/token",
         data={"username": normal_user.email, "password": "password123"},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     tokens = response.json()
     access_token = tokens["access_token"]
@@ -117,7 +118,7 @@ def admin_token_headers(client, admin_user):
     response = client.post(
         "/api/auth/token",
         data={"username": admin_user.email, "password": "adminpass"},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     tokens = response.json()
     access_token = tokens["access_token"]

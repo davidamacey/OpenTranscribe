@@ -69,7 +69,7 @@ def get_prompts(
         ownership_conditions.append(
             and_(
                 models.SummaryPrompt.user_id == current_user.id,
-                ~models.SummaryPrompt.is_system_default
+                ~models.SummaryPrompt.is_system_default,
             )
         )
 
@@ -85,10 +85,15 @@ def get_prompts(
         query = query.filter(and_(*conditions))
 
     total = query.count()
-    prompts = query.order_by(
-        models.SummaryPrompt.is_system_default.desc(),  # System prompts first
-        models.SummaryPrompt.name
-    ).offset(skip).limit(limit).all()
+    prompts = (
+        query.order_by(
+            models.SummaryPrompt.is_system_default.desc(),  # System prompts first
+            models.SummaryPrompt.name,
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
     return schemas.SummaryPromptList(
         prompts=prompts,
@@ -96,11 +101,13 @@ def get_prompts(
         page=skip // limit + 1 if limit > 0 else 1,
         size=len(prompts),
         has_next=(skip + limit) < total,
-        has_prev=skip > 0
+        has_prev=skip > 0,
     )
 
 
-@router.get("/by-content-type/{content_type}", response_model=schemas.ContentTypePromptsResponse)
+@router.get(
+    "/by-content-type/{content_type}", response_model=schemas.ContentTypePromptsResponse
+)
 def get_prompts_by_content_type(
     content_type: str,
     db: Session = Depends(get_db),
@@ -125,36 +132,53 @@ def get_prompts_by_content_type(
         HTTPException: If content_type is invalid or database query fails
     """
     # Validate content type
-    valid_types = {'meeting', 'interview', 'podcast', 'documentary', 'general'}
+    valid_types = {"meeting", "interview", "podcast", "documentary", "general"}
     if content_type not in valid_types:
-        raise HTTPException(status_code=400, detail=f"Invalid content type. Must be one of: {valid_types}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid content type. Must be one of: {valid_types}",
+        )
 
     # Get system prompts for this content type
-    system_prompts = db.query(models.SummaryPrompt).filter(
-        and_(
-            models.SummaryPrompt.content_type == content_type,
-            models.SummaryPrompt.is_system_default,
-            models.SummaryPrompt.is_active
+    system_prompts = (
+        db.query(models.SummaryPrompt)
+        .filter(
+            and_(
+                models.SummaryPrompt.content_type == content_type,
+                models.SummaryPrompt.is_system_default,
+                models.SummaryPrompt.is_active,
+            )
         )
-    ).order_by(models.SummaryPrompt.name).all()
+        .order_by(models.SummaryPrompt.name)
+        .all()
+    )
 
     # Get user's custom prompts for this content type
-    user_prompts = db.query(models.SummaryPrompt).filter(
-        and_(
-            models.SummaryPrompt.content_type == content_type,
-            models.SummaryPrompt.user_id == current_user.id,
-            not models.SummaryPrompt.is_system_default,
-            models.SummaryPrompt.is_active
+    user_prompts = (
+        db.query(models.SummaryPrompt)
+        .filter(
+            and_(
+                models.SummaryPrompt.content_type == content_type,
+                models.SummaryPrompt.user_id == current_user.id,
+                not models.SummaryPrompt.is_system_default,
+                models.SummaryPrompt.is_active,
+            )
         )
-    ).order_by(models.SummaryPrompt.name).all()
+        .order_by(models.SummaryPrompt.name)
+        .all()
+    )
 
     # Get active prompt ID for this user
-    active_prompt_setting = db.query(models.UserSetting).filter(
-        and_(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_summary_prompt_id"
+    active_prompt_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            and_(
+                models.UserSetting.user_id == current_user.id,
+                models.UserSetting.setting_key == "active_summary_prompt_id",
+            )
         )
-    ).first()
+        .first()
+    )
 
     active_prompt_id = None
     if active_prompt_setting and active_prompt_setting.setting_value:
@@ -165,7 +189,7 @@ def get_prompts_by_content_type(
         content_type=content_type,
         system_prompts=system_prompts,
         user_prompts=user_prompts,
-        active_prompt_id=active_prompt_id
+        active_prompt_id=active_prompt_id,
     )
 
 
@@ -194,24 +218,24 @@ def create_prompt(
         HTTPException: If user has reached the prompt limit (50) or creation fails
     """
     # Check if user already has too many prompts
-    user_prompt_count = db.query(models.SummaryPrompt).filter(
-        and_(
-            models.SummaryPrompt.user_id == current_user.id,
-            models.SummaryPrompt.is_active
+    user_prompt_count = (
+        db.query(models.SummaryPrompt)
+        .filter(
+            and_(
+                models.SummaryPrompt.user_id == current_user.id,
+                models.SummaryPrompt.is_active,
+            )
         )
-    ).count()
+        .count()
+    )
 
     if user_prompt_count >= 50:  # Reasonable limit
         raise HTTPException(
-            status_code=400,
-            detail="Maximum number of custom prompts reached (50)"
+            status_code=400, detail="Maximum number of custom prompts reached (50)"
         )
 
     prompt_data = prompt_in.dict()
-    prompt_data.update({
-        "user_id": current_user.id,
-        "is_system_default": False
-    })
+    prompt_data.update({"user_id": current_user.id, "is_system_default": False})
 
     prompt = models.SummaryPrompt(**prompt_data)
     db.add(prompt)
@@ -229,7 +253,11 @@ def get_prompt(
     """
     Get a specific prompt by ID
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
+    prompt = (
+        db.query(models.SummaryPrompt)
+        .filter(models.SummaryPrompt.id == prompt_id)
+        .first()
+    )
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -251,7 +279,11 @@ def update_prompt(
     """
     Update a custom summary prompt (user's own prompts only)
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
+    prompt = (
+        db.query(models.SummaryPrompt)
+        .filter(models.SummaryPrompt.id == prompt_id)
+        .first()
+    )
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -259,7 +291,7 @@ def update_prompt(
     if prompt.is_system_default or prompt.user_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail="Cannot modify system prompts or other users' prompts"
+            detail="Cannot modify system prompts or other users' prompts",
         )
 
     update_data = prompt_in.dict(exclude_unset=True)
@@ -281,7 +313,11 @@ def delete_prompt(
     """
     Delete a custom summary prompt (user's own prompts only)
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
+    prompt = (
+        db.query(models.SummaryPrompt)
+        .filter(models.SummaryPrompt.id == prompt_id)
+        .first()
+    )
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -289,17 +325,21 @@ def delete_prompt(
     if prompt.is_system_default or prompt.user_id != current_user.id:
         raise HTTPException(
             status_code=403,
-            detail="Cannot delete system prompts or other users' prompts"
+            detail="Cannot delete system prompts or other users' prompts",
         )
 
     # Check if this is the user's active prompt
-    active_setting = db.query(models.UserSetting).filter(
-        and_(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_summary_prompt_id",
-            models.UserSetting.setting_value == str(prompt_id)
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            and_(
+                models.UserSetting.user_id == current_user.id,
+                models.UserSetting.setting_key == "active_summary_prompt_id",
+                models.UserSetting.setting_value == str(prompt_id),
+            )
         )
-    ).first()
+        .first()
+    )
 
     if active_setting:
         # Reset to default prompt
@@ -319,12 +359,16 @@ def get_active_prompt(
     Get the user's currently active summary prompt
     """
     # Get user's active prompt setting
-    active_setting = db.query(models.UserSetting).filter(
-        and_(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_summary_prompt_id"
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            and_(
+                models.UserSetting.user_id == current_user.id,
+                models.UserSetting.setting_key == "active_summary_prompt_id",
+            )
         )
-    ).first()
+        .first()
+    )
 
     active_prompt = None
     active_prompt_id = None
@@ -332,51 +376,64 @@ def get_active_prompt(
     if active_setting and active_setting.setting_value:
         try:
             active_prompt_id = int(active_setting.setting_value)
-            active_prompt = db.query(models.SummaryPrompt).filter(
-                models.SummaryPrompt.id == active_prompt_id
-            ).first()
+            active_prompt = (
+                db.query(models.SummaryPrompt)
+                .filter(models.SummaryPrompt.id == active_prompt_id)
+                .first()
+            )
         except (ValueError, TypeError):
             pass
 
     # If no active prompt or prompt not found, get default system prompt
     if not active_prompt:
         # First try to find a universal/general prompt
-        active_prompt = db.query(models.SummaryPrompt).filter(
-            and_(
-                models.SummaryPrompt.is_system_default,
-                models.SummaryPrompt.content_type == "general",
-                models.SummaryPrompt.is_active,
-                or_(
-                    models.SummaryPrompt.name.ilike("%universal%"),
-                    models.SummaryPrompt.name.ilike("%general%")
-                )
-            )
-        ).first()
-
-        # If no universal prompt found, fallback to any general system prompt
-        if not active_prompt:
-            active_prompt = db.query(models.SummaryPrompt).filter(
+        active_prompt = (
+            db.query(models.SummaryPrompt)
+            .filter(
                 and_(
                     models.SummaryPrompt.is_system_default,
                     models.SummaryPrompt.content_type == "general",
-                    models.SummaryPrompt.is_active
+                    models.SummaryPrompt.is_active,
+                    or_(
+                        models.SummaryPrompt.name.ilike("%universal%"),
+                        models.SummaryPrompt.name.ilike("%general%"),
+                    ),
                 )
-            ).first()
+            )
+            .first()
+        )
+
+        # If no universal prompt found, fallback to any general system prompt
+        if not active_prompt:
+            active_prompt = (
+                db.query(models.SummaryPrompt)
+                .filter(
+                    and_(
+                        models.SummaryPrompt.is_system_default,
+                        models.SummaryPrompt.content_type == "general",
+                        models.SummaryPrompt.is_active,
+                    )
+                )
+                .first()
+            )
 
         # Final fallback: any active system prompt
         if not active_prompt:
-            active_prompt = db.query(models.SummaryPrompt).filter(
-                and_(
-                    models.SummaryPrompt.is_system_default,
-                    models.SummaryPrompt.is_active
+            active_prompt = (
+                db.query(models.SummaryPrompt)
+                .filter(
+                    and_(
+                        models.SummaryPrompt.is_system_default,
+                        models.SummaryPrompt.is_active,
+                    )
                 )
-            ).first()
+                .first()
+            )
 
         active_prompt_id = active_prompt.id if active_prompt else None
 
     return schemas.ActivePromptResponse(
-        active_prompt_id=active_prompt_id,
-        active_prompt=active_prompt
+        active_prompt_id=active_prompt_id, active_prompt=active_prompt
     )
 
 
@@ -391,24 +448,34 @@ def set_active_prompt(
     Set the user's active summary prompt
     """
     # Verify prompt exists and user has access
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_selection.prompt_id).first()
+    prompt = (
+        db.query(models.SummaryPrompt)
+        .filter(models.SummaryPrompt.id == prompt_selection.prompt_id)
+        .first()
+    )
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     # Check access: system prompts are public, user prompts are private
     if not prompt.is_system_default and prompt.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Cannot use other users' custom prompts")
+        raise HTTPException(
+            status_code=403, detail="Cannot use other users' custom prompts"
+        )
 
     if not prompt.is_active:
         raise HTTPException(status_code=400, detail="Cannot use inactive prompt")
 
     # Update or create user setting
-    setting = db.query(models.UserSetting).filter(
-        and_(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_summary_prompt_id"
+    setting = (
+        db.query(models.UserSetting)
+        .filter(
+            and_(
+                models.UserSetting.user_id == current_user.id,
+                models.UserSetting.setting_key == "active_summary_prompt_id",
+            )
         )
-    ).first()
+        .first()
+    )
 
     if setting:
         setting.setting_value = str(prompt_selection.prompt_id)
@@ -416,7 +483,7 @@ def set_active_prompt(
         setting = models.UserSetting(
             user_id=current_user.id,
             setting_key="active_summary_prompt_id",
-            setting_value=str(prompt_selection.prompt_id)
+            setting_value=str(prompt_selection.prompt_id),
         )
         db.add(setting)
 
@@ -424,6 +491,5 @@ def set_active_prompt(
     db.refresh(prompt)
 
     return schemas.ActivePromptResponse(
-        active_prompt_id=prompt.id,
-        active_prompt=prompt
+        active_prompt_id=prompt.id, active_prompt=prompt
     )

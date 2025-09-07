@@ -13,20 +13,27 @@ def test_file_with_comment(client, user_token_headers, db_session):
     response = client.post("/api/files/", headers=user_token_headers, files=file_data)
     return response.json()["id"]
 
+
 def test_list_comments(client, user_token_headers, test_file_with_comment):
     """Test listing comments for a file"""
-    response = client.get(f"/api/comments/?media_file_id={test_file_with_comment}", headers=user_token_headers)
+    response = client.get(
+        f"/api/comments/?media_file_id={test_file_with_comment}",
+        headers=user_token_headers,
+    )
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
 
 def test_create_comment(client, user_token_headers, test_file_with_comment, db_session):
     """Test creating a comment for a file"""
     comment_data = {
         "media_file_id": test_file_with_comment,
         "text": "This is a test comment",
-        "timestamp": 30.5  # Comment at 30.5 seconds in the audio
+        "timestamp": 30.5,  # Comment at 30.5 seconds in the audio
     }
-    response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
+    response = client.post(
+        "/api/comments/", headers=user_token_headers, json=comment_data
+    )
     assert response.status_code == 200
     comment = response.json()
     assert "id" in comment
@@ -36,13 +43,19 @@ def test_create_comment(client, user_token_headers, test_file_with_comment, db_s
 
     # Verify comment exists in the database
     from app.models.media import Comment
-    db_comment = db_session.query(Comment).filter(
-        Comment.media_file_id == test_file_with_comment,
-        Comment.text == "This is a test comment"
-    ).first()
+
+    db_comment = (
+        db_session.query(Comment)
+        .filter(
+            Comment.media_file_id == test_file_with_comment,
+            Comment.text == "This is a test comment",
+        )
+        .first()
+    )
     assert db_comment is not None
     assert db_comment.text == "This is a test comment"
     assert db_comment.timestamp == 30.5
+
 
 def test_get_comment(client, user_token_headers, test_file_with_comment, db_session):
     """Test getting a specific comment"""
@@ -50,9 +63,11 @@ def test_get_comment(client, user_token_headers, test_file_with_comment, db_sess
     comment_data = {
         "media_file_id": test_file_with_comment,
         "text": "Comment for get test",
-        "timestamp": 45.0
+        "timestamp": 45.0,
     }
-    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
+    create_response = client.post(
+        "/api/comments/", headers=user_token_headers, json=comment_data
+    )
     comment_id = create_response.json()["id"]
 
     # Now get the comment
@@ -63,23 +78,25 @@ def test_get_comment(client, user_token_headers, test_file_with_comment, db_sess
     assert comment["text"] == "Comment for get test"
     assert comment["timestamp"] == 45.0
 
+
 def test_update_comment(client, user_token_headers, test_file_with_comment, db_session):
     """Test updating a comment"""
     # First create a comment
     comment_data = {
         "media_file_id": test_file_with_comment,
         "text": "Comment for update test",
-        "timestamp": 60.0
+        "timestamp": 60.0,
     }
-    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
+    create_response = client.post(
+        "/api/comments/", headers=user_token_headers, json=comment_data
+    )
     comment_id = create_response.json()["id"]
 
     # Now update the comment
-    update_data = {
-        "text": "Updated comment text",
-        "timestamp": 65.5
-    }
-    response = client.put(f"/api/comments/{comment_id}", headers=user_token_headers, json=update_data)
+    update_data = {"text": "Updated comment text", "timestamp": 65.5}
+    response = client.put(
+        f"/api/comments/{comment_id}", headers=user_token_headers, json=update_data
+    )
     assert response.status_code == 200
     comment = response.json()
     assert comment["id"] == comment_id
@@ -88,9 +105,11 @@ def test_update_comment(client, user_token_headers, test_file_with_comment, db_s
 
     # Verify changes in the database
     from app.models.media import Comment
+
     db_comment = db_session.query(Comment).filter(Comment.id == comment_id).first()
     assert db_comment.text == "Updated comment text"
     assert db_comment.timestamp == 65.5
+
 
 def test_delete_comment(client, user_token_headers, test_file_with_comment, db_session):
     """Test deleting a comment"""
@@ -98,9 +117,11 @@ def test_delete_comment(client, user_token_headers, test_file_with_comment, db_s
     comment_data = {
         "media_file_id": test_file_with_comment,
         "text": "Comment for delete test",
-        "timestamp": 75.0
+        "timestamp": 75.0,
     }
-    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
+    create_response = client.post(
+        "/api/comments/", headers=user_token_headers, json=comment_data
+    )
     comment_id = create_response.json()["id"]
 
     # Now delete the comment
@@ -109,5 +130,6 @@ def test_delete_comment(client, user_token_headers, test_file_with_comment, db_s
 
     # Verify comment is deleted from the database
     from app.models.media import Comment
+
     db_comment = db_session.query(Comment).filter(Comment.id == comment_id).first()
     assert db_comment is None

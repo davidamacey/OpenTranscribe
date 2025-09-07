@@ -18,7 +18,7 @@ minio_client = Minio(
     f"{settings.MINIO_HOST}:{settings.MINIO_PORT}",
     access_key=settings.MINIO_ROOT_USER,
     secret_key=settings.MINIO_ROOT_PASSWORD,
-    secure=settings.MINIO_SECURE
+    secure=settings.MINIO_SECURE,
 )
 
 
@@ -33,7 +33,9 @@ def ensure_bucket_exists():
         raise Exception(f"Error ensuring bucket exists: {e}")
 
 
-def upload_file(file_content: BinaryIO, file_size: int, object_name: str, content_type: str) -> str:
+def upload_file(
+    file_content: BinaryIO, file_size: int, object_name: str, content_type: str
+) -> str:
     """
     Upload a file to MinIO
 
@@ -54,7 +56,7 @@ def upload_file(file_content: BinaryIO, file_size: int, object_name: str, conten
             object_name=object_name,
             data=file_content,
             length=file_size,
-            content_type=content_type
+            content_type=content_type,
         )
         return object_name
     except S3Error as e:
@@ -80,10 +82,10 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
         response = minio_client.get_object(settings.MEDIA_BUCKET_NAME, object_name)
 
         # Get content type
-        content_type = response.headers.get('content-type', 'application/octet-stream')
+        content_type = response.headers.get("content-type", "application/octet-stream")
 
         # Get content length
-        content_length = int(response.headers.get('content-length', 0))
+        content_length = int(response.headers.get("content-length", 0))
 
         # Read the entire file into memory
         file_content = response.read()
@@ -112,6 +114,7 @@ def get_file_stream(object_name: str, range_header: str = None):
         Tuple of (Generator that yields chunks of the file, start_byte, end_byte, total_length)
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Default values
@@ -129,22 +132,23 @@ def get_file_stream(object_name: str, range_header: str = None):
             logger.error(f"Error getting object stats: {e}")
             # Continue without total size - less optimal but still functional
 
-        kwargs = {
-            'bucket_name': settings.MEDIA_BUCKET_NAME,
-            'object_name': object_name
-        }
+        kwargs = {"bucket_name": settings.MEDIA_BUCKET_NAME, "object_name": object_name}
 
         # Parse range header if present - implement robust range parsing
-        if range_header and range_header.startswith('bytes='):
+        if range_header and range_header.startswith("bytes="):
             try:
                 # Parse range from format "bytes=start-end"
-                range_value = range_header.replace('bytes=', '')
-                parts = range_value.split('-')
+                range_value = range_header.replace("bytes=", "")
+                parts = range_value.split("-")
 
                 # Handle different range request formats
                 if parts[0] and parts[1]:  # Format: bytes=start-end
                     start_byte = int(parts[0])
-                    end_byte = min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
+                    end_byte = (
+                        min(int(parts[1]), total_length - 1)
+                        if total_length
+                        else int(parts[1])
+                    )
                 elif parts[0]:  # Format: bytes=start-
                     start_byte = int(parts[0])
                     end_byte = total_length - 1 if total_length else None
@@ -156,16 +160,22 @@ def get_file_stream(object_name: str, range_header: str = None):
 
                 # Validate range is within bounds
                 if total_length and start_byte >= total_length:
-                    logger.warning(f"Range start {start_byte} exceeds file size {total_length}")
+                    logger.warning(
+                        f"Range start {start_byte} exceeds file size {total_length}"
+                    )
                     start_byte = 0
                     end_byte = total_length - 1
 
                 # Add offset and length parameters for MinIO
-                kwargs['offset'] = start_byte
+                kwargs["offset"] = start_byte
                 if end_byte is not None:
-                    kwargs['length'] = end_byte - start_byte + 1  # +1 because range is inclusive
+                    kwargs["length"] = (
+                        end_byte - start_byte + 1
+                    )  # +1 because range is inclusive
 
-                logger.info(f"Streaming with range: start={start_byte}, end={end_byte if end_byte is not None else 'EOF'}, total={total_length}")
+                logger.info(
+                    f"Streaming with range: start={start_byte}, end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
+                )
             except Exception as e:
                 logger.error(f"Error parsing range header '{range_header}': {e}")
                 # Continue without range if parsing fails
@@ -197,7 +207,7 @@ def get_file_stream(object_name: str, range_header: str = None):
         def generate_chunks():
             try:
                 bytes_read = 0
-                max_bytes = kwargs.get('length')
+                max_bytes = kwargs.get("length")
 
                 while True:
                     # Adjust final chunk size if we're at the end of requested range
@@ -248,7 +258,9 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
 
         # Debug logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Getting presigned URL for {object_name} with expires={expires} seconds")
+        logger.info(
+            f"Getting presigned URL for {object_name} with expires={expires} seconds"
+        )
 
         # Create a direct URL using the get_presigned_url method
         try:
@@ -257,32 +269,29 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
             url = minio_client.presigned_get_object(
                 bucket_name=settings.MEDIA_BUCKET_NAME,
                 object_name=object_name,
-                expires=delta
+                expires=delta,
             )
         except Exception as inner_e:
             logger.info(f"First attempt failed: {inner_e}, trying alternative method")
             # If that fails, try using the raw method with seconds
             url = minio_client.get_presigned_url(
-                "GET",
-                settings.MEDIA_BUCKET_NAME,
-                object_name,
-                expires=expires
+                "GET", settings.MEDIA_BUCKET_NAME, object_name, expires=expires
             )
 
         # Verify the URL is valid
-        if not url or not url.startswith('http'):
+        if not url or not url.startswith("http"):
             raise ValueError(f"Invalid URL generated: {url}")
 
         # Replace the internal minio URL with the externally accessible URL
         # For development, use the host IP and port defined in env vars
-        if 'MINIO_PUBLIC_HOST' in os.environ and 'MINIO_PUBLIC_PORT' in os.environ:
+        if "MINIO_PUBLIC_HOST" in os.environ and "MINIO_PUBLIC_PORT" in os.environ:
             # Extract the container host and port from the URL
             minio_server = f"{settings.MINIO_HOST}:{settings.MINIO_PORT}"
             if minio_server in url:
                 # Replace with public host:port
                 public_url = url.replace(
                     minio_server,
-                    f"{os.environ.get('MINIO_PUBLIC_HOST')}:{os.environ.get('MINIO_PUBLIC_PORT')}"
+                    f"{os.environ.get('MINIO_PUBLIC_HOST')}:{os.environ.get('MINIO_PUBLIC_PORT')}",
                 )
                 logger.info(f"Replaced internal {minio_server} with public host in URL")
                 url = public_url
@@ -306,8 +315,7 @@ def delete_file(object_name: str):
     """
     try:
         minio_client.remove_object(
-            bucket_name=settings.MEDIA_BUCKET_NAME,
-            object_name=object_name
+            bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
         )
     except S3Error as e:
         raise Exception(f"Error deleting file: {e}")
@@ -322,17 +330,23 @@ class MinIOService:
     def __init__(self):
         self.client = minio_client
 
-    def upload_file(self, file_path: str, bucket_name: str, object_name: str, content_type: str = None):
+    def upload_file(
+        self,
+        file_path: str,
+        bucket_name: str,
+        object_name: str,
+        content_type: str = None,
+    ):
         """Upload a file to MinIO bucket."""
         try:
-            with open(file_path, 'rb') as file_data:
+            with open(file_path, "rb") as file_data:
                 file_size = os.path.getsize(file_path)
                 self.client.put_object(
                     bucket_name=bucket_name,
                     object_name=object_name,
                     data=file_data,
                     length=file_size,
-                    content_type=content_type
+                    content_type=content_type,
                 )
         except Exception as e:
             raise Exception(f"Error uploading file: {e}")
@@ -345,22 +359,27 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error downloading file: {e}")
 
-    def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
+    def get_presigned_url(
+        self, bucket_name: str, object_name: str, expires: int = 3600
+    ):
         """Get a presigned URL for object access."""
         try:
             url = self.client.presigned_get_object(
                 bucket_name=bucket_name,
                 object_name=object_name,
-                expires=datetime.timedelta(seconds=expires)
+                expires=datetime.timedelta(seconds=expires),
             )
             # Fix hostname for external access
             if url.startswith("http://minio:9000"):
                 from app.core.config import settings
+
                 if settings.ENVIRONMENT == "development":
                     url = url.replace("http://minio:9000", "http://localhost:5178")
                 else:
                     # For production, use environment variable for external MinIO URL
-                    external_url = os.getenv("EXTERNAL_MINIO_URL", "http://localhost:5178")
+                    external_url = os.getenv(
+                        "EXTERNAL_MINIO_URL", "http://localhost:5178"
+                    )
                     url = url.replace("http://minio:9000", external_url)
             return url
         except Exception as e:
@@ -373,10 +392,14 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error deleting object: {e}")
 
-    def list_objects(self, bucket_name: str, prefix: str = None, recursive: bool = False):
+    def list_objects(
+        self, bucket_name: str, prefix: str = None, recursive: bool = False
+    ):
         """List objects in a bucket."""
         try:
-            return self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
+            return self.client.list_objects(
+                bucket_name, prefix=prefix, recursive=recursive
+            )
         except Exception as e:
             raise Exception(f"Error listing objects: {e}")
 

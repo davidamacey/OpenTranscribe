@@ -20,6 +20,7 @@ def handle_database_errors(func: Callable) -> Callable:
     Returns:
         Wrapped function with error handling
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -27,17 +28,17 @@ def handle_database_errors(func: Callable) -> Callable:
         except SQLAlchemyError as e:
             logger.error(f"Database error in {func.__name__}: {e}")
             # Rollback session if available in kwargs
-            if 'db' in kwargs and isinstance(kwargs['db'], Session):
-                kwargs['db'].rollback()
+            if "db" in kwargs and isinstance(kwargs["db"], Session):
+                kwargs["db"].rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Database operation failed"
+                detail="Database operation failed",
             )
         except Exception as e:
             logger.error(f"Unexpected error in {func.__name__}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred"
+                detail="An unexpected error occurred",
             )
 
     return wrapper
@@ -53,6 +54,7 @@ def handle_not_found(resource_name: str = "Resource") -> Callable:
     Returns:
         Decorator function
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -60,10 +62,12 @@ def handle_not_found(resource_name: str = "Resource") -> Callable:
             if result is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"{resource_name} not found"
+                    detail=f"{resource_name} not found",
                 )
             return result
+
         return wrapper
+
     return decorator
 
 
@@ -85,7 +89,7 @@ class ErrorHandler:
         logger.error(f"Database error during {operation}: {error}")
         return HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error during {operation}"
+            detail=f"Database error during {operation}",
         )
 
     @staticmethod
@@ -99,10 +103,7 @@ class ErrorHandler:
         Returns:
             HTTPException with 400 status
         """
-        return HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     @staticmethod
     def not_found_error(resource: str) -> HTTPException:
@@ -116,8 +117,7 @@ class ErrorHandler:
             HTTPException with 404 status
         """
         return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{resource} not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"{resource} not found"
         )
 
     @staticmethod
@@ -131,10 +131,7 @@ class ErrorHandler:
         Returns:
             HTTPException with 403 status
         """
-        return HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=message
-        )
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=message)
 
     @staticmethod
     def file_processing_error(operation: str, error: Exception) -> HTTPException:
@@ -151,5 +148,5 @@ class ErrorHandler:
         logger.error(f"File processing error during {operation}: {error}")
         return HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"File processing failed during {operation}"
+            detail=f"File processing failed during {operation}",
         )

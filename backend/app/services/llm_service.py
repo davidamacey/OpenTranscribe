@@ -32,6 +32,7 @@ class LLMProvider(str, Enum):
 @dataclass
 class LLMResponse:
     """Standardized response from LLM"""
+
     content: str
     usage_tokens: Optional[int] = None
     finish_reason: Optional[str] = None
@@ -42,6 +43,7 @@ class LLMResponse:
 @dataclass
 class LLMConfig:
     """Configuration for LLM provider"""
+
     provider: LLMProvider
     model: str
     api_key: Optional[str] = None
@@ -63,16 +65,25 @@ class LLMService:
         # Provider-specific endpoint mappings
         def build_endpoint(base_url: str) -> str:
             """Build chat completions endpoint, avoiding duplicate /v1 paths"""
-            if base_url.endswith('/v1'):
-                return f"{base_url}/chat/completions"
+            # Clean up the base URL - remove trailing slashes and spaces
+            clean_url = base_url.strip().rstrip("/")
+
+            if clean_url.endswith("/v1"):
+                return f"{clean_url}/chat/completions"
             else:
-                return f"{base_url}/v1/chat/completions"
+                return f"{clean_url}/v1/chat/completions"
 
         self.endpoints = {
             LLMProvider.OPENAI: "https://api.openai.com/v1/chat/completions",
-            LLMProvider.VLLM: build_endpoint(config.base_url) if config.base_url else None,
-            LLMProvider.OLLAMA: build_endpoint(config.base_url) if config.base_url else "http://localhost:11434/v1/chat/completions",
-            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
+            LLMProvider.VLLM: build_endpoint(config.base_url)
+            if config.base_url
+            else None,
+            LLMProvider.OLLAMA: build_endpoint(config.base_url)
+            if config.base_url
+            else "http://localhost:11434/v1/chat/completions",
+            LLMProvider.CUSTOM: build_endpoint(config.base_url)
+            if config.base_url
+            else None,
         }
 
         # Validate configuration
@@ -111,7 +122,9 @@ class LLMService:
 
         return headers
 
-    def _prepare_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+    def _prepare_payload(
+        self, messages: list[dict[str, str]], **kwargs
+    ) -> dict[str, Any]:
         """Prepare request payload for the API"""
         payload = {
             "model": self.config.model,
@@ -124,18 +137,18 @@ class LLMService:
         # Provider-specific adjustments
         if self.config.provider == LLMProvider.VLLM:
             # vLLM supports additional parameters
-            payload.update({
-                "top_p": kwargs.get("top_p", 0.9),
-                "frequency_penalty": kwargs.get("frequency_penalty", 0.0),
-                "presence_penalty": kwargs.get("presence_penalty", 0.0),
-            })
+            payload.update(
+                {
+                    "top_p": kwargs.get("top_p", 0.9),
+                    "frequency_penalty": kwargs.get("frequency_penalty", 0.0),
+                    "presence_penalty": kwargs.get("presence_penalty", 0.0),
+                }
+            )
 
         return payload
 
     async def chat_completion(
-        self,
-        messages: list[dict[str, str]],
-        **kwargs
+        self, messages: list[dict[str, str]], **kwargs
     ) -> LLMResponse:
         """
         Send chat completion request to LLM provider
@@ -154,8 +167,7 @@ class LLMService:
             headers = self._get_headers()
             payload = self._prepare_payload(messages, **kwargs)
 
-            logger.info(f"Sending request to {self.config.provider} ({url})")
-            logger.debug(f"Payload: {payload}")
+            logger.debug(f"Sending request to {self.config.provider} ({url})")
 
             start_time = time.time()
 
@@ -165,7 +177,9 @@ class LLMService:
 
                 if response.status != 200:
                     logger.error(f"LLM API error ({response.status}): {response_text}")
-                    raise Exception(f"LLM API error: {response.status} - {response_text}")
+                    raise Exception(
+                        f"LLM API error: {response.status} - {response_text}"
+                    )
 
                 try:
                     data = json.loads(response_text)
@@ -188,14 +202,16 @@ class LLMService:
                 if "usage" in data:
                     usage_tokens = data["usage"].get("total_tokens")
 
-                logger.info(f"LLM request completed in {request_time:.2f}s, tokens: {usage_tokens}")
+                logger.debug(
+                    f"LLM request completed in {request_time:.2f}s, tokens: {usage_tokens}"
+                )
 
                 return LLMResponse(
                     content=content,
                     usage_tokens=usage_tokens,
                     finish_reason=choice.get("finish_reason"),
                     model=self.config.model,
-                    provider=self.config.provider.value
+                    provider=self.config.provider.value,
                 )
 
         except aiohttp.ClientError as e:
@@ -214,13 +230,15 @@ class LLMService:
         """
         try:
             # Try to get model info from models endpoint
-            models_url = self.base_url.replace('/chat/completions', '/models')
+            models_url = self.base_url.replace("/chat/completions", "/models")
 
             headers = {}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
 
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as session:
                 async with session.get(models_url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -231,13 +249,15 @@ class LLMService:
                                 if model.get("id") == self.config.model:
                                     # Extract context length from various possible fields
                                     context_length = (
-                                        model.get("context_length") or
-                                        model.get("max_context_length") or
-                                        model.get("context_window") or
-                                        model.get("max_tokens")
+                                        model.get("context_length")
+                                        or model.get("max_context_length")
+                                        or model.get("context_window")
+                                        or model.get("max_tokens")
                                     )
                                     if context_length:
-                                        logger.info(f"Retrieved context length for {self.config.model}: {context_length}")
+                                        logger.debug(
+                                            f"Retrieved context length for {self.config.model}: {context_length}"
+                                        )
                                         return int(context_length)
 
                         # If model not found specifically, try to infer from model name
@@ -289,7 +309,9 @@ class LLMService:
         # This is conservative to avoid exceeding context limits
         return len(text) // 3
 
-    def _truncate_transcript_intelligently(self, transcript: str, max_tokens: int, prompt_overhead: int = 1500) -> tuple[str, bool]:
+    def _truncate_transcript_intelligently(
+        self, transcript: str, max_tokens: int, prompt_overhead: int = 1500
+    ) -> tuple[str, bool]:
         """
         Truncate transcript to fit within token limits while preserving structure
 
@@ -314,7 +336,9 @@ class LLMService:
         # If we need to truncate significantly, try to preserve speaker structure
         if len(transcript) > target_chars:
             # Find natural break points (speaker changes)
-            speaker_segments = re.split(r'(\n[A-Z_][A-Z0-9_]*:\s*\[\d+:\d+\])', transcript)
+            speaker_segments = re.split(
+                r"(\n[A-Z_][A-Z0-9_]*:\s*\[\d+:\d+\])", transcript
+            )
 
             truncated = ""
             current_length = 0
@@ -332,7 +356,7 @@ class LLMService:
                 truncated = ""
                 for word in words:
                     if len(truncated) + len(word) + 1 <= target_chars:
-                        truncated += (word + " ")
+                        truncated += word + " "
                     else:
                         break
                 truncated = truncated.strip()
@@ -341,7 +365,9 @@ class LLMService:
 
         return transcript[:target_chars], True
 
-    def _chunk_transcript_intelligently(self, transcript: str, max_tokens: int, prompt_overhead: int = 1500) -> list[str]:
+    def _chunk_transcript_intelligently(
+        self, transcript: str, max_tokens: int, prompt_overhead: int = 1500
+    ) -> list[str]:
         """
         Split transcript into intelligent chunks that respect context limits
 
@@ -365,7 +391,7 @@ class LLMService:
         chunks = []
 
         # Split by speaker changes and timestamps first for natural boundaries
-        speaker_segments = re.split(r'(\n[A-Z_][A-Z0-9_]*:\s*\[\d+:\d+\])', transcript)
+        speaker_segments = re.split(r"(\n[A-Z_][A-Z0-9_]*:\s*\[\d+:\d+\])", transcript)
 
         current_chunk = ""
         current_size = 0
@@ -393,7 +419,7 @@ class LLMService:
                 final_chunks.append(chunk)
             else:
                 # Split large chunks by sentences
-                sentences = re.split(r'(?<=[.!?])\s+', chunk)
+                sentences = re.split(r"(?<=[.!?])\s+", chunk)
                 sub_chunk = ""
 
                 for sentence in sentences:
@@ -409,7 +435,13 @@ class LLMService:
 
         return final_chunks if final_chunks else [transcript[:target_chars_per_chunk]]
 
-    async def _summarize_transcript_section(self, transcript_chunk: str, section_number: int, total_sections: int, speaker_data: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    async def _summarize_transcript_section(
+        self,
+        transcript_chunk: str,
+        section_number: int,
+        total_sections: int,
+        speaker_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """
         Generate a section summary for a transcript chunk
 
@@ -435,44 +467,49 @@ class LLMService:
         # The main prompt expects {transcript} and {speaker_data}, so format it correctly
         formatted_prompt = section_prompt.format(
             transcript=transcript_chunk,
-            speaker_data=json.dumps(speaker_data or {}, indent=2)
+            speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert meeting analyst. Analyze this transcript section and provide a structured summary that will be combined with other sections."
+                "content": "You are an expert meeting analyst. Analyze this transcript section and provide a structured summary that will be combined with other sections.",
             },
-            {
-                "role": "user",
-                "content": formatted_prompt
-            }
+            {"role": "user", "content": formatted_prompt},
         ]
 
         # Context length already handled by chunking
         response_tokens = min(2000, 4000)  # Reasonable response size for sections
-        response = await self.chat_completion(messages, max_tokens=response_tokens, temperature=0.1)
+        response = await self.chat_completion(
+            messages, max_tokens=response_tokens, temperature=0.1
+        )
 
         try:
             content = response.content.strip()
             # Handle code blocks for section summaries too
-            if content.startswith('```json') and content.endswith('```'):
+            if content.startswith("```json") and content.endswith("```"):
                 content = content[7:-3].strip()
-            elif content.startswith('```') and content.endswith('```'):
+            elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()
 
             return json.loads(content)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse section summary JSON: {str(e)}")
             return {
-                "key_points": [f"Section {section_number}: Failed to parse structured summary"],
+                "key_points": [
+                    f"Section {section_number}: Failed to parse structured summary"
+                ],
                 "speakers_in_section": [],
                 "decisions": [],
                 "action_items": [],
-                "topics_discussed": []
+                "topics_discussed": [],
             }
 
-    async def _stitch_section_summaries(self, section_summaries: list[dict[str, Any]], full_speaker_data: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    async def _stitch_section_summaries(
+        self,
+        section_summaries: list[dict[str, Any]],
+        full_speaker_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """
         Combine multiple section summaries into a final comprehensive BLUF summary
 
@@ -494,32 +531,33 @@ class LLMService:
             db.close()
 
         # Create a transcript from section summaries for the main prompt format
-        combined_content = f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(section_summaries, indent=2)}"
+        combined_content = (
+            f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(section_summaries, indent=2)}"
+        )
         formatted_prompt = final_prompt.format(
             transcript=combined_content,
-            speaker_data=json.dumps(full_speaker_data or {}, indent=2)
+            speaker_data=json.dumps(full_speaker_data or {}, indent=2),
         )
 
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert meeting analyst. Synthesize multiple section summaries into a comprehensive BLUF format summary."
+                "content": "You are an expert meeting analyst. Synthesize multiple section summaries into a comprehensive BLUF format summary.",
             },
-            {
-                "role": "user",
-                "content": formatted_prompt
-            }
+            {"role": "user", "content": formatted_prompt},
         ]
 
         response_tokens = min(4000, 6000)  # Larger response for final summary
-        response = await self.chat_completion(messages, max_tokens=response_tokens, temperature=0.1)
+        response = await self.chat_completion(
+            messages, max_tokens=response_tokens, temperature=0.1
+        )
 
         try:
             content = response.content.strip()
             # Handle code blocks for final summaries too
-            if content.startswith('```json') and content.endswith('```'):
+            if content.startswith("```json") and content.endswith("```"):
                 content = content[7:-3].strip()
-            elif content.startswith('```') and content.endswith('```'):
+            elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()
 
             return json.loads(content)
@@ -537,8 +575,8 @@ class LLMService:
                     "provider": self.config.provider.value,
                     "model": self.config.model,
                     "sections_processed": len(section_summaries),
-                    "error": f"Final summary JSON parsing failed: {str(e)}"
-                }
+                    "error": f"Final summary JSON parsing failed: {str(e)}",
+                },
             }
 
     async def generate_summary(
@@ -547,7 +585,7 @@ class LLMService:
         speaker_data: Optional[dict[str, Any]] = None,
         prompt_template: Optional[str] = None,
         user_id: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Generate structured summary from transcript
@@ -571,26 +609,27 @@ class LLMService:
 
         # Get model context length and handle transcript sectioning
         context_length = await self.get_model_context_length() or 4096
-        transcript_chunks = self._chunk_transcript_intelligently(transcript, context_length)
+        transcript_chunks = self._chunk_transcript_intelligently(
+            transcript, context_length
+        )
 
         if len(transcript_chunks) == 1:
             # Single chunk - use original direct approach
-            logger.info(f"Transcript fits in single section for model {self.config.model}")
+            logger.debug(
+                f"Transcript fits in single section for model {self.config.model}"
+            )
 
             formatted_prompt = prompt_template.format(
                 transcript=transcript_chunks[0],
-                speaker_data=json.dumps(speaker_data or {}, indent=2)
+                speaker_data=json.dumps(speaker_data or {}, indent=2),
             )
 
             messages = [
                 {
                     "role": "system",
-                    "content": "You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified."
+                    "content": "You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.",
                 },
-                {
-                    "role": "user",
-                    "content": formatted_prompt
-                }
+                {"role": "user", "content": formatted_prompt},
             ]
 
             response_tokens = min(4000, context_length // 4)
@@ -600,19 +639,23 @@ class LLMService:
             response = await self.chat_completion(messages, **kwargs)
         else:
             # Multi-section approach for long transcripts
-            logger.info(f"Processing transcript in {len(transcript_chunks)} sections for model {self.config.model}")
+            logger.debug(
+                f"Processing transcript in {len(transcript_chunks)} sections for model {self.config.model}"
+            )
 
             section_summaries = []
             for i, chunk in enumerate(transcript_chunks, 1):
-                logger.info(f"Processing section {i}/{len(transcript_chunks)}")
+                logger.debug(f"Processing section {i}/{len(transcript_chunks)}")
                 section_summary = await self._summarize_transcript_section(
                     chunk, i, len(transcript_chunks), speaker_data
                 )
                 section_summaries.append(section_summary)
 
             # Stitch sections together into final summary
-            logger.info("Stitching section summaries into final comprehensive summary")
-            final_summary = await self._stitch_section_summaries(section_summaries, speaker_data)
+            logger.debug("Stitching section summaries into final comprehensive summary")
+            final_summary = await self._stitch_section_summaries(
+                section_summaries, speaker_data
+            )
 
             # Add processing metadata
             final_summary["metadata"]["sections_processed"] = len(transcript_chunks)
@@ -628,40 +671,63 @@ class LLMService:
             content = response.content.strip()
 
             # Handle ```json format
-            if content.startswith('```json') and content.endswith('```'):
+            if content.startswith("```json") and content.endswith("```"):
                 content = content[7:-3].strip()  # Remove ```json and ```
             # Handle generic ``` format
-            elif content.startswith('```') and content.endswith('```'):
+            elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()  # Remove ``` and ```
             # Handle multiline code blocks
-            if content.startswith('```'):
-                lines = content.split('\n')
+            if content.startswith("```"):
+                lines = content.split("\n")
                 if len(lines) > 2:
                     # Check if first line has language specifier
                     first_line = lines[0].strip()
-                    if first_line in ['```', '```json', '```JSON']:
+                    if first_line in ["```", "```json", "```JSON"]:
                         # Remove first and last lines
-                        content = '\n'.join(lines[1:-1]).strip()
+                        content = "\n".join(lines[1:-1]).strip()
                     else:
                         # First line might contain both ``` and content
-                        if first_line.startswith('```'):
+                        if first_line.startswith("```"):
                             # Remove ``` from first line and last line
                             first_content = first_line[3:]
                             middle_lines = lines[1:-1] if len(lines) > 2 else []
                             last_line = lines[-1].strip()
-                            if last_line == '```':
-                                content = '\n'.join([first_content] + middle_lines).strip()
+                            if last_line == "```":
+                                content = "\n".join(
+                                    [first_content] + middle_lines
+                                ).strip()
                             else:
-                                content = '\n'.join([first_content] + middle_lines + [last_line.replace('```', '')]).strip()
+                                content = "\n".join(
+                                    [first_content]
+                                    + middle_lines
+                                    + [last_line.replace("```", "")]
+                                ).strip()
 
             summary_data = json.loads(content)
 
             # Validate required fields
-            required_fields = ["bluf", "brief_summary", "major_topics", "action_items", "key_decisions", "follow_up_items"]
+            required_fields = [
+                "bluf",
+                "brief_summary",
+                "major_topics",
+                "action_items",
+                "key_decisions",
+                "follow_up_items",
+            ]
             for field in required_fields:
                 if field not in summary_data:
                     logger.warning(f"Missing required field in summary: {field}")
-                    summary_data[field] = [] if field in ["major_topics", "action_items", "key_decisions", "follow_up_items"] else ""
+                    summary_data[field] = (
+                        []
+                        if field
+                        in [
+                            "major_topics",
+                            "action_items",
+                            "key_decisions",
+                            "follow_up_items",
+                        ]
+                        else ""
+                    )
 
             # Add metadata
             summary_data["metadata"] = {
@@ -669,7 +735,7 @@ class LLMService:
                 "model": self.config.model,
                 "usage_tokens": response.usage_tokens,
                 "transcript_length": len(transcript),
-                "processing_time_ms": None  # Will be set by caller
+                "processing_time_ms": None,  # Will be set by caller
             }
 
             return summary_data
@@ -690,8 +756,8 @@ class LLMService:
                     "usage_tokens": None,
                     "transcript_length": len(transcript),
                     "processing_time_ms": None,
-                    "error": f"JSON parsing failed: {str(e)}"
-                }
+                    "error": f"JSON parsing failed: {str(e)}",
+                },
             }
 
     async def identify_speakers(
@@ -699,7 +765,7 @@ class LLMService:
         transcript: str,
         speaker_segments: list[dict[str, Any]],
         known_speakers: list[dict[str, Any]],
-        **kwargs
+        **kwargs,
     ) -> dict[str, Any]:
         """
         Use LLM to identify speakers in transcript
@@ -726,36 +792,39 @@ class LLMService:
         # Get context length and truncate transcript if needed
         context_length = await self.get_model_context_length() or 4096
         transcript_processed, was_truncated = self._truncate_transcript_intelligently(
-            transcript, context_length, prompt_overhead=2000  # More overhead for speaker data
+            transcript,
+            context_length,
+            prompt_overhead=2000,  # More overhead for speaker data
         )
 
         if was_truncated:
-            logger.warning(f"Transcript truncated for speaker identification with {self.config.model}")
+            logger.warning(
+                f"Transcript truncated for speaker identification with {self.config.model}"
+            )
 
         # Format the prompt - the main prompt expects transcript and speaker_data
         speaker_context = {
             "speaker_segments": speaker_segments,
-            "known_speakers": known_speakers
+            "known_speakers": known_speakers,
         }
         formatted_prompt = prompt.format(
             transcript=transcript_processed,
-            speaker_data=json.dumps(speaker_context, indent=2)
+            speaker_data=json.dumps(speaker_context, indent=2),
         )
 
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert at identifying speakers in transcripts based on content analysis and context clues."
+                "content": "You are an expert at identifying speakers in transcripts based on content analysis and context clues.",
             },
-            {
-                "role": "user",
-                "content": formatted_prompt
-            }
+            {"role": "user", "content": formatted_prompt},
         ]
 
         # Get context length for this request
         context_length = await self.get_model_context_length() or 4096
-        response_tokens = min(2000, context_length // 4)  # Smaller response for speaker identification
+        response_tokens = min(
+            2000, context_length // 4
+        )  # Smaller response for speaker identification
         kwargs.setdefault("max_tokens", response_tokens)
         kwargs.setdefault("temperature", 0.2)
 
@@ -767,31 +836,37 @@ class LLMService:
             content = response.content.strip()
 
             # Handle ```json format
-            if content.startswith('```json') and content.endswith('```'):
+            if content.startswith("```json") and content.endswith("```"):
                 content = content[7:-3].strip()  # Remove ```json and ```
             # Handle generic ``` format
-            elif content.startswith('```') and content.endswith('```'):
+            elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()  # Remove ``` and ```
             # Handle multiline code blocks
-            if content.startswith('```'):
-                lines = content.split('\n')
+            if content.startswith("```"):
+                lines = content.split("\n")
                 if len(lines) > 2:
                     # Check if first line has language specifier
                     first_line = lines[0].strip()
-                    if first_line in ['```', '```json', '```JSON']:
+                    if first_line in ["```", "```json", "```JSON"]:
                         # Remove first and last lines
-                        content = '\n'.join(lines[1:-1]).strip()
+                        content = "\n".join(lines[1:-1]).strip()
                     else:
                         # First line might contain both ``` and content
-                        if first_line.startswith('```'):
+                        if first_line.startswith("```"):
                             # Remove ``` from first line and last line
                             first_content = first_line[3:]
                             middle_lines = lines[1:-1] if len(lines) > 2 else []
                             last_line = lines[-1].strip()
-                            if last_line == '```':
-                                content = '\n'.join([first_content] + middle_lines).strip()
+                            if last_line == "```":
+                                content = "\n".join(
+                                    [first_content] + middle_lines
+                                ).strip()
                             else:
-                                content = '\n'.join([first_content] + middle_lines + [last_line.replace('```', '')]).strip()
+                                content = "\n".join(
+                                    [first_content]
+                                    + middle_lines
+                                    + [last_line.replace("```", "")]
+                                ).strip()
 
             identification_data = json.loads(content)
 
@@ -799,7 +874,7 @@ class LLMService:
             identification_data["metadata"] = {
                 "provider": self.config.provider.value,
                 "model": self.config.model,
-                "usage_tokens": response.usage_tokens
+                "usage_tokens": response.usage_tokens,
             }
 
             return identification_data
@@ -814,20 +889,20 @@ class LLMService:
                     "provider": self.config.provider.value,
                     "model": self.config.model,
                     "usage_tokens": None,
-                    "error": f"JSON parsing failed: {str(e)}"
-                }
+                    "error": f"JSON parsing failed: {str(e)}",
+                },
             }
 
     @staticmethod
-    def create_from_settings(user_id: Optional[int] = None) -> 'LLMService':
+    def create_from_settings(user_id: Optional[int] = None) -> Optional["LLMService"]:
         """
         Create LLMService from application settings or user-specific settings
-        
+
         Args:
             user_id: If provided, attempts to load user-specific settings first
-        
+
         Returns:
-            LLMService configured with user settings or system defaults
+            LLMService configured with user settings or system defaults, or None if no LLM is configured
         """
         # Try to load user-specific settings first
         if user_id:
@@ -836,42 +911,59 @@ class LLMService:
                 if user_service:
                     return user_service
             except Exception as e:
-                logger.warning(f"Failed to load user LLM settings for user {user_id}, falling back to system defaults: {e}")
+                logger.warning(
+                    f"Failed to load user LLM settings for user {user_id}, falling back to system defaults: {e}"
+                )
 
         # Fall back to system defaults
-        return LLMService.create_from_system_settings()
+        try:
+            return LLMService.create_from_system_settings()
+        except Exception as e:
+            logger.warning(f"No LLM service available: {e}")
+            return None
 
     @staticmethod
-    def create_from_system_settings() -> 'LLMService':
+    def create_from_system_settings() -> "LLMService":
         """
         Create LLMService from system application settings
-        
+
         This method creates an LLM service using the system-wide default configuration
-        from environment variables. It's used as a fallback when users haven't 
+        from environment variables. It's used as a fallback when users haven't
         configured their own LLM settings or when user settings fail to load.
         """
-        provider = LLMProvider(settings.LLM_PROVIDER)
+        # Check if LLM provider is configured
+        if not settings.LLM_PROVIDER or settings.LLM_PROVIDER.strip() == "":
+            raise ValueError(
+                "No LLM provider configured. Please set LLM_PROVIDER in environment variables or configure user-specific LLM settings."
+            )
+
+        try:
+            provider = LLMProvider(settings.LLM_PROVIDER)
+        except ValueError:
+            raise ValueError(
+                f"Invalid LLM provider '{settings.LLM_PROVIDER}'. Supported providers: {', '.join([p.value for p in LLMProvider])}"
+            )
 
         # Provider-specific configuration mapping
         if provider == LLMProvider.VLLM:
             model = settings.VLLM_MODEL_NAME
-            api_key = settings.VLLM_API_KEY
+            api_key = settings.VLLM_API_KEY or None
             base_url = settings.VLLM_BASE_URL
         elif provider == LLMProvider.OPENAI:
             model = settings.OPENAI_MODEL_NAME
-            api_key = settings.OPENAI_API_KEY
+            api_key = settings.OPENAI_API_KEY or None
             base_url = settings.OPENAI_BASE_URL
         elif provider == LLMProvider.OLLAMA:
             model = settings.OLLAMA_MODEL_NAME
-            api_key = None
+            api_key = None  # Ollama typically doesn't require auth
             base_url = settings.OLLAMA_BASE_URL
         elif provider == LLMProvider.CLAUDE:
             model = settings.ANTHROPIC_MODEL_NAME
-            api_key = settings.ANTHROPIC_API_KEY
+            api_key = settings.ANTHROPIC_API_KEY or None
             base_url = settings.ANTHROPIC_BASE_URL
         elif provider == LLMProvider.CUSTOM:
             model = settings.OPENROUTER_MODEL_NAME
-            api_key = settings.OPENROUTER_API_KEY
+            api_key = settings.OPENROUTER_API_KEY or None
             base_url = settings.OPENROUTER_BASE_URL
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
@@ -883,19 +975,19 @@ class LLMService:
             base_url=base_url,
             max_tokens=131000,  # Use full model capacity as requested
             temperature=0.3,
-            timeout=300  # 5 minutes timeout for large context processing
+            timeout=300,  # 5 minutes timeout for large context processing
         )
 
         return LLMService(config)
 
     @staticmethod
-    def create_from_user_settings(user_id: int) -> Optional['LLMService']:
+    def create_from_user_settings(user_id: int) -> Optional["LLMService"]:
         """
         Create LLMService from user-specific database settings
-        
+
         Args:
             user_id: User ID to load settings for
-            
+
         Returns:
             LLMService configured with user settings, or None if no settings found
         """
@@ -906,10 +998,14 @@ class LLMService:
         db = SessionLocal()
         try:
             # Get user's LLM settings
-            user_settings = db.query(UserLLMSettings).filter(
-                UserLLMSettings.user_id == user_id,
-                UserLLMSettings.is_active == True
-            ).first()
+            user_settings = (
+                db.query(UserLLMSettings)
+                .filter(
+                    UserLLMSettings.user_id == user_id,
+                    UserLLMSettings.is_active == True,
+                )
+                .first()
+            )
 
             if not user_settings:
                 return None
@@ -933,14 +1029,18 @@ class LLMService:
                 base_url=user_settings.base_url,
                 max_tokens=user_settings.max_tokens,
                 temperature=temperature_float,
-                timeout=user_settings.timeout
+                timeout=user_settings.timeout,
             )
 
-            logger.info(f"Created LLMService for user {user_id} with provider {provider} and model {user_settings.model_name}")
+            logger.debug(
+                f"Created LLMService for user {user_id} with provider {provider} and model {user_settings.model_name}"
+            )
             return LLMService(config)
 
         except Exception as e:
-            logger.error(f"Error creating LLMService from user settings for user {user_id}: {e}")
+            logger.error(
+                f"Error creating LLMService from user settings for user {user_id}: {e}"
+            )
             return None
         finally:
             db.close()
@@ -952,27 +1052,57 @@ class LLMService:
 
     async def health_check(self) -> bool:
         """
-        Quick health check without sending full request to LLM
+        Quick health check using the models endpoint
 
         Returns:
             True if LLM is available, False otherwise
         """
         try:
             session = await self._get_session()
-            url = self.endpoints[self.config.provider]
             headers = self._get_headers()
 
-            # Simple HEAD request or minimal payload to test connectivity
-            test_payload = {
-                "model": self.config.model,
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 1,
-                "temperature": 0.0
-            }
+            # Build models endpoint URL
+            base_url = (
+                self.config.base_url.strip().rstrip("/")
+                if self.config.base_url
+                else None
+            )
+            if not base_url:
+                return False
 
-            async with session.post(url, json=test_payload, headers=headers) as response:
-                # Accept 200 or even some error codes that indicate the service is up
-                return response.status in [200, 400, 422]  # 400/422 might be validation errors but service is up
+            if base_url.endswith("/v1"):
+                models_url = f"{base_url}/models"
+            else:
+                models_url = f"{base_url}/v1/models"
+
+            logger.debug(f"Health check using models endpoint: {models_url}")
+
+            async with session.get(models_url, headers=headers) as response:
+                if response.status == 200:
+                    # Optionally verify our model is in the list
+                    try:
+                        data = await response.json()
+                        if "data" in data:
+                            model_ids = [model.get("id") for model in data["data"]]
+                            if self.config.model in model_ids:
+                                logger.debug(
+                                    f"Model {self.config.model} found in available models"
+                                )
+                                return True
+                            else:
+                                logger.warning(
+                                    f"Model {self.config.model} not found in available models: {model_ids}"
+                                )
+                                return False  # Model not available
+                        return True
+                    except Exception as e:
+                        logger.debug(
+                            f"Could not parse models response, but got 200: {e}"
+                        )
+                        return True  # Service is up even if we can't parse response
+                else:
+                    logger.debug(f"Models endpoint returned status {response.status}")
+                    return False
 
         except Exception as e:
             logger.debug(f"Health check failed for {self.config.provider}: {e}")
@@ -980,26 +1110,68 @@ class LLMService:
 
     async def validate_connection(self) -> tuple[bool, str]:
         """
-        Validate connection to LLM provider
+        Validate connection to LLM provider using models endpoint first
 
         Returns:
             Tuple of (success, message)
         """
         try:
-            test_messages = [
-                {"role": "user", "content": "Respond with exactly: 'Connection test successful'"}
-            ]
+            # First, check if we can reach the models endpoint
+            session = await self._get_session()
+            headers = self._get_headers()
 
-            response = await self.chat_completion(
-                test_messages,
-                max_tokens=50,
-                temperature=0.0
+            # Build models endpoint URL
+            base_url = (
+                self.config.base_url.strip().rstrip("/")
+                if self.config.base_url
+                else None
             )
+            if not base_url:
+                return False, "No base URL configured"
 
-            if "connection test successful" in response.content.lower():
-                return True, f"Successfully connected to {self.config.provider} ({self.config.model})"
+            if base_url.endswith("/v1"):
+                models_url = f"{base_url}/models"
             else:
-                return False, f"Unexpected response: {response.content}"
+                models_url = f"{base_url}/v1/models"
+
+            logger.debug(f"Testing connection to models endpoint: {models_url}")
+
+            async with session.get(models_url, headers=headers) as response:
+                if response.status == 200:
+                    # Check if our model is available
+                    try:
+                        data = await response.json()
+                        if "data" in data:
+                            model_ids = [model.get("id") for model in data["data"]]
+                            if self.config.model in model_ids:
+                                return (
+                                    True,
+                                    f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available.",
+                                )
+                            else:
+                                available_models = ", ".join(
+                                    model_ids[:3]
+                                )  # Show first 3 models
+                                return (
+                                    False,
+                                    f"Model '{self.config.model}' not found. Available models: {available_models}...",
+                                )
+                        else:
+                            return (
+                                True,
+                                f"Successfully connected to {self.config.provider} (could not verify model list)",
+                            )
+                    except Exception as e:
+                        return (
+                            True,
+                            f"Successfully connected to {self.config.provider} (model verification failed: {str(e)})",
+                        )
+                else:
+                    response_text = await response.text()
+                    return (
+                        False,
+                        f"Models endpoint failed with status {response.status}: {response_text}",
+                    )
 
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
@@ -1024,7 +1196,7 @@ async def create_llm_service_with_fallback() -> LLMService:
         logger.warning(f"Primary LLM provider error: {e}")
 
     # Try fallback providers
-    fallback_providers = getattr(settings, 'LLM_FALLBACK_PROVIDERS', ['openai'])
+    fallback_providers = getattr(settings, "LLM_FALLBACK_PROVIDERS", ["openai"])
 
     for provider_name in fallback_providers:
         if provider_name == settings.LLM_PROVIDER:
@@ -1033,13 +1205,17 @@ async def create_llm_service_with_fallback() -> LLMService:
         try:
             provider = LLMProvider(provider_name)
             # Get provider-specific model name
-            model = getattr(settings, f'{provider_name.upper()}_MODEL_NAME', f'{provider_name}-default')
+            model = getattr(
+                settings,
+                f"{provider_name.upper()}_MODEL_NAME",
+                f"{provider_name}-default",
+            )
 
             fallback_config = LLMConfig(
                 provider=provider,
                 model=model,
-                api_key=getattr(settings, f'{provider_name.upper()}_API_KEY', None),
-                base_url=getattr(settings, f'{provider_name.upper()}_BASE_URL', None),
+                api_key=getattr(settings, f"{provider_name.upper()}_API_KEY", None),
+                base_url=getattr(settings, f"{provider_name.upper()}_BASE_URL", None),
             )
 
             fallback_service = LLMService(fallback_config)
@@ -1065,14 +1241,20 @@ async def create_llm_service_with_fallback() -> LLMService:
 class LLMServiceContext:
     """Context manager for LLM service with proper cleanup"""
 
-    def __init__(self, service: Optional[LLMService] = None, user_id: Optional[int] = None):
+    def __init__(
+        self, service: Optional[LLMService] = None, user_id: Optional[int] = None
+    ):
         self.service = service
         self.user_id = user_id
         self._created_service = service is None
 
-    async def __aenter__(self) -> LLMService:
+    async def __aenter__(self) -> "LLMService":
         if self.service is None:
             self.service = LLMService.create_from_settings(user_id=self.user_id)
+            if self.service is None:
+                raise Exception(
+                    "LLM service is not available. Please configure an LLM provider or check your configuration."
+                )
         return self.service
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -1081,16 +1263,27 @@ class LLMServiceContext:
 
 
 # Utility function for quick LLM availability check
-async def is_llm_available() -> bool:
+async def is_llm_available(user_id: Optional[int] = None) -> bool:
     """
     Quick check to see if any LLM provider is available
+
+    Args:
+        user_id: Optional user ID to check user-specific LLM settings
 
     Returns:
         True if at least one LLM provider is available, False otherwise
     """
     try:
-        async with LLMServiceContext() as llm_service:
-            return await llm_service.health_check()
+        # First check if we can even create an LLM service
+        llm_service = LLMService.create_from_settings(user_id=user_id)
+        if llm_service is None:
+            logger.debug("No LLM service configured")
+            return False
+
+        # Then check if it's actually working
+        health_ok = await llm_service.health_check()
+        await llm_service.close()
+        return health_ok
     except Exception as e:
         logger.debug(f"LLM availability check failed: {e}")
         return False

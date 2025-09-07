@@ -38,15 +38,17 @@ def reset_summary_for_retry(db: Session, file_id: int) -> bool:
         return False
 
     # Only retry if transcription is completed
-    if media_file.status != 'completed':
-        logger.error(f"Cannot retry summary for file {file_id} - transcription not completed (status: {media_file.status})")
+    if media_file.status != "completed":
+        logger.error(
+            f"Cannot retry summary for file {file_id} - transcription not completed (status: {media_file.status})"
+        )
         return False
 
     try:
         # Reset summary fields
         media_file.summary = None
         media_file.summary_opensearch_id = None
-        media_file.summary_status = 'pending'
+        media_file.summary_status = "pending"
 
         db.commit()
         logger.info(f"Reset summary status for file {file_id}")
@@ -121,10 +123,13 @@ def get_failed_summary_count() -> int:
     """
     db = SessionLocal()
     try:
-        return db.query(MediaFile).filter(
-            MediaFile.summary_status == 'failed',
-            MediaFile.status == 'completed'
-        ).count()
+        return (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.summary_status == "failed", MediaFile.status == "completed"
+            )
+            .count()
+        )
     except Exception as e:
         logger.error(f"Error getting failed summary count: {e}")
         return 0

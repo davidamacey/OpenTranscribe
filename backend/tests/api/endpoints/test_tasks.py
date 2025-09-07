@@ -9,24 +9,27 @@ def test_list_tasks(client, user_token_headers):
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
+
 def test_list_tasks_unauthorized(client):
     """Test that unauthorized users cannot list tasks"""
     response = client.get("/api/tasks/")
     assert response.status_code == 401  # Unauthorized
+
 
 def test_get_task_not_found(client, user_token_headers):
     """Test getting a non-existent task"""
     response = client.get("/api/tasks/task_999999", headers=user_token_headers)
     assert response.status_code == 404  # Not found
 
+
 # This test depends on the file upload creating a task
 def test_get_task(client, user_token_headers, db_session):
     """Test getting a specific task"""
     # First upload a file to create an associated task
-    sample_file = {
-        "file": ("task_test.mp3", io.BytesIO(b"test content"), "audio/mpeg")
-    }
-    upload_response = client.post("/api/files/", headers=user_token_headers, files=sample_file)
+    sample_file = {"file": ("task_test.mp3", io.BytesIO(b"test content"), "audio/mpeg")}
+    upload_response = client.post(
+        "/api/files/", headers=user_token_headers, files=sample_file
+    )
     file_id = upload_response.json()["id"]
 
     # Get tasks to find the one associated with this file

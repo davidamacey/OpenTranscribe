@@ -4,6 +4,7 @@ YouTube processing service for downloading and processing YouTube videos.
 This service handles all YouTube-related operations including URL validation,
 video downloading, metadata extraction, and integration with the media processing pipeline.
 """
+
 import io
 import logging
 import os
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # YouTube URL validation regex
 YOUTUBE_URL_PATTERN = re.compile(
-    r'^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/)|youtu\.be/)[\w\-_]+.*$'
+    r"^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/)|youtu\.be/)[\w\-_]+.*$"
 )
 
 
@@ -67,9 +68,9 @@ class YouTubeService:
             HTTPException: If unable to extract video information
         """
         ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": False,
         }
 
         try:
@@ -80,7 +81,7 @@ class YouTubeService:
             logger.error(f"Error extracting video info from {url}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract video information: {str(e)}"
+                detail=f"Failed to extract video information: {str(e)}",
             )
 
     def download_video(self, url: str, output_path: str) -> dict[str, Any]:
@@ -101,23 +102,28 @@ class YouTubeService:
         ydl_opts = {
             # Download best H.264 quality for maximum browser compatibility
             # Prefer H.264 video codec over AV1 to ensure playback works across all browsers
-            'format': 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[vcodec*=h264][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-            'restrictfilenames': True,  # Avoid special characters in filename
-            'no_warnings': False,
-            'extractaudio': False,
-            'embed_subs': True,  # Embed subtitles if available
-            'writesubtitles': False,  # Don't write separate subtitle files
-            'writeautomaticsub': False,  # Don't write auto-generated subs
-            'ignoreerrors': False,
-            'no_playlist': True,  # Only download single video
-            'max_filesize': 15 * 1024 * 1024 * 1024,  # 15GB limit (matches upload limit)
+            "format": "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/bestvideo[vcodec*=h264][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "outtmpl": os.path.join(output_path, "%(title)s.%(ext)s"),
+            "restrictfilenames": True,  # Avoid special characters in filename
+            "no_warnings": False,
+            "extractaudio": False,
+            "embed_subs": True,  # Embed subtitles if available
+            "writesubtitles": False,  # Don't write separate subtitle files
+            "writeautomaticsub": False,  # Don't write auto-generated subs
+            "ignoreerrors": False,
+            "no_playlist": True,  # Only download single video
+            "max_filesize": 15
+            * 1024
+            * 1024
+            * 1024,  # 15GB limit (matches upload limit)
             # Ensure web-compatible MP4 output
-            'merge_output_format': 'mp4',
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            }],
+            "merge_output_format": "mp4",
+            "postprocessors": [
+                {
+                    "key": "FFmpegVideoConvertor",
+                    "preferedformat": "mp4",
+                }
+            ],
         }
 
         try:
@@ -126,22 +132,22 @@ class YouTubeService:
                 info = ydl.extract_info(url, download=False)
 
                 # Check duration (optional limit)
-                duration = info.get('duration')
+                duration = info.get("duration")
                 if duration and duration > 14400:  # 4 hours limit
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Video is too long. Maximum duration is 4 hours."
+                        detail="Video is too long. Maximum duration is 4 hours.",
                     )
 
                 # Download the video
                 ydl.download([url])
 
                 # Find the downloaded file
-                title = info.get('title', 'video')
-                ext = info.get('ext', 'mp4')
+                title = info.get("title", "video")
+                ext = info.get("ext", "mp4")
 
                 # Clean title for filename
-                clean_title = re.sub(r'[^\w\-_\.]', '_', title)[:100]  # Limit length
+                clean_title = re.sub(r"[^\w\-_\.]", "_", title)[:100]  # Limit length
                 expected_filename = f"{clean_title}.{ext}"
                 downloaded_file = os.path.join(output_path, expected_filename)
 
@@ -149,29 +155,29 @@ class YouTubeService:
                 if not os.path.exists(downloaded_file):
                     # Look for any video file in the directory
                     for file in os.listdir(output_path):
-                        if file.endswith(('.mp4', '.webm', '.mkv', '.avi')):
+                        if file.endswith((".mp4", ".webm", ".mkv", ".avi")):
                             downloaded_file = os.path.join(output_path, file)
                             break
                     else:
                         raise FileNotFoundError("Downloaded file not found")
 
                 return {
-                    'file_path': downloaded_file,
-                    'filename': os.path.basename(downloaded_file),
-                    'info': info
+                    "file_path": downloaded_file,
+                    "filename": os.path.basename(downloaded_file),
+                    "info": info,
                 }
 
         except yt_dlp.DownloadError as e:
             logger.error(f"yt-dlp download error for {url}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to download video: {str(e)}"
+                detail=f"Failed to download video: {str(e)}",
             )
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected error during download: {str(e)}"
+                detail=f"Unexpected error during download: {str(e)}",
             )
 
     def _extract_technical_metadata(self, file_path: str) -> dict[str, Any]:
@@ -199,15 +205,15 @@ class YouTubeService:
 
                 # Convert to format expected by MediaFile model
                 return {
-                    'content_type': raw_metadata.get('File:MIMEType', 'video/mp4'),
-                    'format': important_metadata.get('FileType'),
-                    'video_codec': important_metadata.get('VideoCodec'),
-                    'width': important_metadata.get('VideoWidth'),
-                    'height': important_metadata.get('VideoHeight'),
-                    'frame_rate': important_metadata.get('VideoFrameRate'),
-                    'audio_channels': important_metadata.get('AudioChannels'),
-                    'audio_sample_rate': important_metadata.get('AudioSampleRate'),
-                    'duration': important_metadata.get('Duration'),
+                    "content_type": raw_metadata.get("File:MIMEType", "video/mp4"),
+                    "format": important_metadata.get("FileType"),
+                    "video_codec": important_metadata.get("VideoCodec"),
+                    "width": important_metadata.get("VideoWidth"),
+                    "height": important_metadata.get("VideoHeight"),
+                    "frame_rate": important_metadata.get("VideoFrameRate"),
+                    "audio_channels": important_metadata.get("AudioChannels"),
+                    "audio_sample_rate": important_metadata.get("AudioSampleRate"),
+                    "duration": important_metadata.get("Duration"),
                 }
             else:
                 logger.warning("No metadata extracted, using fallback")
@@ -227,8 +233,8 @@ class YouTubeService:
             Frame rate as float or None if invalid
         """
         try:
-            if '/' in frame_rate_str:
-                numerator, denominator = frame_rate_str.split('/')
+            if "/" in frame_rate_str:
+                numerator, denominator = frame_rate_str.split("/")
                 return float(numerator) / float(denominator)
             else:
                 return float(frame_rate_str)
@@ -250,37 +256,61 @@ class YouTubeService:
             import ffmpeg
 
             probe = ffmpeg.probe(file_path)
-            format_info = probe.get('format', {})
-            video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-            audio_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'audio'), None)
+            format_info = probe.get("format", {})
+            video_stream = next(
+                (
+                    stream
+                    for stream in probe["streams"]
+                    if stream["codec_type"] == "video"
+                ),
+                None,
+            )
+            audio_stream = next(
+                (
+                    stream
+                    for stream in probe["streams"]
+                    if stream["codec_type"] == "audio"
+                ),
+                None,
+            )
 
             metadata = {
-                'content_type': 'video/mp4',  # Default
-                'format': format_info.get('format_name'),
-                'duration': float(format_info.get('duration', 0)),
+                "content_type": "video/mp4",  # Default
+                "format": format_info.get("format_name"),
+                "duration": float(format_info.get("duration", 0)),
             }
 
             if video_stream:
-                metadata.update({
-                    'video_codec': video_stream.get('codec_name'),
-                    'width': video_stream.get('width'),
-                    'height': video_stream.get('height'),
-                    'frame_rate': self._safe_frame_rate_eval(video_stream.get('r_frame_rate')) if video_stream.get('r_frame_rate') else None
-                })
+                metadata.update(
+                    {
+                        "video_codec": video_stream.get("codec_name"),
+                        "width": video_stream.get("width"),
+                        "height": video_stream.get("height"),
+                        "frame_rate": self._safe_frame_rate_eval(
+                            video_stream.get("r_frame_rate")
+                        )
+                        if video_stream.get("r_frame_rate")
+                        else None,
+                    }
+                )
 
             if audio_stream:
-                metadata.update({
-                    'audio_channels': audio_stream.get('channels'),
-                    'audio_sample_rate': audio_stream.get('sample_rate'),
-                })
+                metadata.update(
+                    {
+                        "audio_channels": audio_stream.get("channels"),
+                        "audio_sample_rate": audio_stream.get("sample_rate"),
+                    }
+                )
 
             return metadata
 
         except Exception as e:
             logger.warning(f"Failed to extract basic metadata: {e}")
-            return {'content_type': 'video/mp4'}
+            return {"content_type": "video/mp4"}
 
-    def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
+    def _prepare_youtube_metadata(
+        self, url: str, youtube_info: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Prepare YouTube-specific metadata for storage.
 
@@ -292,25 +322,23 @@ class YouTubeService:
             Dictionary with YouTube metadata
         """
         return {
-            'source': 'youtube',
-            'original_url': url,
-            'youtube_id': youtube_info.get('id'),
-            'youtube_title': youtube_info.get('title'),
-            'youtube_description': youtube_info.get('description'),
-            'youtube_uploader': youtube_info.get('uploader'),
-            'youtube_upload_date': youtube_info.get('upload_date'),
-            'youtube_duration': youtube_info.get('duration'),
-            'youtube_view_count': youtube_info.get('view_count'),
-            'youtube_like_count': youtube_info.get('like_count'),
-            'youtube_thumbnail': youtube_info.get('thumbnail'),
-            'youtube_tags': youtube_info.get('tags', []),
-            'youtube_categories': youtube_info.get('categories', []),
+            "source": "youtube",
+            "original_url": url,
+            "youtube_id": youtube_info.get("id"),
+            "youtube_title": youtube_info.get("title"),
+            "youtube_description": youtube_info.get("description"),
+            "youtube_uploader": youtube_info.get("uploader"),
+            "youtube_upload_date": youtube_info.get("upload_date"),
+            "youtube_duration": youtube_info.get("duration"),
+            "youtube_view_count": youtube_info.get("view_count"),
+            "youtube_like_count": youtube_info.get("like_count"),
+            "youtube_thumbnail": youtube_info.get("thumbnail"),
+            "youtube_tags": youtube_info.get("tags", []),
+            "youtube_categories": youtube_info.get("categories", []),
         }
 
     async def _download_youtube_thumbnail(
-        self,
-        youtube_info: dict[str, Any],
-        user_id: int
+        self, youtube_info: dict[str, Any], user_id: int
     ) -> str:
         """
         Download YouTube thumbnail and upload to storage.
@@ -325,24 +353,24 @@ class YouTubeService:
         try:
             # Get the best thumbnail URL from YouTube info
             thumbnail_url = None
-            thumbnails = youtube_info.get('thumbnails', [])
+            thumbnails = youtube_info.get("thumbnails", [])
 
-            if not thumbnails and youtube_info.get('thumbnail'):
+            if not thumbnails and youtube_info.get("thumbnail"):
                 # Fallback to single thumbnail URL
-                thumbnail_url = youtube_info.get('thumbnail')
+                thumbnail_url = youtube_info.get("thumbnail")
             else:
                 # Find the highest quality thumbnail
                 # YouTube provides multiple thumbnails, we want the highest resolution
                 max_width = 0
                 for thumb in thumbnails:
-                    width = thumb.get('width', 0)
-                    if width > max_width and thumb.get('url'):
+                    width = thumb.get("width", 0)
+                    if width > max_width and thumb.get("url"):
                         max_width = width
-                        thumbnail_url = thumb['url']
+                        thumbnail_url = thumb["url"]
 
                 # Fallback to maxresdefault or hqdefault
-                if not thumbnail_url and youtube_info.get('id'):
-                    video_id = youtube_info['id']
+                if not thumbnail_url and youtube_info.get("id"):
+                    video_id = youtube_info["id"]
                     # Try maxresdefault first (1280x720), then hqdefault (480x360)
                     potential_urls = [
                         f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
@@ -376,7 +404,7 @@ class YouTubeService:
                 return None
 
             # Generate storage path (consistent with existing pattern)
-            video_id = youtube_info.get('id', 'unknown')
+            video_id = youtube_info.get("id", "unknown")
             storage_path = f"user_{user_id}/youtube_{video_id}/thumbnail.jpg"
 
             # Upload to storage
@@ -384,22 +412,19 @@ class YouTubeService:
                 file_content=io.BytesIO(thumbnail_data),
                 file_size=len(thumbnail_data),
                 object_name=storage_path,
-                content_type="image/jpeg"
+                content_type="image/jpeg",
             )
 
-            logger.info(f"Successfully downloaded and uploaded YouTube thumbnail: {storage_path}")
+            logger.info(
+                f"Successfully downloaded and uploaded YouTube thumbnail: {storage_path}"
+            )
             return storage_path
 
         except Exception as e:
             logger.error(f"Error downloading YouTube thumbnail: {e}")
             return None
 
-    async def process_youtube_url(
-        self,
-        url: str,
-        db: Session,
-        user: User
-    ) -> MediaFile:
+    async def process_youtube_url(self, url: str, db: Session, user: User) -> MediaFile:
         """
         Process a YouTube URL by downloading the video and creating a MediaFile record.
 
@@ -416,8 +441,7 @@ class YouTubeService:
         """
         if not self.is_valid_youtube_url(url):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid YouTube URL"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL"
             )
 
         # Create temporary directory for download
@@ -428,9 +452,9 @@ class YouTubeService:
             logger.info(f"Starting YouTube download for URL: {url}")
             download_result = self.download_video(url, temp_dir)
 
-            downloaded_file = download_result['file_path']
-            original_filename = download_result['filename']
-            youtube_info = download_result['info']
+            downloaded_file = download_result["file_path"]
+            original_filename = download_result["filename"]
+            youtube_info = download_result["info"]
 
             # Get file stats
             file_stats = os.stat(downloaded_file)
@@ -446,13 +470,13 @@ class YouTubeService:
 
             # Upload to MinIO
             logger.info(f"Uploading downloaded video to MinIO: {storage_path}")
-            with open(downloaded_file, 'rb') as f:
+            with open(downloaded_file, "rb") as f:
                 file_content = io.BytesIO(f.read())
                 upload_file(
                     file_content=file_content,
                     file_size=file_size,
                     object_name=storage_path,
-                    content_type=technical_metadata.get('content_type', 'video/mp4')
+                    content_type=technical_metadata.get("content_type", "video/mp4"),
                 )
 
             # Download and upload YouTube thumbnail
@@ -462,15 +486,19 @@ class YouTubeService:
                     youtube_info, user.id
                 )
                 if thumbnail_path:
-                    logger.info(f"Successfully downloaded YouTube thumbnail: {thumbnail_path}")
+                    logger.info(
+                        f"Successfully downloaded YouTube thumbnail: {thumbnail_path}"
+                    )
                 else:
-                    logger.warning("Failed to download YouTube thumbnail, will generate from video")
+                    logger.warning(
+                        "Failed to download YouTube thumbnail, will generate from video"
+                    )
                     # Fallback to generating thumbnail from video
                     thumbnail_path = await generate_and_upload_thumbnail(
                         user_id=user.id,
                         media_file_id=0,  # Will be updated after DB save
                         video_path=downloaded_file,
-                        timestamp=5.0
+                        timestamp=5.0,
                     )
             except Exception as e:
                 logger.error(f"Error downloading YouTube thumbnail: {e}")
@@ -480,10 +508,12 @@ class YouTubeService:
                         user_id=user.id,
                         media_file_id=0,
                         video_path=downloaded_file,
-                        timestamp=5.0
+                        timestamp=5.0,
                     )
                 except Exception as fallback_error:
-                    logger.error(f"Fallback thumbnail generation also failed: {fallback_error}")
+                    logger.error(
+                        f"Fallback thumbnail generation also failed: {fallback_error}"
+                    )
 
             # Prepare YouTube metadata
             youtube_metadata = self._prepare_youtube_metadata(url, youtube_info)
@@ -491,30 +521,31 @@ class YouTubeService:
             # Create MediaFile record
             media_file = MediaFile(
                 user_id=user.id,
-                filename=youtube_info.get('title', original_filename)[:255],  # Limit length
+                filename=youtube_info.get("title", original_filename)[
+                    :255
+                ],  # Limit length
                 storage_path=storage_path,
                 file_size=file_size,
-                content_type=technical_metadata.get('content_type', 'video/mp4'),
-                duration=technical_metadata.get('duration') or youtube_info.get('duration'),
+                content_type=technical_metadata.get("content_type", "video/mp4"),
+                duration=technical_metadata.get("duration")
+                or youtube_info.get("duration"),
                 status=FileStatus.PENDING,
                 thumbnail_path=thumbnail_path,  # Add thumbnail path
-
                 # YouTube-specific metadata
-                title=youtube_info.get('title'),
-                author=youtube_info.get('uploader'),
-                description=youtube_info.get('description'),
+                title=youtube_info.get("title"),
+                author=youtube_info.get("uploader"),
+                description=youtube_info.get("description"),
                 source_url=url,  # Store original YouTube URL
                 metadata_raw=youtube_metadata,
                 metadata_important=youtube_metadata,
-
                 # Technical metadata from extraction
-                media_format=technical_metadata.get('format'),
-                codec=technical_metadata.get('video_codec'),
-                frame_rate=technical_metadata.get('frame_rate'),
-                resolution_width=technical_metadata.get('width'),
-                resolution_height=technical_metadata.get('height'),
-                audio_channels=technical_metadata.get('audio_channels'),
-                audio_sample_rate=technical_metadata.get('audio_sample_rate'),
+                media_format=technical_metadata.get("format"),
+                codec=technical_metadata.get("video_codec"),
+                frame_rate=technical_metadata.get("frame_rate"),
+                resolution_width=technical_metadata.get("width"),
+                resolution_height=technical_metadata.get("height"),
+                audio_channels=technical_metadata.get("audio_channels"),
+                audio_sample_rate=technical_metadata.get("audio_sample_rate"),
             )
 
             # Save to database

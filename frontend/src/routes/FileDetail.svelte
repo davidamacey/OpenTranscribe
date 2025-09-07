@@ -20,6 +20,7 @@
   import ReprocessButton from '$components/ReprocessButton.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
+  import { llmStatusStore, isLLMAvailable } from '../stores/llmStatus';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -60,6 +61,10 @@
   let showSummaryModal = false;
   let generatingSummary = false;
   let summaryError = '';
+  let summaryGenerating = false; // WebSocket-driven summary generation status
+  // LLM availability for summary functionality
+  $: llmAvailable = $isLLMAvailable;
+  
   
 
   // Confirmation modal state
@@ -1335,11 +1340,18 @@
     }
   }
 
+
   /**
    * Generate summary for the transcript
    */
   async function handleGenerateSummary() {
     if (!file?.id) return;
+    
+    // Check if LLM is available
+    if (!$isLLMAvailable) {
+      summaryError = 'AI summary features are not available. Please configure an LLM provider in Settings.';
+      return;
+    }
     
     try {
       generatingSummary = true;
@@ -1347,13 +1359,16 @@
       
       const response = await axiosInstance.post(`/api/files/${file.id}/summarize`);
       
-      // Refresh file details to show updated status
-      await fetchFileDetails(file.id);
-      
+      // Don't refresh page - let WebSocket notifications handle status updates
+      // This preserves user's editing state
       console.log('Summary generation started:', response.data);
+      
+      // The WebSocket will update summaryGenerating = true when processing starts
     } catch (error: any) {
       console.error('Error generating summary:', error);
-      summaryError = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
+      const errorMessage = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
+      
+      summaryError = errorMessage;
     } finally {
       generatingSummary = false;
     }
@@ -1407,11 +1422,19 @@
     }
 
     if (fileId && !isNaN(Number(fileId))) {
-      fetchFileDetails();
+      // Load file details and initialize LLM status
+      Promise.all([
+        fetchFileDetails(),
+        llmStatusStore.initialize()
+      ]).catch(err => {
+        console.error('Error loading page data:', err);
+      });
     } else {
       errorMessage = 'Invalid file ID';
       isLoading = false;
     }
+
+    // LLM status monitoring is now handled by the Settings component and reactive store
 
     // Track last processed notification to avoid duplicate processing
     let lastProcessedNotificationId = '';
@@ -1447,10 +1470,32 @@
               }
             }
             
+            // WebSocket notifications for file updates
+            
             // Handle summarization status updates
             if (latestNotification.type === 'summary_status') {
-              console.log('Summary status update for file:', fileId, 'Status:', latestNotification.data?.status);
-              fetchFileDetails(); // Refresh to get updated summary status
+              const status = latestNotification.data?.status;
+              console.log('Received summary_status notification:', status);
+              
+              if (status === 'processing' || status === 'generating') {
+                // Summary generation started - show spinner without full refresh
+                summaryGenerating = true;
+                summaryError = '';
+              } else if (status === 'completed') {
+                // Summary completed - update file object without disrupting user workflow
+                summaryGenerating = false;
+                if (file) {
+                  // Smartly update only summary-related fields
+                  // Use fallback values to ensure summary is marked as available
+                  file.summary = latestNotification.data?.summary || 'completed';
+                  file.summary_opensearch_id = latestNotification.data?.summary_opensearch_id || 'completed';
+                  file = { ...file }; // Trigger reactivity for button state
+                }
+              } else if (status === 'failed' || status === 'error') {
+                // Summary failed - show error without full refresh
+                summaryGenerating = false;
+                summaryError = latestNotification.data?.message || 'Failed to generate summary';
+              }
             }
           }
         }
@@ -1484,6 +1529,8 @@
     if (subtitleRefreshTimer) {
       clearTimeout(subtitleRefreshTimer);
     }
+    
+    // LLM status cleanup is handled by the Settings component
     
     // Clean up WebSocket subscription
     if (wsUnsubscribe) {
@@ -1560,16 +1607,36 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
                 <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
               </svg>
-              Summary
+              View Summary
+            </button>
+          {:else if summaryGenerating || generatingSummary}
+            <!-- Show generating state even when no summary exists yet -->
+            <button 
+              class="generate-summary-btn"
+              disabled
+              title="AI summary is being generated..."
+            >
+              <div class="spinner-small"></div>
+              <span>AI Summary</span>
             </button>
           {:else if file?.status === 'completed'}
             <button 
               class="generate-summary-btn"
               on:click={handleGenerateSummary}
-              disabled={generatingSummary}
-              title="Generate AI-powered summary with key insights and action items"
+              disabled={generatingSummary || summaryGenerating || !llmAvailable}
+              title={!llmAvailable ? 'AI summary features are not available. Configure an LLM provider in Settings.' : 
+                     (generatingSummary || summaryGenerating) ? 'AI summary is being generated...' : 
+                     'Generate AI-powered summary with key insights and action items'}
             >
-              {generatingSummary ? 'Generating...' : 'Generate AI Summary'}
+              {#if generatingSummary || summaryGenerating}
+                <div class="spinner-small"></div>
+                <span>AI Summary</span>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
+                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
+                </svg>
+                Generate AI Summary
+              {/if}
             </button>
           {/if}
         </div>
@@ -1582,6 +1649,25 @@
           {errorMessage}
           on:retry={handleVideoRetry}
         />
+
+        <!-- Error Messages -->
+        {#if summaryError}
+          <div class="summary-error-container">
+            <div class="error-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="error-icon">
+                <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+              </svg>
+              <span>{summaryError}</span>
+            </div>
+            <button 
+              class="dismiss-error-btn" 
+              on:click={() => summaryError = ''}
+              title="Dismiss error"
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
         
         <!-- Waveform visualization -->
         {#if file && file.id && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
@@ -1695,6 +1781,35 @@
     fileId={file.id}
     fileName={file?.filename || 'Unknown File'}
     on:close={() => showSummaryModal = false}
+    on:reprocessSummary={async (event) => {
+      // 1. Close modal immediately
+      showSummaryModal = false;
+      
+      // 2. Update button to show spinner state
+      summaryGenerating = true;
+      summaryError = '';
+      
+      // 3. Clear the summary from file object to trigger "generating" button state
+      if (file) {
+        file.summary = null;
+        file.summary_opensearch_id = null;
+        file = { ...file }; // Trigger reactivity
+      }
+      
+      // 4. Trigger the API call for reprocessing
+      try {
+        const response = await axiosInstance.post(`/api/files/${file.id}/summarize`, {
+          force_regenerate: true
+        });
+        
+        // WebSocket will handle the rest of the status updates
+        console.log('Reprocess summary started successfully');
+      } catch (error) {
+        console.error('Failed to start reprocess:', error);
+        summaryError = 'Failed to start summary reprocessing';
+        summaryGenerating = false;
+      }
+    }}
   />
 {/if}
 
@@ -1838,6 +1953,9 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .generate-summary-btn:hover:not(:disabled) {
@@ -1848,6 +1966,83 @@
   .generate-summary-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+
+  .status-text {
+    white-space: nowrap;
+  }
+
+  .generate-summary-btn.checking {
+    background-color: var(--warning-color, #f59e0b);
+    opacity: 0.8;
+  }
+
+  .generate-summary-btn.unavailable {
+    background-color: var(--error-color, #ef4444);
+    color: white;
+  }
+
+  .generate-summary-btn.unavailable:hover {
+    background-color: var(--error-color-dark, #dc2626);
+  }
+
+  .spinner-small {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .warning-icon {
+    flex-shrink: 0;
+    margin-right: 0.3rem;
+    opacity: 0.9;
+  }
+
+  .summary-error-container {
+    background-color: var(--error-bg, #fef2f2);
+    border: 1px solid var(--error-border, #fecaca);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    position: relative;
+  }
+
+  .error-message {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--error-color, #dc2626);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+
+  .error-icon {
+    flex-shrink: 0;
+  }
+
+
+  .dismiss-error-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    line-height: 1;
+  }
+
+  .dismiss-error-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
   }
 
 

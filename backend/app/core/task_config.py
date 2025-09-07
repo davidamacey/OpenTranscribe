@@ -41,10 +41,10 @@ class TaskRecoveryConfig:
         if self.MAX_TASK_DURATIONS is None:
             self.MAX_TASK_DURATIONS = {
                 "transcription": 3600,  # 1 hour max for transcription
-                "extract_audio": 600,   # 10 minutes max for audio extraction
+                "extract_audio": 600,  # 10 minutes max for audio extraction
                 "analyze_transcript": 900,  # 15 minutes max for analysis
                 "summarize_transcript": 900,  # 15 minutes max for summarization
-                "default": 1800  # 30 minutes default for other task types
+                "default": 1800,  # 30 minutes default for other task types
             }
 
 

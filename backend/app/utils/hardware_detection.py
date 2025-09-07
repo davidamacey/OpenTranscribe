@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 class HardwareConfig:
     """Hardware detection and configuration for cross-platform AI processing."""
 
-    def __init__(self, force_device: Optional[str] = None, force_compute_type: Optional[str] = None):
+    def __init__(
+        self,
+        force_device: Optional[str] = None,
+        force_compute_type: Optional[str] = None,
+    ):
         """
         Initialize hardware configuration.
 
@@ -37,6 +41,7 @@ class HardwareConfig:
         # Detect PyTorch availability
         try:
             import torch
+
             self.torch_available = True
             self.torch_version = torch.__version__
         except ImportError:
@@ -69,13 +74,17 @@ class HardwareConfig:
             torch.cuda.set_device(0)
             device_name = torch.cuda.get_device_name(0)
             gpu_requested = os.getenv("GPU_DEVICE_ID", "0")
-            logger.info(f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}")
+            logger.info(
+                f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}"
+            )
             return "cuda"
 
         # Check for MPS (Apple Silicon)
-        if (self.system == "darwin" and
-            hasattr(torch.backends, 'mps') and
-            torch.backends.mps.is_available()):
+        if (
+            self.system == "darwin"
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
             logger.info("Apple MPS available")
             return "mps"
 
@@ -114,6 +123,7 @@ class HardwareConfig:
         if self.device == "cuda":
             try:
                 import torch
+
                 # Get GPU memory info
                 total_memory = torch.cuda.get_device_properties(0).total_memory
                 memory_gb = total_memory / (1024**3)
@@ -122,7 +132,7 @@ class HardwareConfig:
                     return 16
                 elif memory_gb >= 12:  # Mid-range GPU
                     return 8
-                elif memory_gb >= 6:   # Entry-level GPU
+                elif memory_gb >= 6:  # Entry-level GPU
                     return 4
                 else:
                     return 2
@@ -161,7 +171,7 @@ class HardwareConfig:
         config = {
             "device": whisperx_device,
             "compute_type": whisperx_compute_type,
-            "batch_size": self.batch_size
+            "batch_size": self.batch_size,
         }
 
         # Add device-specific configurations
@@ -173,9 +183,7 @@ class HardwareConfig:
 
     def get_pyannote_config(self) -> dict[str, Any]:
         """Get configuration parameters for PyAnnote (speaker diarization)."""
-        config = {
-            "device": self.get_torch_device() if self.torch_available else "cpu"
-        }
+        config = {"device": self.get_torch_device() if self.torch_available else "cpu"}
 
         return config
 
@@ -198,9 +206,13 @@ class HardwareConfig:
             logger.debug(f"CUDA memory cleanup skipped: {e}")
 
         try:
-            if self.device == "mps" and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            if (
+                self.device == "mps"
+                and hasattr(torch.backends, "mps")
+                and torch.backends.mps.is_available()
+            ):
                 # Clear MPS cache only if MPS is actually being used
-                if hasattr(torch.mps, 'empty_cache'):
+                if hasattr(torch.mps, "empty_cache"):
                     torch.mps.empty_cache()
         except Exception as e:
             logger.debug(f"MPS memory cleanup skipped: {e}")
@@ -215,27 +227,30 @@ class HardwareConfig:
         if self.device == "cpu":
             # CPU optimizations
             import multiprocessing
+
             cpu_count = multiprocessing.cpu_count()
 
-            env_vars.update({
-                "OMP_NUM_THREADS": str(cpu_count),
-                "MKL_NUM_THREADS": str(cpu_count),
-                "NUMEXPR_NUM_THREADS": str(cpu_count),
-                "TORCH_CPP_LOG_LEVEL": "WARNING"
-            })
+            env_vars.update(
+                {
+                    "OMP_NUM_THREADS": str(cpu_count),
+                    "MKL_NUM_THREADS": str(cpu_count),
+                    "NUMEXPR_NUM_THREADS": str(cpu_count),
+                    "TORCH_CPP_LOG_LEVEL": "WARNING",
+                }
+            )
 
         elif self.device == "mps":
             # MPS optimizations
-            env_vars.update({
-                "PYTORCH_ENABLE_MPS_FALLBACK": "1",
-                "PYTORCH_MPS_HIGH_WATERMARK_RATIO": "0.0"
-            })
+            env_vars.update(
+                {
+                    "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+                    "PYTORCH_MPS_HIGH_WATERMARK_RATIO": "0.0",
+                }
+            )
 
         elif self.device == "cuda":
             # CUDA optimizations
-            env_vars.update({
-                "TORCH_CUDA_ARCH_LIST": "6.0 6.1 7.0 7.5 8.0 8.6+PTX"
-            })
+            env_vars.update({"TORCH_CUDA_ARCH_LIST": "6.0 6.1 7.0 7.5 8.0 8.6+PTX"})
             # Docker maps GPU_DEVICE_ID to container device 0
 
         return env_vars
@@ -249,7 +264,7 @@ class HardwareConfig:
             "compute_type": self.compute_type,
             "batch_size": self.batch_size,
             "torch_available": self.torch_available,
-            "torch_version": self.torch_version
+            "torch_version": self.torch_version,
         }
 
     def validate_configuration(self) -> tuple[bool, str]:
@@ -308,20 +323,19 @@ def get_docker_runtime_config() -> dict[str, Any]:
     """
     config = detect_hardware()
 
-    docker_config = {
-        "environment": config.get_environment_variables(),
-        "deploy": {}
-    }
+    docker_config = {"environment": config.get_environment_variables(), "deploy": {}}
 
     if config.device == "cuda":
         # NVIDIA GPU runtime
         docker_config["deploy"]["resources"] = {
             "reservations": {
-                "devices": [{
-                    "driver": "nvidia",
-                    "device_ids": [os.getenv("GPU_DEVICE_ID", "0")],
-                    "capabilities": ["gpu"]
-                }]
+                "devices": [
+                    {
+                        "driver": "nvidia",
+                        "device_ids": [os.getenv("GPU_DEVICE_ID", "0")],
+                        "capabilities": ["gpu"],
+                    }
+                ]
             }
         }
 

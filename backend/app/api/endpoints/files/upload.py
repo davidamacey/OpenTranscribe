@@ -31,19 +31,20 @@ def validate_file_type(file: UploadFile) -> None:
     if not file:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No file was uploaded. Please select a file."
+            detail="No file was uploaded. Please select a file.",
         )
 
     allowed_types = ["audio/", "video/"]
     if not any(file.content_type.startswith(t) for t in allowed_types):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be an audio or video format"
+            detail="File must be an audio or video format",
         )
 
 
-def create_media_file_record(db: Session, file: UploadFile, current_user: User,
-                           file_size: int) -> MediaFile:
+def create_media_file_record(
+    db: Session, file: UploadFile, current_user: User, file_size: int
+) -> MediaFile:
     """
     Create a MediaFile database record.
 
@@ -57,11 +58,11 @@ def create_media_file_record(db: Session, file: UploadFile, current_user: User,
         Created MediaFile object
     """
     try:
-        if not hasattr(FileStatus, 'PENDING'):
+        if not hasattr(FileStatus, "PENDING"):
             raise ValueError("FileStatus enum is not properly defined or imported")
 
         # Check if file has file_hash attribute (from FileMetadata object)
-        file_hash = getattr(file, 'file_hash', None)
+        file_hash = getattr(file, "file_hash", None)
 
         # Create MediaFile record with essential metadata
 
@@ -78,7 +79,7 @@ def create_media_file_record(db: Session, file: UploadFile, current_user: User,
             summary=None,
             translated_text=None,
             file_hash=file_hash,
-            thumbnail_path=None
+            thumbnail_path=None,
         )
 
         db.add(db_file)
@@ -91,12 +92,13 @@ def create_media_file_record(db: Session, file: UploadFile, current_user: User,
         logger.error(f"Error creating MediaFile: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating media file record: {str(e)}"
+            detail=f"Error creating media file record: {str(e)}",
         )
 
 
-def upload_file_to_storage(file_content: bytes, file_size: int, storage_path: str,
-                         content_type: str) -> None:
+def upload_file_to_storage(
+    file_content: bytes, file_size: int, storage_path: str, content_type: str
+) -> None:
     """
     Upload file content to MinIO storage.
 
@@ -106,12 +108,12 @@ def upload_file_to_storage(file_content: bytes, file_size: int, storage_path: st
         storage_path: Storage path in MinIO
         content_type: MIME type of the file
     """
-    if os.environ.get('SKIP_S3', 'False').lower() != 'true':
+    if os.environ.get("SKIP_S3", "False").lower() != "true":
         upload_file(
             file_content=io.BytesIO(file_content),
             file_size=file_size,
             object_name=storage_path,
-            content_type=content_type
+            content_type=content_type,
         )
     else:
         logger.info("Skipping S3 upload in test environment")
@@ -124,13 +126,19 @@ def start_transcription_task(file_id: int) -> None:
     Args:
         file_id: ID of the media file to transcribe
     """
-    if os.environ.get('SKIP_CELERY', 'False').lower() != 'true':
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         transcribe_audio_task.delay(file_id)
     else:
         logger.info("Skipping Celery task in test environment")
 
 
-async def process_file_upload(file: UploadFile, db: Session, current_user: User, existing_file_id: Optional[int] = None, client_file_hash: Optional[str] = None) -> MediaFile:
+async def process_file_upload(
+    file: UploadFile,
+    db: Session,
+    current_user: User,
+    existing_file_id: Optional[int] = None,
+    client_file_hash: Optional[str] = None,
+) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
     Includes file hash calculation for duplicate detection and thumbnail generation for video files.
@@ -153,29 +161,39 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
 
         # Validate file type first
         validate_file_type(file)
-        logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
+        logger.info(
+            f"Processing file - filename: {file.filename}, content_type: {file.content_type}"
+        )
 
         # Get file size from content-length header if available
         file_size = 0
         try:
-            file_size = int(file.headers.get('content-length', 0))
+            file_size = int(file.headers.get("content-length", 0))
         except (ValueError, TypeError):
             # If we can't get size from headers, we'll calculate it while reading chunks
             pass
 
         # Check if we should use an existing file record (from prepare_upload)
         if existing_file_id:
-            db_file = db.query(MediaFile).filter(
-                MediaFile.id == existing_file_id,
-                MediaFile.user_id == current_user.id
-            ).first()
+            db_file = (
+                db.query(MediaFile)
+                .filter(
+                    MediaFile.id == existing_file_id,
+                    MediaFile.user_id == current_user.id,
+                )
+                .first()
+            )
 
             if not db_file:
-                logger.warning(f"Existing file ID {existing_file_id} not found for user {current_user.id}")
+                logger.warning(
+                    f"Existing file ID {existing_file_id} not found for user {current_user.id}"
+                )
                 # Create a new file record if the existing one can't be found
                 db_file = create_media_file_record(db, file, current_user, file_size)
             else:
-                logger.info(f"Duplicate detected: using existing file ID={existing_file_id}")
+                logger.info(
+                    f"Duplicate detected: using existing file ID={existing_file_id}"
+                )
                 # Update the status to PENDING
                 db_file.status = FileStatus.PENDING
                 db.commit()
@@ -209,23 +227,30 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
             # Prioritize client-provided hash, then existing hash, then calculate as fallback
             if client_file_hash:
                 # If client_file_hash starts with 0x, remove it for database consistency
-                if client_file_hash.startswith('0x'):
+                if client_file_hash.startswith("0x"):
                     client_file_hash = client_file_hash[2:]
                 db_file.file_hash = client_file_hash
             elif not db_file.file_hash:
                 # No file hash provided - this shouldn't happen with the updated frontend
-                logger.warning(f"No file hash provided for {file.filename} - duplicate detection may not work")
+                logger.warning(
+                    f"No file hash provided for {file.filename} - duplicate detection may not work"
+                )
 
             # Upload to storage
-            upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
+            upload_file_to_storage(
+                file_content, file_size, storage_path, file.content_type
+            )
 
             # For video files, generate and upload a thumbnail
             thumbnail_path = None
-            if file.content_type.startswith('video/'):
+            if file.content_type.startswith("video/"):
                 try:
                     # We need to save the video temporarily to generate thumbnail
                     import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_video:
+
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=os.path.splitext(file.filename)[1]
+                    ) as temp_video:
                         temp_video.write(file_content)
                         temp_file_path = temp_video.name
 
@@ -233,14 +258,18 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
                     thumbnail_path = await generate_and_upload_thumbnail(
                         user_id=current_user.id,
                         media_file_id=db_file.id,
-                        video_path=temp_file_path
+                        video_path=temp_file_path,
                     )
 
                     if thumbnail_path:
-                        logger.info(f"Generated thumbnail for video: {file.filename}, path: {thumbnail_path}")
+                        logger.info(
+                            f"Generated thumbnail for video: {file.filename}, path: {thumbnail_path}"
+                        )
                         db_file.thumbnail_path = thumbnail_path
                     else:
-                        logger.warning(f"Failed to generate thumbnail for video: {file.filename}")
+                        logger.warning(
+                            f"Failed to generate thumbnail for video: {file.filename}"
+                        )
                 finally:
                     # Clean up temporary file
                     if temp_file_path and os.path.exists(temp_file_path):
@@ -248,7 +277,9 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
                             os.unlink(temp_file_path)
                             # Removed debug log
                         except Exception as e:
-                            logger.warning(f"Failed to remove temporary file {temp_file_path}: {str(e)}")
+                            logger.warning(
+                                f"Failed to remove temporary file {temp_file_path}: {str(e)}"
+                            )
 
             # Update storage path, file size, and thumbnail path in database
             db_file.storage_path = storage_path
@@ -277,7 +308,7 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error during file upload: {str(upload_error)}"
+                detail=f"Error during file upload: {str(upload_error)}",
             )
 
     except HTTPException:
@@ -287,5 +318,5 @@ async def process_file_upload(file: UploadFile, db: Session, current_user: User,
         logger.error(f"File upload processing error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing file upload: {str(e)}"
+            detail=f"Error processing file upload: {str(e)}",
         )

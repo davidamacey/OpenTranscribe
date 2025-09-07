@@ -37,7 +37,10 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
-                return {"status": "error", "message": f"Media file with ID {file_id} not found"}
+                return {
+                    "status": "error",
+                    "message": f"Media file with ID {file_id} not found",
+                }
 
             user_id = media_file.user_id
             storage_path = media_file.storage_path
@@ -45,11 +48,13 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
 
         file_data, file_size, content_type = download_file(storage_path)
 
-        if not content_type.startswith('video/'):
+        if not content_type.startswith("video/"):
             return {"status": "error", "message": "Not a video file"}
 
         video_suffix = Path(filename).suffix
-        with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as temp_video:
+        with tempfile.NamedTemporaryFile(
+            suffix=video_suffix, delete=False
+        ) as temp_video:
             temp_video.write(file_data.read())
             video_path = temp_video.name
 
@@ -62,33 +67,37 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
             audio_filename = f"{Path(filename).stem}.{output_format}"
             audio_storage_path = f"user_{user_id}/file_{file_id}/audio/{audio_filename}"
 
-            with tempfile.NamedTemporaryFile(suffix=f".{output_format}", delete=False) as temp_audio:
+            with tempfile.NamedTemporaryFile(
+                suffix=f".{output_format}", delete=False
+            ) as temp_audio:
                 audio_path = temp_audio.name
 
-            ffmpeg.input(video_path).output(audio_path).run(quiet=True, overwrite_output=True)
+            ffmpeg.input(video_path).output(audio_path).run(
+                quiet=True, overwrite_output=True
+            )
 
-            with open(audio_path, 'rb') as audio_file:
+            with open(audio_path, "rb") as audio_file:
                 audio_data = audio_file.read()
 
             upload_file(
                 file_content=io.BytesIO(audio_data),
                 file_size=os.path.getsize(audio_path),
                 object_name=audio_storage_path,
-                content_type=f"audio/{output_format}"
+                content_type=f"audio/{output_format}",
             )
 
             logger.info(f"Audio extraction completed for file {file_id}")
             return {
                 "status": "success",
                 "file_id": file_id,
-                "audio_path": audio_storage_path
+                "audio_path": audio_storage_path,
             }
 
         finally:
             try:
                 if os.path.exists(video_path):
                     os.unlink(video_path)
-                if 'audio_path' in locals() and os.path.exists(audio_path):
+                if "audio_path" in locals() and os.path.exists(audio_path):
                     os.unlink(audio_path)
             except Exception as e:
                 logger.error(f"Error cleaning up temporary files: {e}")
@@ -111,11 +120,17 @@ def analyze_transcript_task(file_id: int):
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
-                return {"status": "error", "message": f"Media file with ID {file_id} not found"}
+                return {
+                    "status": "error",
+                    "message": f"Media file with ID {file_id} not found",
+                }
 
-            segments = db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).order_by(TranscriptSegment.segment_index).all()
+            segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.segment_index)
+                .all()
+            )
 
             if not segments:
                 logger.warning(f"No transcript segments found for file {file_id}")
@@ -123,7 +138,9 @@ def analyze_transcript_task(file_id: int):
 
             full_text = " ".join([segment.text for segment in segments])
 
-            analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+            analytics = (
+                db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+            )
             if not analytics:
                 analytics = Analytics(media_file_id=file_id)
                 db.add(analytics)
@@ -158,11 +175,17 @@ def summarize_transcript_task(file_id: int):
             media_file = get_refreshed_object(db, MediaFile, file_id)
             if not media_file:
                 logger.error(f"Media file with ID {file_id} not found")
-                return {"status": "error", "message": f"Media file with ID {file_id} not found"}
+                return {
+                    "status": "error",
+                    "message": f"Media file with ID {file_id} not found",
+                }
 
-            segments = db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == file_id
-            ).order_by(TranscriptSegment.segment_index).all()
+            segments = (
+                db.query(TranscriptSegment)
+                .filter(TranscriptSegment.media_file_id == file_id)
+                .order_by(TranscriptSegment.segment_index)
+                .all()
+            )
 
             if not segments:
                 logger.warning(f"No transcript segments found for file {file_id}")
@@ -178,19 +201,22 @@ def summarize_transcript_task(file_id: int):
                 from nltk.tokenize import sent_tokenize
 
                 try:
-                    nltk.data.find('tokenizers/punkt')
+                    nltk.data.find("tokenizers/punkt")
                 except LookupError:
-                    nltk.download('punkt')
+                    nltk.download("punkt")
                 try:
-                    nltk.data.find('corpora/stopwords')
+                    nltk.data.find("corpora/stopwords")
                 except LookupError:
-                    nltk.download('stopwords')
+                    nltk.download("stopwords")
 
                 sentences = sent_tokenize(full_text)
-                stop_words = set(stopwords.words('english'))
-                words = [word.lower() for sentence in sentences
-                        for word in nltk.word_tokenize(sentence)
-                        if word.isalnum() and word.lower() not in stop_words]
+                stop_words = set(stopwords.words("english"))
+                words = [
+                    word.lower()
+                    for sentence in sentences
+                    for word in nltk.word_tokenize(sentence)
+                    if word.isalnum() and word.lower() not in stop_words
+                ]
 
                 word_frequencies = FreqDist(words)
 
@@ -204,10 +230,12 @@ def summarize_transcript_task(file_id: int):
                                 sentence_scores[i] = word_frequencies[word]
 
                 num_summary_sentences = min(3, len(sentences))
-                top_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)[:num_summary_sentences]
+                top_sentences = sorted(
+                    sentence_scores.items(), key=lambda x: x[1], reverse=True
+                )[:num_summary_sentences]
                 top_sentences = sorted(top_sentences, key=lambda x: x[0])
 
-                summary = ' '.join([sentences[i] for i, _ in top_sentences])
+                summary = " ".join([sentences[i] for i, _ in top_sentences])
 
                 if not summary.strip():
                     summary = f"Transcript with {len(segments)} segments and approximately {len(full_text.split())} words."

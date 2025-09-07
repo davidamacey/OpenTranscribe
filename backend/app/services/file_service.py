@@ -52,7 +52,9 @@ class FileService:
             logger.error(f"Error uploading file: {e}")
             raise ErrorHandler.file_processing_error("upload", e)
 
-    def get_user_files(self, user: User, filters: Optional[dict[str, Any]] = None) -> list[MediaFile]:
+    def get_user_files(
+        self, user: User, filters: Optional[dict[str, Any]] = None
+    ) -> list[MediaFile]:
         """
         Get files for a user with optional filtering.
 
@@ -68,6 +70,7 @@ class FileService:
 
             if filters:
                 from app.api.endpoints.files import apply_all_filters
+
                 query = apply_all_filters(query, filters)
 
             return query.order_by(MediaFile.upload_time.desc()).all()
@@ -91,7 +94,9 @@ class FileService:
         """
         return AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-    def update_file_metadata(self, file_id: int, updates: MediaFileUpdate, user: User) -> MediaFile:
+    def update_file_metadata(
+        self, file_id: int, updates: MediaFileUpdate, user: User
+    ) -> MediaFile:
         """
         Update file metadata.
 
@@ -133,6 +138,7 @@ class FileService:
             # Delete from storage
             try:
                 from app.services.minio_service import delete_file
+
                 delete_file(file_obj.storage_path)
             except Exception as storage_error:
                 logger.warning(f"Error deleting file from storage: {storage_error}")
@@ -218,15 +224,18 @@ class FileService:
             List of MediaFile objects
         """
         try:
-            return self.db.query(MediaFile).filter(
-                MediaFile.user_id == user.id,
-                MediaFile.status == status
-            ).all()
+            return (
+                self.db.query(MediaFile)
+                .filter(MediaFile.user_id == user.id, MediaFile.status == status)
+                .all()
+            )
         except Exception as e:
             logger.error(f"Error getting files by status: {e}")
             raise ErrorHandler.database_error("status filtering", e)
 
-    def update_file_status(self, file_id: int, status: FileStatus, user: User = None) -> None:
+    def update_file_status(
+        self, file_id: int, status: FileStatus, user: User = None
+    ) -> None:
         """
         Update file status.
 
@@ -265,13 +274,12 @@ class FileService:
         """
         try:
             # Search in filename, title, and transcript content
-            files_query = self.db.query(MediaFile).filter(
-                MediaFile.user_id == user.id
-            )
+            files_query = self.db.query(MediaFile).filter(MediaFile.user_id == user.id)
 
             # Apply text search filters
             from app.api.endpoints.files.filtering import apply_search_filter
             from app.api.endpoints.files.filtering import apply_transcript_search_filter
+
             files_query = apply_search_filter(files_query, query)
 
             # Also search in transcript content

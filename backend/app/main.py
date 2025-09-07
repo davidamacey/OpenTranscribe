@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
                 f"{minio_host}:{minio_port}",
                 access_key=minio_user,
                 secret_key=minio_password,
-                secure=False
+                secure=False,
             )
 
             # Check if bucket exists, if not create it
@@ -60,9 +60,9 @@ async def lifespan(app: FastAPI):
                             "Effect": "Allow",
                             "Principal": {"AWS": "*"},
                             "Action": ["s3:GetObject"],
-                            "Resource": [f"arn:aws:s3:::{bucket_name}/*"]
+                            "Resource": [f"arn:aws:s3:::{bucket_name}/*"],
                         }
-                    ]
+                    ],
                 }
 
                 client.set_bucket_policy(bucket_name, json.dumps(policy))
@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
 
             # Import and run the startup recovery task
             from app.tasks.recovery import startup_recovery_task
+
             result = startup_recovery_task.delay()
             logger.info(f"Startup recovery task scheduled: {result.id}")
         except Exception as e:
@@ -115,7 +116,7 @@ app = FastAPI(
     # This ensures consistent behavior regardless of how frontend makes requests
     redirect_slashes=True,
     # Increase default timeout to 1 hour for large file uploads
-    default_timeout=3600
+    default_timeout=3600,
 )
 
 # Set up CORS
@@ -131,13 +132,11 @@ app.add_middleware(
 app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # 50GB
 
 # Add Route Fixer Middleware to handle inconsistent frontend/backend API calls
-app.add_middleware(
-    RouteFixerMiddleware,
-    api_prefix=settings.API_PREFIX
-)
+app.add_middleware(RouteFixerMiddleware, api_prefix=settings.API_PREFIX)
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)
+
 
 # Health check endpoint
 @app.get("/health")
@@ -145,10 +144,12 @@ def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+
 # Static files are served by nginx in production, not by FastAPI
 # Removed conflicting static file mounting to prevent nginx conflicts
 
 # Run the application if executed directly
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

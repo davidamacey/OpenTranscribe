@@ -4,7 +4,7 @@ Tests for external LLM connections and edge cases
 This module tests various external LLM configurations to ensure
 robust handling of different scenarios including:
 - External Ollama instances
-- External vLLM deployments  
+- External vLLM deployments
 - Network failures and timeouts
 - Invalid credentials
 - Rate limiting scenarios
@@ -33,7 +33,7 @@ class TestExternalOllamaConnections:
             provider=LLMProvider.OLLAMA,
             model="llama2:7b-chat",
             base_url="http://localhost:11434",
-            timeout=10
+            timeout=10,
         )
 
         service = LLMService(config)
@@ -63,7 +63,7 @@ class TestExternalOllamaConnections:
             provider=LLMProvider.OLLAMA,
             model="mistral:7b",
             base_url="http://localhost:11435",  # Non-standard port
-            timeout=5
+            timeout=5,
         )
 
         service = LLMService(config)
@@ -86,7 +86,7 @@ class TestExternalOllamaConnections:
             provider=LLMProvider.OLLAMA,
             model="nonexistent-model:latest",
             base_url="http://localhost:11434",
-            timeout=5
+            timeout=5,
         )
 
         service = LLMService(config)
@@ -96,8 +96,10 @@ class TestExternalOllamaConnections:
 
             if not success:
                 # Should indicate model not found or similar error
-                assert any(keyword in message.lower() for keyword in
-                          ["not found", "unavailable", "model", "error"])
+                assert any(
+                    keyword in message.lower()
+                    for keyword in ["not found", "unavailable", "model", "error"]
+                )
         except Exception:
             # Also acceptable - connection error is expected
             pass
@@ -115,7 +117,7 @@ class TestExternalVLLMConnections:
             provider=LLMProvider.VLLM,
             model="microsoft/DialoGPT-medium",
             base_url="http://localhost:8012/v1",
-            timeout=10
+            timeout=10,
         )
 
         service = LLMService(config)
@@ -141,7 +143,7 @@ class TestExternalVLLMConnections:
             provider=LLMProvider.VLLM,
             model="custom-model",
             base_url="http://192.168.1.100:8000/v1",  # Example external IP
-            timeout=5
+            timeout=5,
         )
 
         service = LLMService(config)
@@ -152,8 +154,10 @@ class TestExternalVLLMConnections:
             assert isinstance(message, str)
         except Exception as e:
             # Expected for non-existent external service
-            assert any(keyword in str(e).lower() for keyword in
-                      ["connection", "timeout", "unreachable", "refused"])
+            assert any(
+                keyword in str(e).lower()
+                for keyword in ["connection", "timeout", "unreachable", "refused"]
+            )
         finally:
             await service.close()
 
@@ -165,7 +169,7 @@ class TestExternalVLLMConnections:
             model="test-model",
             base_url="http://localhost:8012/v1",
             api_key="test-api-key-123",
-            timeout=5
+            timeout=5,
         )
 
         service = LLMService(config)
@@ -194,7 +198,7 @@ class TestNetworkEdgeCases:
             model="gpt-3.5-turbo",
             base_url="http://10.255.255.1",  # Non-routable address
             api_key="test-key",
-            timeout=1  # Very short timeout
+            timeout=1,  # Very short timeout
         )
 
         service = LLMService(config)
@@ -207,8 +211,10 @@ class TestNetworkEdgeCases:
             # Should timeout quickly
             assert elapsed < 5  # Should not take much longer than timeout
             assert success is False
-            assert any(keyword in message.lower() for keyword in
-                      ["timeout", "connection", "failed"])
+            assert any(
+                keyword in message.lower()
+                for keyword in ["timeout", "connection", "failed"]
+            )
         except Exception:
             elapsed = time.time() - start_time
             assert elapsed < 5
@@ -228,10 +234,7 @@ class TestNetworkEdgeCases:
 
         for url in invalid_urls:
             config = LLMConfig(
-                provider=LLMProvider.VLLM,
-                model="test-model",
-                base_url=url,
-                timeout=2
+                provider=LLMProvider.VLLM, model="test-model", base_url=url, timeout=2
             )
 
             service = LLMService(config)
@@ -255,7 +258,7 @@ class TestNetworkEdgeCases:
             provider=LLMProvider.OLLAMA,
             model="test-model",
             base_url="http://nonexistent-domain-12345.com",
-            timeout=3
+            timeout=3,
         )
 
         service = LLMService(config)
@@ -264,12 +267,16 @@ class TestNetworkEdgeCases:
             success, message = await service.validate_connection()
 
             assert success is False
-            assert any(keyword in message.lower() for keyword in
-                      ["resolve", "dns", "connection", "failed", "unreachable"])
+            assert any(
+                keyword in message.lower()
+                for keyword in ["resolve", "dns", "connection", "failed", "unreachable"]
+            )
         except Exception as e:
             # Expected for DNS failures
-            assert any(keyword in str(e).lower() for keyword in
-                      ["resolve", "dns", "connection"])
+            assert any(
+                keyword in str(e).lower()
+                for keyword in ["resolve", "dns", "connection"]
+            )
         finally:
             await service.close()
 
@@ -285,7 +292,7 @@ class TestAPIKeyValidation:
             model="gpt-3.5-turbo",
             base_url="https://api.openai.com/v1",
             api_key="invalid-key-123",
-            timeout=10
+            timeout=10,
         )
 
         service = LLMService(config)
@@ -295,12 +302,16 @@ class TestAPIKeyValidation:
 
             # Should detect invalid API key
             if not success:
-                assert any(keyword in message.lower() for keyword in
-                          ["unauthorized", "invalid", "key", "authentication"])
+                assert any(
+                    keyword in message.lower()
+                    for keyword in ["unauthorized", "invalid", "key", "authentication"]
+                )
         except Exception as e:
             # May throw exception for auth errors
-            assert any(keyword in str(e).lower() for keyword in
-                      ["unauthorized", "authentication", "key"])
+            assert any(
+                keyword in str(e).lower()
+                for keyword in ["unauthorized", "authentication", "key"]
+            )
         finally:
             await service.close()
 
@@ -309,7 +320,11 @@ class TestAPIKeyValidation:
         """Test providers that require API keys with empty keys"""
         providers_requiring_keys = [
             (LLMProvider.OPENAI, "gpt-3.5-turbo", "https://api.openai.com/v1"),
-            (LLMProvider.CLAUDE, "claude-3-haiku-20240307", "https://api.anthropic.com/v1"),
+            (
+                LLMProvider.CLAUDE,
+                "claude-3-haiku-20240307",
+                "https://api.anthropic.com/v1",
+            ),
         ]
 
         for provider, model, base_url in providers_requiring_keys:
@@ -318,7 +333,7 @@ class TestAPIKeyValidation:
                 model=model,
                 base_url=base_url,
                 api_key=None,  # No API key provided
-                timeout=5
+                timeout=5,
             )
 
             service = LLMService(config)
@@ -328,8 +343,10 @@ class TestAPIKeyValidation:
 
                 # Should fail due to missing API key
                 assert success is False
-                assert any(keyword in message.lower() for keyword in
-                          ["key", "authentication", "required", "missing"])
+                assert any(
+                    keyword in message.lower()
+                    for keyword in ["key", "authentication", "required", "missing"]
+                )
             except Exception:
                 # Also acceptable - may throw auth exception
                 pass
@@ -354,7 +371,7 @@ class TestAPIKeyValidation:
                 model="gpt-3.5-turbo",
                 base_url="https://api.openai.com/v1",
                 api_key=key,
-                timeout=5
+                timeout=5,
             )
 
             service = LLMService(config)
@@ -384,16 +401,18 @@ class TestConnectionTestAPI:
             provider="ollama",
             model_name="llama2:7b-chat",
             base_url="http://localhost:11434/v1",
-            timeout=5
+            timeout=5,
         )
 
         # This will attempt actual connection - expect it to fail in test environment
-        result = await test_llm_connection(test_request=test_request, current_user=mock_user)
+        result = await test_llm_connection(
+            test_request=test_request, current_user=mock_user
+        )
 
-        assert hasattr(result, 'success')
-        assert hasattr(result, 'status')
-        assert hasattr(result, 'message')
-        assert hasattr(result, 'response_time_ms')
+        assert hasattr(result, "success")
+        assert hasattr(result, "status")
+        assert hasattr(result, "message")
+        assert hasattr(result, "response_time_ms")
 
         # Should have reasonable response time even for failed connections
         assert result.response_time_ms is not None
@@ -408,14 +427,16 @@ class TestConnectionTestAPI:
             provider="vllm",
             model_name="microsoft/DialoGPT-medium",
             base_url="http://localhost:8012/v1",
-            timeout=5
+            timeout=5,
         )
 
-        result = await test_llm_connection(test_request=test_request, current_user=mock_user)
+        result = await test_llm_connection(
+            test_request=test_request, current_user=mock_user
+        )
 
-        assert hasattr(result, 'success')
-        assert hasattr(result, 'status')
-        assert hasattr(result, 'message')
+        assert hasattr(result, "success")
+        assert hasattr(result, "status")
+        assert hasattr(result, "message")
 
         # Should provide useful feedback
         assert len(result.message) > 0
@@ -431,7 +452,7 @@ class TestResourceManagement:
             provider=LLMProvider.VLLM,
             model="test-model",
             base_url="http://localhost:9999",  # Unlikely to be in use
-            timeout=2
+            timeout=2,
         )
 
         service = LLMService(config)
@@ -456,7 +477,7 @@ class TestResourceManagement:
                 provider=LLMProvider.OLLAMA,
                 model=f"model-{i}",
                 base_url="http://localhost:11434",
-                timeout=1
+                timeout=1,
             )
             for i in range(5)
         ]
@@ -497,7 +518,7 @@ class TestRealWorldScenarios:
             provider=LLMProvider.OLLAMA,
             model="llama2:7b-chat",
             base_url="http://localhost:11434",
-            timeout=10
+            timeout=10,
         )
 
         service = LLMService(config)
@@ -514,8 +535,7 @@ class TestRealWorldScenarios:
                 # Try a simple completion to verify it's working
                 try:
                     response = await service.generate_completion(
-                        prompt="Hello, world!",
-                        max_tokens=10
+                        prompt="Hello, world!", max_tokens=10
                     )
                     assert response is not None
                     assert len(response) > 0
@@ -541,7 +561,7 @@ class TestRealWorldScenarios:
             model="huggingface-model",
             base_url="http://192.168.1.100:8000/v1",
             api_key="optional-api-key",
-            timeout=5
+            timeout=5,
         )
 
         service = LLMService(config)
@@ -558,8 +578,10 @@ class TestRealWorldScenarios:
 
             if not success:
                 # Should indicate network/connection issue
-                assert any(keyword in message.lower() for keyword in
-                          ["connection", "timeout", "refused", "unreachable"])
+                assert any(
+                    keyword in message.lower()
+                    for keyword in ["connection", "timeout", "refused", "unreachable"]
+                )
         except Exception as e:
             print(f"External vLLM connection failed (expected): {e}")
         finally:
@@ -569,9 +591,10 @@ class TestRealWorldScenarios:
 def run_connection_tests():
     """
     Utility function to run connection tests manually
-    
+
     This can be used to test actual connections when the services are available.
     """
+
     async def test_all():
         print("Testing external LLM connections...")
 

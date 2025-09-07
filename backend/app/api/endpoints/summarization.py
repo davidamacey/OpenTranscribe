@@ -25,6 +25,7 @@ from app.schemas.summary import SummaryAnalyticsResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummarySearchRequest
 from app.schemas.summary import SummarySearchResponse
+from app.services.llm_service import is_llm_available
 from app.services.opensearch_summary_service import OpenSearchSummaryService
 from app.tasks.summarization import summarize_transcript_task
 from app.tasks.summarization_helpers import identify_speakers_llm_task
@@ -36,10 +37,12 @@ router = APIRouter()
 @router.post("/{file_id}/summarize", response_model=dict[str, Any])
 async def trigger_summarization(
     file_id: int = Path(..., description="ID of the media file to summarize"),
-    provider: Optional[str] = Query(None, description="LLM provider override (vllm, openai, ollama, etc.)"),
+    provider: Optional[str] = Query(
+        None, description="LLM provider override (vllm, openai, ollama, etc.)"
+    ),
     model: Optional[str] = Query(None, description="Model override"),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Trigger AI-powered summarization for a transcript
@@ -66,30 +69,36 @@ async def trigger_summarization(
     - **Follow-up Items**: Future discussion points
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=404,
-            detail="Media file not found or access denied"
+            status_code=404, detail="Media file not found or access denied"
         )
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
         raise HTTPException(
             status_code=400,
-            detail="File must have completed transcription before summarization"
+            detail="File must have completed transcription before summarization",
+        )
+
+    # Check LLM availability before starting the task
+    llm_available = await is_llm_available(user_id=current_user.id)
+    if not llm_available:
+        raise HTTPException(
+            status_code=503,
+            detail="AI summarization is currently unavailable. Please configure an LLM provider or check your server configuration. You can still access all transcription features.",
         )
 
     try:
         # Start summarization task
         task = summarize_transcript_task.delay(
-            file_id=file_id,
-            provider=provider,
-            model=model
+            file_id=file_id, provider=provider, model=model
         )
 
         logger.info(f"Started summarization task {task.id} for file {file_id}")
@@ -99,14 +108,13 @@ async def trigger_summarization(
             "task_id": task.id,
             "file_id": file_id,
             "provider": provider,
-            "model": model
+            "model": model,
         }
 
     except Exception as e:
         logger.error(f"Failed to start summarization task for file {file_id}: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start summarization: {str(e)}"
+            status_code=500, detail=f"Failed to start summarization: {str(e)}"
         ) from e
 
 
@@ -114,7 +122,7 @@ async def trigger_summarization(
 async def get_file_summary(
     file_id: int = Path(..., description="ID of the media file"),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Retrieve the latest AI-generated summary for a file
@@ -132,15 +140,15 @@ async def get_file_summary(
     - Search-optimized content for highlighting
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=404,
-            detail="Media file not found or access denied"
+            status_code=404, detail="Media file not found or access denied"
         )
 
     try:
@@ -150,16 +158,13 @@ async def get_file_summary(
 
         if summary:
             return SummaryResponse(
-                file_id=file_id,
-                summary_data=summary,
-                source="opensearch"
+                file_id=file_id, summary_data=summary, source="opensearch"
             )
-
 
         # No summary available
         raise HTTPException(
             status_code=404,
-            detail="No summary available for this file. Please generate one first."
+            detail="No summary available for this file. Please generate one first.",
         )
 
     except HTTPException:
@@ -167,15 +172,14 @@ async def get_file_summary(
     except Exception as e:
         logger.error(f"Failed to retrieve summary for file {file_id}: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve summary: {str(e)}"
+            status_code=500, detail=f"Failed to retrieve summary: {str(e)}"
         ) from e
 
 
 @router.post("/search", response_model=SummarySearchResponse)
 async def search_summaries(
     search_request: SummarySearchRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Search across all user summaries with advanced filtering
@@ -206,9 +210,13 @@ async def search_summaries(
         search_params = {
             "text": search_request.query,
             "speakers": search_request.speakers,
-            "date_from": search_request.date_from.isoformat() if search_request.date_from else None,
-            "date_to": search_request.date_to.isoformat() if search_request.date_to else None,
-            "has_pending_actions": search_request.has_pending_actions
+            "date_from": search_request.date_from.isoformat()
+            if search_request.date_from
+            else None,
+            "date_to": search_request.date_to.isoformat()
+            if search_request.date_to
+            else None,
+            "has_pending_actions": search_request.has_pending_actions,
         }
 
         # Execute search
@@ -216,7 +224,7 @@ async def search_summaries(
             query=search_params,
             user_id=current_user.id,
             size=search_request.size,
-            from_=search_request.offset
+            from_=search_request.offset,
         )
 
         return SummarySearchResponse(
@@ -224,22 +232,21 @@ async def search_summaries(
             total=results["total"],
             max_score=results.get("max_score"),
             query=search_request.query,
-            filters=search_params
+            filters=search_params,
         )
 
     except Exception as e:
         logger.error(f"Summary search failed for user {current_user.id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Search failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @router.get("/analytics", response_model=SummaryAnalyticsResponse)
 async def get_summary_analytics(
-    date_from: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    date_from: Optional[str] = Query(
+        None, description="Start date filter (YYYY-MM-DD)"
+    ),
     date_to: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
     """
     Get comprehensive analytics across all user summaries
@@ -276,8 +283,7 @@ async def get_summary_analytics(
 
         # Get analytics data
         analytics = await summary_service.get_summary_analytics(
-            user_id=current_user.id,
-            filters=filters
+            user_id=current_user.id, filters=filters
         )
 
         return SummaryAnalyticsResponse(**analytics)
@@ -285,16 +291,17 @@ async def get_summary_analytics(
     except Exception as e:
         logger.error(f"Analytics generation failed for user {current_user.id}: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Analytics generation failed: {str(e)}"
+            status_code=500, detail=f"Analytics generation failed: {str(e)}"
         )
 
 
-@router.post("/{file_id}/identify-speakers", response_model=SpeakerIdentificationResponse)
+@router.post(
+    "/{file_id}/identify-speakers", response_model=SpeakerIdentificationResponse
+)
 async def identify_speakers(
     file_id: int = Path(..., description="ID of the media file"),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Generate LLM-based speaker identification suggestions
@@ -323,22 +330,29 @@ async def identify_speakers(
     - Provide context clues for manual identification
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=404,
-            detail="Media file not found or access denied"
+            status_code=404, detail="Media file not found or access denied"
         )
 
     # Check if file has speakers to identify
     if not media_file.speakers:
         raise HTTPException(
-            status_code=400,
-            detail="No speakers found in this file to identify"
+            status_code=400, detail="No speakers found in this file to identify"
+        )
+
+    # Check LLM availability before starting the task
+    llm_available = await is_llm_available(user_id=current_user.id)
+    if not llm_available:
+        raise HTTPException(
+            status_code=503,
+            detail="AI speaker identification is currently unavailable. Please configure an LLM provider or check your server configuration. You can still manually update speaker names.",
         )
 
     try:
@@ -351,14 +365,13 @@ async def identify_speakers(
             message="Speaker identification task started",
             task_id=task.id,
             file_id=file_id,
-            speaker_count=len(media_file.speakers)
+            speaker_count=len(media_file.speakers),
         )
 
     except Exception as e:
         logger.error(f"Failed to start speaker identification for file {file_id}: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to start speaker identification: {str(e)}"
+            status_code=500, detail=f"Failed to start speaker identification: {str(e)}"
         )
 
 
@@ -366,7 +379,7 @@ async def identify_speakers(
 async def delete_summary(
     file_id: int = Path(..., description="ID of the media file"),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Delete a file's summary from both OpenSearch and PostgreSQL
@@ -383,15 +396,15 @@ async def delete_summary(
     - Search index entries
     """
     # Verify file exists and belongs to user
-    media_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id
-    ).first()
+    media_file = (
+        db.query(MediaFile)
+        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+        .first()
+    )
 
     if not media_file:
         raise HTTPException(
-            status_code=404,
-            detail="Media file not found or access denied"
+            status_code=404, detail="Media file not found or access denied"
         )
 
     try:
@@ -399,8 +412,13 @@ async def delete_summary(
         deleted = False
 
         # Delete from OpenSearch if document ID exists
-        if hasattr(media_file, 'summary_opensearch_id') and media_file.summary_opensearch_id:
-            opensearch_deleted = await summary_service.delete_summary(media_file.summary_opensearch_id)
+        if (
+            hasattr(media_file, "summary_opensearch_id")
+            and media_file.summary_opensearch_id
+        ):
+            opensearch_deleted = await summary_service.delete_summary(
+                media_file.summary_opensearch_id
+            )
             if opensearch_deleted:
                 media_file.summary_opensearch_id = None
                 deleted = True
@@ -415,16 +433,12 @@ async def delete_summary(
             logger.info(f"Deleted summary for file {file_id}")
             return {"message": "Summary deleted successfully", "file_id": file_id}
         else:
-            raise HTTPException(
-                status_code=404,
-                detail="No summary found to delete"
-            )
+            raise HTTPException(status_code=404, detail="No summary found to delete")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to delete summary for file {file_id}: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete summary: {str(e)}"
+            status_code=500, detail=f"Failed to delete summary: {str(e)}"
         )

@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
@@ -31,7 +30,7 @@ async def list_collections(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get all collections for the current user with media count"""
     collections_query = (
@@ -56,25 +55,25 @@ async def list_collections(
 async def create_collection(
     collection: CollectionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new collection"""
     # Check if collection with same name exists for user
-    existing = db.query(Collection).filter(
-        Collection.user_id == current_user.id,
-        Collection.name == collection.name
-    ).first()
+    existing = (
+        db.query(Collection)
+        .filter(
+            Collection.user_id == current_user.id, Collection.name == collection.name
+        )
+        .first()
+    )
 
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Collection with name '{collection.name}' already exists"
+            detail=f"Collection with name '{collection.name}' already exists",
         )
 
-    db_collection = Collection(
-        **collection.dict(),
-        user_id=current_user.id
-    )
+    db_collection = Collection(**collection.dict(), user_id=current_user.id)
     db.add(db_collection)
     db.commit()
     db.refresh(db_collection)
@@ -86,18 +85,16 @@ async def create_collection(
 async def get_collection(
     collection_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get a specific collection with its media files"""
     collection = (
         db.query(Collection)
-        .filter(
-            Collection.id == collection_id,
-            Collection.user_id == current_user.id
-        )
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
         .options(
-            joinedload(Collection.collection_members)
-            .joinedload(CollectionMember.media_file)
+            joinedload(Collection.collection_members).joinedload(
+                CollectionMember.media_file
+            )
         )
         .first()
     )
@@ -106,9 +103,7 @@ async def get_collection(
         raise HTTPException(status_code=404, detail="Collection not found")
 
     # Extract media files from collection members
-    media_files = [
-        member.media_file for member in collection.collection_members
-    ]
+    media_files = [member.media_file for member in collection.collection_members]
 
     # Create response with media files
     collection_dict = collection.__dict__.copy()
@@ -122,29 +117,34 @@ async def update_collection(
     collection_id: int,
     collection_update: CollectionUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Update a collection"""
-    collection = db.query(Collection).filter(
-        Collection.id == collection_id,
-        Collection.user_id == current_user.id
-    ).first()
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .first()
+    )
 
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     # Check if new name conflicts with existing collection
     if collection_update.name and collection_update.name != collection.name:
-        existing = db.query(Collection).filter(
-            Collection.user_id == current_user.id,
-            Collection.name == collection_update.name,
-            Collection.id != collection_id
-        ).first()
+        existing = (
+            db.query(Collection)
+            .filter(
+                Collection.user_id == current_user.id,
+                Collection.name == collection_update.name,
+                Collection.id != collection_id,
+            )
+            .first()
+        )
 
         if existing:
             raise HTTPException(
                 status_code=400,
-                detail=f"Collection with name '{collection_update.name}' already exists"
+                detail=f"Collection with name '{collection_update.name}' already exists",
             )
 
     # Update fields
@@ -162,13 +162,14 @@ async def update_collection(
 async def delete_collection(
     collection_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a collection"""
-    collection = db.query(Collection).filter(
-        Collection.id == collection_id,
-        Collection.user_id == current_user.id
-    ).first()
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .first()
+    )
 
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
@@ -184,35 +185,44 @@ async def add_media_to_collection(
     collection_id: int,
     media_data: CollectionMemberAdd,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Add media files to a collection"""
     # Verify collection exists and belongs to user
-    collection = db.query(Collection).filter(
-        Collection.id == collection_id,
-        Collection.user_id == current_user.id
-    ).first()
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .first()
+    )
 
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     # Verify all media files exist and belong to user
-    media_files = db.query(MediaFile).filter(
-        MediaFile.id.in_(media_data.media_file_ids),
-        MediaFile.user_id == current_user.id
-    ).all()
+    media_files = (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.id.in_(media_data.media_file_ids),
+            MediaFile.user_id == current_user.id,
+        )
+        .all()
+    )
 
     if len(media_files) != len(media_data.media_file_ids):
         raise HTTPException(
             status_code=404,
-            detail="One or more media files not found or don't belong to you"
+            detail="One or more media files not found or don't belong to you",
         )
 
     # Get existing members to avoid duplicates
-    existing_members = db.query(CollectionMember.media_file_id).filter(
-        CollectionMember.collection_id == collection_id,
-        CollectionMember.media_file_id.in_(media_data.media_file_ids)
-    ).all()
+    existing_members = (
+        db.query(CollectionMember.media_file_id)
+        .filter(
+            CollectionMember.collection_id == collection_id,
+            CollectionMember.media_file_id.in_(media_data.media_file_ids),
+        )
+        .all()
+    )
 
     existing_ids = {member[0] for member in existing_members}
     new_ids = set(media_data.media_file_ids) - existing_ids
@@ -221,8 +231,7 @@ async def add_media_to_collection(
     added_count = 0
     for media_file_id in new_ids:
         member = CollectionMember(
-            collection_id=collection_id,
-            media_file_id=media_file_id
+            collection_id=collection_id, media_file_id=media_file_id
         )
         db.add(member)
         added_count += 1
@@ -232,7 +241,7 @@ async def add_media_to_collection(
     return {
         "message": f"Added {added_count} media files to collection",
         "added": added_count,
-        "already_existed": len(existing_ids)
+        "already_existed": len(existing_ids),
     }
 
 
@@ -241,29 +250,34 @@ async def remove_media_from_collection(
     collection_id: int,
     media_data: CollectionMemberRemove,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Remove media files from a collection"""
     # Verify collection exists and belongs to user
-    collection = db.query(Collection).filter(
-        Collection.id == collection_id,
-        Collection.user_id == current_user.id
-    ).first()
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .first()
+    )
 
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     # Remove members
-    removed_count = db.query(CollectionMember).filter(
-        CollectionMember.collection_id == collection_id,
-        CollectionMember.media_file_id.in_(media_data.media_file_ids)
-    ).delete(synchronize_session=False)
+    removed_count = (
+        db.query(CollectionMember)
+        .filter(
+            CollectionMember.collection_id == collection_id,
+            CollectionMember.media_file_id.in_(media_data.media_file_ids),
+        )
+        .delete(synchronize_session=False)
+    )
 
     db.commit()
 
     return {
         "message": f"Removed {removed_count} media files from collection",
-        "removed": removed_count
+        "removed": removed_count,
     }
 
 
@@ -273,14 +287,15 @@ async def get_collection_media(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """Get media files in a collection"""
     # Verify collection exists and belongs to user
-    collection = db.query(Collection).filter(
-        Collection.id == collection_id,
-        Collection.user_id == current_user.id
-    ).first()
+    collection = (
+        db.query(Collection)
+        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .first()
+    )
 
     if not collection:
         raise HTTPException(status_code=404, detail="Collection not found")

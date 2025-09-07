@@ -24,7 +24,9 @@ class OpenSearchSummaryService:
 
     def __init__(self):
         self.client = opensearch_client
-        self.index_name = getattr(settings, 'OPENSEARCH_SUMMARY_INDEX', 'transcript_summaries')
+        self.index_name = getattr(
+            settings, "OPENSEARCH_SUMMARY_INDEX", "transcript_summaries"
+        )
 
         # Ensure the summary index exists
         self._ensure_summary_index_exists()
@@ -45,16 +47,16 @@ class OpenSearchSummaryService:
                         "index": {
                             "number_of_shards": 1,
                             "number_of_replicas": 0,
-                            "max_result_window": 50000  # Allow deeper pagination
+                            "max_result_window": 50000,  # Allow deeper pagination
                         },
                         "analysis": {
                             "analyzer": {
                                 "summary_analyzer": {
                                     "type": "standard",
-                                    "stopwords": ["_english_"]
+                                    "stopwords": ["_english_"],
                                 }
                             }
-                        }
+                        },
                     },
                     "mappings": {
                         "properties": {
@@ -65,41 +67,61 @@ class OpenSearchSummaryService:
                             "model": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
-
                             # Core summary content
                             "bluf": {"type": "text", "analyzer": "summary_analyzer"},
-                            "brief_summary": {"type": "text", "analyzer": "summary_analyzer"},
-
+                            "brief_summary": {
+                                "type": "text",
+                                "analyzer": "summary_analyzer",
+                            },
                             # Major topics (nested objects)
                             "major_topics": {
                                 "type": "nested",
                                 "properties": {
-                                    "topic": {"type": "text", "analyzer": "summary_analyzer"},
+                                    "topic": {
+                                        "type": "text",
+                                        "analyzer": "summary_analyzer",
+                                    },
                                     "importance": {"type": "keyword"},
-                                    "key_points": {"type": "text", "analyzer": "summary_analyzer"},
-                                    "participants": {"type": "keyword"}
-                                }
+                                    "key_points": {
+                                        "type": "text",
+                                        "analyzer": "summary_analyzer",
+                                    },
+                                    "participants": {"type": "keyword"},
+                                },
                             },
-
                             # Action items (nested objects)
                             "action_items": {
                                 "type": "nested",
                                 "properties": {
-                                    "text": {"type": "text", "analyzer": "summary_analyzer"},
+                                    "text": {
+                                        "type": "text",
+                                        "analyzer": "summary_analyzer",
+                                    },
                                     "assigned_to": {"type": "keyword"},
-                                    "due_date": {"type": "date", "format": "yyyy-MM-dd||epoch_millis"},
+                                    "due_date": {
+                                        "type": "date",
+                                        "format": "yyyy-MM-dd||epoch_millis",
+                                    },
                                     "priority": {"type": "keyword"},
-                                    "context": {"type": "text", "analyzer": "summary_analyzer"},
-                                    "status": {"type": "keyword"}  # pending, completed, cancelled
-                                }
+                                    "context": {
+                                        "type": "text",
+                                        "analyzer": "summary_analyzer",
+                                    },
+                                    "status": {
+                                        "type": "keyword"
+                                    },  # pending, completed, cancelled
+                                },
                             },
-
                             # Key decisions
-                            "key_decisions": {"type": "text", "analyzer": "summary_analyzer"},
-
+                            "key_decisions": {
+                                "type": "text",
+                                "analyzer": "summary_analyzer",
+                            },
                             # Follow-up items
-                            "follow_up_items": {"type": "text", "analyzer": "summary_analyzer"},
-
+                            "follow_up_items": {
+                                "type": "text",
+                                "analyzer": "summary_analyzer",
+                            },
                             # Metadata
                             "metadata": {
                                 "properties": {
@@ -108,20 +130,19 @@ class OpenSearchSummaryService:
                                     "confidence_score": {"type": "float"},
                                     "language": {"type": "keyword"},
                                     "usage_tokens": {"type": "integer"},
-                                    "error": {"type": "text"}
+                                    "error": {"type": "text"},
                                 }
                             },
-
                             # Full-text searchable combined content
-                            "searchable_content": {"type": "text", "analyzer": "summary_analyzer"}
+                            "searchable_content": {
+                                "type": "text",
+                                "analyzer": "summary_analyzer",
+                            },
                         }
-                    }
+                    },
                 }
 
-                self.client.indices.create(
-                    index=self.index_name,
-                    body=index_config
-                )
+                self.client.indices.create(index=self.index_name, body=index_config)
 
                 logger.info(f"Created summary index: {self.index_name}")
 
@@ -156,10 +177,12 @@ class OpenSearchSummaryService:
                 index=self.index_name,
                 id=doc_id,
                 body=doc,
-                refresh=True  # Make document immediately searchable
+                refresh=True,  # Make document immediately searchable
             )
 
-            logger.info(f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}")
+            logger.info(
+                f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}"
+            )
             return doc_id
 
         except Exception as e:
@@ -180,10 +203,7 @@ class OpenSearchSummaryService:
             return None
 
         try:
-            response = self.client.get(
-                index=self.index_name,
-                id=document_id
-            )
+            response = self.client.get(index=self.index_name, id=document_id)
 
             return response["_source"]
 
@@ -194,7 +214,9 @@ class OpenSearchSummaryService:
             logger.error(f"Error retrieving summary: {e}")
             return None
 
-    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[dict[str, Any]]:
+    async def get_summary_by_file_id(
+        self, file_id: int, user_id: int
+    ) -> Optional[dict[str, Any]]:
         """
         Get the latest summary for a specific file
 
@@ -215,18 +237,15 @@ class OpenSearchSummaryService:
                     "bool": {
                         "must": [
                             {"term": {"file_id": file_id}},
-                            {"term": {"user_id": user_id}}
+                            {"term": {"user_id": user_id}},
                         ]
                     }
                 },
                 "sort": [{"summary_version": {"order": "desc"}}],
-                "size": 1
+                "size": 1,
             }
 
-            response = self.client.search(
-                index=self.index_name,
-                body=query
-            )
+            response = self.client.search(index=self.index_name, body=query)
 
             if response["hits"]["hits"]:
                 hit = response["hits"]["hits"][0]
@@ -240,7 +259,9 @@ class OpenSearchSummaryService:
                         # Calculate from brief_summary if available
                         transcript_length = len(summary_data.get("brief_summary", ""))
                         metadata["transcript_length"] = transcript_length
-                        logger.warning(f"Added missing transcript_length ({transcript_length}) to summary metadata for file {file_id}")
+                        logger.warning(
+                            f"Added missing transcript_length ({transcript_length}) to summary metadata for file {file_id}"
+                        )
 
                     # Ensure other required fields exist
                     if "usage_tokens" not in metadata:
@@ -248,10 +269,7 @@ class OpenSearchSummaryService:
                     if "processing_time_ms" not in metadata:
                         metadata["processing_time_ms"] = None
 
-                return {
-                    "document_id": hit["_id"],
-                    **summary_data
-                }
+                return {"document_id": hit["_id"], **summary_data}
 
             return None
 
@@ -259,7 +277,9 @@ class OpenSearchSummaryService:
             logger.error(f"Error getting summary for file {file_id}: {e}")
             return None
 
-    async def search_summaries(self, query: dict[str, Any], user_id: int, size: int = 20, from_: int = 0) -> dict[str, Any]:
+    async def search_summaries(
+        self, query: dict[str, Any], user_id: int, size: int = 20, from_: int = 0
+    ) -> dict[str, Any]:
         """
         Search across all summaries with complex queries
 
@@ -282,7 +302,7 @@ class OpenSearchSummaryService:
                     "bool": {
                         "must": [{"term": {"user_id": user_id}}],
                         "should": [],
-                        "filter": []
+                        "filter": [],
                     }
                 },
                 "size": size,
@@ -292,11 +312,11 @@ class OpenSearchSummaryService:
                     "fields": {
                         "bluf": {},
                         "brief_summary": {},
-                        "searchable_content": {"fragment_size": 200}
+                        "searchable_content": {"fragment_size": 200},
                     },
                     "pre_tags": ["<mark>"],
-                    "post_tags": ["</mark>"]
-                }
+                    "post_tags": ["</mark>"],
+                },
             }
 
             # Add text search if provided
@@ -311,14 +331,13 @@ class OpenSearchSummaryService:
                             "major_topics.topic^2",
                             "major_topics.key_points",
                             "action_items.text",
-                            "key_decisions^2"
+                            "key_decisions^2",
                         ],
-                        "fuzziness": "AUTO"
+                        "fuzziness": "AUTO",
                     }
                 }
                 search_body["query"]["bool"]["should"].append(text_query)
                 search_body["query"]["bool"]["minimum_should_match"] = 1
-
 
             # Add date range filter
             if query.get("date_from") or query.get("date_to"):
@@ -336,18 +355,17 @@ class OpenSearchSummaryService:
                         "path": "action_items",
                         "query": {
                             "bool": {
-                                "must_not": {"term": {"action_items.status": "completed"}}
+                                "must_not": {
+                                    "term": {"action_items.status": "completed"}
+                                }
                             }
-                        }
+                        },
                     }
                 }
                 search_body["query"]["bool"]["filter"].append(action_filter)
 
             # Execute search
-            response = self.client.search(
-                index=self.index_name,
-                body=search_body
-            )
+            response = self.client.search(index=self.index_name, body=search_body)
 
             # Process results
             hits = []
@@ -373,14 +391,16 @@ class OpenSearchSummaryService:
             return {
                 "hits": hits,
                 "total": response["hits"]["total"]["value"],
-                "max_score": response["hits"]["max_score"]
+                "max_score": response["hits"]["max_score"],
             }
 
         except Exception as e:
             logger.error(f"Error searching summaries: {e}")
             return {"hits": [], "total": 0}
 
-    async def get_summary_analytics(self, user_id: int, filters: dict[str, Any] = None) -> dict[str, Any]:
+    async def get_summary_analytics(
+        self, user_id: int, filters: dict[str, Any] = None
+    ) -> dict[str, Any]:
         """
         Get analytics and aggregations for summaries
 
@@ -398,25 +418,24 @@ class OpenSearchSummaryService:
             # Base query with user filter
             agg_query = {
                 "size": 0,  # We only want aggregations
-                "query": {
-                    "bool": {
-                        "must": [{"term": {"user_id": user_id}}]
-                    }
-                },
+                "query": {"bool": {"must": [{"term": {"user_id": user_id}}]}},
                 "aggs": {
-
                     # Action items over time
                     "action_items_trend": {
                         "date_histogram": {
                             "field": "created_at",
-                            "calendar_interval": "week"
+                            "calendar_interval": "week",
                         },
                         "aggs": {
                             "action_count": {
                                 "nested": {"path": "action_items"},
                                 "aggs": {
-                                    "total": {"value_count": {"field": "action_items.text.keyword"}}
-                                }
+                                    "total": {
+                                        "value_count": {
+                                            "field": "action_items.text.keyword"
+                                        }
+                                    }
+                                },
                             },
                             "pending_actions": {
                                 "nested": {"path": "action_items"},
@@ -424,15 +443,18 @@ class OpenSearchSummaryService:
                                     "pending": {
                                         "filter": {
                                             "bool": {
-                                                "must_not": {"term": {"action_items.status": "completed"}}
+                                                "must_not": {
+                                                    "term": {
+                                                        "action_items.status": "completed"
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            }
-                        }
+                                },
+                            },
+                        },
                     },
-
                     # Most common topics
                     "common_topics": {
                         "nested": {"path": "major_topics"},
@@ -440,22 +462,16 @@ class OpenSearchSummaryService:
                             "topics": {
                                 "terms": {
                                     "field": "major_topics.topic.keyword",
-                                    "size": 15
+                                    "size": 15,
                                 }
                             }
-                        }
+                        },
                     },
-
                     # Summary statistics
-                    "summary_stats": {
-                        "stats": {"field": "metadata.transcript_length"}
-                    },
-
+                    "summary_stats": {"stats": {"field": "metadata.transcript_length"}},
                     # Provider usage
-                    "provider_usage": {
-                        "terms": {"field": "provider", "size": 10}
-                    }
-                }
+                    "provider_usage": {"terms": {"field": "provider", "size": 10}},
+                },
             }
 
             # Apply date filter if provided
@@ -465,10 +481,7 @@ class OpenSearchSummaryService:
                     date_filter["range"]["created_at"]["lte"] = filters["date_to"]
                 agg_query["query"]["bool"]["must"].append(date_filter)
 
-            response = self.client.search(
-                index=self.index_name,
-                body=agg_query
-            )
+            response = self.client.search(index=self.index_name, body=agg_query)
 
             # Process aggregations
             aggs = response["aggregations"]
@@ -476,10 +489,16 @@ class OpenSearchSummaryService:
             analytics = {
                 "total_summaries": response["hits"]["total"]["value"],
                 "speaker_stats": [],  # No longer tracking speaker stats
-                "action_items_trend": self._process_trend_aggregation(aggs["action_items_trend"]),
-                "common_topics": self._process_topics_aggregation(aggs["common_topics"]),
+                "action_items_trend": self._process_trend_aggregation(
+                    aggs["action_items_trend"]
+                ),
+                "common_topics": self._process_topics_aggregation(
+                    aggs["common_topics"]
+                ),
                 "summary_statistics": aggs["summary_stats"],
-                "provider_usage": self._process_terms_aggregation(aggs["provider_usage"])
+                "provider_usage": self._process_terms_aggregation(
+                    aggs["provider_usage"]
+                ),
             }
 
             return analytics
@@ -510,7 +529,7 @@ class OpenSearchSummaryService:
                 index=self.index_name,
                 id=document_id,
                 body={"doc": updates},
-                refresh=True
+                refresh=True,
             )
 
             logger.info(f"Updated summary document: {document_id}")
@@ -534,11 +553,7 @@ class OpenSearchSummaryService:
             return False
 
         try:
-            self.client.delete(
-                index=self.index_name,
-                id=document_id,
-                refresh=True
-            )
+            self.client.delete(index=self.index_name, id=document_id, refresh=True)
 
             logger.info(f"Deleted summary document: {document_id}")
             return True
@@ -573,10 +588,7 @@ class OpenSearchSummaryService:
 
         # Add action items
         for item in summary_data.get("action_items", []):
-            searchable_parts.extend([
-                item.get("text", ""),
-                item.get("context", "")
-            ])
+            searchable_parts.extend([item.get("text", ""), item.get("context", "")])
 
         # Add decisions and follow-ups
         searchable_parts.extend(summary_data.get("key_decisions", []))
@@ -585,7 +597,7 @@ class OpenSearchSummaryService:
         # Create the document
         doc = {
             **summary_data,
-            "searchable_content": " ".join(filter(None, searchable_parts))
+            "searchable_content": " ".join(filter(None, searchable_parts)),
         }
 
         # Ensure action items have status field
@@ -595,34 +607,31 @@ class OpenSearchSummaryService:
 
         return doc
 
-
     def _process_trend_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process time-based trend aggregation"""
         trends = []
         for bucket in agg["buckets"]:
-            trends.append({
-                "date": bucket["key_as_string"],
-                "total_actions": bucket["action_count"]["total"]["value"],
-                "pending_actions": bucket["pending_actions"]["pending"]["doc_count"]
-            })
+            trends.append(
+                {
+                    "date": bucket["key_as_string"],
+                    "total_actions": bucket["action_count"]["total"]["value"],
+                    "pending_actions": bucket["pending_actions"]["pending"][
+                        "doc_count"
+                    ],
+                }
+            )
         return trends
 
     def _process_topics_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process topics aggregation"""
         topics = []
         for bucket in agg["topics"]["buckets"]:
-            topics.append({
-                "topic": bucket["key"],
-                "count": bucket["doc_count"]
-            })
+            topics.append({"topic": bucket["key"], "count": bucket["doc_count"]})
         return topics
 
     def _process_terms_aggregation(self, agg: dict[str, Any]) -> list[dict[str, Any]]:
         """Process simple terms aggregation"""
         terms = []
         for bucket in agg["buckets"]:
-            terms.append({
-                "term": bucket["key"],
-                "count": bucket["doc_count"]
-            })
+            terms.append({"term": bucket["key"], "count": bucket["doc_count"]})
         return terms

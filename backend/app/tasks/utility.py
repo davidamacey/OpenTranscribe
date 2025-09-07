@@ -31,7 +31,7 @@ def check_tasks_health(self):
         "stuck_tasks_found": 0,
         "stuck_tasks_recovered": 0,
         "inconsistent_files_found": 0,
-        "inconsistent_files_fixed": 0
+        "inconsistent_files_fixed": 0,
     }
 
     try:
@@ -48,7 +48,9 @@ def check_tasks_health(self):
             summary["stuck_tasks_recovered"] = recovered_count
 
             # Step 2: Identify and fix inconsistent media files
-            inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
+            inconsistent_files = (
+                task_detection_service.identify_inconsistent_media_files(db)
+            )
             summary["inconsistent_files_found"] = len(inconsistent_files)
 
             fixed_count = 0

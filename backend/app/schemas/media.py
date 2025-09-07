@@ -35,11 +35,13 @@ class PrepareUploadRequest(BaseModel):
         content_type: MIME type of the file
         file_hash: SHA-256 hash of the file for duplicate detection
     """
+
     filename: str = Field(..., description="Name of the file to be uploaded")
     file_size: int = Field(..., description="Size of the file in bytes")
     content_type: str = Field(..., description="MIME type of the file")
-    file_hash: Optional[str] = Field(None, description="SHA-256 hash of the file for duplicate detection")
-
+    file_hash: Optional[str] = Field(
+        None, description="SHA-256 hash of the file for duplicate detection"
+    )
 
 
 class SpeakerBase(BaseModel):
@@ -266,6 +268,7 @@ class Comment(CommentBase):
 
 class MediaFileInfo(BaseModel):
     """Schema for simplified media file information that gets included in tasks"""
+
     id: int
     filename: str
     file_size: Optional[int] = None
@@ -276,6 +279,7 @@ class MediaFileInfo(BaseModel):
     media_format: Optional[str] = None
     codec: Optional[str] = None
     upload_time: Optional[datetime] = None
+
 
 class TaskBase(BaseModel):
     task_type: str
@@ -382,29 +386,49 @@ class VideoFormat(str, Enum):
 
 class SubtitleRequest(BaseModel):
     """Request schema for generating subtitles."""
-    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
+
+    include_speakers: bool = Field(
+        True, description="Include speaker labels in subtitles"
+    )
     format: SubtitleFormat = Field(SubtitleFormat.SRT, description="Subtitle format")
 
 
 class VideoWithSubtitlesRequest(BaseModel):
     """Request schema for video with embedded subtitles."""
-    output_format: Optional[VideoFormat] = Field(None, description="Output video format (auto-detect if not specified)")
-    include_speakers: bool = Field(True, description="Include speaker labels in subtitles")
-    force_regenerate: bool = Field(False, description="Force regeneration even if cached version exists")
+
+    output_format: Optional[VideoFormat] = Field(
+        None, description="Output video format (auto-detect if not specified)"
+    )
+    include_speakers: bool = Field(
+        True, description="Include speaker labels in subtitles"
+    )
+    force_regenerate: bool = Field(
+        False, description="Force regeneration even if cached version exists"
+    )
 
 
 class VideoWithSubtitlesResponse(BaseModel):
     """Response schema for video with embedded subtitles."""
-    download_url: str = Field(..., description="URL to download the video with embedded subtitles")
+
+    download_url: str = Field(
+        ..., description="URL to download the video with embedded subtitles"
+    )
     format: str = Field(..., description="Video format")
     cache_key: str = Field(..., description="Cache key for the processed video")
     expires_at: datetime = Field(..., description="When the download URL expires")
-    file_size: Optional[int] = Field(None, description="Size of the processed video file")
+    file_size: Optional[int] = Field(
+        None, description="Size of the processed video file"
+    )
 
 
 class SubtitleValidationResult(BaseModel):
     """Result of subtitle validation."""
+
     is_valid: bool = Field(..., description="Whether subtitles are valid")
-    issues: list[str] = Field(default_factory=list, description="List of validation issues found")
+    issues: list[str] = Field(
+        default_factory=list, description="List of validation issues found"
+    )
     total_segments: int = Field(..., description="Total number of subtitle segments")
-    total_duration: float = Field(..., description="Total duration of subtitles in seconds")
+    total_duration: float = Field(
+        ..., description="Total duration of subtitles in seconds"
+    )

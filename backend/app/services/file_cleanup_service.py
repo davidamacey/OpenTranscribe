@@ -1,6 +1,7 @@
 """
 File cleanup service for recovering stuck files and maintaining system health.
 """
+
 import logging
 from datetime import datetime
 from datetime import timedelta
@@ -39,7 +40,7 @@ class FileCleanupService:
             "files_recovered": 0,
             "files_marked_orphaned": 0,
             "cleanup_errors": [],
-            "recommendations": []
+            "recommendations": [],
         }
 
         try:
@@ -60,7 +61,9 @@ class FileCleanupService:
                             else:
                                 results["files_marked_orphaned"] += 1
                         except Exception as e:
-                            error_msg = f"Error processing stuck file {file_id}: {str(e)}"
+                            error_msg = (
+                                f"Error processing stuck file {file_id}: {str(e)}"
+                            )
                             logger.error(error_msg)
                             results["cleanup_errors"].append(error_msg)
 
@@ -100,7 +103,9 @@ class FileCleanupService:
 
         # Check if we've already tried recovery too many times
         if media_file.recovery_attempts >= self.max_recovery_attempts:
-            logger.warning(f"File {file_id} has exceeded max recovery attempts ({self.max_recovery_attempts})")
+            logger.warning(
+                f"File {file_id} has exceeded max recovery attempts ({self.max_recovery_attempts})"
+            )
             # Mark as permanently orphaned
             media_file.status = FileStatus.ORPHANED
             media_file.force_delete_eligible = True
@@ -120,17 +125,25 @@ class FileCleanupService:
         Returns:
             Number of old orphaned files found
         """
-        threshold_time = datetime.now(timezone.utc) - timedelta(hours=self.orphan_threshold_hours)
+        threshold_time = datetime.now(timezone.utc) - timedelta(
+            hours=self.orphan_threshold_hours
+        )
 
-        old_orphaned_files = db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.ORPHANED,
-            MediaFile.last_recovery_attempt < threshold_time
-        ).all()
+        old_orphaned_files = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.ORPHANED,
+                MediaFile.last_recovery_attempt < threshold_time,
+            )
+            .all()
+        )
 
         for file in old_orphaned_files:
             # Mark as eligible for force deletion
             file.force_delete_eligible = True
-            logger.warning(f"File {file.id} has been orphaned for over {self.orphan_threshold_hours} hours")
+            logger.warning(
+                f"File {file.id} has been orphaned for over {self.orphan_threshold_hours} hours"
+            )
 
         if old_orphaned_files:
             db.commit()
@@ -156,21 +169,21 @@ class FileCleanupService:
             status_counts[status.value] = count
 
         # Check for concerning patterns
-        error_rate = status_counts.get('error', 0) / max(sum(status_counts.values()), 1)
+        error_rate = status_counts.get("error", 0) / max(sum(status_counts.values()), 1)
         if error_rate > 0.1:  # More than 10% error rate
             recommendations.append(
                 f"High error rate detected: {error_rate:.1%} of files are in error state. "
                 "Consider investigating processing pipeline health."
             )
 
-        orphaned_count = status_counts.get('orphaned', 0)
+        orphaned_count = status_counts.get("orphaned", 0)
         if orphaned_count > 0:
             recommendations.append(
                 f"Found {orphaned_count} orphaned file(s). "
                 "Consider manual review or cleanup of these files."
             )
 
-        processing_count = status_counts.get('processing', 0)
+        processing_count = status_counts.get("processing", 0)
         if processing_count > 50:  # Arbitrary threshold
             recommendations.append(
                 f"Large number of files currently processing ({processing_count}). "
@@ -179,7 +192,9 @@ class FileCleanupService:
 
         return recommendations
 
-    def force_cleanup_orphaned_files(self, db: Session, dry_run: bool = False) -> dict[str, Any]:
+    def force_cleanup_orphaned_files(
+        self, db: Session, dry_run: bool = False
+    ) -> dict[str, Any]:
         """
         Force cleanup of orphaned files (admin operation).
 
@@ -195,14 +210,18 @@ class FileCleanupService:
             "eligible_for_deletion": 0,
             "successfully_deleted": 0,
             "deletion_errors": [],
-            "files_processed": []
+            "files_processed": [],
         }
 
         # Find files eligible for force deletion
-        eligible_files = db.query(MediaFile).filter(
-            MediaFile.force_delete_eligible,
-            MediaFile.status.in_([FileStatus.ORPHANED, FileStatus.ERROR])
-        ).all()
+        eligible_files = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.force_delete_eligible,
+                MediaFile.status.in_([FileStatus.ORPHANED, FileStatus.ERROR]),
+            )
+            .all()
+        )
 
         results["eligible_for_deletion"] = len(eligible_files)
 
@@ -218,29 +237,31 @@ class FileCleanupService:
                     # Force delete the file
                     delete_media_file(db, file.id, system_user, force=True)
                     results["successfully_deleted"] += 1
-                    results["files_processed"].append({
-                        "id": file.id,
-                        "filename": file.filename,
-                        "status": "deleted"
-                    })
+                    results["files_processed"].append(
+                        {"id": file.id, "filename": file.filename, "status": "deleted"}
+                    )
                 except Exception as e:
                     error_msg = f"Failed to delete file {file.id}: {str(e)}"
                     results["deletion_errors"].append(error_msg)
-                    results["files_processed"].append({
-                        "id": file.id,
-                        "filename": file.filename,
-                        "status": "error",
-                        "error": str(e)
-                    })
+                    results["files_processed"].append(
+                        {
+                            "id": file.id,
+                            "filename": file.filename,
+                            "status": "error",
+                            "error": str(e),
+                        }
+                    )
         else:
             # Dry run - just record what would be deleted
             for file in eligible_files:
-                results["files_processed"].append({
-                    "id": file.id,
-                    "filename": file.filename,
-                    "status": "would_delete",
-                    "current_status": file.status
-                })
+                results["files_processed"].append(
+                    {
+                        "id": file.id,
+                        "filename": file.filename,
+                        "status": "would_delete",
+                        "current_status": file.status,
+                    }
+                )
 
         return results
 
@@ -260,7 +281,7 @@ class FileCleanupService:
             "stuck_files_detected": 0,
             "files_eligible_for_cleanup": 0,
             "avg_processing_time_hours": 0,
-            "health_score": "unknown"
+            "health_score": "unknown",
         }
 
         # Count files by status
@@ -273,31 +294,41 @@ class FileCleanupService:
         stats["stuck_files_detected"] = len(stuck_files)
 
         # Count files eligible for cleanup
-        eligible_count = db.query(MediaFile).filter(
-            MediaFile.force_delete_eligible
-        ).count()
+        eligible_count = (
+            db.query(MediaFile).filter(MediaFile.force_delete_eligible).count()
+        )
         stats["files_eligible_for_cleanup"] = eligible_count
 
         # Calculate average processing time for completed files
-        completed_files = db.query(MediaFile).filter(
-            MediaFile.status == FileStatus.COMPLETED,
-            MediaFile.task_started_at.isnot(None),
-            MediaFile.completed_at.isnot(None)
-        ).all()
+        completed_files = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.COMPLETED,
+                MediaFile.task_started_at.isnot(None),
+                MediaFile.completed_at.isnot(None),
+            )
+            .all()
+        )
 
         if completed_files:
-            total_processing_time = sum([
-                (file.completed_at - file.task_started_at).total_seconds() / 3600
-                for file in completed_files
-                if file.completed_at and file.task_started_at
-            ])
-            stats["avg_processing_time_hours"] = total_processing_time / len(completed_files)
+            total_processing_time = sum(
+                [
+                    (file.completed_at - file.task_started_at).total_seconds() / 3600
+                    for file in completed_files
+                    if file.completed_at and file.task_started_at
+                ]
+            )
+            stats["avg_processing_time_hours"] = total_processing_time / len(
+                completed_files
+            )
 
         # Calculate health score
         total_files = sum(stats["file_counts_by_status"].values())
         if total_files > 0:
             error_rate = stats["file_counts_by_status"].get("error", 0) / total_files
-            orphaned_rate = stats["file_counts_by_status"].get("orphaned", 0) / total_files
+            orphaned_rate = (
+                stats["file_counts_by_status"].get("orphaned", 0) / total_files
+            )
 
             if error_rate < 0.05 and orphaned_rate < 0.02:
                 stats["health_score"] = "healthy"

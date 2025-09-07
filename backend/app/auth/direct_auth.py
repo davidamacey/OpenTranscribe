@@ -2,6 +2,7 @@
 Direct database authentication module for troubleshooting purposes.
 This bypasses the SQLAlchemy ORM relationships to ensure login works.
 """
+
 import os
 from datetime import datetime
 from datetime import timedelta
@@ -22,20 +23,19 @@ DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "transcribe_app")
 
+
 def get_db_connection():
     """Get a direct database connection."""
     conn = psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD
+        host=DB_HOST, port=DB_PORT, database=DB_NAME, user=DB_USER, password=DB_PASSWORD
     )
     return conn
+
 
 def verify_password(plain_password, hashed_password):
     """Verify a password against a hash."""
     return pwd_context.verify(plain_password, hashed_password)
+
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     """Create a JWT access token."""
@@ -44,11 +44,16 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(
+            minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        )
 
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    encoded_jwt = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
     return encoded_jwt
+
 
 def direct_authenticate_user(email: str, password: str):
     """
@@ -66,6 +71,7 @@ def direct_authenticate_user(email: str, password: str):
         None: If authentication fails
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Basic input validation
@@ -84,7 +90,7 @@ def direct_authenticate_user(email: str, password: str):
         # Query the user
         cursor.execute(
             'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser FROM "user" WHERE email = %s',
-            (email,)
+            (email,),
         )
 
         user = cursor.fetchone()
@@ -93,11 +99,21 @@ def direct_authenticate_user(email: str, password: str):
             logger.info(f"Authentication failed: no user found with email {email}")
             return None
 
-        user_id, user_email, hashed_password, full_name, role, is_active, is_superuser = user
+        (
+            user_id,
+            user_email,
+            hashed_password,
+            full_name,
+            role,
+            is_active,
+            is_superuser,
+        ) = user
 
         # Verify password
         if not verify_password(password, hashed_password):
-            logger.warning(f"Authentication failed: incorrect password for user {email}")
+            logger.warning(
+                f"Authentication failed: incorrect password for user {email}"
+            )
             return None
 
         # Check if user is active
@@ -112,7 +128,7 @@ def direct_authenticate_user(email: str, password: str):
             "full_name": full_name,
             "role": role,
             "is_active": is_active,
-            "is_superuser": is_superuser
+            "is_superuser": is_superuser,
         }
 
     except Exception as e:
