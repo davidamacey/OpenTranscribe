@@ -1292,15 +1292,15 @@
     }
   }
 
-  function handleCollectionRemoved(event: any) {
-    const { collectionId } = event.detail;
+  function handleCollectionsUpdated(event: any) {
+    const { collections: updatedCollections } = event.detail;
     
-    // Update collections array by removing the collection
-    collections = collections.filter(c => c.id !== collectionId);
+    // Update collections array
+    collections = updatedCollections;
     
-    // Update file object if it has collections
-    if (file && file.collections) {
-      file.collections = file.collections.filter((c: any) => c.id !== collectionId);
+    // Update file object if it exists
+    if (file) {
+      file.collections = updatedCollections;
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
     }
@@ -1681,7 +1681,7 @@
           bind:collections 
           fileId={file?.id}
           bind:isExpanded={isCollectionsExpanded}
-          on:collectionRemoved={handleCollectionRemoved}
+          on:collectionsUpdated={handleCollectionsUpdated}
         />
 
         <AnalyticsSection 
