@@ -55,6 +55,25 @@
     error = "";
     successMessage = "";
     
+    // Validate required fields first
+    if (!email.trim()) {
+      error = "Email address is required.";
+      document.getElementById('email')?.focus();
+      return;
+    }
+    
+    if (!validateEmail(email.trim())) {
+      error = "Please enter a valid email address.";
+      document.getElementById('email')?.focus();
+      return;
+    }
+    
+    if (!password.trim()) {
+      error = "Password is required.";
+      document.getElementById('password')?.focus();
+      return;
+    }
+    
     if (!validateForm()) {
       return;
     }
@@ -76,6 +95,15 @@
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         error = result.message || "Login failed. Please check your credentials and try again.";
+        
+        // Focus appropriate field based on error type
+        if (result.message && result.message.toLowerCase().includes('email')) {
+          document.getElementById('email')?.focus();
+        } else if (result.message && (result.message.toLowerCase().includes('password') || result.message.toLowerCase().includes('credentials'))) {
+          document.getElementById('password')?.focus();
+          // Clear password on failed authentication for security
+          password = "";
+        }
       }
     } catch (err) {
       console.error("Login.svelte: Login error:", err);
@@ -108,14 +136,22 @@
     
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if error}
-        <div class="error-message">
-          {error}
+        <div class="error-message" role="alert" aria-live="polite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          <span>{error}</span>
         </div>
       {/if}
       
       {#if successMessage}
-        <div class="success-message">
-          {successMessage}
+        <div class="success-message" role="alert" aria-live="polite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20,6 9,17 4,12"/>
+          </svg>
+          <span>{successMessage}</span>
         </div>
       {/if}
       
@@ -364,10 +400,18 @@
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
-    padding: 1rem;
+    padding: 0.75rem;
     border-radius: 4px;
-    margin-bottom: 1rem;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     font-weight: 500;
+  }
+  
+  .success-message svg {
+    flex-shrink: 0;
+    opacity: 0.8;
   }
   
   .spinner {
@@ -390,6 +434,16 @@
     color: var(--error-color);
     padding: 0.75rem;
     border-radius: 4px;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+  }
+  
+  .error-message svg {
+    flex-shrink: 0;
+    opacity: 0.8;
   }
   
   .auth-logo {

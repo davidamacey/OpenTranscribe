@@ -10,34 +10,33 @@
   export const navigate = null;
   export const condition = true;
   
-  /** @typedef {object} MediaFile
-   * @property {number} id
-   * @property {string} filename
-   * @property {number} [file_size]
-   * @property {string} [content_type]
-   * @property {string} [language]
-   * @property {string} [upload_time]
-   * @property {number} [duration]
-   * @property {string} [format]
-   * @property {string} [media_format]
-   * @property {string} [codec]
-   */
+  interface MediaFile {
+    id: number;
+    filename: string;
+    file_size?: number;
+    content_type?: string;
+    language?: string;
+    upload_time?: string;
+    duration?: number;
+    format?: string;
+    media_format?: string;
+    codec?: string;
+  }
 
-  /** @typedef {object} Task
-   * @property {string} id
-   * @property {number|null} media_file_id
-   * @property {string} task_type
-   * @property {string} status
-   * @property {number} progress
-   * @property {string} created_at
-   * @property {string} updated_at
-   * @property {string|null} completed_at
-   * @property {string|null} error_message
-   * @property {MediaFile|null} media_file
-   * @property {boolean} [showMetadata]
-   */
+  interface Task {
+    id: string;
+    media_file_id: number | null;
+    task_type: string;
+    status: string;
+    progress: number;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+    error_message: string | null;
+    media_file: MediaFile | null;
+    showMetadata?: boolean;
+  }
 
-  /** @type {Array<Task>} */
   let tasks: Task[] = [];
   
   /** @type {boolean} */
