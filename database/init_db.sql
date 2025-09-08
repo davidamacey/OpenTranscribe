@@ -283,9 +283,12 @@ CREATE TABLE IF NOT EXISTS user_setting (
 );
 
 -- User LLM settings table for storing user-specific LLM provider configurations
+-- Each user can have multiple LLM configurations. The active configuration
+-- is tracked via the user_setting table with key 'active_llm_config_id'.
 CREATE TABLE IF NOT EXISTS user_llm_settings (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL, -- User-friendly name for the configuration
     provider VARCHAR(50) NOT NULL, -- openai, vllm, ollama, claude, custom
     model_name VARCHAR(100) NOT NULL,
     api_key TEXT, -- Encrypted API key
@@ -299,7 +302,7 @@ CREATE TABLE IF NOT EXISTS user_llm_settings (
     test_message TEXT, -- Error message or success details
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id) -- Only one LLM setting per user (user can change provider/config)
+    UNIQUE(user_id, name) -- Ensure unique configuration names per user
 );
 
 -- Indexes for prompt and settings queries

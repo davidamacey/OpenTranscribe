@@ -135,7 +135,7 @@
   function openFlowerDashboard() {
     const protocol = window.location.protocol;
     const host = window.location.hostname;
-    const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+    const port = import.meta.env.VITE_FLOWER_PORT || '5175';
     const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
     const url = urlPrefix 
       ? `${protocol}//${host}:${port}/${urlPrefix}/` 
@@ -300,7 +300,6 @@
           
           // Check if this notification is for transcription status
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
-            console.log('UserFileStatus received WebSocket update for file:', latestNotification.data.file_id, 'Status:', latestNotification.data.status);
             
             // Refresh file status when we get updates
             fetchFileStatus();
@@ -474,7 +473,7 @@
         </div>
       {:else}
         <div class="no-problems">
-          <p>✅ All your files are processing normally!</p>
+          <p>✓ All your files are processing normally!</p>
         </div>
       {/if}
       
@@ -739,7 +738,12 @@
             
             {#if detailedStatus.is_stuck}
               <div class="warning">
-                ⚠️ This file appears to be stuck in processing
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-right: 4px;">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                  <path d="M12 9v4"/>
+                  <path d="m12 17 .01 0"/>
+                </svg>
+                This file appears to be stuck in processing
               </div>
             {/if}
             
@@ -838,18 +842,19 @@
   }
   
   .refresh-btn, .recovery-btn, .flower-btn, .tasks-toggle-btn {
-    padding: 0.5rem 1rem;
-    background: var(--primary-color);
+    padding: 0.6rem 1.2rem;
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
     font-weight: 500;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
   .flower-btn {
@@ -859,8 +864,13 @@
   }
   
   .refresh-btn:hover, .recovery-btn:hover, .tasks-toggle-btn:hover {
-    background: var(--primary-hover);
+    background: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .refresh-btn:active, .recovery-btn:active, .tasks-toggle-btn:active {
+    transform: translateY(0);
   }
   
   .flower-btn:hover {

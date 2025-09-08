@@ -25,6 +25,11 @@
   let profileChanged = false;
   let passwordChanged = false;
   
+  // Password visibility toggles
+  let showCurrentPassword = false;
+  let showNewPassword = false;
+  let showConfirmPassword = false;
+  
   // Tab management
   let activeTab = 'profile';
   const tabs = [
@@ -133,6 +138,19 @@
   
   // Check for changes in password form
   $: passwordChanged = !!(currentPassword && newPassword && confirmPassword);
+  
+  // Password visibility toggle functions
+  function toggleCurrentPasswordVisibility() {
+    showCurrentPassword = !showCurrentPassword;
+  }
+  
+  function toggleNewPasswordVisibility() {
+    showNewPassword = !showNewPassword;
+  }
+  
+  function toggleConfirmPasswordVisibility() {
+    showConfirmPassword = !showConfirmPassword;
+  }
 </script>
 
 <div class="settings-container">
@@ -258,37 +276,142 @@
         
         <form on:submit|preventDefault={changePassword} class="settings-form">
       <div class="form-group">
-        <label for="currentPassword">Current Password</label>
-        <input 
-          type="password" 
-          id="currentPassword" 
-          bind:value={currentPassword} 
-          class="form-control"
-          title="Enter your current password to verify your identity"
-        />
+        <div class="password-header">
+          <label for="currentPassword">Current Password</label>
+          <button 
+            type="button" 
+            class="toggle-password" 
+            on:click={toggleCurrentPasswordVisibility}
+            aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+            title={showCurrentPassword ? 'Hide current password text' : 'Show current password text'}
+          >
+            {#if showCurrentPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        {#if showCurrentPassword}
+          <input 
+            type="text" 
+            id="currentPassword" 
+            bind:value={currentPassword} 
+            class="form-control"
+            title="Enter your current password to verify your identity"
+          />
+        {:else}
+          <input 
+            type="password" 
+            id="currentPassword" 
+            bind:value={currentPassword} 
+            class="form-control"
+            title="Enter your current password to verify your identity"
+          />
+        {/if}
       </div>
       
       <div class="form-group">
-        <label for="newPassword">New Password</label>
-        <input 
-          type="password" 
-          id="newPassword" 
-          bind:value={newPassword} 
-          class="form-control"
-          title="Enter a new password (must be at least 8 characters long)"
-        />
+        <div class="password-header">
+          <label for="newPassword">New Password</label>
+          <button 
+            type="button" 
+            class="toggle-password" 
+            on:click={toggleNewPasswordVisibility}
+            aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+            title={showNewPassword ? 'Hide new password text' : 'Show new password text'}
+          >
+            {#if showNewPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        {#if showNewPassword}
+          <input 
+            type="text" 
+            id="newPassword" 
+            bind:value={newPassword} 
+            class="form-control"
+            title="Enter a new password (must be at least 8 characters long)"
+          />
+        {:else}
+          <input 
+            type="password" 
+            id="newPassword" 
+            bind:value={newPassword} 
+            class="form-control"
+            title="Enter a new password (must be at least 8 characters long)"
+          />
+        {/if}
         <p class="form-text">Must be at least 8 characters long</p>
       </div>
       
       <div class="form-group">
-        <label for="confirmPassword">Confirm New Password</label>
-        <input 
-          type="password" 
-          id="confirmPassword" 
-          bind:value={confirmPassword} 
-          class="form-control"
-          title="Re-enter your new password to confirm it matches"
-        />
+        <div class="password-header">
+          <label for="confirmPassword">Confirm New Password</label>
+          <button 
+            type="button" 
+            class="toggle-password" 
+            on:click={toggleConfirmPasswordVisibility}
+            aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+            title={showConfirmPassword ? 'Hide confirm password text' : 'Show confirm password text'}
+          >
+            {#if showConfirmPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        {#if showConfirmPassword}
+          <input 
+            type="text" 
+            id="confirmPassword" 
+            bind:value={confirmPassword} 
+            class="form-control"
+            title="Re-enter your new password to confirm it matches"
+          />
+        {:else}
+          <input 
+            type="password" 
+            id="confirmPassword" 
+            bind:value={confirmPassword} 
+            class="form-control"
+            title="Re-enter your new password to confirm it matches"
+          />
+        {/if}
       </div>
       
       <div class="form-actions">
@@ -410,6 +533,29 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+  
+  .password-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .toggle-password {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+  
+  .toggle-password:hover {
+    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
   }
   
   label {

@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { derived } from 'svelte/store';
   import { Link } from 'svelte-navigator';
@@ -7,7 +7,7 @@
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
   
   // Prop to control whether to show the notification bell button
-  export const hideButton = false;
+  export let hideButton = false;
   
   // Subscribe to the showNotificationsPanel store
   let showPanel = false;
@@ -49,7 +49,7 @@
    * Close panel when clicking outside
    * @param {MouseEvent} event - The click event
    */
-  function handleClickOutside(event) {
+  function handleClickOutside(event: MouseEvent) {
     const panel = document.querySelector('.notifications-panel');
     const button = document.querySelector('.notifications-button');
     const target = event.target;
@@ -63,7 +63,7 @@
    * Remove a notification
    * @param {string} id - The notification ID
    */
-  function removeNotification(id) {
+  function removeNotification(id: string) {
     websocketStore.markAsRead(id);
   }
   
@@ -84,7 +84,7 @@
    * @param {string} type - The notification type
    * @returns {string} - Icon name
    */
-  function getNotificationIcon(type) {
+  function getNotificationIcon(type: string) {
     switch (type) {
       case 'transcription_status':
         return 'file-text';
@@ -102,7 +102,7 @@
    * @param {Date} date - The date to format
    * @returns {string} - Formatted relative time
    */
-  function formatTimestamp(date) {
+  function formatTimestamp(date: Date) {
     const now = new Date();
     const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
     
@@ -127,7 +127,7 @@
    * @param {string} [notification.data.file_id] - Optional file ID
    * @returns {string|null} - File link or null if no file_id
    */
-  function getFileLink(notification) {
+  function getFileLink(notification: { data?: { file_id?: string } }) {
     if (notification.data && notification.data.file_id) {
       return `/files/${notification.data.file_id}`;
     }
@@ -139,7 +139,7 @@
    * @param {Object} notification - The notification object
    * @returns {string} - CSS class for status
    */
-  function getNotificationStatus(notification) {
+  function getNotificationStatus(notification: { data?: { status?: string } }) {
     const notificationData = notification.data || {};
     if (notificationData.status) {
       const status = notificationData.status;

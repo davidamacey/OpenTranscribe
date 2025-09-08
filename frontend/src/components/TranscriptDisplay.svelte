@@ -237,7 +237,6 @@
           // If we're still in processing after 3 seconds, it's likely done
           if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
-            console.log('Download completed (cached video detected)');
             clearInterval(checkInterval);
             return;
           }
@@ -245,7 +244,6 @@
           // For actual processing, give it more time (up to 60 seconds)
           if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
-            console.log('Download completed (timeout)');
             clearInterval(checkInterval);
           }
         }, 1000); // Check every second
@@ -606,16 +604,16 @@
                         {/if}
                         <div class="suggestion-help-text">
                           {#if speaker.confidence >= 0.75}
-                            🎯 <strong>High confidence match:</strong> This speaker appears very similar to "{speaker.suggested_name}" from other videos. Consider using this label.
+                            <strong>High confidence match:</strong> This speaker appears very similar to "{speaker.suggested_name}" from other videos. Consider using this label.
                           {:else if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
                             {@const maxCrossVideoConfidence = Math.max(...speaker.cross_video_matches.map(m => m.confidence))}
                             {#if maxCrossVideoConfidence > speaker.confidence + 0.2}
-                              ⚖️ <strong>Mixed signals:</strong> Moderate match to "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}%), but check cross-video matches below for potentially stronger unlabeled matches.
+                              <strong>Mixed signals:</strong> Moderate match to "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}%), but check cross-video matches below for potentially stronger unlabeled matches.
                             {:else}
-                              💡 <strong>Moderate match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). Cross-video matches below show similar confidence levels.
+                              <strong>Moderate match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). Cross-video matches below show similar confidence levels.
                             {/if}
                           {:else}
-                            💡 <strong>Possible match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). No other cross-video matches found.
+                            <strong>Possible match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). No other cross-video matches found.
                           {/if}
                         </div>
                       </div>
@@ -697,14 +695,14 @@
                               <div class="compact-matches">
                                 <!-- Current file -->
                                 <div class="compact-match current-file">
-                                  <span class="match-text">📄 This video (current)</span>
+                                  <span class="match-text">This video (current)</span>
                                   <span class="match-confidence">✓ Labeled</span>
                                 </div>
                                 
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
                                   <div class="compact-match" title={match.media_file_title}>
-                                    <span class="match-text">📄 {match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}</span>
+                                    <span class="match-text">{match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}</span>
                                     <span class="match-confidence">
                                       ✓ {Math.round(match.confidence * 100)}%
                                     </span>
@@ -868,14 +866,29 @@
   }
 
   .cancel-button {
-    background: var(--surface-color, #f8f9fa);
-    color: var(--text-primary, #374151);
-    border: 1px solid var(--border-color, #d1d5db);
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .cancel-button:hover {
-    background: var(--surface-hover, #f3f4f6);
-    border-color: var(--border-hover, #9ca3af);
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .transcript-display-container {
@@ -1769,19 +1782,26 @@
 
   .save-speakers-button {
     margin-top: 16px;
-    padding: 10px 20px;
-    background: var(--primary-color);
+    padding: 0.6rem 1.2rem;
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .save-speakers-button:hover {
-    background: var(--primary-hover);
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .save-speakers-button:active {
+    transform: translateY(0);
   }
 
   .error-message {

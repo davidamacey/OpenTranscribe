@@ -13,7 +13,7 @@
   let showConfirmModal = false;
   let newProfileName = '';
   let selectedAction = '';
-  let selectedProfileId = null;
+  let selectedProfileId: number | null = null;
   let confirmMessage = '';
   
   function getConfidenceColor(confidence: number): string {

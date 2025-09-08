@@ -254,7 +254,6 @@
       });
       
       if (response.data && Array.isArray(response.data)) {
-        console.log('Raw speaker data from API:', response.data);
         speakerList = response.data
           .map((speaker: any) => ({
             id: speaker.id,
@@ -378,7 +377,6 @@
             player.captions.active = true;
           }
           
-          console.log('Subtitle track loaded and enabled');
         }
       });
       
@@ -421,7 +419,6 @@
       // Add updated subtitle track with cache-busting timestamp
       addSubtitleTrack();
       
-      console.log('Subtitle track refreshed due to transcript changes');
     }, 1000);
   }
 
@@ -674,7 +671,6 @@
             // Clear cached processed videos so downloads will use updated transcript
             try {
               await axiosInstance.delete(`/api/files/${file.id}/cache`);
-              console.log('Cleared video cache to ensure downloads use updated transcript');
             } catch (error) {
               console.warn('Could not clear video cache:', error);
             }
@@ -1202,7 +1198,6 @@
       // Clear cached processed videos so downloads will use updated speaker names
       try {
         await axiosInstance.delete(`/api/files/${file.id}/cache`);
-        console.log('Cleared video cache to ensure downloads use updated speaker names');
         // Note: No user notification needed - this is automatic background cleanup
       } catch (error) {
         console.warn('Could not clear video cache:', error);
@@ -1249,7 +1244,6 @@
         // Clear cached processed videos so downloads will use updated speaker names (fallback)
         try {
           await axiosInstance.delete(`/api/files/${file.id}/cache`);
-          console.log('Cleared video cache to ensure downloads use updated speaker names (fallback)');
         } catch (error) {
           console.warn('Could not clear video cache (fallback):', error);
         }
@@ -1331,7 +1325,6 @@
       // Refresh file details to show updated status
       await fetchFileDetails(fileId);
       
-      console.log('File reprocessing started');
     } catch (error) {
       console.error('Error starting reprocess:', error);
       errorMessage = 'Failed to start reprocessing. Please try again.';
@@ -1361,7 +1354,6 @@
       
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
-      console.log('Summary generation started:', response.data);
       
       // The WebSocket will update summaryGenerating = true when processing starts
     } catch (error: any) {
@@ -1462,10 +1454,8 @@
                   file = { ...file }; // Trigger reactivity
                   reactiveFile.set(file);
                 }
-                console.log('Progress update for file:', fileId, 'Progress:', latestNotification.data.progress + '%', 'Message:', latestNotification.data.message);
               } else {
                 // For status changes (completed, error), do a full refresh
-                console.log('Status change for file:', fileId, 'Status:', latestNotification.data?.status);
                 fetchFileDetails();
               }
             }
@@ -1475,7 +1465,6 @@
             // Handle summarization status updates
             if (latestNotification.type === 'summary_status') {
               const status = latestNotification.data?.status;
-              console.log('Received summary_status notification:', status);
               
               if (status === 'processing' || status === 'generating') {
                 // Summary generation started - show spinner without full refresh
@@ -1803,7 +1792,6 @@
         });
         
         // WebSocket will handle the rest of the status updates
-        console.log('Reprocess summary started successfully');
       } catch (error) {
         console.error('Failed to start reprocess:', error);
         summaryError = 'Failed to start summary reprocessing';
@@ -1919,23 +1907,29 @@
   }
 
   .view-summary-btn {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.8rem;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .view-summary-btn:hover {
-    background-color: var(--primary-color-dark, #2563eb);
+    background-color: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .view-summary-btn:active {
+    transform: translateY(0);
   }
 
   .view-summary-btn .ai-icon {

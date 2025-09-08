@@ -580,7 +580,12 @@
               on:click={useCurrentTime}
               title="Mark the current video playback time to link this comment to that moment"
             >
-              <span class="button-icon">⏱</span>
+              <span class="button-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12,6 12,12 16,14"/>
+                </svg>
+              </span>
               <span>Mark Current Time</span>
             </button>
           {:else}
@@ -901,20 +906,26 @@
   }
   
   .submit-button {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
   .submit-button:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
+    background-color: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .submit-button:active:not(:disabled) {
+    transform: translateY(0);
   }
   
   .submit-button:disabled {

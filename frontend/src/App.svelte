@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { Router, Route, Link, navigate } from "svelte-navigator";
   import { onMount, onDestroy } from "svelte";
   import { get } from 'svelte/store';

@@ -2,6 +2,7 @@
 API endpoints for user LLM settings management
 """
 
+import contextlib
 import logging
 import time
 from typing import Any
@@ -24,6 +25,32 @@ from app.utils.encryption import test_encryption
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None:
+    """Helper function to set active LLM configuration for a user"""
+    # Check if setting already exists
+    existing_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
+        .first()
+    )
+
+    if existing_setting:
+        existing_setting.setting_value = str(config_id)
+        db.add(existing_setting)
+    else:
+        new_setting = models.UserSetting(
+            user_id=user_id,
+            setting_key="active_llm_config_id",
+            setting_value=str(config_id),
+        )
+        db.add(new_setting)
+
+    db.commit()
 
 
 def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
@@ -86,6 +113,50 @@ def get_supported_providers() -> Any:
     return schemas.SupportedProvidersResponse(providers=providers)
 
 
+@router.get("/", response_model=schemas.UserLLMConfigurationsList)
+def get_user_configurations(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get all user's LLM configurations
+    """
+    # Get all user configurations
+    configurations = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .order_by(models.UserLLMSettings.created_at.desc())
+        .all()
+    )
+
+    # Get active configuration ID
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
+        .first()
+    )
+
+    active_config_id = None
+    if active_setting and active_setting.setting_value:
+        with contextlib.suppress(ValueError):
+            active_config_id = int(active_setting.setting_value)
+
+    # Convert to public schemas
+    public_configs = []
+    for config in configurations:
+        # Let FastAPI handle the conversion automatically
+        public_configs.append(config)
+
+    return schemas.UserLLMConfigurationsList(
+        configurations=public_configs,
+        active_configuration_id=active_config_id,
+        total=len(public_configs),
+    )
+
+
 @router.get("/status", response_model=schemas.LLMSettingsStatus)
 def get_llm_settings_status(
     db: Session = Depends(get_db),
@@ -94,72 +165,107 @@ def get_llm_settings_status(
     """
     Get status information about user's LLM settings
     """
-    user_settings = (
+    # Get all configurations
+    total_configs = (
         db.query(models.UserLLMSettings)
         .filter(models.UserLLMSettings.user_id == current_user.id)
+        .count()
+    )
+
+    if total_configs == 0:
+        return schemas.LLMSettingsStatus(
+            has_settings=False, total_configurations=0, using_system_default=True
+        )
+
+    # Get active configuration
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
         .first()
     )
 
-    if not user_settings:
-        return schemas.LLMSettingsStatus(has_settings=False, using_system_default=True)
+    active_config = None
+    if active_setting and active_setting.setting_value:
+        try:
+            active_config_id = int(active_setting.setting_value)
+            active_config = (
+                db.query(models.UserLLMSettings)
+                .filter(
+                    models.UserLLMSettings.user_id == current_user.id,
+                    models.UserLLMSettings.id == active_config_id,
+                )
+                .first()
+            )
+        except ValueError:
+            pass
+
+    active_public = None
+    if active_config:
+        active_public = active_config
 
     return schemas.LLMSettingsStatus(
         has_settings=True,
-        provider=user_settings.provider,
-        model_name=user_settings.model_name,
-        test_status=user_settings.test_status,
-        last_tested=user_settings.last_tested,
-        is_active=user_settings.is_active,
-        using_system_default=False,
+        active_configuration=active_public,
+        total_configurations=total_configs,
+        using_system_default=not bool(active_config),
     )
 
 
-@router.get("/", response_model=schemas.UserLLMSettingsPublic)
-def get_user_llm_settings(
+@router.get("/config/{config_id}", response_model=schemas.UserLLMSettingsPublic)
+def get_user_configuration(
+    config_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Get current user's LLM settings (without API key for security)
+    Get a specific user's LLM configuration
     """
-    user_settings = (
+    user_config = (
         db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == config_id,
+        )
         .first()
     )
 
-    if not user_settings:
+    if not user_config:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first.",
+            detail="Configuration not found.",
         )
 
     # Convert to public schema (excludes API key)
-    return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
-    )
+    return user_config
 
 
 @router.post("/", response_model=schemas.UserLLMSettingsPublic)
-def create_user_llm_settings(
+def create_user_llm_configuration(
     *,
     db: Session = Depends(get_db),
     settings_in: schemas.UserLLMSettingsCreate,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Create LLM settings for the current user
+    Create a new LLM configuration for the current user
     """
-    # Check if user already has settings
-    existing_settings = (
+    # Check if user already has a configuration with this name
+    existing_config = (
         db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.name == settings_in.name,
+        )
         .first()
     )
 
-    if existing_settings:
+    if existing_config:
         raise HTTPException(
-            status_code=400, detail="User already has LLM settings. Use PUT to update."
+            status_code=400,
+            detail=f"Configuration with name '{settings_in.name}' already exists.",
         )
 
     # Test encryption before proceeding
@@ -175,41 +281,71 @@ def create_user_llm_settings(
         if not encrypted_api_key:
             raise HTTPException(status_code=500, detail="Failed to encrypt API key")
 
-    # Create new settings
+    # Create new configuration
     settings_data = settings_in.model_dump(exclude={"api_key"})
     settings_data.update({"user_id": current_user.id, "api_key": encrypted_api_key})
 
-    user_settings = models.UserLLMSettings(**settings_data)
-    db.add(user_settings)
+    user_config = models.UserLLMSettings(**settings_data)
+    db.add(user_config)
     db.commit()
-    db.refresh(user_settings)
+    db.refresh(user_config)
 
-    return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
+    # If this is the user's first configuration, make it active
+    existing_count = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .count()
     )
 
+    if existing_count == 1:  # This is the first config
+        _set_active_configuration(db, current_user.id, user_config.id)
 
-@router.put("/", response_model=schemas.UserLLMSettingsPublic)
-def update_user_llm_settings(
+    return user_config
+
+
+@router.put("/config/{config_id}", response_model=schemas.UserLLMSettingsPublic)
+def update_user_llm_configuration(
+    config_id: int,
     *,
     db: Session = Depends(get_db),
     settings_in: schemas.UserLLMSettingsUpdate,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Update current user's LLM settings
+    Update a specific LLM configuration
     """
-    user_settings = (
+    user_config = (
         db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == config_id,
+        )
         .first()
     )
 
-    if not user_settings:
+    if not user_config:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first.",
+            detail="Configuration not found.",
         )
+
+    # Check for name conflicts if name is being updated
+    if settings_in.name and settings_in.name != user_config.name:
+        existing_config = (
+            db.query(models.UserLLMSettings)
+            .filter(
+                models.UserLLMSettings.user_id == current_user.id,
+                models.UserLLMSettings.name == settings_in.name,
+                models.UserLLMSettings.id != config_id,
+            )
+            .first()
+        )
+
+        if existing_config:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Configuration with name '{settings_in.name}' already exists.",
+            )
 
     # Handle API key encryption
     update_data = settings_in.model_dump(exclude_unset=True, exclude={"api_key"})
@@ -236,38 +372,144 @@ def update_user_llm_settings(
 
     # Apply updates
     for field, value in update_data.items():
-        setattr(user_settings, field, value)
+        setattr(user_config, field, value)
 
-    db.add(user_settings)
+    db.add(user_config)
     db.commit()
-    db.refresh(user_settings)
+    db.refresh(user_config)
 
-    return schemas.UserLLMSettingsPublic(
-        **user_settings.__dict__, has_api_key=bool(user_settings.api_key)
+    return user_config
+
+
+@router.post("/set-active", response_model=schemas.UserLLMSettingsPublic)
+def set_active_configuration(
+    *,
+    db: Session = Depends(get_db),
+    request: schemas.SetActiveConfigRequest,
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Set the active LLM configuration for the user
+    """
+    # Verify the configuration exists and belongs to the user
+    user_config = (
+        db.query(models.UserLLMSettings)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == request.configuration_id,
+        )
+        .first()
     )
 
+    if not user_config:
+        raise HTTPException(
+            status_code=404,
+            detail="Configuration not found.",
+        )
 
-@router.delete("/")
-def delete_user_llm_settings(
+    # Set as active
+    _set_active_configuration(db, current_user.id, request.configuration_id)
+
+    return user_config
+
+
+@router.delete("/config/{config_id}")
+def delete_user_llm_configuration(
+    config_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Delete current user's LLM settings (revert to system defaults)
+    Delete a specific LLM configuration
     """
-    user_settings = (
+    user_config = (
         db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == config_id,
+        )
         .first()
     )
 
-    if not user_settings:
-        raise HTTPException(status_code=404, detail="User LLM settings not found")
+    if not user_config:
+        raise HTTPException(status_code=404, detail="Configuration not found")
 
-    db.delete(user_settings)
+    # Check if this is the active configuration
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
+        .first()
+    )
+
+    is_active = False
+    if active_setting and active_setting.setting_value == str(config_id):
+        is_active = True
+
+    # Delete the configuration
+    db.delete(user_config)
+
+    # If this was the active configuration, clear the active setting
+    # or set another configuration as active if available
+    if is_active:
+        # Find another configuration to set as active
+        remaining_config = (
+            db.query(models.UserLLMSettings)
+            .filter(
+                models.UserLLMSettings.user_id == current_user.id,
+                models.UserLLMSettings.id != config_id,
+            )
+            .first()
+        )
+
+        if remaining_config:
+            # Set the first remaining config as active
+            _set_active_configuration(db, current_user.id, remaining_config.id)
+        else:
+            # No configurations left, remove the active setting
+            if active_setting:
+                db.delete(active_setting)
+
     db.commit()
 
-    return {"detail": "LLM settings deleted successfully. Using system defaults."}
+    return {"detail": "Configuration deleted successfully."}
+
+
+@router.delete("/all")
+def delete_all_user_configurations(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Delete all user's LLM configurations (revert to system defaults)
+    """
+    # Delete all configurations
+    deleted_count = (
+        db.query(models.UserLLMSettings)
+        .filter(models.UserLLMSettings.user_id == current_user.id)
+        .delete()
+    )
+
+    # Delete active setting
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
+        .first()
+    )
+
+    if active_setting:
+        db.delete(active_setting)
+
+    db.commit()
+
+    return {
+        "detail": f"All {deleted_count} configurations deleted successfully. Using system defaults."
+    }
 
 
 @router.post("/test", response_model=schemas.ConnectionTestResponse)
@@ -330,41 +572,65 @@ async def test_llm_connection(
 
 
 @router.post("/test-current", response_model=schemas.ConnectionTestResponse)
-async def test_current_settings(
+async def test_active_configuration(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Test connection using current user's saved LLM settings
+    Test connection using current user's active LLM configuration
     """
-    user_settings = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.user_id == current_user.id)
+    # Get active configuration
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == current_user.id,
+            models.UserSetting.setting_key == "active_llm_config_id",
+        )
         .first()
     )
 
-    if not user_settings:
+    if not active_setting or not active_setting.setting_value:
         raise HTTPException(
             status_code=404,
-            detail="User LLM settings not found. Create settings first.",
+            detail="No active LLM configuration found. Please set an active configuration first.",
+        )
+
+    try:
+        active_config_id = int(active_setting.setting_value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid active configuration ID") from e
+
+    user_config = (
+        db.query(models.UserLLMSettings)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == active_config_id,
+        )
+        .first()
+    )
+
+    if not user_config:
+        raise HTTPException(
+            status_code=404,
+            detail="Active LLM configuration not found.",
         )
 
     # Decrypt API key
     api_key = None
-    if user_settings.api_key:
-        api_key = decrypt_api_key(user_settings.api_key)
-        if not api_key and user_settings.api_key:  # Decryption failed
+    if user_config.api_key:
+        api_key = decrypt_api_key(user_config.api_key)
+        if not api_key and user_config.api_key:  # Decryption failed
             raise HTTPException(
                 status_code=500, detail="Failed to decrypt stored API key"
             )
 
     # Test connection
     test_request = schemas.ConnectionTestRequest(
-        provider=schemas.LLMProvider(user_settings.provider),
-        model_name=user_settings.model_name,
+        provider=schemas.LLMProvider(user_config.provider),
+        model_name=user_config.model_name,
         api_key=api_key,
-        base_url=user_settings.base_url,
-        timeout=user_settings.timeout,
+        base_url=user_config.base_url,
+        timeout=user_config.timeout,
     )
 
     result = await test_llm_connection(
@@ -374,14 +640,143 @@ async def test_current_settings(
     # Update test status in database
     from sqlalchemy import text
 
-    user_settings.test_status = result.status.value
-    user_settings.test_message = result.message
-    user_settings.last_tested = db.execute(text("SELECT NOW()")).scalar()
+    user_config.test_status = result.status.value
+    user_config.test_message = result.message
+    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()
 
-    db.add(user_settings)
+    db.add(user_config)
     db.commit()
 
     return result
+
+
+@router.post("/test-config/{config_id}", response_model=schemas.ConnectionTestResponse)
+async def test_specific_configuration(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Test connection for a specific LLM configuration
+    """
+    user_config = (
+        db.query(models.UserLLMSettings)
+        .filter(
+            models.UserLLMSettings.user_id == current_user.id,
+            models.UserLLMSettings.id == config_id,
+        )
+        .first()
+    )
+
+    if not user_config:
+        raise HTTPException(
+            status_code=404,
+            detail="Configuration not found.",
+        )
+
+    # Decrypt API key
+    api_key = None
+    if user_config.api_key:
+        api_key = decrypt_api_key(user_config.api_key)
+        if not api_key and user_config.api_key:  # Decryption failed
+            raise HTTPException(
+                status_code=500, detail="Failed to decrypt stored API key"
+            )
+
+    # Test connection
+    test_request = schemas.ConnectionTestRequest(
+        provider=schemas.LLMProvider(user_config.provider),
+        model_name=user_config.model_name,
+        api_key=api_key,
+        base_url=user_config.base_url,
+        timeout=user_config.timeout,
+    )
+
+    result = await test_llm_connection(
+        test_request=test_request, current_user=current_user
+    )
+
+    # Update test status in database
+    from sqlalchemy import text
+
+    user_config.test_status = result.status.value
+    user_config.test_message = result.message
+    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()
+
+    db.add(user_config)
+    db.commit()
+
+    return result
+
+
+@router.get("/ollama/models")
+async def get_ollama_models(
+    base_url: str,
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from an Ollama instance
+    """
+    import aiohttp
+
+    try:
+        # Clean up base URL
+        clean_url = base_url.strip().rstrip("/")
+        if clean_url.endswith("/v1"):
+            clean_url = clean_url[:-3]  # Remove /v1 suffix
+
+        models_url = f"{clean_url}/api/tags"
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(models_url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    models = []
+
+                    if "models" in data:
+                        for model in data["models"]:
+                            models.append(
+                                {
+                                    "name": model.get("name", ""),
+                                    "size": model.get("size", 0),
+                                    "modified_at": model.get("modified_at", ""),
+                                    "digest": model.get("digest", ""),
+                                    "details": model.get("details", {}),
+                                    "display_name": model.get("name", "").split(":")[
+                                        0
+                                    ],  # Remove tag for display
+                                }
+                            )
+
+                    return {
+                        "success": True,
+                        "models": models,
+                        "total": len(models),
+                        "message": f"Found {len(models)} models on Ollama server",
+                    }
+                else:
+                    error_text = await response.text()
+                    return {
+                        "success": False,
+                        "models": [],
+                        "total": 0,
+                        "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
+                    }
+    except aiohttp.ClientError as e:
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Connection error: {str(e)}",
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Ollama models from {base_url}: {e}")
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Unexpected error: {str(e)}",
+        }
 
 
 @router.get("/encryption-test")

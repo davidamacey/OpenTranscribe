@@ -59,22 +59,23 @@
       
       collections = [...collections, { ...response.data, media_count: 0 }];
       
-      // Reset form
+      // Reset form for potential next collection
       newCollectionName = '';
       newCollectionDescription = '';
-      
-      // Always close the create modal after creation
-      showCreateModal = false;
       
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
         await addMediaToCollection(response.data.id);
+        // Close create modal after adding media since the workflow is complete
+        showCreateModal = false;
+        // Trigger callback to refresh filters after adding media
+        onCollectionSelect(response.data.id);
       } else {
         toastStore.success(`Collection "${response.data.name}" created successfully`);
+        // Close the create modal but keep the manage collections modal open
+        showCreateModal = false;
+        // Don't trigger collection selection callback in manage mode during creation
       }
-      
-      // Trigger callback to refresh filters
-      onCollectionSelect(response.data.id);
     } catch (err: any) {
       console.error('Error creating collection:', err);
       error = err.response?.data?.detail || 'Failed to create collection';
@@ -257,18 +258,26 @@
           {#if viewMode === 'manage'}
             <div class="collection-actions">
               <button
-                class="btn-icon"
+                class="edit-button"
                 title="Edit collection"
                 on:click|stopPropagation={() => openEditModal(collection)}
               >
-                ✏️
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
               </button>
               <button
-                class="btn-icon delete"
+                class="delete-config-button"
                 title="Delete collection"
                 on:click|stopPropagation={() => openDeleteConfirm(collection)}
               >
-                🗑️
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3,6 5,6 21,6"/>
+                  <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                  <line x1="10" y1="11" x2="10" y2="17"/>
+                  <line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
               </button>
             </div>
           {:else if viewMode === 'add' && selectedMediaIds.length > 0}
@@ -668,48 +677,41 @@
     gap: 8px;
   }
   
-  .btn-icon {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border-color);
-    background: var(--surface-color);
-    color: #374151;
-    cursor: pointer;
-    border-radius: 6px;
+  .edit-button, .delete-config-button {
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
     transition: all 0.2s ease;
+    border: 1px solid;
   }
-  
-  .btn-icon:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
-    color: #111827;
+
+  .edit-button {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
   }
-  
-  .btn-icon.delete:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #ef4444;
+
+  .edit-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
   }
-  
-  :global(.dark) .btn-icon {
-    color: #d1d5db;
+
+  .delete-config-button {
+    background-color: transparent;
+    border-color: var(--error-color);
+    color: var(--error-color);
   }
-  
-  :global(.dark) .btn-icon:hover {
-    color: #f9fafb;
-  }
-  
-  .btn-icon svg {
-    width: 16px;
-    height: 16px;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+
+  .delete-config-button:hover:not(:disabled) {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+    color: white;
+    transform: translateY(-1px);
   }
   
   .btn-add {
@@ -870,15 +872,18 @@
   }
   
   .btn-secondary {
-    background-color: #6b7280;
-    color: white;
-    box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
   .btn-secondary:hover:not(:disabled) {
-    background-color: #4b5563;
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(107, 114, 128, 0.25);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
   
   .btn-secondary:active:not(:disabled) {
@@ -990,9 +995,6 @@
     border-color: var(--border-color);
   }
   
-  :global(.dark) .btn-icon:hover {
-    background: var(--hover-background);
-  }
   
   :global(.dark) .badge.public {
     background: rgba(34, 197, 94, 0.2);

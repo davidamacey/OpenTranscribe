@@ -550,14 +550,31 @@
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 140px;
   }
 
   .cancel-button:hover {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
-    border-color: var(--primary-color);
+    border-color: #3b82f6;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .confirm-button {

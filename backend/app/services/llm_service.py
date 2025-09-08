@@ -26,7 +26,7 @@ class LLMProvider(str, Enum):
     VLLM = "vllm"
     OLLAMA = "ollama"
     CLAUDE = "claude"
-    ANTHROPIC = "anthropic" 
+    ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
     CUSTOM = "custom"
 
@@ -84,7 +84,7 @@ class LLMService:
             if config.base_url
             else "http://localhost:11434/v1/chat/completions",
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
-            LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages", 
+            LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
             LLMProvider.OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
             LLMProvider.CUSTOM: build_endpoint(config.base_url)
             if config.base_url
@@ -129,7 +129,9 @@ class LLMService:
                 headers["anthropic-version"] = "2023-06-01"
         elif self.config.provider == LLMProvider.OPENROUTER and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
-            headers["HTTP-Referer"] = "https://opentranscribe.ai"  # Required by OpenRouter
+            headers["HTTP-Referer"] = (
+                "https://opentranscribe.ai"  # Required by OpenRouter
+            )
             headers["X-Title"] = "OpenTranscribe"
         elif self.config.provider == LLMProvider.CUSTOM and self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
@@ -140,34 +142,33 @@ class LLMService:
         self, messages: list[dict[str, str]], **kwargs
     ) -> dict[str, Any]:
         """Prepare request payload for the API"""
-        
+
         # Claude/Anthropic uses a different API format
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             # Convert OpenAI format messages to Claude format
             system_message = ""
             user_messages = []
-            
+
             for msg in messages:
                 if msg.get("role") == "system":
                     system_message = msg.get("content", "")
                 elif msg.get("role") in ["user", "assistant"]:
-                    user_messages.append({
-                        "role": msg["role"], 
-                        "content": msg["content"]
-                    })
-            
+                    user_messages.append(
+                        {"role": msg["role"], "content": msg["content"]}
+                    )
+
             payload = {
                 "model": self.config.model,
                 "messages": user_messages,
                 "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
                 "temperature": kwargs.get("temperature", self.config.temperature),
             }
-            
+
             if system_message:
                 payload["system"] = system_message
-                
+
             return payload
-        
+
         # Standard OpenAI-compatible format for other providers
         payload = {
             "model": self.config.model,
@@ -228,29 +229,31 @@ class LLMService:
                     data = json.loads(response_text)
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse LLM response: {response_text}")
-                    raise Exception(f"Invalid JSON response: {e}")
+                    raise Exception(f"Invalid JSON response: {e}") from e
 
                 # Extract content from response based on provider
                 content = ""
                 usage_tokens = None
                 finish_reason = None
-                
+
                 if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
                     # Claude response format
                     if "content" not in data or not data["content"]:
                         raise Exception("No content in Claude response")
-                    
+
                     # Claude returns content as array of text blocks
                     content_blocks = data["content"]
                     if isinstance(content_blocks, list) and content_blocks:
                         content = content_blocks[0].get("text", "")
                     else:
                         content = str(content_blocks)
-                        
+
                     # Claude usage format
                     if "usage" in data:
-                        usage_tokens = data["usage"].get("output_tokens", 0) + data["usage"].get("input_tokens", 0)
-                        
+                        usage_tokens = data["usage"].get("output_tokens", 0) + data[
+                            "usage"
+                        ].get("input_tokens", 0)
+
                     finish_reason = data.get("stop_reason")
                 else:
                     # OpenAI-compatible response format
@@ -282,7 +285,7 @@ class LLMService:
 
         except aiohttp.ClientError as e:
             logger.error(f"HTTP error in LLM request: {e}")
-            raise Exception(f"Network error: {e}")
+            raise Exception(f"Network error: {e}") from e
         except Exception as e:
             logger.error(f"Error in LLM request: {e}")
             raise
@@ -304,8 +307,7 @@ class LLMService:
 
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=10)
-            ) as session:
-                async with session.get(models_url, headers=headers) as response:
+            ) as session, session.get(models_url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
 
@@ -962,15 +964,15 @@ class LLMService:
     @staticmethod
     def create_from_settings(user_id: Optional[int] = None) -> Optional["LLMService"]:
         """
-        Create LLMService from application settings or user-specific settings
+        Create LLMService from user-specific settings only
 
         Args:
-            user_id: If provided, attempts to load user-specific settings first
+            user_id: If provided, attempts to load user-specific settings
 
         Returns:
-            LLMService configured with user settings or system defaults, or None if no LLM is configured
+            LLMService configured with user settings, or None if no user LLM is configured
         """
-        # Try to load user-specific settings first
+        # Try to load user-specific settings
         if user_id:
             try:
                 user_service = LLMService.create_from_user_settings(user_id)
@@ -978,15 +980,12 @@ class LLMService:
                     return user_service
             except Exception as e:
                 logger.warning(
-                    f"Failed to load user LLM settings for user {user_id}, falling back to system defaults: {e}"
+                    f"Failed to load user LLM settings for user {user_id}: {e}"
                 )
 
-        # Fall back to system defaults
-        try:
-            return LLMService.create_from_system_settings()
-        except Exception as e:
-            logger.warning(f"No LLM service available: {e}")
-            return None
+        # No fallback - users must explicitly configure LLM settings
+        logger.info(f"No active LLM configuration found for user {user_id}")
+        return None
 
     @staticmethod
     def create_from_system_settings() -> "LLMService":
@@ -1005,10 +1004,10 @@ class LLMService:
 
         try:
             provider = LLMProvider(settings.LLM_PROVIDER)
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 f"Invalid LLM provider '{settings.LLM_PROVIDER}'. Supported providers: {', '.join([p.value for p in LLMProvider])}"
-            )
+            ) from e
 
         # Provider-specific configuration mapping
         if provider == LLMProvider.VLLM:
@@ -1057,18 +1056,33 @@ class LLMService:
         Returns:
             LLMService configured with user settings, or None if no settings found
         """
+        from app import models
         from app.db.base import SessionLocal
         from app.models.user_llm_settings import UserLLMSettings
         from app.utils.encryption import decrypt_api_key
 
         db = SessionLocal()
         try:
-            # Get user's LLM settings
+            # Get user's active LLM configuration ID
+            active_config_setting = (
+                db.query(models.UserSetting)
+                .filter(
+                    models.UserSetting.user_id == user_id,
+                    models.UserSetting.setting_key == "active_llm_config_id",
+                )
+                .first()
+            )
+
+            if not active_config_setting or not active_config_setting.setting_value:
+                return None
+
+            # Get the active LLM configuration
+            active_config_id = int(active_config_setting.setting_value)
             user_settings = (
                 db.query(UserLLMSettings)
                 .filter(
                     UserLLMSettings.user_id == user_id,
-                    UserLLMSettings.is_active == True,
+                    UserLLMSettings.id == active_config_id,
                 )
                 .first()
             )
@@ -1184,32 +1198,46 @@ class LLMService:
         try:
             session = await self._get_session()
             headers = self._get_headers()
-            
+
             # Claude/Anthropic providers don't have a models endpoint, test with a simple request
             if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
                 # Test with a simple message
                 test_payload = {
                     "model": self.config.model,
                     "messages": [{"role": "user", "content": "test"}],
-                    "max_tokens": 10
+                    "max_tokens": 10,
                 }
-                
+
                 url = self.endpoints[self.config.provider]
                 logger.debug(f"Testing Claude connection with message endpoint: {url}")
-                
-                async with session.post(url, json=test_payload, headers=headers) as response:
+
+                async with session.post(
+                    url, json=test_payload, headers=headers
+                ) as response:
                     if response.status == 200:
-                        return True, f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available."
+                        return (
+                            True,
+                            f"Successfully connected to {self.config.provider}. Model '{self.config.model}' is available.",
+                        )
                     elif response.status == 401:
-                        return False, "Authentication failed. Please check your API key."
+                        return (
+                            False,
+                            "Authentication failed. Please check your API key.",
+                        )
                     elif response.status == 403:
-                        return False, "Access forbidden. Please check your API key permissions."
+                        return (
+                            False,
+                            "Access forbidden. Please check your API key permissions.",
+                        )
                     elif response.status == 429:
-                        return False, "Rate limit exceeded. Connection test successful but quota reached."
+                        return (
+                            False,
+                            "Rate limit exceeded. Connection test successful but quota reached.",
+                        )
                     else:
                         response_text = await response.text()
                         return False, f"API error ({response.status}): {response_text}"
-            
+
             # For OpenAI-compatible providers, use models endpoint
             else:
                 # Build models endpoint URL

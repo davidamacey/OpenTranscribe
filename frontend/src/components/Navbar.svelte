@@ -210,7 +210,7 @@
                 // Get the current protocol and host
                 const protocol = window.location.protocol;
                 const host = window.location.hostname;
-                const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+                const port = import.meta.env.VITE_FLOWER_PORT || '5175';
                 const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
                 
                 // Construct the URL properly with trailing slash

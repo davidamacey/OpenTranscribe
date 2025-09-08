@@ -25,10 +25,10 @@ const initialState: LLMStatusState = {
 // Main LLM status store with centralized monitoring
 function createLLMStatusStore() {
   const { subscribe, set, update } = writable<LLMStatusState>(initialState);
-  let monitoringTimer: NodeJS.Timeout;
+  let monitoringTimer: NodeJS.Timeout | undefined;
   let isInitialized = false;
 
-  return {
+  const store = {
     subscribe,
     
     // Initialize the store and start monitoring
@@ -48,11 +48,10 @@ function createLLMStatusStore() {
           checking: false
         }));
 
-        // Start periodic monitoring
-        this.startMonitoring();
+        // Start periodic monitoring  
+        store.startMonitoring();
         isInitialized = true;
         
-        console.log('LLM Status Store initialized:', status);
       } catch (error) {
         console.error('Failed to initialize LLM status:', error);
         update(state => ({ ...state, checking: false }));
@@ -66,7 +65,7 @@ function createLLMStatusStore() {
       monitoringTimer = setInterval(async () => {
         const currentState = get({ subscribe });
         if (!currentState.checking) {
-          await this.refreshStatus();
+          await store.refreshStatus();
         }
       }, 120000); // Check every 2 minutes
     },
@@ -75,7 +74,7 @@ function createLLMStatusStore() {
     stopMonitoring() {
       if (monitoringTimer) {
         clearInterval(monitoringTimer);
-        monitoringTimer = undefined;
+        monitoringTimer = undefined as any;
       }
     },
 
@@ -131,18 +130,19 @@ function createLLMStatusStore() {
     // Clear status (reset to initial state)
     reset: () => {
       set(initialState);
-      this.stopMonitoring();
+      store.stopMonitoring();
       isInitialized = false;
     },
 
     // Handle WebSocket notifications
-    handleNotification: (type: string, data: any) => {
+    handleNotification: (type: string, _data: any) => {
       if (type === 'llm_settings_changed' || type === 'llm_status_changed') {
-        console.log('LLM settings/status changed via WebSocket, refreshing...');
-        this.refreshStatus();
+        store.refreshStatus();
       }
     }
   };
+
+  return store;
 }
 
 export const llmStatusStore = createLLMStatusStore();

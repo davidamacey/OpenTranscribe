@@ -560,9 +560,9 @@
     
     if (errorMessage.includes('no audio content') || errorMessage.includes('corrupted') || errorMessage.includes('unsupported format')) {
       toastStore.error(
-        `❌ File Quality Issue: "${file.filename}"\n\n` +
+        `File Quality Issue: "${file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 Suggestions:\n` +
+        `Suggestions:\n` +
         `• Check if the file plays correctly on your device\n` +
         `• Try converting to MP3, WAV, or MP4 format\n` +
         `• Ensure the file isn't password protected or DRM-locked\n` +
@@ -571,9 +571,9 @@
       );
     } else if (errorMessage.includes('no speech') || errorMessage.includes('only music') || errorMessage.includes('background noise')) {
       toastStore.error(
-        `🎵 No Speech Detected: "${file.filename}"\n\n` +
+        `No Speech Detected: "${file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 This typically happens when:\n` +
+        `This typically happens when:\n` +
         `• The file contains only music or instrumental audio\n` +
         `• Speech is too quiet or unclear\n` +
         `• The file has excessive background noise\n` +
@@ -584,9 +584,9 @@
     } else {
       // Generic error with helpful guidance
       toastStore.error(
-        `⚠️ Processing Failed: "${file.filename}"\n\n` +
+        `Processing Failed: "${file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 You can:\n` +
+        `You can:\n` +
         `• Use the "Retry" button to try processing again\n` +
         `• Check the file format and quality\n` +
         `• Contact support if the problem persists`,
@@ -637,16 +637,13 @@
               });
             }
             
-            console.log('MediaLibrary updated from WebSocket notification for file:', fileId, 'Status:', status);
           } 
           // Handle new file uploads
           else if (latestNotification.type === 'file_upload' || latestNotification.type === 'file_created') {
-            console.log('New file uploaded, refreshing file list');
             fetchFiles();
           }
           // Handle file updates (metadata, processing completion, etc.)
           else if (latestNotification.type === 'file_updated' && latestNotification.data?.file_id) {
-            console.log('File updated, refreshing file list');
             fetchFiles();
           }
         }
@@ -1043,11 +1040,14 @@
           <CollectionsPanel 
             selectedMediaIds={Array.from(selectedFiles)}
             viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
-            onCollectionSelect={() => {
-              showCollectionsModal = false;
+            onCollectionSelect={(collectionId) => {
+              // Only close modal if we're in 'add' mode and actually adding files
               if (selectedFiles.size > 0) {
+                showCollectionsModal = false;
                 clearSelection();
               }
+              // In manage mode, keep the modal open for multiple collections
+              
               // Refresh collections in filter
               if (filterSidebarRef && filterSidebarRef.refreshCollections) {
                 filterSidebarRef.refreshCollections();

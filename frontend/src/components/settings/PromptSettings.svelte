@@ -305,6 +305,61 @@
   // Track form changes for dirty state
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
   
+  // Function to prevent native tooltip flicker and position tooltip
+  function removeTitle(event) {
+    // Remove title attribute to prevent native tooltip
+    if (event.target.hasAttribute('title')) {
+      event.target.removeAttribute('title');
+    }
+    // Check parent elements too
+    let element = event.target.closest('[title]');
+    if (element) {
+      element.removeAttribute('title');
+    }
+    
+    // Position the tooltip dynamically
+    const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
+    const tooltip = event.target.closest('.info-tooltip');
+    
+    tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
+    tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
+  }
+
+  // Copy functionality - matches SummaryModal pattern
+  let copyButtonText = 'Copy';
+  
+  function copyPromptText(text: string) {
+    if (!text) return;
+    
+    navigator.clipboard.writeText(text).then(() => {
+      copyButtonText = 'Copied!';
+      setTimeout(() => {
+        copyButtonText = 'Copy';
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      // Fallback for browsers that don't support clipboard API
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copyButtonText = 'Copied!';
+        setTimeout(() => {
+          copyButtonText = 'Copy';
+        }, 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+        copyButtonText = 'Copy failed';
+        setTimeout(() => {
+          copyButtonText = 'Copy';
+        }, 2000);
+      }
+    });
+  }
+  
   // Prevent body scrolling when modals are open
   $: {
     if (showCreateForm || showViewModal || showUnsavedChangesModal) {
@@ -364,64 +419,84 @@
   {#if loading}
     <div class="loading">Loading prompts...</div>
   {:else}
-    <!-- Active Prompt Section -->
-    <div class="active-prompt-section">
-      <h4>Currently Active Prompt</h4>
-      {#if activePrompt}
-        <div class="active-prompt-card">
-          <div class="prompt-info">
-            <div class="prompt-name">{activePrompt.name}</div>
-            <div class="prompt-meta">
-              {activePrompt.is_system_default ? 'System' : 'Custom'} • 
-              {activePrompt.content_type || 'General'}
-            </div>
-            {#if activePrompt.description}
-              <div class="prompt-description">{activePrompt.description}</div>
-            {/if}
-          </div>
-        </div>
-      {:else}
-        <div class="no-active-prompt">
-          No active prompt selected. Please select a prompt below.
-        </div>
-      {/if}
-    </div>
 
     <!-- System Prompts -->
     {#if systemPrompts.length > 0}
-      <div class="prompt-section">
-        <h4>System Prompts</h4>
-        <div class="prompts-grid">
+      <div class="saved-configs-section">
+        <div class="section-header">
+          <h4>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            System Prompts
+          </h4>
+        </div>
+        
+        <div class="config-list">
           {#each systemPrompts as prompt}
-            <div class="prompt-card" class:active={selectedPromptId === prompt.id}>
-              <div class="prompt-info">
-                <div class="prompt-name">{prompt.name}</div>
-                <div class="prompt-meta">
-                  {prompt.content_type || 'General'}
+            <div class="config-item" class:active={selectedPromptId === prompt.id}>
+              <div class="config-info">
+                <div class="config-name">
+                  {prompt.name}
+                  <span 
+                    class="info-tooltip" 
+                    data-tooltip="This system prompt cannot be deleted or edited. Create custom prompts to suit your specific needs."
+                    on:mouseenter={removeTitle}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 16v-4"/>
+                      <path d="M12 8h.01"/>
+                    </svg>
+                  </span>
                 </div>
+                <div class="config-provider">{prompt.content_type || 'General'}</div>
                 {#if prompt.description}
-                  <div class="prompt-description">{prompt.description}</div>
+                  <div class="config-url">{prompt.description}</div>
                 {/if}
               </div>
               <div class="prompt-actions">
-                <button
-                  class="action-button secondary"
+                {#if selectedPromptId === prompt.id}
+                  <div class="config-status currently-active">
+                    <div class="status-indicator">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20,6 9,17 4,12"/>
+                      </svg>
+                    </div>
+                    <span class="status-text">Currently Active</span>
+                  </div>
+                {:else}
+                  <button
+                    class="activate-button"
+                    on:click={() => setActivePrompt(prompt.id)}
+                    disabled={saving}
+                    title="Make this prompt active"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                    Activate
+                  </button>
+                {/if}
+                
+                <button 
+                  class="view-button"
                   on:click={() => viewPrompt(prompt)}
                   title="View prompt text"
                 >
-                  View Prompt
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
                 </button>
-                {#if selectedPromptId !== prompt.id}
-                  <button
-                    class="action-button primary"
-                    on:click={() => setActivePrompt(prompt.id)}
-                    disabled={saving}
-                  >
-                    Use This Prompt
-                  </button>
-                {:else}
-                  <div class="active-badge">Active</div>
-                {/if}
               </div>
             </div>
           {/each}
@@ -430,71 +505,128 @@
     {/if}
 
     <!-- Custom Prompts -->
-    <div class="prompt-section">
+    <div class="saved-configs-section">
       <div class="section-header">
-        <h4>Your Custom Prompts</h4>
-        <button
-          class="action-button primary"
-          on:click={openCreateForm}
-          disabled={saving}
-        >
-          Create New Prompt
+        <h4>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10,9 9,9 8,9"/>
+          </svg>
+          Your Custom Prompts
+        </h4>
+        <button class="create-config-button" on:click={openCreateForm} title="Create new prompt">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Create Prompt
         </button>
       </div>
 
       {#if userPrompts.length > 0}
-        <div class="prompts-grid">
+        <div class="config-list">
           {#each userPrompts as prompt}
-            <div class="prompt-card" class:active={selectedPromptId === prompt.id}>
-              <div class="prompt-info">
-                <div class="prompt-name">{prompt.name}</div>
-                <div class="prompt-meta">
-                  {prompt.content_type || 'General'}
-                </div>
+            <div class="config-item" class:active={selectedPromptId === prompt.id}>
+              <div class="config-info">
+                <div class="config-name">{prompt.name}</div>
+                <div class="config-provider">{prompt.content_type || 'General'}</div>
                 {#if prompt.description}
-                  <div class="prompt-description">{prompt.description}</div>
+                  <div class="config-url">{prompt.description}</div>
                 {/if}
               </div>
               <div class="prompt-actions">
-                <button
-                  class="action-button secondary"
+                {#if selectedPromptId === prompt.id}
+                  <div class="config-status currently-active">
+                    <div class="status-indicator">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20,6 9,17 4,12"/>
+                      </svg>
+                    </div>
+                    <span class="status-text">Currently Active</span>
+                  </div>
+                {:else}
+                  <button
+                    class="activate-button"
+                    on:click={() => setActivePrompt(prompt.id)}
+                    disabled={saving}
+                    title="Make this prompt active"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                    Activate
+                  </button>
+                {/if}
+                
+                <button 
+                  class="view-button"
                   on:click={() => viewPrompt(prompt)}
                   title="View prompt text"
                 >
-                  View Prompt
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
                 </button>
-                {#if selectedPromptId !== prompt.id}
-                  <button
-                    class="action-button primary"
-                    on:click={() => setActivePrompt(prompt.id)}
-                    disabled={saving}
-                  >
-                    Use This Prompt
-                  </button>
-                {:else}
-                  <div class="active-badge">Active</div>
-                {/if}
-                <button
-                  class="action-button secondary"
+                <button 
+                  class="edit-button"
                   on:click={() => openEditForm(prompt)}
                   disabled={saving}
+                  title="Edit this prompt"
                 >
-                  Edit
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
                 </button>
-                <button
-                  class="action-button danger"
+                <button 
+                  class="delete-config-button"
                   on:click={() => confirmDeletePrompt(prompt)}
                   disabled={saving}
+                  title={`Delete prompt: ${prompt.name}`}
                 >
-                  Delete
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3,6 5,6 21,6"/>
+                    <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                  </svg>
                 </button>
               </div>
             </div>
           {/each}
         </div>
       {:else}
-        <div class="no-prompts">
-          You don't have any custom prompts yet. Create one to customize your AI summarization.
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14,2 14,8 20,8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10,9 9,9 8,9"/>
+            </svg>
+          </div>
+          <h4>No Custom Prompts</h4>
+          <p>Create your first custom prompt to personalize your AI summarization experience.</p>
+          <button class="create-first-config-btn" on:click={openCreateForm}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Create First Prompt
+          </button>
         </div>
       {/if}
     </div>
@@ -555,7 +687,32 @@
           </div>
 
           <div class="form-group">
-            <label for="prompt_text">Prompt Text *</label>
+            <div class="textarea-header">
+              <label for="prompt_text">Prompt Text *</label>
+              {#if formData.prompt_text.trim()}
+                <button
+                  type="button"
+                  class="copy-button-header"
+                  class:copied={copyButtonText === 'Copied!'}
+                  on:click={() => copyPromptText(formData.prompt_text)}
+                  aria-label="Copy prompt text"
+                  title={copyButtonText === 'Copied!' ? 'Prompt text copied to clipboard!' : 'Copy prompt text'}
+                >
+                  {#if copyButtonText === 'Copied!'}
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                    </svg>
+                    Copied!
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                      <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                    </svg>
+                    Copy
+                  {/if}
+                </button>
+              {/if}
+            </div>
             <textarea
               id="prompt_text"
               bind:value={formData.prompt_text}
@@ -636,7 +793,30 @@
             </div>
           </div>
           <div class="prompt-text-container">
-            <strong>Prompt Text:</strong>
+            <div class="prompt-text-header">
+              <strong>Prompt Text:</strong>
+              <button
+                type="button"
+                class="copy-button-header"
+                class:copied={copyButtonText === 'Copied!'}
+                on:click={() => copyPromptText(viewingPrompt.prompt_text)}
+                aria-label="Copy prompt text"
+                title={copyButtonText === 'Copied!' ? 'Prompt text copied to clipboard!' : 'Copy prompt text'}
+              >
+                {#if copyButtonText === 'Copied!'}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
+                  </svg>
+                  Copied!
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                    <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                  </svg>
+                  Copy
+                {/if}
+              </button>
+            </div>
             <div class="prompt-text-display">{viewingPrompt.prompt_text}</div>
           </div>
         </div>
@@ -800,34 +980,46 @@
   }
 
   .action-button {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 1px solid;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
 
   .action-button.primary {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
+    background-color: #3b82f6;
+    border-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .action-button.primary:hover:not(:disabled) {
-    background-color: var(--primary-dark);
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .action-button.primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .action-button.secondary {
-    background-color: transparent;
+    background-color: var(--surface-color);
     border-color: var(--border-color);
     color: var(--text-color);
   }
 
   .action-button.secondary:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
+    background-color: #3b82f6;
+    border-color: #3b82f6;
     color: white;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
@@ -860,6 +1052,368 @@
   .action-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* New button styles to match LLM provider page */
+  .create-config-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .create-config-button:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .create-config-button:active {
+    transform: translateY(0);
+  }
+
+  .config-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    width: fit-content;
+  }
+
+  .config-status.currently-active {
+    background-color: var(--success-bg);
+    color: var(--success-color);
+    border: 1px solid var(--success-border);
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .activate-button, .view-button, .edit-button, .delete-config-button {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid;
+    height: 32px;
+    box-sizing: border-box;
+  }
+
+  .activate-button {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+    color: white;
+    padding: 0.5rem 0.5rem;
+  }
+
+  .activate-button:hover:not(:disabled) {
+    background-color: #059669;
+    border-color: #059669;
+  }
+
+  .view-button {
+    background-color: transparent;
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  .view-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .edit-button {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  .edit-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .delete-config-button {
+    background-color: transparent;
+    border-color: var(--error-color);
+    color: var(--error-color);
+  }
+
+  .delete-config-button:hover:not(:disabled) {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .delete-config-button:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .saved-configs-section {
+    margin-bottom: 2rem;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .section-header h4 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Additional styles to match LLM provider structure */
+  .config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .config-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
+    transition: all 0.2s ease;
+  }
+
+  .config-item.active {
+    border-color: var(--primary-color);
+    background: var(--primary-bg);
+  }
+
+  .config-item:hover:not(.active) {
+    border-color: var(--border-hover);
+    background: var(--hover-color);
+  }
+
+  .config-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .config-name {
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .info-tooltip {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    opacity: 0.6;
+    cursor: help;
+    transition: opacity 0.2s ease;
+    position: relative;
+  }
+
+  .info-tooltip:hover {
+    opacity: 1;
+    color: var(--primary-color);
+  }
+
+  .info-tooltip[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: fixed;
+    left: var(--tooltip-left, 50%);
+    top: var(--tooltip-top, 50%);
+    background: #1a1a1a;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: normal;
+    max-width: 320px;
+    white-space: normal;
+    z-index: 9999;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    text-align: left;
+    pointer-events: none;
+    transform: translate(-50%, 8px);
+  }
+
+  /* Disable native browser tooltip completely */
+  .info-tooltip[data-tooltip] {
+    /* Remove any title attribute behavior */
+  }
+  
+  .info-tooltip[data-tooltip]:hover {
+    /* Prevent native tooltip from showing */
+  }
+
+  .config-provider {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+  }
+
+  .config-url {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    max-width: 400px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+
+  .config-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+  }
+
+  .empty-icon {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .empty-state h4 {
+    margin: 0 0 0.5rem;
+    color: var(--text-color);
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  .empty-state p {
+    margin: 0 0 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .create-first-config-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .create-first-config-btn:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .create-first-config-btn:active {
+    transform: translateY(0);
+  }
+
+  /* Copy button styles - matches SummaryModal */
+  .textarea-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .prompt-text-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .copy-button-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+  }
+
+  .copy-button-header:hover {
+    background-color: var(--hover-bg);
+    color: var(--text-primary);
+    border-color: var(--primary-color);
+  }
+
+  .copy-button-header.copied {
+    background-color: var(--success-bg);
+    border-color: var(--success-color);
+    color: var(--success-color);
+  }
+
+  .copy-button-header.copied:hover {
+    background-color: var(--success-bg);
+    border-color: var(--success-color);
+    color: var(--success-color);
   }
 
   /* Modal button styling to match app design */

@@ -24,6 +24,7 @@ export interface ConnectionStatus {
 export interface UserLLMSettings {
   id: number;
   user_id: number;
+  name: string;
   provider: keyof LLMProvider;
   model_name: string;
   base_url?: string;
@@ -40,6 +41,7 @@ export interface UserLLMSettings {
 }
 
 export interface UserLLMSettingsCreate {
+  name: string;
   provider: keyof LLMProvider;
   model_name: string;
   api_key?: string;
@@ -51,6 +53,7 @@ export interface UserLLMSettingsCreate {
 }
 
 export interface UserLLMSettingsUpdate {
+  name?: string;
   provider?: keyof LLMProvider;
   model_name?: string;
   api_key?: string;
@@ -91,13 +94,20 @@ export interface SupportedProvidersResponse {
   providers: ProviderDefaults[];
 }
 
+export interface UserLLMConfigurationsList {
+  configurations: UserLLMSettings[];
+  active_configuration_id?: number;
+  total: number;
+}
+
+export interface SetActiveConfigRequest {
+  configuration_id: number;
+}
+
 export interface LLMSettingsStatus {
   has_settings: boolean;
-  provider?: keyof LLMProvider;
-  model_name?: string;
-  test_status?: keyof ConnectionStatus;
-  last_tested?: string;
-  is_active: boolean;
+  active_configuration?: UserLLMSettings;
+  total_configurations: number;
   using_system_default: boolean;
 }
 
@@ -121,15 +131,16 @@ export class LLMSettingsApi {
   }
 
   /**
-   * Get current user's LLM settings
+   * Get all user's LLM configurations
    */
-  static async getUserSettings(): Promise<UserLLMSettings> {
+  static async getUserConfigurations(): Promise<UserLLMConfigurationsList> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/`);
     return response.data;
   }
 
+
   /**
-   * Create new LLM settings for the current user
+   * Create new LLM configuration for the current user
    */
   static async createSettings(settings: UserLLMSettingsCreate): Promise<UserLLMSettings> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/`, settings);
@@ -137,18 +148,36 @@ export class LLMSettingsApi {
   }
 
   /**
-   * Update current user's LLM settings
+   * Update an existing LLM configuration
    */
-  static async updateSettings(settings: UserLLMSettingsUpdate): Promise<UserLLMSettings> {
-    const response = await axiosInstance.put(`${this.BASE_PATH}/`, settings);
+  static async updateSettings(configId: number, settings: UserLLMSettingsUpdate): Promise<UserLLMSettings> {
+    const response = await axiosInstance.put(`${this.BASE_PATH}/config/${configId}`, settings);
     return response.data;
   }
 
   /**
-   * Delete current user's LLM settings (revert to system defaults)
+   * Delete a specific LLM configuration
+   */
+  static async deleteConfiguration(configId: number): Promise<{ detail: string }> {
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${configId}`);
+    return response.data;
+  }
+
+  /**
+   * Delete all user's LLM configurations (revert to system defaults)
    */
   static async deleteSettings(): Promise<{ detail: string }> {
-    const response = await axiosInstance.delete(`${this.BASE_PATH}/`);
+    const response = await axiosInstance.delete(`${this.BASE_PATH}/all`);
+    return response.data;
+  }
+
+  /**
+   * Set active LLM configuration
+   */
+  static async setActiveConfiguration(configId: number): Promise<UserLLMSettings> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
+      configuration_id: configId
+    });
     return response.data;
   }
 
@@ -161,10 +190,40 @@ export class LLMSettingsApi {
   }
 
   /**
-   * Test connection using current user's saved LLM settings
+   * Test connection using current user's active LLM configuration
    */
   static async testCurrentSettings(): Promise<ConnectionTestResponse> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/test-current`);
+    return response.data;
+  }
+
+  /**
+   * Test connection using a specific configuration
+   */
+  static async testConfiguration(configId: number): Promise<ConnectionTestResponse> {
+    const response = await axiosInstance.post(`${this.BASE_PATH}/test-config/${configId}`);
+    return response.data;
+  }
+
+  /**
+   * Get available models from an Ollama instance
+   */
+  static async getOllamaModels(baseUrl: string): Promise<{
+    success: boolean;
+    models: Array<{
+      name: string;
+      size: number;
+      modified_at: string;
+      digest: string;
+      details: any;
+      display_name: string;
+    }>;
+    total: number;
+    message: string;
+  }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/ollama/models`, {
+      params: { base_url: baseUrl }
+    });
     return response.data;
   }
 
@@ -269,7 +328,7 @@ export class LLMSettingsApi {
       case 'failed':
         return { text: 'Failed', class: 'error', icon: '✗' };
       case 'pending':
-        return { text: 'Testing...', class: 'pending', icon: '⏳' };
+        return { text: 'Testing...', class: 'pending', icon: '...' };
       case 'untested':
       default:
         return { text: 'Untested', class: 'neutral', icon: '?' };

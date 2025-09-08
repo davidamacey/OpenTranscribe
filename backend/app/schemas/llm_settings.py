@@ -34,6 +34,7 @@ class ConnectionStatus(str, Enum):
 class UserLLMSettingsBase(BaseModel):
     """Base schema for user LLM settings"""
 
+    name: str
     provider: LLMProvider
     model_name: str
     base_url: Optional[str] = None
@@ -56,8 +57,8 @@ class UserLLMSettingsBase(BaseModel):
             temp_float = float(v)
             if temp_float < 0.0 or temp_float > 2.0:
                 raise ValueError("temperature must be between 0.0 and 2.0")
-        except ValueError:
-            raise ValueError("temperature must be a valid number")
+        except ValueError as e:
+            raise ValueError("temperature must be a valid number") from e
         return v
 
     @field_validator("timeout")
@@ -77,6 +78,7 @@ class UserLLMSettingsCreate(UserLLMSettingsBase):
 class UserLLMSettingsUpdate(BaseModel):
     """Schema for updating user LLM settings"""
 
+    name: Optional[str] = None
     provider: Optional[LLMProvider] = None
     model_name: Optional[str] = None
     api_key: Optional[str] = None  # Will be encrypted before storage
@@ -101,8 +103,8 @@ class UserLLMSettingsUpdate(BaseModel):
                 temp_float = float(v)
                 if temp_float < 0.0 or temp_float > 2.0:
                     raise ValueError("temperature must be between 0.0 and 2.0")
-            except ValueError:
-                raise ValueError("temperature must be a valid number")
+            except ValueError as e:
+                raise ValueError("temperature must be a valid number") from e
         return v
 
     @field_validator("timeout")
@@ -133,6 +135,7 @@ class UserLLMSettingsPublic(BaseModel):
 
     id: int
     user_id: int
+    name: str
     provider: LLMProvider
     model_name: str
     base_url: Optional[str] = None
@@ -188,13 +191,24 @@ class SupportedProvidersResponse(BaseModel):
     providers: list[ProviderDefaults]
 
 
+class UserLLMConfigurationsList(BaseModel):
+    """Response containing all user's LLM configurations"""
+
+    configurations: list[UserLLMSettingsPublic]
+    active_configuration_id: Optional[int] = None
+    total: int
+
+
+class SetActiveConfigRequest(BaseModel):
+    """Request to set active LLM configuration"""
+
+    configuration_id: int
+
+
 class LLMSettingsStatus(BaseModel):
     """Status information about user's LLM settings"""
 
     has_settings: bool = False
-    provider: Optional[LLMProvider] = None
-    model_name: Optional[str] = None
-    test_status: Optional[ConnectionStatus] = None
-    last_tested: Optional[datetime] = None
-    is_active: bool = False
+    active_configuration: Optional[UserLLMSettingsPublic] = None
+    total_configurations: int = 0
     using_system_default: bool = True

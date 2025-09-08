@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user as userStore } from '../stores/auth';

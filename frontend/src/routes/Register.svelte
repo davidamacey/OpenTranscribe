@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { useNavigate } from "svelte-navigator";
   import { register, login } from "../stores/auth";
   
@@ -17,6 +17,8 @@
   let confirmPassword = "";
   let error = "";
   let loading = false;
+  let showPassword = false;
+  let showConfirmPassword = false;
   
   // Validate form
   function validateForm() {
@@ -78,6 +80,15 @@
       loading = false;
     }
   }
+  
+  // Toggle password visibility
+  function togglePasswordVisibility() {
+    showPassword = !showPassword;
+  }
+  
+  function toggleConfirmPasswordVisibility() {
+    showConfirmPassword = !showConfirmPassword;
+  }
 </script>
 
 <div class="auth-container">
@@ -122,27 +133,99 @@
       </div>
       
       <div class="form-group">
-        <label for="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          bind:value={password}
-          placeholder="Choose a password"
-          disabled={loading}
-          title="Choose a secure password (minimum 8 characters)"
-        />
+        <div class="password-header">
+          <label for="password">Password</label>
+          <button 
+            type="button" 
+            class="toggle-password" 
+            on:click={togglePasswordVisibility}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            title={showPassword ? 'Hide password text' : 'Show password text'}
+          >
+            {#if showPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        {#if showPassword}
+          <input
+            id="password"
+            type="text"
+            bind:value={password}
+            placeholder="Choose a password"
+            disabled={loading}
+            title="Choose a secure password (minimum 8 characters)"
+          />
+        {:else}
+          <input
+            id="password"
+            type="password"
+            bind:value={password}
+            placeholder="Choose a password"
+            disabled={loading}
+            title="Choose a secure password (minimum 8 characters)"
+          />
+        {/if}
       </div>
       
       <div class="form-group">
-        <label for="confirmPassword">Confirm Password</label>
-        <input
-          id="confirmPassword"
-          type="password"
-          bind:value={confirmPassword}
-          placeholder="Confirm your password"
-          disabled={loading}
-          title="Re-enter your password to confirm it matches"
-        />
+        <div class="password-header">
+          <label for="confirmPassword">Confirm Password</label>
+          <button 
+            type="button" 
+            class="toggle-password" 
+            on:click={toggleConfirmPasswordVisibility}
+            aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+            title={showConfirmPassword ? 'Hide confirm password text' : 'Show confirm password text'}
+          >
+            {#if showConfirmPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
+          </button>
+        </div>
+        {#if showConfirmPassword}
+          <input
+            id="confirmPassword"
+            type="text"
+            bind:value={confirmPassword}
+            placeholder="Confirm your password"
+            disabled={loading}
+            title="Re-enter your password to confirm it matches"
+          />
+        {:else}
+          <input
+            id="confirmPassword"
+            type="password"
+            bind:value={confirmPassword}
+            placeholder="Confirm your password"
+            disabled={loading}
+            title="Re-enter your password to confirm it matches"
+          />
+        {/if}
       </div>
       
       <button 
@@ -233,19 +316,30 @@
   }
   
   .auth-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    font-size: 1rem;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
   
-  .auth-button:hover {
-    background-color: var(--primary-dark);
+  .auth-button:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .auth-button:active:not(:disabled) {
+    transform: translateY(0);
   }
   
   .auth-button:disabled {
@@ -277,5 +371,28 @@
     width: auto;
     object-fit: contain;
     border-radius: 8px;
+  }
+  
+  .password-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  .toggle-password {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+  
+  .toggle-password:hover {
+    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
   }
 </style>

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse } from '../../lib/api/llmSettings';
+  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '../../lib/api/llmSettings';
+  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '../../stores/toast';
   import { llmStatusStore } from '../../stores/llmStatus';
 
@@ -16,26 +18,26 @@
   let currentSettings: UserLLMSettings | null = null;
   let supportedProviders: ProviderDefaults[] = [];
   let hasSettings = false;
+  let savedConfigurations: UserLLMSettings[] = [];
+  let activeConfigurationId: number | null = null;
+  let editingConfiguration: UserLLMSettings | null = null;
   
-  // Form data
-  let formData = {
-    provider: '' as any,
-    model_name: '',
-    api_key: '',
-    base_url: '',
-    max_tokens: 4096,
-    temperature: '0.3',
-    timeout: 60,
-    is_active: true
-  };
+  // Modal state
+  let showConfigModal = false;
   
-  let showApiKey = false;
-  let testResult: ConnectionTestResponse | null = null;
-  let isDirty = false;
+  // Confirmation modals
+  let showDeleteConfigModal = false;
+  let configToDelete: UserLLMSettings | null = null;
+  let showDeleteAllModal = false;
+  
+  // Auto-fade timers for messages
+  let successTimer: NodeJS.Timeout;
+  let errorTimer: NodeJS.Timeout;
+  
+  // Connection status for active configuration
   let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   let statusMessage = '';
   let statusLastChecked: Date | null = null;
-  let statusTimer: NodeJS.Timeout;
   let checkingStatus = false;
 
   // Load initial data
@@ -45,7 +47,9 @@
 
   // Cleanup on destroy
   onDestroy(() => {
-    // Cleanup is handled by the centralized store
+    // Clear timers
+    clearTimeout(successTimer);
+    clearTimeout(errorTimer);
   });
 
   async function loadData() {
@@ -57,283 +61,230 @@
       const providersResponse = await LLMSettingsApi.getSupportedProviders();
       supportedProviders = providersResponse.providers;
 
-      // Try to load user settings
+      // Try to load user configurations
       try {
-        currentSettings = await LLMSettingsApi.getUserSettings();
-        hasSettings = true;
-        populateForm();
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          // No settings yet, use defaults
-          hasSettings = false;
-          if (supportedProviders.length > 0) {
-            const defaultProvider = supportedProviders[0];
-            const defaults = LLMSettingsApi.getProviderDefaults(defaultProvider.provider);
-            formData = { ...formData, ...defaults };
-          }
+        const configurationsResponse = await LLMSettingsApi.getUserConfigurations();
+        savedConfigurations = configurationsResponse.configurations;
+        activeConfigurationId = configurationsResponse.active_configuration_id || null;
+        
+        if (activeConfigurationId && savedConfigurations.length > 0) {
+          currentSettings = savedConfigurations.find(c => c.id === activeConfigurationId) || null;
+          hasSettings = true;
+          
+          // Check initial status if settings exist and update the central store
+          await checkCurrentStatus();
         } else {
+          currentSettings = null;
+          hasSettings = false;
+          llmStatusStore.reset();
+        }
+      } catch (err: any) {
+        // Handle cases where there are no configurations gracefully
+        if (err.response?.status !== 404 && err.response?.status !== 403) {
           throw err;
         }
+        // Set empty state for 404 (not found) or 403 (forbidden/no configs)
+        currentSettings = null;
+        hasSettings = false;
+        llmStatusStore.reset();
       }
     } catch (err: any) {
-      console.error('Error loading LLM settings:', err);
-      error = err.response?.data?.detail || 'Failed to load LLM settings';
+      // Only show error for serious provider loading issues
+      console.error('Error loading LLM providers:', err);
+      // Only show error if it's not related to missing user configurations
+      if (!err.message?.includes('LLM') && !err.response?.data?.detail?.includes('configuration')) {
+        error = err.response?.data?.detail || 'Failed to load LLM providers';
+      }
     } finally {
       loading = false;
-    }
-    
-    // Check initial status if settings exist and update the central store
-    if (hasSettings) {
-      await checkCurrentStatus();
     }
   }
 
   async function checkCurrentStatus() {
-    if (checkingStatus || !hasSettings) return;
-    
-    try {
-      checkingStatus = true;
-      
-      // Use the saved settings endpoint since it has access to the encrypted API key
-      const statusResult = await LLMSettingsApi.testCurrentSettings();
-      connectionStatus = statusResult.success ? 'connected' : 'disconnected';
-      statusMessage = statusResult.message;
-      statusLastChecked = new Date();
-      
-      // Update the global store
-      llmStatusStore.setStatus({
-        available: statusResult.success,
-        user_id: 0, // Will be set by the API response if needed
-        provider: statusResult.success ? formData.provider : null,
-        model: statusResult.success ? formData.model_name : null,
-        message: statusResult.message
-      });
-      
-      console.log('Settings page status check result:', statusResult);
-    } catch (err: any) {
-      console.error('Settings page status check error:', err);
-      connectionStatus = 'disconnected';
-      statusMessage = err.response?.data?.detail || 'Unable to check connection status';
-      statusLastChecked = new Date();
-      
-      // Update the global store with error state
-      llmStatusStore.setStatus({
-        available: false,
-        user_id: 0,
-        provider: null,
-        model: null,
-        message: statusMessage
-      });
-    } finally {
-      checkingStatus = false;
-    }
-  }
-
-  function populateForm() {
-    if (!currentSettings) return;
-    
-    formData = {
-      provider: currentSettings.provider,
-      model_name: currentSettings.model_name,
-      api_key: '', // Never populate API key for security
-      base_url: currentSettings.base_url || '',
-      max_tokens: currentSettings.max_tokens,
-      temperature: currentSettings.temperature,
-      timeout: currentSettings.timeout,
-      is_active: currentSettings.is_active
-    };
-  }
-
-  function onProviderChange() {
-    const selectedProvider = supportedProviders.find(p => p.provider === formData.provider);
-    if (selectedProvider) {
-      const defaults = LLMSettingsApi.getProviderDefaults(selectedProvider.provider);
-      formData = {
-        ...formData,
-        model_name: defaults.model_name || '',
-        base_url: defaults.base_url || '',
-        max_tokens: defaults.max_tokens || 4096,
-        temperature: defaults.temperature || '0.3',
-        timeout: defaults.timeout || 60
-      };
-      markDirty();
-    }
-  }
-
-  function markDirty() {
-    isDirty = true;
-    testResult = null;
-  }
-
-  async function testConnection() {
-    if (!formData.provider || !formData.model_name) {
-      toastStore.error('Please select a provider and model first');
+    if (!hasSettings || !activeConfigurationId) {
+      connectionStatus = 'unknown';
+      statusMessage = '';
       return;
     }
 
-    testing = true;
-    error = '';
-    testResult = null;
-
+    checkingStatus = true;
+    
     try {
-      testResult = await LLMSettingsApi.testConnection({
-        provider: formData.provider,
-        model_name: formData.model_name,
-        api_key: formData.api_key || undefined,
-        base_url: formData.base_url || undefined,
-        timeout: formData.timeout
-      });
-
-      if (testResult.success) {
-        toastStore.success(`Connection test successful! Response time: ${testResult.response_time_ms}ms`, 5000);
-        
-        // Immediately update the centralized LLM status store
-        llmStatusStore.setStatus({
-          available: true,
-          user_id: 0,
-          provider: formData.provider,
-          model: formData.model_name,
-          message: testResult.message
-        });
-      } else {
-        toastStore.error(testResult.message, 5000);
-        
-        // Update the centralized store with error state
-        llmStatusStore.setStatus({
-          available: false,
-          user_id: 0,
-          provider: null,
-          model: null,
-          message: testResult.message
-        });
-      }
-    } catch (err: any) {
-      console.error('Connection test failed:', err);
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
-      toastStore.error(errorMsg, 5000);
+      const result = await LLMSettingsApi.testCurrentSettings();
       
-      // Update the centralized store with error state
-      llmStatusStore.setStatus({
-        available: false,
-        user_id: 0,
-        provider: null,
-        model: null,
-        message: errorMsg
-      });
-    } finally {
-      testing = false;
-    }
-  }
-
-  async function testSavedSettings() {
-    if (!hasSettings) {
-      toastStore.error('No saved settings to test. Please save settings first.');
-      return;
-    }
-
-    testing = true;
-    error = '';
-    testResult = null;
-
-    try {
-      testResult = await LLMSettingsApi.testCurrentSettings();
-
-      if (testResult.success) {
-        toastStore.success(`Saved settings test successful! Response time: ${testResult.response_time_ms}ms`, 5000);
-        
-        // Update connection status and global store
+      if (result.success) {
         connectionStatus = 'connected';
-        statusMessage = testResult.message;
+        statusMessage = result.message;
         statusLastChecked = new Date();
         
-        // Update the centralized LLM status store
+        // Update the centralized store with success state
         llmStatusStore.setStatus({
           available: true,
-          user_id: 0,
-          provider: currentSettings?.provider || null,
-          model: currentSettings?.model_name || null,
-          message: testResult.message
+          provider: currentSettings?.provider || 'unknown',
+          model: currentSettings?.model_name || 'unknown',
+          lastChecked: statusLastChecked,
+          message: result.message
         });
       } else {
-        toastStore.error(testResult.message, 5000);
-        
-        // Update connection status and global store
         connectionStatus = 'disconnected';
-        statusMessage = testResult.message;
+        statusMessage = result.message;
         statusLastChecked = new Date();
         
         // Update the centralized store with error state
         llmStatusStore.setStatus({
           available: false,
-          user_id: 0,
-          provider: null,
-          model: null,
-          message: testResult.message
+          provider: currentSettings?.provider || 'unknown',
+          model: currentSettings?.model_name || 'unknown',
+          lastChecked: statusLastChecked,
+          message: result.message
         });
       }
     } catch (err: any) {
-      console.error('Saved settings test failed:', err);
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
-      toastStore.error(errorMsg, 5000);
-      
-      // Update connection status and global store
       connectionStatus = 'disconnected';
+      const errorMsg = err.response?.data?.detail || 'Connection test failed';
       statusMessage = errorMsg;
       statusLastChecked = new Date();
       
       // Update the centralized store with error state
       llmStatusStore.setStatus({
         available: false,
-        user_id: 0,
-        provider: null,
-        model: null,
+        provider: currentSettings?.provider || 'unknown',
+        model: currentSettings?.model_name || 'unknown',
+        lastChecked: statusLastChecked,
         message: errorMsg
       });
     } finally {
-      testing = false;
+      checkingStatus = false;
     }
   }
 
-  async function saveSettings() {
+  // Modal management functions
+  function openCreateModal() {
+    showConfigModal = true;
+    editingConfiguration = null;
+  }
+  
+  function openEditModal(config: UserLLMSettings) {
+    showConfigModal = true;
+    editingConfiguration = config;
+  }
+
+  function editConfiguration(config: UserLLMSettings) {
+    openEditModal(config);
+  }
+
+  async function activateConfiguration(configId: number) {
+    if (configId === activeConfigurationId) {
+      toastStore.success('Configuration is already active', 3000);
+      return;
+    }
+
     saving = true;
     error = '';
-    success = '';
 
     try {
-      if (hasSettings) {
-        // Update existing settings
-        const updateData: any = { ...formData };
-        if (!formData.api_key) {
-          delete updateData.api_key; // Don't update API key if empty
-        }
-        
-        currentSettings = await LLMSettingsApi.updateSettings(updateData);
-      } else {
-        // Create new settings
-        currentSettings = await LLMSettingsApi.createSettings(formData);
-        hasSettings = true;
-      }
-
-      success = 'LLM settings saved successfully';
-      isDirty = false;
+      await LLMSettingsApi.setActiveConfiguration(configId);
       
-      // Check connection status after saving and update central store
+      // Update local state
+      activeConfigurationId = configId;
+      currentSettings = savedConfigurations.find(c => c.id === configId) || null;
+      hasSettings = true;
+      
+      // Check status of newly activated configuration
       await checkCurrentStatus();
+      
+      success = 'Configuration activated successfully';
+      clearTimeout(successTimer);
+      successTimer = setTimeout(() => success = '', 5000);
       
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
-      console.error('Error saving settings:', err);
-      error = err.response?.data?.detail || 'Failed to save LLM settings';
+      error = err.response?.data?.detail || 'Failed to activate configuration';
+      clearTimeout(errorTimer);
+      errorTimer = setTimeout(() => error = '', 8000);
+      toastStore.error(error, 5000);
     } finally {
       saving = false;
     }
   }
 
-  async function deleteSettings() {
-    if (!hasSettings || !confirm('Are you sure you want to delete your LLM settings? You will revert to system defaults.')) {
+  async function testSavedConfiguration(config: UserLLMSettings): Promise<void> {
+    testing = true;
+    
+    try {
+      const result = await LLMSettingsApi.testConfiguration(config.id);
+      
+      if (result.success) {
+        toastStore.success(`${config.name}: ${result.message}`, 5000);
+      } else {
+        toastStore.error(`${config.name}: ${result.message}`, 8000);
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+    } finally {
+      testing = false;
+    }
+  }
+
+  function confirmDeleteConfiguration(config: UserLLMSettings) {
+    configToDelete = config;
+    showDeleteConfigModal = true;
+  }
+  
+  async function deleteConfiguration() {
+    if (!configToDelete) return;
+    
+    saving = true;
+    error = '';
+
+    try {
+      await LLMSettingsApi.deleteConfiguration(configToDelete.id);
+      
+      // Remove from saved configurations
+      savedConfigurations = savedConfigurations.filter(c => c.id !== configToDelete.id);
+      
+      // If this was the active configuration, clear it
+      if (configToDelete.id === activeConfigurationId) {
+        activeConfigurationId = null;
+        currentSettings = null;
+        hasSettings = false;
+        
+        // Reset global LLM status store
+        llmStatusStore.reset();
+      }
+      
+      success = `Configuration "${configToDelete.name}" deleted successfully`;
+      clearTimeout(successTimer);
+      successTimer = setTimeout(() => success = '', 5000);
+      
+      configToDelete = null;
+      showDeleteConfigModal = false;
+      
+      // Trigger parent component update
+      if (onSettingsChange) {
+        onSettingsChange();
+      }
+    } catch (err: any) {
+      error = err.response?.data?.detail || 'Failed to delete configuration';
+      clearTimeout(errorTimer);
+      errorTimer = setTimeout(() => error = '', 8000);
+      toastStore.error(error, 5000);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function confirmDeleteAll() {
+    showDeleteAllModal = true;
+  }
+  
+  async function deleteAllSettings() {
+    if (!hasSettings) {
+      toastStore.error('No settings to delete');
       return;
     }
 
@@ -342,12 +293,12 @@
 
     try {
       await LLMSettingsApi.deleteSettings();
+      
+      // Reset all local state
+      savedConfigurations = [];
+      activeConfigurationId = null;
       currentSettings = null;
       hasSettings = false;
-      isDirty = false;
-      success = 'LLM settings deleted. Using system defaults.';
-      
-      // Reset status and global store
       connectionStatus = 'unknown';
       statusMessage = '';
       statusLastChecked = null;
@@ -355,30 +306,91 @@
       // Reset global LLM status store
       llmStatusStore.reset();
       
-      // Reset form to defaults
-      if (supportedProviders.length > 0) {
-        const defaultProvider = supportedProviders[0];
-        const defaults = LLMSettingsApi.getProviderDefaults(defaultProvider.provider);
-        formData = { ...formData, ...defaults, api_key: '' };
-      }
+      success = 'All LLM configurations deleted successfully';
+      clearTimeout(successTimer);
+      successTimer = setTimeout(() => success = '', 8000);
       
+      showDeleteAllModal = false;
+      
+      // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
-      console.error('Error deleting settings:', err);
       error = err.response?.data?.detail || 'Failed to delete LLM settings';
+      clearTimeout(errorTimer);
+      errorTimer = setTimeout(() => error = '', 8000);
     } finally {
       saving = false;
     }
   }
-
-  function getProviderDisplayName(provider: string): string {
-    return LLMSettingsApi.getProviderDisplayName(provider as any);
+  
+  function handleConfigSaved(event: CustomEvent<UserLLMSettings>) {
+    const savedConfig = event.detail;
+    
+    // Update the configurations list
+    if (editingConfiguration) {
+      // Update existing configuration
+      const index = savedConfigurations.findIndex(c => c.id === savedConfig.id);
+      if (index !== -1) {
+        savedConfigurations[index] = savedConfig;
+        savedConfigurations = [...savedConfigurations];
+      }
+    } else {
+      // Add new configuration
+      savedConfigurations = [...savedConfigurations, savedConfig];
+    }
+    
+    // Update hasSettings flag
+    hasSettings = savedConfigurations.length > 0;
+    
+    // Trigger parent component update
+    if (onSettingsChange) {
+      onSettingsChange();
+    }
   }
 
-  function isFormValid(): boolean {
-    return !!(formData.provider && formData.model_name);
+  function getProviderDisplayName(provider: string): string {
+    const displayNames: Record<string, string> = {
+      openai: 'OpenAI',
+      vllm: 'vLLM',
+      ollama: 'Ollama',
+      claude: 'Claude (Anthropic)',
+      anthropic: 'Anthropic Claude',
+      openrouter: 'OpenRouter',
+      custom: 'Custom Provider'
+    };
+    return displayNames[provider] || provider;
+  }
+
+  // Modal overflow management - prevent main page scrolling when any modal is open
+  $: {
+    if (showConfigModal || showDeleteConfigModal || showDeleteAllModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  }
+  
+  // Handle keyboard shortcuts for modals
+  let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
+  
+  $: {
+    // Clean up previous listener if exists
+    if (keydownHandler) {
+      document.removeEventListener('keydown', keydownHandler);
+      keydownHandler = null;
+    }
+    
+    // Add new listener if modal is open
+    if (showConfigModal) {
+      keydownHandler = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          showConfigModal = false;
+        }
+      };
+      document.addEventListener('keydown', keydownHandler);
+    }
   }
 </script>
 
@@ -400,717 +412,573 @@
     </div>
   {/if}
 
-  <!-- Connection Status Badge -->
-  {#if hasSettings && connectionStatus !== 'unknown'}
-    <div class="connection-status {connectionStatus}" title={statusMessage}>
-      <div class="status-indicator">
-        {#if checkingStatus}
-          <div class="spinner-mini"></div>
-        {:else if connectionStatus === 'connected'}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-        {:else}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-          </svg>
-        {/if}
-      </div>
-      <span class="status-text">
-        {#if checkingStatus}
-          Checking...
-        {:else if connectionStatus === 'connected'}
-          Connected
-        {:else}
-          Disconnected
-        {/if}
-      </span>
-      {#if statusLastChecked}
-        <span class="status-timestamp">
-          {statusLastChecked.toLocaleTimeString()}
-        </span>
-      {/if}
-    </div>
-  {/if}
-
   {#if loading}
     <div class="loading">Loading LLM settings...</div>
   {:else}
-    <form on:submit|preventDefault={saveSettings} class="llm-form">
-      <!-- Provider Selection -->
-      <div class="form-group">
-        <label for="provider">LLM Provider *</label>
-        <select
-          id="provider"
-          bind:value={formData.provider}
-          on:change={onProviderChange}
-          disabled={saving}
-          class="form-control"
-        >
-          <option value="">Select a provider...</option>
-          {#each supportedProviders as provider}
-            <option value={provider.provider}>
-              {getProviderDisplayName(provider.provider)} - {provider.description}
-            </option>
-          {/each}
-        </select>
+    <!-- Saved Configurations -->
+    <div class="saved-configs-section">
+      <div class="section-header">
+        <h4>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+          Saved Configurations
+        </h4>
+        <button class="create-config-button" on:click={openCreateModal} title="Create new LLM configuration">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Create Configuration
+        </button>
       </div>
-
-      {#if formData.provider}
-        <!-- Model Name -->
-        <div class="form-group">
-          <label for="model_name">Model Name *</label>
-          <input
-            type="text"
-            id="model_name"
-            bind:value={formData.model_name}
-            on:input={markDirty}
-            disabled={saving}
-            class="form-control"
-            placeholder="e.g., gpt-4o-mini, llama2:7b-chat"
-            required
-          />
-        </div>
-
-        <!-- API Key (if required) -->
-        {#if supportedProviders.find(p => p.provider === formData.provider)?.requires_api_key}
-          <div class="form-group">
-            <label for="api_key">
-              API Key
-              {#if currentSettings?.has_api_key}
-                <span class="api-key-status">(Currently stored - leave blank to keep existing)</span>
-              {/if}
-            </label>
-            <div class="api-key-input">
-              {#if showApiKey}
-                <input
-                  type="text"
-                  id="api_key"
-                  bind:value={formData.api_key}
-                  on:input={markDirty}
-                  disabled={saving}
-                  class="form-control"
-                  placeholder="Enter your API key..."
-                />
-              {:else}
-                <input
-                  type="password"
-                  id="api_key"
-                  bind:value={formData.api_key}
-                  on:input={markDirty}
-                  disabled={saving}
-                  class="form-control"
-                  placeholder="Enter your API key..."
-                />
-              {/if}
-              <button
-                type="button"
-                class="toggle-visibility"
-                on:click={() => showApiKey = !showApiKey}
-                title={showApiKey ? 'Hide API key' : 'Show API key'}
-              >
-{#if showApiKey}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                  </svg>
-                {:else}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                {/if}
-              </button>
-            </div>
-          </div>
-        {/if}
-
-        <!-- Custom Base URL -->
-        {#if supportedProviders.find(p => p.provider === formData.provider)?.supports_custom_url}
-          <div class="form-group">
-            <label for="base_url">Base URL</label>
-            <input
-              type="url"
-              id="base_url"
-              bind:value={formData.base_url}
-              on:input={markDirty}
-              disabled={saving}
-              class="form-control"
-              placeholder="e.g., http://localhost:8012/v1"
-            />
-            <small class="form-text">Custom endpoint URL for your LLM provider</small>
-          </div>
-        {/if}
-
-        <!-- Test Connection Buttons (for all providers) -->
-        <div class="form-group">
-          <div class="test-section">
-            <div class="test-buttons">
-              <button
-                type="button"
-                class="test-button"
-                on:click={testConnection}
-                disabled={testing || saving || !isFormValid()}
-              >
-                {#if testing}
-                  <svg class="spinner-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                  </svg>
-                  Testing Connection...
-                {:else}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                  </svg>
-                  Test Connection
-                {/if}
-              </button>
-
-              {#if hasSettings}
-                <button
-                  type="button"
-                  class="test-button secondary"
-                  on:click={testSavedSettings}
-                  disabled={testing || saving}
-                  title="Test using your saved settings"
-                >
-                  {#if testing}
-                    <svg class="spinner-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                    </svg>
-                    Testing Saved...
-                  {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                    </svg>
-                    Test Saved Settings
-                  {/if}
-                </button>
-              {/if}
-            </div>
-
-            {#if testResult}
-              <div class="test-result {testResult.success ? 'success' : 'error'}">
-                {testResult.message}
-                {#if testResult.success && testResult.response_time_ms}
-                  <div class="response-time">Response time: {testResult.response_time_ms}ms</div>
+      
+      {#if savedConfigurations.length > 0}
+        <div class="config-list">
+          {#each savedConfigurations as config}
+            <div class="config-item" class:active={config.id === activeConfigurationId}>
+              <div class="config-info">
+                <div class="config-name">{config.name}</div>
+                <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
+                {#if config.base_url}
+                  <div class="config-url">{config.base_url}</div>
                 {/if}
               </div>
-            {/if}
-          </div>
+              
+              <div class="config-actions">
+                {#if config.id === activeConfigurationId}
+                  <div class="config-status currently-active" title={statusMessage}>
+                    <div class="status-indicator">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20,6 9,17 4,12"/>
+                      </svg>
+                    </div>
+                    <span class="status-text">Currently Active</span>
+                  </div>
+                {:else}
+                  <button 
+                    class="activate-button"
+                    on:click={() => activateConfiguration(config.id)}
+                    disabled={saving}
+                    title="Make this configuration active"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                    Activate
+                  </button>
+                {/if}
+                
+                <button 
+                  class="test-connection-button"
+                  on:click={() => testSavedConfiguration(config)}
+                  disabled={testing}
+                  title={`Test connection for ${config.name}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <polyline points="23 20 23 14 17 14"/>
+                    <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                </button>
+                
+                <button 
+                  class="edit-button"
+                  on:click={() => editConfiguration(config)}
+                  disabled={saving}
+                  title="Edit this configuration"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                
+                <button 
+                  class="delete-config-button"
+                  on:click={() => confirmDeleteConfiguration(config)}
+                  disabled={saving}
+                  title={`Delete configuration: ${config.name}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3,6 5,6 21,6"/>
+                    <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          {/each}
         </div>
-
-        <!-- Advanced Settings -->
-        <details class="advanced-settings">
-          <summary>Advanced Settings</summary>
-          
-          <div class="form-row">
-            <div class="form-group">
-              <label for="max_tokens">Max Tokens</label>
-              <input
-                type="number"
-                id="max_tokens"
-                bind:value={formData.max_tokens}
-                on:input={markDirty}
-                disabled={saving}
-                class="form-control"
-                min="1"
-                max="200000"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="temperature">Temperature</label>
-              <input
-                type="number"
-                id="temperature"
-                bind:value={formData.temperature}
-                on:input={markDirty}
-                disabled={saving}
-                class="form-control"
-                min="0"
-                max="2"
-                step="0.1"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="timeout">Timeout (seconds)</label>
-              <input
-                type="number"
-                id="timeout"
-                bind:value={formData.timeout}
-                on:input={markDirty}
-                disabled={saving}
-                class="form-control"
-                min="5"
-                max="600"
-              />
-            </div>
-          </div>
-
-          <div class="form-group checkbox-group">
-            <label class="checkbox-container">
-              <input
-                type="checkbox"
-                bind:checked={formData.is_active}
-                on:change={markDirty}
-                disabled={saving}
-              />
-              <span class="checkbox-text">Enable LLM (summarize and speaker ID)</span>
-            </label>
-            <small class="form-text">When disabled, AI summarization and speaker identification features will not be available. Transcription will still work normally.</small>
-          </div>
-        </details>
-
-
-        <!-- Form Actions -->
-        <div class="form-actions">
-          <button
-            type="submit"
-            class="save-button primary"
-            disabled={saving || !isFormValid()}
-          >
-            {#if saving}
-              <div class="spinner"></div>
-              Saving...
-            {:else}
-              Save Configuration
-            {/if}
-          </button>
-
-          {#if hasSettings}
-            <button
-              type="button"
-              class="delete-button danger"
-              on:click={deleteSettings}
+        
+        <!-- Delete All Button -->
+        {#if savedConfigurations.length > 0}
+          <div class="delete-all-section">
+            <button 
+              class="delete-all-button" 
+              on:click={confirmDeleteAll}
               disabled={saving}
+              title="Delete all saved configurations (LLM features will be disabled)"
             >
-              Delete Settings
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3,6 5,6 21,6"/>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+              Delete All Configurations
             </button>
-          {/if}
+          </div>
+        {/if}
+      {:else}
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+            </svg>
+          </div>
+          <h4>No LLM Configurations</h4>
+          <p>Create your first LLM configuration to enable AI summarization and speaker identification.</p>
+          <button class="create-first-config-btn" on:click={openCreateModal}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Create First Configuration
+          </button>
         </div>
       {/if}
-    </form>
+    </div>
   {/if}
 </div>
 
+<!-- LLM Configuration Modal -->
+<LLMConfigModal 
+  bind:show={showConfigModal}
+  editingConfig={editingConfiguration}
+  {supportedProviders}
+  on:saved={handleConfigSaved}
+  on:close={() => {
+    showConfigModal = false;
+    editingConfiguration = null;
+  }}
+/>
+
+<!-- Confirmation Modals -->
+<ConfirmationModal
+  bind:isOpen={showDeleteConfigModal}
+  title="Delete Configuration"
+  message={configToDelete ? `Are you sure you want to delete the configuration "${configToDelete.name}"? This action cannot be undone.` : ''}
+  confirmText="Delete"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={deleteConfiguration}
+  on:cancel={() => { configToDelete = null; showDeleteConfigModal = false; }}
+  on:close={() => { configToDelete = null; showDeleteConfigModal = false; }}
+/>
+
+<ConfirmationModal
+  bind:isOpen={showDeleteAllModal}
+  title="Delete All Configurations"
+  message="Are you sure you want to delete all LLM configurations? This will disable AI features (summarization and speaker identification) until you create a new configuration. This action cannot be undone."
+  confirmText="Delete All"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={deleteAllSettings}
+  on:cancel={() => showDeleteAllModal = false}
+  on:close={() => showDeleteAllModal = false}
+/>
+
 <style>
   .llm-settings {
-    max-width: 600px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .settings-header {
+    margin-bottom: 2rem;
+    text-align: center;
   }
 
   .settings-header h3 {
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.5rem;
     color: var(--text-color);
+    font-size: 1.5rem;
+    font-weight: 600;
   }
 
   .settings-header p {
-    margin: 0 0 1.5rem 0;
-    color: var(--text-light);
+    margin: 0;
+    color: var(--text-muted);
     font-size: 0.9rem;
+    line-height: 1.5;
   }
 
   .message {
-    padding: 0.75rem 1rem;
-    border-radius: 4px;
+    padding: 1rem;
     margin-bottom: 1rem;
-    font-size: 0.9rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    line-height: 1.4;
   }
 
   .message.success {
-    background-color: rgba(16, 185, 129, 0.1);
+    background-color: var(--success-bg);
     color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.2);
+    border: 1px solid var(--success-border);
   }
 
   .message.error {
-    background-color: rgba(239, 68, 68, 0.1);
+    background-color: var(--error-bg);
     color: var(--error-color);
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    border: 1px solid var(--error-border);
   }
 
   .loading {
     text-align: center;
-    padding: 2rem;
-    color: var(--text-light);
-  }
-
-  .llm-form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
-  }
-
-  label {
-    font-weight: 500;
+    padding: 3rem;
+    color: var(--text-muted);
     font-size: 0.9rem;
-    color: var(--text-color);
   }
 
-  .form-control {
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.9rem;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    transition: border-color 0.2s ease;
+  .saved-configs-section {
+    margin-bottom: 2rem;
   }
 
-  .form-control:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-  }
-
-  .form-control:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .form-text {
-    font-size: 0.8rem;
-    color: var(--text-light);
-    margin-top: 0.25rem;
-  }
-
-  .checkbox-group {
-    margin-bottom: 1rem !important;
-    padding-top: 1rem !important;
-  }
-
-  .checkbox-container {
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    cursor: pointer !important;
-    font-weight: 500 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: auto !important;
-    max-width: none !important;
-    justify-content: flex-start !important;
-  }
-
-  .checkbox-container input[type="checkbox"] {
-    margin: 0 !important;
-    padding: 0 !important;
-    cursor: pointer !important;
-    flex-shrink: 0 !important;
-    width: auto !important;
-  }
-
-  .checkbox-text {
-    margin: 0 !important;
-    padding: 0 !important;
-    line-height: 1.2 !important;
-    display: inline !important;
-    width: auto !important;
-  }
-
-  .api-key-status {
-    font-weight: normal;
-    color: var(--success-color);
-    font-size: 0.8rem;
-  }
-
-  .api-key-input {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .api-key-input .form-control {
-    flex: 1;
-  }
-
-  .toggle-visibility {
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--surface-color);
-    cursor: pointer;
-    font-size: 1rem;
-  }
-
-  .toggle-visibility:hover {
-    background-color: var(--hover-bg);
-  }
-
-  .input-with-test {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-
-  .input-with-test .form-control {
-    flex: 1;
-  }
-
-  .test-icon-button {
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background-color: var(--surface-color);
-    cursor: pointer;
+  .section-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .test-icon-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
-  }
-
-  .test-icon-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .spinner-icon {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .advanced-settings {
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 1rem;
-  }
-
-  .advanced-settings summary {
-    cursor: pointer;
-    font-weight: 500;
+    justify-content: space-between;
     margin-bottom: 1rem;
-    user-select: none;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
   }
 
-  .test-section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
-    background-color: var(--surface-color);
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-  }
-
-  .test-buttons {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .test-button {
+  .section-header h4 {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
-    border: 1px solid var(--primary-color);
-    border-radius: 4px;
-    background-color: transparent;
-    color: var(--primary-color);
-    cursor: pointer;
+    margin: 0;
+    font-size: 1.1rem;
     font-weight: 500;
-    transition: all 0.2s ease;
-  }
-
-  .test-button:hover:not(:disabled) {
-    background-color: var(--primary-color);
-    color: white;
-  }
-
-  .test-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .test-button.secondary {
-    background-color: transparent;
-    border: 1px solid var(--border-color);
     color: var(--text-color);
   }
 
-  .test-button.secondary:hover:not(:disabled) {
-    background-color: var(--hover-bg);
-    border-color: var(--primary-color);
-  }
-
-  .test-result {
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-
-  .test-result.success {
-    background-color: rgba(16, 185, 129, 0.1);
-    color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-
-  .test-result.error {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
-
-  .response-time {
-    font-size: 0.8rem;
-    margin-top: 0.25rem;
-    opacity: 0.8;
-  }
-
-  .form-actions {
-    display: flex;
-    gap: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-  }
-
-  .save-button {
+  .create-config-button {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    background: #3b82f6;
+    color: white;
     border: none;
-    border-radius: 4px;
-    background-color: var(--primary-color);
-    color: white;
-    font-weight: 500;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
     cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .create-config-button:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .create-config-button:active {
+    transform: translateY(0);
+  }
+
+  .config-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .config-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--card-bg);
     transition: all 0.2s ease;
   }
 
-  .save-button:hover:not(:disabled) {
-    background-color: var(--primary-dark);
+  .config-item.active {
+    border-color: var(--primary-color);
+    background: var(--primary-bg);
   }
 
-  .save-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .config-item:hover:not(.active) {
+    border-color: var(--border-hover);
+    background: var(--hover-color);
   }
 
-  .delete-button {
-    padding: 0.75rem 1.25rem;
-    border: 1px solid var(--error-color);
-    border-radius: 4px;
-    background-color: transparent;
-    color: var(--error-color);
-    cursor: pointer;
+  .config-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .config-name {
     font-weight: 500;
-    transition: all 0.2s ease;
+    color: var(--text-color);
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
   }
 
-  .delete-button:hover:not(:disabled) {
-    background-color: var(--error-color);
-    color: white;
+  .config-provider {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
   }
 
-  .delete-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .config-url {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    opacity: 0.7;
   }
 
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  @media (max-width: 768px) {
-    .form-row {
-      grid-template-columns: 1fr;
-    }
-
-    .form-actions {
-      flex-direction: column;
-    }
-
-    .api-key-input {
-      flex-direction: column;
-    }
-
-    .test-buttons {
-      flex-direction: column;
-    }
-  }
-
-  /* Connection Status Badge */
-  .connection-status {
+  .config-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    margin: 1rem 0;
-    border: 1px solid;
+    flex-shrink: 0;
   }
 
-  .connection-status.connected {
-    background-color: var(--success-bg, #f0f9f0);
-    border-color: var(--success-border, #c6f6c6);
-    color: var(--success-text, #16a34a);
+  .config-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    width: fit-content;
   }
 
-  .connection-status.disconnected {
-    background-color: var(--error-bg, #fef2f2);
-    border-color: var(--error-border, #fecaca);
-    color: var(--error-text, #dc2626);
+  .config-status.connected {
+    background-color: var(--success-bg);
+    color: var(--success-color);
+    border: 1px solid var(--success-border);
+  }
+
+  .config-status.disconnected {
+    background-color: var(--error-bg);
+    color: var(--error-color);
+    border: 1px solid var(--error-border);
+  }
+
+  .config-status.unknown {
+    background-color: var(--secondary-bg);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+  }
+
+  .config-status.currently-active {
+    background-color: var(--success-bg);
+    color: var(--success-color);
+    border: 1px solid var(--success-border);
   }
 
   .status-indicator {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
   }
 
-  .status-text {
-    font-weight: 500;
-    flex-grow: 1;
-  }
-
-  .status-timestamp {
+  .activate-button, .edit-button, .delete-config-button, .test-connection-button {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
     font-size: 0.8rem;
-    opacity: 0.7;
-    font-weight: normal;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid;
+    height: 32px;
+    box-sizing: border-box;
+  }
+
+  .activate-button {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+    color: white;
+    padding: 0.5rem 0.5rem;
+  }
+
+  .activate-button:hover:not(:disabled) {
+    background-color: #059669;
+    border-color: #059669;
+  }
+
+  .test-connection-button {
+    background-color: transparent;
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  .test-connection-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .edit-button {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  .edit-button:hover:not(:disabled) {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  .delete-config-button {
+    background-color: transparent;
+    border-color: var(--error-color);
+    color: var(--error-color);
+  }
+
+  .delete-config-button:hover:not(:disabled) {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .delete-config-button:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .delete-all-section {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+  }
+
+  .delete-all-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .delete-all-button:hover:not(:disabled) {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .delete-all-button:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+  }
+
+  .delete-all-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    background: var(--card-bg);
+  }
+
+  .empty-icon {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .empty-state h4 {
+    margin: 0 0 0.5rem;
+    color: var(--text-color);
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  .empty-state p {
+    margin: 0 0 1.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .create-first-config-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .create-first-config-btn:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .create-first-config-btn:active {
+    transform: translateY(0);
   }
 
   .spinner-mini {
     width: 12px;
     height: 12px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
+    border: 2px solid transparent;
     border-top: 2px solid currentColor;
     border-radius: 50%;
     animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>
