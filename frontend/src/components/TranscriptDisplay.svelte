@@ -260,9 +260,16 @@
 
 <section class="transcript-column">
   <div class="transcript-header">
-    <h4>Transcript</h4>
-    <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
+    <!-- Search component moved to header -->
+    <TranscriptSearch 
+      {transcriptSegments}
+      {speakerList}
+      disabled={!file?.transcript_segments?.length}
+      on:searchResults={handleSearchResults}
+      on:navigateToMatch={handleNavigateToMatch}
+    />
   </div>
+  
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
@@ -284,15 +291,6 @@
         <p class="error-message small">{transcriptError}</p>
       {/if}
     {:else}
-      <!-- Search component -->
-      <TranscriptSearch 
-        {transcriptSegments}
-        {speakerList}
-        disabled={!file?.transcript_segments?.length}
-        on:searchResults={handleSearchResults}
-        on:navigateToMatch={handleNavigateToMatch}
-      />
-      
       <div bind:this={transcriptContainer} class="transcript-display-container">
         <div class="transcript-display">
         {#each file.transcript_segments as segment}
@@ -810,7 +808,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
+    min-height: 32px;
   }
 
   .transcript-column h4 {

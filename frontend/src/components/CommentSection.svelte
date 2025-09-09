@@ -84,22 +84,17 @@
         return;
       }
       
-      // Fetching comments for file
-      
       // Create custom headers with authentication token
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
       
-      // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
-        // Use the correct endpoint structure: /comments/files/{fileId}/comments
         const endpoint = `/comments/files/${numericFileId}/comments`;
         response = await axiosInstance.get(endpoint, { headers });
       } catch (/** @type {any} */ error) {
-        // Log error information for debugging
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
         
         // If the error is a 401, this is an authentication issue
@@ -113,18 +108,14 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint without leading slash as fallback
-            // Trying legacy endpoint
             response = await axiosInstance.get(`files/${numericFileId}/comments`, { headers });
-            // Successfully fetched comments using legacy endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
-              // Trying query parameter approach as last resort
               response = await axiosInstance.get('/comments', { 
                 params: { media_file_id: numericFileId },
                 headers 
               });
-              // Successfully fetched comments using query param
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
               error = `Failed to load comments: ${lastError.message}`;
@@ -196,18 +187,10 @@
       event.stopPropagation();
     }
     
-    // Adding comment with button click
-    
     if (!newComment.trim()) return;
     
     // Use the timestamp input if it was explicitly set, otherwise use null
     const timestamp = timestampInput !== null ? timestampInput : null;
-    
-    // If timestamp is null at this point, inform the user they need to mark a time
-    if (timestamp === null) {
-      error = 'Please use "Mark Current Time" to set a timestamp for your comment.';
-      return;
-    }
     
     // Store locally for optimistic UI updates
     const commentText = newComment.trim();
@@ -220,8 +203,6 @@
       const token = localStorage.getItem('token');
       const numericFileId = Number(fileId);
       
-      // Adding comment for file
-
       if (!token) {
         console.error('No auth token found in localStorage');
         error = 'You need to be logged in to add comments';
@@ -551,6 +532,16 @@
 
 <!-- Main wrapper with fixed header and scrollable comments -->
 <div class="comments-wrapper">
+  <div class="comments-header-internal">
+    <h4 class="section-heading">Comments & Notes</h4>
+    <div class="comments-preview">
+      {#if comments && comments.length > 0}
+        <span class="tag-chip">{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>
+      {:else}
+        <span class="no-comments">No comments</span>
+      {/if}
+    </div>
+  </div>
   <!-- Error message if needed -->
   {#if error}
     <div class="error-message">
@@ -567,9 +558,9 @@
     <form class="comment-form" on:submit={addComment}>
       <textarea
         bind:value={newComment}
-        placeholder="Add your comment here..."
+        placeholder="Type your comment or note here..."
         rows="2"
-        title="Type your comment here. You can optionally mark a timestamp to link your comment to a specific moment in the video."
+        title="Enter your comment or note. You must mark a timestamp and add text before you can submit."
       ></textarea>
       <div class="form-actions">
         <div class="timestamp-actions">
@@ -578,7 +569,7 @@
               type="button"
               class="timestamp-button"
               on:click={useCurrentTime}
-              title="Mark the current video playback time to link this comment to that moment"
+              title="Click to mark the current video time - required before you can add your comment"
             >
               <span class="button-icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -595,7 +586,7 @@
                 type="button"
                 class="clear-button"
                 on:click|stopPropagation={() => timestampInput = null}
-                title="Clear timestamp"
+                title="Clear the marked timestamp (you'll need to mark time again to submit)"
               >
                 ✖
               </button>
@@ -605,8 +596,10 @@
         <button
           type="submit"
           class="submit-button"
-          disabled={!newComment.trim()}
-          title="Add your comment to this file{timestampInput !== null ? ' at the marked timestamp' : ''}"
+          disabled={!newComment.trim() || timestampInput === null}
+          title={!newComment.trim() || timestampInput === null 
+            ? 'You must add text and mark a timestamp before submitting' 
+            : `Add your comment at ${formatTimestamp(timestampInput)}`}
         >
           Add Comment
         </button>
@@ -709,12 +702,56 @@
 </div>
 
 <style>
+  .comments-header-internal {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary, var(--surface-color));
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .section-heading {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .comments-preview {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .tag-chip {
+    background: var(--primary-light);
+    color: var(--primary-color);
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .no-comments {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
+  }
+
   /* Main wrapper for the entire comments component */
   .comments-wrapper {
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-height: 600px;
+    max-height: 1200px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     overflow: hidden;
   }
   
@@ -739,7 +776,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 0.5rem;
-    max-height: 400px;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;

@@ -56,7 +56,7 @@
 
 <style>
   .tags-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: 0;
   }
 
   .tags-header {

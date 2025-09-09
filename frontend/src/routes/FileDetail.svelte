@@ -18,8 +18,10 @@
   import CommentSection from '$components/CommentSection.svelte';
   import CollectionsSection from '$components/CollectionsSection.svelte';
   import ReprocessButton from '$components/ReprocessButton.svelte';
+  import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
+  import TranscriptModal from '$components/TranscriptModal.svelte';
   import { llmStatusStore, isLLMAvailable } from '../stores/llmStatus';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
@@ -59,6 +61,7 @@
   let reprocessing = false;
   let summaryData: any = null;
   let showSummaryModal = false;
+  let showTranscriptModal = false;
   let generatingSummary = false;
   let summaryError = '';
   let summaryGenerating = false; // WebSocket-driven summary generation status
@@ -1327,7 +1330,26 @@
       
     } catch (error) {
       console.error('Error starting reprocess:', error);
-      errorMessage = 'Failed to start reprocessing. Please try again.';
+      toastStore.addToast('Failed to start reprocessing. Please try again.', 'error');
+    } finally {
+      reprocessing = false;
+    }
+  }
+
+  async function handleReprocessHeader() {
+    if (!file?.id) return;
+    
+    try {
+      reprocessing = true;
+      await axiosInstance.post(`/api/files/${file.id}/reprocess`);
+      
+      // Refresh file details to show updated status
+      await fetchFileDetails(file.id);
+      
+      toastStore.addToast('Reprocessing started successfully', 'success');
+    } catch (error) {
+      console.error('Error starting reprocess:', error);
+      toastStore.addToast('Failed to start reprocessing. Please try again.', 'error');
     } finally {
       reprocessing = false;
     }
@@ -1342,7 +1364,6 @@
     
     // Check if LLM is available
     if (!$isLLMAvailable) {
-      summaryError = 'AI summary features are not available. Please configure an LLM provider in Settings.';
       return;
     }
     
@@ -1483,7 +1504,16 @@
               } else if (status === 'failed' || status === 'error') {
                 // Summary failed - show error without full refresh
                 summaryGenerating = false;
-                summaryError = latestNotification.data?.message || 'Failed to generate summary';
+                
+                // Don't show LLM configuration errors to users who don't have LLM capability
+                const errorMessage = latestNotification.data?.message || 'Failed to generate summary';
+                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') || 
+                                       errorMessage.toLowerCase().includes('configure an llm provider') ||
+                                       errorMessage.toLowerCase().includes('llm provider');
+                
+                if (!isLLMConfigError) {
+                  summaryError = errorMessage;
+                }
               }
             }
           }
@@ -1586,7 +1616,22 @@
       <section class="video-column">
         <div class="video-header">
           <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
-          <!-- AI Summary Buttons - right aligned above video -->
+          <!-- Action Buttons - right aligned above video -->
+          <div class="header-buttons">
+            <!-- View Full Transcript Button - LEFT of AI Summary -->
+            {#if file && file.transcript_segments && file.transcript_segments.length > 0}
+              <button 
+                class="view-transcript-btn"
+                on:click={() => showTranscriptModal = true}
+                title="View full transcript in modal"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="transcript-icon">
+                  <path d="M4 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+                  <path d="M5 5h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
+                </svg>
+                Transcript
+              </button>
+            {/if}
           {#if file?.summary || file?.summary_opensearch_id}
             <button 
               class="view-summary-btn"
@@ -1596,7 +1641,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
                 <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
               </svg>
-              View Summary
+              Summary
             </button>
           {:else if summaryGenerating || generatingSummary}
             <!-- Show generating state even when no summary exists yet -->
@@ -1628,6 +1673,24 @@
               {/if}
             </button>
           {/if}
+          <!-- Reprocess Button - icon only with tooltip -->
+          {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
+            <button 
+              class="reprocess-button-header" 
+              on:click={handleReprocessHeader}
+              disabled={reprocessing}
+              title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              {#if reprocessing}
+                <div class="spinner-small"></div>
+              {/if}
+            </button>
+          {/if}
+          </div>
         </div>
         
         <VideoPlayer 
@@ -1690,16 +1753,11 @@
           {speakerList}
         />
 
-        <div class="comments-section">
-          <h4 class="comments-heading">Comments & Discussion</h4>
-          <div class="comments-section-wrapper">
-            <CommentSection 
-              fileId={file?.id ? String(file.id) : ''} 
-              {currentTime} 
-              on:seekTo={handleSeekTo}
-            />
-          </div>
-        </div>
+        <CommentSection 
+          fileId={file?.id ? String(file.id) : ''} 
+          {currentTime} 
+          on:seekTo={handleSeekTo}
+        />
       </section>
       
       <!-- Right column: Transcript -->
@@ -1731,12 +1789,6 @@
         </section>
       {:else}
         <section class="transcript-column">
-          <div class="transcript-header">
-            <h4>Transcript</h4>
-            <div class="reprocess-button-wrapper">
-              <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
-            </div>
-          </div>
           <div class="no-transcript">
             <p>No transcript available for this file.</p>
           </div>
@@ -1801,6 +1853,16 @@
   />
 {/if}
 
+<!-- Transcript Modal -->
+{#if file?.id}
+  <TranscriptModal
+    bind:isOpen={showTranscriptModal}
+    fileId={file.id}
+    fileName={file?.filename || 'Unknown File'}
+    transcriptSegments={file?.transcript_segments || []}
+    on:close={() => showTranscriptModal = false}
+  />
+{/if}
 
 <style>
   .file-detail-page {
@@ -1857,15 +1919,13 @@
     background: var(--primary-hover);
   }
   
-  .reprocess-button-wrapper {
-    display: inline-block;
-  }
   
   .transcript-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
+    width: 100%;
+    min-height: 32px;
   }
 
   .file-header {
@@ -1890,7 +1950,89 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 0px;
+    min-height: 32px;
+  }
+
+  .header-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .view-transcript-btn {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
+  }
+
+  .view-transcript-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .view-transcript-btn:active {
+    transform: scale(0.98);
+  }
+
+  .view-transcript-btn .transcript-icon {
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .reprocess-button-header {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    width: 40px;
+    height: 40px;
+  }
+
+  .reprocess-button-header:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .reprocess-button-header:active {
+    transform: scale(0.98);
+  }
+
+  .reprocess-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .reprocess-button-header .spinner-small {
+    border: 2px solid rgba(128, 128, 128, 0.3);
+    border-top: 2px solid var(--primary-color);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
   }
 
   .video-column h4 {
@@ -1907,34 +2049,36 @@
   }
 
   .view-summary-btn {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
   }
 
   .view-summary-btn:hover {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
   
   .view-summary-btn:active {
-    transform: translateY(0);
+    transform: scale(0.98);
   }
 
   .view-summary-btn .ai-icon {
     flex-shrink: 0;
-    opacity: 0.9;
+    opacity: 0.8;
   }
 
   .generate-summary-btn {
@@ -2041,27 +2185,9 @@
 
 
   .waveform-section {
-    margin-top: 6px;
     width: 100%;
   }
 
-  .comments-section {
-    margin-top: 20px;
-  }
-
-  .comments-heading {
-    margin: 0 0 16px 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .comments-section-wrapper {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
-  }
 
   .ai-summary-section {
     background: var(--surface-color);

@@ -65,7 +65,7 @@
 
 <style>
   .collections-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: 0;
   }
 
   .collections-header {

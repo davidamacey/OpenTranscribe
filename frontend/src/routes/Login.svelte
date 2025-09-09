@@ -127,11 +127,6 @@
       </div>
       <h1>Login</h1>
       <p>Sign in to your account</p>
-      <div class="info-message">
-        <p><strong>Default Admin Credentials:</strong></p>
-        <p>Email: admin@example.com</p>
-        <p>Password: password</p>
-      </div>
     </div>
     
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -345,17 +340,6 @@
     cursor: not-allowed;
   }
   
-  .info-message {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 0.5rem;
-    font-size: 0.9rem;
-  }
-  
-  .info-message p {
-    margin: 0.25rem 0;
-  }
   
   .auth-links {
     margin-top: 1.5rem;
