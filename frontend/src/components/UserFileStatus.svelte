@@ -13,8 +13,7 @@
   let detailedStatus = null;
   let retryingFiles = new Set();
   
-  // Auto-refresh settings (per session, not persistent)
-  let autoRefresh = false;
+  // Auto-refresh settings (enabled by default)
   let refreshInterval = null;
   
   // Tasks section state
@@ -22,6 +21,14 @@
   let tasksLoading = false;
   let tasksError = null;
   let showTasksSection = false;
+  
+  // Restore tasks section state from session storage
+  if (typeof window !== 'undefined') {
+    const savedTasksSection = sessionStorage.getItem('showTasksSection');
+    if (savedTasksSection === 'true') {
+      showTasksSection = true;
+    }
+  }
   
   // Task filtering
   let taskFilter = 'all'; // 'all', 'pending', 'in_progress', 'completed', 'failed'
@@ -38,10 +45,18 @@
   onMount(() => {
     fetchFileStatus();
     setupWebSocketUpdates();
+    startAutoRefresh();
+    
+    // Load tasks if section should be shown
+    if (showTasksSection && tasks.length === 0) {
+      fetchTasks();
+    }
   });
   
-  async function fetchFileStatus() {
-    loading = true;
+  async function fetchFileStatus(silent = false) {
+    if (!silent) {
+      loading = true;
+    }
     error = null;
     
     try {
@@ -49,14 +64,20 @@
       fileStatus = response.data;
     } catch (err) {
       console.error('Error fetching file status:', err);
-      error = err.response?.data?.detail || 'Failed to load file status';
+      if (!silent) {
+        error = err.response?.data?.detail || 'Failed to load file status';
+      }
     } finally {
-      loading = false;
+      if (!silent) {
+        loading = false;
+      }
     }
   }
   
-  async function fetchTasks() {
-    tasksLoading = true;
+  async function fetchTasks(silent = false) {
+    if (!silent) {
+      tasksLoading = true;
+    }
     tasksError = null;
     
     try {
@@ -65,9 +86,13 @@
       filterTasks();
     } catch (err) {
       console.error('Error fetching tasks:', err);
-      tasksError = err.response?.data?.detail || 'Failed to load tasks';
+      if (!silent) {
+        tasksError = err.response?.data?.detail || 'Failed to load tasks';
+      }
     } finally {
-      tasksLoading = false;
+      if (!silent) {
+        tasksLoading = false;
+      }
     }
   }
   
@@ -127,6 +152,12 @@
   
   function toggleTasksSection() {
     showTasksSection = !showTasksSection;
+    
+    // Save state to session storage
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('showTasksSection', showTasksSection.toString());
+    }
+    
     if (showTasksSection && tasks.length === 0) {
       fetchTasks();
     }
@@ -164,7 +195,7 @@
       await axiosInstance.post(`/my-files/${fileId}/retry`);
       
       // Refresh status after retry
-      await fetchFileStatus();
+      await fetchFileStatus(true); // Silent refresh
       if (selectedFile === fileId) {
         await fetchDetailedStatus(fileId);
       }
@@ -191,7 +222,7 @@
       
       // Refresh status after a delay
       setTimeout(() => {
-        fetchFileStatus();
+        fetchFileStatus(true); // Silent refresh
       }, 2000);
       
     } catch (err) {
@@ -203,15 +234,13 @@
     }
   }
   
-  function toggleAutoRefresh() {
-    if (autoRefresh) {
-      refreshInterval = setInterval(fetchFileStatus, 30000); // Refresh every 30 seconds
-    } else {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-        refreshInterval = null;
+  function startAutoRefresh() {
+    refreshInterval = setInterval(() => {
+      fetchFileStatus(true); // Silent refresh
+      if (showTasksSection) {
+        fetchTasks(true); // Silent refresh
       }
-    }
+    }, 30000); // Refresh every 30 seconds
   }
   
   function showMessage(message, type) {
@@ -302,11 +331,11 @@
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             
             // Refresh file status when we get updates
-            fetchFileStatus();
+            fetchFileStatus(true); // Silent refresh
             
             // Also refresh tasks if tasks section is open
             if (showTasksSection) {
-              fetchTasks();
+              fetchTasks(true); // Silent refresh
             }
           }
         }
@@ -341,17 +370,6 @@
       </button>
       
       <button 
-        class="refresh-btn" 
-        on:click={() => {
-          fetchFileStatus();
-          if (showTasksSection) fetchTasks();
-        }}
-        disabled={loading || tasksLoading}
-      >
-        {(loading || tasksLoading) ? 'Refreshing...' : 'Refresh'}
-      </button>
-      
-      <button 
         class="tasks-toggle-btn" 
         on:click={toggleTasksSection}
         title="Show/hide detailed tasks view"
@@ -363,14 +381,14 @@
         {showTasksSection ? 'Hide Tasks' : 'Show All Tasks'}
       </button>
       
-      <label class="auto-refresh-toggle">
-        <input 
-          type="checkbox" 
-          bind:checked={autoRefresh} 
-          on:change={() => toggleAutoRefresh()}
-        />
-        Auto-refresh
-      </label>
+      <div class="auto-refresh-info">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4"/>
+          <path d="M12 8h.01"/>
+        </svg>
+        Auto-refreshes every 30s
+      </div>
     </div>
   </div>
   
@@ -841,7 +859,7 @@
     align-items: center;
   }
   
-  .refresh-btn, .recovery-btn, .flower-btn, .tasks-toggle-btn {
+  .recovery-btn, .flower-btn, .tasks-toggle-btn {
     padding: 0.6rem 1.2rem;
     background: #3b82f6;
     color: white;
@@ -863,13 +881,13 @@
     border: 1px solid var(--border-color);
   }
   
-  .refresh-btn:hover, .recovery-btn:hover, .tasks-toggle-btn:hover {
+  .recovery-btn:hover, .tasks-toggle-btn:hover {
     background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
   
-  .refresh-btn:active, .recovery-btn:active, .tasks-toggle-btn:active {
+  .recovery-btn:active, .tasks-toggle-btn:active {
     transform: translateY(0);
   }
   
@@ -878,25 +896,41 @@
     border-color: var(--border-hover);
   }
   
-  .refresh-btn:disabled, .recovery-btn:disabled, .tasks-toggle-btn:disabled {
+  .recovery-btn:disabled, .tasks-toggle-btn:disabled {
     background: var(--text-light);
     cursor: not-allowed;
     transform: none;
   }
+
+  .spinner-mini {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
   
-  .auto-refresh-toggle {
+  .auto-refresh-info {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    cursor: pointer;
-    color: var(--text-color);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
     font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
   }
   
-  .auto-refresh-toggle input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
+  .auto-refresh-info svg {
+    opacity: 0.7;
   }
   
   .status-cards {

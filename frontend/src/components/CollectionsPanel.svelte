@@ -3,6 +3,7 @@
   import { fade, slide } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
+  import ConfirmationModal from './ConfirmationModal.svelte';
   
   // Props
   export let selectedMediaIds: number[] = [];
@@ -152,6 +153,17 @@
       deleting = false;
     }
   }
+
+  // Handle confirmation modal confirm
+  function handleConfirmModalConfirm() {
+    deleteCollection();
+  }
+
+  // Handle confirmation modal cancel
+  function handleConfirmModalCancel() {
+    showDeleteConfirm = false;
+    collectionToDelete = null;
+  }
   
   // Add selected media to collection
   async function addMediaToCollection(collectionId: number) {
@@ -297,29 +309,25 @@
   <!-- Create Collection Modal -->
   {#if showCreateModal}
     <div class="modal-overlay" on:click={() => showCreateModal = false} transition:fade>
-      <div class="modal" on:click|stopPropagation transition:slide>
-        <div class="modal-header-custom">
+      <div class="modal-content" on:click|stopPropagation transition:slide>
+        <div class="modal-header">
           <h3>Create New Collection</h3>
           <button 
-            class="modal-close-btn" 
+            class="close-button" 
             on:click={() => showCreateModal = false}
             type="button"
             aria-label="Close modal"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          >×</button>
         </div>
         
-        <form on:submit|preventDefault={createCollection}>
+        <form on:submit|preventDefault={createCollection} class="config-form">
           <div class="form-group">
-            <label for="collection-name">Name</label>
+            <label for="collection-name">Name *</label>
             <input
               id="collection-name"
               type="text"
               bind:value={newCollectionName}
+              class="form-control"
               placeholder="My Collection"
               required
               disabled={creating}
@@ -327,20 +335,21 @@
           </div>
           
           <div class="form-group">
-            <label for="collection-description">Description (optional)</label>
+            <label for="collection-description">Description</label>
             <textarea
               id="collection-description"
               bind:value={newCollectionDescription}
+              class="form-control"
               placeholder="Describe this collection..."
               rows="3"
               disabled={creating}
             />
           </div>
           
-          <div class="modal-actions">
+          <div class="form-actions">
             <button
               type="button"
-              class="btn-secondary"
+              class="cancel-button"
               on:click={() => showCreateModal = false}
               disabled={creating}
             >
@@ -348,10 +357,20 @@
             </button>
             <button
               type="submit"
-              class="btn-primary"
+              class="save-button primary"
               disabled={creating || !newCollectionName.trim()}
             >
-              {creating ? 'Creating...' : 'Create Collection'}
+              {#if creating}
+                <div class="spinner-mini"></div>
+                Creating...
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17,21 17,13 7,13 7,21"/>
+                  <polyline points="7,3 7,8 15,8"/>
+                </svg>
+                Create Collection
+              {/if}
             </button>
           </div>
         </form>
@@ -362,29 +381,25 @@
   <!-- Edit Collection Modal -->
   {#if showEditModal && collectionToEdit}
     <div class="modal-overlay" on:click={() => showEditModal = false} transition:fade>
-      <div class="modal" on:click|stopPropagation transition:slide>
-        <div class="modal-header-custom">
+      <div class="modal-content" on:click|stopPropagation transition:slide>
+        <div class="modal-header">
           <h3>Edit Collection</h3>
           <button 
-            class="modal-close-btn" 
+            class="close-button" 
             on:click={() => showEditModal = false}
             type="button"
             aria-label="Close modal"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          >×</button>
         </div>
         
-        <form on:submit|preventDefault={updateCollection}>
+        <form on:submit|preventDefault={updateCollection} class="config-form">
           <div class="form-group">
-            <label for="edit-collection-name">Name</label>
+            <label for="edit-collection-name">Name *</label>
             <input
               id="edit-collection-name"
               type="text"
               bind:value={editCollectionName}
+              class="form-control"
               placeholder="Collection Name"
               required
               disabled={updating}
@@ -392,20 +407,21 @@
           </div>
           
           <div class="form-group">
-            <label for="edit-collection-description">Description (optional)</label>
+            <label for="edit-collection-description">Description</label>
             <textarea
               id="edit-collection-description"
               bind:value={editCollectionDescription}
+              class="form-control"
               placeholder="Describe this collection..."
               rows="3"
               disabled={updating}
             />
           </div>
           
-          <div class="modal-actions">
+          <div class="form-actions">
             <button
               type="button"
-              class="btn-secondary"
+              class="cancel-button"
               on:click={() => showEditModal = false}
               disabled={updating}
             >
@@ -413,10 +429,20 @@
             </button>
             <button
               type="submit"
-              class="btn-primary"
+              class="save-button primary"
               disabled={updating || !editCollectionName.trim()}
             >
-              {updating ? 'Updating...' : 'Update Collection'}
+              {#if updating}
+                <div class="spinner-mini"></div>
+                Updating...
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17,21 17,13 7,13 7,21"/>
+                  <polyline points="7,3 7,8 15,8"/>
+                </svg>
+                Update Collection
+              {/if}
             </button>
           </div>
         </form>
@@ -424,36 +450,19 @@
     </div>
   {/if}
   
-  <!-- Delete Confirmation Modal -->
-  {#if showDeleteConfirm && collectionToDelete}
-    <div class="modal-overlay" on:click={() => showDeleteConfirm = false} transition:fade>
-      <div class="modal confirm-modal" on:click|stopPropagation transition:slide>
-        <h3>Delete Collection</h3>
-        
-        <p>Are you sure you want to delete the collection <strong>"{collectionToDelete.name}"</strong>?</p>
-        <p class="warning-text">This action cannot be undone. The media files will not be deleted, only removed from this collection.</p>
-        
-        <div class="modal-actions">
-          <button
-            type="button"
-            class="btn-secondary"
-            on:click={() => showDeleteConfirm = false}
-            disabled={deleting}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn-danger"
-            on:click={deleteCollection}
-            disabled={deleting}
-          >
-            {deleting ? 'Deleting...' : 'Delete Collection'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+<!-- Delete Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showDeleteConfirm}
+  title="Delete Collection"
+  message={collectionToDelete ? `Are you sure you want to delete the collection "${collectionToDelete.name}"? This action cannot be undone. The media files will not be deleted, only removed from this collection.` : ''}
+  confirmText={deleting ? 'Deleting...' : 'Delete Collection'}
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
 </div>
 
 <style>
@@ -736,223 +745,178 @@
     cursor: not-allowed;
   }
   
-  /* Modal styles */
+  /* Modal styles - updated to match LLM config modal */
   .modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    padding: 20px;
+    padding: 1rem;
   }
-  
-  .modal {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 32px;
-    max-width: 550px;
+
+  .modal-content {
+    background-color: var(--background-color);
+    border-radius: 8px;
+    max-width: 600px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
   }
-  
-  .modal h3 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  
-  .modal-header-custom {
+
+  .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    padding: 1.5rem 1.5rem 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
   }
-  
-  .modal-close-btn {
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .close-button {
     background: none;
     border: none;
+    font-size: 1.5rem;
     cursor: pointer;
-    padding: 8px;
-    border-radius: 6px;
-    color: var(--text-secondary);
-    transition: all 0.2s;
+    color: var(--text-light);
+    padding: 0;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  
-  .modal-close-btn:hover {
-    background: var(--hover-background);
-    color: var(--text-primary);
+
+  .close-button:hover {
+    color: var(--text-color);
   }
-  
-  .modal-close-btn svg {
-    width: 20px;
-    height: 20px;
+
+  .config-form {
+    padding: 1.5rem;
   }
-  
-  .modal form {
-    background: transparent;
-    padding: 0;
-    margin: 0;
-  }
-  
+
   .form-group {
-    margin-bottom: 24px;
+    margin-bottom: 1.5rem;
   }
-  
+
   .form-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--text-color);
   }
-  
-  .form-group input,
-  .form-group textarea {
+
+  .form-control {
     width: 100%;
-    padding: 12px 16px;
+    padding: 0.75rem;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 14px;
-    font-family: inherit;
-    background: transparent;
-    color: var(--text-primary);
-    transition: all 0.2s;
+    border-radius: 4px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    font-size: 0.875rem;
+    transition: border-color 0.2s ease;
   }
-  
-  .form-group input:focus,
-  .form-group textarea:focus {
+
+  .form-control:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
-  
-  .form-group input:disabled,
-  .form-group textarea:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    background: var(--surface-color);
-  }
-  
-  .form-group textarea {
-    resize: vertical;
-    min-height: 60px;
-  }
-  
-  .modal-actions {
+
+  .form-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 12px;
-    margin-top: 24px;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
   }
-  
-  .btn-secondary,
-  .btn-primary {
+
+  .cancel-button {
+    background: var(--surface-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    border: none;
     border-radius: 10px;
+    cursor: pointer;
     font-size: 0.95rem;
     font-weight: 500;
-    cursor: pointer;
     transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  
-  .btn-secondary {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
-  
-  .btn-secondary:hover:not(:disabled) {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
+
+  .cancel-button:hover:not(:disabled) {
+    background: #3b82f6;
     color: white;
+    border-color: #3b82f6;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
   
-  .btn-secondary:active:not(:disabled) {
+  .cancel-button:active {
     transform: translateY(0);
-  }
-  
-  .btn-primary {
-    background-color: #3b82f6;
-    color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
-  .btn-primary:hover:not(:disabled) {
-    background-color: #2563eb;
+
+  .save-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .save-button:hover:not(:disabled) {
+    background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
   
-  .btn-primary:active:not(:disabled) {
+  .save-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
-  .btn-secondary:disabled,
-  .btn-primary:disabled {
+
+  .save-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
-  .btn-danger {
-    background-color: #ef4444;
-    color: white;
-    padding: 0.6rem 1.2rem;
-    border: none;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
+
+  .spinner-mini {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
   
-  .btn-danger:hover:not(:disabled) {
-    background-color: #dc2626;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-  
-  .btn-danger:active:not(:disabled) {
-    transform: translateY(0);
-  }
-  
-  .btn-danger:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  .confirm-modal p {
-    margin: 0 0 16px 0;
-    color: var(--text-primary);
-    line-height: 1.5;
-  }
-  
-  .warning-text {
-    color: var(--text-secondary);
-    font-size: 14px;
-  }
   
   /* Dark mode adjustments */
   :global(.dark) .modal-overlay {
@@ -999,5 +963,48 @@
   :global(.dark) .badge.public {
     background: rgba(34, 197, 94, 0.2);
     color: #4ade80;
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>
