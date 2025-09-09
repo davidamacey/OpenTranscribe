@@ -1402,7 +1402,7 @@
 
   .copy-button-header:hover {
     background-color: var(--hover-bg);
-    color: var(--text-primary);
+    color: var(--primary-color);
     border-color: var(--primary-color);
   }
 
@@ -1462,9 +1462,9 @@
   }
 
   :global(.modal-cancel-button:hover) {
-    background-color: #3b82f6 !important;
+    background-color: #2563eb !important;
     color: white !important;
-    border-color: #3b82f6 !important;
+    border-color: #2563eb !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }

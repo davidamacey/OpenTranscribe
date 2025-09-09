@@ -78,13 +78,15 @@
         </div>
         
         <div class="modal-footer">
-          <button 
-            class="modal-button {cancelButtonClass}" 
-            on:click={handleCancel}
-            type="button"
-          >
-            {cancelText}
-          </button>
+          {#if cancelText}
+            <button 
+              class="modal-button {cancelButtonClass}" 
+              on:click={handleCancel}
+              type="button"
+            >
+              {cancelText}
+            </button>
+          {/if}
           <button 
             class="modal-button {confirmButtonClass}" 
             on:click={handleConfirm}
@@ -207,7 +209,7 @@
   }
 
   .cancel-button {
-    background: var(--surface-color);
+    background: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
@@ -216,18 +218,20 @@
     font-weight: 500;
     transition: all 0.2s ease;
     cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--card-shadow);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     min-width: 120px;
+    /* Ensure high contrast */
+    opacity: 1;
   }
 
   .cancel-button:hover {
-    background: #3b82f6;
+    background: var(--primary-color);
     color: white;
-    border-color: #3b82f6;
+    border-color: var(--primary-color);
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }

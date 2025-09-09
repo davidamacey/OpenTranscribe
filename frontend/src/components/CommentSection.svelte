@@ -1,11 +1,11 @@
 <script>
-  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { fly } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
   import axiosInstance from '../lib/axios';
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
+  import ConfirmationModal from './ConfirmationModal.svelte';
   
   // The Svelte component is exported by default automatically
   
@@ -29,14 +29,18 @@
   /** @type {string} */
   let editingCommentText = '';
   
+  // Confirmation modal state
+  let showConfirmModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
+  
   // Event dispatcher
   const dispatch = createEventDispatcher();
   
   // Event listener for getComments events from parent components
-  /** @param {Event} event */
-  function handleGetCommentsEvent(event) {
-    // Cast standard Event to CustomEvent to access detail property
-    const customEvent = /** @type {CustomEvent} */ (event);
+  function handleGetCommentsEvent() {
     // Send comments data back through the event
     dispatch('getComments', { comments: comments });
   }
@@ -193,8 +197,6 @@
     const timestamp = timestampInput !== null ? timestampInput : null;
     
     // Store locally for optimistic UI updates
-    const commentText = newComment.trim();
-    const currentTimestamp = timestamp;
     try {
       // Get user data from localStorage
       const userData = JSON.parse(localStorage.getItem('user') || '{}');
@@ -215,25 +217,12 @@
         'Content-Type': 'application/json'
       };
 
-      // Prepare the comment data
-      const commentData = {
-        text: newComment,
-        timestamp,
-        media_file_id: numericFileId
-      };
-      
       // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
         // The correct endpoint without leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
         const endpoint = `comments/files/${numericFileId}/comments`;
-        // Adding comment with endpoint
-        
-        // Log the full URL that will be used
-        const baseURL = axiosInstance.defaults.baseURL || '';
-        const fullURL = baseURL + (baseURL.endsWith('/') ? '' : '/') + endpoint;
-        // Full URL for adding comment
         
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
@@ -334,32 +323,6 @@
   
   // Edit a comment
   /**
-   * Set a comment for editing
-   * @param {number} id - The ID of the comment to edit
-   * @param {string} text - The current text of the comment
-   */
-  function startEditing(id, text) {
-    editingCommentId = id;
-    editingCommentText = text;
-  }
-  
-  /**
-   * Cancel editing a comment
-   */
-  function cancelEditing() {
-    editingCommentId = null;
-    editingCommentText = '';
-  }
-  
-  /**
-   * Save edited comment
-   */
-  function saveEdit() {
-    if (editingCommentId === null) return;
-    editComment(editingCommentId, editingCommentText);
-  }
-
-  /**
    * Edit an existing comment
    * @param {number} commentId - The ID of the comment to edit
    * @param {string} newText - The new text for the comment
@@ -398,7 +361,7 @@
         // Request details for editing comment
       }
       
-      const response = await axiosInstance.put(`comments/${commentId}`, {
+      await axiosInstance.put(`comments/${commentId}`, {
         text: newText
       }, { headers });
       
@@ -431,18 +394,55 @@
     }
   }
   
-  // Delete a comment
   /**
-   * Delete a comment by ID
-   * @param {number} commentId - The ID of the comment to delete
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message
+   * @param {() => void} callback - The callback to execute on confirmation
    */
+  function showConfirmation(title, message, callback) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
+  }
+
   /**
    * Delete a comment
    * @param {number} commentId - The ID of the comment to delete
    */
   async function deleteComment(commentId) {
-    if (!confirm('Are you sure you want to delete this comment?')) return;
-    
+    showConfirmation(
+      'Delete Comment',
+      'Are you sure you want to delete this comment?',
+      () => executeDeleteComment(commentId)
+    );
+  }
+
+  /**
+   * Execute comment deletion after confirmation
+   * @param {number} commentId - The ID of the comment to delete
+   */
+  async function executeDeleteComment(commentId) {
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
@@ -700,6 +700,20 @@
     {/if}
   </div>
 </div>
+
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Delete"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
 
 <style>
   .comments-header-internal {
@@ -1041,21 +1055,52 @@
   }
   
   .save-button, .cancel-button {
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    transition: all 0.2s ease;
+    border: none;
+    min-width: 60px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .save-button {
-    background-color: var(--primary-color);
+    background: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+  
+  .save-button:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .save-button:active {
+    transform: translateY(0);
   }
   
   .cancel-button {
+    background-color: var(--card-background);
     color: var(--text-color);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
+  }
+  
+  .cancel-button:hover {
+    background: #2563eb;
+    color: white;
+    border: 1px solid #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .cancel-button:active {
+    transform: translateY(0);
   }
   
   .edit-button {
@@ -1108,5 +1153,48 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

@@ -3,9 +3,17 @@
   import { Link } from 'svelte-navigator';
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
+  import ConfirmationModal from '../components/ConfirmationModal.svelte';
   
   // Modal state
   let showUploadModal = false;
+  
+  // Confirmation modal state
+  let showConfirmModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
   
   // Define types
   interface MediaFile {
@@ -122,6 +130,66 @@
   let selectedStatuses: string[] = [];
   let transcriptSearch: string = '';
   let showFilters: boolean = false; // For mobile
+  
+  /**
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message
+   * @param {() => void} callback - The callback to execute on confirmation
+   */
+  function showConfirmation(title: string, message: string, callback: () => void) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle force delete of processing files
+   */
+  async function handleForceDelete(conflictFileIds: number[]) {
+    try {
+      // Try force deletion for conflicted files
+      const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: conflictFileIds,
+        action: 'delete',
+        force: true
+      });
+      
+      const forceResults = forceResponse.data;
+      const forceSuccessful = forceResults.filter((r: any) => r.success);
+      
+      if (forceSuccessful.length > 0) {
+        toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
+      }
+    } catch (forceErr) {
+      console.error('Error force deleting files:', forceErr);
+      toastStore.error('Failed to force delete some files. They may require admin intervention.');
+    }
+    
+    // Refresh the file list
+    await fetchFiles();
+    clearSelection();
+  }
   
   // Fetch media files
   async function fetchFiles() {
@@ -289,10 +357,17 @@
   async function deleteSelectedFiles() {
     if (selectedFiles.size === 0) return;
     
-    if (!confirm(`Are you sure you want to delete ${selectedFiles.size} selected file(s)? This action cannot be undone.`)) {
-      return;
-    }
-    
+    showConfirmation(
+      'Delete Selected Files',
+      `Are you sure you want to delete ${selectedFiles.size} selected file(s)? This action cannot be undone.`,
+      () => executeDeleteSelectedFiles()
+    );
+  }
+
+  /**
+   * Execute delete selected files after confirmation
+   */
+  async function executeDeleteSelectedFiles() {
     try {
       loading = true;
       
@@ -312,30 +387,14 @@
       
       if (conflicts.length > 0) {
         const conflictFileIds = conflicts.map((c: any) => c.file_id);
-        const proceed = confirm(
+        showConfirmation(
+          'Force Delete Processing Files',
           `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
           `Would you like to cancel their processing and delete them? ` +
-          `(This action cannot be undone)`
+          `(This action cannot be undone)`,
+          () => handleForceDelete(conflictFileIds)
         );
-        
-        if (proceed) {
-          // Try force deletion for conflicted files
-          try {
-            const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
-              file_ids: conflictFileIds,
-              action: 'delete',
-              force: true
-            });
-            
-            const forceResults = forceResponse.data;
-            const forceSuccessful = forceResults.filter((r: any) => r.success);
-            
-            toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
-          } catch (forceErr) {
-            console.error('Error force deleting files:', forceErr);
-            toastStore.error('Failed to force delete some files. They may require admin intervention.');
-          }
-        }
+        return; // Exit early to wait for user confirmation
       }
       
       // Report on regular deletion results
@@ -343,9 +402,8 @@
         toastStore.success(`Successfully deleted ${successful.length} file(s).`);
       }
       
-      const regularFailures = failed.filter((r: any) => !conflicts.some((c: any) => c.file_id === r.file_id));
-      if (regularFailures.length > 0) {
-        toastStore.error(`Failed to delete ${regularFailures.length} file(s). Please try again.`);
+      if (failed.length > 0) {
+        toastStore.error(`Failed to delete ${failed.length} file(s). Please try again.`);
       }
       
       // Refresh the file list
@@ -867,6 +925,19 @@
   </div>
 {/if}
 
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Confirm"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
 
 <style>
   /* Selection controls */
@@ -1792,5 +1863,48 @@
       transition: none;
       animation: none;
     }
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

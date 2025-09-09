@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user } from '../stores/auth';
+  import ConfirmationModal from './ConfirmationModal.svelte';
   
   /**
    * @typedef {Object} User
@@ -40,6 +41,13 @@
 
   /** @type {string} */
   let newRole = 'user';
+
+  // Confirmation modal state
+  let showConfirmModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
 
   /** @type {boolean} */
   let showAddUserForm = false;
@@ -126,14 +134,54 @@
   }
 
   /**
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message
+   * @param {() => void} callback - The callback to execute on confirmation
+   */
+  function showConfirmation(title, message, callback) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
+  }
+
+  /**
    * Delete a user
    * @param {string} userId
    */
   async function deleteUser(userId) {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-      return;
-    }
-    
+    showConfirmation(
+      'Delete User',
+      'Are you sure you want to delete this user? This action cannot be undone.',
+      () => executeDeleteUser(userId)
+    );
+  }
+
+  /**
+   * Execute user deletion after confirmation
+   * @param {string} userId
+   */
+  async function executeDeleteUser(userId) {
     try {
       await axiosInstance.delete(`/api/users/${userId}`);
       successMessage = 'User deleted successfully';
@@ -388,6 +436,20 @@
   {/if}
 </div>
 
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Delete"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
+
 <style>
   .user-management {
     width: 100%;
@@ -629,5 +691,48 @@
     border-radius: 4px;
     margin-top: 1rem;
     color: var(--text-color);
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

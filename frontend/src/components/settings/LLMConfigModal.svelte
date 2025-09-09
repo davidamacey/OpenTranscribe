@@ -1091,4 +1091,53 @@
     align-items: center;
     gap: 0.5rem;
   }
+
+  /* Modal button styles to ensure consistency with other modals */
+  :global(.modal-primary-button) {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
+  }
+
+  :global(.modal-primary-button:hover) {
+    background-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  :global(.modal-primary-button:active) {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
+  }
+
+  :global(.modal-warning-button) {
+    background-color: #f59e0b !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
+  }
+
+  :global(.modal-warning-button:hover) {
+    background-color: #d97706 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25) !important;
+  }
+
+  :global(.modal-warning-button:active) {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
+  }
 </style>

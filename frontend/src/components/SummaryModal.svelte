@@ -558,7 +558,7 @@
 
   .copy-button-header:hover {
     background-color: var(--hover-bg);
-    color: var(--text-primary);
+    color: var(--primary-color);
     border-color: var(--primary-color);
   }
 
@@ -615,6 +615,7 @@
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
+    margin-right: 1.5rem;
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
