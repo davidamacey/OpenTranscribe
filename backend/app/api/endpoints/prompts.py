@@ -105,9 +105,7 @@ def get_prompts(
     )
 
 
-@router.get(
-    "/by-content-type/{content_type}", response_model=schemas.ContentTypePromptsResponse
-)
+@router.get("/by-content-type/{content_type}", response_model=schemas.ContentTypePromptsResponse)
 def get_prompts_by_content_type(
     content_type: str,
     db: Session = Depends(get_db),
@@ -230,9 +228,7 @@ def create_prompt(
     )
 
     if user_prompt_count >= 50:  # Reasonable limit
-        raise HTTPException(
-            status_code=400, detail="Maximum number of custom prompts reached (50)"
-        )
+        raise HTTPException(status_code=400, detail="Maximum number of custom prompts reached (50)")
 
     prompt_data = prompt_in.dict()
     prompt_data.update({"user_id": current_user.id, "is_system_default": False})
@@ -253,11 +249,7 @@ def get_prompt(
     """
     Get a specific prompt by ID
     """
-    prompt = (
-        db.query(models.SummaryPrompt)
-        .filter(models.SummaryPrompt.id == prompt_id)
-        .first()
-    )
+    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -279,11 +271,7 @@ def update_prompt(
     """
     Update a custom summary prompt (user's own prompts only)
     """
-    prompt = (
-        db.query(models.SummaryPrompt)
-        .filter(models.SummaryPrompt.id == prompt_id)
-        .first()
-    )
+    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -313,11 +301,7 @@ def delete_prompt(
     """
     Delete a custom summary prompt (user's own prompts only)
     """
-    prompt = (
-        db.query(models.SummaryPrompt)
-        .filter(models.SummaryPrompt.id == prompt_id)
-        .first()
-    )
+    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -458,9 +442,7 @@ def set_active_prompt(
 
     # Check access: system prompts are public, user prompts are private
     if not prompt.is_system_default and prompt.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="Cannot use other users' custom prompts"
-        )
+        raise HTTPException(status_code=403, detail="Cannot use other users' custom prompts")
 
     if not prompt.is_active:
         raise HTTPException(status_code=400, detail="Cannot use inactive prompt")
@@ -490,6 +472,4 @@ def set_active_prompt(
     db.commit()
     db.refresh(prompt)
 
-    return schemas.ActivePromptResponse(
-        active_prompt_id=prompt.id, active_prompt=prompt
-    )
+    return schemas.ActivePromptResponse(active_prompt_id=prompt.id, active_prompt=prompt)

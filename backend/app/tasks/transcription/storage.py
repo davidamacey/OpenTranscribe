@@ -12,9 +12,7 @@ from app.models.media import TranscriptSegment
 logger = logging.getLogger(__name__)
 
 
-def save_transcript_segments(
-    db: Session, file_id: int, segments: list[dict[str, Any]]
-) -> None:
+def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str, Any]]) -> None:
     """
     Save transcript segments to the database.
 
@@ -53,9 +51,7 @@ def update_media_file_transcription_status(
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
-        logger.error(
-            f"Media file with ID {file_id} not found when updating transcription status"
-        )
+        logger.error(f"Media file with ID {file_id} not found when updating transcription status")
         return
 
     # Calculate duration from segments

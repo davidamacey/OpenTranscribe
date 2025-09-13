@@ -36,8 +36,7 @@ def generate_waveform_data_task(self, file_id: int = None, skip_existing: bool =
                 db.query(MediaFile)
                 .filter(MediaFile.status == FileStatus.COMPLETED)
                 .filter(
-                    MediaFile.content_type.like("audio/%")
-                    | MediaFile.content_type.like("video/%")
+                    MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%")
                 )
             )
 
@@ -49,9 +48,7 @@ def generate_waveform_data_task(self, file_id: int = None, skip_existing: bool =
 
             files_to_process = query.all()
 
-            logger.info(
-                f"Found {len(files_to_process)} files to process for waveform generation"
-            )
+            logger.info(f"Found {len(files_to_process)} files to process for waveform generation")
 
             if not files_to_process:
                 return {
@@ -125,16 +122,12 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
 
                 # Generate waveform data
                 waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator.generate_waveform_data(
-                    temp_file_path
-                )
+                waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
 
                 if waveform_data:
                     # Save to database
                     with session_scope() as db:
-                        media_file = (
-                            db.query(MediaFile).filter(MediaFile.id == file_id).first()
-                        )
+                        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
                         if media_file:
                             media_file.waveform_data = waveform_data
                             db.commit()
@@ -147,9 +140,7 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
                 try:
                     os.unlink(temp_file_path)
                 except Exception as cleanup_error:
-                    logger.warning(
-                        f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}"
-                    )
+                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
 
     except Exception as e:
         logger.error(f"Error generating waveform for file {file_id}: {e}")
@@ -164,8 +155,6 @@ def trigger_waveform_generation(file_id: int = None, skip_existing: bool = True)
         file_id: Specific file ID to process, or None for all files
         skip_existing: Skip files that already have waveform data
     """
-    task = generate_waveform_data_task.delay(
-        file_id=file_id, skip_existing=skip_existing
-    )
+    task = generate_waveform_data_task.delay(file_id=file_id, skip_existing=skip_existing)
     logger.info(f"Triggered waveform generation task: {task.id}")
     return task.id

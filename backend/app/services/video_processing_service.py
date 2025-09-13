@@ -49,9 +49,7 @@ class VideoProcessingService:
                     "error": error,
                 },
             }
-            await redis_client.publish(
-                "websocket_notifications", json.dumps(notification_data)
-            )
+            await redis_client.publish("websocket_notifications", json.dumps(notification_data))
             await redis_client.close()
             logger.info(
                 f"Sent download progress update: user={user_id}, file={file_id}, status={status}"
@@ -102,9 +100,7 @@ class VideoProcessingService:
         """Generate a cache key for processed video using original filename."""
         # Get base filename without extension
         base_name = (
-            original_filename.rsplit(".", 1)[0]
-            if "." in original_filename
-            else original_filename
+            original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
         speaker_suffix = "_with_speakers" if include_speakers else "_no_speakers"
         return f"{base_name}{speaker_suffix}.mp4"
@@ -160,9 +156,7 @@ class VideoProcessingService:
                     if parts[0] and parts[1]:  # Format: bytes=start-end
                         start_byte = int(parts[0])
                         end_byte = (
-                            min(int(parts[1]), total_length - 1)
-                            if total_length
-                            else int(parts[1])
+                            min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
                         )
                     elif parts[0]:  # Format: bytes=start-
                         start_byte = int(parts[0])
@@ -205,10 +199,7 @@ class VideoProcessingService:
 
                     while True:
                         # Adjust final chunk size if we're at the end of requested range
-                        if (
-                            max_bytes is not None
-                            and bytes_read + chunk_size > max_bytes
-                        ):
+                        if max_bytes is not None and bytes_read + chunk_size > max_bytes:
                             final_chunk_size = max_bytes - bytes_read
                             if final_chunk_size <= 0:
                                 break
@@ -234,7 +225,7 @@ class VideoProcessingService:
 
         except Exception as e:
             logger.error(f"Error setting up cached file stream for {object_name}: {e}")
-            raise Exception(f"Error streaming cached file: {e}")
+            raise Exception(f"Error streaming cached file: {e}") from e
 
     def embed_subtitles_in_video(
         self,
@@ -286,9 +277,7 @@ class VideoProcessingService:
             subtitle_path = temp_dir_path / "subtitles.srt"
             try:
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "processing", 20
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "processing", 20)
 
                 subtitle_content = SubtitleService.generate_srt_content(
                     db, file_id, include_speakers
@@ -298,16 +287,12 @@ class VideoProcessingService:
                     f.write(subtitle_content)
 
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "processing", 30
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "processing", 30)
 
             except Exception as e:
                 logger.error(f"Failed to generate subtitles for file {file_id}: {e}")
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "error", error=str(e)
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "error", error=str(e))
                 raise
 
             # Output video path
@@ -360,9 +345,7 @@ class VideoProcessingService:
             try:
                 # Run ffmpeg command
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "processing", 50
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "processing", 50)
 
                 logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
                 result = subprocess.run(
@@ -389,9 +372,7 @@ class VideoProcessingService:
                 logger.info(f"Output file size: {os.path.getsize(output_path)} bytes")
 
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "processing", 80
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "processing", 80)
 
                 # Upload processed video to cache
                 logger.info(
@@ -407,26 +388,22 @@ class VideoProcessingService:
                 logger.info("Upload complete, video processing finished")
 
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "completed", 100
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "completed", 100)
 
                 # Return the cache key instead of presigned URL - we'll stream through backend
                 return cache_key
 
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 logger.error(f"ffmpeg timeout for file {file_id}")
                 if user_id:
                     self._send_download_progress_sync(
                         user_id, file_id, "error", error="Video processing timeout"
                     )
-                raise Exception("Video processing timeout")
+                raise Exception("Video processing timeout") from e
             except Exception as e:
                 logger.error(f"Video processing error for file {file_id}: {e}")
                 if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "error", error=str(e)
-                    )
+                    self._send_download_progress_sync(user_id, file_id, "error", error=str(e))
                 raise
 
     def process_video_with_subtitles(
@@ -458,9 +435,7 @@ class VideoProcessingService:
         if not db_file_for_name:
             raise Exception(f"Media file {file_id} not found")
 
-        cache_key = self.generate_cache_key(
-            file_id, db_file_for_name.filename, include_speakers
-        )
+        cache_key = self.generate_cache_key(file_id, db_file_for_name.filename, include_speakers)
 
         # Check cache first
         if self.is_video_cached(cache_key):
@@ -506,9 +481,7 @@ class VideoProcessingService:
 
             # Clear both speaker variants
             for include_speakers in [True, False]:
-                cache_key = self.generate_cache_key(
-                    file_id, db_file.filename, include_speakers
-                )
+                cache_key = self.generate_cache_key(file_id, db_file.filename, include_speakers)
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")

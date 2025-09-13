@@ -48,9 +48,9 @@ def extract_audio_from_video(video_path: str, output_path: str) -> None:
     """
     logger.info(f"Extracting audio from video file {video_path}")
     try:
-        ffmpeg.input(video_path).output(
-            output_path, acodec="pcm_s16le", ar="16000", ac=1
-        ).run(quiet=True, overwrite_output=True)
+        ffmpeg.input(video_path).output(output_path, acodec="pcm_s16le", ar="16000", ac=1).run(
+            quiet=True, overwrite_output=True
+        )
 
         # Verify output file was created and has content
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
@@ -68,26 +68,23 @@ def extract_audio_from_video(video_path: str, output_path: str) -> None:
         ):
             raise ValueError(
                 "This file appears to be corrupted or is not a valid video file. Please check the file and try uploading again."
-            )
-        elif (
-            "No audio streams found" in stderr_output
-            or "does not contain audio" in stderr_output
-        ):
+            ) from e
+        elif "No audio streams found" in stderr_output or "does not contain audio" in stderr_output:
             raise ValueError(
                 "This video file does not contain any audio tracks. Please upload a video with audio or an audio file directly."
-            )
+            ) from e
         elif "Unknown format" in stderr_output or "not supported" in stderr_output:
             raise ValueError(
                 "This video format is not supported. Please convert to a common format like MP4, AVI, or MOV and try again."
-            )
+            ) from e
         else:
             # Generic fallback for other video processing errors
             raise ValueError(
                 "Unable to extract audio from this video file. The file may be corrupted, password-protected, or in an unsupported format."
-            )
+            ) from e
     except Exception as e:
         logger.error(f"Unexpected error during video audio extraction: {e}")
-        raise ValueError(f"Video audio extraction failed: {str(e)}")
+        raise ValueError(f"Video audio extraction failed: {str(e)}") from e
 
 
 def convert_audio_format(input_path: str, output_path: str) -> None:
@@ -100,9 +97,9 @@ def convert_audio_format(input_path: str, output_path: str) -> None:
     """
     logger.info("Converting audio to WAV format")
     try:
-        ffmpeg.input(input_path).output(
-            output_path, acodec="pcm_s16le", ar="16000", ac=1
-        ).run(quiet=True, overwrite_output=True)
+        ffmpeg.input(input_path).output(output_path, acodec="pcm_s16le", ar="16000", ac=1).run(
+            quiet=True, overwrite_output=True
+        )
 
         # Verify output file was created and has content
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
@@ -122,31 +119,27 @@ def convert_audio_format(input_path: str, output_path: str) -> None:
         ):
             raise ValueError(
                 "This file appears to be corrupted or is not a valid audio/video file. Please check the file and try uploading again."
-            )
+            ) from e
         elif "Unknown format" in stderr_output or "not supported" in stderr_output:
             raise ValueError(
                 "This file format is not supported. Please convert to a common format like MP3, WAV, or MP4 and try again."
-            )
+            ) from e
         elif any(
             keyword in stderr_output.lower()
             for keyword in ["permission denied", "no such file", "directory"]
         ):
-            raise ValueError(
-                "Unable to access the uploaded file. Please try uploading again."
-            )
+            raise ValueError("Unable to access the uploaded file. Please try uploading again.") from e
         else:
             # Generic fallback for other ffmpeg errors
             raise ValueError(
                 "Unable to process this file as audio/video content. The file may be corrupted, password-protected, or in an unsupported format."
-            )
+            ) from e
     except Exception as e:
         logger.error(f"Unexpected error during audio conversion: {e}")
-        raise ValueError(f"Audio processing failed: {str(e)}")
+        raise ValueError(f"Audio processing failed: {str(e)}") from e
 
 
-def prepare_audio_for_transcription(
-    temp_file_path: str, content_type: str, temp_dir: str
-) -> str:
+def prepare_audio_for_transcription(temp_file_path: str, content_type: str, temp_dir: str) -> str:
     """
     Prepare audio file for transcription by extracting from video or converting format.
 

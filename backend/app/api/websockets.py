@@ -33,9 +33,7 @@ class ConnectionManager:
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
         self.active_connections[user_id].append(websocket)
-        logger.info(
-            f"User {user_id} connected. Total connections: {len(self.active_connections)}"
-        )
+        logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket, user_id: int):
         if user_id in self.active_connections:
@@ -99,9 +97,7 @@ async def redis_subscriber():
                             f"Forwarded notification to user {user_id}: {notification_type}"
                         )
                     else:
-                        logger.warning(
-                            f"Invalid notification data: {notification_data}"
-                        )
+                        logger.warning(f"Invalid notification data: {notification_data}")
                 except Exception as e:
                     logger.error(f"Error processing Redis notification: {e}")
     except Exception as e:
@@ -118,9 +114,7 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
 
     try:
         await redis_client.publish("websocket_notifications", json.dumps(notification))
-        logger.info(
-            f"Published notification to Redis for user {user_id}: {notification_type}"
-        )
+        logger.info(f"Published notification to Redis for user {user_id}: {notification_type}")
     except Exception as e:
         logger.error(f"Failed to publish notification to Redis: {e}")
 

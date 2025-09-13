@@ -34,18 +34,14 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
 
         # Patterns that should bypass middleware handling (let FastAPI handle them)
         self.bypass_patterns = [
-            re.compile(
-                f"^{api_prefix}/files/\\d+/?$"
-            ),  # Files with ID (GET, PUT, DELETE)
+            re.compile(f"^{api_prefix}/files/\\d+/?$"),  # Files with ID (GET, PUT, DELETE)
             re.compile(f"^{api_prefix}/tags/\\d+/?$"),  # Tags with ID
             re.compile(f"^{api_prefix}/speakers/\\d+/?$"),  # Speakers with ID
         ]
 
         # Also handle with or without trailing slash
         logger.info(f"Router will match {api_prefix}/tags/ and {api_prefix}/tags")
-        logger.info(
-            f"Router will match {api_prefix}/speakers/ and {api_prefix}/speakers"
-        )
+        logger.info(f"Router will match {api_prefix}/speakers/ and {api_prefix}/speakers")
 
     async def dispatch(self, request: Request, call_next):
         original_path = request.url.path
@@ -70,9 +66,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
 
             # Bypass speaker-related endpoint handling too, like we do for tags
             elif original_path.startswith(f"{self.api_prefix}/speakers"):
-                logger.info(
-                    f"Bypassing middleware for speaker request: {original_path}"
-                )
+                logger.info(f"Bypassing middleware for speaker request: {original_path}")
                 # explicitly do nothing, let it pass through
 
         # Call the next middleware in the chain
@@ -80,9 +74,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
 
         # If we got a 404, it might be due to a route mismatch
         if response.status_code == 404 and original_path.startswith(self.api_prefix):
-            logger.warning(
-                f"404 for path {request.method} {original_path} - attempting to fix"
-            )
+            logger.warning(f"404 for path {request.method} {original_path} - attempting to fix")
 
             # First check if this path should bypass middleware handling
             for bypass_pattern in self.bypass_patterns:
@@ -95,9 +87,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
             # Check if any of our route patterns match
             for pattern, handler in self.route_patterns:
                 if pattern.match(original_path):
-                    logger.info(
-                        f"Matched pattern for {original_path}, delegating to handler"
-                    )
+                    logger.info(f"Matched pattern for {original_path}, delegating to handler")
                     try:
                         # Call the specific handler for this route pattern
                         return await handler(request)
@@ -105,9 +95,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
                         logger.error(f"Error in route handler: {e}")
                         return JSONResponse(
                             status_code=500,
-                            content={
-                                "detail": "Internal server error in route handler"
-                            },
+                            content={"detail": "Internal server error in route handler"},
                         )
 
         return response
@@ -119,9 +107,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
             # Get current user from auth token
             auth_header = request.headers.get("Authorization")
             if not auth_header or not auth_header.startswith("Bearer "):
-                return JSONResponse(
-                    status_code=401, content={"detail": "Not authenticated"}
-                )
+                return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
 
             # This is a simplified approach for middleware - in a real system,
             # we would properly extract and verify the token
@@ -144,9 +130,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
         # Get current user from auth token
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401, content={"detail": "Not authenticated"}
-            )
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
 
         # We now pass through to the actual endpoints
         try:
@@ -180,9 +164,7 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
         return JSONResponse(status_code=200, content=[])
 
     async def handle_file_tags_endpoint(self, request: Request):
-        logger.info(
-            f"Handling file tags operation: {request.method} {request.url.path}"
-        )
+        logger.info(f"Handling file tags operation: {request.method} {request.url.path}")
 
         try:
             # Parse the request path to get file_id
@@ -199,19 +181,13 @@ class RouteFixerMiddleware(BaseHTTPMiddleware):
                 # Get current user from auth token
                 auth_header = request.headers.get("Authorization")
                 if not auth_header or not auth_header.startswith("Bearer "):
-                    return JSONResponse(
-                        status_code=401, content={"detail": "Not authenticated"}
-                    )
+                    return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
 
                 # Let the actual API handle this request - return a 404 and FastAPI will handle it
                 return JSONResponse(status_code=404, content={"detail": "Not Found"})
             else:
-                logger.error(
-                    f"Invalid path format for file tags operation: {request.url.path}"
-                )
-                return JSONResponse(
-                    status_code=404, content={"detail": "Invalid path format"}
-                )
+                logger.error(f"Invalid path format for file tags operation: {request.url.path}")
+                return JSONResponse(status_code=404, content={"detail": "Invalid path format"})
         except Exception as e:
             logger.error(f"Error in file tags endpoint handler: {e}")
             return JSONResponse(status_code=500, content={"detail": str(e)})

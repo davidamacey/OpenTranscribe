@@ -48,9 +48,7 @@ def test_search_files(client, user_token_headers, test_file_for_search):
 def test_search_with_filters(client, user_token_headers, test_file_for_search):
     """Test searching with filters"""
     # Search with language filter
-    response = client.get(
-        "/api/search/?query=test&language=en", headers=user_token_headers
-    )
+    response = client.get("/api/search/?query=test&language=en", headers=user_token_headers)
     assert response.status_code == 200
     results = response.json()
 

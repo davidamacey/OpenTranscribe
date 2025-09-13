@@ -45,16 +45,12 @@ def startup_recovery_task(self):
             abandoned_files = task_detection_service.identify_abandoned_files(db)
             summary["abandoned_files_found"] = len(abandoned_files)
 
-            reset_count = task_recovery_service.reset_abandoned_files(
-                db, abandoned_files
-            )
+            reset_count = task_recovery_service.reset_abandoned_files(db, abandoned_files)
             summary["abandoned_files_reset"] = reset_count
 
             # Step 2: Retry abandoned files
             retry_count = 0
-            for media_file in abandoned_files[
-                :reset_count
-            ]:  # Only retry successfully reset files
+            for media_file in abandoned_files[:reset_count]:  # Only retry successfully reset files
                 if task_recovery_service.schedule_file_retry(media_file.id):
                     retry_count += 1
             summary["files_retried"] = retry_count
@@ -63,9 +59,7 @@ def startup_recovery_task(self):
             orphaned_tasks = task_detection_service.identify_orphaned_tasks(db)
             summary["orphaned_tasks_found"] = len(orphaned_tasks)
 
-            failed_count = task_recovery_service.recover_orphaned_tasks(
-                db, orphaned_tasks
-            )
+            failed_count = task_recovery_service.recover_orphaned_tasks(db, orphaned_tasks)
             summary["orphaned_tasks_failed"] = failed_count
 
             logger.info(
@@ -138,9 +132,7 @@ def recover_user_files_task(self, user_id: int = None):
     bind=True,
     time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME,
 )
-@with_task_lock(
-    "periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME
-)
+@with_task_lock("periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
 def periodic_health_check_task(self):
     """
     Periodic task to check for stuck tasks and inconsistent media files.
@@ -176,9 +168,7 @@ def periodic_health_check_task(self):
             summary["stuck_tasks_recovered"] = recovered_count
 
             # Step 2: Identify and fix inconsistent media files
-            inconsistent_files = (
-                task_detection_service.identify_inconsistent_media_files(db)
-            )
+            inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
             summary["inconsistent_files_found"] = len(inconsistent_files)
 
             fixed_count = 0
@@ -190,23 +180,15 @@ def periodic_health_check_task(self):
 
             # Step 3: Identify and recover files stuck without active Celery tasks
             stuck_files_without_celery = (
-                task_detection_service.identify_stuck_files_without_active_celery_tasks(
-                    db
-                )
+                task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
             )
-            summary["stuck_files_without_celery_found"] = len(
-                stuck_files_without_celery
-            )
+            summary["stuck_files_without_celery_found"] = len(stuck_files_without_celery)
 
             if stuck_files_without_celery:
-                recovery_stats = (
-                    task_recovery_service.recover_stuck_files_without_celery_tasks(
-                        db, stuck_files_without_celery
-                    )
+                recovery_stats = task_recovery_service.recover_stuck_files_without_celery_tasks(
+                    db, stuck_files_without_celery
                 )
-                summary["stuck_files_without_celery_recovered"] = recovery_stats[
-                    "files_recovered"
-                ]
+                summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
                 logger.info(
                     f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
                 )

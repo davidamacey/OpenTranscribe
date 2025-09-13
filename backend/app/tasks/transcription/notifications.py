@@ -5,9 +5,33 @@ import redis
 
 from app.api.websockets import send_notification
 from app.core.config import settings
+from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.models.media import MediaFile
 
 logger = logging.getLogger(__name__)
+
+
+def get_file_metadata(file_id: int) -> dict:
+    """Get basic file metadata for notifications."""
+    try:
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if media_file:
+                return {
+                    "filename": media_file.filename,
+                    "content_type": media_file.content_type,
+                    "file_size": media_file.file_size,
+                }
+    except Exception as e:
+        logger.warning(f"Failed to get file metadata for file {file_id}: {e}")
+
+    # Return minimal data if query fails
+    return {
+        "filename": f"File {file_id}",
+        "content_type": "unknown",
+        "file_size": 0,
+    }
 
 
 async def send_status_notification(
@@ -27,6 +51,9 @@ async def send_status_notification(
         True if notification was sent successfully, False otherwise
     """
     try:
+        # Get file metadata
+        file_metadata = get_file_metadata(file_id)
+
         await send_notification(
             user_id,
             "transcription_status",
@@ -35,6 +62,9 @@ async def send_status_notification(
                 "status": status.value,
                 "message": message,
                 "progress": progress,
+                "filename": file_metadata["filename"],
+                "content_type": file_metadata["content_type"],
+                "file_size": file_metadata["file_size"],
             },
         )
         return True
@@ -63,6 +93,9 @@ def send_notification_via_redis(
         # Create Redis client
         redis_client = redis.from_url(settings.REDIS_URL)
 
+        # Get file metadata
+        file_metadata = get_file_metadata(file_id)
+
         # Prepare notification data
         notification = {
             "user_id": user_id,
@@ -72,6 +105,9 @@ def send_notification_via_redis(
                 "status": status.value,
                 "message": message,
                 "progress": progress,
+                "filename": file_metadata["filename"],
+                "content_type": file_metadata["content_type"],
+                "file_size": file_metadata["file_size"],
             },
         }
 
@@ -111,31 +147,23 @@ def send_notification_with_retry(
     """
     for retry in range(max_retries):
         try:
-            success = send_notification_via_redis(
-                user_id, file_id, status, message, progress
-            )
+            success = send_notification_via_redis(user_id, file_id, status, message, progress)
             if success:
                 logger.info(
                     f"Successfully sent notification for file {file_id} on attempt {retry + 1}"
                 )
                 return True
             else:
-                logger.warning(
-                    f"Failed to send notification (attempt {retry + 1}/{max_retries})"
-                )
+                logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries})")
         except Exception as e:
-            logger.warning(
-                f"Failed to send notification (attempt {retry + 1}/{max_retries}): {e}"
-            )
+            logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries}): {e}")
 
         if retry < max_retries - 1:  # Don't sleep on the last attempt
             import time
 
             time.sleep(1)  # Short delay before retry
 
-    logger.error(
-        f"Failed to send notification for file {file_id} after {max_retries} attempts"
-    )
+    logger.error(f"Failed to send notification for file {file_id} after {max_retries} attempts")
     return False
 
 
@@ -146,9 +174,7 @@ def send_processing_notification(user_id: int, file_id: int) -> None:
     )
 
 
-def send_progress_notification(
-    user_id: int, file_id: int, progress: float, message: str
-) -> None:
+def send_progress_notification(user_id: int, file_id: int, progress: float, message: str) -> None:
     """Send progress update notification."""
     progress_percent = int(progress * 100)
     send_notification_with_retry(
@@ -165,6 +191,56 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
         "Transcription completed successfully",
         progress=100,
     )
+
+    # Also send a file_updated notification to refresh the gallery item
+    try:
+        from app.db.session_utils import session_scope
+
+        # Get updated file data for gallery
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            if media_file:
+                # Create file data for gallery update
+                file_data = {
+                    "id": media_file.id,
+                    "filename": media_file.filename,
+                    "status": media_file.status.value if media_file.status else "completed",
+                    "content_type": media_file.content_type,
+                    "file_size": media_file.file_size,
+                    "title": media_file.title,
+                    "author": media_file.author,
+                    "duration": media_file.duration,
+                    "thumbnail_url": f"/api/files/{media_file.id}/thumbnail"
+                    if media_file.thumbnail_path
+                    else None,
+                    "upload_time": media_file.upload_time.isoformat()
+                    if media_file.upload_time
+                    else None,
+                }
+
+                # Send file_updated notification via Redis (since we're in sync context)
+                import json
+
+                import redis
+
+                from app.core.config import settings
+
+                redis_client = redis.from_url(settings.REDIS_URL)
+                notification = {
+                    "user_id": user_id,
+                    "type": "file_updated",
+                    "data": {
+                        "file_id": str(file_id),
+                        "file": file_data,
+                        "status": "completed",
+                        "message": "File processing completed",
+                    },
+                }
+                redis_client.publish("websocket_notifications", json.dumps(notification))
+                logger.info(f"Sent file_updated notification for completed file {file_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to send file_updated notification for file {file_id}: {e}")
 
 
 def send_error_notification(user_id: int, file_id: int, error_message: str) -> None:

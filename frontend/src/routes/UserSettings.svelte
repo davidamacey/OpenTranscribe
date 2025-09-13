@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import axios from 'axios';
   import axiosInstance from '../lib/axios';
   import { authStore, fetchUserInfo } from '../stores/auth';
   import LLMSettings from '../components/settings/LLMSettings.svelte';
   import PromptSettings from '../components/settings/PromptSettings.svelte';
+  import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '../lib/api/userSettings';
   
   // Explicitly declare router props to prevent warnings
   export let location = null;
@@ -29,12 +29,21 @@
   let showCurrentPassword = false;
   let showNewPassword = false;
   let showConfirmPassword = false;
+
+  // Recording settings - now persisted in database instead of localStorage
+  let maxRecordingDuration = 120; // minutes (default 2 hours)
+  let recordingQuality = 'high'; // 'standard', 'high', 'maximum'
+  let autoStopEnabled = true;
+  let recordingSettingsChanged = false;
+  let recordingSettingsLoading = false; // Loading state for API operations
+  let migrationCompleted = false; // Track localStorage migration
   
   // Tab management
   let activeTab = 'profile';
   const tabs = [
     { id: 'profile', label: 'Profile' },
     { id: 'password', label: 'Password' },
+    { id: 'recording', label: 'Recording' },
     { id: 'ai-prompts', label: 'AI Prompts' },
     { id: 'llm-provider', label: 'LLM Provider' }
   ];
@@ -45,6 +54,7 @@
       fullName = $authStore.user.full_name || '';
       email = $authStore.user.email || '';
     }
+    loadRecordingSettings();
   });
   
   // Handle tab changes
@@ -151,6 +161,107 @@
   function toggleConfirmPasswordVisibility() {
     showConfirmPassword = !showConfirmPassword;
   }
+
+  // Load recording settings from database (with localStorage migration)
+  async function loadRecordingSettings() {
+    recordingSettingsLoading = true;
+    error = '';
+    
+    try {
+      // Check if we need to migrate from localStorage
+      const localStorageSettings = RecordingSettingsHelper.migrateFromLocalStorage();
+      
+      if (localStorageSettings && !migrationCompleted) {
+        console.log('Migrating recording settings from localStorage to database...');
+        
+        try {
+          // Save migrated settings to database
+          const savedSettings = await UserSettingsApi.updateRecordingSettings(localStorageSettings);
+          
+          // Update local state
+          maxRecordingDuration = savedSettings.max_recording_duration;
+          recordingQuality = savedSettings.recording_quality;
+          autoStopEnabled = savedSettings.auto_stop_enabled;
+          
+          // Clean up localStorage after successful migration
+          RecordingSettingsHelper.cleanupLocalStorage();
+          migrationCompleted = true;
+          
+          console.log('Successfully migrated recording settings to database');
+          return;
+        } catch (migrationError) {
+          console.error('Failed to migrate settings to database, will load from server:', migrationError);
+          // Continue to load from server below
+        }
+      }
+      
+      // Load from database
+      const settings = await UserSettingsApi.getRecordingSettings();
+      maxRecordingDuration = settings.max_recording_duration;
+      recordingQuality = settings.recording_quality;
+      autoStopEnabled = settings.auto_stop_enabled;
+      
+    } catch (err) {
+      console.warn('Error loading recording settings from database:', err);
+      // Fall back to defaults
+      maxRecordingDuration = 120;
+      recordingQuality = 'high';
+      autoStopEnabled = true;
+    } finally {
+      recordingSettingsLoading = false;
+    }
+  }
+
+  // Save recording settings to database
+  async function saveRecordingSettings() {
+    recordingSettingsLoading = true;
+    error = '';
+    
+    const settingsToSave = {
+      max_recording_duration: maxRecordingDuration,
+      recording_quality: recordingQuality,
+      auto_stop_enabled: autoStopEnabled
+    };
+    
+    // Validate settings client-side
+    const validationErrors = RecordingSettingsHelper.validateSettings(settingsToSave);
+    if (validationErrors.length > 0) {
+      error = validationErrors[0]; // Show first error
+      recordingSettingsLoading = false;
+      return;
+    }
+    
+    try {
+      const updatedSettings = await UserSettingsApi.updateRecordingSettings(settingsToSave);
+      
+      // Update local state with server response
+      maxRecordingDuration = updatedSettings.max_recording_duration;
+      recordingQuality = updatedSettings.recording_quality;
+      autoStopEnabled = updatedSettings.auto_stop_enabled;
+      
+      recordingSettingsChanged = false;
+      success = 'Recording settings saved successfully';
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        success = '';
+      }, 3000);
+      
+    } catch (err) {
+      console.error('Error saving recording settings:', err);
+      const errorObj = err as any;
+      error = errorObj.response?.data?.detail || 'Failed to save recording settings';
+    } finally {
+      recordingSettingsLoading = false;
+    }
+  }
+
+  // Track recording settings changes
+  function onRecordingSettingChange() {
+    recordingSettingsChanged = true;
+    success = '';
+    error = '';
+  }
 </script>
 
 <div class="settings-container">
@@ -178,6 +289,18 @@
         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
       </svg>
       Password
+    </button>
+    <button 
+      class="tab-button {activeTab === 'recording' ? 'active' : ''}"
+      on:click={() => switchTab('recording')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+      Recording
     </button>
     <button 
       class="tab-button {activeTab === 'ai-prompts' ? 'active' : ''}"
@@ -428,6 +551,97 @@
       </div>
     {/if}
     
+    {#if activeTab === 'recording'}
+      <div class="settings-section">
+        <h2>Recording Settings</h2>
+        
+        {#if success}
+          <div class="success-message">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            {success}
+          </div>
+        {/if}
+        
+        {#if error}
+          <div class="error-message">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            {error}
+          </div>
+        {/if}
+        
+        <div class="form-group">
+          <label for="maxRecordingDuration">Maximum Recording Duration</label>
+          <select 
+            id="maxRecordingDuration" 
+            bind:value={maxRecordingDuration}
+            on:change={onRecordingSettingChange}
+            class="form-control"
+            title="Set the maximum duration for audio recordings"
+          >
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>1 hour</option>
+            <option value={120}>2 hours</option>
+            <option value={240}>4 hours</option>
+            <option value={480}>8 hours</option>
+          </select>
+          <small class="form-text">Maximum recording length. Recordings will be automatically stopped when this limit is reached (if auto-stop is enabled below).</small>
+        </div>
+
+        <div class="form-group">
+          <label for="recordingQuality">Audio Quality</label>
+          <select 
+            id="recordingQuality" 
+            bind:value={recordingQuality}
+            on:change={onRecordingSettingChange}
+            class="form-control"
+            title="Choose the audio quality for recordings"
+          >
+            <option value="standard">Standard (64 kbps)</option>
+            <option value="high">High (128 kbps)</option>
+            <option value="maximum">Maximum (256 kbps)</option>
+          </select>
+          <small class="form-text">Higher quality settings produce larger files but better audio.</small>
+        </div>
+
+        <div class="form-group">
+          <div class="checkbox-wrapper">
+            <input 
+              type="checkbox" 
+              id="autoStopEnabled" 
+              bind:checked={autoStopEnabled}
+              on:change={onRecordingSettingChange}
+              title="Automatically stop recording at the maximum duration"
+            />
+            <label for="autoStopEnabled">Automatically stop at maximum duration</label>
+          </div>
+          <small class="form-text">When enabled, recordings will be automatically stopped when the maximum duration is reached. When disabled, you can record beyond the limit but will need to manually stop.</small>
+        </div>
+
+        <div class="form-actions">
+          <button 
+            type="button" 
+            on:click={saveRecordingSettings}
+            disabled={!recordingSettingsChanged || recordingSettingsLoading}
+            class="button primary-button"
+            title="Save your recording preferences"
+          >
+            {#if recordingSettingsLoading}
+              Saving...
+            {:else}
+              Save Recording Settings
+            {/if}
+          </button>
+        </div>
+      </div>
+    {/if}
+    
     {#if activeTab === 'ai-prompts'}
       <div class="settings-section">
         <PromptSettings onSettingsChange={onAISettingsChange} />
@@ -533,8 +747,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    margin-bottom: 1.5rem;
   }
-  
+
+  .form-group:last-of-type {
+    margin-bottom: 1rem;
+  }
+
   .password-header {
     display: flex;
     justify-content: space-between;
@@ -570,6 +789,7 @@
     font-size: 0.9rem;
     background-color: var(--background-color);
     color: var(--text-color);
+    width: 100%;
   }
   
   .form-control:disabled {
@@ -647,6 +867,24 @@
     margin-bottom: 1rem;
   }
   
+  .checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .checkbox-wrapper input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .checkbox-wrapper label {
+    margin: 0;
+    cursor: pointer;
+    font-weight: 500;
+  }
+
   @media (max-width: 768px) {
     .tabs-nav {
       flex-wrap: nowrap;

@@ -106,9 +106,7 @@ def upgrade():
             default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(
-            ["media_file_id"], ["media_file.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["media_file_id"], ["media_file.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["speaker_id"],
             ["speaker.id"],
@@ -241,9 +239,7 @@ def downgrade():
     op.drop_index("ix_task_user_id", table_name="task")
     op.drop_index("ix_comment_file_id", table_name="comment")
     op.drop_index("ix_transcript_segment_speaker_id", table_name="transcript_segment")
-    op.drop_index(
-        "ix_transcript_segment_media_file_id", table_name="transcript_segment"
-    )
+    op.drop_index("ix_transcript_segment_media_file_id", table_name="transcript_segment")
     op.drop_index("ix_media_file_user_id", table_name="media_file")
     op.drop_index("ix_user_email", table_name="user")
 

@@ -61,9 +61,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                 continue
 
             # Calculate similarity
-            similarity = calculate_cosine_similarity(
-                embedding_array, np.array(other_embedding)
-            )
+            similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
 
             logger.info(
                 f"Similarity between {updated_speaker.display_name} and {speaker.name}: {similarity:.3f}"
@@ -104,9 +102,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
         db.rollback()
 
 
-def calculate_cosine_similarity(
-    embedding1: np.ndarray, embedding2: np.ndarray
-) -> float:
+def calculate_cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
     """Calculate cosine similarity between two embeddings."""
     # Normalize embeddings
     norm1 = embedding1 / np.linalg.norm(embedding1)
@@ -119,9 +115,7 @@ def calculate_cosine_similarity(
     return float((similarity + 1) / 2)
 
 
-def store_speaker_match(
-    speaker1_id: int, speaker2_id: int, confidence: float, db: Session
-) -> None:
+def store_speaker_match(speaker1_id: int, speaker2_id: int, confidence: float, db: Session) -> None:
     """Store a speaker match in the database."""
     # Ensure consistent ordering (smaller ID first)
     smaller_id = min(speaker1_id, speaker2_id)

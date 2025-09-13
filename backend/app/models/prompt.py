@@ -22,6 +22,7 @@ class SummaryPrompt(Base):
     Supports both system-provided default prompts and user-created custom prompts.
     Allows for multiple prompts per content type with proper management.
     """
+
     __tablename__ = "summary_prompt"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -29,11 +30,17 @@ class SummaryPrompt(Base):
     description = Column(Text, nullable=True)
     prompt_text = Column(Text, nullable=False)
     is_system_default = Column(Boolean, nullable=False, default=False)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     is_active = Column(Boolean, nullable=False, default=True)
-    content_type = Column(String(50), nullable=True, index=True)  # 'meeting', 'interview', 'podcast', 'documentary', 'general'
+    content_type = Column(
+        String(50), nullable=True, index=True
+    )  # 'meeting', 'interview', 'podcast', 'documentary', 'general'
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     user = relationship("User", back_populates="summary_prompts")
@@ -45,14 +52,19 @@ class UserSetting(Base):
 
     Key-value store for user preferences including active summary prompt selection.
     """
+
     __tablename__ = "user_setting"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     setting_key = Column(String(100), nullable=False, index=True)
     setting_value = Column(Text, nullable=True)  # Can store JSON or simple values
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     user = relationship("User", back_populates="settings")

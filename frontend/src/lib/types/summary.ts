@@ -48,6 +48,7 @@ export interface SummaryMetadata {
 export interface SummaryData {
   bluf: string;
   brief_summary: string;
+  speakers: SpeakerInfo[];
   major_topics: MajorTopic[];
   action_items: ActionItem[];
   key_decisions: string[];

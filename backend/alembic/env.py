@@ -2,15 +2,14 @@ import os
 import sys
 from logging.config import fileConfig
 
+# Add the parent directory to Python path BEFORE app imports
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
-
-# Add the parent directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
-# Import models and config
 from app.db.base import Base
 
 # NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema
@@ -21,7 +20,6 @@ from app.db.base import Base
 config = context.config
 
 # Setup the connection string
-from dotenv import load_dotenv
 
 load_dotenv()
 

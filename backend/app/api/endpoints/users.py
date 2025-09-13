@@ -52,9 +52,7 @@ def create_user(user_data: UserCreate, db: Session) -> User:
 
 
 @router.get("/", response_model=list[UserSchema])
-def list_users(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
-):
+def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     List all users (admin only)
     """
@@ -118,9 +116,7 @@ def get_user(
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
 
@@ -136,9 +132,7 @@ def update_user(
     """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Update fields
     update_data = user_update.model_dump(exclude_unset=True)
@@ -174,9 +168,7 @@ def delete_user(
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     db.delete(user)
     db.commit()

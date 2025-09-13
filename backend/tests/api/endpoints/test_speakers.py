@@ -14,9 +14,7 @@ def test_list_speakers_unauthorized(client):
 def test_create_speaker(client, user_token_headers, db_session):
     """Test creating a new speaker"""
     speaker_data = {"name": "Test Speaker"}
-    response = client.post(
-        "/api/speakers/", headers=user_token_headers, json=speaker_data
-    )
+    response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     assert response.status_code == 200
     speaker = response.json()
     assert "id" in speaker
@@ -25,9 +23,7 @@ def test_create_speaker(client, user_token_headers, db_session):
     # Verify speaker exists in the database
     from app.models.media import Speaker
 
-    db_speaker = (
-        db_session.query(Speaker).filter(Speaker.name == "Test Speaker").first()
-    )
+    db_speaker = db_session.query(Speaker).filter(Speaker.name == "Test Speaker").first()
     assert db_speaker is not None
     assert db_speaker.name == "Test Speaker"
 
@@ -36,9 +32,7 @@ def test_get_speaker(client, user_token_headers, db_session):
     """Test getting a specific speaker"""
     # First create a speaker
     speaker_data = {"name": "Speaker for Get Test"}
-    create_response = client.post(
-        "/api/speakers/", headers=user_token_headers, json=speaker_data
-    )
+    create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
 
     # Now get the speaker
@@ -53,9 +47,7 @@ def test_update_speaker(client, user_token_headers, db_session):
     """Test updating a speaker"""
     # First create a speaker
     speaker_data = {"name": "Speaker for Update Test"}
-    create_response = client.post(
-        "/api/speakers/", headers=user_token_headers, json=speaker_data
-    )
+    create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
 
     # Now update the speaker
@@ -79,9 +71,7 @@ def test_delete_speaker(client, user_token_headers, db_session):
     """Test deleting a speaker"""
     # First create a speaker
     speaker_data = {"name": "Speaker for Delete Test"}
-    create_response = client.post(
-        "/api/speakers/", headers=user_token_headers, json=speaker_data
-    )
+    create_response = client.post("/api/speakers/", headers=user_token_headers, json=speaker_data)
     speaker_id = create_response.json()["id"]
 
     # Now delete the speaker

@@ -34,9 +34,7 @@ class TaskLockManager:
         if self._redis_client is None:
             try:
                 # Parse Redis URL and create client
-                self._redis_client = redis.from_url(
-                    self.redis_url, decode_responses=True
-                )
+                self._redis_client = redis.from_url(self.redis_url, decode_responses=True)
                 # Test connection
                 self._redis_client.ping()
             except Exception as e:
@@ -46,9 +44,7 @@ class TaskLockManager:
         return self._redis_client if self._redis_client is not False else None
 
     @contextmanager
-    def acquire_lock(
-        self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0
-    ):
+    def acquire_lock(self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
         """
         Acquire a distributed lock for task execution.
 
@@ -84,9 +80,7 @@ class TaskLockManager:
             if acquired:
                 logger.info(f"Acquired lock for {lock_key}")
             else:
-                logger.info(
-                    f"Could not acquire lock for {lock_key} - task may already be running"
-                )
+                logger.info(f"Could not acquire lock for {lock_key} - task may already be running")
 
             yield acquired
 
@@ -97,7 +91,7 @@ class TaskLockManager:
 
         except Exception as e:
             logger.error(f"Unexpected error during lock operation for {lock_key}: {e}")
-            raise TaskLockError(f"Lock operation failed: {e}")
+            raise TaskLockError(f"Lock operation failed: {e}") from e
 
         finally:
             # Release lock if acquired

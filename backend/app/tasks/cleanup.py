@@ -49,7 +49,7 @@ def run_periodic_cleanup(self):
     except Exception as e:
         logger.error(f"Critical error in periodic cleanup: {e}")
         # Don't retry automatically to avoid infinite loops
-        raise self.retry(countdown=3600, max_retries=3)  # Retry in 1 hour
+        raise self.retry(countdown=3600, max_retries=3) from e  # Retry in 1 hour
 
 
 @shared_task(bind=True, name="cleanup.deep_cleanup")

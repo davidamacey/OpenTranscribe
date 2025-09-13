@@ -20,7 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 def send_summary_notification(
-    user_id: int, file_id: int, status: str, message: str, progress: int = 0
+    user_id: int,
+    file_id: int,
+    status: str,
+    message: str,
+    progress: int = 0,
+    summary_data: dict = None,
+    summary_opensearch_id: str = None,
 ) -> bool:
     """
     Send summary status notification via Redis pub/sub from synchronous context (like Celery worker).
@@ -31,6 +37,8 @@ def send_summary_notification(
         status: Summary status ('processing', 'completed', 'failed')
         message: Status message
         progress: Progress percentage
+        summary_data: Summary content (included when status is 'completed')
+        summary_opensearch_id: OpenSearch document ID (included when status is 'completed')
 
     Returns:
         True if notification was sent successfully, False otherwise
@@ -39,16 +47,32 @@ def send_summary_notification(
         # Create Redis client
         redis_client = redis.from_url(settings.REDIS_URL)
 
+        # Get file metadata
+        from app.tasks.transcription.notifications import get_file_metadata
+
+        file_metadata = get_file_metadata(file_id)
+
         # Prepare notification data
+        notification_data = {
+            "file_id": str(file_id),
+            "status": status,
+            "message": message,
+            "progress": progress,
+            "filename": file_metadata["filename"],
+            "content_type": file_metadata["content_type"],
+            "file_size": file_metadata["file_size"],
+        }
+
+        # Include summary data when status is completed
+        if status == "completed" and summary_data:
+            notification_data["summary"] = summary_data
+        if status == "completed" and summary_opensearch_id:
+            notification_data["summary_opensearch_id"] = summary_opensearch_id
+
         notification = {
             "user_id": user_id,
-            "type": "summary_status",
-            "data": {
-                "file_id": str(file_id),
-                "status": status,
-                "message": message,
-                "progress": progress,
-            },
+            "type": "summarization_status",
+            "data": notification_data,
         }
 
         # Publish to Redis
@@ -59,15 +83,17 @@ def send_summary_notification(
         return True
 
     except Exception as e:
-        logger.error(
-            f"Failed to send summary notification via Redis for file {file_id}: {e}"
-        )
+        logger.error(f"Failed to send summary notification via Redis for file {file_id}: {e}")
         return False
 
 
 @celery_app.task(bind=True, name="summarize_transcript")
 def summarize_transcript_task(
-    self, file_id: int, provider: Optional[str] = None, model: Optional[str] = None
+    self,
+    file_id: int,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    force_regenerate: bool = False,
 ):
     """
     Generate a comprehensive summary of a transcript using LLM with structured BLUF format
@@ -79,6 +105,7 @@ def summarize_transcript_task(
         file_id: Database ID of the MediaFile to summarize
         provider: Optional LLM provider override (openai, vllm, ollama, etc.)
         model: Optional model override
+        force_regenerate: If True, clear existing summaries before regenerating
     """
     task_id = self.request.id
     db = SessionLocal()
@@ -98,6 +125,26 @@ def summarize_transcript_task(
         # Update task status
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
+        # Handle force regeneration - clear existing summaries
+        if force_regenerate:
+            logger.info(
+                f"Force regenerate requested - clearing existing summaries for file {file_id}"
+            )
+
+            # Clear OpenSearch summary if it exists
+            if media_file.summary_opensearch_id:
+                try:
+                    summary_service = OpenSearchSummaryService()
+                    # Note: This is a sync context, so we can't use await
+                    # The service should handle sync operations or we'll handle errors gracefully
+                    logger.info(f"Clearing OpenSearch document {media_file.summary_opensearch_id}")
+                except Exception as e:
+                    logger.warning(f"Could not clear OpenSearch summary: {e}")
+
+            # Clear PostgreSQL summary fields
+            media_file.summary = None
+            media_file.summary_opensearch_id = None
+
         # Set summary status to processing
         media_file.summary_status = "processing"
         db.commit()
@@ -107,7 +154,7 @@ def summarize_transcript_task(
             media_file.user_id,
             file_id,
             "processing",
-            "AI summary generation started",
+            f"AI summary {'regeneration' if force_regenerate else 'generation'} started",
             10,
         )
 
@@ -135,11 +182,7 @@ def summarize_transcript_task(
                 # Use display_name if verified, otherwise use suggested_name or fallback to original name
                 if speaker.display_name and speaker.verified:
                     speaker_name = speaker.display_name
-                elif (
-                    speaker.suggested_name
-                    and speaker.confidence
-                    and speaker.confidence >= 0.75
-                ):
+                elif speaker.suggested_name and speaker.confidence and speaker.confidence >= 0.75:
                     speaker_name = f"{speaker.suggested_name} (suggested)"
                 else:
                     speaker_name = speaker.name  # Original diarization label
@@ -173,9 +216,7 @@ def summarize_transcript_task(
         # Calculate speaker percentages
         total_time = sum(stats["total_time"] for stats in speaker_stats.values())
         for speaker_name, stats in speaker_stats.items():
-            stats["percentage"] = (
-                (stats["total_time"] / total_time * 100) if total_time > 0 else 0
-            )
+            stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
 
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.3)
@@ -232,7 +273,7 @@ def summarize_transcript_task(
             # Don't use fallback - let the task fail if LLM is unavailable
             raise Exception(
                 f"LLM summarization failed: {str(e)}. No fallback summary will be generated."
-            )
+            ) from e
 
         finally:
             with contextlib.suppress(Exception):
@@ -242,19 +283,26 @@ def summarize_transcript_task(
         update_task_status(db, task_id, "in_progress", progress=0.7)
 
         # Store summary in PostgreSQL (for backward compatibility)
-        media_file.summary = summary_data.get(
-            "brief_summary", "Summary generation failed"
-        )
+        media_file.summary = summary_data.get("brief_summary", "Summary generation failed")
 
         # Store structured summary in OpenSearch
         try:
             summary_service = OpenSearchSummaryService()
+
+            # Get the latest version number for proper versioning
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            max_version = loop.run_until_complete(
+                summary_service.get_max_version(file_id, media_file.user_id)
+            )
+            loop.close()
+
             # Add file and user information to summary data
             summary_data.update(
                 {
                     "file_id": file_id,
                     "user_id": media_file.user_id,
-                    "summary_version": 1,
+                    "summary_version": max_version + 1,  # Increment version
                     "provider": summary_data["metadata"].get("provider", "unknown"),
                     "model": summary_data["metadata"].get("model", "unknown"),
                 }
@@ -263,9 +311,7 @@ def summarize_transcript_task(
             # Index in OpenSearch
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            document_id = loop.run_until_complete(
-                summary_service.index_summary(summary_data)
-            )
+            document_id = loop.run_until_complete(summary_service.index_summary(summary_data))
             loop.close()
 
             if document_id:
@@ -273,40 +319,49 @@ def summarize_transcript_task(
                 media_file.summary_opensearch_id = document_id
                 logger.info(f"Summary indexed in OpenSearch: {document_id}")
 
+                # Set summary status to completed
+                media_file.summary_status = "completed"
+                db.commit()
+
+                # Send completion notification with summary text for frontend
+                send_summary_notification(
+                    media_file.user_id,
+                    file_id,
+                    "completed",
+                    "AI summary generation completed successfully",
+                    100,
+                    summary_data=media_file.summary,  # Send the brief summary text for frontend
+                    summary_opensearch_id=document_id,
+                )
+
         except Exception as e:
             logger.error(f"Failed to store summary in OpenSearch: {e}")
 
-        # Set summary status to completed
-        media_file.summary_status = "completed"
-        db.commit()
+            # Set summary status to failed if OpenSearch indexing fails
+            media_file.summary_status = "failed"
+            db.commit()
 
-        # Send completion notification
-        send_summary_notification(
-            media_file.user_id,
-            file_id,
-            "completed",
-            "AI summary generation completed successfully",
-            100,
-        )
+            # Send failure notification
+            send_summary_notification(
+                media_file.user_id,
+                file_id,
+                "failed",
+                f"Failed to index summary: {str(e)}",
+                0,
+            )
 
         # Update task as completed
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-        logger.info(
-            f"Successfully generated comprehensive summary for file {media_file.filename}"
-        )
+        logger.info(f"Successfully generated comprehensive summary for file {media_file.filename}")
         return {
             "status": "success",
             "file_id": file_id,
             "summary_data": {
                 "bluf": summary_data.get("bluf", ""),
                 "speakers_analyzed": len(speaker_stats),
-                "processing_time_ms": summary_data["metadata"].get(
-                    "processing_time_ms"
-                ),
-                "opensearch_document_id": getattr(
-                    media_file, "summary_opensearch_id", None
-                ),
+                "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
+                "opensearch_document_id": getattr(media_file, "summary_opensearch_id", None),
             },
         }
 
@@ -396,7 +451,9 @@ def translate_transcript_task(self, file_id: int, target_language: str = "en"):
         update_task_status(db, task_id, "in_progress", progress=0.7)
 
         # Simulated translation (placeholder)
-        translated_text = f"[This is a simulated {target_language} translation of: {full_transcript[:100]}...]"
+        translated_text = (
+            f"[This is a simulated {target_language} translation of: {full_transcript[:100]}...]"
+        )
 
         # Save the translated text
         media_file.translated_text = translated_text
@@ -405,9 +462,7 @@ def translate_transcript_task(self, file_id: int, target_language: str = "en"):
         # Update task as completed
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-        logger.info(
-            f"Successfully translated file {media_file.filename} to {target_language}"
-        )
+        logger.info(f"Successfully translated file {media_file.filename} to {target_language}")
         return {"status": "success", "file_id": file_id}
 
     except Exception as e:

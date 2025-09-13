@@ -25,6 +25,7 @@ from app.schemas.summary import SummaryAnalyticsResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummarySearchRequest
 from app.schemas.summary import SummarySearchResponse
+from app.schemas.summary import SummaryTaskRequest
 from app.services.llm_service import is_llm_available
 from app.services.opensearch_summary_service import OpenSearchSummaryService
 from app.tasks.summarization import summarize_transcript_task
@@ -37,6 +38,7 @@ router = APIRouter()
 @router.post("/{file_id}/summarize", response_model=dict[str, Any])
 async def trigger_summarization(
     file_id: int = Path(..., description="ID of the media file to summarize"),
+    request: SummaryTaskRequest = SummaryTaskRequest(),
     provider: Optional[str] = Query(
         None, description="LLM provider override (vllm, openai, ollama, etc.)"
     ),
@@ -76,9 +78,7 @@ async def trigger_summarization(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=404, detail="Media file not found or access denied"
-        )
+        raise HTTPException(status_code=404, detail="Media file not found or access denied")
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
@@ -98,10 +98,25 @@ async def trigger_summarization(
     try:
         # Start summarization task
         task = summarize_transcript_task.delay(
-            file_id=file_id, provider=provider, model=model
+            file_id=file_id,
+            provider=provider,
+            model=model,
+            force_regenerate=request.force_regenerate,
         )
 
-        logger.info(f"Started summarization task {task.id} for file {file_id}")
+        logger.info(
+            f"Started summarization task {task.id} for file {file_id} (force_regenerate={request.force_regenerate})"
+        )
+
+        # Send queued notification immediately
+        from app.tasks.summarization import send_summary_notification
+
+        send_summary_notification(
+            current_user.id,
+            file_id,
+            "queued",
+            f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
+        )
 
         return {
             "message": "Summarization task started",
@@ -147,9 +162,7 @@ async def get_file_summary(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=404, detail="Media file not found or access denied"
-        )
+        raise HTTPException(status_code=404, detail="Media file not found or access denied")
 
     try:
         # Try to get structured summary from OpenSearch
@@ -157,9 +170,7 @@ async def get_file_summary(
         summary = await summary_service.get_summary_by_file_id(file_id, current_user.id)
 
         if summary:
-            return SummaryResponse(
-                file_id=file_id, summary_data=summary, source="opensearch"
-            )
+            return SummaryResponse(file_id=file_id, summary_data=summary, source="opensearch")
 
         # No summary available
         raise HTTPException(
@@ -171,9 +182,7 @@ async def get_file_summary(
         raise
     except Exception as e:
         logger.error(f"Failed to retrieve summary for file {file_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve summary: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve summary: {str(e)}") from e
 
 
 @router.post("/search", response_model=SummarySearchResponse)
@@ -210,12 +219,8 @@ async def search_summaries(
         search_params = {
             "text": search_request.query,
             "speakers": search_request.speakers,
-            "date_from": search_request.date_from.isoformat()
-            if search_request.date_from
-            else None,
-            "date_to": search_request.date_to.isoformat()
-            if search_request.date_to
-            else None,
+            "date_from": search_request.date_from.isoformat() if search_request.date_from else None,
+            "date_to": search_request.date_to.isoformat() if search_request.date_to else None,
             "has_pending_actions": search_request.has_pending_actions,
         }
 
@@ -237,14 +242,12 @@ async def search_summaries(
 
     except Exception as e:
         logger.error(f"Summary search failed for user {current_user.id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}") from e
 
 
 @router.get("/analytics", response_model=SummaryAnalyticsResponse)
 async def get_summary_analytics(
-    date_from: Optional[str] = Query(
-        None, description="Start date filter (YYYY-MM-DD)"
-    ),
+    date_from: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -290,14 +293,10 @@ async def get_summary_analytics(
 
     except Exception as e:
         logger.error(f"Analytics generation failed for user {current_user.id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Analytics generation failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Analytics generation failed: {str(e)}") from e
 
 
-@router.post(
-    "/{file_id}/identify-speakers", response_model=SpeakerIdentificationResponse
-)
+@router.post("/{file_id}/identify-speakers", response_model=SpeakerIdentificationResponse)
 async def identify_speakers(
     file_id: int = Path(..., description="ID of the media file"),
     current_user: User = Depends(get_current_active_user),
@@ -337,15 +336,11 @@ async def identify_speakers(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=404, detail="Media file not found or access denied"
-        )
+        raise HTTPException(status_code=404, detail="Media file not found or access denied")
 
     # Check if file has speakers to identify
     if not media_file.speakers:
-        raise HTTPException(
-            status_code=400, detail="No speakers found in this file to identify"
-        )
+        raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
 
     # Check LLM availability before starting the task
     llm_available = await is_llm_available(user_id=current_user.id)
@@ -372,7 +367,7 @@ async def identify_speakers(
         logger.error(f"Failed to start speaker identification for file {file_id}: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to start speaker identification: {str(e)}"
-        )
+        ) from e
 
 
 @router.delete("/{file_id}/summary")
@@ -403,19 +398,14 @@ async def delete_summary(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=404, detail="Media file not found or access denied"
-        )
+        raise HTTPException(status_code=404, detail="Media file not found or access denied")
 
     try:
         summary_service = OpenSearchSummaryService()
         deleted = False
 
         # Delete from OpenSearch if document ID exists
-        if (
-            hasattr(media_file, "summary_opensearch_id")
-            and media_file.summary_opensearch_id
-        ):
+        if hasattr(media_file, "summary_opensearch_id") and media_file.summary_opensearch_id:
             opensearch_deleted = await summary_service.delete_summary(
                 media_file.summary_opensearch_id
             )
@@ -439,6 +429,4 @@ async def delete_summary(
         raise
     except Exception as e:
         logger.error(f"Failed to delete summary for file {file_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to delete summary: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to delete summary: {str(e)}") from e

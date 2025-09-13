@@ -15,9 +15,7 @@ logger = logging.getLogger(__name__)
 # Initialize the OpenSearch client
 try:
     opensearch_client = OpenSearch(
-        hosts=[
-            {"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}
-        ],
+        hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
         http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
         use_ssl=False,
         verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
@@ -38,9 +36,7 @@ def ensure_indices_exist():
 
     try:
         # Create transcript index if it doesn't exist
-        if not opensearch_client.indices.exists(
-            index=settings.OPENSEARCH_TRANSCRIPT_INDEX
-        ):
+        if not opensearch_client.indices.exists(index=settings.OPENSEARCH_TRANSCRIPT_INDEX):
             transcript_index_config = {
                 "settings": {
                     "index": {"number_of_shards": 1, "number_of_replicas": 0},
@@ -67,14 +63,10 @@ def ensure_indices_exist():
                 index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=transcript_index_config
             )
 
-            logger.info(
-                f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}"
-            )
+            logger.info(f"Created transcript index: {settings.OPENSEARCH_TRANSCRIPT_INDEX}")
 
         # Create speaker index if it doesn't exist
-        if not opensearch_client.indices.exists(
-            index=settings.OPENSEARCH_SPEAKER_INDEX
-        ):
+        if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
             speaker_index_config = {
                 "settings": {
                     "index": {
@@ -92,9 +84,7 @@ def ensure_indices_exist():
                         "profile_id": {"type": "integer"},
                         "user_id": {"type": "integer"},
                         "name": {"type": "keyword"},
-                        "collection_ids": {
-                            "type": "integer"
-                        },  # Array of collection IDs
+                        "collection_ids": {"type": "integer"},  # Array of collection IDs
                         "media_file_id": {"type": "integer"},  # Source media file
                         "segment_count": {"type": "integer"},  # Number of segments used
                         "created_at": {"type": "date"},
@@ -223,9 +213,7 @@ def add_speaker_embedding(
             logger.error(f"Cannot index speaker {speaker_id}: invalid embedding format")
             return
 
-        logger.info(
-            f"Indexing speaker {speaker_id} with embedding length: {len(embedding)}"
-        )
+        logger.info(f"Indexing speaker {speaker_id} with embedding length: {len(embedding)}")
 
         # Prepare document
         doc = {
@@ -305,9 +293,7 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
         if response["errors"]:
             logger.error(f"Bulk indexing had errors: {response}")
         else:
-            logger.info(
-                f"Successfully bulk indexed {len(embeddings_data)} speaker embeddings"
-            )
+            logger.info(f"Successfully bulk indexed {len(embeddings_data)} speaker embeddings")
 
         return response
 
@@ -361,9 +347,7 @@ def search_transcripts(
 
         # Add full-text search
         if query:
-            must_conditions.append(
-                {"match": {"content": {"query": query, "fuzziness": "AUTO"}}}
-            )
+            must_conditions.append({"match": {"content": {"query": query, "fuzziness": "AUTO"}}})
 
         # Add speaker filter if specified
         if speaker:
@@ -403,15 +387,11 @@ def search_transcripts(
                 from sentence_transformers import SentenceTransformer
 
                 # Check if model exists locally or download it
-                model_path = os.path.join(
-                    settings.MODELS_DIRECTORY, "sentence-transformers"
-                )
+                model_path = os.path.join(settings.MODELS_DIRECTORY, "sentence-transformers")
                 os.makedirs(model_path, exist_ok=True)
 
                 # Load the model (will download if not present)
-                embedding_model = SentenceTransformer(
-                    "all-MiniLM-L6-v2", cache_folder=model_path
-                )
+                embedding_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=model_path)
 
                 # Generate embedding for the query
                 query_embedding = embedding_model.encode(query).tolist()
@@ -455,9 +435,7 @@ def search_transcripts(
             else:
                 # Fallback to first part of content
                 content = source.get("content", "")
-                result["snippet"] = (
-                    content[:150] + "..." if len(content) > 150 else content
-                )
+                result["snippet"] = content[:150] + "..." if len(content) > 150 else content
 
             results.append(result)
 
@@ -505,9 +483,7 @@ def find_matching_speaker(
 
         # Add exclusion filter if specified
         if exclude_speaker_ids:
-            filters.append(
-                {"bool": {"must_not": {"terms": {"speaker_id": exclude_speaker_ids}}}}
-            )
+            filters.append({"bool": {"must_not": {"terms": {"speaker_id": exclude_speaker_ids}}}})
 
         # Build a kNN query to find similar speaker embeddings
         # Using the proper OpenSearch knn query syntax based on documentation
@@ -525,9 +501,7 @@ def find_matching_speaker(
         }
 
         # Execute search
-        response = opensearch_client.search(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-        )
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
         # Check if we have a match
         if len(response["hits"]["hits"]) > 0:
@@ -678,9 +652,7 @@ def find_speaker_across_media(speaker_id: int, user_id: int) -> list[dict[str, A
             "_source": ["file_id", "title", "upload_time"],
         }
 
-        response = opensearch_client.search(
-            index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=query
-        )
+        response = opensearch_client.search(index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=query)
 
         # Process results
         results = []
@@ -701,9 +673,7 @@ def find_speaker_across_media(speaker_id: int, user_id: int) -> list[dict[str, A
         return []
 
 
-def update_speaker_collections(
-    speaker_id: int, profile_id: int, collection_ids: list[int]
-):
+def update_speaker_collections(speaker_id: int, profile_id: int, collection_ids: list[int]):
     """
     Update speaker embedding collections when a speaker is labeled/assigned to profile
 
@@ -770,9 +740,7 @@ def move_speaker_to_profile_collection(
             body=update_body,
         )
 
-        logger.info(
-            f"Moved speaker {unlabeled_speaker_id} to profile {target_profile_id}"
-        )
+        logger.info(f"Moved speaker {unlabeled_speaker_id} to profile {target_profile_id}")
         return response
 
     except Exception as e:
@@ -829,9 +797,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
         logger.error(f"Error bulk updating collection assignments: {e}")
 
 
-def get_speakers_in_collection(
-    collection_id: int, user_id: int
-) -> list[dict[str, Any]]:
+def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[str, Any]]:
     """
     Get all speakers in a specific collection
 
@@ -870,9 +836,7 @@ def get_speakers_in_collection(
             ],
         }
 
-        response = opensearch_client.search(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-        )
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
         speakers = []
         for hit in response["hits"]["hits"]:
@@ -912,9 +876,7 @@ def merge_speaker_embeddings(
 
     try:
         # Delete the source speaker document
-        opensearch_client.delete(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_id)
-        )
+        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_id))
 
         # Update the target speaker's collections
         update_body = {
@@ -962,15 +924,11 @@ def cleanup_orphaned_embeddings(user_id: int) -> int:
             "_source": ["speaker_id", "profile_id"],
         }
 
-        response = opensearch_client.search(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-        )
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
         # This function would need to be called with database context
         # to verify which speakers still exist
-        logger.info(
-            f"Found {len(response['hits']['hits'])} embeddings for user {user_id}"
-        )
+        logger.info(f"Found {len(response['hits']['hits'])} embeddings for user {user_id}")
 
         # Return count for now - actual cleanup would require database validation
         return len(response["hits"]["hits"])
@@ -1039,9 +997,7 @@ def update_speaker_display_name(speaker_id: int, display_name: Optional[str]):
             body=update_body,
         )
 
-        logger.info(
-            f"Updated display name for speaker {speaker_id} to '{display_name}'"
-        )
+        logger.info(f"Updated display name for speaker {speaker_id} to '{display_name}'")
         return response
 
     except Exception as e:

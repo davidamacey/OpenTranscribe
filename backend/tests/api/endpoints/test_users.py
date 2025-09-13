@@ -77,9 +77,7 @@ def test_update_user_unauthorized(client, user_token_headers, admin_user):
 
 def test_delete_user(client, admin_token_headers, normal_user, db_session):
     """Test deleting a user (admin only)"""
-    response = client.delete(
-        f"/api/users/{normal_user.id}", headers=admin_token_headers
-    )
+    response = client.delete(f"/api/users/{normal_user.id}", headers=admin_token_headers)
     assert response.status_code == 204
 
     # Verify the user is deleted from the database

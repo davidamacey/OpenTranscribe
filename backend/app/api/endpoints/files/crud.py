@@ -47,9 +47,7 @@ def get_media_file_by_id(
     db_file = query.first()
 
     if not db_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     return db_file
 
@@ -69,16 +67,8 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
     try:
         # Check if tag table exists first
         inspector = inspect(db.bind)
-        if (
-            "tag" in inspector.get_table_names()
-            and "file_tag" in inspector.get_table_names()
-        ):
-            tags = (
-                db.query(Tag.name)
-                .join(FileTag)
-                .filter(FileTag.media_file_id == file_id)
-                .all()
-            )
+        if "tag" in inspector.get_table_names() and "file_tag" in inspector.get_table_names():
+            tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
         else:
             logger.warning("Tag tables don't exist yet, skipping tag retrieval")
     except Exception as tag_error:
@@ -125,19 +115,13 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
                     "name": col.name,
                     "description": col.description,
                     "is_public": col.is_public,
-                    "created_at": col.created_at.isoformat()
-                    if col.created_at
-                    else None,
-                    "updated_at": col.updated_at.isoformat()
-                    if col.updated_at
-                    else None,
+                    "created_at": col.created_at.isoformat() if col.created_at else None,
+                    "updated_at": col.updated_at.isoformat() if col.updated_at else None,
                 }
                 for col in collection_objs
             ]
         else:
-            logger.warning(
-                "Collection tables don't exist yet, skipping collection retrieval"
-            )
+            logger.warning("Collection tables don't exist yet, skipping collection retrieval")
     except Exception as collection_error:
         logger.error(f"Error getting collections: {collection_error}")
         db.rollback()  # Important to roll back the failed transaction
@@ -176,9 +160,7 @@ def set_file_urls(db_file: MediaFile) -> None:
             db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
 
 
-def get_media_file_detail(
-    db: Session, file_id: int, current_user: User
-) -> MediaFileDetail:
+def get_media_file_detail(db: Session, file_id: int, current_user: User) -> MediaFileDetail:
     """
     Get detailed media file information including tags.
 
@@ -222,7 +204,7 @@ def get_media_file_detail(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving media file: {str(e)}",
-        )
+        ) from e
 
 
 def update_media_file(
@@ -253,9 +235,7 @@ def update_media_file(
     return db_file
 
 
-def delete_media_file(
-    db: Session, file_id: int, current_user: User, force: bool = False
-) -> None:
+def delete_media_file(db: Session, file_id: int, current_user: User, force: bool = False) -> None:
     """
     Delete a media file and all associated data with safety checks.
 
@@ -321,14 +301,12 @@ def delete_media_file(
 
         # If we deleted from storage but DB deletion failed, that's a problem
         if storage_deleted:
-            logger.error(
-                f"File {file_id} deleted from storage but not from database - orphaned!"
-            )
+            logger.error(f"File {file_id} deleted from storage but not from database - orphaned!")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete file from database: {str(e)}",
-        )
+        ) from e
 
 
 def update_single_transcript_segment(

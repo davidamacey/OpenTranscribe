@@ -69,9 +69,7 @@ def analyze_transcript_task(self, file_id: int):
         keywords = extract_keywords(transcript_segments)
 
         # Store analytics results
-        existing_analytics = (
-            db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
-        )
+        existing_analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
         if existing_analytics:
             # Update existing record

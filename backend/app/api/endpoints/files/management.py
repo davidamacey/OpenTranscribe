@@ -92,13 +92,10 @@ async def get_file_status_detail(
         actions = []
         recommendations = []
 
-        if db_file.status == FileStatus.PROCESSING:
-            if db_file.active_task_id:
-                actions.append("cancel")
-                if is_stuck:
-                    recommendations.append(
-                        "This file appears stuck. Consider cancelling and retrying."
-                    )
+        if db_file.status == FileStatus.PROCESSING and db_file.active_task_id:
+            actions.append("cancel")
+            if is_stuck:
+                recommendations.append("This file appears stuck. Consider cancelling and retrying.")
 
         if db_file.status in [
             FileStatus.ERROR,
@@ -155,7 +152,7 @@ async def get_file_status_detail(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving file status details",
-        )
+        ) from e
 
 
 @router.post("/{file_id}/cancel")
@@ -197,7 +194,7 @@ async def cancel_file_processing(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cancelling file processing",
-        )
+        ) from e
 
 
 @router.post("/{file_id}/retry")
@@ -224,11 +221,7 @@ async def retry_file_processing(
             )
 
         # Check retry limits
-        if (
-            db_file.retry_count >= db_file.max_retries
-            and not reset_retry_count
-            and not is_admin
-        ):
+        if db_file.retry_count >= db_file.max_retries and not reset_retry_count and not is_admin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File has reached maximum retry attempts ({db_file.max_retries}). Contact admin for help.",
@@ -269,7 +262,7 @@ async def retry_file_processing(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrying file processing",
-        )
+        ) from e
 
 
 @router.post("/{file_id}/recover")
@@ -307,7 +300,7 @@ async def recover_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error recovering file",
-        )
+        ) from e
 
 
 @router.delete("/{file_id}/force")
@@ -334,14 +327,12 @@ async def force_delete_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error force deleting file",
-        )
+        ) from e
 
 
 @router.get("/management/stuck")
 async def get_stuck_files(
-    threshold_hours: float = Query(
-        2.0, description="Hours threshold for stuck detection"
-    ),
+    threshold_hours: float = Query(2.0, description="Hours threshold for stuck detection"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -355,9 +346,7 @@ async def get_stuck_files(
 
         for file_id in stuck_file_ids:
             try:
-                db_file = get_media_file_by_id(
-                    db, file_id, current_user.id, is_admin=is_admin
-                )
+                db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
                 stuck_files.append(
                     {
                         "id": db_file.id,
@@ -388,7 +377,7 @@ async def get_stuck_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving stuck files",
-        )
+        ) from e
 
 
 @router.post("/management/bulk-action", response_model=list[BulkActionResult])
@@ -418,9 +407,7 @@ async def bulk_file_action(
                     )
 
                 elif request.action == "retry":
-                    success = reset_file_for_retry(
-                        db, file_id, request.reset_retry_count
-                    )
+                    success = reset_file_for_retry(db, file_id, request.reset_retry_count)
                     if success:
                         # Start transcription task
                         import os
@@ -432,9 +419,7 @@ async def bulk_file_action(
                             message = "Retry prepared (test mode)"
 
                         results.append(
-                            BulkActionResult(
-                                file_id=file_id, success=True, message=message
-                            )
+                            BulkActionResult(file_id=file_id, success=True, message=message)
                         )
                     else:
                         results.append(
@@ -509,7 +494,7 @@ async def bulk_file_action(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error performing bulk file action",
-        )
+        ) from e
 
 
 @router.post("/management/cleanup-orphaned")
@@ -544,13 +529,9 @@ async def cleanup_orphaned_files(
                     if success:
                         cleanup_results["recovered"] += 1
                     else:
-                        cleanup_results["errors"].append(
-                            f"Failed to recover file {file_id}"
-                        )
+                        cleanup_results["errors"].append(f"Failed to recover file {file_id}")
                 except Exception as e:
-                    cleanup_results["errors"].append(
-                        f"Error processing file {file_id}: {str(e)}"
-                    )
+                    cleanup_results["errors"].append(f"Error processing file {file_id}: {str(e)}")
 
         return cleanup_results
 
@@ -559,4 +540,4 @@ async def cleanup_orphaned_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cleaning up orphaned files",
-        )
+        ) from e

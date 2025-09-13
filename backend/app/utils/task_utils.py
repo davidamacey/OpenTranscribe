@@ -106,9 +106,7 @@ def update_task_status(
     return task
 
 
-def update_media_file_status(
-    db: Session, file_id: int, status: FileStatus
-) -> Optional[MediaFile]:
+def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> Optional[MediaFile]:
     """Update media file status."""
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
@@ -122,10 +120,7 @@ def update_media_file_status(
     media_file.status = status
 
     # Set completed_at timestamp if status is COMPLETED or ERROR
-    if (
-        status in [FileStatus.COMPLETED, FileStatus.ERROR]
-        and not media_file.completed_at
-    ):
+    if status in [FileStatus.COMPLETED, FileStatus.ERROR] and not media_file.completed_at:
         media_file.completed_at = datetime.now(timezone.utc)
 
     db.commit()
@@ -133,9 +128,7 @@ def update_media_file_status(
     return media_file
 
 
-def update_media_file_from_task_status(
-    db: Session, file_id: int
-) -> Optional[MediaFile]:
+def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[MediaFile]:
     """Check task statuses and update media file status accordingly.
 
     This function checks all tasks associated with a media file and updates
@@ -316,14 +309,10 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     )
 
     # Check for orphaned files that need recovery
-    orphaned_files = (
-        db.query(MediaFile).filter(MediaFile.status == FileStatus.ORPHANED).all()
-    )
+    orphaned_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ORPHANED).all()
 
     # Combine all lists
-    stuck_files = (
-        processing_stuck_files + pending_stuck_files + failed_files + orphaned_files
-    )
+    stuck_files = processing_stuck_files + pending_stuck_files + failed_files + orphaned_files
 
     stuck_file_ids = []
     for file in stuck_files:
@@ -340,9 +329,7 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                     file.task_started_at = None
                     db.commit()
             except Exception as e:
-                logger.warning(
-                    f"Could not check task status for {file.active_task_id}: {e}"
-                )
+                logger.warning(f"Could not check task status for {file.active_task_id}: {e}")
                 stuck_file_ids.append(file.id)
         else:
             # No active task but still processing - definitely stuck
@@ -383,9 +370,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
                 from app.tasks.transcription import transcribe_audio_task
 
                 task = transcribe_audio_task.delay(file_id)
-                logger.info(
-                    f"Started recovery task {task.id} for pending file {file_id}"
-                )
+                logger.info(f"Started recovery task {task.id} for pending file {file_id}")
 
             # File status will be updated by the task
             return True
@@ -409,9 +394,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
                     from app.tasks.transcription import transcribe_audio_task
 
                     task = transcribe_audio_task.delay(file_id)
-                    logger.info(
-                        f"Started retry task {task.id} for failed file {file_id}"
-                    )
+                    logger.info(f"Started retry task {task.id} for failed file {file_id}")
                 return True
             return False
 
@@ -432,9 +415,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
                 from app.tasks.transcription import transcribe_audio_task
 
                 task = transcribe_audio_task.delay(file_id)
-                logger.info(
-                    f"Started recovery task {task.id} for orphaned file {file_id}"
-                )
+                logger.info(f"Started recovery task {task.id} for orphaned file {file_id}")
             return True
 
         elif media_file.transcript_segments:
@@ -506,9 +487,7 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
     return False, f"File status is {media_file.status}"
 
 
-def reset_file_for_retry(
-    db: Session, file_id: int, reset_retry_count: bool = False
-) -> bool:
+def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = False) -> bool:
     """Reset a file for retry processing.
 
     Args:
@@ -549,9 +528,7 @@ def reset_file_for_retry(
         from app.models.media import TranscriptSegment
 
         # Delete existing transcript segments
-        db.query(TranscriptSegment).filter(
-            TranscriptSegment.media_file_id == file_id
-        ).delete()
+        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
 
         # Delete existing speakers
         db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
@@ -563,9 +540,7 @@ def reset_file_for_retry(
         db.query(Task).filter(Task.media_file_id == file_id).delete()
 
         db.commit()
-        logger.info(
-            f"Reset file {file_id} for retry (attempt {media_file.retry_count})"
-        )
+        logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
         return True
 
     except Exception as e:

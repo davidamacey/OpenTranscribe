@@ -61,9 +61,7 @@ class FileCleanupService:
                             else:
                                 results["files_marked_orphaned"] += 1
                         except Exception as e:
-                            error_msg = (
-                                f"Error processing stuck file {file_id}: {str(e)}"
-                            )
+                            error_msg = f"Error processing stuck file {file_id}: {str(e)}"
                             logger.error(error_msg)
                             results["cleanup_errors"].append(error_msg)
 
@@ -125,9 +123,7 @@ class FileCleanupService:
         Returns:
             Number of old orphaned files found
         """
-        threshold_time = datetime.now(timezone.utc) - timedelta(
-            hours=self.orphan_threshold_hours
-        )
+        threshold_time = datetime.now(timezone.utc) - timedelta(hours=self.orphan_threshold_hours)
 
         old_orphaned_files = (
             db.query(MediaFile)
@@ -192,9 +188,7 @@ class FileCleanupService:
 
         return recommendations
 
-    def force_cleanup_orphaned_files(
-        self, db: Session, dry_run: bool = False
-    ) -> dict[str, Any]:
+    def force_cleanup_orphaned_files(self, db: Session, dry_run: bool = False) -> dict[str, Any]:
         """
         Force cleanup of orphaned files (admin operation).
 
@@ -294,9 +288,7 @@ class FileCleanupService:
         stats["stuck_files_detected"] = len(stuck_files)
 
         # Count files eligible for cleanup
-        eligible_count = (
-            db.query(MediaFile).filter(MediaFile.force_delete_eligible).count()
-        )
+        eligible_count = db.query(MediaFile).filter(MediaFile.force_delete_eligible).count()
         stats["files_eligible_for_cleanup"] = eligible_count
 
         # Calculate average processing time for completed files
@@ -318,17 +310,13 @@ class FileCleanupService:
                     if file.completed_at and file.task_started_at
                 ]
             )
-            stats["avg_processing_time_hours"] = total_processing_time / len(
-                completed_files
-            )
+            stats["avg_processing_time_hours"] = total_processing_time / len(completed_files)
 
         # Calculate health score
         total_files = sum(stats["file_counts_by_status"].values())
         if total_files > 0:
             error_rate = stats["file_counts_by_status"].get("error", 0) / total_files
-            orphaned_rate = (
-                stats["file_counts_by_status"].get("orphaned", 0) / total_files
-            )
+            orphaned_rate = stats["file_counts_by_status"].get("orphaned", 0) / total_files
 
             if error_rate < 0.05 and orphaned_rate < 0.02:
                 stats["health_score"] = "healthy"

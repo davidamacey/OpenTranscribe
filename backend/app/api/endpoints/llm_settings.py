@@ -270,9 +270,7 @@ def create_user_llm_configuration(
 
     # Test encryption before proceeding
     if not test_encryption():
-        raise HTTPException(
-            status_code=500, detail="Encryption system is not working properly"
-        )
+        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
 
     # Encrypt API key if provided
     encrypted_api_key = None
@@ -620,9 +618,7 @@ async def test_active_configuration(
     if user_config.api_key:
         api_key = decrypt_api_key(user_config.api_key)
         if not api_key and user_config.api_key:  # Decryption failed
-            raise HTTPException(
-                status_code=500, detail="Failed to decrypt stored API key"
-            )
+            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
     # Test connection
     test_request = schemas.ConnectionTestRequest(
@@ -633,9 +629,7 @@ async def test_active_configuration(
         timeout=user_config.timeout,
     )
 
-    result = await test_llm_connection(
-        test_request=test_request, current_user=current_user
-    )
+    result = await test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Update test status in database
     from sqlalchemy import text
@@ -679,9 +673,7 @@ async def test_specific_configuration(
     if user_config.api_key:
         api_key = decrypt_api_key(user_config.api_key)
         if not api_key and user_config.api_key:  # Decryption failed
-            raise HTTPException(
-                status_code=500, detail="Failed to decrypt stored API key"
-            )
+            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
     # Test connection
     test_request = schemas.ConnectionTestRequest(
@@ -692,9 +684,7 @@ async def test_specific_configuration(
         timeout=user_config.timeout,
     )
 
-    result = await test_llm_connection(
-        test_request=test_request, current_user=current_user
-    )
+    result = await test_llm_connection(test_request=test_request, current_user=current_user)
 
     # Update test status in database
     from sqlalchemy import text
@@ -728,40 +718,43 @@ async def get_ollama_models(
         models_url = f"{clean_url}/api/tags"
 
         timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(models_url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    models = []
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(models_url) as response,
+        ):
+            if response.status == 200:
+                data = await response.json()
+                models = []
 
-                    if "models" in data:
-                        for model in data["models"]:
-                            models.append(
-                                {
-                                    "name": model.get("name", ""),
-                                    "size": model.get("size", 0),
-                                    "modified_at": model.get("modified_at", ""),
-                                    "digest": model.get("digest", ""),
-                                    "details": model.get("details", {}),
-                                    "display_name": model.get("name", "").split(":")[
-                                        0
-                                    ],  # Remove tag for display
-                                }
-                            )
+                if "models" in data:
+                    for model in data["models"]:
+                        models.append(
+                            {
+                                "name": model.get("name", ""),
+                                "size": model.get("size", 0),
+                                "modified_at": model.get("modified_at", ""),
+                                "digest": model.get("digest", ""),
+                                "details": model.get("details", {}),
+                                "display_name": model.get("name", "").split(":")[
+                                    0
+                                ],  # Remove tag for display
+                            }
+                        )
 
-                    return {
-                        "success": True,
-                        "models": models,
-                        "total": len(models),
-                        "message": f"Found {len(models)} models on Ollama server",
-                    }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "models": [],
-                        "total": 0,
-                        "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
-                    }
+                return {
+                    "success": True,
+                    "models": models,
+                    "total": len(models),
+                    "message": f"Found {len(models)} models on Ollama server",
+                }
+            else:
+                error_text = await response.text()
+                return {
+                    "success": False,
+                    "models": [],
+                    "total": 0,
+                    "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
+                }
     except aiohttp.ClientError as e:
         return {
             "success": False,
@@ -787,8 +780,6 @@ def test_encryption_endpoint(
     Test the encryption system (for debugging)
     """
     if not test_encryption():
-        raise HTTPException(
-            status_code=500, detail="Encryption system is not working properly"
-        )
+        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
 
     return {"status": "success", "message": "Encryption system is working correctly"}

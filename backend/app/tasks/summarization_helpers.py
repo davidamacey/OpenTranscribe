@@ -85,9 +85,7 @@ def identify_speakers_llm_task(self, file_id: int):
         from app.utils.task_utils import create_task_record
         from app.utils.task_utils import update_task_status
 
-        create_task_record(
-            db, task_id, media_file.user_id, file_id, "speaker_identification"
-        )
+        create_task_record(db, task_id, media_file.user_id, file_id, "speaker_identification")
 
         # Update task status
         update_task_status(db, task_id, "in_progress", progress=0.1)
@@ -107,9 +105,7 @@ def identify_speakers_llm_task(self, file_id: int):
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
 
         if not speakers:
-            logger.info(
-                f"No speakers found for file {file_id}, skipping LLM identification"
-            )
+            logger.info(f"No speakers found for file {file_id}, skipping LLM identification")
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             return {"status": "skipped", "message": "No speakers to identify"}
 
@@ -125,9 +121,7 @@ def identify_speakers_llm_task(self, file_id: int):
         for segment in transcript_segments[:50]:  # Limit for analysis
             speaker_segments.append(
                 {
-                    "speaker_label": segment.speaker.name
-                    if segment.speaker
-                    else "Unknown",
+                    "speaker_label": segment.speaker.name if segment.speaker else "Unknown",
                     "start_time": segment.start_time,
                     "end_time": segment.end_time,
                     "text": segment.text[:200],  # Limit text length
@@ -137,9 +131,7 @@ def identify_speakers_llm_task(self, file_id: int):
         # Get known speakers (verified speakers from other files)
         known_speakers = []
         profiles = (
-            db.query(SpeakerProfile)
-            .filter(SpeakerProfile.user_id == media_file.user_id)
-            .all()
+            db.query(SpeakerProfile).filter(SpeakerProfile.user_id == media_file.user_id).all()
         )
 
         for profile in profiles:
@@ -179,15 +171,11 @@ def identify_speakers_llm_task(self, file_id: int):
                 # Find the speaker in the database
                 speaker = (
                     db.query(Speaker)
-                    .filter(
-                        Speaker.media_file_id == file_id, Speaker.name == speaker_label
-                    )
+                    .filter(Speaker.media_file_id == file_id, Speaker.name == speaker_label)
                     .first()
                 )
 
-                if (
-                    speaker and confidence >= 0.5
-                ):  # Only store medium+ confidence predictions
+                if speaker and confidence >= 0.5:  # Only store medium+ confidence predictions
                     # Store as suggestion, not automatic assignment
                     speaker.suggested_name = predicted_name
                     speaker.confidence = confidence
@@ -214,9 +202,7 @@ def identify_speakers_llm_task(self, file_id: int):
         }
 
     except Exception as e:
-        logger.error(
-            f"Error in speaker identification task for file {file_id}: {str(e)}"
-        )
+        logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
         update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
         return {"status": "error", "message": str(e)}
 

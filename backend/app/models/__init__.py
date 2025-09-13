@@ -41,5 +41,5 @@ __all__ = [
     "SpeakerCollectionMember",
     "SummaryPrompt",
     "UserSetting",
-    "UserLLMSettings"
+    "UserLLMSettings",
 ]

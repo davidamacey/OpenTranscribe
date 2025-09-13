@@ -61,9 +61,7 @@ async def create_collection(
     # Check if collection with same name exists for user
     existing = (
         db.query(Collection)
-        .filter(
-            Collection.user_id == current_user.id, Collection.name == collection.name
-        )
+        .filter(Collection.user_id == current_user.id, Collection.name == collection.name)
         .first()
     )
 
@@ -91,11 +89,7 @@ async def get_collection(
     collection = (
         db.query(Collection)
         .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .options(
-            joinedload(Collection.collection_members).joinedload(
-                CollectionMember.media_file
-            )
-        )
+        .options(joinedload(Collection.collection_members).joinedload(CollectionMember.media_file))
         .first()
     )
 
@@ -230,9 +224,7 @@ async def add_media_to_collection(
     # Add new members
     added_count = 0
     for media_file_id in new_ids:
-        member = CollectionMember(
-            collection_id=collection_id, media_file_id=media_file_id
-        )
+        member = CollectionMember(collection_id=collection_id, media_file_id=media_file_id)
         db.add(member)
         added_count += 1
 

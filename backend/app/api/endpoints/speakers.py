@@ -44,9 +44,7 @@ def delete_speaker(
     )
 
     if not speaker:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
 
     # Delete the speaker
     db.delete(speaker)
@@ -88,6 +86,72 @@ def create_speaker(
     return new_speaker
 
 
+def _filter_speakers_query(query, verified_only: bool, for_filter: bool, file_id: Optional[int]):
+    """Apply filters to the speakers query."""
+    if verified_only:
+        query = query.filter(Speaker.verified)
+
+    if for_filter:
+        query = query.filter(
+            Speaker.display_name.isnot(None),
+            Speaker.display_name != "",
+            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
+        )
+
+    if file_id is not None:
+        query = query.filter(Speaker.media_file_id == file_id)
+
+    return query
+
+
+def _sort_speakers(speakers):
+    """Sort speakers by SPEAKER_XX numbering for consistent ordering."""
+
+    def get_speaker_number(speaker):
+        match = re.match(r"^SPEAKER_(\d+)$", speaker.name)
+        return int(match.group(1)) if match else 999
+
+    speakers.sort(key=lambda s: (not s.verified, get_speaker_number(s), s.display_name or s.name))
+    return speakers
+
+
+def _get_unique_speakers_for_filter(speakers):
+    """Get unique speakers by display name for filter use."""
+    seen_names = set()
+    unique_speakers = []
+    for speaker in speakers:
+        display_name = speaker.display_name or speaker.name
+        if (
+            display_name not in seen_names
+            and not display_name.startswith("SPEAKER_")
+            and display_name.strip() != ""
+        ):
+            seen_names.add(display_name)
+            unique_speakers.append(speaker)
+    return unique_speakers
+
+
+def _process_speaker_suggestions(speaker, matching_service, current_user, db):
+    """Process speaker suggestions and auto-matching."""
+    if not speaker.suggested_name and not speaker.verified:
+        embedding = get_speaker_embedding(speaker.id)
+        if embedding:
+            import numpy as np
+
+            match = matching_service.match_speaker_to_known_speakers(
+                np.array(embedding), current_user.id
+            )
+            if match and match["confidence"] >= 0.5:
+                speaker.suggested_name = match["suggested_name"]
+                speaker.confidence = match["confidence"]
+
+                if match["confidence"] >= 0.75 and not speaker.display_name:
+                    speaker.display_name = match["suggested_name"]
+                    speaker.verified = True
+
+                db.commit()
+
+
 @router.get("/")
 def list_speakers(
     verified_only: bool = False,
@@ -106,55 +170,12 @@ def list_speakers(
     """
     try:
         query = db.query(Speaker).filter(Speaker.user_id == current_user.id)
-
-        # Filter by verification status if requested
-        if verified_only:
-            query = query.filter(Speaker.verified)
-
-        # If this is for filtering, only return speakers with meaningful display names
-        if for_filter:
-            query = query.filter(
-                Speaker.display_name.isnot(None),
-                Speaker.display_name != "",
-                # Exclude display names that are just the original speaker labels (SPEAKER_XX)
-                ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
-            )
-
-        # Filter by file_id if provided
-        if file_id is not None:
-            # Filter speakers directly by media_file_id
-            query = query.filter(Speaker.media_file_id == file_id)
-
+        query = _filter_speakers_query(query, verified_only, for_filter, file_id)
         speakers = query.all()
+        speakers = _sort_speakers(speakers)
 
-        # Sort speakers by SPEAKER_XX numbering for consistent ordering
-        def get_speaker_number(speaker):
-            match = re.match(r"^SPEAKER_(\d+)$", speaker.name)
-            return int(match.group(1)) if match else 999  # Unknown speakers go to end
-
-        speakers.sort(
-            key=lambda s: (
-                not s.verified,
-                get_speaker_number(s),
-                s.display_name or s.name,
-            )
-        )
-
-        # If for_filter, group by display_name to avoid duplicates
         if for_filter:
-            seen_names = set()
-            unique_speakers = []
-            for speaker in speakers:
-                display_name = speaker.display_name or speaker.name
-                # Additional check: skip SPEAKER_XX patterns even if they somehow made it through
-                if (
-                    display_name not in seen_names
-                    and not display_name.startswith("SPEAKER_")
-                    and display_name.strip() != ""
-                ):
-                    seen_names.add(display_name)
-                    unique_speakers.append(speaker)
-            return unique_speakers
+            return _get_unique_speakers_for_filter(speakers)
 
         # Initialize services for matching (without loading pyannote model)
         matching_service = SpeakerMatchingService(db, None)
@@ -162,28 +183,7 @@ def list_speakers(
         # Add profile information to speakers
         result = []
         for speaker in speakers:
-            # If speaker doesn't have a suggestion but has an embedding, try to find a match
-            if not speaker.suggested_name and not speaker.verified:
-                embedding = get_speaker_embedding(speaker.id)
-                if embedding:
-                    import numpy as np
-
-                    match = matching_service.match_speaker_to_known_speakers(
-                        np.array(embedding), current_user.id
-                    )
-                    if (
-                        match and match["confidence"] >= 0.5
-                    ):  # Show suggestions from 50% confidence
-                        # Update the speaker with the suggestion
-                        speaker.suggested_name = match["suggested_name"]
-                        speaker.confidence = match["confidence"]
-
-                        # Auto-populate display_name for high confidence matches (≥75%)
-                        if match["confidence"] >= 0.75 and not speaker.display_name:
-                            speaker.display_name = match["suggested_name"]
-                            speaker.verified = True
-
-                        db.commit()
+            _process_speaker_suggestions(speaker, matching_service, current_user, db)
 
             # Get cross-video matches for this speaker
             cross_video_matches = matching_service.get_speaker_matches(speaker.id)
@@ -215,22 +215,15 @@ def list_speakers(
                             match.get("speaker_id") for match in cross_video_matches
                         }
                         for unlabeled_match in unlabeled_matches:
-                            if (
-                                unlabeled_match["speaker_id"]
-                                not in existing_speaker_ids
-                            ):
+                            if unlabeled_match["speaker_id"] not in existing_speaker_ids:
                                 cross_video_matches.append(unlabeled_match)
 
                         # Set confidence to highest match for UI display
                         if cross_video_matches:
-                            highest_match = max(
-                                cross_video_matches, key=lambda x: x["confidence"]
-                            )
+                            highest_match = max(cross_video_matches, key=lambda x: x["confidence"])
                             speaker.confidence = highest_match["confidence"]
                 else:
-                    logger.warning(
-                        f"No embedding found for speaker {speaker.id} ({speaker.name})"
-                    )
+                    logger.warning(f"No embedding found for speaker {speaker.id} ({speaker.name})")
 
             # Add additional match context for UI
             for match in cross_video_matches:
@@ -309,9 +302,7 @@ def get_speaker(
     )
 
     if not speaker:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
 
     return speaker
 
@@ -333,9 +324,7 @@ def update_speaker(
     )
 
     if not speaker:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
 
     # Update fields
     for field, value in speaker_update.model_dump(exclude_unset=True).items():
@@ -408,9 +397,9 @@ def merge_speakers(
         )
 
     # Update all transcript segments from source to target
-    db.query(TranscriptSegment).filter(
-        TranscriptSegment.speaker_id == source_speaker.id
-    ).update({"speaker_id": target_speaker.id})
+    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
+        {"speaker_id": target_speaker.id}
+    )
 
     # Optionally, merge the embedding vectors (e.g., by averaging)
     # This would require more complex logic in a real implementation
@@ -472,9 +461,7 @@ def verify_speaker_identification(
 
         if action == "accept":
             if not profile_id:
-                raise HTTPException(
-                    status_code=400, detail="profile_id required for accept action"
-                )
+                raise HTTPException(status_code=400, detail="profile_id required for accept action")
 
             # Verify profile exists
             profile = (
@@ -534,9 +521,7 @@ def verify_speaker_identification(
             )
 
             if existing_profile:
-                raise HTTPException(
-                    status_code=400, detail="Profile with this name already exists"
-                )
+                raise HTTPException(status_code=400, detail="Profile with this name already exists")
 
             # Create new profile
             new_profile = SpeakerProfile(
@@ -571,7 +556,7 @@ def verify_speaker_identification(
     except Exception as e:
         logger.error(f"Error verifying speaker: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/{speaker_id}/matches", response_model=list[dict[str, Any]])
@@ -604,7 +589,7 @@ def get_speaker_matches(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker matches: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/{speaker_id}/cross-media", response_model=list[dict[str, Any]])
@@ -681,4 +666,4 @@ def get_speaker_cross_media_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting cross-media occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e

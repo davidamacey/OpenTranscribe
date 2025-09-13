@@ -46,10 +46,17 @@ A modern Svelte-based frontend for the OpenTranscribe AI-powered transcription a
 - **Responsive Design** - Works seamlessly across desktop and mobile
 - **Real-time Updates** - WebSocket integration for live transcription progress
 - **Dark/Light Mode** - Automatic theme switching with user preference
-- **File Upload** - Drag-and-drop file upload with progress tracking
+- **Advanced Upload System** - Floating, draggable upload manager with concurrent processing
+- **Upload Progress Tracking** - Real-time progress with estimated time remaining
+- **Intelligent Upload Management** - Queue control, retry logic, and duplicate detection
 - **Media Player** - Custom video/audio player with transcript synchronization
+- **Full-Screen Transcript View** - Dedicated modal for reading and searching long transcripts
 - **Search Interface** - Full-text and semantic search capabilities
-- **User Management** - Authentication, registration, and profile management
+- **User Management** - Authentication, registration, and profile management with settings
+- **Recording Settings** - User-specific audio recording preferences and quality controls
+- **Collection Management** - Comprehensive file organization with drag-and-drop collection editing
+- **Modal Consistency** - Unified modal design patterns with improved UX
+- **Auto-Refresh Systems** - Background updates without manual refresh requirements
 
 ## 📁 Directory Structure
 
@@ -62,10 +69,15 @@ frontend/
 ├── src/                       # Source code
 │   ├── components/            # Reusable UI components
 │   │   ├── AnalyticsSection.svelte
+│   │   ├── CollectionsEditor.svelte  # NEW: Inline collection management
 │   │   ├── CommentSection.svelte
+│   │   ├── ConfirmationModal.svelte  # NEW: Reusable confirmation dialog
 │   │   ├── FileUploader.svelte
 │   │   ├── Navbar.svelte
 │   │   ├── TranscriptDisplay.svelte
+│   │   ├── TranscriptModal.svelte    # NEW: Full-screen transcript viewer
+│   │   ├── UploadManager.svelte      # NEW: Floating upload manager
+│   │   ├── UploadProgress.svelte     # NEW: Individual upload progress
 │   │   ├── VideoPlayer.svelte
 │   │   └── ...                # More components
 │   ├── routes/                # Page components
@@ -77,9 +89,15 @@ frontend/
 │   ├── stores/                # Svelte stores for state management
 │   │   ├── auth.ts           # Authentication state
 │   │   ├── notifications.ts   # Notification system
+│   │   ├── recording.ts      # NEW: Recording state management
 │   │   ├── theme.js          # Theme management
+│   │   ├── uploads.ts        # NEW: Upload queue management
 │   │   └── websocket.ts      # WebSocket connection
 │   ├── lib/                  # Utilities and services
+│   │   ├── api/              # API service modules
+│   │   │   └── userSettings.ts  # NEW: User settings API client
+│   │   ├── services/         # Business logic services
+│   │   │   └── uploadService.ts # NEW: Upload management service
 │   │   ├── axios.ts          # HTTP client configuration
 │   │   ├── websocket.js      # WebSocket service
 │   │   └── utils/            # Helper functions
@@ -108,12 +126,15 @@ frontend/
 
 #### File Management
 - **`FileUploader.svelte`** - Drag-and-drop file upload with progress
+- **`UploadManager.svelte`** - **NEW**: Floating, draggable upload manager with real-time progress
+- **`UploadProgress.svelte`** - **NEW**: Individual upload progress tracking with retry/cancel
 - **`FileHeader.svelte`** - File metadata and action buttons
 - **`DownloadButton.svelte`** - Export and download options
 
 #### Media & Transcription
 - **`VideoPlayer.svelte`** - Custom media player with transcript sync
 - **`TranscriptDisplay.svelte`** - Interactive transcript with speaker labels
+- **`TranscriptModal.svelte`** - **NEW**: Full-screen transcript viewer with search functionality
 - **`SpeakerEditor.svelte`** - Speaker management and editing
 - **`MetadataDisplay.svelte`** - File information and statistics
 
@@ -121,6 +142,8 @@ frontend/
 - **`FilterSidebar.svelte`** - Advanced search and filtering options
 - **`TagsEditor.svelte`** - Tag management interface
 - **`TagsSection.svelte`** - Tag display and interaction
+- **`CollectionsEditor.svelte`** - **NEW**: Inline collection management with drag-and-drop
+- **`CollectionsPanel.svelte`** - Collection organization interface
 
 #### Analytics & Insights
 - **`AnalyticsSection.svelte`** - Transcript analytics and statistics
@@ -130,6 +153,7 @@ frontend/
 #### Administration
 - **`UserManagementTable.svelte`** - Admin user management interface
 - **`ApiDebugger.svelte`** - Development API testing tool
+- **`ConfirmationModal.svelte`** - **NEW**: Reusable confirmation dialog for destructive actions
 
 ### Page Components
 
@@ -299,10 +323,16 @@ npm run format
 ```
 
 ### Code Style
-- **TypeScript** - Strict type checking enabled
-- **ESLint** - Code linting with Svelte-specific rules
+- **TypeScript** - Strict type checking enabled with comprehensive ESLint integration
+- **ESLint** - Code linting with Svelte-specific rules and TypeScript support
 - **Prettier** - Consistent code formatting
 - **Svelte Check** - Svelte-specific type checking
+
+### Enhanced Development Features
+- **ESLint Integration** - Comprehensive linting with TypeScript and Svelte plugins
+- **Type Safety Improvements** - Reduced TypeScript errors with proper parameter typing
+- **Code Quality Tooling** - Automated formatting and error detection
+- **Performance Optimizations** - Improved component reactivity and reduced re-renders
 
 ### Development Guidelines
 1. **Component Naming** - PascalCase for component files

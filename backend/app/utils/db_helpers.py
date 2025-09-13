@@ -95,9 +95,7 @@ def safe_get_by_id(
         return None
 
 
-def bulk_update(
-    db: Session, model: type[T], updates: list[dict], id_field: str = "id"
-) -> bool:
+def bulk_update(db: Session, model: type[T], updates: list[dict], id_field: str = "id") -> bool:
     """
     Perform bulk updates efficiently.
 
@@ -113,9 +111,7 @@ def bulk_update(
     try:
         for update_data in updates:
             obj_id = update_data.pop(id_field)
-            db.query(model).filter(getattr(model, id_field) == obj_id).update(
-                update_data
-            )
+            db.query(model).filter(getattr(model, id_field) == obj_id).update(update_data)
 
         db.commit()
         return True
@@ -198,12 +194,7 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
         List of tag names
     """
     try:
-        tags = (
-            db.query(Tag.name)
-            .join(FileTag)
-            .filter(FileTag.media_file_id == file_id)
-            .all()
-        )
+        tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
         return [tag[0] for tag in tags]
     except SQLAlchemyError as e:
         logger.error(f"Error getting tags for file {file_id}: {e}")
@@ -230,9 +221,7 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str]) -> bool:
             # Check if file-tag association already exists
             existing = (
                 db.query(FileTag)
-                .filter(
-                    and_(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id)
-                )
+                .filter(and_(FileTag.media_file_id == file_id, FileTag.tag_id == tag.id))
                 .first()
             )
 
@@ -319,17 +308,13 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
 
         # Total file size
         total_size = (
-            db.query(func.sum(MediaFile.file_size))
-            .filter(MediaFile.user_id == user_id)
-            .scalar()
+            db.query(func.sum(MediaFile.file_size)).filter(MediaFile.user_id == user_id).scalar()
             or 0
         )
 
         # Total duration
         total_duration = (
-            db.query(func.sum(MediaFile.duration))
-            .filter(MediaFile.user_id == user_id)
-            .scalar()
+            db.query(func.sum(MediaFile.duration)).filter(MediaFile.user_id == user_id).scalar()
             or 0
         )
 

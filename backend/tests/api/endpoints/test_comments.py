@@ -7,9 +7,7 @@ import pytest
 def test_file_with_comment(client, user_token_headers, db_session):
     """Create a test file that we can add comments to"""
     # Upload a file
-    file_data = {
-        "file": ("comment_test.mp3", io.BytesIO(b"test audio content"), "audio/mpeg")
-    }
+    file_data = {"file": ("comment_test.mp3", io.BytesIO(b"test audio content"), "audio/mpeg")}
     response = client.post("/api/files/", headers=user_token_headers, files=file_data)
     return response.json()["id"]
 
@@ -31,9 +29,7 @@ def test_create_comment(client, user_token_headers, test_file_with_comment, db_s
         "text": "This is a test comment",
         "timestamp": 30.5,  # Comment at 30.5 seconds in the audio
     }
-    response = client.post(
-        "/api/comments/", headers=user_token_headers, json=comment_data
-    )
+    response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     assert response.status_code == 200
     comment = response.json()
     assert "id" in comment
@@ -65,9 +61,7 @@ def test_get_comment(client, user_token_headers, test_file_with_comment, db_sess
         "text": "Comment for get test",
         "timestamp": 45.0,
     }
-    create_response = client.post(
-        "/api/comments/", headers=user_token_headers, json=comment_data
-    )
+    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
 
     # Now get the comment
@@ -87,9 +81,7 @@ def test_update_comment(client, user_token_headers, test_file_with_comment, db_s
         "text": "Comment for update test",
         "timestamp": 60.0,
     }
-    create_response = client.post(
-        "/api/comments/", headers=user_token_headers, json=comment_data
-    )
+    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
 
     # Now update the comment
@@ -119,9 +111,7 @@ def test_delete_comment(client, user_token_headers, test_file_with_comment, db_s
         "text": "Comment for delete test",
         "timestamp": 75.0,
     }
-    create_response = client.post(
-        "/api/comments/", headers=user_token_headers, json=comment_data
-    )
+    create_response = client.post("/api/comments/", headers=user_token_headers, json=comment_data)
     comment_id = create_response.json()["id"]
 
     # Now delete the comment

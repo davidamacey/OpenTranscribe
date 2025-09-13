@@ -72,15 +72,11 @@ def apply_speaker_filter(query: Query, speaker: Optional[list[str]]) -> Query:
     if speaker and len(speaker) > 0:
         speaker_or_conditions = []
         for s in speaker:
-            speaker_or_conditions.append(
-                sa.or_(Speaker.display_name == s, Speaker.name == s)
-            )
+            speaker_or_conditions.append(sa.or_(Speaker.display_name == s, Speaker.name == s))
 
         if speaker_or_conditions:
             query = (
-                query.join(
-                    TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id
-                )
+                query.join(TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id)
                 .join(Speaker, Speaker.id == TranscriptSegment.speaker_id)
                 .filter(sa.or_(*speaker_or_conditions))
                 .distinct()
@@ -202,9 +198,7 @@ def apply_status_filter(query: Query, status: Optional[list[str]]) -> Query:
     return query
 
 
-def apply_transcript_search_filter(
-    query: Query, transcript_search: Optional[str]
-) -> Query:
+def apply_transcript_search_filter(query: Query, transcript_search: Optional[str]) -> Query:
     """
     Apply transcript content search filter.
 
@@ -217,9 +211,7 @@ def apply_transcript_search_filter(
     """
     if transcript_search:
         query = (
-            query.join(
-                TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id
-            )
+            query.join(TranscriptSegment, TranscriptSegment.media_file_id == MediaFile.id)
             .filter(TranscriptSegment.text.ilike(f"%{transcript_search}%"))
             .distinct()
         )
@@ -242,9 +234,7 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
     query = apply_tag_filter(query, filters.get("tag"))
     query = apply_speaker_filter(query, filters.get("speaker"))
     query = apply_date_filters(query, filters.get("from_date"), filters.get("to_date"))
-    query = apply_duration_filters(
-        query, filters.get("min_duration"), filters.get("max_duration")
-    )
+    query = apply_duration_filters(query, filters.get("min_duration"), filters.get("max_duration"))
     query = apply_file_size_filters(
         query, filters.get("min_file_size"), filters.get("max_file_size")
     )

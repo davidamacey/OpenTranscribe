@@ -74,9 +74,7 @@ class HardwareConfig:
             torch.cuda.set_device(0)
             device_name = torch.cuda.get_device_name(0)
             gpu_requested = os.getenv("GPU_DEVICE_ID", "0")
-            logger.info(
-                f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}"
-            )
+            logger.info(f"Using CUDA device 0 (GPU_DEVICE_ID={gpu_requested}): {device_name}")
             return "cuda"
 
         # Check for MPS (Apple Silicon)
@@ -136,7 +134,7 @@ class HardwareConfig:
                     return 4
                 else:
                     return 2
-            except:
+            except Exception:
                 return 8  # Safe default
 
         elif self.device == "mps":
@@ -210,10 +208,10 @@ class HardwareConfig:
                 self.device == "mps"
                 and hasattr(torch.backends, "mps")
                 and torch.backends.mps.is_available()
+                and hasattr(torch.mps, "empty_cache")
             ):
                 # Clear MPS cache only if MPS is actually being used
-                if hasattr(torch.mps, "empty_cache"):
-                    torch.mps.empty_cache()
+                torch.mps.empty_cache()
         except Exception as e:
             logger.debug(f"MPS memory cleanup skipped: {e}")
 

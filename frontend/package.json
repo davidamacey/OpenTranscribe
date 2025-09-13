@@ -37,7 +37,7 @@
     "date-fns": "^2.30.0",
     "imohash": "^1.0.3",
     "node-fetch": "^2.6.11",
-    "plyr": "^3.7.8",
+    "plyr": "^3.8.3",
     "svelte-loading-spinners": "^0.3.4",
     "svelte-navigator": "^3.2.2",
     "svelte-notifications": "^0.9.98"

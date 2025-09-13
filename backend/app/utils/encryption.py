@@ -46,7 +46,7 @@ def _get_encryption_key() -> bytes:
             return base64.urlsafe_b64encode(key_material)
     except Exception as e:
         logger.error(f"Failed to get encryption key: {e}")
-        raise ValueError("Invalid encryption key configuration")
+        raise ValueError("Invalid encryption key configuration") from e
 
 
 def encrypt_api_key(api_key: str) -> Optional[str]:
@@ -136,10 +136,7 @@ def test_encryption() -> bool:
 
         # Test decryption
         decrypted = decrypt_api_key(encrypted)
-        if decrypted != test_data:
-            return False
-
-        return True
+        return decrypted == test_data
 
     except Exception as e:
         logger.error(f"Encryption test failed: {e}")

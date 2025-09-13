@@ -29,13 +29,18 @@ app/
 ├── api/                    # 🌐 API Layer
 │   ├── endpoints/         # Route handlers organized by resource
 │   │   ├── files/        # Modular file management
+│   │   │   ├── streaming.py    # Video/audio streaming support
+│   │   │   ├── upload.py       # Enhanced upload handling
+│   │   │   └── url_processing.py # URL processing endpoints
 │   │   ├── admin.py      # Admin operations
 │   │   ├── auth.py       # Authentication
 │   │   ├── comments.py   # Comment system
 │   │   ├── search.py     # Search functionality
 │   │   ├── speakers.py   # Speaker management
+│   │   ├── summarization.py    # NEW: LLM-powered summarization
 │   │   ├── tags.py       # Tag operations
 │   │   ├── tasks.py      # Task monitoring
+│   │   ├── user_settings.py    # NEW: User settings management
 │   │   └── users.py      # User management
 │   ├── router.py         # Main API router configuration
 │   └── websockets.py     # Real-time WebSocket handlers
@@ -44,6 +49,7 @@ app/
 ├── core/                  # ⚙️ Core Configuration
 │   ├── celery.py         # Background task configuration
 │   ├── config.py         # Application settings
+│   ├── constants.py      # NEW: Application constants and defaults
 │   └── security.py       # Security utilities (JWT, hashing)
 ├── db/                    # 🗄️ Database Layer
 │   ├── base.py           # Database connection and base setup
@@ -64,14 +70,18 @@ app/
 │   └── opensearch_service.py  # Search service
 ├── tasks/                 # ⚡ Background Processing
 │   ├── transcription/    # Modular transcription pipeline
+│   │   └── notifications.py # Enhanced WebSocket notifications
 │   ├── analytics.py      # Analytics processing
-│   ├── summarization.py  # Text summarization
-│   └── transcription.py  # Main transcription router
+│   ├── summarization.py  # Multi-provider LLM summarization
+│   ├── transcription.py  # Main transcription router
+│   └── youtube_processing.py # NEW: Enhanced YouTube URL processing
 ├── utils/                 # 🛠️ Common Utilities
 │   ├── auth_decorators.py    # Authorization decorators
 │   ├── db_helpers.py         # Database query helpers
 │   ├── error_handlers.py     # Error handling utilities
-│   └── task_utils.py         # Task management utilities
+│   ├── filename.py           # NEW: Filename processing utilities
+│   ├── task_utils.py         # Task management utilities
+│   └── thumbnail.py          # Enhanced thumbnail generation
 ├── main.py               # 🚀 FastAPI Application Entry Point
 └── initial_data.py       # 📋 Database Initialization
 ```
@@ -120,10 +130,21 @@ def get_resource(
 
 ### Files Module (`api/endpoints/files/`)
 Special modular organization for complex file operations:
-- `upload.py` - File upload processing
+- `upload.py` - Enhanced file upload processing with concurrency control
 - `crud.py` - Basic CRUD operations
 - `filtering.py` - Advanced filtering logic
-- `streaming.py` - Video/audio streaming
+- `streaming.py` - Video/audio streaming support
+- `url_processing.py` - **NEW**: Enhanced URL processing for video links
+
+### New API Endpoints
+- **User Settings (`user_settings.py`)**:
+  - Recording preferences management
+  - User-specific configuration storage
+  - Settings validation and defaults
+- **Summarization (`summarization.py`)**:
+  - Multi-provider LLM integration
+  - BLUF format summary generation
+  - Intelligent section processing
 
 ## 🔧 Service Layer (`services/`)
 

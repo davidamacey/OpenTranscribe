@@ -127,3 +127,55 @@ async def generate_and_upload_thumbnail(
     except Exception as e:
         logger.error(f"Error generating and uploading thumbnail: {str(e)}")
         return None
+
+
+def generate_and_upload_thumbnail_sync(
+    user_id: int,
+    media_file_id: int,
+    video_path: Union[str, Path],
+    timestamp: float = 1.0,
+) -> Optional[str]:
+    """
+    Generate a thumbnail from a video file and upload it to storage (synchronous version).
+
+    Args:
+        user_id: User ID for storage path
+        media_file_id: Media file ID for storage path
+        video_path: Path to the video file
+        timestamp: Time in seconds to extract the thumbnail
+
+    Returns:
+        The storage path of the uploaded thumbnail, or None if generation failed
+    """
+    try:
+        # Generate thumbnail
+        thumbnail_bytes = generate_thumbnail(video_path, timestamp=timestamp)
+
+        if not thumbnail_bytes:
+            logger.error(f"Failed to generate thumbnail for file {media_file_id}")
+            return None
+
+        # Generate storage path for thumbnail
+        filename = (
+            Path(video_path).stem
+            if isinstance(video_path, (str, Path))
+            else f"file_{media_file_id}"
+        )
+        storage_path = f"user_{user_id}/file_{media_file_id}/thumbnail_{filename}.jpg"
+
+        # Upload thumbnail to storage
+        if os.environ.get("SKIP_S3", "False").lower() != "true":
+            upload_file(
+                file_content=io.BytesIO(thumbnail_bytes),
+                file_size=len(thumbnail_bytes),
+                object_name=storage_path,
+                content_type="image/jpeg",
+            )
+        else:
+            logger.info("Skipping S3 upload for thumbnail in test environment")
+
+        return storage_path
+
+    except Exception as e:
+        logger.error(f"Error generating and uploading thumbnail: {str(e)}")
+        return None

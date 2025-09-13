@@ -1,8 +1,24 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import axiosInstance from '../lib/axios';
   import type { AxiosProgressEvent, CancelTokenSource } from 'axios';
   import axios from 'axios';
+  import ConfirmationModal from './ConfirmationModal.svelte';
+  
+  // Import global recording store
+  import { recordingStore, recordingManager, hasActiveRecording, isRecording, recordingDuration, audioLevel, recordingStartTime } from '../stores/recording';
+  
+  // Import upload store for background uploads
+  import { uploadsStore } from '../stores/uploads';
+  import { toastStore } from '../stores/toast';
+  
+  // Derived stores for additional recording state
+  $: recordedBlob = $recordingStore.recordedBlob;
+  $: recordingError = $recordingStore.recordingError;
+  $: recordingSupported = $recordingStore.recordingSupported;
+  $: audioDevices = $recordingStore.audioDevices;
+  $: selectedDeviceId = $recordingStore.selectedDeviceId;
+  $: isPaused = $recordingStore.isPaused;
   
   // Constants for file handling
   const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
@@ -19,7 +35,7 @@
 
   
   // State
-  let activeTab: 'file' | 'url' = 'file';
+  let activeTab: 'file' | 'url' | 'record' = 'file';
   let file: FileWithSize | null = null;
   let fileInput: HTMLInputElement;
   let drag = false;
@@ -37,9 +53,13 @@
   // URL processing state
   let youtubeUrl = '';
   let processingUrl = false;
-  let urlProgress = 0;
   let urlError = '';
   let urlStatusMessage = '';
+  
+  // Local recording UI state
+  let showRecordingInfo = false;
+  let showRecordingWarningModal = false;
+  let pendingNavigationAction: (() => void) | null = null;
   
   // Upload speed calculation variables
   let lastLoaded = 0;
@@ -51,14 +71,50 @@
   onMount(() => {
     token = localStorage.getItem('token') || '';
     const cleanup = initDragAndDrop();
+    loadRecordingSettings();
+    
+    // Listen for events to set active tab
+    const handleSetTabEvent = (event: CustomEvent) => {
+      if (event.detail?.activeTab) {
+        activeTab = event.detail.activeTab;
+        // Tab change is handled by reactive updates
+      }
+    };
+
+    // Listen for direct file upload from recording popup
+    const handleDirectUpload = (event: CustomEvent) => {
+      if (event.detail?.file) {
+        file = event.detail.file;
+        activeTab = 'file';
+        // Trigger upload immediately
+        setTimeout(() => {
+          uploadFile();
+        }, 100);
+      }
+    };
+    
+    window.addEventListener('setFileUploaderTab', handleSetTabEvent);
+    window.addEventListener('directFileUpload', handleDirectUpload);
+    
     return () => {
       if (cleanup) cleanup();
+      window.removeEventListener('setFileUploaderTab', handleSetTabEvent);
+      window.removeEventListener('directFileUpload', handleDirectUpload);
     };
   });
   
   // Event dispatcher with proper types
   const dispatch = createEventDispatcher<{
-    uploadComplete: { fileId: number; isDuplicate?: boolean };
+    uploadComplete: { 
+      fileId?: number; 
+      uploadId?: string;
+      isDuplicate?: boolean; 
+      isUrl?: boolean;
+      multiple?: boolean;
+      count?: number;
+      isRecording?: boolean;
+      isFile?: boolean;
+    };
     uploadError: { error: string };
   }>();
 
@@ -82,6 +138,152 @@
   // Max file size (15GB in bytes) - matches nginx client_max_body_size
   const MAX_FILE_SIZE = 15 * 1024 * 1024 * 1024; // 15GB
   
+  // Recording settings - loaded from user preferences
+  let maxRecordingDuration = 2 * 60 * 60; // Default 2 hours in seconds
+  let recordingQuality = 'high';
+  let autoStopEnabled = true;
+  
+  const RECORDING_OPTIONS = {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: 44100
+    },
+    video: false
+  };
+  
+  // Load recording settings from localStorage
+  function loadRecordingSettings() {
+    const settings = localStorage.getItem('recordingSettings');
+    if (settings) {
+      try {
+        const parsed = JSON.parse(settings);
+        maxRecordingDuration = (parsed.maxRecordingDuration || 120) * 60; // Convert minutes to seconds
+        recordingQuality = parsed.recordingQuality || 'high';
+        autoStopEnabled = parsed.autoStopEnabled !== undefined ? parsed.autoStopEnabled : true;
+      } catch (err) {
+        // Recording settings loading failed - using defaults
+      }
+    }
+  }
+
+
+
+  // Start recording using global recording manager
+  async function startRecording() {
+    try {
+      await recordingManager.startRecording();
+    } catch (err) {
+      console.error('Recording error:', err);
+    }
+  }
+
+  // Stop recording using global recording manager
+  function stopRecording() {
+    recordingManager.stopRecording();
+  }
+
+  // Pause/resume recording using global recording manager
+  function togglePauseRecording() {
+    let currentState;
+    const unsubscribe = recordingStore.subscribe(state => currentState = state);
+    unsubscribe();
+    
+    if (currentState?.isPaused) {
+      recordingManager.resumeRecording();
+    } else {
+      recordingManager.pauseRecording();
+    }
+  }
+
+
+  // Format recording duration
+  function formatDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Upload recorded audio using global recording manager
+  async function uploadRecordedAudio() {
+    const recordedBlob = recordingManager.getRecordedBlob();
+    if (!recordedBlob) {
+      return;
+    }
+
+    try {
+      // Use background upload service for recording
+      const filename = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+      const uploadId = uploadsStore.addRecording(recordedBlob, filename);
+      
+      // Clear recording state when starting upload
+      recordingManager.clearRecording();
+      
+      // Clear any UI state
+      file = null;
+      error = '';
+      
+      // Dispatch upload event
+      dispatch('uploadComplete', { uploadId, isRecording: true });
+      
+      // Show success toast
+      toastStore.success('Recording added to upload queue');
+      
+    } catch (error) {
+      console.error('Error adding recording to upload queue:', error);
+      toastStore.error('Failed to add recording to upload queue');
+    }
+  }
+
+  // Clear recording using global recording manager
+  function clearRecording() {
+    recordingManager.clearRecording();
+  }
+  
+  // Handle device selection change
+  function handleDeviceChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    recordingStore.update(state => ({
+      ...state,
+      selectedDeviceId: target.value
+    }));
+  }
+
+  // Reset recording state with protection check
+  function resetRecordingState() {
+    // Only reset if no active recording in progress
+    let currentState;
+    const unsubscribe = recordingStore.subscribe(state => currentState = state);
+    unsubscribe();
+    
+    if (!currentState?.hasActiveRecording) {
+      recordingManager.clearRecording();
+    }
+  }
+
+  // Recording warning modal handlers
+  function handleRecordingWarningConfirm() {
+    // User confirmed to discard recording
+    recordingManager.clearRecording();
+    
+    if (pendingNavigationAction) {
+      pendingNavigationAction();
+      pendingNavigationAction = null;
+    }
+    showRecordingWarningModal = false;
+  }
+
+  function handleRecordingWarningCancel() {
+    pendingNavigationAction = null;
+    showRecordingWarningModal = false;
+  }
+
   // Initialize drag and drop
   function initDragAndDrop() {
     const dropZone = document.getElementById('drop-zone');
@@ -127,7 +329,13 @@
     
     const files = dt.files;
     if (files && files.length > 0) {
-      handleFileSelect(files[0]);
+      if (files.length === 1) {
+        // Single file - use traditional modal upload
+        handleFileSelect(files[0]);
+      } else {
+        // Multiple files - use background upload service
+        handleMultipleFiles(Array.from(files));
+      }
     }
   }
   
@@ -210,6 +418,57 @@
     
     file = selectedFile;
   }
+
+  // Handle multiple files using background upload service
+  function handleMultipleFiles(files: File[]) {
+    // Validate each file
+    const validFiles: File[] = [];
+    const invalidFiles: string[] = [];
+
+    files.forEach(file => {
+      // Check file size
+      if (file.size > FILE_SIZE_LIMIT) {
+        invalidFiles.push(`${file.name} (too large: ${formatFileSize(file.size)})`);
+        return;
+      }
+
+      // Check file type
+      const isValidType = file.type && (
+        file.type.startsWith('audio/') || 
+        file.type.startsWith('video/')
+      );
+      
+      if (!isValidType) {
+        // Try to determine type from extension
+        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+        const validExtensions = [
+          'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus',
+          'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'f4v'
+        ];
+        
+        if (!validExtensions.includes(extension)) {
+          invalidFiles.push(`${file.name} (unsupported format)`);
+          return;
+        }
+      }
+
+      validFiles.push(file);
+    });
+
+    // Show validation results
+    if (invalidFiles.length > 0) {
+      toastStore.error(`Skipped ${invalidFiles.length} invalid files:\n${invalidFiles.join('\n')}`);
+    }
+
+    if (validFiles.length > 0) {
+      // Add valid files to upload queue
+      uploadsStore.addFiles(validFiles);
+      
+      // Close modal and show success message
+      dispatch('uploadComplete', { multiple: true, count: validFiles.length });
+      toastStore.success(`Added ${validFiles.length} files to upload queue`);
+    }
+  }
   
   // Format file size for display
   function formatFileSize(bytes: number): string {
@@ -224,10 +483,18 @@
   // Handle file input change
   function handleFileInputChange(e: Event) {
     const target = e.target as HTMLInputElement;
-    const selectedFile = target.files?.[0];
-    if (selectedFile) {
-      handleFileSelect(selectedFile);
+    const files = target.files;
+    
+    if (!files || files.length === 0) return;
+    
+    if (files.length === 1) {
+      // Single file - use traditional modal upload
+      handleFileSelect(files[0]);
+    } else {
+      // Multiple files - use background upload service
+      handleMultipleFiles(Array.from(files));
     }
+    
     // Reset the input value to allow re-uploading the same file
     target.value = '';
   }
@@ -244,6 +511,28 @@
     if (!file) return;
     
     error = '';
+    
+    // Use background upload service for consistency with URLs and multiple files
+    try {
+      const uploadId = uploadsStore.addFile(file);
+      
+      // Clear form and close modal
+      file = null;
+      if (fileInput) fileInput.value = '';
+      dispatch('uploadComplete', { uploadId, isFile: true });
+      
+      // Show success toast
+      toastStore.success('File added to upload queue');
+      
+      return;
+    } catch (error) {
+      console.error('Error adding file to upload queue:', error);
+      toastStore.error('Failed to add file to upload queue');
+      return;
+    }
+    
+    // Legacy direct upload code (kept for reference but not used)
+    /*
     uploading = true;
     progress = 0;
     isCancelling = false;
@@ -461,6 +750,7 @@
         }, 3000);
       }
     }
+    */
   }
   
   // Cancel upload or selection
@@ -556,28 +846,90 @@
   function resetUrlState() {
     youtubeUrl = '';
     processingUrl = false;
-    urlProgress = 0;
     urlError = '';
     urlStatusMessage = '';
     currentFileId = null;
   }
 
-  // Switch tabs and reset states
-  function switchTab(tab: 'file' | 'url') {
+  // Switch tabs with recording protection
+  function switchTab(tab: 'file' | 'url' | 'record') {
     if (tab === activeTab) return;
     
+    // Allow switching tabs freely - recording continues in background
     activeTab = tab;
     
     if (tab === 'file') {
       resetUrlState();
-    } else {
+    } else if (tab === 'url') {
       resetUploadState();
+    } else if (tab === 'record') {
+      resetUploadState();
+      resetUrlState();
     }
   }
+  
 
   // Validate YouTube URL
   function isValidYouTubeUrl(url: string): boolean {
     return YOUTUBE_URL_REGEX.test(url.trim());
+  }
+
+  // Paste URL from clipboard - optimized for single-click experience
+  async function pasteFromClipboard() {
+    try {
+      // Check if clipboard API is available
+      if (!navigator.clipboard?.readText) {
+        fallbackToKeyboardPaste();
+        return;
+      }
+
+      // Check secure context
+      if (!window.isSecureContext) {
+        toastStore.info('Clipboard access requires HTTPS. Use Ctrl+V to paste manually.');
+        fallbackToKeyboardPaste();
+        return;
+      }
+
+      // Attempt direct clipboard read
+      const text = await navigator.clipboard.readText();
+      
+      if (text && text.trim()) {
+        youtubeUrl = text.trim();
+        urlError = ''; // Clear any previous errors
+        toastStore.success('✓ Pasted from clipboard');
+      } else {
+        toastStore.info('Clipboard appears to be empty');
+        fallbackToKeyboardPaste();
+      }
+      
+    } catch (error) {
+      // Clipboard read failed - handle gracefully with fallback
+      
+      // Handle permission denial gracefully
+      if (error.name === 'NotAllowedError') {
+        // Don't show error, just provide seamless fallback
+        fallbackToKeyboardPaste();
+      } else {
+        toastStore.info('Use Ctrl+V (Cmd+V on Mac) to paste');
+        fallbackToKeyboardPaste();
+      }
+    }
+  }
+
+  // Seamless fallback that focuses input for keyboard paste
+  function fallbackToKeyboardPaste() {
+    const input = document.getElementById('youtube-url') as HTMLInputElement;
+    if (input) {
+      input.focus();
+      input.select(); // Select any existing text for easy replacement
+      
+      // Brief visual feedback that the button worked and input is ready
+      setTimeout(() => {
+        if (document.activeElement === input) {
+          toastStore.info('Ready to paste - use Ctrl+V (Cmd+V on Mac)');
+        }
+      }, 100);
+    }
   }
 
   // Process YouTube URL
@@ -592,6 +944,60 @@
       return;
     }
 
+    // Prevent multiple submissions
+    if (processingUrl) {
+      return;
+    }
+    
+    processingUrl = true;
+    urlError = '';
+    urlStatusMessage = 'Starting YouTube processing...';
+    
+    try {
+      // Call the API endpoint directly for immediate processing
+      const response = await axiosInstance.post('/files/process-url', {
+        url: youtubeUrl.trim()
+      });
+      
+      // Get the media file response
+      const mediaFile = response.data;
+      
+      // Clear form immediately after successful submission
+      const processedUrl = youtubeUrl.trim();
+      youtubeUrl = '';
+      urlError = '';
+      urlStatusMessage = '';
+      
+      // Dispatch success event to close modal
+      dispatch('uploadComplete', { fileId: mediaFile.id, isUrl: true });
+      
+      // Show success toast with more descriptive message
+      toastStore.success(`YouTube video "${mediaFile.title || 'video'}" added to processing queue`);
+      
+    } catch (error: unknown) {
+      // YouTube processing error - show user-friendly messages
+      const axiosError = error as any;
+      
+      // Handle different types of errors
+      if (axiosError.response?.status === 409) {
+        // Duplicate video
+        urlError = axiosError.response.data.detail || 'This YouTube video already exists in your library';
+        toastStore.warning(urlError);
+      } else if (axiosError.response?.status === 400) {
+        // Bad request (invalid URL, etc.)
+        urlError = axiosError.response.data.detail || 'Invalid YouTube URL';
+        toastStore.error(urlError);
+      } else {
+        // Other errors
+        urlError = 'Failed to process YouTube URL. Please try again.';
+        toastStore.error(urlError);
+      }
+    } finally {
+      processingUrl = false;
+    }
+    
+    // Original modal-based processing (commented out but kept for reference)
+    /*
     urlError = '';
     processingUrl = true;
     urlProgress = 0;
@@ -657,6 +1063,7 @@
       processingUrl = false;
       cancelTokenSource = null;
     }
+    */
   }
 
   // Cancel URL processing
@@ -814,7 +1221,7 @@
       
       return "0x" + hashHex;
     } catch (error) {
-      console.error('Error calculating file hash:', error);
+      // File hash calculation failed - re-throw for proper error handling
       throw error;
     }
   }
@@ -850,6 +1257,20 @@
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
       </svg>
       YouTube URL
+    </button>
+    <button 
+      class="tab-button {activeTab === 'record' ? 'active' : ''}"
+      on:click={() => switchTab('record')}
+      disabled={!recordingSupported}
+      title={recordingSupported ? 'Record audio from microphone' : 'Recording not supported in this browser'}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+      Record Audio
     </button>
   </div>
   <!-- Display duplicate notification - made more prominent with !important -->
@@ -900,6 +1321,7 @@
   
   <!-- File Upload Tab -->
   {#if activeTab === 'file'}
+    <div class="file-upload-container">
     {#if !file}
     <div 
       id="drop-zone" 
@@ -916,12 +1338,14 @@
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
       <div class="upload-text">
-        <span>Drag & drop your audio/video file here</span>
+        <span>Drag & drop your audio/video files here</span>
         <span class="or-text">or click to browse</span>
+        <span class="multi-file-hint">Multiple files supported</span>
       </div>
       <input
         type="file"
         accept="audio/*,video/*"
+        multiple
         bind:this={fileInput}
         on:change={handleFileInputChange}
         style="display: none;"
@@ -983,7 +1407,8 @@
         </div>
       {/if}
     {/if}
-  {:else}
+    </div>
+  {:else if activeTab === 'url'}
     <!-- YouTube URL Tab -->
     <div class="url-input-container">
       <div class="url-input-section">
@@ -994,14 +1419,32 @@
           </svg>
           YouTube URL
         </label>
-        <input
-          id="youtube-url"
-          type="url"
-          placeholder="https://www.youtube.com/watch?v=..."
-          class="url-input"
-          bind:value={youtubeUrl}
-          disabled={processingUrl}
-        />
+        <div class="url-input-wrapper">
+          <input
+            id="youtube-url"
+            type="url"
+            placeholder="https://www.youtube.com/watch?v=..."
+            class="url-input"
+            bind:value={youtubeUrl}
+            disabled={processingUrl}
+          />
+          <button
+            type="button"
+            class="paste-button"
+            on:click={pasteFromClipboard}
+            disabled={processingUrl}
+            title="Paste URL from clipboard (or use Ctrl+V in the input field)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <path d="M12 11h4"/>
+              <path d="M12 16h4"/>
+              <path d="M8 11h.01"/>
+              <path d="M8 16h.01"/>
+            </svg>
+          </button>
+        </div>
         <div class="url-actions">
           <button
             type="button"
@@ -1037,16 +1480,9 @@
       {/if}
       
       {#if processingUrl}
-        <div class="progress-container">
-          <div class="progress-header">
-            <span class="progress-text">{urlProgress}%</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {urlProgress}%"></div>
-          </div>
-          {#if urlStatusMessage}
-            <p class="status-message">{urlStatusMessage}</p>
-          {/if}
+        <div class="url-processing-status">
+          <div class="processing-spinner"></div>
+          <p class="processing-message">{urlStatusMessage}</p>
         </div>
       {/if}
       
@@ -1060,8 +1496,237 @@
         </div>
       </div>
     </div>
+  {:else}
+    <!-- Recording Tab -->
+    <div class="recording-input-container">
+      {#if !recordingSupported}
+        <div class="message error-message">
+          <div class="message-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+          <div class="message-content">
+            Recording is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.
+          </div>
+        </div>
+      {:else}
+        <div class="recording-input-section">
+          {#if audioDevices.length > 0}
+            <div class="device-selector-centered">
+              <label for="audio-device-select" class="device-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                Microphone Device
+              </label>
+              <select
+                id="audio-device-select"
+                class="device-select"
+                value={selectedDeviceId}
+                on:change={handleDeviceChange}
+                disabled={$isRecording}
+                title="Select microphone device"
+              >
+                {#each audioDevices as device}
+                  <option value={device.deviceId}>
+                    {device.label || `Microphone ${audioDevices.indexOf(device) + 1}`}
+                  </option>
+                {/each}
+              </select>
+            </div>
+          {/if}
+
+          <div class="recording-controls-main">
+            {#if !$isRecording && !recordedBlob}
+              <button
+                class="recording-button primary-button"
+                on:click={startRecording}
+                title="Start audio recording (max {Math.floor(maxRecordingDuration / 60)} minutes)"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                  <line x1="12" y1="19" x2="12" y2="23"></line>
+                  <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                Start Recording
+              </button>
+            {:else if $isRecording}
+              <div class="recording-active-compact">
+                <div class="recording-status-row">
+                  <div class="recording-indicator-compact">
+                    <div class="recording-dot {isPaused ? 'paused' : 'recording'}"></div>
+                    <span class="recording-status-text">
+                      {isPaused ? 'Paused' : 'Recording'}
+                    </span>
+                    <span class="recording-duration-compact">{formatDuration($recordingDuration)}</span>
+                  </div>
+                </div>
+
+                <div class="audio-visualizer-compact">
+                  <div class="audio-level-meter-horizontal">
+                    {#each Array(20) as _, i}
+                      <div 
+                        class="audio-level-bar"
+                        class:active="{($audioLevel / 100) * 20 > i}"
+                        class:low="{i < 12}"
+                        class:medium="{i >= 12 && i < 16}"
+                        class:high="{i >= 16}"
+                      ></div>
+                    {/each}
+                  </div>
+                </div>
+
+                <div class="recording-controls-row-compact">
+                  <button
+                    class="control-button-compact pause-button"
+                    on:click={togglePauseRecording}
+                    title={isPaused ? 'Resume recording' : 'Pause recording'}
+                  >
+                    {#if isPaused}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
+                    {:else}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="6" y="4" width="4" height="16"></rect>
+                        <rect x="14" y="4" width="4" height="16"></rect>
+                      </svg>
+                    {/if}
+                  </button>
+
+                  <button
+                    class="control-button-compact stop-button"
+                    on:click={stopRecording}
+                    title="Stop recording and prepare for upload"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {:else if recordedBlob}
+              <div class="recording-complete-compact">
+                <div class="recording-info-compact">
+                  <div class="recording-details-compact">
+                    <span class="recording-title-compact">Recording Complete</span>
+                    <span class="recording-meta-compact">{formatDuration($recordingDuration)} • {(recordedBlob.size / 1024 / 1024).toFixed(1)} MB</span>
+                  </div>
+                </div>
+
+                <div class="recording-actions-vertical">
+                  <button
+                    class="control-button-compact upload-recording-button primary-action"
+                    on:click={uploadRecordedAudio}
+                    disabled={uploading}
+                    title="Upload recording for AI transcription and processing"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    {uploading ? 'Uploading...' : 'Upload'}
+                  </button>
+
+                  <div class="action-separator"></div>
+
+                  <button
+                    class="control-button-compact clear-button secondary-action"
+                    on:click={clearRecording}
+                    title="Clear recording and start over"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Start Over
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          {#if recordingError}
+            <div class="message error-message">
+              <div class="message-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+              </div>
+              <div class="message-content">{recordingError}</div>
+            </div>
+          {/if}
+
+          {#if uploading}
+            <div class="progress-container">
+              <div class="progress-header">
+                <span class="progress-text">{progress}%</span>
+                {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
+                  <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+                {/if}
+              </div>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: {progress}%"></div>
+              </div>
+              {#if statusMessage}
+                <p class="status-message">{statusMessage}</p>
+              {/if}
+            </div>
+          {/if}
+
+        </div>
+
+        <div class="recording-settings-section">
+          <div class="settings-summary-centered">
+            Max: {Math.floor(maxRecordingDuration / 60)}min • Quality: {recordingQuality} • Auto-stop: {autoStopEnabled ? 'On' : 'Off'}
+          </div>
+          <div class="settings-link-centered">
+            <a href="/settings" class="change-settings-link" title="Go to user settings to change recording preferences">Change settings</a>
+          </div>
+        </div>
+      {/if}
+    </div>
   {/if}
 </div>
+
+<!-- Background Recording Indicator -->
+{#if $hasActiveRecording && activeTab !== 'record'}
+  <div class="background-recording-indicator" title="Recording in progress - {Math.floor((Date.now() - ($recordingStartTime || 0)) / 1000)}s">
+    <div class="recording-pulse"></div>
+    <span class="recording-indicator-text">Recording...</span>
+    <button class="return-to-recording" on:click={() => switchTab('record')} title="Return to recording">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+    </button>
+  </div>
+{/if}
+
+<!-- Recording Warning Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showRecordingWarningModal}
+  title="Recording in Progress"
+  message="You have an active recording in progress. Switching tabs will stop and discard your recording. Are you sure you want to continue?"
+  confirmText="Discard Recording"
+  cancelText="Keep Recording"
+  confirmButtonClass="modal-warning-button"
+  cancelButtonClass="modal-primary-button"
+  on:confirm={handleRecordingWarningConfirm}
+  on:cancel={handleRecordingWarningCancel}
+/>
 
 <style>
   .uploader-container {
@@ -1076,9 +1741,24 @@
   
   .tab-navigation {
     display: flex;
+    justify-content: center;
     gap: 0.5rem;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 1rem;
+    padding: 0;
+    width: 100%;
+    position: relative;
+  }
+  
+  .tab-navigation::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: var(--border-color);
+    z-index: 0;
   }
   
   .tab-button {
@@ -1095,6 +1775,7 @@
     border-radius: 6px 6px 0 0;
     transition: all 0.2s ease;
     position: relative;
+    z-index: 1;
   }
   
   .tab-button:hover {
@@ -1116,7 +1797,6 @@
     right: 0;
     height: 2px;
     background-color: var(--primary-color);
-    border-radius: 2px 2px 0 0;
   }
   
   .drop-zone {
@@ -1168,6 +1848,17 @@
     font-size: 0.9em;
   }
   
+  .multi-file-hint {
+    color: var(--primary-color);
+    font-size: 0.8em;
+    font-weight: 500;
+    margin-top: 4px;
+  }
+  
+  .supported-formats {
+    text-align: center;
+  }
+
   .supported-formats p {
     margin: 0;
     font-size: 0.875rem;
@@ -1299,6 +1990,38 @@
     text-align: center;
     color: var(--color-primary);
   }
+
+  .url-processing-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background-color: rgba(59, 130, 246, 0.05);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 8px;
+    margin-top: 0.75rem;
+  }
+
+  .processing-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(59, 130, 246, 0.2);
+    border-top: 2px solid #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .processing-message {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #3b82f6;
+  }
   
   .error-message {
     background-color: rgba(239, 68, 68, 0.1);
@@ -1381,11 +2104,20 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
+  /* File Upload Container */
+  .file-upload-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.5rem 0; /* Consistent padding across all tabs */
+  }
+
   /* URL Input Styles */
   .url-input-container {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    padding: 0.5rem 0; /* Consistent padding across all tabs */
   }
   
   .url-input-section {
@@ -1407,15 +2139,53 @@
     color: #ff0000; /* YouTube red */
   }
   
+  .url-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  
   .url-input {
     width: 100%;
     padding: 0.75rem;
+    padding-right: 3rem; /* Make space for paste button */
     border: 2px solid var(--border-color);
     border-radius: 8px;
     font-size: 1rem;
     background-color: var(--surface-color);
     color: var(--text-primary);
     transition: border-color 0.2s ease;
+  }
+  
+  .paste-button {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 1;
+  }
+  
+  .paste-button:hover:not(:disabled) {
+    background: var(--button-hover);
+    color: var(--primary-color);
+    transform: scale(1.05);
+  }
+  
+  .paste-button:active {
+    transform: scale(0.95);
+  }
+  
+  .paste-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   
   .url-input:focus {
@@ -1514,8 +2284,732 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
   }
   
+  :global(.dark) .paste-button {
+    color: var(--text-secondary);
+  }
+  
+  :global(.dark) .paste-button:hover:not(:disabled) {
+    background: var(--button-hover);
+    color: var(--primary-color);
+  }
+  
   :global(.dark) .url-info {
     background-color: var(--surface-color);
     border-color: var(--border-color);
+  }
+
+  /* Recording Tab Styles */
+
+
+
+  .device-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .device-select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
+  }
+
+  .device-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .device-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+
+
+
+  .clear-button:hover {
+    background-color: #6b7280;
+    border-color: #6b7280;
+  }
+
+  .upload-recording-button {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+  }
+
+  .upload-recording-button:hover {
+    background-color: #2563eb;
+    border-color: #2563eb;
+  }
+
+  .upload-recording-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+
+  /* Tab button disabled state */
+  .tab-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-secondary);
+  }
+
+  .tab-button:disabled:hover {
+    background-color: transparent;
+    color: var(--text-secondary);
+    transform: none;
+  }
+
+  /* Dark mode adjustments */
+  :global(.dark) .device-select {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+
+  :global(.dark) .device-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+
+
+  .device-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    text-align: center;
+  }
+
+  .device-select {
+    width: 100%;
+    max-width: 250px;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
+    text-align: center;
+  }
+
+  .device-select:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .device-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .info-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .info-button:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+    background-color: rgba(59, 130, 246, 0.05);
+  }
+
+  .recording-controls-main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    background-color: var(--surface-color);
+    min-height: 180px;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .recording-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .recording-button.primary-button {
+    background-color: #dc2626;
+    color: white;
+    border-color: #dc2626;
+  }
+
+  .recording-button.primary-button:hover {
+    background-color: #b91c1c;
+    border-color: #b91c1c;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
+  }
+
+  .recording-button.primary-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
+  }
+
+  .recording-active-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+    transition: all 0.2s ease;
+  }
+
+  .recording-status-row {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .recording-indicator-compact {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .recording-status-text {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+  }
+
+  .recording-duration-compact {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    background-color: rgba(59, 130, 246, 0.1);
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+  }
+
+  .audio-visualizer-compact {
+    width: 100%;
+    margin: 0.25rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-height: 35px; /* Reduced for uniform bar heights */
+  }
+
+  .audio-level-meter-horizontal {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    height: 35px;
+    padding: 0 10px;
+    width: 50%;
+    margin: 0 auto;
+    justify-content: center;
+  }
+
+  .audio-level-bar {
+    width: 12px;
+    height: 25px;
+    border-radius: 3px;
+    background-color: var(--border-color);
+    opacity: 0.3;
+    transition: all 0.1s ease-out;
+  }
+
+  .audio-level-bar.active.low {
+    background-color: #10b981;
+    opacity: 1;
+    height: 25px;
+  }
+
+  .audio-level-bar.active.medium {
+    background-color: #f59e0b;
+    opacity: 1;
+    height: 25px;
+  }
+
+  .audio-level-bar.active.high {
+    background-color: #dc2626;
+    opacity: 1;
+    height: 25px;
+  }
+
+
+  .recording-controls-row-compact {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
+  .control-button-compact {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .control-button-compact:hover:not(:disabled) {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .control-button-compact:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .control-button-compact.pause-button:hover:not(:disabled) {
+    background-color: #f59e0b;
+    border-color: #f59e0b;
+    box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
+  }
+
+  .control-button-compact.stop-button:hover:not(:disabled) {
+    background-color: #dc2626;
+    border-color: #dc2626;
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25);
+  }
+
+  .recording-complete-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+
+  .recording-info-compact {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background-color: rgba(16, 185, 129, 0.1);
+    border: 1px solid #10b981;
+    border-radius: 8px;
+    width: 100%;
+  }
+
+  .recording-details-compact {
+    flex: 1;
+    text-align: center;
+  }
+
+  .recording-title-compact {
+    display: block;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+  }
+
+  .recording-meta-compact {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .recording-actions-compact {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .recording-actions-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+    width: 100%;
+  }
+
+  .action-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    width: 60%;
+    margin: 0.25rem 0;
+    opacity: 0.5;
+  }
+
+  .control-button-compact.primary-action {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    font-weight: 600;
+    min-width: 120px;
+  }
+
+  .control-button-compact.primary-action:hover:not(:disabled) {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .control-button-compact.secondary-action {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    opacity: 0.8;
+    min-width: 100px;
+  }
+
+  .control-button-compact.secondary-action:hover {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+    color: white;
+    opacity: 1;
+  }
+
+  .control-button-compact.clear-button {
+    border-color: var(--error-color);
+    color: var(--error-color);
+  }
+
+  .control-button-compact.clear-button:hover:not(:disabled) {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .control-button-compact.upload-recording-button {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    width: auto;
+    gap: 0.5rem;
+  }
+
+  .control-button-compact.upload-recording-button:hover:not(:disabled) {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .control-button-compact.upload-recording-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .recording-info-popup {
+    position: relative;
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .recording-info-content h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .recording-settings-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .setting-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+  }
+
+  .setting-label {
+    color: var(--text-secondary);
+  }
+
+  .setting-value {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .recording-features-compact ul {
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--text-secondary);
+  }
+
+  .recording-features-compact li {
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+  }
+
+  .settings-link {
+    margin: 0.75rem 0 0 0;
+    text-align: center;
+  }
+
+  .settings-link a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .settings-link a:hover {
+    text-decoration: underline;
+  }
+
+  .settings-link-inline {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .settings-link-inline:hover {
+    text-decoration: underline;
+  }
+
+  /* Recording info section styling - compact version - rules moved above */
+
+  .recording-settings-compact {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 0.75rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    text-align: center;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .recording-settings-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    width: 100%;
+  }
+
+  .settings-summary-centered {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: center;
+    width: fit-content;
+    margin: 0 auto;
+  }
+
+  .settings-link-centered {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+  }
+
+
+  .change-settings-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .change-settings-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Dark mode adjustments for recording components */
+  :global(.dark) .device-select {
+    background-color: var(--background-color);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+  }
+
+  :global(.dark) .device-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+
+  :global(.dark) .recording-controls-main {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+  }
+
+  :global(.dark) .recording-info {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+  }
+
+  :global(.dark) .control-button-compact {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  :global(.dark) .control-button-compact svg {
+    color: var(--text-color);
+  }
+
+  :global(.dark) .control-button-compact.clear-button {
+    border-color: var(--error-color);
+    color: var(--error-color);
+  }
+
+  :global(.dark) .control-button-compact.upload-recording-button {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+  }
+
+  :global(.dark) .info-button {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  :global(.dark) .info-button:hover {
+    color: var(--primary-color);
+    border-color: var(--primary-color);
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  :global(.dark) .recording-info-popup {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  :global(.dark) .recording-info-compact {
+    background-color: rgba(16, 185, 129, 0.15);
+  }
+
+  /* Background Recording Indicator */
+  .background-recording-indicator {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    backdrop-filter: blur(8px);
+  }
+
+  .recording-pulse {
+    width: 12px;
+    height: 12px;
+    background-color: #dc2626;
+    border-radius: 50%;
+    animation: pulse-recording 1.5s infinite;
+  }
+
+  @keyframes pulse-recording {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.2);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .recording-indicator-text {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .return-to-recording {
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.25rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+  }
+
+  .return-to-recording:hover {
+    background-color: var(--hover-color, rgba(59, 130, 246, 0.1));
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  :global(.dark) .background-recording-indicator {
+    background-color: var(--surface-color);
+    border-color: var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 </style>

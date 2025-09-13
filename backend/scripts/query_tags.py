@@ -7,20 +7,19 @@ import logging
 import os
 import sys
 
-from sqlalchemy import text
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Add the parent directory to sys.path
+# Add the parent directory to sys.path BEFORE any app imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import models after adding to path
+from sqlalchemy import text
+
 from app.db.base import SessionLocal
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def query_tags():
@@ -42,9 +41,7 @@ def query_tags():
         file_tags = db.query(FileTag).all()
         print("\n=== FILE TAGS ===")
         for ft in file_tags:
-            print(
-                f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}"
-            )
+            print(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
 
         # Get more details about file tags with join
         print("\n=== DETAILED FILE TAGS ===")

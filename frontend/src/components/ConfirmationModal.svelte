@@ -50,7 +50,7 @@
     transition:fade={{ duration: 200 }}
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
-    tabindex="0"
+    tabindex="-1"
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"
@@ -87,11 +87,10 @@
               {cancelText}
             </button>
           {/if}
-          <button 
-            class="modal-button {confirmButtonClass}" 
+          <button
+            class="modal-button {confirmButtonClass}"
             on:click={handleConfirm}
             type="button"
-            autofocus
           >
             {confirmText}
           </button>

@@ -34,12 +34,8 @@ router = APIRouter()
 @router.get("/{file_id}/waveform")
 async def get_audio_waveform(
     file_id: int,
-    samples: int = Query(
-        1000, description="Number of samples to return", ge=100, le=10000
-    ),
-    refresh_cache: bool = Query(
-        False, description="Force refresh of cached waveform data"
-    ),
+    samples: int = Query(1000, description="Number of samples to return", ge=100, le=10000),
+    refresh_cache: bool = Query(False, description="Force refresh of cached waveform data"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -86,22 +82,11 @@ async def get_audio_waveform(
 
         # Check for cached waveform data (prioritize cached data)
         cache_key = f"waveform_{samples}"
-        if (
-            not refresh_cache
-            and db_file.waveform_data
-            and isinstance(db_file.waveform_data, dict)
-        ):
+        if not refresh_cache and db_file.waveform_data and isinstance(db_file.waveform_data, dict):
             cached_data = db_file.waveform_data.get(cache_key)
-            if (
-                cached_data
-                and isinstance(cached_data, dict)
-                and cached_data.get("waveform")
-            ):
+            if cached_data and isinstance(cached_data, dict) and cached_data.get("waveform"):
                 # Check if cached data was generated with old algorithm (missing new fields)
-                if (
-                    "extracted_samples" not in cached_data
-                    or "expected_duration" not in cached_data
-                ):
+                if "extracted_samples" not in cached_data or "expected_duration" not in cached_data:
                     logger.info(
                         f"Cached waveform data for file {file_id} is outdated, regenerating"
                     )
@@ -130,9 +115,7 @@ async def get_audio_waveform(
 
                 # Extract waveform data using the WaveformGenerator
                 waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator._extract_single_waveform(
-                    temp_file_path, samples
-                )
+                waveform_data = waveform_generator._extract_single_waveform(temp_file_path, samples)
 
                 if not waveform_data:
                     raise ValueError("Failed to extract waveform data")
@@ -159,20 +142,16 @@ async def get_audio_waveform(
                     if os.path.exists(temp_file_path):
                         os.unlink(temp_file_path)
                 except Exception as cleanup_error:
-                    logger.warning(
-                        f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}"
-                    )
+                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Error generating waveform for file {file_id}: {e}", exc_info=True
-        )
+        logger.error(f"Error generating waveform for file {file_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate waveform: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/{file_id}/waveform/peaks")
@@ -269,20 +248,16 @@ async def get_audio_waveform_peaks(
                     if os.path.exists(temp_file_path):
                         os.unlink(temp_file_path)
                 except Exception as cleanup_error:
-                    logger.warning(
-                        f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}"
-                    )
+                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True
-        )
+        logger.error(f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate waveform peaks: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/{file_id}/waveform/generate")
@@ -312,9 +287,7 @@ async def generate_waveform_for_file(
             )
 
         # Trigger waveform generation task for this specific file
-        task_id = trigger_waveform_generation(
-            file_id=file_id, skip_existing=not force_regenerate
-        )
+        task_id = trigger_waveform_generation(file_id=file_id, skip_existing=not force_regenerate)
 
         action = "regeneration" if force_regenerate else "generation"
         return {
@@ -332,7 +305,7 @@ async def generate_waveform_for_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start waveform generation: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/waveforms/generate")
@@ -359,10 +332,7 @@ async def generate_waveforms_for_files(
         query = (
             db.query(MediaFile)
             .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(
-                MediaFile.content_type.like("audio/%")
-                | MediaFile.content_type.like("video/%")
-            )
+            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
         )
 
         if not force_regenerate:
@@ -379,9 +349,7 @@ async def generate_waveforms_for_files(
             }
 
         # Trigger the background task
-        task_id = trigger_waveform_generation(
-            file_id=None, skip_existing=not force_regenerate
-        )
+        task_id = trigger_waveform_generation(file_id=None, skip_existing=not force_regenerate)
 
         logger.info(
             f"User {current_user.id} triggered waveform generation for {len(files_to_process)} files"
@@ -400,7 +368,7 @@ async def generate_waveforms_for_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start waveform generation: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/waveforms/status")
@@ -424,30 +392,21 @@ def get_waveform_status(
         # Get counts for audio/video files
         total_media_files = (
             db.query(MediaFile)
-            .filter(
-                MediaFile.content_type.like("audio/%")
-                | MediaFile.content_type.like("video/%")
-            )
+            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
             .count()
         )
 
         completed_media_files = (
             db.query(MediaFile)
             .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(
-                MediaFile.content_type.like("audio/%")
-                | MediaFile.content_type.like("video/%")
-            )
+            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
             .count()
         )
 
         files_with_waveforms = (
             db.query(MediaFile)
             .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(
-                MediaFile.content_type.like("audio/%")
-                | MediaFile.content_type.like("video/%")
-            )
+            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
             .filter(MediaFile.waveform_data.isnot(None))
             .count()
         )
@@ -472,4 +431,4 @@ def get_waveform_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get waveform status: {str(e)}",
-        )
+        ) from e

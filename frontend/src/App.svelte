@@ -16,6 +16,7 @@
   import Navbar from "./components/Navbar.svelte";
   import NotificationsPanel from "./components/NotificationsPanel.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
+  import UploadManager from "./components/UploadManager.svelte";
   
   // Import routes
   import Login from "./routes/Login.svelte";
@@ -93,6 +94,7 @@
       {#if $isAuthenticated}
         <Navbar />
         <NotificationsPanel hideButton={true} />
+        <UploadManager />
       {/if}
       
       <main class="content {!$isAuthenticated ? 'no-navbar' : ''}">

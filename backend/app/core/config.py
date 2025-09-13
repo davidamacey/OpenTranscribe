@@ -16,9 +16,7 @@ class Settings(BaseSettings):
     DEBUG: bool = ENVIRONMENT == "development"
 
     # JWT Token settings
-    JWT_SECRET_KEY: str = os.getenv(
-        "JWT_SECRET_KEY", "this_should_be_changed_in_production"
-    )
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
@@ -83,9 +81,7 @@ class Settings(BaseSettings):
 
     # Hardware Detection Settings (auto-detected by default)
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
-    COMPUTE_TYPE: str = os.getenv(
-        "COMPUTE_TYPE", "auto"
-    )  # auto, float16, float32, int8
+    COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
     GPU_DEVICE_ID: int = int(
         os.getenv("GPU_DEVICE_ID", "0")
@@ -113,20 +109,12 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL_NAME: str = os.getenv("OLLAMA_MODEL_NAME", "llama2:7b-chat")
 
-    ANTHROPIC_MODEL_NAME: str = os.getenv(
-        "ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307"
-    )
-    ANTHROPIC_BASE_URL: str = os.getenv(
-        "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
-    )
+    ANTHROPIC_MODEL_NAME: str = os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-haiku-20240307")
+    ANTHROPIC_BASE_URL: str = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
-    OPENROUTER_MODEL_NAME: str = os.getenv(
-        "OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku"
-    )
-    OPENROUTER_BASE_URL: str = os.getenv(
-        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
-    )
+    OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
+    OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
 
     # Performance optimization properties

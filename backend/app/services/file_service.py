@@ -50,7 +50,7 @@ class FileService:
             return await process_file_upload(file, self.db, user)
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
-            raise ErrorHandler.file_processing_error("upload", e)
+            raise ErrorHandler.file_processing_error("upload", e) from e
 
     def get_user_files(
         self, user: User, filters: Optional[dict[str, Any]] = None
@@ -76,7 +76,7 @@ class FileService:
             return query.order_by(MediaFile.upload_time.desc()).all()
         except Exception as e:
             logger.error(f"Error getting user files: {e}")
-            raise ErrorHandler.database_error("file retrieval", e)
+            raise ErrorHandler.database_error("file retrieval", e) from e
 
     def get_file_by_id(self, file_id: int, user: User) -> MediaFile:
         """
@@ -94,9 +94,7 @@ class FileService:
         """
         return AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-    def update_file_metadata(
-        self, file_id: int, updates: MediaFileUpdate, user: User
-    ) -> MediaFile:
+    def update_file_metadata(self, file_id: int, updates: MediaFileUpdate, user: User) -> MediaFile:
         """
         Update file metadata.
 
@@ -122,7 +120,7 @@ class FileService:
         except Exception as e:
             logger.error(f"Error updating file metadata: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("file update", e)
+            raise ErrorHandler.database_error("file update", e) from e
 
     def delete_file(self, file_id: int, user: User) -> None:
         """
@@ -151,7 +149,7 @@ class FileService:
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("file deletion", e)
+            raise ErrorHandler.database_error("file deletion", e) from e
 
     def get_file_tags(self, file_id: int, user: User) -> list[str]:
         """
@@ -231,11 +229,9 @@ class FileService:
             )
         except Exception as e:
             logger.error(f"Error getting files by status: {e}")
-            raise ErrorHandler.database_error("status filtering", e)
+            raise ErrorHandler.database_error("status filtering", e) from e
 
-    def update_file_status(
-        self, file_id: int, status: FileStatus, user: User = None
-    ) -> None:
+    def update_file_status(self, file_id: int, status: FileStatus, user: User = None) -> None:
         """
         Update file status.
 
@@ -258,7 +254,7 @@ class FileService:
         except Exception as e:
             logger.error(f"Error updating file status: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("status update", e)
+            raise ErrorHandler.database_error("status update", e) from e
 
     def search_files(self, user: User, query: str, limit: int = 50) -> list[MediaFile]:
         """
@@ -283,9 +279,7 @@ class FileService:
             files_query = apply_search_filter(files_query, query)
 
             # Also search in transcript content
-            transcript_query = self.db.query(MediaFile).filter(
-                MediaFile.user_id == user.id
-            )
+            transcript_query = self.db.query(MediaFile).filter(MediaFile.user_id == user.id)
             transcript_query = apply_transcript_search_filter(transcript_query, query)
 
             # Combine results and remove duplicates
@@ -305,4 +299,4 @@ class FileService:
 
         except Exception as e:
             logger.error(f"Error searching files: {e}")
-            raise ErrorHandler.database_error("file search", e)
+            raise ErrorHandler.database_error("file search", e) from e

@@ -27,9 +27,7 @@ def test_get_task(client, user_token_headers, db_session):
     """Test getting a specific task"""
     # First upload a file to create an associated task
     sample_file = {"file": ("task_test.mp3", io.BytesIO(b"test content"), "audio/mpeg")}
-    upload_response = client.post(
-        "/api/files/", headers=user_token_headers, files=sample_file
-    )
+    upload_response = client.post("/api/files/", headers=user_token_headers, files=sample_file)
     file_id = upload_response.json()["id"]
 
     # Get tasks to find the one associated with this file

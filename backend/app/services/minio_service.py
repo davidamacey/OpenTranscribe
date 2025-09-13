@@ -30,12 +30,10 @@ def ensure_bucket_exists():
         if not minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME):
             minio_client.make_bucket(settings.MEDIA_BUCKET_NAME)
     except S3Error as e:
-        raise Exception(f"Error ensuring bucket exists: {e}")
+        raise Exception(f"Error ensuring bucket exists: {e}") from e
 
 
-def upload_file(
-    file_content: BinaryIO, file_size: int, object_name: str, content_type: str
-) -> str:
+def upload_file(file_content: BinaryIO, file_size: int, object_name: str, content_type: str) -> str:
     """
     Upload a file to MinIO
 
@@ -60,7 +58,7 @@ def upload_file(
         )
         return object_name
     except S3Error as e:
-        raise Exception(f"Error uploading file: {e}")
+        raise Exception(f"Error uploading file: {e}") from e
 
 
 def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
@@ -98,7 +96,7 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
         return io.BytesIO(file_content), content_length, content_type
     except Exception as e:
         logger.error(f"Error downloading file: {e}")
-        raise Exception(f"Error downloading file: {e}")
+        raise Exception(f"Error downloading file: {e}") from e
 
 
 def get_file_stream(object_name: str, range_header: str = None):
@@ -145,9 +143,7 @@ def get_file_stream(object_name: str, range_header: str = None):
                 if parts[0] and parts[1]:  # Format: bytes=start-end
                     start_byte = int(parts[0])
                     end_byte = (
-                        min(int(parts[1]), total_length - 1)
-                        if total_length
-                        else int(parts[1])
+                        min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
                     )
                 elif parts[0]:  # Format: bytes=start-
                     start_byte = int(parts[0])
@@ -160,18 +156,14 @@ def get_file_stream(object_name: str, range_header: str = None):
 
                 # Validate range is within bounds
                 if total_length and start_byte >= total_length:
-                    logger.warning(
-                        f"Range start {start_byte} exceeds file size {total_length}"
-                    )
+                    logger.warning(f"Range start {start_byte} exceeds file size {total_length}")
                     start_byte = 0
                     end_byte = total_length - 1
 
                 # Add offset and length parameters for MinIO
                 kwargs["offset"] = start_byte
                 if end_byte is not None:
-                    kwargs["length"] = (
-                        end_byte - start_byte + 1
-                    )  # +1 because range is inclusive
+                    kwargs["length"] = end_byte - start_byte + 1  # +1 because range is inclusive
 
                 logger.info(
                     f"Streaming with range: start={start_byte}, end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
@@ -237,7 +229,7 @@ def get_file_stream(object_name: str, range_header: str = None):
 
     except Exception as e:
         logger.error(f"Error setting up file stream for {object_name}: {e}")
-        raise Exception(f"Error streaming file: {e}")
+        raise Exception(f"Error streaming file: {e}") from e
 
 
 def get_file_url(object_name: str, expires: int = 86400) -> str:
@@ -258,9 +250,7 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
 
         # Debug logging
         logger = logging.getLogger(__name__)
-        logger.info(
-            f"Getting presigned URL for {object_name} with expires={expires} seconds"
-        )
+        logger.info(f"Getting presigned URL for {object_name} with expires={expires} seconds")
 
         # Create a direct URL using the get_presigned_url method
         try:
@@ -303,7 +293,7 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
     except Exception as e:
         # Catch all exceptions, not just S3Error
         logger.error(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
-        raise Exception(f"Error getting file URL: {e}")
+        raise Exception(f"Error getting file URL: {e}") from e
 
 
 def delete_file(object_name: str):
@@ -314,11 +304,9 @@ def delete_file(object_name: str):
         object_name: Object name in MinIO
     """
     try:
-        minio_client.remove_object(
-            bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
-        )
+        minio_client.remove_object(bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name)
     except S3Error as e:
-        raise Exception(f"Error deleting file: {e}")
+        raise Exception(f"Error deleting file: {e}") from e
 
 
 class MinIOService:
@@ -349,7 +337,7 @@ class MinIOService:
                     content_type=content_type,
                 )
         except Exception as e:
-            raise Exception(f"Error uploading file: {e}")
+            raise Exception(f"Error uploading file: {e}") from e
 
     def download_file(self, object_name: str, file_path: str, bucket_name: str = None):
         """Download a file from MinIO to local path."""
@@ -357,11 +345,9 @@ class MinIOService:
         try:
             self.client.fget_object(bucket, object_name, file_path)
         except Exception as e:
-            raise Exception(f"Error downloading file: {e}")
+            raise Exception(f"Error downloading file: {e}") from e
 
-    def get_presigned_url(
-        self, bucket_name: str, object_name: str, expires: int = 3600
-    ):
+    def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600):
         """Get a presigned URL for object access."""
         try:
             url = self.client.presigned_get_object(
@@ -377,56 +363,50 @@ class MinIOService:
                     url = url.replace("http://minio:9000", "http://localhost:5178")
                 else:
                     # For production, use environment variable for external MinIO URL
-                    external_url = os.getenv(
-                        "EXTERNAL_MINIO_URL", "http://localhost:5178"
-                    )
+                    external_url = os.getenv("EXTERNAL_MINIO_URL", "http://localhost:5178")
                     url = url.replace("http://minio:9000", external_url)
             return url
         except Exception as e:
-            raise Exception(f"Error getting presigned URL: {e}")
+            raise Exception(f"Error getting presigned URL: {e}") from e
 
     def delete_object(self, bucket_name: str, object_name: str):
         """Delete an object from MinIO."""
         try:
             self.client.remove_object(bucket_name, object_name)
         except Exception as e:
-            raise Exception(f"Error deleting object: {e}")
+            raise Exception(f"Error deleting object: {e}") from e
 
-    def list_objects(
-        self, bucket_name: str, prefix: str = None, recursive: bool = False
-    ):
+    def list_objects(self, bucket_name: str, prefix: str = None, recursive: bool = False):
         """List objects in a bucket."""
         try:
-            return self.client.list_objects(
-                bucket_name, prefix=prefix, recursive=recursive
-            )
+            return self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
         except Exception as e:
-            raise Exception(f"Error listing objects: {e}")
+            raise Exception(f"Error listing objects: {e}") from e
 
     def stat_object(self, bucket_name: str, object_name: str):
         """Get object statistics."""
         try:
             return self.client.stat_object(bucket_name, object_name)
         except Exception as e:
-            raise Exception(f"Error getting object stats: {e}")
+            raise Exception(f"Error getting object stats: {e}") from e
 
     def get_object(self, bucket_name: str, object_name: str):
         """Get object from MinIO."""
         try:
             return self.client.get_object(bucket_name, object_name)
         except Exception as e:
-            raise Exception(f"Error getting object: {e}")
+            raise Exception(f"Error getting object: {e}") from e
 
     def bucket_exists(self, bucket_name: str) -> bool:
         """Check if bucket exists."""
         try:
             return self.client.bucket_exists(bucket_name)
         except Exception as e:
-            raise Exception(f"Error checking bucket existence: {e}")
+            raise Exception(f"Error checking bucket existence: {e}") from e
 
     def make_bucket(self, bucket_name: str):
         """Create a new bucket."""
         try:
             self.client.make_bucket(bucket_name)
         except Exception as e:
-            raise Exception(f"Error creating bucket: {e}")
+            raise Exception(f"Error creating bucket: {e}") from e

@@ -9,15 +9,14 @@ from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Import from app directly - since we're running inside the container
 from app.core.config import settings
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Tag
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Create direct connection to database
 DATABASE_URL = settings.DATABASE_URL
@@ -44,9 +43,7 @@ def inspect_database():
         file_tags = db.query(FileTag).all()
         logger.info("\n=== FILE TAGS ===")
         for ft in file_tags:
-            logger.info(
-                f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}"
-            )
+            logger.info(f"FileTag ID: {ft.id}, File ID: {ft.media_file_id}, Tag ID: {ft.tag_id}")
 
         # Get more details about file tags with join
         logger.info("\n=== DETAILED FILE TAGS ===")

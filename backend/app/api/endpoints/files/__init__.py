@@ -8,9 +8,8 @@ This module contains the refactored files endpoint split into modular components
 - streaming.py: Video/audio streaming endpoints
 """
 
+import contextlib
 from datetime import datetime
-from typing import Dict
-from typing import List
 from typing import Optional
 
 from fastapi import APIRouter
@@ -52,9 +51,11 @@ from .streaming import get_enhanced_video_streaming_response
 from .streaming import get_thumbnail_streaming_response
 from .streaming import get_video_streaming_response
 from .streaming import validate_file_exists
-
-# Import main functions for use in the router
+from .subtitles import router as subtitles_router
+from .summary_status import router as summary_status_router
 from .upload import process_file_upload
+from .url_processing import router as url_processing_router
+from .waveform import router as waveform_router
 
 # Create the router
 router = APIRouter()
@@ -62,27 +63,9 @@ router = APIRouter()
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
-
-# Import and include subtitle router
-from .subtitles import router as subtitles_router
-
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])
-
-# Import and include waveform router
-from .waveform import router as waveform_router
-
 router.include_router(waveform_router, prefix="", tags=["waveform"])
-
-# Import and include URL processing router
-from .url_processing import router as url_processing_router
-
 router.include_router(url_processing_router, prefix="", tags=["url-processing"])
-
-# Import and include summary status router
-import contextlib
-
-from .summary_status import router as summary_status_router
-
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 
@@ -107,9 +90,7 @@ async def upload_media_file(
         file_hash = request.headers.get("X-File-Hash")
 
     # Process the file upload
-    db_file = await process_file_upload(
-        file, db, current_user, existing_file_id, file_hash
-    )
+    db_file = await process_file_upload(file, db, current_user, existing_file_id, file_hash)
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
@@ -235,12 +216,8 @@ def get_media_file_content(
 def download_media_file(
     file_id: int,
     token: str = None,
-    original: bool = Query(
-        False, description="Download original file without subtitles"
-    ),
-    include_speakers: bool = Query(
-        True, description="Include speaker labels in subtitles"
-    ),
+    original: bool = Query(False, description="Download original file without subtitles"),
+    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -269,9 +246,7 @@ def download_media_file(
             # Check if ffmpeg is available
             if not video_service.check_ffmpeg_availability():
                 # Fall back to original file if ffmpeg is not available
-                logger.warning(
-                    f"ffmpeg not available, serving original file for {file_id}"
-                )
+                logger.warning(f"ffmpeg not available, serving original file for {file_id}")
                 return get_content_streaming_response(db_file)
 
             logger.info(f"ffmpeg available, processing video {file_id} with subtitles")
@@ -286,9 +261,7 @@ def download_media_file(
                 output_format="mp4",
             )
 
-            logger.info(
-                f"Video processing complete, streaming processed video: {cache_key}"
-            )
+            logger.info(f"Video processing complete, streaming processed video: {cache_key}")
 
             # Stream the processed video through backend
             from fastapi.responses import StreamingResponse
@@ -303,9 +276,7 @@ def download_media_file(
 
             # Generate proper filename for download
             base_name = (
-                db_file.filename.rsplit(".", 1)[0]
-                if "." in db_file.filename
-                else db_file.filename
+                db_file.filename.rsplit(".", 1)[0] if "." in db_file.filename else db_file.filename
             )
             download_filename = f"{base_name}_with_subtitles.mp4"
 
@@ -318,9 +289,7 @@ def download_media_file(
             if total_length:
                 headers["Content-Length"] = str(total_length)
 
-            return StreamingResponse(
-                content=file_stream, media_type="video/mp4", headers=headers
-            )
+            return StreamingResponse(content=file_stream, media_type="video/mp4", headers=headers)
 
         except Exception as e:
             import logging
@@ -340,12 +309,8 @@ def download_media_file(
 def download_media_file_with_token(
     file_id: int,
     token: str,
-    original: bool = Query(
-        False, description="Download original file without subtitles"
-    ),
-    include_speakers: bool = Query(
-        True, description="Include speaker labels in subtitles"
-    ),
+    original: bool = Query(False, description="Download original file without subtitles"),
+    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     db: Session = Depends(get_db),
 ):
     """
@@ -363,9 +328,7 @@ def download_media_file_with_token(
 
     try:
         # Validate JWT token manually
-        payload = jwt.decode(
-            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-        )
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -419,9 +382,7 @@ def download_media_file_with_token(
                     output_format="mp4",
                 )
 
-                logger.info(
-                    f"Video processing complete, streaming processed video: {cache_key}"
-                )
+                logger.info(f"Video processing complete, streaming processed video: {cache_key}")
 
                 # Stream the processed video through backend
                 from fastapi.responses import StreamingResponse
@@ -465,11 +426,11 @@ def download_media_file_with_token(
         # Return original file
         return get_content_streaming_response(db_file)
 
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail="Invalid token") from e
     except Exception as e:
         logger.error(f"Error in download with token: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
+        raise HTTPException(status_code=401, detail="Authentication failed") from e
 
 
 @router.get("/{file_id}/video")
@@ -516,9 +477,7 @@ def get_metadata_filters_endpoint(
     return get_metadata_filters(db, current_user.id)
 
 
-@router.put(
-    "/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment
-)
+@router.put("/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment)
 def update_transcript_segment(
     file_id: int,
     segment_id: int,
@@ -530,9 +489,7 @@ def update_transcript_segment(
     from .crud import update_single_transcript_segment
 
     # Update the transcript segment
-    result = update_single_transcript_segment(
-        db, file_id, segment_id, segment_update, current_user
-    )
+    result = update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
 
     # Transcript has been updated - subtitles will be regenerated on-demand
 
@@ -584,7 +541,7 @@ def clear_video_cache(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing video cache: {str(e)}",
-        )
+        ) from e
 
 
 __all__ = [

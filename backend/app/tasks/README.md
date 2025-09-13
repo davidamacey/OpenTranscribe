@@ -39,9 +39,10 @@ tasks/
 │   └── notifications.py       # WebSocket notifications
 ├── analytics.py               # Analytics and insights processing
 ├── cleanup.py                 # File recovery and cleanup tasks
-├── summarization.py           # AI-powered summarization with intelligent section processing
+├── summarization.py           # Multi-provider AI summarization with intelligent section processing
 ├── summarization_helpers.py   # Context-aware chunking and LLM utilities
-└── transcription.py           # Main transcription task router
+├── transcription.py           # Main transcription task router
+└── youtube_processing.py      # NEW: Enhanced YouTube URL processing with metadata extraction
 ```
 
 ## 🎙️ Transcription Pipeline (`transcription/`)

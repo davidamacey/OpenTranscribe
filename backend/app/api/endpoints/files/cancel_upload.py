@@ -65,6 +65,6 @@ async def cancel_upload(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel upload",
-        )
+        ) from e
 
     return None

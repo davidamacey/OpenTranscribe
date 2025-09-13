@@ -4,7 +4,6 @@ LLM Status API endpoints
 
 import logging
 from typing import Any
-from typing import Dict
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -25,7 +24,7 @@ router = APIRouter()
 @router.get("/status")
 async def get_llm_status(
     current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Check if LLM services are available for the current user
 
@@ -93,7 +92,7 @@ async def get_llm_status(
 @router.get("/llm/providers")
 async def get_available_providers(
     current_user: User = Depends(get_current_active_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Get list of supported LLM providers
 
@@ -111,15 +110,13 @@ async def get_available_providers(
 
     except Exception as e:
         logger.error(f"Error getting LLM providers: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Error getting LLM providers: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error getting LLM providers: {str(e)}") from e
 
 
 @router.post("/llm/test-connection")
 async def test_llm_connection(
     current_user: User = Depends(get_current_active_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Test connection to the configured LLM service
 

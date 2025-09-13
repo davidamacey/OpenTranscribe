@@ -43,9 +43,7 @@ def get_user_file_status(
     """
     try:
         # Get user's files
-        user_files = (
-            db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
-        )
+        user_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
 
         # Count files by status
         status_counts = {
@@ -86,8 +84,7 @@ def get_user_file_status(
                         "status": file.status.value,
                         "upload_time": file.upload_time,
                         "age_hours": file_age.total_seconds() / 3600,
-                        "can_retry": file.status
-                        in [FileStatus.ERROR, FileStatus.PROCESSING],
+                        "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
                     }
                 )
 
@@ -123,7 +120,7 @@ def get_user_file_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving file status: {str(e)}",
-        )
+        ) from e
 
 
 @router.get("/{file_id}/status", response_model=dict[str, Any])
@@ -144,9 +141,7 @@ def get_file_detailed_status(
         )
 
         if not media_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
         # Get task summary
         task_summary = get_task_summary_for_media_file(db, file_id)
@@ -206,7 +201,7 @@ def get_file_detailed_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving file details: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/{file_id}/retry", response_model=dict[str, Any])
@@ -229,9 +224,7 @@ async def retry_file_processing(
         )
 
         if not media_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
         # Check if retry is appropriate
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
@@ -245,8 +238,7 @@ async def retry_file_processing(
             db.query(TaskModel)
             .filter(
                 TaskModel.media_file_id == file_id,
-                TaskModel.created_at
-                > datetime.now(timezone.utc) - timedelta(minutes=5),
+                TaskModel.created_at > datetime.now(timezone.utc) - timedelta(minutes=5),
             )
             .count()
         )
@@ -304,7 +296,7 @@ async def retry_file_processing(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrying file: {str(e)}",
-        )
+        ) from e
 
 
 @router.post("/request-recovery", response_model=dict[str, Any])
@@ -327,9 +319,7 @@ async def request_user_recovery(
                 from app.tasks.recovery import recover_user_files_task
 
                 result = recover_user_files_task.delay(current_user.id)
-                logger.info(
-                    f"User {current_user.id} requested file recovery, task ID: {result.id}"
-                )
+                logger.info(f"User {current_user.id} requested file recovery, task ID: {result.id}")
             except Exception as e:
                 logger.error(f"Error in user recovery request: {e}")
 
@@ -346,7 +336,7 @@ async def request_user_recovery(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error requesting recovery: {str(e)}",
-        )
+        ) from e
 
 
 def _get_file_suggestions(
@@ -374,9 +364,7 @@ def _get_file_suggestions(
                 "Large files or files with poor audio quality may take longer to process."
             )
         else:
-            suggestions.append(
-                "File is currently being processed. Please wait for completion."
-            )
+            suggestions.append("File is currently being processed. Please wait for completion.")
 
     elif media_file.status == FileStatus.PENDING:
         if file_age > timedelta(hours=1):
@@ -384,9 +372,7 @@ def _get_file_suggestions(
                 "This file has been waiting to be processed for a while. You can retry to move it to the front of the queue."
             )
         else:
-            suggestions.append(
-                "File is waiting to be processed. Processing will begin shortly."
-            )
+            suggestions.append("File is waiting to be processed. Processing will begin shortly.")
 
     elif media_file.status == FileStatus.COMPLETED:
         suggestions.append("File has been successfully processed and is ready for use.")

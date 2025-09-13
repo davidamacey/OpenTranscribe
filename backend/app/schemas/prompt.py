@@ -13,9 +13,7 @@ from pydantic import field_validator
 class SummaryPromptBase(BaseModel):
     """Base schema for summary prompts"""
 
-    name: str = Field(
-        ..., max_length=255, description="User-friendly name for the prompt"
-    )
+    name: str = Field(..., max_length=255, description="User-friendly name for the prompt")
     description: Optional[str] = Field(
         None, description="Optional description of what this prompt is for"
     )
@@ -80,9 +78,7 @@ class SummaryPrompt(SummaryPromptBase):
     user_id: Optional[int] = Field(
         None, description="User ID for custom prompts, null for system prompts"
     )
-    is_system_default: bool = Field(
-        False, description="Whether this is a system-provided prompt"
-    )
+    is_system_default: bool = Field(False, description="Whether this is a system-provided prompt")
     created_at: datetime
     updated_at: datetime
 
@@ -105,9 +101,7 @@ class UserSettingBase(BaseModel):
     """Base schema for user settings"""
 
     setting_key: str = Field(..., max_length=100, description="Setting key")
-    setting_value: Optional[str] = Field(
-        None, description="Setting value (JSON or simple value)"
-    )
+    setting_value: Optional[str] = Field(None, description="Setting value (JSON or simple value)")
 
 
 class UserSettingCreate(UserSettingBase):
@@ -147,9 +141,7 @@ class ActivePromptSelection(BaseModel):
 class ActivePromptResponse(BaseModel):
     """Schema for active prompt response"""
 
-    active_prompt_id: Optional[int] = Field(
-        None, description="Currently active prompt ID"
-    )
+    active_prompt_id: Optional[int] = Field(None, description="Currently active prompt ID")
     active_prompt: Optional[SummaryPrompt] = Field(
         None, description="Currently active prompt details"
     )

@@ -8,11 +8,12 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
+from app.models.media import Analytics
+from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
@@ -131,6 +132,94 @@ def format_bytes(byte_count):
         byte_count /= 1024
 
 
+def _delete_user_speakers(db: Session, user_id: int) -> None:
+    """Delete all speakers for a user.
+
+    Args:
+        db: Database session
+        user_id: ID of the user whose speakers to delete
+    """
+    speakers_count = db.query(Speaker).filter(Speaker.user_id == user_id).count()
+    if speakers_count > 0:
+        logger.info(f"Deleting {speakers_count} speakers for user {user_id}")
+        db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
+        logger.info("Speakers deleted successfully")
+
+
+def _delete_user_media_files(db: Session, user_id: int) -> None:
+    """Delete all media files and related records for a user.
+
+    Args:
+        db: Database session
+        user_id: ID of the user whose media files to delete
+    """
+    media_files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
+    media_count = len(media_files)
+
+    if media_count > 0:
+        logger.info(f"Found {media_count} media files for user {user_id}")
+        media_ids = [m.id for m in media_files]
+
+        # Delete transcript segments for these media files
+        segments_count = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id.in_(media_ids))
+            .count()
+        )
+
+        if segments_count > 0:
+            logger.info(f"Deleting {segments_count} transcript segments for user's media files")
+            db.query(TranscriptSegment).filter(
+                TranscriptSegment.media_file_id.in_(media_ids)
+            ).delete(synchronize_session=False)
+            logger.info("Transcript segments deleted successfully")
+
+        # Delete other related records using SQLAlchemy ORM for safety
+        if media_ids:
+            # Delete file_tag records safely using SQLAlchemy
+            file_tags_deleted = (
+                db.query(FileTag)
+                .filter(FileTag.media_file_id.in_(media_ids))
+                .delete(synchronize_session=False)
+            )
+            logger.info(f"Deleted {file_tags_deleted} file tags successfully")
+
+            # Delete analytics records safely using SQLAlchemy
+            analytics_deleted = (
+                db.query(Analytics)
+                .filter(Analytics.media_file_id.in_(media_ids))
+                .delete(synchronize_session=False)
+            )
+            logger.info(f"Deleted {analytics_deleted} analytics records successfully")
+
+        # Now delete the media files
+        db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
+        logger.info(f"Deleted {media_count} media files for user {user_id}")
+
+
+def _validate_user_deletion(user: User, current_user: User) -> None:
+    """Validate that a user can be deleted.
+
+    Args:
+        user: User to be deleted
+        current_user: User performing the deletion
+
+    Raises:
+        HTTPException: If user cannot be deleted
+    """
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account",
+        )
+
+    if user.is_superuser and current_user.id != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete a superuser account",
+        )
+
+
 @router.get("/stats", response_model=dict[str, Any])
 async def get_admin_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
@@ -185,17 +274,11 @@ async def get_admin_stats(
         total_files = db.query(MediaFile).count()
 
         # Count files by status
-        pending_files = (
-            db.query(MediaFile).filter(MediaFile.status == "pending").count()
-        )
+        pending_files = db.query(MediaFile).filter(MediaFile.status == "pending").count()
 
-        processing_files = (
-            db.query(MediaFile).filter(MediaFile.status == "processing").count()
-        )
+        processing_files = db.query(MediaFile).filter(MediaFile.status == "processing").count()
 
-        completed_files = (
-            db.query(MediaFile).filter(MediaFile.status == "completed").count()
-        )
+        completed_files = db.query(MediaFile).filter(MediaFile.status == "completed").count()
 
         error_files = db.query(MediaFile).filter(MediaFile.status == "error").count()
 
@@ -236,9 +319,7 @@ async def get_admin_stats(
                     "id": task.id,
                     "type": getattr(task, "task_type", ""),
                     "status": task.status,
-                    "created_at": task.created_at.isoformat()
-                    if task.created_at
-                    else None,
+                    "created_at": task.created_at.isoformat() if task.created_at else None,
                     "elapsed": int(elapsed) if elapsed else 0,
                 }
             )
@@ -337,8 +418,18 @@ def delete_admin_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """
-    Delete a user and all their data (admin only)
+    """Delete a user and all their data (admin only).
+
+    Args:
+        user_id: ID of the user to delete
+        db: Database session
+        current_user: Current admin user
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If user not found or deletion not allowed
     """
     logger.info(f"Admin deleting user with ID: {user_id}")
 
@@ -346,107 +437,27 @@ def delete_admin_user(
         user = db.query(User).filter(User.id == user_id).first()
 
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        if user.id == current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete your own account",
-            )
+        # Validate deletion is allowed
+        _validate_user_deletion(user, current_user)
 
-        # Check if user is a superuser
-        if (
-            user.is_superuser and current_user.id != 1
-        ):  # Only main admin can delete other superusers
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Cannot delete a superuser account",
-            )
-
-        # Delete speakers
+        # Delete related data in order
         try:
-            speakers_count = (
-                db.query(Speaker).filter(Speaker.user_id == user_id).count()
-            )
-            if speakers_count > 0:
-                logger.info(f"Deleting {speakers_count} speakers for user {user_id}")
-                db.query(Speaker).filter(Speaker.user_id == user_id).delete(
-                    synchronize_session=False
-                )
-                logger.info("Speakers deleted successfully")
+            _delete_user_speakers(db, user_id)
         except Exception as speaker_error:
             logger.error(f"Error deleting speakers: {speaker_error}")
             raise
 
-        # Find and delete all media file related entities
         try:
-            media_files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
-            media_count = len(media_files)
-
-            if media_count > 0:
-                logger.info(f"Found {media_count} media files for user {user_id}")
-                media_ids = [m.id for m in media_files]
-
-                # Delete transcript segments for these media files
-                segments_count = (
-                    db.query(TranscriptSegment)
-                    .filter(TranscriptSegment.media_file_id.in_(media_ids))
-                    .count()
-                )
-
-                if segments_count > 0:
-                    logger.info(
-                        f"Deleting {segments_count} transcript segments for user's media files"
-                    )
-                    db.query(TranscriptSegment).filter(
-                        TranscriptSegment.media_file_id.in_(media_ids)
-                    ).delete(synchronize_session=False)
-                    logger.info("Transcript segments deleted successfully")
-
-                # Delete other related records
-                try:
-                    if media_ids:
-                        # Use parameterized query to prevent SQL injection
-                        media_ids_str = ",".join(
-                            [":id" + str(i) for i in range(len(media_ids))]
-                        )
-                        media_ids_params = {
-                            f"id{i}": media_id for i, media_id in enumerate(media_ids)
-                        }
-
-                        file_tag_sql = text(
-                            f"DELETE FROM file_tag WHERE media_file_id IN ({media_ids_str})"
-                        )
-                        db.execute(file_tag_sql, media_ids_params)
-                        logger.info("File tags deleted successfully")
-
-                        analytics_sql = text(
-                            f"DELETE FROM analytics WHERE media_file_id IN ({media_ids_str})"
-                        )
-                        db.execute(analytics_sql, media_ids_params)
-                        logger.info("Analytics deleted successfully")
-                except Exception as related_error:
-                    logger.error(
-                        f"Error deleting file_tag or analytics: {related_error}"
-                    )
-                    raise
-
-                # Now delete the media files
-                db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(
-                    synchronize_session=False
-                )
-                logger.info(f"Deleted {media_count} media files for user {user_id}")
+            _delete_user_media_files(db, user_id)
         except Exception as media_error:
             logger.error(f"Error deleting media files: {media_error}")
             raise
 
-        # Now delete the user
+        # Delete the user
         try:
-            logger.info(
-                f"Final step: Deleting user with ID {user_id} and email {user.email}"
-            )
+            logger.info(f"Final step: Deleting user with ID {user_id} and email {user.email}")
             db.delete(user)
             db.commit()
             logger.info("User deleted from database")
@@ -458,13 +469,14 @@ def delete_admin_user(
         logger.info(f"===== USER DELETION COMPLETED SUCCESSFULLY: {user_id} =====")
         return {"message": "User deleted successfully"}
 
-    except HTTPException as he:
-        raise he
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"===== ERROR IN DELETE_USER: {e} =====")
         logger.error(f"Error type: {type(e).__name__}")
         logger.error(f"Error details: {str(e)}")
         db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting user: {str(e)}",
         ) from e

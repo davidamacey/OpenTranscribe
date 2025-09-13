@@ -70,13 +70,11 @@ class WhisperXService:
             Dictionary containing transcription result
         """
         try:
-            import gc
-
             import whisperx
-        except ImportError:
+        except ImportError as e:
             raise ImportError(
                 "WhisperX is not installed. Please install it with 'pip install whisperx'."
-            )
+            ) from e
 
         # Load model with hardware-specific configuration
         detected_device = self.hardware_config.device
@@ -119,9 +117,7 @@ class WhisperXService:
                 # Assume 16kHz sample rate (WhisperX default)
                 duration = len(audio) / 16000
                 if duration < 0.1:  # Less than 100ms
-                    raise ValueError(
-                        "Audio file is too short to contain meaningful content"
-                    )
+                    raise ValueError("Audio file is too short to contain meaningful content")
 
         except Exception as e:
             logger.error(f"Failed to load audio from {audio_file_path}: {str(e)}")
@@ -129,10 +125,10 @@ class WhisperXService:
                 # Don't expose internal dependency issues to users
                 raise ValueError(
                     "Audio file could not be processed. The file may be corrupted or in an unsupported format."
-                )
+                ) from e
             raise ValueError(
                 f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {str(e)}"
-            )
+            ) from e
 
         try:
             transcription_result = model.transcribe(
@@ -149,7 +145,7 @@ class WhisperXService:
             logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
             raise ValueError(
                 f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}"
-            )
+            ) from e
 
         logger.info(
             f"Initial transcription completed with {len(transcription_result['segments'])} segments"
@@ -161,9 +157,7 @@ class WhisperXService:
 
         return transcription_result, audio
 
-    def align_transcription(
-        self, transcription_result: dict[str, Any], audio
-    ) -> dict[str, Any]:
+    def align_transcription(self, transcription_result: dict[str, Any], audio) -> dict[str, Any]:
         """
         Align transcription with precise word-level timestamps.
 
@@ -175,11 +169,9 @@ class WhisperXService:
             Aligned transcription result
         """
         try:
-            import gc
-
             import whisperx
-        except ImportError:
-            raise ImportError("WhisperX is not installed.")
+        except ImportError as e:
+            raise ImportError("WhisperX is not installed.") from e
 
         logger.info("Loading alignment model...")
         align_model, align_metadata = whisperx.load_align_model(
@@ -221,8 +213,8 @@ class WhisperXService:
         """
         try:
             import whisperx
-        except ImportError:
-            raise ImportError("WhisperX is not installed.")
+        except ImportError as e:
+            raise ImportError("WhisperX is not installed.") from e
 
         logger.info("Performing speaker diarization...")
 
@@ -253,8 +245,8 @@ class WhisperXService:
         """
         try:
             import whisperx
-        except ImportError:
-            raise ImportError("WhisperX is not installed.")
+        except ImportError as e:
+            raise ImportError("WhisperX is not installed.") from e
 
         logger.info("Assigning speaker labels to transcript...")
         result = whisperx.assign_word_speakers(diarize_segments, aligned_result)

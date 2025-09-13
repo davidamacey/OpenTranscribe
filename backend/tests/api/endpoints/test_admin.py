@@ -43,9 +43,7 @@ def test_admin_users_create(client, admin_token_headers, db_session):
         "is_superuser": False,
     }
 
-    response = client.post(
-        "/api/admin/users", headers=admin_token_headers, json=new_user_data
-    )
+    response = client.post("/api/admin/users", headers=admin_token_headers, json=new_user_data)
     assert response.status_code == 200
     user_data = response.json()
 
@@ -57,18 +55,14 @@ def test_admin_users_create(client, admin_token_headers, db_session):
     # Verify user exists in the database
     from app.models.user import User
 
-    db_user = (
-        db_session.query(User).filter(User.email == new_user_data["email"]).first()
-    )
+    db_user = db_session.query(User).filter(User.email == new_user_data["email"]).first()
     assert db_user is not None
     assert db_user.email == new_user_data["email"]
 
 
 def test_admin_users_delete(client, admin_token_headers, normal_user, db_session):
     """Test admin user deletion endpoint"""
-    response = client.delete(
-        f"/api/admin/users/{normal_user.id}", headers=admin_token_headers
-    )
+    response = client.delete(f"/api/admin/users/{normal_user.id}", headers=admin_token_headers)
     assert response.status_code == 200
     assert response.json() == {"message": "User deleted successfully"}
 

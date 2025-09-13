@@ -179,10 +179,19 @@
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
       selectedFile = fileId;
+      // Disable body scrolling when modal opens
+      document.body.style.overflow = 'hidden';
     } catch (err) {
       console.error('Error fetching detailed status:', err);
       error = err.response?.data?.detail || 'Failed to load file details';
     }
+  }
+
+  function closeModal() {
+    detailedStatus = null;
+    selectedFile = null;
+    // Re-enable body scrolling when modal closes
+    document.body.style.overflow = '';
   }
   
   async function retryFile(fileId) {
@@ -350,6 +359,10 @@
     }
     if (unsubscribeWebSocket) {
       unsubscribeWebSocket();
+    }
+    // Ensure body scrolling is restored if component is destroyed while modal is open
+    if (document.body.style.overflow === 'hidden') {
+      document.body.style.overflow = '';
     }
   });
 </script>
@@ -704,11 +717,11 @@
   {/if}
   
   {#if detailedStatus && selectedFile}
-    <div class="detailed-status-modal" on:click={() => { detailedStatus = null; selectedFile = null; }}>
+    <div class="detailed-status-modal" on:click={closeModal}>
       <div class="modal-content" on:click|stopPropagation>
         <div class="modal-header">
           <h3>File Details: {detailedStatus.file.filename}</h3>
-          <button class="close-btn" on:click={() => { detailedStatus = null; selectedFile = null; }}>×</button>
+          <button class="close-btn" on:click={closeModal}>×</button>
         </div>
         
         <div class="modal-body">

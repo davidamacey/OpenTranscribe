@@ -63,7 +63,7 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error starting transcription: {e}")
-            raise ErrorHandler.file_processing_error("transcription start", e)
+            raise ErrorHandler.file_processing_error("transcription start", e) from e
 
     def get_transcription_status(self, file_id: int, user: User) -> dict[str, Any]:
         """
@@ -83,9 +83,7 @@ class TranscriptionService:
             # Get latest task for this file
             latest_task = (
                 self.db.query(Task)
-                .filter(
-                    Task.media_file_id == file_id, Task.task_type == "transcription"
-                )
+                .filter(Task.media_file_id == file_id, Task.task_type == "transcription")
                 .order_by(Task.created_at.desc())
                 .first()
             )
@@ -110,11 +108,9 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error getting transcription status: {e}")
-            raise ErrorHandler.database_error("status retrieval", e)
+            raise ErrorHandler.database_error("status retrieval", e) from e
 
-    def get_transcript_segments(
-        self, file_id: int, user: User
-    ) -> list[TranscriptSegment]:
+    def get_transcript_segments(self, file_id: int, user: User) -> list[TranscriptSegment]:
         """
         Get transcript segments for a file.
 
@@ -138,7 +134,7 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error getting transcript segments: {e}")
-            raise ErrorHandler.database_error("segment retrieval", e)
+            raise ErrorHandler.database_error("segment retrieval", e) from e
 
     def update_transcript_segments(
         self, file_id: int, updates: list[TranscriptSegmentUpdate], user: User
@@ -181,7 +177,7 @@ class TranscriptionService:
         except Exception as e:
             logger.error(f"Error updating transcript segments: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("segment update", e)
+            raise ErrorHandler.database_error("segment update", e) from e
 
     def get_file_speakers(self, file_id: int, user: User) -> list[Speaker]:
         """
@@ -208,11 +204,9 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error getting file speakers: {e}")
-            raise ErrorHandler.database_error("speaker retrieval", e)
+            raise ErrorHandler.database_error("speaker retrieval", e) from e
 
-    def update_speaker_info(
-        self, speaker_id: int, display_name: str, user: User
-    ) -> Speaker:
+    def update_speaker_info(self, speaker_id: int, display_name: str, user: User) -> Speaker:
         """
         Update speaker display name.
 
@@ -245,7 +239,7 @@ class TranscriptionService:
         except Exception as e:
             logger.error(f"Error updating speaker info: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("speaker update", e)
+            raise ErrorHandler.database_error("speaker update", e) from e
 
     def merge_speakers(
         self, primary_speaker_id: int, secondary_speaker_id: int, user: User
@@ -292,7 +286,7 @@ class TranscriptionService:
         except Exception as e:
             logger.error(f"Error merging speakers: {e}")
             self.db.rollback()
-            raise ErrorHandler.database_error("speaker merge", e)
+            raise ErrorHandler.database_error("speaker merge", e) from e
 
     def start_analysis(self, file_id: int, user: User) -> dict[str, Any]:
         """
@@ -330,7 +324,7 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error starting analysis: {e}")
-            raise ErrorHandler.file_processing_error("analysis start", e)
+            raise ErrorHandler.file_processing_error("analysis start", e) from e
 
     def start_summarization(self, file_id: int, user: User) -> dict[str, Any]:
         """
@@ -354,9 +348,7 @@ class TranscriptionService:
             )
 
             if segment_count == 0:
-                raise ErrorHandler.validation_error(
-                    "File has no transcript to summarize"
-                )
+                raise ErrorHandler.validation_error("File has no transcript to summarize")
 
             # Start summarization task
             task = summarize_transcript_task.delay(file_id)
@@ -370,11 +362,9 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error starting summarization: {e}")
-            raise ErrorHandler.file_processing_error("summarization start", e)
+            raise ErrorHandler.file_processing_error("summarization start", e) from e
 
-    def search_transcript(
-        self, file_id: int, query: str, user: User
-    ) -> list[TranscriptSegment]:
+    def search_transcript(self, file_id: int, query: str, user: User) -> list[TranscriptSegment]:
         """
         Search within a transcript.
 
@@ -402,4 +392,4 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Error searching transcript: {e}")
-            raise ErrorHandler.database_error("transcript search", e)
+            raise ErrorHandler.database_error("transcript search", e) from e

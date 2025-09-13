@@ -111,9 +111,7 @@ class SubtitleService:
                         subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
 
                     formatted_subtitles.append(
-                        "\n".join(
-                            subtitle_lines[: SubtitleService.MAX_LINES_PER_SUBTITLE]
-                        )
+                        "\n".join(subtitle_lines[: SubtitleService.MAX_LINES_PER_SUBTITLE])
                     )
                     current_subtitle = sentence
                 else:
@@ -140,12 +138,8 @@ class SubtitleService:
                 subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
 
             # Split into multiple subtitles if needed
-            for i in range(
-                0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE
-            ):
-                subtitle_chunk = subtitle_lines[
-                    i : i + SubtitleService.MAX_LINES_PER_SUBTITLE
-                ]
+            for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
+                subtitle_chunk = subtitle_lines[i : i + SubtitleService.MAX_LINES_PER_SUBTITLE]
                 # For WebVTT multi-line chunks, add speaker prefix to each chunk
                 if format_type.lower() == "webvtt" and speaker_prefix and i > 0:
                     subtitle_chunk[0] = f"{speaker_prefix}{subtitle_chunk[0]}"
@@ -191,9 +185,7 @@ class SubtitleService:
             allocated_time = duration * text_ratio
 
             # Apply minimum and maximum display time constraints
-            optimal_duration = SubtitleService.calculate_optimal_display_time(
-                subtitle_text
-            )
+            optimal_duration = SubtitleService.calculate_optimal_display_time(subtitle_text)
             actual_duration = min(
                 max(allocated_time, SubtitleService.MIN_DISPLAY_TIME), optimal_duration
             )
@@ -246,26 +238,18 @@ class SubtitleService:
         for segment in segments:
             speaker_name = None
             if include_speakers and segment.speaker_id:
-                speaker = (
-                    db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
-                )
+                speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
                 if speaker:
                     # Use display name if available, otherwise use original name
                     speaker_name = speaker.display_name or speaker.name
 
             # Split long segments into properly formatted subtitles for WebVTT
-            subtitle_parts = SubtitleService.split_long_segment(
-                segment, speaker_name, "webvtt"
-            )
+            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
 
             for start_time, end_time, text in subtitle_parts:
                 # Format WebVTT timestamps (using dots instead of commas)
-                start_timestamp = SubtitleService.format_timestamp(start_time).replace(
-                    ",", "."
-                )
-                end_timestamp = SubtitleService.format_timestamp(end_time).replace(
-                    ",", "."
-                )
+                start_timestamp = SubtitleService.format_timestamp(start_time).replace(",", ".")
+                end_timestamp = SubtitleService.format_timestamp(end_time).replace(",", ".")
 
                 # Add WebVTT cue
                 webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
@@ -273,9 +257,7 @@ class SubtitleService:
         return webvtt_content
 
     @staticmethod
-    def generate_srt_content(
-        db: Session, media_file_id: int, include_speakers: bool = True
-    ) -> str:
+    def generate_srt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
         """Generate SRT subtitle content from transcript segments."""
         # Get media file and transcript segments
         media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
@@ -299,26 +281,20 @@ class SubtitleService:
         for segment in segments:
             speaker_name = None
             if include_speakers and segment.speaker_id:
-                speaker = (
-                    db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
-                )
+                speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
                 if speaker:
                     # Use display name if available, otherwise use original name
                     speaker_name = speaker.display_name or speaker.name
 
             # Split long segments into properly formatted subtitles
-            subtitle_parts = SubtitleService.split_long_segment(
-                segment, speaker_name, "srt"
-            )
+            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
 
             for start_time, end_time, text in subtitle_parts:
                 # Format SRT entry
                 start_timestamp = SubtitleService.format_timestamp(start_time)
                 end_timestamp = SubtitleService.format_timestamp(end_time)
 
-                srt_entry = (
-                    f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
-                )
+                srt_entry = f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
                 srt_content.append(srt_entry)
                 subtitle_index += 1
 
@@ -332,9 +308,7 @@ class SubtitleService:
         output_path: Optional[str] = None,
     ) -> str:
         """Generate SRT file and optionally save to disk."""
-        srt_content = SubtitleService.generate_srt_content(
-            db, media_file_id, include_speakers
-        )
+        srt_content = SubtitleService.generate_srt_content(db, media_file_id, include_speakers)
 
         if output_path:
             with open(output_path, "w", encoding="utf-8") as f:

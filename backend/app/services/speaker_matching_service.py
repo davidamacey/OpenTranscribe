@@ -7,6 +7,9 @@ import numpy as np
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.constants import SPEAKER_CONFIDENCE_HIGH
+from app.core.constants import SPEAKER_CONFIDENCE_LOW
+from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.models.media import Speaker
 from app.models.media import SpeakerCollectionMember
 from app.models.media import SpeakerMatch
@@ -21,17 +24,15 @@ logger = logging.getLogger(__name__)
 class ConfidenceLevel:
     """Confidence level thresholds for speaker matching"""
 
-    HIGH = 0.75  # Auto-accept (green)
-    MEDIUM = 0.50  # Requires validation (yellow)
-    LOW = 0.0  # Requires user input (red)
+    HIGH = SPEAKER_CONFIDENCE_HIGH  # Auto-accept (green)
+    MEDIUM = SPEAKER_CONFIDENCE_MEDIUM  # Requires validation (yellow)
+    LOW = SPEAKER_CONFIDENCE_LOW  # Requires user input (red)
 
 
 class SpeakerMatchingService:
     """Service for matching speakers across media files with confidence levels."""
 
-    def __init__(
-        self, db: Session, embedding_service: Optional[SpeakerEmbeddingService]
-    ):
+    def __init__(self, db: Session, embedding_service: Optional[SpeakerEmbeddingService]):
         self.db = db
         self.embedding_service = embedding_service
 
@@ -115,9 +116,7 @@ class SpeakerMatchingService:
             List of matched speakers with video source information
         """
         matches = []
-        logger.info(
-            f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}"
-        )
+        logger.info(f"Finding unlabeled matches for speaker {exclude_speaker_id}, user {user_id}")
 
         try:
             from app.services.opensearch_service import opensearch_client
@@ -137,9 +136,7 @@ class SpeakerMatchingService:
                                         {
                                             "bool": {
                                                 "must_not": {
-                                                    "term": {
-                                                        "speaker_id": exclude_speaker_id
-                                                    }
+                                                    "term": {"speaker_id": exclude_speaker_id}
                                                 }
                                             }
                                         },
@@ -151,9 +148,7 @@ class SpeakerMatchingService:
                 },
             }
 
-            response = opensearch_client.search(
-                index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-            )
+            response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
             logger.info(
                 f"OpenSearch response for speaker {exclude_speaker_id}: {len(response['hits']['hits'])} hits"
@@ -169,9 +164,7 @@ class SpeakerMatchingService:
 
                     # Get the matched speaker details
                     matched_speaker = (
-                        self.db.query(Speaker)
-                        .filter(Speaker.id == match_speaker_id)
-                        .first()
+                        self.db.query(Speaker).filter(Speaker.id == match_speaker_id).first()
                     )
 
                     if matched_speaker and matched_speaker.media_file:
@@ -184,9 +177,7 @@ class SpeakerMatchingService:
                                 "media_file_title": matched_speaker.media_file.title
                                 or matched_speaker.media_file.filename,
                                 "confidence": confidence,
-                                "confidence_level": self.get_confidence_level(
-                                    confidence
-                                ),
+                                "confidence_level": self.get_confidence_level(confidence),
                                 "verified": matched_speaker.verified,
                                 "is_cross_video_suggestion": True,
                             }
@@ -198,9 +189,7 @@ class SpeakerMatchingService:
         except Exception as e:
             logger.error(f"Error finding unlabeled speaker matches: {e}")
 
-        logger.info(
-            f"Returning {len(matches)} unlabeled matches for speaker {exclude_speaker_id}"
-        )
+        logger.info(f"Returning {len(matches)} unlabeled matches for speaker {exclude_speaker_id}")
         return matches
 
     def match_speaker_to_profile(
@@ -347,13 +336,9 @@ class SpeakerMatchingService:
 
             # Aggregate embeddings for this speaker
             try:
-                aggregated_embedding = self.embedding_service.aggregate_embeddings(
-                    embeddings
-                )
+                aggregated_embedding = self.embedding_service.aggregate_embeddings(embeddings)
             except Exception as e:
-                logger.error(
-                    f"Error aggregating embeddings for speaker {speaker_id}: {e}"
-                )
+                logger.error(f"Error aggregating embeddings for speaker {speaker_id}: {e}")
                 continue
 
             speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
@@ -366,9 +351,7 @@ class SpeakerMatchingService:
             if match:
                 # Found a matching speaker - store the suggestion only if high confidence
                 speaker.confidence = match["confidence"]
-                if (
-                    match["confidence"] >= ConfidenceLevel.HIGH
-                ):  # Only suggest if ≥75% confidence
+                if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
                     speaker.suggested_name = match["suggested_name"]
 
                 # If high confidence, auto-apply the suggestion
@@ -417,9 +400,7 @@ class SpeakerMatchingService:
                         user_id=user_id,
                         name=speaker.name,
                         embedding=embedding_list,
-                        display_name=speaker.display_name
-                        if speaker.display_name
-                        else None,
+                        display_name=speaker.display_name if speaker.display_name else None,
                         media_file_id=media_file_id,
                     )
 
@@ -429,9 +410,7 @@ class SpeakerMatchingService:
                     )
 
                     if found_matches:
-                        logger.info(
-                            f"Found {len(found_matches)} matches for speaker {speaker_id}"
-                        )
+                        logger.info(f"Found {len(found_matches)} matches for speaker {speaker_id}")
                         # If there are high-confidence matches from verified speakers, suggest them
                         for match in found_matches:
                             if match["confidence"] >= 0.75 and match["display_name"]:
@@ -449,9 +428,7 @@ class SpeakerMatchingService:
                         }
                     )
                 else:
-                    logger.warning(
-                        f"Invalid embedding for speaker {speaker_id}, skipping storage"
-                    )
+                    logger.warning(f"Invalid embedding for speaker {speaker_id}, skipping storage")
                     results.append(
                         {
                             "speaker_id": speaker_id,
@@ -464,9 +441,7 @@ class SpeakerMatchingService:
         self.db.commit()
         return results
 
-    def find_speaker_occurrences(
-        self, profile_id: int, user_id: int
-    ) -> list[dict[str, Any]]:
+    def find_speaker_occurrences(self, profile_id: int, user_id: int) -> list[dict[str, Any]]:
         """
         Find all media files where a speaker profile appears.
 
@@ -504,9 +479,7 @@ class SpeakerMatchingService:
 
         return occurrences
 
-    def update_speaker_embeddings(
-        self, profile_id: int, audio_paths: list[str]
-    ) -> bool:
+    def update_speaker_embeddings(self, profile_id: int, audio_paths: list[str]) -> bool:
         """
         Update speaker profile embeddings with new reference audio.
 
@@ -518,11 +491,7 @@ class SpeakerMatchingService:
             Success status
         """
         try:
-            profile = (
-                self.db.query(SpeakerProfile)
-                .filter(SpeakerProfile.id == profile_id)
-                .first()
-            )
+            profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
 
             if not profile:
                 logger.error(f"Speaker profile {profile_id} not found")
@@ -639,11 +608,7 @@ class SpeakerMatchingService:
                                         {"term": {"user_id": user_id}},
                                         {
                                             "bool": {
-                                                "must_not": {
-                                                    "term": {
-                                                        "speaker_id": new_speaker_id
-                                                    }
-                                                }
+                                                "must_not": {"term": {"speaker_id": new_speaker_id}}
                                             }
                                         },
                                     ]
@@ -654,9 +619,7 @@ class SpeakerMatchingService:
                 },
             }
 
-            response = opensearch_client.search(
-                index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-            )
+            response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
             # Process each match
             for hit in response["hits"]["hits"]:
@@ -679,19 +642,40 @@ class SpeakerMatchingService:
                     )
 
                     if not existing_match:
-                        # Store the match
-                        speaker_match = SpeakerMatch(
-                            speaker1_id=speaker1_id,
-                            speaker2_id=speaker2_id,
-                            confidence=score,
+                        # Verify both speakers exist before creating match
+                        speaker1_exists = (
+                            self.db.query(Speaker).filter(Speaker.id == speaker1_id).first()
                         )
-                        self.db.add(speaker_match)
+                        speaker2_exists = (
+                            self.db.query(Speaker).filter(Speaker.id == speaker2_id).first()
+                        )
+
+                        if not speaker1_exists or not speaker2_exists:
+                            logger.debug(
+                                f"Skipping speaker match - speaker1_id {speaker1_id} exists: {bool(speaker1_exists)}, speaker2_id {speaker2_id} exists: {bool(speaker2_exists)}"
+                            )
+                            continue
+
+                        # Create match with both speakers verified to exist
+                        try:
+                            speaker_match = SpeakerMatch(
+                                speaker1_id=speaker1_id,
+                                speaker2_id=speaker2_id,
+                                confidence=score,
+                            )
+                            self.db.add(speaker_match)
+                            # Flush to catch any remaining issues
+                            self.db.flush()
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to create speaker match between {speaker1_id} and {speaker2_id}: {e}"
+                            )
+                            self.db.rollback()
+                            continue
 
                         # Get speaker details for the match
                         matched_speaker = (
-                            self.db.query(Speaker)
-                            .filter(Speaker.id == match_speaker_id)
-                            .first()
+                            self.db.query(Speaker).filter(Speaker.id == match_speaker_id).first()
                         )
 
                         if matched_speaker:
@@ -702,9 +686,7 @@ class SpeakerMatchingService:
                                     "display_name": matched_speaker.display_name,
                                     "media_file_id": matched_speaker.media_file_id,
                                     "confidence": score,
-                                    "confidence_level": self.get_confidence_level(
-                                        score
-                                    ),
+                                    "confidence_level": self.get_confidence_level(score),
                                 }
                             )
                     else:
@@ -746,16 +728,12 @@ class SpeakerMatchingService:
             for match in speaker_matches:
                 # Determine which speaker is the match
                 matched_speaker_id = (
-                    match.speaker2_id
-                    if match.speaker1_id == speaker_id
-                    else match.speaker1_id
+                    match.speaker2_id if match.speaker1_id == speaker_id else match.speaker1_id
                 )
 
                 # Get the matched speaker details
                 matched_speaker = (
-                    self.db.query(Speaker)
-                    .filter(Speaker.id == matched_speaker_id)
-                    .first()
+                    self.db.query(Speaker).filter(Speaker.id == matched_speaker_id).first()
                 )
 
                 if (
@@ -770,9 +748,7 @@ class SpeakerMatchingService:
                             "media_file_title": matched_speaker.media_file.title
                             or matched_speaker.media_file.filename,
                             "confidence": match.confidence,
-                            "confidence_level": self.get_confidence_level(
-                                match.confidence
-                            ),
+                            "confidence_level": self.get_confidence_level(match.confidence),
                             "verified": matched_speaker.verified,
                         }
                     )

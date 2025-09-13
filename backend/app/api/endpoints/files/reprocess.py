@@ -23,9 +23,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
     try:
         # Clear transcript-related fields that exist on the MediaFile model
         media_file.summary = None
-        media_file.summary_opensearch_id = (
-            None  # Clear OpenSearch summary ID for regeneration
-        )
+        media_file.summary_opensearch_id = None  # Clear OpenSearch summary ID for regeneration
         media_file.summary_status = "pending"  # Reset summary status for regeneration
         media_file.translated_text = None
         media_file.waveform_data = None  # Clear waveform data for regeneration
@@ -45,9 +43,7 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
             db.delete(segment)
 
         # Clear any existing speaker data
-        existing_speakers = (
-            db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
-        )
+        existing_speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
         for speaker in existing_speakers:
             db.delete(speaker)
 
@@ -83,9 +79,7 @@ def start_reprocessing_task(file_id: int) -> None:
         logger.info("Skipping Celery task in test environment")
 
 
-async def process_file_reprocess(
-    file_id: int, db: Session, current_user: User
-) -> MediaFile:
+async def process_file_reprocess(file_id: int, db: Session, current_user: User) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
 
@@ -140,9 +134,7 @@ async def process_file_reprocess(
                 detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
             )
 
-        logger.info(
-            f"Starting reprocessing for file {file_id} by user {current_user.email}"
-        )
+        logger.info(f"Starting reprocessing for file {file_id} by user {current_user.email}")
 
         # Use the enhanced retry logic
         success = reset_file_for_retry(db, file_id, reset_retry_count=False)
@@ -172,4 +164,4 @@ async def process_file_reprocess(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing reprocess request",
-        )
+        ) from e

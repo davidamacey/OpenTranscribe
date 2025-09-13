@@ -51,9 +51,7 @@ async def prepare_upload(
         # If file hash is provided, check for duplicates
         duplicate_id: Optional[int] = None
         if request.file_hash:
-            duplicate_id = await check_duplicate_by_hash(
-                db, request.file_hash, current_user.id
-            )
+            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
 
             if duplicate_id:
                 logger.info(
@@ -66,9 +64,7 @@ async def prepare_upload(
         file_metadata.file_hash = request.file_hash
 
         # Create the database record
-        db_file = create_media_file_record(
-            db, file_metadata, current_user, request.file_size
-        )
+        db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
 
         # Return the file ID
@@ -79,4 +75,4 @@ async def prepare_upload(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error preparing upload: {str(e)}",
-        )
+        ) from e

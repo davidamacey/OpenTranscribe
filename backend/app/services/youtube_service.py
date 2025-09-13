@@ -14,8 +14,10 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from typing import Callable
+from typing import Optional
 
-import httpx
+import requests
 import yt_dlp
 from fastapi import HTTPException
 from fastapi import status
@@ -25,8 +27,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
-from app.tasks.transcription import transcribe_audio_task
-from app.utils.thumbnail import generate_and_upload_thumbnail
+from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
 
@@ -82,15 +83,21 @@ class YouTubeService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to extract video information: {str(e)}",
-            )
+            ) from e
 
-    def download_video(self, url: str, output_path: str) -> dict[str, Any]:
+    def download_video(
+        self,
+        url: str,
+        output_path: str,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> dict[str, Any]:
         """
         Download video from YouTube URL.
 
         Args:
             url: YouTube URL
             output_path: Directory to save downloaded file
+            progress_callback: Optional callback for progress updates
 
         Returns:
             Dictionary with file path, filename, and video info
@@ -98,6 +105,20 @@ class YouTubeService:
         Raises:
             HTTPException: If download fails
         """
+
+        # Create progress hook function
+        def progress_hook(d):
+            if progress_callback and d.get("status") == "downloading":
+                # Calculate progress percentage from downloaded_bytes and total_bytes
+                total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate")
+                downloaded_bytes = d.get("downloaded_bytes", 0)
+
+                if total_bytes and total_bytes > 0:
+                    progress_percent = min(
+                        int((downloaded_bytes / total_bytes) * 40) + 20, 60
+                    )  # Map to 20-60% range
+                    progress_callback(progress_percent, "Downloading video...")
+
         # Configure yt-dlp options for highest quality with web-compatible output
         ydl_opts = {
             # Download best H.264 quality for maximum browser compatibility
@@ -112,10 +133,7 @@ class YouTubeService:
             "writeautomaticsub": False,  # Don't write auto-generated subs
             "ignoreerrors": False,
             "no_playlist": True,  # Only download single video
-            "max_filesize": 15
-            * 1024
-            * 1024
-            * 1024,  # 15GB limit (matches upload limit)
+            "max_filesize": 15 * 1024 * 1024 * 1024,  # 15GB limit (matches upload limit)
             # Ensure web-compatible MP4 output
             "merge_output_format": "mp4",
             "postprocessors": [
@@ -125,6 +143,10 @@ class YouTubeService:
                 }
             ],
         }
+
+        # Add progress hook if callback is provided
+        if progress_callback:
+            ydl_opts["progress_hooks"] = [progress_hook]
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -172,13 +194,13 @@ class YouTubeService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to download video: {str(e)}",
-            )
+            ) from e
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Unexpected error during download: {str(e)}",
-            )
+            ) from e
 
     def _extract_technical_metadata(self, file_path: str) -> dict[str, Any]:
         """
@@ -192,12 +214,8 @@ class YouTubeService:
         """
         try:
             # Use the existing metadata extraction service
-            from app.tasks.transcription.metadata_extractor import (
-                extract_media_metadata,
-            )
-            from app.tasks.transcription.metadata_extractor import (
-                get_important_metadata,
-            )
+            from app.tasks.transcription.metadata_extractor import extract_media_metadata
+            from app.tasks.transcription.metadata_extractor import get_important_metadata
 
             raw_metadata = extract_media_metadata(file_path)
             if raw_metadata:
@@ -258,19 +276,11 @@ class YouTubeService:
             probe = ffmpeg.probe(file_path)
             format_info = probe.get("format", {})
             video_stream = next(
-                (
-                    stream
-                    for stream in probe["streams"]
-                    if stream["codec_type"] == "video"
-                ),
+                (stream for stream in probe["streams"] if stream["codec_type"] == "video"),
                 None,
             )
             audio_stream = next(
-                (
-                    stream
-                    for stream in probe["streams"]
-                    if stream["codec_type"] == "audio"
-                ),
+                (stream for stream in probe["streams"] if stream["codec_type"] == "audio"),
                 None,
             )
 
@@ -286,9 +296,7 @@ class YouTubeService:
                         "video_codec": video_stream.get("codec_name"),
                         "width": video_stream.get("width"),
                         "height": video_stream.get("height"),
-                        "frame_rate": self._safe_frame_rate_eval(
-                            video_stream.get("r_frame_rate")
-                        )
+                        "frame_rate": self._safe_frame_rate_eval(video_stream.get("r_frame_rate"))
                         if video_stream.get("r_frame_rate")
                         else None,
                     }
@@ -308,9 +316,7 @@ class YouTubeService:
             logger.warning(f"Failed to extract basic metadata: {e}")
             return {"content_type": "video/mp4"}
 
-    def _prepare_youtube_metadata(
-        self, url: str, youtube_info: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
         """
         Prepare YouTube-specific metadata for storage.
 
@@ -337,11 +343,9 @@ class YouTubeService:
             "youtube_categories": youtube_info.get("categories", []),
         }
 
-    async def _download_youtube_thumbnail(
-        self, youtube_info: dict[str, Any], user_id: int
-    ) -> str:
+    def _download_youtube_thumbnail_sync(self, youtube_info: dict[str, Any], user_id: int) -> str:
         """
-        Download YouTube thumbnail and upload to storage.
+        Download YouTube thumbnail and upload to storage (synchronous version).
 
         Args:
             youtube_info: YouTube metadata from yt-dlp
@@ -381,11 +385,10 @@ class YouTubeService:
                     # Test each URL to see which works
                     for test_url in potential_urls:
                         try:
-                            async with httpx.AsyncClient() as client:
-                                response = await client.head(test_url, timeout=10)
-                                if response.status_code == 200:
-                                    thumbnail_url = test_url
-                                    break
+                            response = requests.head(test_url, timeout=10)
+                            if response.status_code == 200:
+                                thumbnail_url = test_url
+                                break
                         except:
                             continue
 
@@ -394,10 +397,9 @@ class YouTubeService:
                 return None
 
             # Download the thumbnail
-            async with httpx.AsyncClient() as client:
-                response = await client.get(thumbnail_url, timeout=30)
-                response.raise_for_status()
-                thumbnail_data = response.content
+            response = requests.get(thumbnail_url, timeout=30)
+            response.raise_for_status()
+            thumbnail_data = response.content
 
             if not thumbnail_data:
                 logger.warning("Empty thumbnail data received")
@@ -415,26 +417,33 @@ class YouTubeService:
                 content_type="image/jpeg",
             )
 
-            logger.info(
-                f"Successfully downloaded and uploaded YouTube thumbnail: {storage_path}"
-            )
+            logger.info(f"Successfully downloaded and uploaded YouTube thumbnail: {storage_path}")
             return storage_path
 
         except Exception as e:
             logger.error(f"Error downloading YouTube thumbnail: {e}")
             return None
 
-    async def process_youtube_url(self, url: str, db: Session, user: User) -> MediaFile:
+    def process_youtube_url_sync(
+        self,
+        url: str,
+        db: Session,
+        user: User,
+        media_file: MediaFile,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> MediaFile:
         """
-        Process a YouTube URL by downloading the video and creating a MediaFile record.
+        Process a YouTube URL by downloading the video and updating the MediaFile record (synchronous).
 
         Args:
             url: YouTube URL to process
             db: Database session
             user: User requesting the processing
+            media_file: Pre-created MediaFile to update
+            progress_callback: Optional callback for progress updates
 
         Returns:
-            Created MediaFile object
+            Updated MediaFile object
 
         Raises:
             HTTPException: If processing fails
@@ -444,17 +453,34 @@ class YouTubeService:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL"
             )
 
+        # Extract video info first to get YouTube ID
+        logger.debug(f"Extracting video information for URL: {url}")
+        video_info = self.extract_video_info(url)
+        youtube_id = video_info.get("id")
+
+        if not youtube_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not extract YouTube video ID",
+            )
+
         # Create temporary directory for download
         temp_dir = tempfile.mkdtemp(prefix="youtube_download_")
 
         try:
-            # Download the video
+            if progress_callback:
+                progress_callback(15, "Preparing for download...")
+
+            # Download the video using the already extracted info (this will use 20-60% progress range)
             logger.info(f"Starting YouTube download for URL: {url}")
-            download_result = self.download_video(url, temp_dir)
+            download_result = self.download_video(url, temp_dir, progress_callback)
+
+            if progress_callback:
+                progress_callback(65, "Video downloaded, processing metadata...")
 
             downloaded_file = download_result["file_path"]
             original_filename = download_result["filename"]
-            youtube_info = download_result["info"]
+            youtube_info = video_info  # Use the info we already extracted
 
             # Get file stats
             file_stats = os.stat(downloaded_file)
@@ -462,6 +488,9 @@ class YouTubeService:
 
             # Extract technical metadata from downloaded file first
             technical_metadata = self._extract_technical_metadata(downloaded_file)
+
+            if progress_callback:
+                progress_callback(75, "Uploading to storage...")
 
             # Generate unique storage path
             file_uuid = str(uuid.uuid4())
@@ -479,24 +508,21 @@ class YouTubeService:
                     content_type=technical_metadata.get("content_type", "video/mp4"),
                 )
 
+            if progress_callback:
+                progress_callback(85, "Processing thumbnails...")
+
             # Download and upload YouTube thumbnail
             thumbnail_path = None
             try:
-                thumbnail_path = await self._download_youtube_thumbnail(
-                    youtube_info, user.id
-                )
+                thumbnail_path = self._download_youtube_thumbnail_sync(youtube_info, user.id)
                 if thumbnail_path:
-                    logger.info(
-                        f"Successfully downloaded YouTube thumbnail: {thumbnail_path}"
-                    )
+                    logger.debug(f"Successfully downloaded YouTube thumbnail: {thumbnail_path}")
                 else:
-                    logger.warning(
-                        "Failed to download YouTube thumbnail, will generate from video"
-                    )
+                    logger.warning("Failed to download YouTube thumbnail, will generate from video")
                     # Fallback to generating thumbnail from video
-                    thumbnail_path = await generate_and_upload_thumbnail(
+                    thumbnail_path = generate_and_upload_thumbnail_sync(
                         user_id=user.id,
-                        media_file_id=0,  # Will be updated after DB save
+                        media_file_id=media_file.id,
                         video_path=downloaded_file,
                         timestamp=5.0,
                     )
@@ -504,67 +530,52 @@ class YouTubeService:
                 logger.error(f"Error downloading YouTube thumbnail: {e}")
                 # Fallback to generating thumbnail from video
                 try:
-                    thumbnail_path = await generate_and_upload_thumbnail(
+                    thumbnail_path = generate_and_upload_thumbnail_sync(
                         user_id=user.id,
-                        media_file_id=0,
+                        media_file_id=media_file.id,
                         video_path=downloaded_file,
                         timestamp=5.0,
                     )
                 except Exception as fallback_error:
-                    logger.error(
-                        f"Fallback thumbnail generation also failed: {fallback_error}"
-                    )
+                    logger.error(f"Fallback thumbnail generation also failed: {fallback_error}")
+
+            if progress_callback:
+                progress_callback(95, "Finalizing and updating database...")
 
             # Prepare YouTube metadata
             youtube_metadata = self._prepare_youtube_metadata(url, youtube_info)
 
-            # Create MediaFile record
-            media_file = MediaFile(
-                user_id=user.id,
-                filename=youtube_info.get("title", original_filename)[
-                    :255
-                ],  # Limit length
-                storage_path=storage_path,
-                file_size=file_size,
-                content_type=technical_metadata.get("content_type", "video/mp4"),
-                duration=technical_metadata.get("duration")
-                or youtube_info.get("duration"),
-                status=FileStatus.PENDING,
-                thumbnail_path=thumbnail_path,  # Add thumbnail path
-                # YouTube-specific metadata
-                title=youtube_info.get("title"),
-                author=youtube_info.get("uploader"),
-                description=youtube_info.get("description"),
-                source_url=url,  # Store original YouTube URL
-                metadata_raw=youtube_metadata,
-                metadata_important=youtube_metadata,
-                # Technical metadata from extraction
-                media_format=technical_metadata.get("format"),
-                codec=technical_metadata.get("video_codec"),
-                frame_rate=technical_metadata.get("frame_rate"),
-                resolution_width=technical_metadata.get("width"),
-                resolution_height=technical_metadata.get("height"),
-                audio_channels=technical_metadata.get("audio_channels"),
-                audio_sample_rate=technical_metadata.get("audio_sample_rate"),
-            )
+            # Update the existing MediaFile record
+            media_file.filename = youtube_info.get("title", original_filename)[:255]  # Limit length
+            media_file.storage_path = storage_path
+            media_file.file_size = file_size
+            media_file.content_type = technical_metadata.get("content_type", "video/mp4")
+            media_file.duration = technical_metadata.get("duration") or youtube_info.get("duration")
+            media_file.status = FileStatus.PENDING
+            media_file.thumbnail_path = thumbnail_path
 
-            # Save to database
-            db.add(media_file)
+            # YouTube-specific metadata
+            media_file.title = youtube_info.get("title")
+            media_file.author = youtube_info.get("uploader")
+            media_file.description = youtube_info.get("description")
+            media_file.source_url = url  # Store original YouTube URL
+            media_file.metadata_raw = youtube_metadata
+            media_file.metadata_important = youtube_metadata
+
+            # Technical metadata from extraction
+            media_file.media_format = technical_metadata.get("format")
+            media_file.codec = technical_metadata.get("video_codec")
+            media_file.frame_rate = technical_metadata.get("frame_rate")
+            media_file.resolution_width = technical_metadata.get("width")
+            media_file.resolution_height = technical_metadata.get("height")
+            media_file.audio_channels = technical_metadata.get("audio_channels")
+            media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
+
+            # Save updated record to database
             db.commit()
             db.refresh(media_file)
 
-            logger.info(f"Created MediaFile record {media_file.id} for YouTube video")
-
-            # Thumbnail is already properly set from YouTube's official thumbnail
-            # No need to regenerate with media file ID since we're using YouTube video ID
-
-            # Start transcription task
-            try:
-                transcribe_audio_task.delay(media_file.id)
-                logger.info(f"Started transcription task for MediaFile {media_file.id}")
-            except Exception as e:
-                logger.error(f"Failed to start transcription task: {e}")
-                # Don't fail the whole process if task scheduling fails
+            logger.info(f"Updated MediaFile record {media_file.id} for YouTube video")
 
             return media_file
 
@@ -572,6 +583,6 @@ class YouTubeService:
             # Clean up temporary files
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+                logger.debug(f"Cleaned up temporary directory: {temp_dir}")
             except Exception as e:
                 logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")

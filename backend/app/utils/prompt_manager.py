@@ -18,9 +18,7 @@ from app.models import UserSetting
 logger = logging.getLogger(__name__)
 
 
-def get_user_active_prompt(
-    user_id: Optional[int] = None, db: Optional[Session] = None
-) -> str:
+def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] = None) -> str:
     """
     Get the active summary prompt for a user, falling back to system default
 
@@ -58,15 +56,11 @@ def get_user_active_prompt(
                 prompt_id = int(active_setting.setting_value)
                 active_prompt = (
                     db.query(SummaryPrompt)
-                    .filter(
-                        and_(SummaryPrompt.id == prompt_id, SummaryPrompt.is_active)
-                    )
+                    .filter(and_(SummaryPrompt.id == prompt_id, SummaryPrompt.is_active))
                     .first()
                 )
             except (ValueError, TypeError):
-                logger.warning(
-                    f"Invalid prompt ID in user setting: {active_setting.setting_value}"
-                )
+                logger.warning(f"Invalid prompt ID in user setting: {active_setting.setting_value}")
 
         # If no active prompt or prompt not found, get system default from database
         if not active_prompt:
@@ -142,9 +136,7 @@ def get_system_default_prompt(db: Session) -> str:
             return default_prompt.prompt_text
 
         # Final fallback: any active system prompt
-        logger.warning(
-            "No general system prompt found, using any available system prompt"
-        )
+        logger.warning("No general system prompt found, using any available system prompt")
         any_system_prompt = (
             db.query(SummaryPrompt)
             .filter(and_(SummaryPrompt.is_system_default, SummaryPrompt.is_active))
@@ -284,9 +276,7 @@ def create_user_prompt(
             db.close()
 
 
-def set_user_active_prompt(
-    user_id: int, prompt_id: int, db: Optional[Session] = None
-) -> bool:
+def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] = None) -> bool:
     """
     Set a user's active summary prompt
 

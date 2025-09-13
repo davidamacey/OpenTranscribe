@@ -33,9 +33,7 @@ def require_file_ownership(func: Callable) -> Callable:
         file_id = kwargs.get("file_id")
 
         if not all([db, current_user, file_id]):
-            raise ValueError(
-                "Function must have 'db', 'current_user', and 'file_id' parameters"
-            )
+            raise ValueError("Function must have 'db', 'current_user', and 'file_id' parameters")
 
         # Check if user owns the file
         file_exists = (
@@ -87,11 +85,7 @@ def require_admin_or_ownership(
                 return func(*args, **kwargs)
 
             # Check if user owns the resource
-            resource = (
-                db.query(resource_model)
-                .filter(resource_model.id == resource_id)
-                .first()
-            )
+            resource = db.query(resource_model).filter(resource_model.id == resource_id).first()
 
             if not resource or getattr(resource, user_id_field) != current_user.id:
                 raise HTTPException(
@@ -202,9 +196,7 @@ class AuthorizationHelper:
         return file_obj
 
     @staticmethod
-    def check_admin_or_owner(
-        resource, user: User, owner_field: str = "user_id"
-    ) -> bool:
+    def check_admin_or_owner(resource, user: User, owner_field: str = "user_id") -> bool:
         """
         Check if user is admin or owns the resource.
 
@@ -248,13 +240,9 @@ class AuthorizationHelper:
         resource = db.query(model_class).filter(model_class.id == resource_id).first()
 
         if not resource:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
 
         if not AuthorizationHelper.check_admin_or_owner(resource, user, owner_field):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
         return resource

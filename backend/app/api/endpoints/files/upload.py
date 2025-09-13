@@ -1,3 +1,4 @@
+import contextlib
 import io
 import logging
 import os
@@ -8,11 +9,14 @@ from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.constants import UPLOAD_CHUNK_SIZE
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
 from app.tasks.transcription import transcribe_audio_task
+from app.utils.filename import get_safe_storage_filename
+from app.utils.filename import sanitize_filename
 from app.utils.thumbnail import generate_and_upload_thumbnail
 
 logger = logging.getLogger(__name__)
@@ -65,9 +69,11 @@ def create_media_file_record(
         file_hash = getattr(file, "file_hash", None)
 
         # Create MediaFile record with essential metadata
+        # Sanitize filename to prevent issues with special characters
+        sanitized_filename = sanitize_filename(file.filename)
 
         db_file = MediaFile(
-            filename=file.filename,
+            filename=sanitized_filename,
             user_id=current_user.id,
             storage_path="",  # Will be updated after upload
             file_size=file_size,
@@ -93,7 +99,7 @@ def create_media_file_record(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating media file record: {str(e)}",
-        )
+        ) from e
 
 
 def upload_file_to_storage(
@@ -167,11 +173,8 @@ async def process_file_upload(
 
         # Get file size from content-length header if available
         file_size = 0
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             file_size = int(file.headers.get("content-length", 0))
-        except (ValueError, TypeError):
-            # If we can't get size from headers, we'll calculate it while reading chunks
-            pass
 
         # Check if we should use an existing file record (from prepare_upload)
         if existing_file_id:
@@ -191,9 +194,7 @@ async def process_file_upload(
                 # Create a new file record if the existing one can't be found
                 db_file = create_media_file_record(db, file, current_user, file_size)
             else:
-                logger.info(
-                    f"Duplicate detected: using existing file ID={existing_file_id}"
-                )
+                logger.info(f"Duplicate detected: using existing file ID={existing_file_id}")
                 # Update the status to PENDING
                 db_file.status = FileStatus.PENDING
                 db.commit()
@@ -202,19 +203,18 @@ async def process_file_upload(
             db_file = create_media_file_record(db, file, current_user, file_size)
             logger.info(f"Created new file record with ID: {db_file.id}")
 
-        # Generate storage path
-        storage_path = f"user_{current_user.id}/file_{db_file.id}/{file.filename}"
+        # Generate storage path with sanitized filename
+        storage_path = get_safe_storage_filename(file.filename, current_user.id, db_file.id)
         temp_file_path: Optional[str] = None
 
         try:
-            # Process file in chunks (10MB chunks by default)
-            chunk_size = 10 * 1024 * 1024  # 10MB chunks
+            # Process file in chunks
             file_content = bytearray()
             total_read = 0
 
             # Read file in chunks
             while True:
-                chunk = await file.read(chunk_size)
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
                 file_content.extend(chunk)
@@ -237,9 +237,7 @@ async def process_file_upload(
                 )
 
             # Upload to storage
-            upload_file_to_storage(
-                file_content, file_size, storage_path, file.content_type
-            )
+            upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
 
             # For video files, generate and upload a thumbnail
             thumbnail_path = None
@@ -267,9 +265,7 @@ async def process_file_upload(
                         )
                         db_file.thumbnail_path = thumbnail_path
                     else:
-                        logger.warning(
-                            f"Failed to generate thumbnail for video: {file.filename}"
-                        )
+                        logger.warning(f"Failed to generate thumbnail for video: {file.filename}")
                 finally:
                     # Clean up temporary file
                     if temp_file_path and os.path.exists(temp_file_path):
@@ -301,15 +297,13 @@ async def process_file_upload(
 
             # Clean up temporary file if it exists
             if temp_file_path and os.path.exists(temp_file_path):
-                try:
+                with contextlib.suppress(Exception):
                     os.unlink(temp_file_path)
-                except Exception:
-                    pass  # Already handling an error, don't raise another
 
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error during file upload: {str(upload_error)}",
-            )
+            ) from upload_error
 
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -319,4 +313,4 @@ async def process_file_upload(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing file upload: {str(e)}",
-        )
+        ) from e

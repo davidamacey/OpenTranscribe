@@ -229,9 +229,7 @@ class TestLLMSettingsAPI:
         existing_settings = Mock()
         existing_settings.id = 1
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = (
-            existing_settings
-        )
+        mock_db.query.return_value.filter.return_value.first.return_value = existing_settings
         mock_get_db.return_value = mock_db
 
         settings_data = {"provider": "openai", "model_name": "gpt-4o-mini"}
@@ -348,54 +346,56 @@ class TestLLMServiceIntegration:
 
     async def test_create_from_user_settings_success(self):
         """Test creating LLM service from valid user settings"""
-        with patch("app.services.llm_service.SessionLocal") as mock_session_local:
-            with patch("app.utils.encryption.decrypt_api_key") as mock_decrypt:
-                # Mock database
-                mock_settings = Mock()
-                mock_settings.provider = "openai"
-                mock_settings.model_name = "gpt-4o-mini"
-                mock_settings.api_key = "encrypted_key"
-                mock_settings.base_url = "https://api.openai.com/v1"
-                mock_settings.max_tokens = 2000
-                mock_settings.temperature = "0.3"
-                mock_settings.timeout = 60
-                mock_settings.is_active = True
+        with (
+            patch("app.services.llm_service.SessionLocal") as mock_session_local,
+            patch("app.utils.encryption.decrypt_api_key") as mock_decrypt,
+        ):
+            # Mock database
+            mock_settings = Mock()
+            mock_settings.provider = "openai"
+            mock_settings.model_name = "gpt-4o-mini"
+            mock_settings.api_key = "encrypted_key"
+            mock_settings.base_url = "https://api.openai.com/v1"
+            mock_settings.max_tokens = 2000
+            mock_settings.temperature = "0.3"
+            mock_settings.timeout = 60
+            mock_settings.is_active = True
 
-                mock_db = Mock()
-                mock_db.query.return_value.filter.return_value.first.return_value = (
-                    mock_settings
-                )
-                mock_session_local.return_value = mock_db
+            mock_db = Mock()
+            mock_db.query.return_value.filter.return_value.first.return_value = mock_settings
+            mock_session_local.return_value = mock_db
 
-                # Mock decryption
-                mock_decrypt.return_value = "sk-test123456789"
+            # Mock decryption
+            mock_decrypt.return_value = "sk-test123456789"
 
-                from app.services.llm_service import LLMService
+            from app.services.llm_service import LLMService
 
-                service = LLMService.create_from_user_settings(user_id=1)
+            service = LLMService.create_from_user_settings(user_id=1)
 
-                assert service is not None
-                assert service.config.provider.value == "openai"
-                assert service.config.model == "gpt-4o-mini"
+            assert service is not None
+            assert service.config.provider.value == "openai"
+            assert service.config.model == "gpt-4o-mini"
 
     async def test_create_from_settings_with_fallback(self):
         """Test creating LLM service with fallback to system defaults"""
-        with patch(
-            "app.services.llm_service.LLMService.create_from_user_settings"
-        ) as mock_user_settings:
-            with patch(
+        with (
+            patch(
+                "app.services.llm_service.LLMService.create_from_user_settings"
+            ) as mock_user_settings,
+            patch(
                 "app.services.llm_service.LLMService.create_from_system_settings"
-            ) as mock_system_settings:
-                # Mock user settings failure
-                mock_user_settings.return_value = None
-                mock_system_settings.return_value = Mock()
+            ) as mock_system_settings,
+        ):
+            # Mock user settings failure
+            mock_user_settings.return_value = None
+            mock_system_settings.return_value = Mock()
 
-                from app.services.llm_service import LLMService
+            from app.services.llm_service import LLMService
 
-                service = LLMService.create_from_settings(user_id=1)
+            LLMService.create_from_settings(user_id=1)
 
-                mock_user_settings.assert_called_once_with(1)
-                mock_system_settings.assert_called_once()
+            mock_user_settings.assert_called_once_with(1)
+            mock_system_settings.assert_called_once()
 
 
 class TestLLMSettingsIntegration:
@@ -436,9 +436,7 @@ class TestLLMSettingsIntegration:
         mock_settings.is_active = True
 
         mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = (
-            mock_settings
-        )
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_settings
         mock_session_local.return_value = mock_db
 
         # Test service creation

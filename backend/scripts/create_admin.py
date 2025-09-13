@@ -31,8 +31,8 @@ def create_admin_user():
     """
     # Create database engine and session
     engine = create_engine(settings.DATABASE_URL)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = session_local()
 
     try:
         # Check if admin already exists

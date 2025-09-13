@@ -57,12 +57,8 @@ class SpeakerEmbeddingService:
                     use_auth_token=hf_token,
                 )
             else:
-                logger.info(
-                    "Initializing pyannote embedding model without authentication"
-                )
-                self.inference = Inference(
-                    self.model_name, window="whole", device=self.device
-                )
+                logger.info("Initializing pyannote embedding model without authentication")
+                self.inference = Inference(self.model_name, window="whole", device=self.device)
 
             logger.info(f"Initialized pyannote embedding model on {self.device}")
         except Exception as e:
@@ -155,9 +151,7 @@ class SpeakerEmbeddingService:
 
             if embeddings:
                 speaker_embeddings[speaker_id] = embeddings
-                logger.info(
-                    f"Extracted {len(embeddings)} embeddings for speaker {speaker_id}"
-                )
+                logger.info(f"Extracted {len(embeddings)} embeddings for speaker {speaker_id}")
 
         return speaker_embeddings
 
@@ -181,9 +175,7 @@ class SpeakerEmbeddingService:
         stacked = np.vstack(embeddings)
         return np.mean(stacked, axis=0)
 
-    def compute_similarity(
-        self, embedding1: np.ndarray, embedding2: np.ndarray
-    ) -> float:
+    def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """
         Compute cosine similarity between two embeddings.
 
@@ -204,9 +196,7 @@ class SpeakerEmbeddingService:
         # Ensure similarity is in [0, 1] range
         return float((similarity + 1) / 2)
 
-    def extract_reference_embedding(
-        self, audio_paths: list[str]
-    ) -> Optional[np.ndarray]:
+    def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
         """
         Extract a reference embedding from multiple audio samples of the same speaker.
 

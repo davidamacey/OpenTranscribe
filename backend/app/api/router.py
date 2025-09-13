@@ -19,6 +19,7 @@ from .endpoints import summarization
 from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import user_files
+from .endpoints import user_settings
 from .endpoints import users
 from .endpoints.files import router as files_router
 from .endpoints.files.management import router as file_management_router
@@ -69,9 +70,7 @@ def include_router_with_consistency(router, prefix, tags=None):
 # Include routers from different endpoints with consistent path handling
 include_router_with_consistency(auth.router, prefix="/auth", tags=["auth"])
 include_router_with_consistency(files_router, prefix="/files", tags=["files"])
-include_router_with_consistency(
-    file_management_router, prefix="/files", tags=["file-management"]
-)
+include_router_with_consistency(file_management_router, prefix="/files", tags=["file-management"])
 include_router_with_consistency(search.router, prefix="/search", tags=["search"])
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
 include_router_with_consistency(
@@ -82,20 +81,15 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
-include_router_with_consistency(
-    collections.router, prefix="/collections", tags=["collections"]
-)
-include_router_with_consistency(
-    user_files.router, prefix="/my-files", tags=["user-files"]
-)
-include_router_with_consistency(
-    summarization.router, prefix="/files", tags=["summarization"]
-)
+include_router_with_consistency(collections.router, prefix="/collections", tags=["collections"])
+include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
+include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])
-include_router_with_consistency(
-    llm_settings.router, prefix="/llm-settings", tags=["llm-settings"]
-)
+include_router_with_consistency(llm_settings.router, prefix="/llm-settings", tags=["llm-settings"])
 include_router_with_consistency(llm_status.router, prefix="/llm", tags=["llm-status"])
+include_router_with_consistency(
+    user_settings.router, prefix="/user-settings", tags=["user-settings"]
+)
 
 # Include WebSocket router without prefix since it handles its own paths
 api_router.include_router(websockets.router, tags=["websockets"])

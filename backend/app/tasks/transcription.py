@@ -52,9 +52,7 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
             return {"status": "error", "message": "Not a video file"}
 
         video_suffix = Path(filename).suffix
-        with tempfile.NamedTemporaryFile(
-            suffix=video_suffix, delete=False
-        ) as temp_video:
+        with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as temp_video:
             temp_video.write(file_data.read())
             video_path = temp_video.name
 
@@ -72,9 +70,7 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
             ) as temp_audio:
                 audio_path = temp_audio.name
 
-            ffmpeg.input(video_path).output(audio_path).run(
-                quiet=True, overwrite_output=True
-            )
+            ffmpeg.input(video_path).output(audio_path).run(quiet=True, overwrite_output=True)
 
             with open(audio_path, "rb") as audio_file:
                 audio_data = audio_file.read()
@@ -138,9 +134,7 @@ def analyze_transcript_task(file_id: int):
 
             full_text = " ".join([segment.text for segment in segments])
 
-            analytics = (
-                db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
-            )
+            analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
             if not analytics:
                 analytics = Analytics(media_file_id=file_id)
                 db.add(analytics)
@@ -230,9 +224,9 @@ def summarize_transcript_task(file_id: int):
                                 sentence_scores[i] = word_frequencies[word]
 
                 num_summary_sentences = min(3, len(sentences))
-                top_sentences = sorted(
-                    sentence_scores.items(), key=lambda x: x[1], reverse=True
-                )[:num_summary_sentences]
+                top_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)[
+                    :num_summary_sentences
+                ]
                 top_sentences = sorted(top_sentences, key=lambda x: x[0])
 
                 summary = " ".join([sentences[i] for i, _ in top_sentences])

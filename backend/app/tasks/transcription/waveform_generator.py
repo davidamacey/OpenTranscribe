@@ -33,21 +33,15 @@ class WaveformGenerator:
     def _check_dependencies(self):
         """Check that required dependencies (FFmpeg) are available."""
         try:
-            subprocess.run(
-                ["ffmpeg", "-version"], capture_output=True, check=True, timeout=10
-            )
-            subprocess.run(
-                ["ffprobe", "-version"], capture_output=True, check=True, timeout=10
-            )
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)
+            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)
         except (
             subprocess.CalledProcessError,
             FileNotFoundError,
             subprocess.TimeoutExpired,
         ) as e:
             logger.error(f"FFmpeg not available: {e}")
-            raise RuntimeError(
-                "FFmpeg is required for waveform generation but not available"
-            )
+            raise RuntimeError("FFmpeg is required for waveform generation but not available") from e
 
     def generate_waveform_data(self, file_path: str) -> Optional[dict[str, Any]]:
         """
@@ -68,15 +62,11 @@ class WaveformGenerator:
                 if waveform_data:
                     cache_key = f"waveform_{samples}"
                     waveform_cache[cache_key] = waveform_data
-                    logger.debug(
-                        f"Generated {resolution_name} waveform: {samples} samples"
-                    )
+                    logger.debug(f"Generated {resolution_name} waveform: {samples} samples")
 
             # If we got at least one waveform, return the cache
             if waveform_cache:
-                logger.info(
-                    f"Generated waveform data for {len(waveform_cache)} resolutions"
-                )
+                logger.info(f"Generated waveform data for {len(waveform_cache)} resolutions")
                 return waveform_cache
             else:
                 logger.warning(f"Failed to generate waveform data for {file_path}")
@@ -112,9 +102,7 @@ class WaveformGenerator:
                 file_path,
             ]
 
-            result = subprocess.run(
-                probe_cmd, capture_output=True, text=True, check=True
-            )
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
             probe_data = json.loads(result.stdout)
 
             # Find audio stream
@@ -169,9 +157,7 @@ class WaveformGenerator:
             )
 
             logger.debug(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
-            result = subprocess.run(
-                ffmpeg_cmd, capture_output=True, check=True, timeout=300
-            )
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=300)
 
             # Convert bytes to numpy array
             audio_data = np.frombuffer(result.stdout, dtype=np.int16)
@@ -236,9 +222,7 @@ class WaveformGenerator:
                     f"Audio has fewer samples ({total_samples}) than target ({target_samples})"
                 )
                 indices = np.linspace(0, total_samples - 1, target_samples)
-                waveform = np.interp(
-                    indices, np.arange(total_samples), np.abs(audio_data)
-                ).tolist()
+                waveform = np.interp(indices, np.arange(total_samples), np.abs(audio_data)).tolist()
 
             # Ensure we have exactly target_samples
             if len(waveform) < target_samples:
@@ -262,9 +246,7 @@ class WaveformGenerator:
                 "samples": len(waveform),
                 "original_sample_rate": sample_rate,
                 "extracted_samples": total_samples,  # Total audio samples extracted
-                "seconds_per_point": actual_duration / target_samples
-                if target_samples > 0
-                else 0,
+                "seconds_per_point": actual_duration / target_samples if target_samples > 0 else 0,
             }
 
         except subprocess.CalledProcessError as e:

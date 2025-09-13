@@ -24,9 +24,7 @@ class OpenSearchSummaryService:
 
     def __init__(self):
         self.client = opensearch_client
-        self.index_name = getattr(
-            settings, "OPENSEARCH_SUMMARY_INDEX", "transcript_summaries"
-        )
+        self.index_name = getattr(settings, "OPENSEARCH_SUMMARY_INDEX", "transcript_summaries")
 
         # Ensure the summary index exists
         self._ensure_summary_index_exists()
@@ -107,9 +105,7 @@ class OpenSearchSummaryService:
                                         "type": "text",
                                         "analyzer": "summary_analyzer",
                                     },
-                                    "status": {
-                                        "type": "keyword"
-                                    },  # pending, completed, cancelled
+                                    "status": {"type": "keyword"},  # pending, completed, cancelled
                                 },
                             },
                             # Key decisions
@@ -180,9 +176,7 @@ class OpenSearchSummaryService:
                 refresh=True,  # Make document immediately searchable
             )
 
-            logger.info(
-                f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}"
-            )
+            logger.info(f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}")
             return doc_id
 
         except Exception as e:
@@ -214,9 +208,7 @@ class OpenSearchSummaryService:
             logger.error(f"Error retrieving summary: {e}")
             return None
 
-    async def get_summary_by_file_id(
-        self, file_id: int, user_id: int
-    ) -> Optional[dict[str, Any]]:
+    async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[dict[str, Any]]:
         """
         Get the latest summary for a specific file
 
@@ -243,7 +235,7 @@ class OpenSearchSummaryService:
                 },
                 "sort": [
                     {"summary_version": {"order": "desc"}},
-                    {"created_at": {"order": "desc"}}
+                    {"created_at": {"order": "desc"}},
                 ],
                 "size": 1,
             }
@@ -357,11 +349,7 @@ class OpenSearchSummaryService:
                     "nested": {
                         "path": "action_items",
                         "query": {
-                            "bool": {
-                                "must_not": {
-                                    "term": {"action_items.status": "completed"}
-                                }
-                            }
+                            "bool": {"must_not": {"term": {"action_items.status": "completed"}}}
                         },
                     }
                 }
@@ -433,11 +421,7 @@ class OpenSearchSummaryService:
                             "action_count": {
                                 "nested": {"path": "action_items"},
                                 "aggs": {
-                                    "total": {
-                                        "value_count": {
-                                            "field": "action_items.text.keyword"
-                                        }
-                                    }
+                                    "total": {"value_count": {"field": "action_items.text.keyword"}}
                                 },
                             },
                             "pending_actions": {
@@ -447,9 +431,7 @@ class OpenSearchSummaryService:
                                         "filter": {
                                             "bool": {
                                                 "must_not": {
-                                                    "term": {
-                                                        "action_items.status": "completed"
-                                                    }
+                                                    "term": {"action_items.status": "completed"}
                                                 }
                                             }
                                         }
@@ -492,16 +474,10 @@ class OpenSearchSummaryService:
             analytics = {
                 "total_summaries": response["hits"]["total"]["value"],
                 "speaker_stats": [],  # No longer tracking speaker stats
-                "action_items_trend": self._process_trend_aggregation(
-                    aggs["action_items_trend"]
-                ),
-                "common_topics": self._process_topics_aggregation(
-                    aggs["common_topics"]
-                ),
+                "action_items_trend": self._process_trend_aggregation(aggs["action_items_trend"]),
+                "common_topics": self._process_topics_aggregation(aggs["common_topics"]),
                 "summary_statistics": aggs["summary_stats"],
-                "provider_usage": self._process_terms_aggregation(
-                    aggs["provider_usage"]
-                ),
+                "provider_usage": self._process_terms_aggregation(aggs["provider_usage"]),
             }
 
             return analytics
@@ -541,6 +517,42 @@ class OpenSearchSummaryService:
         except Exception as e:
             logger.error(f"Error updating summary: {e}")
             return False
+
+    async def get_max_version(self, file_id: int, user_id: int) -> int:
+        """
+        Get the highest version number for a file's summaries
+
+        Args:
+            file_id: Media file ID
+            user_id: User ID for security
+
+        Returns:
+            Maximum version number for the file, or 0 if no summaries exist
+        """
+        if not self.client:
+            return 0
+
+        try:
+            query = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"file_id": file_id}},
+                            {"term": {"user_id": user_id}},
+                        ]
+                    }
+                },
+                "aggs": {"max_version": {"max": {"field": "summary_version"}}},
+                "size": 0,
+            }
+
+            response = self.client.search(index=self.index_name, body=query)
+            max_version = response["aggregations"]["max_version"]["value"]
+            return int(max_version) if max_version else 0
+
+        except Exception as e:
+            logger.error(f"Failed to get max version for file {file_id}: {e}")
+            return 0
 
     async def delete_summary(self, document_id: str) -> bool:
         """
@@ -618,9 +630,7 @@ class OpenSearchSummaryService:
                 {
                     "date": bucket["key_as_string"],
                     "total_actions": bucket["action_count"]["total"]["value"],
-                    "pending_actions": bucket["pending_actions"]["pending"][
-                        "doc_count"
-                    ],
+                    "pending_actions": bucket["pending_actions"]["pending"]["doc_count"],
                 }
             )
         return trends

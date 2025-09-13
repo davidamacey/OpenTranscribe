@@ -65,9 +65,7 @@ class TaskDetectionService:
         logger.info(f"Identified {len(stuck_tasks)} stuck tasks")
         return stuck_tasks
 
-    def identify_stuck_files_without_active_celery_tasks(
-        self, db: Session
-    ) -> list[MediaFile]:
+    def identify_stuck_files_without_active_celery_tasks(self, db: Session) -> list[MediaFile]:
         """
         Identify files that are stuck in PROCESSING state without any active Celery tasks.
 
@@ -127,9 +125,7 @@ class TaskDetectionService:
                             f"has {len(active_tasks)} stale tasks"
                         )
 
-        logger.info(
-            f"Identified {len(stuck_files)} stuck files without active Celery tasks"
-        )
+        logger.info(f"Identified {len(stuck_files)} stuck files without active Celery tasks")
         return stuck_files
 
     def identify_inconsistent_media_files(self, db: Session) -> list[MediaFile]:
@@ -218,9 +214,7 @@ class TaskDetectionService:
         logger.info(f"Identified {len(truly_abandoned)} abandoned files")
         return truly_abandoned
 
-    def find_user_problem_files(
-        self, db: Session, user_id: int = None
-    ) -> list[MediaFile]:
+    def find_user_problem_files(self, db: Session, user_id: int = None) -> list[MediaFile]:
         """
         Find files that may need recovery for a specific user or all users.
 
@@ -248,9 +242,7 @@ class TaskDetectionService:
             if file_age > age_threshold:
                 aged_files.append(media_file)
 
-        logger.info(
-            f"Found {len(aged_files)} problem files for user {user_id or 'all'}"
-        )
+        logger.info(f"Found {len(aged_files)} problem files for user {user_id or 'all'}")
         return aged_files
 
     def _is_task_duration_exceeded(self, task: Task, now: datetime) -> bool:

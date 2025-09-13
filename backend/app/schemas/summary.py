@@ -19,13 +19,9 @@ class SpeakerInfo(BaseModel):
     """Information about a speaker in the summary"""
 
     name: str = Field(..., description="Speaker name or label")
-    talk_time_seconds: Union[int, float] = Field(
-        ..., description="Total talk time in seconds"
-    )
+    talk_time_seconds: Union[int, float] = Field(..., description="Total talk time in seconds")
     percentage: float = Field(..., description="Percentage of total talk time")
-    key_points: list[str] = Field(
-        ..., description="Key points or contributions from this speaker"
-    )
+    key_points: list[str] = Field(..., description="Key points or contributions from this speaker")
 
     @field_validator("talk_time_seconds")
     @classmethod
@@ -39,26 +35,18 @@ class SpeakerInfo(BaseModel):
 class ContentSection(BaseModel):
     """A content section within the summary"""
 
-    time_range: str = Field(
-        ..., description="Time range for this section (e.g., '00:05-00:15')"
-    )
+    time_range: str = Field(..., description="Time range for this section (e.g., '00:05-00:15')")
     topic: str = Field(..., description="Topic or title of this section")
-    key_points: list[str] = Field(
-        ..., description="Key discussion points in this section"
-    )
+    key_points: list[str] = Field(..., description="Key discussion points in this section")
 
 
 class ActionItem(BaseModel):
     """An action item extracted from the meeting"""
 
     text: str = Field(..., description="Description of the action item")
-    assigned_to: Optional[str] = Field(
-        None, description="Person assigned to this action"
-    )
+    assigned_to: Optional[str] = Field(None, description="Person assigned to this action")
     due_date: Optional[str] = Field(None, description="Due date in YYYY-MM-DD format")
-    priority: Literal["high", "medium", "low"] = Field(
-        ..., description="Priority level"
-    )
+    priority: Literal["high", "medium", "low"] = Field(..., description="Priority level")
     context: str = Field(..., description="Context about why this action is needed")
     status: Optional[Literal["pending", "completed", "cancelled"]] = Field(
         "pending", description="Current status"
@@ -72,12 +60,8 @@ class SummaryMetadata(BaseModel):
     model: str = Field(..., description="Model name used for generation")
     usage_tokens: Optional[int] = Field(None, description="Total tokens used")
     transcript_length: int = Field(..., description="Length of input transcript")
-    processing_time_ms: Optional[int] = Field(
-        None, description="Processing time in milliseconds"
-    )
-    confidence_score: Optional[float] = Field(
-        None, description="Overall confidence score"
-    )
+    processing_time_ms: Optional[int] = Field(None, description="Processing time in milliseconds")
+    confidence_score: Optional[float] = Field(None, description="Overall confidence score")
     language: Optional[str] = Field(None, description="Detected language")
     error: Optional[str] = Field(None, description="Error message if generation failed")
 
@@ -89,35 +73,19 @@ class MajorTopic(BaseModel):
     importance: Literal["high", "medium", "low"] = Field(
         ..., description="Importance level of this topic"
     )
-    key_points: list[str] = Field(
-        ..., description="Key points discussed about this topic"
-    )
-    participants: list[str] = Field(
-        ..., description="Speakers who contributed to this topic"
-    )
+    key_points: list[str] = Field(..., description="Key points discussed about this topic")
+    participants: list[str] = Field(..., description="Speakers who contributed to this topic")
 
 
 class SummaryData(BaseModel):
     """Complete structured summary data in BLUF format"""
 
-    bluf: str = Field(
-        ..., description="Bottom Line Up Front - 2-3 sentence executive summary"
-    )
-    brief_summary: str = Field(
-        ..., description="Comprehensive paragraph summary with context"
-    )
-    major_topics: list[MajorTopic] = Field(
-        ..., description="Major topics and themes discussed"
-    )
-    action_items: list[ActionItem] = Field(
-        ..., description="Extracted action items and tasks"
-    )
-    key_decisions: list[str] = Field(
-        ..., description="Concrete decisions that were made"
-    )
-    follow_up_items: list[str] = Field(
-        ..., description="Items requiring future attention"
-    )
+    bluf: str = Field(..., description="Bottom Line Up Front - 2-3 sentence executive summary")
+    brief_summary: str = Field(..., description="Comprehensive paragraph summary with context")
+    major_topics: list[MajorTopic] = Field(..., description="Major topics and themes discussed")
+    action_items: list[ActionItem] = Field(..., description="Extracted action items and tasks")
+    key_decisions: list[str] = Field(..., description="Concrete decisions that were made")
+    follow_up_items: list[str] = Field(..., description="Items requiring future attention")
     metadata: SummaryMetadata = Field(..., description="Generation metadata")
 
 
@@ -128,26 +96,18 @@ class SummaryResponse(BaseModel):
     summary_data: SummaryData = Field(..., description="The structured summary")
     source: Literal["opensearch", "postgresql"] = Field(..., description="Data source")
     document_id: Optional[str] = Field(None, description="OpenSearch document ID")
-    created_at: Optional[datetime] = Field(
-        None, description="When the summary was created"
-    )
-    updated_at: Optional[datetime] = Field(
-        None, description="When the summary was last updated"
-    )
+    created_at: Optional[datetime] = Field(None, description="When the summary was created")
+    updated_at: Optional[datetime] = Field(None, description="When the summary was last updated")
 
 
 class SummarySearchRequest(BaseModel):
     """Request for searching summaries"""
 
     query: Optional[str] = Field(None, description="Text to search for")
-    speakers: Optional[list[str]] = Field(
-        None, description="Filter by specific speakers"
-    )
+    speakers: Optional[list[str]] = Field(None, description="Filter by specific speakers")
     date_from: Optional[datetime] = Field(None, description="Start date filter")
     date_to: Optional[datetime] = Field(None, description="End date filter")
-    has_pending_actions: Optional[bool] = Field(
-        None, description="Filter by pending action items"
-    )
+    has_pending_actions: Optional[bool] = Field(None, description="Filter by pending action items")
     size: int = Field(20, description="Number of results to return")
     offset: int = Field(0, description="Result offset for pagination")
 
@@ -182,21 +142,13 @@ class SummaryAnalyticsResponse(BaseModel):
     """Analytics data for user summaries"""
 
     total_summaries: int = Field(..., description="Total number of summaries")
-    speaker_stats: list[dict[str, Any]] = Field(
-        ..., description="Speaker participation statistics"
-    )
+    speaker_stats: list[dict[str, Any]] = Field(..., description="Speaker participation statistics")
     action_items_trend: list[dict[str, Any]] = Field(
         ..., description="Action item trends over time"
     )
-    common_topics: list[dict[str, Any]] = Field(
-        ..., description="Most common discussion topics"
-    )
-    summary_statistics: dict[str, Any] = Field(
-        ..., description="General summary statistics"
-    )
-    provider_usage: list[dict[str, Any]] = Field(
-        ..., description="LLM provider usage statistics"
-    )
+    common_topics: list[dict[str, Any]] = Field(..., description="Most common discussion topics")
+    summary_statistics: dict[str, Any] = Field(..., description="General summary statistics")
+    provider_usage: list[dict[str, Any]] = Field(..., description="LLM provider usage statistics")
 
 
 class SpeakerIdentificationResponse(BaseModel):
@@ -208,6 +160,12 @@ class SpeakerIdentificationResponse(BaseModel):
     speaker_count: int = Field(..., description="Number of speakers to identify")
 
 
+class SummaryTaskRequest(BaseModel):
+    """Request to trigger summarization task"""
+
+    force_regenerate: bool = Field(False, description="Force regeneration of existing summary")
+
+
 class SummaryTaskStatus(BaseModel):
     """Status of a summary generation task"""
 
@@ -217,8 +175,6 @@ class SummaryTaskStatus(BaseModel):
     )
     progress: Optional[float] = Field(None, description="Progress percentage (0-1)")
     error_message: Optional[str] = Field(None, description="Error message if failed")
-    result: Optional[dict[str, Any]] = Field(
-        None, description="Task result if completed"
-    )
+    result: Optional[dict[str, Any]] = Field(None, description="Task result if completed")
     created_at: datetime = Field(..., description="When the task was created")
     updated_at: datetime = Field(..., description="Last update time")

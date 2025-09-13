@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+from urllib.parse import quote
 
 from fastapi import HTTPException
 from fastapi import status
@@ -11,6 +12,27 @@ from app.services.minio_service import download_file
 from app.services.minio_service import get_file_stream
 
 logger = logging.getLogger(__name__)
+
+
+def create_content_disposition_header(filename: str) -> str:
+    """Create a properly encoded Content-Disposition header for file downloads.
+
+    Handles Unicode filename encoding using RFC 5987 format to ensure proper
+    display across different browsers and avoid security issues with special characters.
+
+    Args:
+        filename: Original filename that may contain Unicode characters.
+
+    Returns:
+        str: Properly formatted Content-Disposition header value using UTF-8 encoding.
+             Format: "inline; filename*=UTF-8''<encoded_filename>"
+
+    Example:
+        >>> create_content_disposition_header("café—video.mp4")
+        "inline; filename*=UTF-8''caf%C3%A9%E2%80%94video.mp4"
+    """
+    safe_filename = quote(filename.encode("utf-8"), safe="")
+    return f"inline; filename*=UTF-8''{safe_filename}"
 
 
 def create_mock_response(db_file: MediaFile) -> dict:
@@ -42,9 +64,7 @@ def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
         )
 
     try:
-        file_content_io, content_length, content_type = download_file(
-            db_file.storage_path
-        )
+        file_content_io, content_length, content_type = download_file(db_file.storage_path)
         return StreamingResponse(
             content=file_content_io,
             media_type=content_type or db_file.content_type,
@@ -58,12 +78,10 @@ def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving file content: {e}",
-        )
+        ) from e
 
 
-def get_video_streaming_response(
-    db_file: MediaFile, range_header: str = None
-) -> StreamingResponse:
+def get_video_streaming_response(db_file: MediaFile, range_header: str = None) -> StreamingResponse:
     """
     Get streaming response for video playback with range support.
 
@@ -86,7 +104,7 @@ def get_video_streaming_response(
 
         # Set appropriate headers for video streaming with proper CORS support
         headers = {
-            "Content-Disposition": f'inline; filename="{db_file.filename}"',
+            "Content-Disposition": create_content_disposition_header(db_file.filename),
             "Accept-Ranges": "bytes",
             "Cache-Control": "max-age=3600",  # Allow caching for 1 hour
             "Access-Control-Allow-Origin": "*",  # Allow access from any origin
@@ -96,9 +114,7 @@ def get_video_streaming_response(
         }
 
         # Determine status code based on range request
-        status_code = (
-            status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
-        )
+        status_code = status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
 
         # Return the video as a streaming response
         return StreamingResponse(
@@ -112,7 +128,7 @@ def get_video_streaming_response(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error serving video: {e}",
-        )
+        ) from e
 
 
 def get_enhanced_video_streaming_response(
@@ -152,13 +168,11 @@ def get_enhanced_video_streaming_response(
         )
 
         # Determine response status code (206 Partial Content for range requests)
-        status_code = (
-            status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
-        )
+        status_code = status.HTTP_206_PARTIAL_CONTENT if range_header else status.HTTP_200_OK
 
         # Set comprehensive response headers for optimal streaming
         headers = {
-            "Content-Disposition": f'inline; filename="{db_file.filename}"',
+            "Content-Disposition": create_content_disposition_header(db_file.filename),
             "Content-Type": media_type,
             "Accept-Ranges": "bytes",  # Inform client we support range requests
             "Access-Control-Allow-Origin": "*",  # Allow any origin for development
@@ -173,9 +187,7 @@ def get_enhanced_video_streaming_response(
 
             # For range requests, content length is the actual bytes being sent
             content_length = (
-                end_byte - start_byte + 1
-                if end_byte is not None
-                else total_length - start_byte
+                end_byte - start_byte + 1 if end_byte is not None else total_length - start_byte
             )
             headers["Content-Length"] = str(content_length)
 
@@ -208,7 +220,7 @@ def get_enhanced_video_streaming_response(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error streaming video: {e}",
-        )
+        ) from e
 
 
 def validate_file_exists(db_file: MediaFile) -> None:
@@ -222,14 +234,10 @@ def validate_file_exists(db_file: MediaFile) -> None:
         HTTPException: If file doesn't exist or isn't available
     """
     if not db_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     if not db_file.storage_path:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not available"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not available")
 
 
 def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
@@ -274,4 +282,4 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving thumbnail: {str(e)}",
-        )
+        ) from e

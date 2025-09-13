@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { writable } from 'svelte/store';
-  import Plyr from 'plyr';
-  import 'plyr/dist/plyr.css';
   import axiosInstance from '$lib/axios';
   import { formatTimestampWithMillis } from '$lib/utils/formatting';
   import { websocketStore } from '$stores/websocket';
@@ -35,7 +33,7 @@
   let videoUrl = '';
   let errorMessage = '';
   let apiBaseUrl = '';
-  let player: Plyr | null = null;
+  let videoPlayerComponent: any = null;
   let currentTime = 0;
   let duration = 0;
   let isLoading = true;
@@ -53,6 +51,7 @@
   let isEditingTranscript = false;
   let editedTranscript = '';
   let savingTranscript = false;
+  let savingSpeakers = false;
   let transcriptError = '';
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
@@ -65,6 +64,8 @@
   let generatingSummary = false;
   let summaryError = '';
   let summaryGenerating = false; // WebSocket-driven summary generation status
+  let currentProcessingStep = ''; // Current processing step from WebSocket notifications
+  let lastProcessedNotificationState = ''; // Track processed notification state globally
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
   
@@ -77,12 +78,53 @@
   // Reactive store for file updates
   const reactiveFile = writable(null);
   
-  // Debounce timer for subtitle refresh
-  let subtitleRefreshTimer: number;
 
   /**
    * Fetches file details from the API
    */
+  /**
+   * Fetch transcript and related data to update the page without overwriting file state
+   */
+  async function fetchTranscriptData(): Promise<void> {
+    if (!fileId) {
+      console.error('FileDetail: No file ID provided to fetchTranscriptData');
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.get(`/api/files/${fileId}`);
+      
+      if (response.data && typeof response.data === 'object' && file) {
+        // Update all transcript and processing-related fields while preserving UI state flags
+        file.transcript_segments = response.data.transcript_segments || [];
+        file.speakers = response.data.speakers || [];
+        file.waveform_data = response.data.waveform_data;
+        file.duration = response.data.duration;
+        file.duration_seconds = response.data.duration_seconds;
+        
+        // Update metadata and processing info
+        file.processed_at = response.data.processed_at;
+        file.analytics = response.data.analytics;
+        
+        // Update collections if they changed
+        collections = response.data.collections || [];
+        
+        // Update file object
+        file = { ...file };
+        reactiveFile.set(file);
+        
+        // Process the new transcript data
+        processTranscriptData();
+        
+        // Fetch analytics separately to get the latest data
+        await fetchAnalytics(fileId);
+        
+      }
+    } catch (error) {
+      console.error('Error fetching transcript data:', error);
+    }
+  }
+
   async function fetchFileDetails(fileIdOrEvent?: string): Promise<void> {
     const targetFileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : fileId;
     
@@ -267,7 +309,7 @@
             verified: speaker.verified,
             confidence: speaker.confidence,
             profile: speaker.profile,
-            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.75), // Only high-confidence matches (≥75%)
+            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.50), // Show high and medium confidence matches (≥50%)
             showMatches: false  // Add this for the collapsible UI
           }))
           .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
@@ -332,98 +374,12 @@
   }
 
 
-  /**
-   * Add subtitle track to video element dynamically
-   */
-  async function addSubtitleTrack() {
-    if (!file || !player) return;
-    
-    try {
-      // Get the video element from Plyr
-      const videoElement = player.media;
-      if (!videoElement) return;
-      
-      // Fetch subtitles using axios to include authentication
-      const timestamp = Date.now();
-      const response = await axiosInstance.get(`/files/${file.id}/subtitles`, {
-        params: {
-          format: 'webvtt',
-          include_speakers: true,
-          t: timestamp
-        },
-        responseType: 'text'
-      });
-      
-      // Create a blob URL from the subtitle content
-      const blob = new Blob([response.data], { type: 'text/vtt' });
-      const subtitleUrl = URL.createObjectURL(blob);
-      
-      // Create subtitle track element
-      const track = document.createElement('track');
-      track.kind = 'subtitles';
-      track.label = 'English (Auto-generated)';
-      track.srclang = 'en';
-      track.default = true;
-      track.src = subtitleUrl;
-      
-      // Add track to video element
-      videoElement.appendChild(track);
-      
-      // Enable the track
-      track.addEventListener('load', () => {
-        if (videoElement.textTracks && videoElement.textTracks.length > 0) {
-          const textTrack = videoElement.textTracks[videoElement.textTracks.length - 1];
-          textTrack.mode = 'showing';
-          
-          // Enable captions in Plyr
-          if (player && player.captions) {
-            player.captions.active = true;
-          }
-          
-        }
-      });
-      
-      // Clean up blob URL when track is removed
-      track.addEventListener('error', () => {
-        URL.revokeObjectURL(subtitleUrl);
-      });
-      
-    } catch (error) {
-      console.error('Error adding subtitle track:', error);
-    }
-  }
+
+
 
   /**
    * Refresh subtitle track when transcript changes (debounced)
    */
-  function refreshSubtitleTrack() {
-    // Clear existing timer
-    if (subtitleRefreshTimer) {
-      clearTimeout(subtitleRefreshTimer);
-    }
-    
-    // Set new timer for 1 second debounce
-    subtitleRefreshTimer = setTimeout(() => {
-      if (!player || !file) return;
-      
-      const videoElement = player.media;
-      if (!videoElement) return;
-      
-      // Remove existing subtitle tracks and clean up blob URLs
-      const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
-      tracks.forEach(track => {
-        // Clean up blob URL if it's a blob URL
-        if (track.src && track.src.startsWith('blob:')) {
-          URL.revokeObjectURL(track.src);
-        }
-        track.remove();
-      });
-      
-      // Add updated subtitle track with cache-busting timestamp
-      addSubtitleTrack();
-      
-    }, 1000);
-  }
 
   /**
    * Initialize the video player with enhanced streaming capabilities
@@ -433,93 +389,15 @@
       return;
     }
     
-    const videoElement = document.querySelector('#player') as HTMLVideoElement;
+    const mediaElement = document.querySelector('#player') as HTMLMediaElement;
     
-    if (!videoElement) {
+    if (!mediaElement) {
       return;
     }
 
-    try {
-      // Configure video element
-      videoElement.preload = 'metadata';
-      videoElement.crossOrigin = 'anonymous';
-      videoElement.playsInline = true;
-
-      // Check if this video has embedded subtitles
-      const isVideo = file?.content_type && file.content_type.startsWith('video/');
-      const hasTranscript = file?.status === 'completed';
-      const hasEmbeddedSubtitles = isVideo && hasTranscript;
-
-      // Initialize Plyr with subtitle support
-      const plyrControls = ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'];
-      const plyrSettings = ['quality', 'speed'];
-      
-      // Add captions/subtitles controls if the video has embedded subtitles
-      if (hasEmbeddedSubtitles) {
-        plyrControls.splice(-1, 0, 'captions'); // Add captions button before fullscreen
-        plyrSettings.push('captions'); // Add captions to settings menu
-      }
-
-      player = new Plyr(videoElement, {
-        controls: plyrControls,
-        settings: plyrSettings,
-        quality: { default: 720, options: [1080, 720, 480, 360] },
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        ratio: '16:9',
-        fullscreen: { enabled: true, fallback: true, iosNative: true },
-        captions: { 
-          active: true, // Enable captions by default if available
-          language: 'auto',
-          update: true
-        }
-      });
-
-      // Set up event listeners
-      player.on('ready', () => {
-        playerInitialized = true;
-        
-        // Add subtitle tracks dynamically if video has completed transcription
-        if (hasEmbeddedSubtitles) {
-          addSubtitleTrack();
-        }
-      });
-
-      player.on('timeupdate', () => {
-        currentTime = player?.currentTime || 0;
-        updateCurrentSegment(currentTime);
-      });
-
-      player.on('loadedmetadata', () => {
-        duration = player?.duration || 0;
-      });
-
-      player.on('loadstart', () => {
-        isPlayerBuffering = true;
-      });
-
-      player.on('canplay', () => {
-        isPlayerBuffering = false;
-      });
-
-      player.on('waiting', () => {
-        isPlayerBuffering = true;
-      });
-
-      player.on('playing', () => {
-        isPlayerBuffering = false;
-      });
-
-      player.on('progress', () => {
-        if (videoElement.buffered.length > 0) {
-          loadProgress = (videoElement.buffered.end(0) / videoElement.duration) * 100;
-        }
-      });
-      
-    } catch (error) {
-      console.error('Error initializing player:', error);
-      errorMessage = 'Failed to initialize video player';
-      playerInitialized = false;
-    }
+    // Mark as initialized - all player initialization is now handled by VideoPlayer component
+    playerInitialized = true;
+    console.log('Media player initialization is now handled by VideoPlayer component');
   }
 
   /**
@@ -581,8 +459,6 @@
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
       
-      // Refresh subtitle track with debounce since speaker labels changed
-      refreshSubtitleTrack();
     }
     
     // Persist to database
@@ -668,8 +544,6 @@
             };
             reactiveFile.set(file);
             
-            // Refresh subtitle track with debounce
-            refreshSubtitleTrack();
             
             // Clear cached processed videos so downloads will use updated transcript
             try {
@@ -683,6 +557,15 @@
         editingSegmentId = null;
         editingSegmentText = '';
         transcriptError = '';
+
+        // Update subtitles in the video player
+        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+          try {
+            await videoPlayerComponent.updateSubtitles();
+          } catch (error) {
+            console.warn('Failed to update subtitles after segment edit:', error);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error saving segment:', error);
@@ -1141,6 +1024,8 @@
   async function handleSaveSpeakerNames() {
     if (!speakerList || speakerList.length === 0) return;
     
+    savingSpeakers = true;
+    
     try {
       // Update speakers in the backend (only meaningful names)
       const updatePromises = speakerList
@@ -1195,8 +1080,6 @@
         await fetchAnalytics(file.id.toString());
       }
       
-      // Refresh video subtitles with updated speaker names
-      refreshSubtitleTrack();
       
       // Clear cached processed videos so downloads will use updated speaker names
       try {
@@ -1207,8 +1090,10 @@
       }
       
       // Speaker names saved to database and updated locally
+      toastStore.success('Speaker names saved successfully!');
     } catch (error) {
       console.error('Error saving speaker names:', error);
+      toastStore.error('Failed to save speaker names. Changes applied locally only.');
       // Fall back to local-only updates
       const transcriptData = file?.transcript_segments;
       if (transcriptData) {
@@ -1241,8 +1126,6 @@
           await fetchAnalytics(file.id.toString());
         }
         
-        // Refresh video subtitles with updated speaker names (fallback)
-        refreshSubtitleTrack();
         
         // Clear cached processed videos so downloads will use updated speaker names (fallback)
         try {
@@ -1253,6 +1136,8 @@
         
         // Speaker names updated locally only (database update failed)
       }
+    } finally {
+      savingSpeakers = false;
     }
   }
 
@@ -1265,26 +1150,14 @@
   // Speaker verification event handlers
 
   function seekToTime(time: number) {
-    if (player) {
-      // Add 0.5 second padding before the target time for better context
-      const paddedTime = Math.max(0, time - 0.5);
-      player.currentTime = paddedTime;
-      
-      // Flash player controls briefly to show timestamp
-      const playerContainer = document.querySelector('.plyr');
-      if (playerContainer) {
-        playerContainer.classList.add('plyr--show-controls');
-        setTimeout(() => {
-          playerContainer.classList.remove('plyr--show-controls');
-        }, 3000); // Show controls for 3 seconds
-      }
-      
-      if (player.paused) {
-        const playPromise = player.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(console.error);
-        }
-      }
+    // Add 0.5 second padding before the target time for better context
+    const paddedTime = Math.max(0, time - 0.5);
+
+    // Use VideoPlayer component's seek function for all media types
+    if (videoPlayerComponent && videoPlayerComponent.seekToTime) {
+      videoPlayerComponent.seekToTime(paddedTime);
+    } else {
+      console.warn('VideoPlayer component not available for seeking');
     }
   }
 
@@ -1313,6 +1186,25 @@
     fetchFileDetails();
   }
 
+  // Audio player event handlers for custom player
+  function handleTimeUpdate(event: CustomEvent) {
+    currentTime = event.detail.currentTime;
+    duration = event.detail.duration;
+    updateCurrentSegment(currentTime);
+  }
+
+  function handlePlay(event: CustomEvent) {
+    // Handle play event if needed
+  }
+
+  function handlePause(event: CustomEvent) {
+    // Handle pause event if needed
+  }
+
+  function handleLoadedMetadata(event: CustomEvent) {
+    duration = event.detail.duration;
+  }
+
   function handleWaveformSeek(event: CustomEvent) {
     const seekTime = event.detail.time;
     seekToTime(seekTime);
@@ -1321,16 +1213,45 @@
   async function handleReprocess(event: CustomEvent) {
     const { fileId } = event.detail;
     
+    
     try {
       reprocessing = true;
+      
+      // Reset notification processing state for reprocessing
+      lastProcessedNotificationState = '';
+      
+      // Optimistically set file to processing state for immediate UI feedback
+      if (file) {
+        file.status = 'processing';
+        file.progress = 0;
+        // Clear transcript data to show placeholder state during reprocessing
+        file.transcript_segments = [];
+        file.summary = null;
+        file.summary_opensearch_id = null;
+        
+        // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
+        if (llmAvailable) {
+          summaryGenerating = true;
+          generatingSummary = true;
+          summaryError = '';
+        }
+        
+        file = file; // Trigger reactivity
+      }
+      
       await axiosInstance.post(`/api/files/${fileId}/reprocess`);
       
-      // Refresh file details to show updated status
-      await fetchFileDetails(fileId);
+      // Don't immediately fetch - let WebSocket notifications handle updates
+      // The file is now pending/processing and notifications will update the UI
       
     } catch (error) {
-      console.error('Error starting reprocess:', error);
-      toastStore.addToast('Failed to start reprocessing. Please try again.', 'error');
+      console.error('❌ Error starting reprocess:', error);
+      toastStore.error('Failed to start reprocessing. Please try again.');
+      
+      // Revert optimistic update on error
+      if (file) {
+        await fetchFileDetails(fileId);
+      }
     } finally {
       reprocessing = false;
     }
@@ -1341,15 +1262,38 @@
     
     try {
       reprocessing = true;
+      
+      // Reset notification processing state for reprocessing
+      lastProcessedNotificationState = '';
+      
+      // Optimistically set file to processing state for immediate UI feedback
+      file.status = 'processing';
+      file.progress = 0;
+      // Clear transcript data to show placeholder state during reprocessing
+      file.transcript_segments = [];
+      file.summary = null;
+      file.summary_opensearch_id = null;
+      
+      // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
+      if (llmAvailable) {
+        summaryGenerating = true;
+        generatingSummary = true;
+        summaryError = '';
+      }
+      
+      file = file; // Trigger reactivity
+      
       await axiosInstance.post(`/api/files/${file.id}/reprocess`);
       
-      // Refresh file details to show updated status
-      await fetchFileDetails(file.id);
+      // Don't immediately fetch - let WebSocket notifications handle updates
+      toastStore.success('Reprocessing started successfully');
       
-      toastStore.addToast('Reprocessing started successfully', 'success');
     } catch (error) {
-      console.error('Error starting reprocess:', error);
-      toastStore.addToast('Failed to start reprocessing. Please try again.', 'error');
+      console.error('❌ Error starting reprocess (header):', error);
+      toastStore.error('Failed to start reprocessing. Please try again.');
+      
+      // Revert optimistic update on error
+      await fetchFileDetails(file.id);
     } finally {
       reprocessing = false;
     }
@@ -1424,11 +1368,13 @@
 
   // Component mount logic
   onMount(() => {
-    apiBaseUrl = window.location.origin;
+    // Use the correct backend API base URL (port 5174, not frontend port 5173)
+    apiBaseUrl = window.location.protocol + '//' + window.location.hostname + ':5174';
     
     if (id) {
       fileId = id;
     } else {
+      console.error('FileDetail: No id parameter provided');
       const urlParams = new URLSearchParams(window.location.search);
       const pathParts = window.location.pathname.split('/');
       fileId = urlParams.get('id') || pathParts[pathParts.length - 1] || '';
@@ -1449,64 +1395,177 @@
 
     // LLM status monitoring is now handled by the Settings component and reactive store
 
-    // Track last processed notification to avoid duplicate processing
-    let lastProcessedNotificationId = '';
-
     // Subscribe to WebSocket notifications for real-time updates
     wsUnsubscribe = websocketStore.subscribe(($ws) => {
+      
+      
       if ($ws.notifications.length > 0) {
-        const latestNotification = $ws.notifications[0];
         
-        // Only process if this is a new notification we haven't handled
-        if (latestNotification.id !== lastProcessedNotificationId) {
-          lastProcessedNotificationId = latestNotification.id;
+        // Find the most recently updated notification for the current file
+        const currentFileNotifications = $ws.notifications.filter(n => {
+          const notificationFileId = String(n.data?.file_id || n.fileId || '');
+          const currentFileId = String(fileId);
+          return notificationFileId === currentFileId;
+        });
+        
+        if (currentFileNotifications.length === 0) {
+          return;
+        }
+        
+        // Sort by last update time (most recent first)
+        currentFileNotifications.sort((a, b) => {
+          const aTime = a.lastUpdated || a.timestamp;
+          const bTime = b.lastUpdated || b.timestamp;
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
+        
+        const latestNotification = currentFileNotifications[0];
+        
+        
+        // Create a unique state signature to detect content changes, not just ID changes
+        const notificationState = `${latestNotification.id}_${latestNotification.status}_${latestNotification.progress?.percentage}_${latestNotification.currentStep}_${latestNotification.timestamp}`;
+        
+        // Only process if the notification content has changed (not just new ID)
+        if (notificationState !== lastProcessedNotificationState) {
+          lastProcessedNotificationState = notificationState;
           
           // Check if this notification is for our current file
+          // Skip if fileId is not set yet (component still initializing)
+          if (!fileId) {
+            return;
+          }
+          
           // Convert both to strings for comparison since notification sends file_id as string
-          if (String(latestNotification.data?.file_id) === String(fileId)) {
+          const notificationFileId = String(latestNotification.data?.file_id);
+          const currentFileId = String(fileId);
+          
+          
+          if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
             
             // Handle transcription status updates
             if (latestNotification.type === 'transcription_status') {
-              // Update progress in real-time without full refresh for progress updates
-              if (latestNotification.data?.status === 'processing' && latestNotification.data?.progress !== undefined) {
+              
+              // Get status from notification (progressive notifications set it at root level)
+              const notificationStatus = latestNotification.status || latestNotification.data?.status;
+              const notificationProgress = latestNotification.progress?.percentage || latestNotification.data?.progress;
+              
+              
+              // Update progress in real-time for processing updates
+              if (notificationStatus === 'processing' && notificationProgress !== undefined) {
                 if (file) {
-                  file.progress = latestNotification.data.progress;
+                  file.progress = notificationProgress;
                   file.status = 'processing';
+                  // Update the current processing step from the progressive notification
+                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || 'Processing...';
+                  file = { ...file }; // Trigger reactivity
+                  reactiveFile.set(file);
+                  
+                }
+              } else if (notificationStatus === 'completed' || notificationStatus === 'success' || notificationStatus === 'complete' || notificationStatus === 'finished') {
+                // Transcription completed - show completion and refresh
+                if (file) {
+                  file.progress = 100;
+                  file.status = 'completed';
+                  currentProcessingStep = 'Processing complete!';
+                  
+                  // If LLM is available, always show AI summary spinner after transcription completion
+                  // This handles the automatic summarization that triggers after transcription
+                  if (llmAvailable) {
+                    summaryGenerating = true;
+                    generatingSummary = true;
+                    summaryError = '';
+                    // Keep reprocessing flag true until summary completes to maintain proper UI state
+                  } else {
+                    // No LLM available, safe to reset reprocessing flag
+                    reprocessing = false;
+                  }
+                  
                   file = { ...file }; // Trigger reactivity
                   reactiveFile.set(file);
                 }
-              } else {
-                // For status changes (completed, error), do a full refresh
+                
+                // Clear processing step and refresh transcript data after completion
+                setTimeout(async () => {
+                  currentProcessingStep = ''; // Clear processing step
+
+                  // Only refresh the transcript data, not the entire file object to preserve spinner state
+                  if (file?.id && (file.status === 'completed' || file.status === 'success')) {
+                    await fetchTranscriptData();
+
+                    // Refresh subtitles in the video player now that transcript is available
+                    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+                      try {
+                        await videoPlayerComponent.updateSubtitles();
+                      } catch (error) {
+                        console.warn('Failed to update subtitles:', error);
+                      }
+                    }
+                  }
+                }, 1000);
+              } else if (notificationStatus === 'error' || notificationStatus === 'failed') {
+                // Error state - refresh immediately
+                currentProcessingStep = ''; // Clear processing step
                 fetchFileDetails();
               }
             }
             
             // WebSocket notifications for file updates
             
-            // Handle summarization status updates
-            if (latestNotification.type === 'summary_status') {
-              const status = latestNotification.data?.status;
+            // Handle summarization status updates  
+            if (latestNotification.type === 'summarization_status') {
+              // Only process notifications for the current file
+              const notificationFileId = String(latestNotification.data?.file_id || '');
+              const currentFileId = String(fileId || '');
               
-              if (status === 'processing' || status === 'generating') {
-                // Summary generation started - show spinner without full refresh
+              if (notificationFileId !== currentFileId) {
+              } else {
+              
+              // Get status from notification (progressive notifications set it at root level)
+              const status = latestNotification.status || latestNotification.data?.status;
+              
+              
+              if (status === 'queued' || status === 'processing' || status === 'generating') {
+                // Summary generation started - show spinner
                 summaryGenerating = true;
+                generatingSummary = true;
                 summaryError = '';
-              } else if (status === 'completed') {
-                // Summary completed - update file object without disrupting user workflow
+                
+              } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
+                // Summary completed - stop spinners and update file
+                
                 summaryGenerating = false;
+                generatingSummary = false;
+                summaryError = '';
+                
+                // Reset reprocessing flag when summary completes (final step of reprocessing)
+                reprocessing = false;
+                
                 if (file) {
-                  // Smartly update only summary-related fields
-                  // Use fallback values to ensure summary is marked as available
-                  file.summary = latestNotification.data?.summary || 'completed';
-                  file.summary_opensearch_id = latestNotification.data?.summary_opensearch_id || 'completed';
-                  file = { ...file }; // Trigger reactivity for button state
+                  // Update summary-related fields from notification data
+                  const summaryContent = latestNotification.data?.summary;
+                  const summaryId = latestNotification.data?.summary_opensearch_id;
+                  
+                  
+                  if (summaryContent) {
+                    file.summary = summaryContent;
+                  }
+                  if (summaryId) {
+                    file.summary_opensearch_id = summaryId;
+                  }
+                  
+                  
+                  // Force reactivity update
+                  file = { ...file };
+                  reactiveFile.set(file);
+                  
                 }
               } else if (status === 'failed' || status === 'error') {
-                // Summary failed - show error without full refresh
+                // Summary failed - stop spinners and show error
                 summaryGenerating = false;
+                generatingSummary = false;
                 
-                // Don't show LLM configuration errors to users who don't have LLM capability
-                const errorMessage = latestNotification.data?.message || 'Failed to generate summary';
+                // Get error message from notification
+                const errorMessage = latestNotification.data?.message || latestNotification.message || 'Failed to generate summary';
                 const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') || 
                                        errorMessage.toLowerCase().includes('configure an llm provider') ||
                                        errorMessage.toLowerCase().includes('llm provider');
@@ -1514,10 +1573,15 @@
                 if (!isLLMConfigError) {
                   summaryError = errorMessage;
                 }
+                
               }
+              } // Close the else block for file ID matching
             }
+          } else {
           }
+        } else {
         }
+      } else {
       }
     });
   });
@@ -1526,10 +1590,10 @@
     if (player) {
       try {
         // Clean up any subtitle blob URLs before destroying player
-        const videoElement = player.media;
-        if (videoElement) {
-          const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
-          tracks.forEach(track => {
+        const mediaElement = player.media;
+        if (mediaElement) {
+          const tracks = Array.from(mediaElement.querySelectorAll('track[kind="subtitles"]')) as HTMLTrackElement[];
+          tracks.forEach((track: HTMLTrackElement) => {
             if (track.src && track.src.startsWith('blob:')) {
               URL.revokeObjectURL(track.src);
             }
@@ -1544,10 +1608,6 @@
       }
     }
     
-    // Clear any pending subtitle refresh timer
-    if (subtitleRefreshTimer) {
-      clearTimeout(subtitleRefreshTimer);
-    }
     
     // LLM status cleanup is handled by the Settings component
     
@@ -1602,7 +1662,7 @@
     </div>
   {:else if file}
     <div class="file-header">
-      <FileHeader {file} />
+      <FileHeader {file} {currentProcessingStep} />
       
       
       <MetadataDisplay 
@@ -1619,7 +1679,7 @@
           <!-- Action Buttons - right aligned above video -->
           <div class="header-buttons">
             <!-- View Full Transcript Button - LEFT of AI Summary -->
-            {#if file && file.transcript_segments && file.transcript_segments.length > 0}
+            {#if file && file.transcript_segments && file.transcript_segments.length > 0 && file.status !== 'processing'}
               <button 
                 class="view-transcript-btn"
                 on:click={() => showTranscriptModal = true}
@@ -1632,6 +1692,7 @@
                 Transcript
               </button>
             {/if}
+          <!-- Debug: Summary button state: hasSummary={!!(file?.summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
           {#if file?.summary || file?.summary_opensearch_id}
             <button 
               class="view-summary-btn"
@@ -1694,12 +1755,17 @@
         </div>
         
         <VideoPlayer 
+          bind:this={videoPlayerComponent}
           {videoUrl} 
           {file} 
           {isPlayerBuffering} 
           {loadProgress} 
           {errorMessage}
           on:retry={handleVideoRetry}
+          on:timeupdate={handleTimeUpdate}
+          on:play={handlePlay}
+          on:pause={handlePause}
+          on:loadedmetadata={handleLoadedMetadata}
         />
 
         <!-- Error Messages -->
@@ -1769,6 +1835,7 @@
           {isEditingTranscript}
           {editedTranscript}
           {savingTranscript}
+          {savingSpeakers}
           {transcriptError}
           {editingSegmentId}
           bind:editingSegmentText
@@ -1790,7 +1857,15 @@
       {:else}
         <section class="transcript-column">
           <div class="no-transcript">
-            <p>No transcript available for this file.</p>
+            {#if file?.status === 'processing' || file?.status === 'pending'}
+              <div class="processing-placeholder">
+                <div class="spinner-large"></div>
+                <p>Generating transcript...</p>
+                <small>This may take a few minutes depending on the length of your file.</small>
+              </div>
+            {:else}
+              <p>No transcript available for this file.</p>
+            {/if}
           </div>
         </section>
       {/if}
@@ -2240,10 +2315,7 @@
     border-color: rgba(59, 130, 246, 0.4);
   }
 
-  /* Player controls flash styling */
-  :global(.plyr--show-controls .plyr__controls) {
-    opacity: 1 !important;
-    transform: translateY(0) !important;
-  }
+  /* All Plyr styling is now handled in VideoPlayer.svelte */
+
 
 </style>

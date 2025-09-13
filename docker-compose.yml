@@ -151,7 +151,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile.dev
     restart: always
-    command: celery -A app.core.celery worker --loglevel=info
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
     runtime: nvidia
     deploy:
       resources:

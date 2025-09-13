@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.analytics",
         "app.tasks.utility",
         "app.tasks.recovery",
+        "app.tasks.youtube_processing",
     ],
 )
 
@@ -27,10 +28,15 @@ celery_app.conf.update(
     task_track_started=True,
     worker_prefetch_multiplier=1,  # One task at a time for GPU tasks
     task_routes={
-        "app.tasks.transcription.*": {"queue": "transcription"},
+        "app.tasks.transcription.*": {"queue": "gpu"},
+        "transcribe_audio": {"queue": "gpu"},  # Explicit routing for transcription task
+        "process_youtube_url_task": {"queue": "gpu"},  # Explicit routing for YouTube task
+        "generate_waveform_data": {"queue": "utility"},  # Waveform generation is CPU-bound
         "app.tasks.summarization.*": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
         "app.tasks.utility.*": {"queue": "utility"},
+        "app.tasks.recovery.*": {"queue": "utility"},
+        "app.tasks.youtube_processing.*": {"queue": "gpu"},  # GPU queue for video processing
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

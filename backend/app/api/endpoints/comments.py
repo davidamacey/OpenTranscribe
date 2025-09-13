@@ -31,9 +31,7 @@ def get_comments_for_file_nested(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Get comments for this file
     comments = db.query(Comment).filter(Comment.media_file_id == file_id).all()
@@ -56,9 +54,7 @@ def create_comment_for_file_nested(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Create comment with file_id from URL
     db_comment = Comment(
@@ -92,9 +88,7 @@ def get_comments_for_file(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Get comments for this file
     comments = (
@@ -127,9 +121,7 @@ def create_comment_query_param(
     )
 
     if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Create new comment
     db_comment = Comment(

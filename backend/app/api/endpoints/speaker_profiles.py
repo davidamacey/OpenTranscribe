@@ -37,9 +37,7 @@ def list_speaker_profiles(
 ):
     """List all speaker profiles for the current user."""
     try:
-        query = db.query(SpeakerProfile).filter(
-            SpeakerProfile.user_id == current_user.id
-        )
+        query = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id)
 
         if collection_id:
             # Filter by collection
@@ -52,9 +50,7 @@ def list_speaker_profiles(
         result = []
         for profile in profiles:
             # Count speaker instances
-            instance_count = (
-                db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
-            )
+            instance_count = db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
 
             # Get media files where this speaker appears
             media_files = find_speaker_across_media(profile.id, current_user.id)
@@ -77,7 +73,7 @@ def list_speaker_profiles(
 
     except Exception as e:
         logger.error(f"Error listing speaker profiles: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/profiles", response_model=dict[str, Any])
@@ -92,9 +88,7 @@ def create_speaker_profile(
         # Check if profile with same name exists
         existing = (
             db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.user_id == current_user.id, SpeakerProfile.name == name
-            )
+            .filter(SpeakerProfile.user_id == current_user.id, SpeakerProfile.name == name)
             .first()
         )
 
@@ -128,7 +122,7 @@ def create_speaker_profile(
     except Exception as e:
         logger.error(f"Error creating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.put("/profiles/{profile_id}", response_model=dict[str, Any])
@@ -192,7 +186,7 @@ def update_speaker_profile(
     except Exception as e:
         logger.error(f"Error updating speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/speakers/{speaker_id}/assign-profile", response_model=dict[str, Any])
@@ -257,7 +251,7 @@ def assign_speaker_to_profile(
     except Exception as e:
         logger.error(f"Error assigning speaker to profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/speakers/{speaker_id}/suggestions", response_model=list[dict[str, Any]])
@@ -284,9 +278,7 @@ def get_speaker_profile_suggestions(
             return []
 
         # Get media file for audio processing
-        media_file = (
-            db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
-        )
+        media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
 
         if not media_file:
             return []
@@ -324,7 +316,7 @@ def get_speaker_profile_suggestions(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker suggestions: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/profiles/{profile_id}/occurrences", response_model=list[dict[str, Any]])
@@ -353,9 +345,7 @@ def get_speaker_profile_occurrences(
         matching_service = SpeakerMatchingService(db, embedding_service)
 
         # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(
-            profile_id, current_user.id
-        )
+        occurrences = matching_service.find_speaker_occurrences(profile_id, current_user.id)
 
         return occurrences
 
@@ -363,7 +353,7 @@ def get_speaker_profile_occurrences(
         raise
     except Exception as e:
         logger.error(f"Error getting speaker occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -403,7 +393,7 @@ def delete_speaker_profile(
     except Exception as e:
         logger.error(f"Error deleting speaker profile: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/collections", response_model=list[dict[str, Any]])
@@ -413,9 +403,7 @@ def list_speaker_collections(
     """List all speaker collections for the current user."""
     try:
         collections = (
-            db.query(SpeakerCollection)
-            .filter(SpeakerCollection.user_id == current_user.id)
-            .all()
+            db.query(SpeakerCollection).filter(SpeakerCollection.user_id == current_user.id).all()
         )
 
         result = []
@@ -443,7 +431,7 @@ def list_speaker_collections(
 
     except Exception as e:
         logger.error(f"Error listing speaker collections: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/collections", response_model=dict[str, Any])
@@ -467,9 +455,7 @@ def create_speaker_collection(
         )
 
         if existing:
-            raise HTTPException(
-                status_code=400, detail="Collection with this name already exists"
-            )
+            raise HTTPException(status_code=400, detail="Collection with this name already exists")
 
         collection = SpeakerCollection(
             user_id=current_user.id,
@@ -496,4 +482,4 @@ def create_speaker_collection(
     except Exception as e:
         logger.error(f"Error creating speaker collection: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from e

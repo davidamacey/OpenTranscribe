@@ -185,141 +185,173 @@
   }
 </script>
 
-<div class="speaker-stats">
-  <h2>Speaker Analytics</h2>
+<div class="speaker-stats compact-layout">
+  <!-- Analytics Overview Cards -->
+  <div class="analytics-overview">
+    <div class="overview-card">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </div>
+      <div class="card-content">
+        <div class="card-value">{normalizedAnalytics.word_count || 0}</div>
+        <div class="card-label">Words</div>
+      </div>
+    </div>
+    
+    <div class="overview-card">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12,6 12,12 16,14"/>
+        </svg>
+      </div>
+      <div class="card-content">
+        <div class="card-value">{formatTime(normalizedAnalytics.duration_seconds || 0)}</div>
+        <div class="card-label">Duration</div>
+      </div>
+    </div>
+    
+    <div class="overview-card">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0z"/>
+          <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+        </svg>
+      </div>
+      <div class="card-content">
+        <div class="card-value">{Object.keys(normalizedAnalytics.talk_time?.by_speaker || {}).length}</div>
+        <div class="card-label">Speakers</div>
+      </div>
+    </div>
+    
+    {#if normalizedAnalytics.interruptions?.total > 0}
+    <div class="overview-card">
+      <div class="card-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+      </div>
+      <div class="card-content">
+        <div class="card-value">{normalizedAnalytics.interruptions.total}</div>
+        <div class="card-label">Interruptions</div>
+      </div>
+    </div>
+    {/if}
+  </div>
   
   {#if normalizedAnalytics.talk_time.total > 0}
-    <div class="talk-time-container">
-      <h3>Talk Time Distribution</h3>
+    <!-- Compact Talk Time Section -->
+    <div class="section-compact">
+      <h3 class="section-title">
+        <span class="section-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3v18h18"/>
+            <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+          </svg>
+        </span>
+        Talk Time Distribution
+      </h3>
       
-      <!-- Single horizontal bar showing all speakers -->
-      <div class="talk-time-combined-bar">
+      <!-- Large Horizontal Bar Chart -->
+      <div class="talk-time-bar-large">
         {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time]}
           <div 
-            class="speaker-segment"
+            class="speaker-segment-large"
             style="
               width: {safeCalculatePercentage(time, normalizedAnalytics.talk_time.total)}%;
               background-color: {getSpeakerBgColor(speakerName)};
-              border-right: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};
             "
             title="{speakerName}: {formatTime(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
           ></div>
         {/each}
       </div>
       
-      <!-- Legend below the bar -->
-      <div class="talk-time-legend">
-        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time]}
-          <div class="legend-item">
-            <div 
-              class="legend-color-indicator" 
-              style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
-            ></div>
-            <span class="legend-speaker-name">{speakerName}</span>
-            <span class="legend-time">{formatTime(time)}</span>
-            <span class="legend-percentage">({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)</span>
-          </div>
-        {/each}
-      </div>
-      
-      <div class="total-time">
-        <span>Total: {formatTime(normalizedAnalytics.talk_time.total)}</span>
-      </div>
-    </div>
-  
-    {#if normalizedAnalytics.interruptions.total > 0}
-    <div class="interruptions-container">
-      <h3>Interruptions</h3>
-      
-      <div class="interruptions-list">
-        {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count]}
-          <div class="interruption-item">
-            <div class="speaker-name-container">
-              <div 
-                class="speaker-color-indicator" 
-                style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
-              ></div>
-              <span class="speaker-name">{speakerName}</span>
+      <!-- Combined Speaker Data Chips -->
+      <div class="speaker-chips-grid">
+        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker).sort(([,a], [,b]) => b - a) as [speakerName, time]}
+          {@const speakerTurns = normalizedAnalytics.turn_taking?.by_speaker?.[speakerName] || 0}
+          <div class="speaker-chip">
+            <div class="chip-header">
+              <div class="speaker-dot-large" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
+              <span class="speaker-name-chip">{speakerName}</span>
             </div>
-            
-            <div class="interruption-count">
-              {count} {count === 1 ? 'interruption' : 'interruptions'}
+            <div class="chip-stats">
+              <div class="stat-item">
+                <span class="stat-value">{formatTime(time)}</span>
+                <span class="stat-label">time</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-value">{safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%</span>
+                <span class="stat-label">share</span>
+              </div>
+              {#if normalizedAnalytics.turn_taking?.total_turns > 0}
+              <div class="stat-item">
+                <span class="stat-value">{speakerTurns}</span>
+                <span class="stat-label">{speakerTurns === 1 ? 'turn' : 'turns'}</span>
+              </div>
+              {/if}
             </div>
           </div>
         {/each}
       </div>
-      
-      <div class="total-interruptions">
-        <span>Total: {normalizedAnalytics.interruptions.total} {normalizedAnalytics.interruptions.total === 1 ? 'interruption' : 'interruptions'}</span>
-      </div>
     </div>
-  {/if}
-  
-  {#if normalizedAnalytics.turn_taking.total_turns > 0}
-    <div class="turn-taking-container">
-      <h3>Turn Taking</h3>
-      
-      <div class="turns-count">
-        <span>Total turns: {normalizedAnalytics.turn_taking.total_turns}</span>
-      </div>
-      
-      <div class="turn-distribution">
-        <div class="turn-bars">
-          {#each getObjectEntries(normalizedAnalytics.turn_taking.by_speaker) as [speakerName, turns]}
-            <div class="speaker-bar">
-              <div class="speaker-name-container">
-                <div 
-                  class="speaker-color-indicator" 
-                  style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
-                ></div>
-                <span class="speaker-name">{speakerName}</span>
+    
+      <!-- Additional Metrics Row -->
+      {#if (normalizedAnalytics.interruptions?.total > 0) || (normalizedAnalytics.questions?.total > 0)}
+      <div class="additional-metrics-row">
+        {#if normalizedAnalytics.interruptions?.total > 0}
+        <div class="metric-section">
+          <h4 class="metric-title">
+            <span class="metric-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </span>
+            Interruptions
+          </h4>
+          <div class="metric-list">
+            {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count]}
+              <div class="metric-item">
+                <div class="metric-speaker">
+                  <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
+                  <span class="speaker-name-small">{speakerName}</span>
+                </div>
+                <span class="metric-value">{count}</span>
               </div>
-              
-              <div class="bar-container">
-                <div 
-                  class="bar-fill" 
-                  style="
-                    width: {safeCalculatePercentage(turns, normalizedAnalytics.turn_taking.total_turns)}%; 
-                    background-color: {getSpeakerBgColor(speakerName)};
-                    border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};
-                  "
-                ></div>
-                <span class="turn-label">{turns} {turns === 1 ? 'turn' : 'turns'}</span>
-              </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
-      </div>
-    </div>
-  {/if}
-  
-  {#if normalizedAnalytics.questions.total > 0}
-    <div class="questions-container">
-      <h3>Questions</h3>
-      
-      <div class="questions-list">
-        {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count]}
-          <div class="question-item">
-            <div class="speaker-name-container">
-              <div 
-                class="speaker-color-indicator" 
-                style="background-color: {getSpeakerBgColor(speakerName)}; border: 1px solid {getSpeakerColor(getSpeakerNameForColor(speakerName)).border};"
-              ></div>
-              <span class="speaker-name">{speakerName}</span>
-            </div>
-            
-            <div class="question-count">
-              {count} {count === 1 ? 'question' : 'questions'}
-            </div>
+        {/if}
+        
+        {#if normalizedAnalytics.questions?.total > 0}
+        <div class="metric-section">
+          <h4 class="metric-title">
+            <span class="metric-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                <point cx="12" cy="17"/>
+              </svg>
+            </span>
+            Questions
+          </h4>
+          <div class="metric-list">
+            {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count]}
+              <div class="metric-item">
+                <div class="metric-speaker">
+                  <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
+                  <span class="speaker-name-small">{speakerName}</span>
+                </div>
+                <span class="metric-value">{count}</span>
+              </div>
+            {/each}
           </div>
-        {/each}
+        </div>
+        {/if}
       </div>
-      
-      <div class="total-questions">
-        <span>Total: {normalizedAnalytics.questions.total} {normalizedAnalytics.questions.total === 1 ? 'question' : 'questions'}</span>
-      </div>
-    </div>
-  {/if}
+      {/if}
   {:else}
     <div class="empty-state">
       <p>No speaker analytics available for this file.</p>
@@ -328,163 +360,279 @@
 </div>
 
 <style>
-  .speaker-stats {
+  .speaker-stats.compact-layout {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
     background-color: var(--surface-color);
     border-radius: 8px;
-    padding: 1.5rem;
+    padding: 1rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
   
-  .speaker-stats h2 {
-    font-size: 1.2rem;
-    margin: 0 0 0.5rem;
+  /* Analytics Overview Cards */
+  .analytics-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
   }
   
-  .speaker-stats h3 {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--text-color);
-    margin: 0 0 1rem;
+  .overview-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
   }
   
-  .talk-time-container, .interruptions-container, .turn-taking-container, .questions-container {
+  .overview-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+  }
+  
+  .card-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+    flex-shrink: 0;
+  }
+  
+  .card-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .card-content {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.1rem;
+    min-width: 0;
   }
   
-  .talk-time-combined-bar {
+  .card-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+  
+  .card-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1;
+  }
+  
+  /* Compact Sections */
+  .section-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+  
+  .section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+  }
+  
+  .section-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+  
+  /* Large Talk Time Bar */
+  .talk-time-bar-large {
     display: flex;
     width: 100%;
     height: 24px;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    margin-bottom: 1rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    margin: 0.75rem 0 1rem 0;
+    border: 1px solid var(--border-color);
   }
   
-  .speaker-segment {
+  .speaker-segment-large {
     height: 100%;
-    transition: opacity 0.2s ease;
+    transition: all 0.2s ease;
+    cursor: pointer;
   }
   
-  .speaker-segment:hover {
-    opacity: 0.8;
+  .speaker-segment-large:hover {
+    opacity: 0.85;
+    transform: scaleY(1.1);
   }
   
-  .talk-time-legend {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+  /* Speaker Data Chips Grid */
+  .speaker-chips-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
   }
   
-  .legend-item {
+  .speaker-chip {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem;
+    transition: all 0.2s ease;
+  }
+  
+  .speaker-chip:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+  
+  .chip-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
   }
   
-  .legend-color-indicator {
-    width: 12px;
-    height: 12px;
+  .speaker-dot-large {
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     flex-shrink: 0;
   }
   
-  .legend-speaker-name {
+  .speaker-name-chip {
     font-weight: 500;
-    color: var(--text-color);
-    min-width: 80px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
   }
   
-  .legend-time {
-    color: var(--text-color);
-    min-width: 50px;
+  .chip-stats {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
   }
   
-  .legend-percentage {
-    color: var(--text-light);
-    font-size: 0.8rem;
-  }
-  
-  .turn-bars {
+  .stat-item {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    align-items: center;
+    flex: 1;
   }
   
-  .speaker-bar {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+  .stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    line-height: 1.2;
   }
   
-  .speaker-name-container {
+  .stat-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 0.1rem;
+  }
+  
+  /* Additional Metrics Row */
+  .additional-metrics-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+  
+  .metric-section {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+  }
+  
+  .metric-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
   }
   
-  .speaker-color-indicator {
+  .metric-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+  }
+  
+  .metric-icon svg {
     width: 12px;
     height: 12px;
-    border-radius: 50%;
   }
   
-  .speaker-name {
-    font-size: 0.9rem;
-    color: var(--text-color);
-  }
-  
-  .bar-container {
-    height: 10px;
-    background-color: var(--background-color);
-    border-radius: 5px;
-    overflow: hidden;
-    position: relative;
-    margin-bottom: 1.25rem;
-  }
-  
-  .bar-fill {
-    height: 100%;
-    border-radius: 5px;
-  }
-  
-  .turn-label {
-    position: absolute;
-    right: 0;
-    bottom: -20px;
-    font-size: 0.8rem;
-    color: var(--text-light);
-  }
-  
-  .total-time, .total-interruptions, .turns-count, .total-questions {
-    font-size: 0.9rem;
-    color: var(--text-light);
-    margin-top: 0.5rem;
-    text-align: right;
-  }
-  
-  .interruptions-list, .questions-list {
+  .metric-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.3rem;
   }
   
-  .interruption-item, .question-item {
+  .metric-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    padding: 0.2rem 0;
   }
   
-  .interruption-count, .question-count {
-    color: var(--text-light);
+  .metric-speaker {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .speaker-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  
+  .speaker-name-small {
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .metric-value {
+    color: var(--text-secondary);
+    font-weight: 500;
+    flex-shrink: 0;
   }
   
   .empty-state {
@@ -494,8 +642,71 @@
   }
   
   @media (max-width: 768px) {
-    .speaker-stats {
-      padding: 1rem;
+    .speaker-stats.compact-layout {
+      padding: 0.75rem;
+    }
+    
+    .analytics-overview {
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 0.5rem;
+    }
+    
+    .overview-card {
+      padding: 0.5rem;
+    }
+    
+    .card-value {
+      font-size: 1rem;
+    }
+    
+    .card-label {
+      font-size: 0.7rem;
+    }
+    
+    .speaker-chips-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .chip-stats {
+      gap: 0.5rem;
+    }
+    
+    .additional-metrics-row {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .analytics-overview {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .card-icon svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .section-title {
+      font-size: 0.85rem;
+    }
+    
+    .talk-time-bar-large {
+      height: 20px;
+      border-radius: 10px;
+    }
+    
+    .speaker-chip {
+      padding: 0.5rem;
+    }
+    
+    .chip-stats {
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    
+    .stat-item {
+      flex-direction: row;
+      justify-content: space-between;
     }
   }
 </style>

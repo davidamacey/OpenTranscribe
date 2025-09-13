@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Link } from 'svelte-navigator';
+  import { flip } from 'svelte/animate';
+  import { fade, scale } from 'svelte/transition';
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
+  import { hasActiveUploads, uploadsStore } from '$stores/uploads';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
   
   // Modal state
@@ -97,6 +100,12 @@
   let loading: boolean = true;
   let error: string | null = null;
   
+  // Animation and smooth update state
+  let fileMap = new Map<number, MediaFile>();
+  let pendingNewFiles = new Set<number>();
+  let pendingDeletions = new Set<number>();
+  let refreshTimeouts = new Map<string, number>();
+  
   // Selection state
   let selectedFiles = new Set<number>();
   let isSelecting: boolean = false;
@@ -180,20 +189,24 @@
       
       if (forceSuccessful.length > 0) {
         toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
+        // Remove force deleted files smoothly
+        const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_id);
+        removeFilesSmooth(forceSuccessfulIds);
       }
     } catch (forceErr) {
       console.error('Error force deleting files:', forceErr);
       toastStore.error('Failed to force delete some files. They may require admin intervention.');
     }
     
-    // Refresh the file list
-    await fetchFiles();
     clearSelection();
   }
   
-  // Fetch media files
-  async function fetchFiles() {
-    loading = true;
+  // Fetch media files with smooth update support
+  async function fetchFiles(isInitialLoad: boolean = false, skipAnimation: boolean = false) {
+    // Only show loading state on initial load
+    if (isInitialLoad || files.length === 0) {
+      loading = true;
+    }
     error = null;
     
     try {
@@ -253,20 +266,120 @@
         params.append('transcript_search', transcriptSearch.trim());
       }
       
+      let newFiles: MediaFile[] = [];
+      
       // If a collection is selected, fetch files from that collection
       if (selectedCollectionId !== null) {
         const response = await axiosInstance.get(`/api/collections/${selectedCollectionId}/media`, { params });
-        files = response.data;
+        newFiles = response.data;
       } else {
         const response = await axiosInstance.get('/files', { params });
-        files = response.data;
+        newFiles = response.data;
       }
+      
+      // Update files with smooth transitions
+      if (!skipAnimation && files.length > 0) {
+        updateFilesSmooth(newFiles);
+      } else {
+        files = newFiles;
+        updateFileMap();
+      }
+      
     } catch (err) {
       console.error('Error fetching files:', err);
       error = 'Failed to load media files. Please try again.';
     } finally {
       loading = false;
     }
+  }
+  
+  // Update file map for efficient lookups
+  function updateFileMap() {
+    fileMap.clear();
+    files.forEach(file => {
+      fileMap.set(file.id, file);
+    });
+  }
+  
+  // Smooth file list updates without full re-render
+  function updateFilesSmooth(newFiles: MediaFile[]) {
+    const newFileMap = new Map<number, MediaFile>();
+    newFiles.forEach(file => newFileMap.set(file.id, file));
+    
+    // Identify truly new files (not in current list)
+    const existingIds = new Set(files.map(f => f.id));
+    const newIds = newFiles.map(f => f.id).filter(id => !existingIds.has(id));
+    
+    // Mark new files for entrance animation
+    newIds.forEach(id => pendingNewFiles.add(id));
+    
+    // Update the files array
+    files = newFiles;
+    updateFileMap();
+    
+    // Clear new file markers after animation
+    setTimeout(() => {
+      newIds.forEach(id => pendingNewFiles.delete(id));
+    }, 600);
+  }
+  
+  // Add a single new file smoothly to the top
+  function addNewFileSmooth(newFile: MediaFile) {
+    // Check if file already exists
+    if (fileMap.has(newFile.id)) {
+      // Update existing file
+      files = files.map(f => f.id === newFile.id ? newFile : f);
+      fileMap.set(newFile.id, newFile);
+      return;
+    }
+    
+    // Add new file to the beginning
+    pendingNewFiles.add(newFile.id);
+    files = [newFile, ...files];
+    fileMap.set(newFile.id, newFile);
+    
+    // Clear new file marker after animation
+    setTimeout(() => {
+      pendingNewFiles.delete(newFile.id);
+    }, 600);
+  }
+  
+  // Throttled refresh function to prevent spam
+  function throttledRefresh(key: string, delay: number = 500) {
+    if (refreshTimeouts.has(key)) {
+      clearTimeout(refreshTimeouts.get(key));
+    }
+    
+    const timeoutId = setTimeout(() => {
+      fetchFiles(false, true); // Skip animation for throttled refreshes
+      refreshTimeouts.delete(key);
+    }, delay);
+    
+    refreshTimeouts.set(key, timeoutId);
+  }
+  
+  // Remove files smoothly with animation
+  function removeFilesSmooth(fileIds: number[]) {
+    // Mark files for deletion animation
+    fileIds.forEach(id => {
+      if (fileMap.has(id)) {
+        pendingDeletions.add(id);
+      }
+    });
+    
+    // Wait for exit animation to complete, then remove from array
+    setTimeout(() => {
+      files = files.filter(file => !fileIds.includes(file.id));
+      fileIds.forEach(id => {
+        fileMap.delete(id);
+        pendingDeletions.delete(id);
+      });
+    }, 250); // Match fade out animation duration
+  }
+  
+  // Remove single file smoothly
+  function removeFileSmooth(fileId: number) {
+    removeFilesSmooth([fileId]);
   }
   
   // Handle filter changes
@@ -369,7 +482,7 @@
    */
   async function executeDeleteSelectedFiles() {
     try {
-      loading = true;
+      // Don't show loading state - use smooth animations instead
       
       // Use bulk action API for better error handling
       const response = await axiosInstance.post('/files/management/bulk-action', {
@@ -400,14 +513,15 @@
       // Report on regular deletion results
       if (successful.length > 0) {
         toastStore.success(`Successfully deleted ${successful.length} file(s).`);
+        // Remove successfully deleted files smoothly
+        const successfulIds = successful.map((r: any) => r.file_id);
+        removeFilesSmooth(successfulIds);
       }
       
       if (failed.length > 0) {
         toastStore.error(`Failed to delete ${failed.length} file(s). Please try again.`);
       }
       
-      // Refresh the file list
-      await fetchFiles();
       clearSelection();
       
     } catch (err: any) {
@@ -415,19 +529,25 @@
       const errorMessage = err.response?.data?.detail || 'An error occurred while deleting files. Please try again.';
       toastStore.error(errorMessage);
     } finally {
-      loading = false;
+      // No need to set loading = false since we didn't set it to true
     }
   }
 
   // File upload completed handler
   function handleUploadComplete(event: CustomEvent) {
-    // Refresh the file list
-    fetchFiles();
+    // For URL uploads, don't immediately refresh - let WebSocket notifications handle it
+    // This prevents showing loading state while YouTube/URL processing happens in background
+    const isUrl = event.detail?.isUrl || false;
+    const isDuplicate = event.detail?.isDuplicate || false;
+    
+    if (!isUrl) {
+      // For file uploads, do a smooth refresh since files are ready to display
+      throttledRefresh('upload-complete', 300);
+    }
+    // For URL uploads, the gallery will refresh when WebSocket notifications arrive
     
     // Only close the modal if not a duplicate file
     // For duplicates, we want to keep the modal open to show the notification
-    const isDuplicate = event.detail?.isDuplicate || false;
-    
     if (!isDuplicate) {
       showUploadModal = false;
     }
@@ -484,6 +604,7 @@
   // Subscribe to WebSocket file status updates to update file status in real-time
   // Track last processed notification to avoid duplicate processing
   let lastProcessedNotificationId = '';
+  let previousActiveUploadCount = 0;
   
   function setupWebSocketUpdates() {
     unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
@@ -495,7 +616,11 @@
           lastProcessedNotificationId = latestNotification.id;
           
           // Handle different notification types
-          if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
+          if (latestNotification.type === 'file_deleted' && latestNotification.data?.file_id) {
+            const fileId = parseInt(String(latestNotification.data.file_id));
+            removeFileSmooth(fileId);
+          }
+          else if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             const fileId = String(latestNotification.data.file_id);
             const status = latestNotification.data.status;
             
@@ -512,29 +637,86 @@
               return file;
             });
             
-            // If the file status changed to error, refresh to get the latest error message and show enhanced notification
+            // If the file status changed to error, refresh to get the latest error message
             if (status === 'error') {
-              fetchFiles().then(() => {
-                // Find the updated file with error message
-                const errorFile = files.find(f => String(f.id) === fileId);
-                if (errorFile) {
-                  showEnhancedErrorNotification(errorFile);
-                }
-              });
+              throttledRefresh('error-' + fileId, 300);
+            }
+            
+            // If processing completed, do a smooth refresh
+            if (status === 'completed') {
+              throttledRefresh('completed-' + fileId, 200);
             }
             
           } 
-          // Handle new file uploads
+          // Handle new file uploads with smooth addition
           else if (latestNotification.type === 'file_upload' || latestNotification.type === 'file_created') {
-            fetchFiles();
+            if (latestNotification.data?.file) {
+              // Add the new file smoothly without full refresh
+              addNewFileSmooth(latestNotification.data.file);
+            } else {
+              // Fallback to throttled refresh if no file data provided
+              throttledRefresh('new-file', 500);
+            }
           }
           // Handle file updates (metadata, processing completion, etc.)
           else if (latestNotification.type === 'file_updated' && latestNotification.data?.file_id) {
-            fetchFiles();
+            const fileId = String(latestNotification.data.file_id);
+
+            // Try to update the file in place first
+            let fileExists = false;
+            files = files.map(file => {
+              if (String(file.id) === fileId) {
+                fileExists = true;
+                // If we have full file data, use it; otherwise merge notification data
+                if (latestNotification.data.file) {
+                  return {
+                    ...file,
+                    ...latestNotification.data.file
+                  };
+                } else {
+                  return {
+                    ...file,
+                    status: latestNotification.data.status || file.status,
+                    thumbnail_url: latestNotification.data.thumbnail_url || file.thumbnail_url,
+                  };
+                }
+              }
+              return file;
+            });
+
+            // Only fetch if file doesn't exist in current list (new file)
+            if (!fileExists) {
+              if (latestNotification.data.file) {
+                addNewFileSmooth(latestNotification.data.file);
+              } else {
+                throttledRefresh('update-' + fileId, 300);
+              }
+            }
           }
         }
       }
     });
+    
+    // Also subscribe to upload store to detect when uploads finish
+    const unsubscribeUploads = uploadsStore.subscribe(($uploads) => {
+      const currentActiveUploadCount = $uploads.uploads.filter(u => 
+        ['uploading', 'processing', 'preparing'].includes(u.status)
+      ).length;
+      
+      // If active upload count decreased to 0, do a smooth refresh
+      if (previousActiveUploadCount > 0 && currentActiveUploadCount === 0) {
+        throttledRefresh('uploads-complete', 800); // Slightly longer delay for upload completion
+      }
+      
+      previousActiveUploadCount = currentActiveUploadCount;
+    });
+    
+    // Return cleanup function for uploads subscription
+    const originalUnsubscribe = unsubscribeFileStatus;
+    unsubscribeFileStatus = () => {
+      if (originalUnsubscribe) originalUnsubscribe();
+      if (unsubscribeUploads) unsubscribeUploads();
+    };
   }
   
   onMount(() => {
@@ -544,7 +726,42 @@
     // Setup WebSocket subscription for real-time updates
     setupWebSocketUpdates();
     
-    fetchFiles();
+    // Listen for events to open Add Media modal
+    const handleOpenModalEvent = (event: CustomEvent) => {
+      showUploadModal = true;
+      // Dispatch a separate event for the FileUploader after the modal is shown
+      setTimeout(() => {
+        if (event.detail?.activeTab) {
+          window.dispatchEvent(new CustomEvent('setFileUploaderTab', {
+            detail: { activeTab: event.detail.activeTab }
+          }));
+        }
+      }, 50);
+    };
+
+    // Listen for direct file upload from recording popup
+    const handleUploadRecordedFile = (event: CustomEvent) => {
+      if (event.detail?.file) {
+        showUploadModal = true;
+        // Trigger file upload directly
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('directFileUpload', {
+            detail: { file: event.detail.file }
+          }));
+        }, 100);
+      }
+    };
+    
+    window.addEventListener('openAddMediaModal', handleOpenModalEvent);
+    window.addEventListener('uploadRecordedFile', handleUploadRecordedFile);
+    
+    fetchFiles(true); // Initial load
+    
+    // Return cleanup function
+    return () => {
+      window.removeEventListener('openAddMediaModal', handleOpenModalEvent);
+      window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile);
+    };
   });
   
   onDestroy(() => {
@@ -552,6 +769,12 @@
     if (unsubscribeFileStatus) {
       unsubscribeFileStatus();
     }
+    
+    // Clean up any pending refresh timeouts
+    refreshTimeouts.forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    refreshTimeouts.clear();
   });
 </script>
 
@@ -633,7 +856,7 @@
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
-              Upload Media
+              Add Media
             </button>
             <button 
               class="collections-btn"
@@ -712,9 +935,12 @@
       {:else}
         <div class="file-grid">
           {#each files as file (file.id)}
-              <div 
-                class="file-card {selectedFiles.has(file.id) ? 'selected' : ''}"
-              >
+            <div 
+              class="file-card {selectedFiles.has(file.id) ? 'selected' : ''} {pendingNewFiles.has(file.id) ? 'new-file' : ''} {pendingDeletions.has(file.id) ? 'deleting' : ''}"
+              animate:flip={{ duration: 300 }}
+              in:scale={{ duration: 300, start: 0.8 }}
+              out:fade={{ duration: 250 }}
+            >
                 {#if isSelecting}
                   <label class="file-selector">
                     <input 
@@ -858,7 +1084,7 @@
       on:keydown|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="upload-modal-title">Upload Media</h2>
+          <h2 id="upload-modal-title">Add Media</h2>
           <button 
             class="modal-close" 
             on:click={toggleUploadModal}
@@ -1313,29 +1539,88 @@
   }
   
   
-  /* File grid */
-  .file-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-  }
+  /* File grid - moved to combined section below */
   
   .file-card {
     position: relative;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     border-radius: 12px;
-    transition: all 0.2s ease-in-out;
+    transition: all 0.3s ease-in-out;
     cursor: pointer;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    transform: translateZ(0); /* Enable hardware acceleration */
+  }
+  
+  /* New file animation */
+  .file-card.new-file {
+    animation: newFileGlow 0.8s ease-out;
+    border-color: #3b82f6;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  
+  /* Dark mode new file animation */
+  :global(.dark) .file-card.new-file {
+    border-color: #60a5fa;
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.4);
+  }
+  
+  /* Deleting file animation */
+  .file-card.deleting {
+    opacity: 0.5;
+    transform: scale(0.95);
+    transition: all 0.25s ease-out;
+    pointer-events: none;
+  }
+  
+  @keyframes newFileGlow {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+      border-color: #60a5fa;
+    }
+    50% {
+      transform: scale(1.02);
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.4);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+      border-color: #3b82f6;
+    }
+  }
+  
+  /* Smooth loading state for existing cards */
+  .file-card.loading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  
+  /* Grid container for smooth transitions */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    /* Enable smooth grid transitions */
+    transition: all 0.3s ease;
   }
   
   .file-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
+  }
+  
+  /* Smooth hover for thumbnails */
+  .file-card:hover .thumbnail-image {
+    transform: scale(1.05);
+  }
+  
+  /* Staggered animation for initial load */
+  .file-card {
+    animation-delay: calc(var(--animation-order, 0) * 0.05s);
   }
   
   .file-card.selected {
@@ -1859,10 +2144,81 @@
   @media (prefers-reduced-motion: reduce) {
     .tab-button,
     .tab-button.active,
-    .tab-button.active::after {
+    .tab-button.active::after,
+    .file-card,
+    .file-card.new-file,
+    .thumbnail-image {
       transition: none;
       animation: none;
     }
+    
+    .file-card:hover {
+      transform: none;
+    }
+    
+    .file-card:hover .thumbnail-image {
+      transform: none;
+    }
+  }
+  
+  /* Smooth state transitions for better UX */
+  .loading-state {
+    transition: opacity 0.3s ease;
+  }
+  
+  .loading-state.entering {
+    opacity: 0;
+  }
+  
+  .loading-state.entered {
+    opacity: 1;
+  }
+  
+  /* Performance optimizations */
+  .file-card {
+    will-change: transform;
+  }
+  
+  .thumbnail-image {
+    will-change: transform;
+  }
+  
+  /* Loading shimmer effect for better perceived performance */
+  @keyframes shimmer {
+    0% {
+      background-position: -200px 0;
+    }
+    100% {
+      background-position: calc(200px + 100%) 0;
+    }
+  }
+  
+  .file-card.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+    background-size: 200px 100%;
+    animation: shimmer 1.5s infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+  
+  :global(.dark) .file-card.loading::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
   }
 
   /* Modal button styling to match app design */

@@ -15,9 +15,29 @@ OpenTranscribe uses a hybrid approach to database management:
 ## Current Setup
 
 During development:
-- The `reset_and_init.sh` script uses `init_db.sql` to initialize the database with a clean schema
-- The script also calls `app/initial_data.py` to create initial test data
-- The database can be completely reset using the reset script with: `./reset_and_init.sh dev`
+- The `./opentr.sh reset dev` script uses `database/init_db.sql` to initialize the database with a clean schema
+- The script also calls `app/initial_data.py` to create initial test data and admin user
+- The database can be completely reset using: `./opentr.sh reset dev` (⚠️ **WARNING**: This deletes ALL data)
+- Individual services can be restarted without data loss using: `./opentr.sh restart-backend`
+
+### Enhanced Database Features
+
+The current schema includes several new features and improvements:
+
+#### User Settings System
+- **User-specific settings** for recording preferences (duration, quality, auto-stop)
+- **LLM configurations** with encrypted API key storage per user
+- **Custom AI prompts** for different content types and workflows
+
+#### Advanced AI Integration
+- **LLM provider settings** with multi-provider support (OpenAI, Claude, vLLM, Ollama, etc.)
+- **Summarization history** tracking with versioning and status management
+- **Custom prompt templates** for different content types (meetings, interviews, podcasts)
+
+#### Enhanced Media Processing
+- **YouTube URL processing** with metadata extraction and enhanced error handling
+- **Improved file upload handling** with concurrent processing and retry logic
+- **Enhanced notification system** with WebSocket integration and progress tracking
 
 ## Future Migration Approach
 

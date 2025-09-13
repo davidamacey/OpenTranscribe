@@ -125,9 +125,7 @@ def get_failed_summary_count() -> int:
     try:
         return (
             db.query(MediaFile)
-            .filter(
-                MediaFile.summary_status == "failed", MediaFile.status == "completed"
-            )
+            .filter(MediaFile.summary_status == "failed", MediaFile.status == "completed")
             .count()
         )
     except Exception as e:

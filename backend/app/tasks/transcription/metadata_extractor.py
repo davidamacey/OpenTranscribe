@@ -95,10 +95,7 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
     # Look for any additional fields that might be useful
     for key, value in metadata.items():
-        if any(
-            term in key.lower()
-            for term in ["creator", "copyright", "language", "genre"]
-        ):
+        if any(term in key.lower() for term in ["creator", "copyright", "language", "genre"]):
             important_fields[key] = value
 
     return important_fields
@@ -124,9 +121,7 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
                 metadata_list = et.get_metadata(file_path)
                 if metadata_list:
                     extracted_metadata = metadata_list[0]
-                    logger.info(
-                        f"Successfully extracted {len(extracted_metadata)} metadata fields"
-                    )
+                    logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields")
         except Exception as et_err:
             logger.warning(f"Error using Python ExifTool: {et_err}")
 
@@ -186,12 +181,12 @@ def update_media_file_metadata(
         media_file.resolution_height = important_metadata.get(
             "VideoHeight"
         ) or important_metadata.get("ImageHeight")
-        media_file.frame_rate = important_metadata.get(
-            "VideoFrameRate"
-        ) or important_metadata.get("FrameRate")
-        media_file.codec = important_metadata.get(
-            "VideoCodec"
-        ) or important_metadata.get("CompressorID")
+        media_file.frame_rate = important_metadata.get("VideoFrameRate") or important_metadata.get(
+            "FrameRate"
+        )
+        media_file.codec = important_metadata.get("VideoCodec") or important_metadata.get(
+            "CompressorID"
+        )
         media_file.frame_count = important_metadata.get("FrameCount")
 
         if important_metadata.get("AspectRatio"):
@@ -209,9 +204,7 @@ def update_media_file_metadata(
             duration_value = float(important_metadata.get("Duration"))
             media_file.duration = duration_value
         except (ValueError, TypeError):
-            logger.warning(
-                f"Could not parse duration: {important_metadata.get('Duration')}"
-            )
+            logger.warning(f"Could not parse duration: {important_metadata.get('Duration')}")
 
     # Creation and modification dates
     if important_metadata.get("CreateDate"):
@@ -220,13 +213,9 @@ def update_media_file_metadata(
             if ":" in create_date_str and len(create_date_str) >= 10:
                 if len(create_date_str) <= 19:  # No timezone
                     create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
-                media_file.creation_date = datetime.datetime.fromisoformat(
-                    create_date_str
-                )
+                media_file.creation_date = datetime.datetime.fromisoformat(create_date_str)
         except (ValueError, TypeError):
-            logger.warning(
-                f"Could not parse creation date: {important_metadata.get('CreateDate')}"
-            )
+            logger.warning(f"Could not parse creation date: {important_metadata.get('CreateDate')}")
 
     if important_metadata.get("ModifyDate"):
         try:
@@ -235,9 +224,7 @@ def update_media_file_metadata(
                 modify_date_str = modify_date_str.replace(":", "-", 2)
                 if len(modify_date_str) <= 19:  # No timezone
                     modify_date_str += "+00:00"
-                media_file.last_modified_date = datetime.datetime.fromisoformat(
-                    modify_date_str
-                )
+                media_file.last_modified_date = datetime.datetime.fromisoformat(modify_date_str)
         except (ValueError, TypeError):
             logger.warning(
                 f"Could not parse modification date: {important_metadata.get('ModifyDate')}"
@@ -249,9 +236,7 @@ def update_media_file_metadata(
 
     # Content information
     media_file.title = important_metadata.get("Title")
-    media_file.author = important_metadata.get("Author") or important_metadata.get(
-        "Artist"
-    )
+    media_file.author = important_metadata.get("Author") or important_metadata.get("Artist")
     media_file.description = (
         important_metadata.get("Description")
         or important_metadata.get("Comment")

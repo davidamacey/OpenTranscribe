@@ -11,6 +11,7 @@ robust handling of different scenarios including:
 """
 
 import asyncio
+import contextlib
 import time
 from unittest.mock import Mock
 
@@ -212,8 +213,7 @@ class TestNetworkEdgeCases:
             assert elapsed < 5  # Should not take much longer than timeout
             assert success is False
             assert any(
-                keyword in message.lower()
-                for keyword in ["timeout", "connection", "failed"]
+                keyword in message.lower() for keyword in ["timeout", "connection", "failed"]
             )
         except Exception:
             elapsed = time.time() - start_time
@@ -273,10 +273,7 @@ class TestNetworkEdgeCases:
             )
         except Exception as e:
             # Expected for DNS failures
-            assert any(
-                keyword in str(e).lower()
-                for keyword in ["resolve", "dns", "connection"]
-            )
+            assert any(keyword in str(e).lower() for keyword in ["resolve", "dns", "connection"])
         finally:
             await service.close()
 
@@ -309,8 +306,7 @@ class TestAPIKeyValidation:
         except Exception as e:
             # May throw exception for auth errors
             assert any(
-                keyword in str(e).lower()
-                for keyword in ["unauthorized", "authentication", "key"]
+                keyword in str(e).lower() for keyword in ["unauthorized", "authentication", "key"]
             )
         finally:
             await service.close()
@@ -405,9 +401,7 @@ class TestConnectionTestAPI:
         )
 
         # This will attempt actual connection - expect it to fail in test environment
-        result = await test_llm_connection(
-            test_request=test_request, current_user=mock_user
-        )
+        result = await test_llm_connection(test_request=test_request, current_user=mock_user)
 
         assert hasattr(result, "success")
         assert hasattr(result, "status")
@@ -430,9 +424,7 @@ class TestConnectionTestAPI:
             timeout=5,
         )
 
-        result = await test_llm_connection(
-            test_request=test_request, current_user=mock_user
-        )
+        result = await test_llm_connection(test_request=test_request, current_user=mock_user)
 
         assert hasattr(result, "success")
         assert hasattr(result, "status")
@@ -457,11 +449,9 @@ class TestResourceManagement:
 
         service = LLMService(config)
 
-        try:
+        with contextlib.suppress(Exception):
             # This should fail
             await service.validate_connection()
-        except Exception:
-            pass  # Expected
 
         # Cleanup should work without errors
         await service.close()

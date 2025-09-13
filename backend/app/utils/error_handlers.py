@@ -33,13 +33,13 @@ def handle_database_errors(func: Callable) -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Database operation failed",
-            )
+            ) from e
         except Exception as e:
             logger.error(f"Unexpected error in {func.__name__}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred",
-            )
+            ) from e
 
     return wrapper
 
@@ -116,9 +116,7 @@ class ErrorHandler:
         Returns:
             HTTPException with 404 status
         """
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"{resource} not found"
-        )
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{resource} not found")
 
     @staticmethod
     def unauthorized_error(message: str = "Access denied") -> HTTPException:

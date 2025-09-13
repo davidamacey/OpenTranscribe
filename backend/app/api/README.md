@@ -21,18 +21,21 @@ This directory contains the FastAPI application's API layer, organized by resour
 api/
 ├── endpoints/              # API route handlers
 │   ├── files/             # Modular file management
-│   │   ├── upload.py      # File upload processing
+│   │   ├── upload.py      # Enhanced file upload processing with concurrency
 │   │   ├── crud.py        # Basic CRUD operations
 │   │   ├── management.py  # Enhanced file management and recovery
 │   │   ├── filtering.py   # Advanced filtering logic
-│   │   └── streaming.py   # Video/audio streaming
+│   │   ├── streaming.py   # Video/audio streaming support
+│   │   └── url_processing.py # NEW: YouTube/URL processing
 │   ├── admin.py           # Admin operations
 │   ├── auth.py            # Authentication endpoints
 │   ├── comments.py        # Comment system
 │   ├── search.py          # Search functionality
 │   ├── speakers.py        # Speaker management
+│   ├── summarization.py   # NEW: LLM-powered summarization
 │   ├── tags.py            # Tag operations
-│   ├── tasks.py           # Task monitoring
+│   ├── tasks.py           # Enhanced task monitoring
+│   ├── user_settings.py   # NEW: User settings management
 │   └── users.py           # User management
 ├── router.py              # Main API router configuration
 └── websockets.py          # Real-time WebSocket handlers
@@ -227,6 +230,48 @@ GET    /search/files        # Search files only
 GET    /search/transcripts  # Search transcripts only
 ```
 
+### **NEW: User Settings (`user_settings.py`)**
+```
+GET    /user-settings/recording      # Get user recording preferences
+PUT    /user-settings/recording      # Update recording settings
+DELETE /user-settings/recording      # Reset to defaults
+GET    /user-settings/all           # Get all user settings (debug)
+```
+
+**Recording Settings Management:**
+- **Duration Control**: Set maximum recording duration (5, 10, 15, 30, 60 minutes)
+- **Quality Settings**: Configure recording quality (low, medium, high)
+- **Auto-Stop Control**: Enable/disable automatic stop when duration reached
+- **Validation**: Server-side validation with comprehensive error handling
+- **Defaults**: Fallback to system defaults when user hasn't customized settings
+
+### **NEW: Summarization (`summarization.py`)**
+```
+POST   /summarization/{file_id}     # Generate AI summary
+GET    /summarization/{file_id}     # Get existing summary
+DELETE /summarization/{file_id}     # Delete summary
+```
+
+**AI-Powered Summarization Features:**
+- **Multi-Provider Support**: OpenAI, Claude, vLLM, Ollama, OpenRouter, custom endpoints
+- **BLUF Format**: Bottom Line Up Front structured summaries
+- **Intelligent Section Processing**: Handles transcripts of any length with context-aware chunking
+- **Custom Prompts**: User-defined prompts for different content types
+- **Real-time Progress**: WebSocket notifications during processing
+- **Error Recovery**: Robust error handling with user-friendly messages
+
+### **NEW: URL Processing (`files/url_processing.py`)**
+```
+POST   /files/process-url           # Process YouTube/media URLs
+GET    /files/url-status/{task_id}  # Get URL processing status
+```
+
+**Enhanced URL Processing:**
+- **YouTube Integration**: Extract audio from YouTube videos with metadata
+- **Progress Tracking**: Real-time download and processing progress
+- **Error Handling**: Comprehensive error recovery and user feedback
+- **Quality Selection**: Automatic quality optimization for transcription
+
 ### Admin (`admin.py`)
 ```
 GET    /admin/stats         # System statistics
@@ -319,9 +364,12 @@ def list_all_users(
 
 ### Real-time Updates
 WebSockets provide real-time notifications for:
-- **Task progress**: Transcription, analysis progress updates
-- **File status**: Processing status changes
-- **System notifications**: Admin alerts
+- **Task progress**: Transcription, analysis, summarization progress updates
+- **File status**: Processing status changes with detailed progress tracking
+- **Upload progress**: Real-time upload status with concurrent file processing
+- **Summarization progress**: AI processing status with section-by-section updates
+- **System notifications**: Admin alerts and user-specific notifications
+- **Recording status**: Live recording progress and session management
 
 ### WebSocket Pattern
 ```python

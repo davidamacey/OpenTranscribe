@@ -265,13 +265,39 @@
       // Remove from list
       allPrompts = allPrompts.filter(p => p.id !== promptToDelete.id);
       
-      // If this was the active prompt, clear selection
-      if (selectedPromptId === promptToDelete.id) {
+      // Check if we deleted the active prompt
+      const wasActivePrompt = selectedPromptId === promptToDelete.id;
+      
+      // Check if we have any remaining user prompts after deletion
+      const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
+      
+      // If no user prompts remain, automatically activate Universal Content Analyzer (regardless of which prompt was active)
+      if (remainingUserPrompts.length === 0) {
+        try {
+          // Load fresh active prompt data - backend will automatically fall back to Universal Content Analyzer
+          const activeResponse = await PromptsApi.getActivePrompt();
+          selectedPromptId = activeResponse.active_prompt_id;
+          activePrompt = activeResponse.active_prompt;
+          
+          if (activePrompt && activePrompt.name) {
+            success = `Prompt deleted successfully. ${activePrompt.name} is now active and will be used for all future summaries.`;
+          } else {
+            success = 'Prompt deleted successfully. Default system prompt is now active.';
+          }
+        } catch (activeErr: any) {
+          console.error('Error getting fallback active prompt:', activeErr);
+          selectedPromptId = null;
+          activePrompt = null;
+          success = 'Prompt deleted successfully';
+        }
+      } else if (wasActivePrompt) {
+        // Just clear the selection if it was active but we still have user prompts
         selectedPromptId = null;
         activePrompt = null;
+        success = 'Prompt deleted successfully';
+      } else {
+        success = 'Prompt deleted successfully';
       }
-      
-      success = 'Prompt deleted successfully';
       
       if (onSettingsChange) {
         onSettingsChange();

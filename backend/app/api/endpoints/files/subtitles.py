@@ -24,10 +24,8 @@ async def get_subtitles(
     file_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    include_speakers: bool = Query(
-        True, description="Include speaker labels in subtitles"
-    ),
-    format: str = Query("srt", description="Subtitle format (srt, webvtt)"),
+    include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
+    subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt)"),
 ):
     """
     Generate and download subtitles for a media file.
@@ -49,23 +47,19 @@ async def get_subtitles(
 
     try:
         # Generate subtitle content based on format
-        if format.lower() == "webvtt":
+        if subtitle_format.lower() == "webvtt":
             subtitle_content = SubtitleService.generate_webvtt_content(
                 db, file_id, include_speakers
             )
         else:
-            subtitle_content = SubtitleService.generate_srt_content(
-                db, file_id, include_speakers
-            )
+            subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
 
         if not subtitle_content.strip():
-            raise HTTPException(
-                status_code=404, detail="No transcript available for this file"
-            )
+            raise HTTPException(status_code=404, detail="No transcript available for this file")
 
         # Determine content type based on format
         content_type_map = {"srt": "application/x-subrip", "webvtt": "text/vtt"}
-        content_type = content_type_map.get(format.lower(), "text/plain")
+        content_type = content_type_map.get(subtitle_format.lower(), "text/plain")
 
         # Generate filename
         base_filename = (
@@ -73,7 +67,7 @@ async def get_subtitles(
             if "." in media_file.filename
             else media_file.filename
         )
-        filename = f"{base_filename}.{format.lower()}"
+        filename = f"{base_filename}.{subtitle_format.lower()}"
 
         return Response(
             content=subtitle_content,
@@ -85,11 +79,11 @@ async def get_subtitles(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to generate subtitles: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/{file_id}/subtitles/validate", response_model=SubtitleValidationResult)
@@ -124,9 +118,7 @@ async def validate_subtitles(
         from app.models.media import TranscriptSegment
 
         segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .all()
+            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).all()
         )
 
         total_segments = len(segments)
@@ -142,7 +134,7 @@ async def validate_subtitles(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to validate subtitles: {str(e)}"
-        )
+        ) from e
 
 
 @router.get("/supported-formats")
