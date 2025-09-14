@@ -6,6 +6,7 @@
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
   import { hasActiveUploads, uploadsStore } from '$stores/uploads';
+  import { galleryStore, galleryState, selectedCount } from '$stores/gallery';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
   
   // Modal state
@@ -106,14 +107,14 @@
   let pendingDeletions = new Set<number>();
   let refreshTimeouts = new Map<string, number>();
   
-  // Selection state
-  let selectedFiles = new Set<number>();
-  let isSelecting: boolean = false;
-
   // View state
   let selectedCollectionId: number | null = null;
   let showCollectionsModal = false;
-  let activeTab: 'gallery' | 'status' = 'gallery';
+
+  // Use gallery store for state management
+  $: activeTab = $galleryState.activeTab;
+  $: isSelecting = $galleryState.isSelecting;
+  $: selectedFiles = $galleryState.selectedFiles;
   
   // Component refs
   let filterSidebarRef: any;
@@ -138,7 +139,8 @@
   let selectedFileTypes: string[] = [];
   let selectedStatuses: string[] = [];
   let transcriptSearch: string = '';
-  let showFilters: boolean = false; // For mobile
+  // Use store for showFilters
+  $: showFilters = $galleryState.showFilters;
   
   /**
    * Show confirmation modal
@@ -282,6 +284,7 @@
         updateFilesSmooth(newFiles);
       } else {
         files = newFiles;
+        galleryStore.setFiles(newFiles);
         updateFileMap();
       }
       
@@ -315,6 +318,7 @@
     
     // Update the files array
     files = newFiles;
+    galleryStore.setFiles(newFiles);
     updateFileMap();
     
     // Clear new file markers after animation
@@ -410,38 +414,23 @@
       event.stopPropagation();
       event.preventDefault();
     }
-    
-    const newSelection = new Set(selectedFiles);
-    if (newSelection.has(fileId)) {
-      newSelection.delete(fileId);
-    } else {
-      newSelection.add(fileId);
-    }
-    
-    selectedFiles = newSelection;
-    isSelecting = newSelection.size > 0;
+
+    galleryStore.toggleFileSelection(fileId);
   }
-  
+
   // Select all files
   function selectAllFiles() {
-    if (selectedFiles.size === files.length) {
-      // If all are selected, deselect all but stay in selection mode
-      selectedFiles = new Set();
-    } else {
-      // Select all visible files
-      selectedFiles = new Set(files.map(file => file.id));
-    }
+    galleryStore.selectAllFiles();
   }
-  
+
   // Clear selection
   function clearSelection() {
-    selectedFiles = new Set();
-    isSelecting = false;
+    galleryStore.clearSelection();
   }
 
   // Toggle filter sidebar for mobile
   function toggleFilters() {
-    showFilters = !showFilters;
+    galleryStore.toggleFilters();
   }
   
   // Toggle upload modal
@@ -776,144 +765,83 @@
     });
     refreshTimeouts.clear();
   });
+
+  // Set up store-based action triggers
+  onMount(() => {
+    // Subscribe to gallery action triggers (initial values are now handled in store)
+    const unsubscribeUpload = galleryStore.onUploadTrigger(() => {
+      toggleUploadModal();
+    });
+
+    const unsubscribeCollections = galleryStore.onCollectionsTrigger(() => {
+      showCollectionsModal = true;
+    });
+
+    const unsubscribeAddToCollection = galleryStore.onAddToCollectionTrigger(() => {
+      showCollectionsModal = true;
+    });
+
+    const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
+      deleteSelectedFiles();
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeUpload();
+      unsubscribeCollections();
+      unsubscribeAddToCollection();
+      unsubscribeDeleteSelected();
+    };
+  });
 </script>
 
-<div class="media-library">
-  <header class="library-header">
-    <div class="header-row">
-      <div class="title-and-tabs">
-        <h1>Media Library</h1>
-        <div class="tabs">
-          <button 
-            class="tab-button {activeTab === 'gallery' ? 'active' : ''}"
-            on:click={() => activeTab = 'gallery'}
+<!-- Main container with fixed height -->
+<div class="media-library-container">
+  {#if activeTab === 'gallery'}
+    <div class="gallery-tab-wrapper">
+      <!-- Left Sidebar: Filters (Sticky) -->
+      <div class="filter-sidebar {showFilters ? 'show' : ''}">
+        <!-- Filters Toggle Button (always visible) -->
+        <div class="filter-toggle-container">
+          <button
+            class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
+            on:click={toggleFilters}
+            title="{showFilters ? 'Hide' : 'Show'} filters panel"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-              <polyline points="21 15 16 10 5 21"></polyline>
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
-            Gallery
-          </button>
-          <button 
-            class="tab-button {activeTab === 'status' ? 'active' : ''}"
-            on:click={() => activeTab = 'status'}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            File Status
+            {#if showFilters}
+              <span class="filter-toggle-text">Hide Filters</span>
+            {/if}
           </button>
         </div>
-      </div>
-      
-      {#if activeTab === 'gallery'}
-        <div class="header-actions">
-          {#if isSelecting}
-          <div class="selection-controls">
-            <button 
-              class="select-all-btn" 
-              on:click={selectAllFiles}
-              title="{selectedFiles.size === files.length ? 'Remove all files from selection' : 'Add all visible files to selection'}"
-            >
-              {selectedFiles.size === files.length ? 'Deselect all' : 'Select all'}
-            </button>
-            <button
-              class="add-to-collection-btn"
-              on:click={() => showCollectionsModal = true}
-              title="Add selected files to a collection"
-            >
-              Add to Collection
-            </button>
-            <button 
-              class="delete-selected-btn" 
-              on:click={deleteSelectedFiles}
-              title="Permanently delete the {selectedFiles.size} selected file{selectedFiles.size === 1 ? '' : 's'} - this action cannot be undone"
-            >
-              Delete {selectedFiles.size} selected
-            </button>
-            <button 
-              class="cancel-selection-btn" 
-              on:click={clearSelection}
-              title="Exit selection mode and clear all selected files"
-            >
-              Cancel Selection
-            </button>
-          </div>
-        {:else}
-          <div class="normal-actions">
-            <button 
-              class="upload-button" 
-              on:click={toggleUploadModal}
-              title="Upload new audio or video files for transcription"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              Add Media
-            </button>
-            <button 
-              class="collections-btn"
-              on:click={() => showCollectionsModal = true}
-              title="Manage your collections"
-            >
-              Collections
-            </button>
-            <button 
-              class="select-files-btn" 
-              on:click={() => isSelecting = true}
-              title="Enter selection mode to choose multiple files for batch operations"
-            >
-              Select Files
-            </button>
+
+        <!-- Filter Content (hidden when collapsed) -->
+        {#if showFilters}
+          <div class="filter-content">
+            <FilterSidebar
+              bind:this={filterSidebarRef}
+              searchQuery={searchQuery}
+              selectedTags={selectedTags}
+              selectedSpeakers={selectedSpeakers}
+              selectedCollectionId={selectedCollectionId}
+              dateRange={{from: null, to: null}}
+              durationRange={{min: null, max: null}}
+              fileSizeRange={{min: null, max: null}}
+              selectedFileTypes={selectedFileTypes}
+              selectedStatuses={selectedStatuses}
+              transcriptSearch={transcriptSearch}
+              on:filter={applyFilters}
+              on:reset={resetFilters}
+            />
           </div>
         {/if}
-        </div>
-      {/if}
-    </div>
-    
-    {#if activeTab === 'gallery'}
-      <div class="mobile-filter-toggle">
-        <button 
-          on:click={toggleFilters}
-          title="Show or hide the filter sidebar to search and filter your media files"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-          </svg>
-          Filters
-        </button>
       </div>
-    {/if}
-  </header>
 
-  <div class="library-content">
-    {#if activeTab === 'gallery'}
-      <div class="filter-sidebar {showFilters ? 'show' : ''}">
-        <FilterSidebar 
-        bind:this={filterSidebarRef}
-        searchQuery={searchQuery}
-        selectedTags={selectedTags}
-        selectedSpeakers={selectedSpeakers}
-        selectedCollectionId={selectedCollectionId}
-        dateRange={{from: null, to: null}}
-        durationRange={{min: null, max: null}}
-        fileSizeRange={{min: null, max: null}}
-        selectedFileTypes={selectedFileTypes}
-        selectedStatuses={selectedStatuses}
-        transcriptSearch={transcriptSearch}
-        on:filter={applyFilters}
-        on:reset={resetFilters}
-      />
-    </div>
-    
-    <div class="file-list-container">
+      <!-- Right Content: Scrollable Media Grid -->
+      <div class="content-area">
+        <div class="scrollable-content">
       {#if loading}
         <div class="loading-state">
           <p>Loading files...</p>
@@ -921,8 +849,8 @@
       {:else if error}
         <div class="error-state">
           <p>Unable to connect to the server. Please check your connection and try again.</p>
-          <button 
-            class="retry-button" 
+          <button
+            class="retry-button"
             on:click={fetchFiles}
             title="Retry loading your media files"
           >Retry</button>
@@ -935,7 +863,7 @@
       {:else}
         <div class="file-grid">
           {#each files as file (file.id)}
-            <div 
+            <div
               class="file-card {selectedFiles.has(file.id) ? 'selected' : ''} {pendingNewFiles.has(file.id) ? 'new-file' : ''} {pendingDeletions.has(file.id) ? 'deleting' : ''}"
               animate:flip={{ duration: 300 }}
               in:scale={{ duration: 300, start: 0.8 }}
@@ -943,18 +871,18 @@
             >
                 {#if isSelecting}
                   <label class="file-selector">
-                    <input 
-                      type="checkbox" 
-                      class="file-checkbox" 
-                      checked={selectedFiles.has(file.id)} 
+                    <input
+                      type="checkbox"
+                      class="file-checkbox"
+                      checked={selectedFiles.has(file.id)}
                       on:change={(e) => toggleFileSelection(file.id, e)}
                       title="Select or deselect this file for batch operations"
                     />
                     <span class="checkmark"></span>
                   </label>
                 {/if}
-                <Link 
-                  to={isSelecting ? '#' : `/files/${file.id}`} 
+                <Link
+                  to={isSelecting ? '#' : `/files/${file.id}`}
                   class="file-card-link"
                   on:click={(e) => {
                     if (isSelecting) {
@@ -966,9 +894,9 @@
                 <div class="file-content">
                   {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
                     <div class="file-thumbnail">
-                      <img 
-                        src={file.thumbnail_url} 
-                        alt="Thumbnail for {file.filename}" 
+                      <img
+                        src={file.thumbnail_url}
+                        alt="Thumbnail for {file.filename}"
                         loading="lazy"
                         class="thumbnail-image"
                       />
@@ -1000,16 +928,16 @@
                       </svg>
                     </div>
                   {/if}
-                  
+
                   <h2 class="file-name">{file.filename}</h2>
-                  
+
                   <div class="file-meta">
                     <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
                     {#if file.duration}
                       <span class="file-duration">{formatDuration(file.duration)}</span>
                     {/if}
                   </div>
-                  
+
                   <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                     <span class="status-dot"></span>
                     {#if file.status === 'pending'}
@@ -1022,8 +950,8 @@
                       {#if file.last_error_message}
                         <!-- svelte-ignore a11y-click-events-have-key-events -->
                         <!-- svelte-ignore a11y-no-static-element-interactions -->
-                        <span 
-                          class="error-details-trigger" 
+                        <span
+                          class="error-details-trigger"
                           on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
                           title="Click for error details"
                         >
@@ -1049,15 +977,13 @@
         </div>
       {/if}
     </div>
-  
+  </div>
+    </div>
   {:else if activeTab === 'status'}
     <div class="status-tab-content">
       <UserFileStatus />
     </div>
   {/if}
-  </div>
-    
-  
 </div>
 
 <!-- Upload Modal -->
@@ -1065,21 +991,23 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- The modal backdrop that closes on click -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div 
-    class="modal-backdrop" 
+  <div
+    class="modal-backdrop"
     role="dialog"
     aria-modal="true"
     tabindex="0"
+    transition:fade={{ duration: 400 }}
     on:click|self={toggleUploadModal}
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
   >
     <!-- The actual modal dialog -->
-    <div 
-      class="modal-container" 
+    <div
+      class="modal-container"
       role="dialog"
       aria-labelledby="upload-modal-title"
       aria-modal="true"
       tabindex="-1"
+      transition:scale={{ duration: 350, start: 0.9 }}
       on:click|stopPropagation
       on:keydown|stopPropagation>
       <div class="modal-content">
@@ -1107,8 +1035,16 @@
 
 <!-- Collections Modal -->
 {#if showCollectionsModal}
-  <div class="modal-backdrop" on:click={() => showCollectionsModal = false}>
-    <div class="modal-container" on:click|stopPropagation>
+  <div
+    class="modal-backdrop"
+    transition:fade={{ duration: 400 }}
+    on:click={() => showCollectionsModal = false}
+  >
+    <div
+      class="modal-container"
+      transition:scale={{ duration: 350, start: 0.9 }}
+      on:click|stopPropagation
+    >
       <div class="modal-content">
         <div class="modal-header">
           <h2>Manage Collections</h2>
@@ -1261,17 +1197,10 @@
     background-color: #059669;
   }
 
-  .header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 1rem;
-  }
-  
   .header-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    align-items: center;
   }
   
   
@@ -1334,50 +1263,33 @@
     display: block;
   }
 
-  .media-library {
+  /* Main Container - Fixed Height Layout */
+  .media-library-container {
+    height: calc(100vh - 60px); /* Full viewport minus navbar only */
     display: flex;
-    flex-direction: column;
+    overflow: hidden;
+    padding-top: 0;
+  }
+
+  /* Gallery Tab Wrapper */
+  .gallery-tab-wrapper {
+    display: flex;
     height: 100%;
-  }
-  
-  .library-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-  
-  .library-header h1 {
-    font-size: 1.5rem;
-    margin: 0;
-  }
-  
-  .title-and-tabs {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .tabs {
-    display: flex;
-    gap: 0.5rem;
-    margin-left: 2rem;
+    width: 100%;
   }
   
   .tab-button {
     color: var(--text-color);
     background: none;
     border: none;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     border-radius: 6px;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     font-family: inherit;
-    font-size: 1rem;
+    font-size: 0.9rem;
     cursor: pointer;
     position: relative;
     font-weight: 500;
@@ -1448,24 +1360,109 @@
     width: 100%;
   }
   
-  /* Search functionality is now handled in the FilterSidebar component */
-  
-  .library-content {
-    display: flex;
-    gap: 2rem;
-    height: 100%;
-  }
-  
+  /* Left Sidebar - Sticky Filters */
   .filter-sidebar {
-    width: 250px;
+    flex-shrink: 0;
+    background-color: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+    padding-top: 2rem; /* Additional spacing from navbar */
+  }
+
+  /* Expanded state */
+  .filter-sidebar.show {
+    width: 280px;
+  }
+
+  /* Collapsed state */
+  .filter-sidebar:not(.show) {
+    width: 50px; /* Just enough for the toggle button */
+  }
+
+  .filter-toggle-container {
+    padding: 0 0.5rem;
+    margin-bottom: 1rem;
     flex-shrink: 0;
   }
-  
-  .file-list-container {
+
+  .filter-sidebar.show .filter-toggle-container {
+    padding: 0 1rem;
+  }
+
+  .filter-toggle-btn {
+    width: 100%;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
+  }
+
+  .filter-toggle-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .filter-toggle-btn:active {
+    transform: scale(0.98);
+  }
+
+  .filter-toggle-btn svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .filter-toggle-btn.collapsed {
+    justify-content: center;
+    padding: 0.6rem;
+    width: auto;
+  }
+
+  .filter-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1rem;
+  }
+
+  /* Right Content Area - Scrollable */
+  .content-area {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    min-width: 0; /* Allow flex shrinking */
+  }
+
+  .scrollable-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    padding-top: 1.5rem; /* Match filter sidebar padding */
+  }
+
+  /* Compact Button Styles */
+  .compact {
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+  }
+
+  .compact svg {
+    width: 14px !important;
+    height: 14px !important;
   }
   
   /* Upload Button in Header */
@@ -2009,113 +2006,67 @@
     color: #a5b4fc;
   }
   
+  /* Mobile Filter Toggle */
+  .mobile-filter-toggle {
+    display: none;
+    margin-left: auto;
+  }
+
+  .mobile-filter-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .mobile-filter-toggle button:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
   /* Responsive design */
   @media (max-width: 768px) {
-    .library-header {
+    .media-library-container {
       flex-direction: column;
-      align-items: flex-start;
     }
-    
-    .header-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-    
-    .header-actions {
-      width: 100%;
-    }
-    
-    .selection-controls {
-      flex-wrap: wrap;
-      width: 100%;
-    }
-    
-    .selection-controls button {
-      flex: 1;
-      min-width: 120px;
-    }
-    
-    
+
     .filter-sidebar {
       position: fixed;
-      top: 0;
+      top: 60px;
       left: -100%;
       width: 100%;
-      height: 100%;
-      background: white;
-      z-index: 100;
-      transition: left 0.3s ease;
-      overflow-y: auto;
-      padding: 1rem;
-    }
-    
-    :global(.dark) .filter-sidebar {
+      height: calc(100vh - 60px);
       background: var(--surface-color);
+      z-index: 1000;
+      transition: left 0.3s ease;
+      border-right: none;
+      border-top: 1px solid var(--border-color);
     }
-    
+
     .filter-sidebar.show {
       left: 0;
     }
-    
-    .mobile-filter-toggle {
-      display: block;
-      margin-top: 1rem;
+
+    .content-area {
+      width: 100%;
     }
-    
-    .mobile-filter-toggle button {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background-color: #3b82f6;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 0.6rem 1.2rem;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+
+    .scrollable-content {
+      padding: 1rem;
     }
-    
-    .mobile-filter-toggle button:hover:not(:disabled) {
-      background-color: #2563eb;
-      color: white;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-      text-decoration: none;
-    }
-    
-    .mobile-filter-toggle button:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    
-    .library-content {
-      flex-direction: column;
-      gap: 1rem;
-    }
-    
+
     .file-grid {
       grid-template-columns: 1fr;
-    }
-    
-    .tabs {
-      margin-left: 0;
-    }
-    
-    .tab-button {
-      padding: 0.4rem 0.8rem;
-      font-size: 0.9rem;
-    }
-    
-    .tab-button.active::after {
-      bottom: -6px;
-      height: 2px;
-    }
-    
-    .tab-button.active:hover::after {
-      height: 3px;
     }
   }
   

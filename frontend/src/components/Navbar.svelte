@@ -1,23 +1,36 @@
 <script lang="ts">
   import { Link, useNavigate, useLocation } from "svelte-navigator";
   import { user, logout, fetchUserInfo } from "../stores/auth";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import NotificationsPanel from "./NotificationsPanel.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
-  
+  import AboutModal from "./AboutModal.svelte";
+
   // Import the centralized notification store
   import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
   import { unreadCount } from '../stores/websocket';
-  
+
   // Import recording store
   import { recordingStore, recordingManager } from '../stores/recording';
-  
+
   // Import upload store for background uploads
   import { uploadsStore } from '../stores/uploads';
   import { toastStore } from '../stores/toast';
+
+  // Import gallery store for modern state management
+  import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../stores/gallery';
+
+  // Create event dispatcher for gallery actions
+  const dispatch = createEventDispatcher();
+
+  // Gallery state detection based on location
+  $: isGalleryPage = $location.pathname === '/' || $location.pathname === '';
   
   // Recording control popup state
   let showRecordingControls = false;
+
+  // About modal state
+  let showAboutModal = false;
   
   // Reactive recording state from store - use store directly
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
@@ -167,6 +180,43 @@
     showRecordingControls = false; // Close popup after delete
   }
 
+  // Gallery control functions using store
+  function handleTabChange(tab: 'gallery' | 'status') {
+    galleryStore.setActiveTab(tab);
+  }
+
+  function handleUploadClick() {
+    galleryStore.triggerUpload();
+  }
+
+  function handleCollectionsClick() {
+    galleryStore.triggerCollections();
+  }
+
+  function handleSelectFilesClick() {
+    galleryStore.setSelecting(true);
+  }
+
+  function handleSelectAllFiles() {
+    galleryStore.selectAllFiles();
+  }
+
+  function handleDeleteSelected() {
+    galleryStore.triggerDeleteSelected();
+  }
+
+  function handleCancelSelection() {
+    galleryStore.clearSelection();
+  }
+
+  function handleAddToCollection() {
+    galleryStore.triggerAddToCollection();
+  }
+
+  function handleToggleFilters() {
+    galleryStore.toggleFilters();
+  }
+
   /**
    * Format recording duration for display with consistent width
    */
@@ -239,15 +289,85 @@
 
 <nav class="navbar">
   <div class="navbar-container">
+    <!-- Far Left: OpenTranscribe Logo -->
     <div class="navbar-brand">
-      <Link 
-        to="/"
-        title="Go to OpenTranscribe home page"
+      <button
+        class="logo-link"
+        on:click={() => showAboutModal = true}
+        title="Learn more about OpenTranscribe"
       >
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
-      </Link>
+      </button>
     </div>
-    
+
+    <!-- Left side: Gallery tabs (only on gallery page) -->
+    {#if isGalleryPage}
+      <div class="gallery-tabs">
+        <button
+          class="tab-button {$galleryState.activeTab === 'gallery' ? 'active' : ''}"
+          on:click={() => handleTabChange('gallery')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          Gallery
+        </button>
+        <button
+          class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
+          on:click={() => handleTabChange('status')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          File Status
+        </button>
+      </div>
+    {/if}
+
+    <!-- Gallery action buttons (after tabs when on gallery page) -->
+    {#if isGalleryPage && $galleryState.activeTab === 'gallery'}
+      <div class="gallery-actions">
+        {#if $galleryState.isSelecting}
+          <button class="nav-btn select-all-btn" on:click={handleSelectAllFiles}>
+            {$allFilesSelected ? 'Deselect all' : 'Select all'}
+          </button>
+          <button class="nav-btn add-to-collection-btn" on:click={handleAddToCollection}>
+            Add to Collection
+          </button>
+          <button class="nav-btn delete-selected-btn" on:click={handleDeleteSelected}>
+            Delete {$selectedCount} selected
+          </button>
+          <button class="nav-btn cancel-selection-btn" on:click={handleCancelSelection}>
+            Cancel Selection
+          </button>
+        {:else}
+          <button class="nav-btn upload-btn" on:click={handleUploadClick}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Add Media
+          </button>
+          <button class="nav-btn collections-btn" on:click={handleCollectionsClick}>
+            Collections
+          </button>
+          <button class="nav-btn select-files-btn" on:click={handleSelectFilesClick}>
+            Select Files
+          </button>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Spacer to push right elements to far right -->
+    <div class="navbar-spacer"></div>
+
     <div class="nav-links">
       <!-- Gallery link - only show when not on gallery/file pages -->
       {#if showGalleryLink}
@@ -518,6 +638,9 @@
   <NotificationsPanel />
 {/if}
 
+<!-- About Modal -->
+<AboutModal bind:showModal={showAboutModal} />
+
 <style>
   .navbar {
     position: fixed;
@@ -532,33 +655,183 @@
   
   .navbar-container {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     height: 100%;
     padding: 0 1rem;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
+    gap: 2rem; /* Increased spacing between sections */
+  }
+
+  .navbar-spacer {
+    flex: 1; /* Takes up remaining space to push right elements to the right */
+  }
+
+  /* Gallery Controls */
+  .gallery-tabs {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .gallery-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+
+  /* Tab Button Styles */
+  .tab-button {
+    color: var(--text-color);
+    background: none;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    position: relative;
+    font-weight: 500;
+  }
+
+  .tab-button:hover {
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    color: var(--primary-color);
+  }
+
+  .tab-button.active {
+    color: var(--primary-color, #3b82f6);
+    background-color: transparent;
+  }
+
+  .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 1rem);
+    height: 3px;
+    background-color: var(--primary-color, #3b82f6);
+    border-radius: 2px;
+  }
+
+  /* Nav Button Styles - Smaller for navbar but same styling */
+  .nav-btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background-color: #2563eb;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    text-decoration: none;
+  }
+
+  .nav-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .nav-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Specific button styles */
+  .collections-btn {
+    background-color: #8b5cf6 !important;
+    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.2);
+  }
+
+  .collections-btn:hover:not(:disabled) {
+    background-color: #7c3aed !important;
+    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25);
+  }
+
+  .select-files-btn {
+    background-color: #059669 !important;
+    box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
+  }
+
+  .select-files-btn:hover:not(:disabled) {
+    background-color: #047857 !important;
+    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25);
+  }
+
+  .delete-selected-btn {
+    background-color: #dc2626;
+  }
+
+  .delete-selected-btn:hover {
+    background-color: #b91c1c;
+  }
+
+  .cancel-selection-btn {
+    background-color: #6b7280;
+  }
+
+  .cancel-selection-btn:hover {
+    background-color: #4b5563;
+  }
+
+  .add-to-collection-btn {
+    background-color: #10b981;
+  }
+
+  .add-to-collection-btn:hover {
+    background-color: #059669;
   }
   
   .navbar-brand {
     display: flex;
     align-items: center;
   }
-  
-  .navbar-brand :global(a) {
+
+  .logo-link {
     display: flex;
     align-items: center;
     text-decoration: none;
     color: var(--primary-color);
     font-weight: 600;
     font-size: 1.25rem;
+    transition: transform 0.2s ease;
+    border-radius: 8px;
+    padding: 0.25rem;
+    background: none;
+    border: none;
+    cursor: pointer;
   }
-  
+
+  .logo-link:hover {
+    transform: scale(1.1);
+  }
+
   .logo-banner {
     height: 36px;
     width: auto;
     object-fit: contain;
     border-radius: 6px;
+    transition: inherit;
   }
   
   .nav-links {
@@ -896,33 +1169,72 @@
   }
   
   @media (max-width: 768px) {
+    .navbar-container {
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 0.5rem;
+    }
+
+    .gallery-tabs {
+      order: 1;
+      flex-basis: 100%;
+      gap: 0.4rem;
+    }
+
+    .navbar-brand {
+      order: 2;
+    }
+
+    .gallery-actions {
+      order: 3;
+      gap: 0.4rem;
+    }
+
+    .nav-links {
+      order: 4;
+    }
+
+    .gallery-actions .nav-btn {
+      display: none;
+    }
+
+    .tab-button {
+      padding: 0.3rem 0.6rem;
+      font-size: 0.85rem;
+    }
+
+    .tab-button.active::after {
+      bottom: -6px;
+      height: 2px;
+    }
+
     .nav-links {
       display: none;
     }
-    
+
     .mobile-toggle {
       display: block;
     }
-    
+
     .mobile-toggle button {
       background: transparent;
       border: none;
       cursor: pointer;
       color: var(--text-color);
     }
-    
+
     /* Mobile dropdown adjustments */
     .dropdown-menu {
       width: 220px;
       right: -10px;
     }
-    
+
     .dropdown-item {
       padding: 0.625rem 1rem;
       margin: 0.125rem 0.25rem;
       font-size: 0.95rem;
     }
-    
+
     .dropdown-item:hover {
       transform: none; /* Disable transform on mobile for better touch experience */
     }

@@ -2304,9 +2304,15 @@
   }
 
   /* Transcript segment highlighting styles */
+  :global(.transcript-segment .segment-content) {
+    border: 1px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
+    transition: all 0.2s ease;
+  }
+
   :global(.transcript-segment.active-segment .segment-content) {
     background-color: rgba(59, 130, 246, 0.12);
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.3);
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
   }
 

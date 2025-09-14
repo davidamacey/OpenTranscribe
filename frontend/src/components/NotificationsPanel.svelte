@@ -6,8 +6,6 @@
   import { websocketStore } from '../stores/websocket';
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
 
-  // Props
-  export const hideButton: boolean = false;
 
   // Subscribe to the showNotificationsPanel store
   let showPanel = false;
