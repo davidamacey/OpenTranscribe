@@ -223,7 +223,7 @@ class WhisperXService:
         # Use PyAnnote-compatible device configuration
         pyannote_config = self.hardware_config.get_pyannote_config()
 
-        diarize_model = whisperx.DiarizationPipeline(
+        diarize_model = whisperx.diarize.DiarizationPipeline(
             use_auth_token=hf_token, device=pyannote_config["device"]
         )
 

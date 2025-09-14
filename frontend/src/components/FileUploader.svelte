@@ -2300,7 +2300,14 @@
 
   /* Recording Tab Styles */
 
-
+  .device-selector-centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding-bottom: 1.5rem;
+  }
 
   .device-label {
     display: flex;

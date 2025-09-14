@@ -657,10 +657,10 @@
     display: flex;
     align-items: center;
     height: 100%;
-    padding: 0 1rem;
-    max-width: 1400px;
+    padding: 0 1.5rem;
+    max-width: 1600px;
     margin: 0 auto;
-    gap: 2rem; /* Increased spacing between sections */
+    gap: 3rem; /* Further increased spacing between sections */
   }
 
   .navbar-spacer {
@@ -670,15 +670,23 @@
   /* Gallery Controls */
   .gallery-tabs {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
     align-items: center;
   }
 
   .gallery-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.75rem;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  .gallery-actions::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
   }
 
 
@@ -698,6 +706,8 @@
     cursor: pointer;
     position: relative;
     font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .tab-button:hover {
@@ -737,6 +747,7 @@
     align-items: center;
     gap: 0.4rem;
     white-space: nowrap;
+    flex-shrink: 0;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
@@ -765,7 +776,10 @@
 
   .collections-btn:hover:not(:disabled) {
     background-color: #7c3aed !important;
-    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25);
+    color: white !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25) !important;
+    text-decoration: none !important;
   }
 
   .select-files-btn {
@@ -775,31 +789,49 @@
 
   .select-files-btn:hover:not(:disabled) {
     background-color: #047857 !important;
-    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25);
+    color: white !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25) !important;
+    text-decoration: none !important;
   }
 
   .delete-selected-btn {
-    background-color: #dc2626;
+    background-color: #dc2626 !important;
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.2);
   }
 
-  .delete-selected-btn:hover {
-    background-color: #b91c1c;
+  .delete-selected-btn:hover:not(:disabled) {
+    background-color: #991b1b !important;
+    color: white !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25) !important;
+    text-decoration: none !important;
   }
 
   .cancel-selection-btn {
-    background-color: #6b7280;
+    background-color: #6b7280 !important;
+    box-shadow: 0 2px 4px rgba(107, 114, 128, 0.2);
   }
 
-  .cancel-selection-btn:hover {
-    background-color: #4b5563;
+  .cancel-selection-btn:hover:not(:disabled) {
+    background-color: #4b5563 !important;
+    color: white !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(107, 114, 128, 0.25) !important;
+    text-decoration: none !important;
   }
 
   .add-to-collection-btn {
-    background-color: #10b981;
+    background-color: #10b981 !important;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
   }
 
-  .add-to-collection-btn:hover {
-    background-color: #059669;
+  .add-to-collection-btn:hover:not(:disabled) {
+    background-color: #047857 !important;
+    color: white !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25) !important;
+    text-decoration: none !important;
   }
   
   .navbar-brand {
@@ -974,6 +1006,10 @@
   
   .username {
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
   }
   
   .dropdown-icon {
@@ -1550,9 +1586,9 @@
   }
 
   .delete-btn:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #ef4444;
+    background: rgba(153, 27, 27, 0.1);
+    border-color: #991b1b;
+    color: #991b1b;
   }
 
   .modal-btn:hover {

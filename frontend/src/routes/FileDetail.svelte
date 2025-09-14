@@ -434,7 +434,7 @@
   // Handle speaker name updates
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
-    
+
     // Update the speaker in the speakerList and maintain sort order
     speakerList = speakerList
       .map(speaker => {
@@ -444,7 +444,7 @@
         return speaker;
       })
       .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
-    
+
     // Update transcript data with new speaker name
     const transcriptData = file?.transcript_segments;
     if (transcriptData && Array.isArray(transcriptData)) {
@@ -453,14 +453,23 @@
           segment.speaker = newName;
         }
       });
-      
+
       // Update file data
       file.transcript_segments = [...transcriptData];
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
-      
+
     }
-    
+
+    // Update subtitles in the video player with new speaker names
+    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+      try {
+        await videoPlayerComponent.updateSubtitles();
+      } catch (error) {
+        console.warn('Failed to update subtitles after speaker update:', error);
+      }
+    }
+
     // Persist to database
     try {
       const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
@@ -1079,8 +1088,16 @@
       if (file?.id) {
         await fetchAnalytics(file.id.toString());
       }
-      
-      
+
+      // Update subtitles in the video player with new speaker names
+      if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+        try {
+          await videoPlayerComponent.updateSubtitles();
+        } catch (error) {
+          console.warn('Failed to update subtitles after saving speaker names:', error);
+        }
+      }
+
       // Clear cached processed videos so downloads will use updated speaker names
       try {
         await axiosInstance.delete(`/api/files/${file.id}/cache`);
@@ -1088,7 +1105,7 @@
       } catch (error) {
         console.warn('Could not clear video cache:', error);
       }
-      
+
       // Speaker names saved to database and updated locally
       toastStore.success('Speaker names saved successfully!');
     } catch (error) {
@@ -1125,15 +1142,23 @@
         if (file?.id) {
           await fetchAnalytics(file.id.toString());
         }
-        
-        
+
+        // Update subtitles in the video player with new speaker names (fallback)
+        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+          try {
+            await videoPlayerComponent.updateSubtitles();
+          } catch (error) {
+            console.warn('Failed to update subtitles after fallback speaker update:', error);
+          }
+        }
+
         // Clear cached processed videos so downloads will use updated speaker names (fallback)
         try {
           await axiosInstance.delete(`/api/files/${file.id}/cache`);
         } catch (error) {
           console.warn('Could not clear video cache (fallback):', error);
         }
-        
+
         // Speaker names updated locally only (database update failed)
       }
     } finally {
@@ -1754,13 +1779,14 @@
           </div>
         </div>
         
-        <VideoPlayer 
+        <VideoPlayer
           bind:this={videoPlayerComponent}
-          {videoUrl} 
-          {file} 
-          {isPlayerBuffering} 
-          {loadProgress} 
+          {videoUrl}
+          {file}
+          {isPlayerBuffering}
+          {loadProgress}
           {errorMessage}
+          {speakerList}
           on:retry={handleVideoRetry}
           on:timeupdate={handleTimeUpdate}
           on:play={handlePlay}

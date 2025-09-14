@@ -8,6 +8,7 @@
   export let isPlayerBuffering: boolean = false;
   export let loadProgress: number = 0;
   export let errorMessage: string = '';
+  export let speakerList: any[] = [];
 
   const dispatch = createEventDispatcher();
 
@@ -57,8 +58,14 @@
         return;
       }
 
-      // Generate WebVTT content from transcript segments
-      const webvttContent = generateWebVTTFromSegments(file.transcript_segments);
+      // Create speaker display name mapping
+      const speakerMapping = new Map();
+      speakerList.forEach((speaker: any) => {
+        speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
+      });
+
+      // Generate WebVTT content from transcript segments with speaker mapping
+      const webvttContent = generateWebVTTFromSegments(file.transcript_segments, speakerMapping);
 
       // Create blob URL for the WebVTT content
       const blob = new Blob([webvttContent], { type: 'text/vtt' });
@@ -233,7 +240,7 @@
     }
   }
 
-  function generateWebVTTFromSegments(segments: any[]): string {
+  function generateWebVTTFromSegments(segments: any[], speakerMapping?: Map<string, string>): string {
     // Ensure proper WebVTT header with NOTE for debugging
     let webvtt = 'WEBVTT\n\nNOTE Generated from transcript segments\n\n';
 
@@ -248,9 +255,15 @@
         const formattedStartTime = formatTime(startTime);
         const formattedEndTime = formatTime(endTime);
 
-        // Include speaker name with text
-        const speakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `Speaker ${index + 1}`;
-        const displayText = `${speakerName}: ${text.trim()}`;
+        // Get original speaker name from segment
+        const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `Speaker ${index + 1}`;
+
+        // Use speaker mapping to get display name, fallback to original
+        const displaySpeakerName = speakerMapping?.get(originalSpeakerName) ||
+                                  segment.speaker?.display_name ||
+                                  originalSpeakerName;
+
+        const displayText = `${displaySpeakerName}: ${text.trim()}`;
 
         // Add cue with proper WebVTT format
         webvtt += `${formattedStartTime} --> ${formattedEndTime}\n`;
