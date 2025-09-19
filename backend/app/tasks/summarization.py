@@ -261,13 +261,37 @@ def summarize_transcript_task(
             # Create LLM service using user settings or system settings
             if media_file.user_id:
                 llm_service = LLMService.create_from_user_settings(media_file.user_id)
-                logger.info(f"Using user LLM settings for user {media_file.user_id}")
+                logger.info(f"Attempted to load user LLM settings for user {media_file.user_id}")
             else:
                 llm_service = LLMService.create_from_system_settings()
-                logger.info("Using system LLM settings")
+                logger.info("Attempted to load system LLM settings")
 
             if not llm_service:
-                raise Exception("Could not create LLM service - check configuration")
+                logger.info("No LLM provider configured - skipping AI summary generation")
+
+                # Set summary status to skipped (indicating no LLM configured)
+                media_file.summary_status = "not_configured"
+                media_file.summary = None
+                db.commit()
+
+                # Send notification that LLM is not configured
+                send_summary_notification(
+                    media_file.user_id,
+                    file_id,
+                    "not_configured",
+                    "AI summary not available - no LLM provider configured in settings",
+                    0,
+                )
+
+                # Update task status
+                update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+
+                logger.info(f"Transcription completed for file {media_file.filename} (no LLM summary generated)")
+                return {
+                    "status": "success",
+                    "file_id": file_id,
+                    "message": "Transcription completed successfully. AI summary not available - no LLM provider configured."
+                }
 
             # Log provider/model overrides (deprecated but supported for backward compatibility)
             if provider:
@@ -336,11 +360,6 @@ def summarize_transcript_task(
             raise Exception(
                 f"LLM summarization failed: {detailed_error}. No fallback summary will be generated."
             ) from e
-
-        # No additional cleanup needed
-        except Exception:
-            # Re-raise the exception to be handled by the outer try block
-            raise
 
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.7)

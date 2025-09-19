@@ -738,7 +738,7 @@ class LLMService:
 
             if not active_config_setting or not active_config_setting.setting_value:
                 logger.info(
-                    f"No active LLM configuration for user {user_id}, using system settings"
+                    f"No active LLM configuration for user {user_id}, checking system settings"
                 )
                 return LLMService.create_from_system_settings()
 
@@ -755,7 +755,7 @@ class LLMService:
 
             if not user_settings:
                 logger.warning(
-                    f"Active LLM config {active_config_id} not found for user {user_id}, using system settings"
+                    f"Active LLM config {active_config_id} not found for user {user_id}, checking system settings"
                 )
                 return LLMService.create_from_system_settings()
 
@@ -792,51 +792,81 @@ class LLMService:
             db.close()
 
     @staticmethod
-    def create_from_system_settings() -> "LLMService":
+    def create_from_system_settings() -> Optional["LLMService"]:
         """Create LLMService from system settings"""
         if not settings.LLM_PROVIDER or settings.LLM_PROVIDER.strip() == "":
-            raise ValueError(
-                "No LLM provider configured. Please set LLM_PROVIDER in environment variables."
-            )
+            logger.info("No LLM provider configured (LLM_PROVIDER not set)")
+            return None
 
         try:
             provider = LLMProvider(settings.LLM_PROVIDER)
         except ValueError as e:
-            raise ValueError(f"Invalid LLM provider '{settings.LLM_PROVIDER}'.") from e
+            logger.warning(f"Invalid LLM provider '{settings.LLM_PROVIDER}': {e}")
+            return None
 
-        # Provider-specific configuration
+        # Provider-specific configuration with validation
         if provider == LLMProvider.VLLM:
             model = settings.VLLM_MODEL_NAME
             api_key = settings.VLLM_API_KEY or None
             base_url = settings.VLLM_BASE_URL
+            # Validate required settings for vLLM
+            if not model or model.strip() == "gpt-oss":  # Default placeholder value
+                logger.info("vLLM provider configured but no valid model name set")
+                return None
+            if not base_url or base_url == "http://localhost:8012/v1":  # Default that likely won't work
+                logger.info("vLLM provider configured but using default localhost endpoint (likely not available)")
+                return None
         elif provider == LLMProvider.OPENAI:
             model = settings.OPENAI_MODEL_NAME
             api_key = settings.OPENAI_API_KEY or None
             base_url = settings.OPENAI_BASE_URL
+            # Validate required settings for OpenAI
+            if not model or not model.strip():
+                logger.info("OpenAI provider configured but no model name set")
+                return None
+            if not api_key or not api_key.strip():
+                logger.info("OpenAI provider configured but no API key set")
+                return None
         elif provider == LLMProvider.OLLAMA:
             model = settings.OLLAMA_MODEL_NAME
             api_key = None
             base_url = settings.OLLAMA_BASE_URL
+            # Validate required settings for Ollama
+            if not model or not model.strip():
+                logger.info("Ollama provider configured but no model name set")
+                return None
         elif provider == LLMProvider.CLAUDE:
             model = settings.ANTHROPIC_MODEL_NAME
             api_key = settings.ANTHROPIC_API_KEY or None
             base_url = settings.ANTHROPIC_BASE_URL
+            # Validate required settings for Claude/Anthropic
+            if not model or not model.strip():
+                logger.info("Claude/Anthropic provider configured but no model name set")
+                return None
+            if not api_key or not api_key.strip():
+                logger.info("Claude/Anthropic provider configured but no API key set")
+                return None
         else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+            logger.warning(f"Unsupported LLM provider: {provider}")
+            return None
 
-        config = LLMConfig(
-            provider=provider,
-            model=model,
-            api_key=api_key,
-            base_url=base_url,
-            max_tokens=32768,  # Conservative system default
-            temperature=0.3,
-        )
+        try:
+            config = LLMConfig(
+                provider=provider,
+                model=model,
+                api_key=api_key,
+                base_url=base_url,
+                max_tokens=32768,  # Conservative system default
+                temperature=0.3,
+            )
 
-        logger.info(
-            f"Created LLMService from system settings: {provider}/{model}, context_window={config.max_tokens}"
-        )
-        return LLMService(config)
+            logger.info(
+                f"Created LLMService from system settings: {provider}/{model}, context_window={config.max_tokens}"
+            )
+            return LLMService(config)
+        except Exception as e:
+            logger.error(f"Failed to create LLMService from system settings: {e}")
+            return None
 
 
 # Context manager for proper cleanup
@@ -848,7 +878,7 @@ class LLMServiceContext:
         self.user_id = user_id
         self._created_service = service is None
 
-    def __enter__(self) -> "LLMService":
+    def __enter__(self) -> Optional["LLMService"]:
         if self.service is None:
             self.service = (
                 LLMService.create_from_user_settings(self.user_id)
@@ -856,7 +886,8 @@ class LLMServiceContext:
                 else LLMService.create_from_system_settings()
             )
             if self.service is None:
-                raise Exception("LLM service is not available. Please configure an LLM provider.")
+                logger.info("LLM service is not available - no provider configured")
+                return None
         return self.service
 
     def __exit__(self, exc_type, exc_val, exc_tb):

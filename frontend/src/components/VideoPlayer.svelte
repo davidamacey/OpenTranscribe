@@ -527,6 +527,7 @@
   :global(.plyr--audio .plyr__controls) {
     background: var(--surface-color) !important;
     border-color: var(--border-color) !important;
+    padding-top: 28px !important; /* Increased space above controls for progress bar visibility */
   }
 
   :global(.plyr--audio .plyr__control:not([data-plyr="speed"])) {
@@ -544,7 +545,7 @@
   }
 
   :global(.plyr--audio .plyr__time) {
-    color: white !important;
+    color: var(--text-color) !important;
   }
 
   :global(.plyr--audio .plyr__progress input[type="range"]) {
@@ -559,6 +560,7 @@
     background: var(--border-color) !important;
   }
 
+  /* Audio progress bar thumb - blue in light mode, white in dark mode */
   :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
     background: var(--primary-color) !important;
     border: none !important;
@@ -569,6 +571,54 @@
     border: none !important;
   }
 
+  /* Dark mode specific - white thumbs */
+  :global([data-theme='dark'] .plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
+    background: white !important;
+  }
+
+  :global([data-theme='dark'] .plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
+    background: white !important;
+  }
+
+  /* Audio player progress bar positioning and sizing - AUDIO ONLY */
+  :global(.plyr--audio .plyr__progress) {
+    position: absolute !important;
+    top: 6px !important; /* Position in the increased padding space with more clearance */
+    left: 8px !important;
+    right: 8px !important;
+    width: calc(100% - 16px) !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 10 !important;
+  }
+
+  /* Make audio progress bar track more prominent */
+  :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-track) {
+    height: 6px !important;
+    border-radius: 3px !important;
+  }
+
+  :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-track) {
+    height: 6px !important;
+    border-radius: 3px !important;
+  }
+
+  /* Make audio progress bar thumb more prominent */
+  :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+  }
+
+  :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+  }
+
   :global(.plyr--audio .plyr__volume input[type="range"]::-webkit-slider-track) {
     background: var(--border-color) !important;
   }
@@ -577,6 +627,7 @@
     background: var(--border-color) !important;
   }
 
+  /* Audio volume thumb - blue in light mode, white in dark mode */
   :global(.plyr--audio .plyr__volume input[type="range"]::-webkit-slider-thumb) {
     background: var(--primary-color) !important;
     border: none !important;
@@ -585,6 +636,15 @@
   :global(.plyr--audio .plyr__volume input[type="range"]::-moz-range-thumb) {
     background: var(--primary-color) !important;
     border: none !important;
+  }
+
+  /* Dark mode specific - white volume thumbs */
+  :global([data-theme='dark'] .plyr--audio .plyr__volume input[type="range"]::-webkit-slider-thumb) {
+    background: white !important;
+  }
+
+  :global([data-theme='dark'] .plyr--audio .plyr__volume input[type="range"]::-moz-range-thumb) {
+    background: white !important;
   }
 
   /* Ensure audio player popups appear above other components */
