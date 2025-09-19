@@ -42,7 +42,7 @@ def trigger_automatic_summarization(file_id: int):
     """Trigger automatic summarization and speaker identification after transcription completes"""
     try:
         # First trigger speaker identification
-        from app.tasks.summarization_helpers import identify_speakers_llm_task
+        from app.tasks.speaker_tasks import identify_speakers_llm_task
 
         speaker_task = identify_speakers_llm_task.delay(file_id=file_id)
         logger.info(

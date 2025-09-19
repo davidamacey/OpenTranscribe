@@ -14,7 +14,8 @@
     retrySummary: void;
   }>();
 
-  
+
+
 </script>
 
 <div class="summary-actions">
@@ -90,15 +91,6 @@
     background-color: var(--primary-dark);
   }
 
-  .action-button.secondary {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-  }
-
-  .action-button.secondary:hover:not(:disabled) {
-    background-color: var(--hover-bg);
-  }
 
   .action-button.warning {
     background-color: var(--warning-color);
@@ -109,21 +101,6 @@
     background-color: var(--warning-dark);
   }
 
-  .status-message {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    flex: 1;
-  }
-
-  .status-message.info {
-    background-color: var(--info-bg);
-    color: var(--info-color);
-    border: 1px solid var(--info-color);
-  }
 
   .spinner {
     width: 16px;

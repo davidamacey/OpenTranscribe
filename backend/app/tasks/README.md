@@ -40,7 +40,7 @@ tasks/
 ├── analytics.py               # Analytics and insights processing
 ├── cleanup.py                 # File recovery and cleanup tasks
 ├── summarization.py           # Multi-provider AI summarization with intelligent section processing
-├── summarization_helpers.py   # Context-aware chunking and LLM utilities
+├── speaker_tasks.py           # LLM-powered speaker identification and management
 ├── transcription.py           # Main transcription task router
 └── youtube_processing.py      # NEW: Enhanced YouTube URL processing with metadata extraction
 ```

@@ -45,11 +45,10 @@ class UserLLMSettings(Base):
     base_url = Column(String(500), nullable=True)  # Custom endpoint URL
 
     # Optional settings
-    max_tokens = Column(Integer, default=2000, nullable=False)
+    max_tokens = Column(Integer, default=8192, nullable=False)  # Model's context window in tokens (user-configured)
     temperature = Column(
         String(10), default="0.3", nullable=False
     )  # Store as string to avoid float precision issues
-    timeout = Column(Integer, default=60, nullable=False)
 
     # Status tracking
     is_active = Column(Boolean, default=True, nullable=False)

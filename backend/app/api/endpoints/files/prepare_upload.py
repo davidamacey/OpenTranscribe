@@ -13,6 +13,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.media import PrepareUploadRequest
 from app.utils.file_hash import check_duplicate_by_hash
+from app.utils.file_hash import cleanup_failed_duplicates
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,9 @@ async def prepare_upload(
         # If file hash is provided, check for duplicates
         duplicate_id: Optional[int] = None
         if request.file_hash:
+            # First clean up any failed files with the same hash to allow re-upload
+            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
+
             duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
 
             if duplicate_id:

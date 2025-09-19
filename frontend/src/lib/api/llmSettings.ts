@@ -4,36 +4,22 @@
 
 import axiosInstance from '../axios';
 
-export interface LLMProvider {
-  OPENAI: 'openai';
-  VLLM: 'vllm';
-  OLLAMA: 'ollama';
-  CLAUDE: 'claude';
-  ANTHROPIC: 'anthropic';
-  OPENROUTER: 'openrouter';
-  CUSTOM: 'custom';
-}
+export type LLMProvider = 'openai' | 'vllm' | 'ollama' | 'claude' | 'anthropic' | 'openrouter' | 'custom';
 
-export interface ConnectionStatus {
-  SUCCESS: 'success';
-  FAILED: 'failed';
-  PENDING: 'pending';
-  UNTESTED: 'untested';
-}
+export type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
 export interface UserLLMSettings {
   id: number;
   user_id: number;
   name: string;
-  provider: keyof LLMProvider;
+  provider: LLMProvider;
   model_name: string;
   base_url?: string;
   max_tokens: number;
   temperature: string;
-  timeout: number;
   is_active: boolean;
   last_tested?: string;
-  test_status?: keyof ConnectionStatus;
+  test_status?: ConnectionStatus;
   test_message?: string;
   has_api_key: boolean;
   created_at: string;
@@ -42,13 +28,12 @@ export interface UserLLMSettings {
 
 export interface UserLLMSettingsCreate {
   name: string;
-  provider: keyof LLMProvider;
+  provider: LLMProvider;
   model_name: string;
   api_key?: string;
   base_url?: string;
   max_tokens?: number;
   temperature?: string;
-  timeout?: number;
   is_active?: boolean;
 }
 
@@ -60,28 +45,26 @@ export interface UserLLMSettingsUpdate {
   base_url?: string;
   max_tokens?: number;
   temperature?: string;
-  timeout?: number;
   is_active?: boolean;
 }
 
 export interface ConnectionTestRequest {
-  provider: keyof LLMProvider;
+  provider: LLMProvider;
   model_name: string;
   api_key?: string;
   base_url?: string;
-  timeout?: number;
 }
 
 export interface ConnectionTestResponse {
   success: boolean;
-  status: keyof ConnectionStatus;
+  status: ConnectionStatus;
   message: string;
   response_time_ms?: number;
   model_info?: any;
 }
 
 export interface ProviderDefaults {
-  provider: keyof LLMProvider;
+  provider: LLMProvider;
   default_model: string;
   default_base_url?: string;
   requires_api_key: boolean;
@@ -238,63 +221,56 @@ export class LLMSettingsApi {
   /**
    * Get provider-specific default configuration
    */
-  static getProviderDefaults(provider: keyof LLMProvider): Partial<UserLLMSettingsCreate> {
-    const providerDefaults: Record<keyof LLMProvider, Partial<UserLLMSettingsCreate>> = {
+  static getProviderDefaults(provider: LLMProvider): Partial<UserLLMSettingsCreate> {
+    const providerDefaults: Record<LLMProvider, Partial<UserLLMSettingsCreate>> = {
       openai: {
         provider: 'openai',
         model_name: 'gpt-4o-mini',
         base_url: 'https://api.openai.com/v1',
-        max_tokens: 16000,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 16000,  // Context window for GPT-4o-mini
+        temperature: '0.3'
       },
       vllm: {
         provider: 'vllm',
         model_name: 'gpt-oss',
         base_url: 'http://localhost:8012/v1',
-        max_tokens: 8192,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 32768,  // Typical context window for vLLM models
+        temperature: '0.3'
       },
       ollama: {
         provider: 'ollama',
         model_name: 'llama2:7b-chat',
         base_url: 'http://localhost:11434/v1',
-        max_tokens: 4096,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 8192,  // Conservative context window
+        temperature: '0.3'
       },
       claude: {
         provider: 'claude',
         model_name: 'claude-3-haiku-20240307',
         base_url: 'https://api.anthropic.com/v1',
-        max_tokens: 4096,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 200000,  // Claude's large context window
+        temperature: '0.3'
       },
       anthropic: {
         provider: 'anthropic',
         model_name: 'claude-3-haiku-20240307',
         base_url: 'https://api.anthropic.com/v1',
-        max_tokens: 4096,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 200000,  // Anthropic Claude context window
+        temperature: '0.3'
       },
       openrouter: {
         provider: 'openrouter',
         model_name: 'anthropic/claude-3-haiku',
         base_url: 'https://openrouter.ai/api/v1',
-        max_tokens: 4096,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 128000,  // OpenRouter typical context window
+        temperature: '0.3'
       },
       custom: {
         provider: 'custom',
         model_name: '',
         base_url: '',
-        max_tokens: 4096,
-        temperature: '0.3',
-        timeout: 60
+        max_tokens: 8192,  // Default context window for custom providers
+        temperature: '0.3'
       }
     };
 
@@ -304,8 +280,8 @@ export class LLMSettingsApi {
   /**
    * Get user-friendly provider name
    */
-  static getProviderDisplayName(provider: keyof LLMProvider): string {
-    const displayNames: Record<keyof LLMProvider, string> = {
+  static getProviderDisplayName(provider: LLMProvider): string {
+    const displayNames: Record<LLMProvider, string> = {
       openai: 'OpenAI',
       vllm: 'vLLM',
       ollama: 'Ollama',
@@ -321,7 +297,7 @@ export class LLMSettingsApi {
   /**
    * Get connection status display information
    */
-  static getStatusDisplay(status?: keyof ConnectionStatus): { text: string; class: string; icon: string } {
+  static getStatusDisplay(status?: ConnectionStatus): { text: string; class: string; icon: string } {
     switch (status) {
       case 'success':
         return { text: 'Connected', class: 'success', icon: '✓' };

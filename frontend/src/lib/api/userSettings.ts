@@ -168,7 +168,6 @@ export class RecordingSettingsHelper {
   static cleanupLocalStorage(): void {
     try {
       localStorage.removeItem('recordingSettings');
-      console.log('Successfully cleaned up old localStorage recording settings');
     } catch (error) {
       console.warn('Error cleaning up localStorage:', error);
     }

@@ -49,7 +49,7 @@ async def get_llm_status(
                             "message": "LLM service is available and configured",
                         }
                     )
-                    await llm_service.close()
+                    llm_service.close()
                 else:
                     status_info.update(
                         {
@@ -133,9 +133,9 @@ async def test_llm_connection(
             }
 
         # Test the connection
-        success, message = await llm_service.validate_connection()
+        success, message = llm_service.validate_connection()
 
-        await llm_service.close()
+        llm_service.close()
 
         return {
             "success": success,

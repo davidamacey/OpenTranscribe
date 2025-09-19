@@ -60,10 +60,10 @@ export class LLMService {
    */
   async getStatus(forceRefresh = false): Promise<LLMStatus> {
     const now = Date.now();
-    
+
     // Use different cache durations based on last result
     const cacheDuration = this.statusCache?.available ? this.CACHE_DURATION : this.FAST_CACHE_DURATION;
-    
+
     // Return cached status if still valid
     if (!forceRefresh && this.statusCache && (now - this.lastCheck) < cacheDuration) {
       return this.statusCache;
@@ -73,9 +73,10 @@ export class LLMService {
       const response = await axiosInstance.get('/api/llm/status');
       this.statusCache = response.data;
       this.lastCheck = now;
-      return this.statusCache;
+      return this.statusCache as LLMStatus;
     } catch (error: any) {
-      console.error('Error getting LLM status:', error);
+      console.error('[LLM Service] Error getting LLM status:', error);
+      console.error('[LLM Service] Error details:', error.response?.status, error.response?.data);
       
       // Return default unavailable status on error
       const errorStatus: LLMStatus = {

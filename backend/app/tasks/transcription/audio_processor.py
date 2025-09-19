@@ -128,7 +128,9 @@ def convert_audio_format(input_path: str, output_path: str) -> None:
             keyword in stderr_output.lower()
             for keyword in ["permission denied", "no such file", "directory"]
         ):
-            raise ValueError("Unable to access the uploaded file. Please try uploading again.") from e
+            raise ValueError(
+                "Unable to access the uploaded file. Please try uploading again."
+            ) from e
         else:
             # Generic fallback for other ffmpeg errors
             raise ValueError(

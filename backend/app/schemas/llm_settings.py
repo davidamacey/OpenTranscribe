@@ -38,16 +38,15 @@ class UserLLMSettingsBase(BaseModel):
     provider: LLMProvider
     model_name: str
     base_url: Optional[str] = None
-    max_tokens: int = 2000
+    max_tokens: int = 8192  # Model's context window in tokens (user-configured)
     temperature: str = "0.3"  # Store as string to avoid float precision issues
-    timeout: int = 60
     is_active: bool = True
 
     @field_validator("max_tokens")
     @classmethod
     def validate_max_tokens(cls, v):
-        if v < 1 or v > 200000:  # Reasonable limits
-            raise ValueError("max_tokens must be between 1 and 200000")
+        if v < 512 or v > 2000000:  # Reasonable limits for context window
+            raise ValueError("max_tokens (context window) must be between 512 and 2,000,000")
         return v
 
     @field_validator("temperature")
@@ -61,12 +60,7 @@ class UserLLMSettingsBase(BaseModel):
             raise ValueError("temperature must be a valid number") from e
         return v
 
-    @field_validator("timeout")
-    @classmethod
-    def validate_timeout(cls, v):
-        if v < 5 or v > 600:  # 5 seconds to 10 minutes
-            raise ValueError("timeout must be between 5 and 600 seconds")
-        return v
+    # Removed timeout validation - timeouts handled at service level
 
 
 class UserLLMSettingsCreate(UserLLMSettingsBase):
@@ -85,14 +79,13 @@ class UserLLMSettingsUpdate(BaseModel):
     base_url: Optional[str] = None
     max_tokens: Optional[int] = None
     temperature: Optional[str] = None
-    timeout: Optional[int] = None
     is_active: Optional[bool] = None
 
     @field_validator("max_tokens")
     @classmethod
     def validate_max_tokens(cls, v):
-        if v is not None and (v < 1 or v > 200000):
-            raise ValueError("max_tokens must be between 1 and 200000")
+        if v is not None and (v < 512 or v > 2000000):
+            raise ValueError("max_tokens (context window) must be between 512 and 2,000,000")
         return v
 
     @field_validator("temperature")
@@ -107,12 +100,7 @@ class UserLLMSettingsUpdate(BaseModel):
                 raise ValueError("temperature must be a valid number") from e
         return v
 
-    @field_validator("timeout")
-    @classmethod
-    def validate_timeout(cls, v):
-        if v is not None and (v < 5 or v > 600):
-            raise ValueError("timeout must be between 5 and 600 seconds")
-        return v
+    # Removed timeout validation - timeouts handled at service level
 
 
 class UserLLMSettings(UserLLMSettingsBase):
@@ -139,9 +127,8 @@ class UserLLMSettingsPublic(BaseModel):
     provider: LLMProvider
     model_name: str
     base_url: Optional[str] = None
-    max_tokens: int
+    max_tokens: int  # This is the user-configured context window
     temperature: str
-    timeout: int
     is_active: bool
     last_tested: Optional[datetime] = None
     test_status: Optional[ConnectionStatus] = None
@@ -160,7 +147,6 @@ class ConnectionTestRequest(BaseModel):
     model_name: str
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-    timeout: Optional[int] = 30
 
 
 class ConnectionTestResponse(BaseModel):

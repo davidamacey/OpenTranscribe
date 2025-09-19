@@ -28,8 +28,8 @@ from app.schemas.summary import SummarySearchResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.llm_service import is_llm_available
 from app.services.opensearch_summary_service import OpenSearchSummaryService
+from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
-from app.tasks.summarization_helpers import identify_speakers_llm_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

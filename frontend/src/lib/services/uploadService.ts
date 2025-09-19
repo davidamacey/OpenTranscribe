@@ -153,8 +153,13 @@ class UploadService {
     if (!upload) return;
 
     try {
-      // Set status to preparing
-      this.updateUpload(uploadId, { status: 'preparing', startTime: Date.now() });
+      // Set status to preparing with 0% progress
+      this.updateUpload(uploadId, {
+        status: 'preparing',
+        startTime: Date.now(),
+        progress: 0,
+        estimatedTime: undefined
+      });
       this.emit('started', uploadId);
 
       let result;
@@ -170,11 +175,13 @@ class UploadService {
           throw new Error(`Unknown upload type: ${upload.type}`);
       }
 
+      // Upload completed successfully - show 100% with green checkmark
       this.updateUpload(uploadId, {
         status: 'completed',
         progress: 100,
         fileId: result.id,
-        isDuplicate: result.isDuplicate
+        isDuplicate: result.isDuplicate,
+        estimatedTime: undefined
       });
 
       this.emit('completed', uploadId, result);
@@ -221,7 +228,11 @@ class UploadService {
     let fileHash = null;
     if (file instanceof File) {
       try {
-        this.updateUpload(uploadId, { status: 'preparing' });
+        this.updateUpload(uploadId, {
+          status: 'preparing',
+          progress: 0,
+          estimatedTime: 'Calculating file hash...'
+        });
         fileHash = await calculateFileHash(file);
       } catch (err) {
         // File hash calculation is optional, continue without it
@@ -243,7 +254,12 @@ class UploadService {
     }
 
     // Step 2: Upload the file
-    this.updateUpload(uploadId, { status: 'uploading', fileId });
+    this.updateUpload(uploadId, {
+      status: 'uploading',
+      fileId,
+      progress: 0,
+      estimatedTime: 'Uploading...'
+    });
 
     const formData = new FormData();
     formData.append('file', file);
@@ -255,19 +271,27 @@ class UploadService {
         'X-File-Hash': fileHash || '',
       },
       timeout: UPLOAD_TIMEOUT_MS,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
       cancelToken: cancelToken.token,
       onUploadProgress: (progressEvent: AxiosProgressEvent) => {
         if (progressEvent.total) {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          // Calculate progress percentage but cap at 99% during upload
+          // Only show 100% when upload is completely finished and processed
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          const progress = Math.min(percentCompleted, 99);
+
           this.updateUpload(uploadId, { progress });
           this.emit('progress', uploadId, { progress });
-          
+
           // Calculate estimated time remaining
           const elapsed = Date.now() - (upload.startTime || Date.now());
-          const rate = progressEvent.loaded / elapsed;
-          const remaining = (progressEvent.total - progressEvent.loaded) / rate;
-          const estimatedTime = this.formatTimeRemaining(remaining);
-          this.updateUpload(uploadId, { estimatedTime });
+          if (elapsed > 0) {
+            const rate = progressEvent.loaded / elapsed; // bytes per ms
+            const remaining = (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
+            const estimatedTime = this.formatTimeRemaining(remaining);
+            this.updateUpload(uploadId, { estimatedTime });
+          }
         }
       }
     });

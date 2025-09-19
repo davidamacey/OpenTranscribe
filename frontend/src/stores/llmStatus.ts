@@ -33,13 +33,15 @@ function createLLMStatusStore() {
     
     // Initialize the store and start monitoring
     async initialize() {
-      if (isInitialized) return;
-      
+      if (isInitialized) {
+        return;
+      }
+
       try {
         // Get initial status
         update(state => ({ ...state, checking: true }));
         const status = await llmService.getStatus(true);
-        
+
         update(state => ({
           ...state,
           status,
@@ -48,13 +50,13 @@ function createLLMStatusStore() {
           checking: false
         }));
 
-        // Start periodic monitoring  
+        // Start periodic monitoring
         store.startMonitoring();
         isInitialized = true;
-        
+
       } catch (error) {
-        console.error('Failed to initialize LLM status:', error);
-        update(state => ({ ...state, checking: false }));
+        console.error('[LLM Store] Failed to initialize LLM status:', error);
+        update(state => ({ ...state, checking: false, available: false }));
       }
     },
 
@@ -148,7 +150,9 @@ function createLLMStatusStore() {
 export const llmStatusStore = createLLMStatusStore();
 
 // Derived stores for common use cases
-export const isLLMAvailable = derived(llmStatusStore, $llmStatus => $llmStatus.available);
+export const isLLMAvailable = derived(llmStatusStore, $llmStatus => {
+  return $llmStatus.available;
+});
 export const isLLMChecking = derived(llmStatusStore, $llmStatus => $llmStatus.checking);
 export const llmStatusMessage = derived(llmStatusStore, $llmStatus => $llmStatus.status?.message || '');
 export const llmProvider = derived(llmStatusStore, $llmStatus => $llmStatus.status?.provider || null);

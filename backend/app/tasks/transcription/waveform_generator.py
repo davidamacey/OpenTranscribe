@@ -41,7 +41,9 @@ class WaveformGenerator:
             subprocess.TimeoutExpired,
         ) as e:
             logger.error(f"FFmpeg not available: {e}")
-            raise RuntimeError("FFmpeg is required for waveform generation but not available") from e
+            raise RuntimeError(
+                "FFmpeg is required for waveform generation but not available"
+            ) from e
 
     def generate_waveform_data(self, file_path: str) -> Optional[dict[str, Any]]:
         """

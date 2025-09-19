@@ -19,7 +19,6 @@
     base_url: '',
     max_tokens: 4096,
     temperature: '0.3',
-    timeout: 60,
     is_active: true
   };
 
@@ -37,7 +36,6 @@
     base_url: '',
     max_tokens: 4096,
     temperature: '0.3',
-    timeout: 60,
     is_active: true
   };
 
@@ -124,7 +122,6 @@
       base_url: config.base_url || '',
       max_tokens: config.max_tokens,
       temperature: config.temperature,
-      timeout: config.timeout,
       is_active: config.is_active
     };
     originalFormData = { ...formData };
@@ -139,7 +136,6 @@
       base_url: '',
       max_tokens: 4096,
       temperature: '0.3',
-      timeout: 60,
       is_active: true
     };
     originalFormData = { ...formData };
@@ -230,8 +226,7 @@
         provider: formData.provider,
         model_name: formData.model_name,
         api_key: formData.api_key || undefined,
-        base_url: formData.base_url || undefined,
-        timeout: formData.timeout
+        base_url: formData.base_url || undefined
       });
       
       testResult = result;
@@ -571,18 +566,6 @@
                 />
               </div>
               
-              <div class="form-group">
-                <label for="timeout">Timeout (seconds)</label>
-                <input
-                  type="number"
-                  id="timeout"
-                  bind:value={formData.timeout}
-                  disabled={saving}
-                  class="form-control"
-                  min="10"
-                  max="300"
-                />
-              </div>
             </div>
           </div>
 

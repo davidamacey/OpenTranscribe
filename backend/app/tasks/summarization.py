@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import json
 import logging
 import time
@@ -12,8 +11,8 @@ from app.core.config import settings
 from app.db.base import SessionLocal
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
-from app.tasks.summarization_helpers import generate_llm_summary
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -240,44 +239,108 @@ def summarize_transcript_task(
             50,
         )
 
-        # Use asyncio to run the async LLM service
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
         start_time = time.time()
 
         try:
-            # Run LLM summarization - fail if LLM is not available
-            summary_data = loop.run_until_complete(
-                generate_llm_summary(
-                    full_transcript, speaker_stats, provider, model, media_file.user_id
-                )
+            # Run LLM summarization
+            logger.info(
+                f"Starting LLM summarization for transcript of {len(full_transcript)} characters"
             )
 
+            # Log transcript details for debugging
+            transcript_length = len(full_transcript)
+            speaker_count = len(speaker_stats) if speaker_stats else 0
+            logger.info(
+                f"Starting LLM summary generation: {transcript_length} chars, {speaker_count} speakers"
+            )
+
+            # Estimate token count
+            estimated_tokens = transcript_length // 3
+            logger.info(f"Estimated input tokens: {estimated_tokens}")
+
+            # Create LLM service using user settings or system settings
+            if media_file.user_id:
+                llm_service = LLMService.create_from_user_settings(media_file.user_id)
+                logger.info(f"Using user LLM settings for user {media_file.user_id}")
+            else:
+                llm_service = LLMService.create_from_system_settings()
+                logger.info("Using system LLM settings")
+
+            if not llm_service:
+                raise Exception("Could not create LLM service - check configuration")
+
+            # Log provider/model overrides (deprecated but supported for backward compatibility)
+            if provider:
+                logger.warning(
+                    f"Provider override specified: {provider} (deprecated - use user settings)"
+                )
+            if model:
+                logger.warning(
+                    f"Model override specified: {model} (deprecated - use user settings)"
+                )
+
+            logger.info(f"Using LLM: {llm_service.config.provider}/{llm_service.config.model}")
+            logger.info(f"User context window: {llm_service.user_context_window} tokens")
+
+            try:
+                # Generate summary using user's configured context window
+                summary_data = llm_service.generate_summary(
+                    transcript=full_transcript,
+                    speaker_data=speaker_stats,
+                    user_id=media_file.user_id,
+                )
+            finally:
+                # Clean up the service
+                llm_service.close()
+
             processing_time = int((time.time() - start_time) * 1000)
+            if "metadata" not in summary_data:
+                summary_data["metadata"] = {}
             summary_data["metadata"]["processing_time_ms"] = processing_time
 
+            logger.info(f"LLM summarization completed in {processing_time}ms")
+
         except Exception as e:
-            logger.error(f"LLM summarization failed: {e}")
+            error_type = type(e).__name__
+            error_msg = str(e)
+            logger.error(f"LLM summarization failed with {error_type}: {error_msg}")
+            logger.error(f"Full error details: {repr(e)}")
+
+            # Log additional context
+            logger.error(f"Transcript length: {len(full_transcript)} chars")
+            logger.error(f"Provider: {provider}, Model: {model}")
+            logger.error(f"User ID: {media_file.user_id}")
+
             # Set summary status to failed for graceful handling
             media_file.summary_status = "failed"
             db.commit()
-            # Send failed notification
+
+            # Send failed notification with more detail
+            detailed_error = f"{error_type}: {error_msg}"
+            if "timeout" in error_msg.lower():
+                detailed_error = "Request timed out. Try reducing video length or contact support."
+            elif "context" in error_msg.lower() or "token" in error_msg.lower():
+                detailed_error = (
+                    "Content too long for model. Try shorter videos or contact support."
+                )
+
             send_summary_notification(
                 media_file.user_id,
                 file_id,
                 "failed",
-                f"AI summary generation failed: {str(e)}",
+                f"AI summary generation failed: {detailed_error}",
                 0,
             )
+
             # Don't use fallback - let the task fail if LLM is unavailable
             raise Exception(
-                f"LLM summarization failed: {str(e)}. No fallback summary will be generated."
+                f"LLM summarization failed: {detailed_error}. No fallback summary will be generated."
             ) from e
 
-        finally:
-            with contextlib.suppress(Exception):
-                loop.close()
+        # No additional cleanup needed
+        except Exception:
+            # Re-raise the exception to be handled by the outer try block
+            raise
 
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.7)
@@ -336,19 +399,44 @@ def summarize_transcript_task(
 
         except Exception as e:
             logger.error(f"Failed to store summary in OpenSearch: {e}")
+            logger.info("Summary generated successfully but OpenSearch indexing failed")
 
-            # Set summary status to failed if OpenSearch indexing fails
-            media_file.summary_status = "failed"
+            # Summary generation succeeded, only OpenSearch failed - task is still successful
+            media_file.summary_status = "completed"
             db.commit()
 
-            # Send failure notification
+            # Send completion notification with summary data (OpenSearch failed but summary exists)
             send_summary_notification(
                 media_file.user_id,
                 file_id,
-                "failed",
-                f"Failed to index summary: {str(e)}",
-                0,
+                "completed",
+                "AI summary generation completed (search indexing failed)",
+                100,
+                summary_data=media_file.summary,  # Send the brief summary text for frontend
+                summary_opensearch_id=None,  # No OpenSearch ID since indexing failed
             )
+
+        # Send completion notification with summary text for frontend
+        try:
+            send_summary_notification(
+                media_file.user_id,
+                file_id,
+                "completed",
+                "AI summary generation completed successfully",
+                100,
+                summary_data=summary_data.get("brief_summary", ""),
+            )
+            logger.info(f"Sent completion notification to user {media_file.user_id}")
+        except Exception as notif_error:
+            logger.error(f"Failed to send completion notification: {notif_error}")
+            # Don't fail the task if notification fails
+
+        logger.info("=== Summarization Task Completed Successfully ===")
+        logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
+        logger.info(f"Final summary length: {len(media_file.summary)} characters")
+        logger.info(f"Summary status: {media_file.summary_status}")
+
+        # OpenSearch indexing error handling removed since we're skipping it
 
         # Update task as completed
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
@@ -366,110 +454,60 @@ def summarize_transcript_task(
         }
 
     except Exception as e:
-        # Handle errors
-        logger.error(f"Error summarizing file {file_id}: {str(e)}")
+        # Handle errors with comprehensive logging
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"Error summarizing file {file_id}: {error_type}: {error_msg}")
+        logger.error("Full error traceback:", exc_info=True)
+
+        # Log additional context for debugging
+        try:
+            if "media_file" in locals() and media_file:
+                logger.error(
+                    f"Media file details: ID={media_file.id}, filename={media_file.filename}, user_id={media_file.user_id}"
+                )
+                if hasattr(media_file, "duration"):
+                    logger.error(
+                        f"Media duration: {getattr(media_file, 'duration', 'unknown')} seconds"
+                    )
+        except Exception as ctx_e:
+            logger.error(f"Error logging context: {ctx_e}")
 
         # Set summary status to failed if not already set
         try:
-            if media_file and media_file.summary_status != "failed":
+            if "media_file" in locals() and media_file and media_file.summary_status != "failed":
+                # Create user-friendly error message
+                user_error_msg = error_msg
+                if "timeout" in error_msg.lower():
+                    user_error_msg = (
+                        "Request timed out. The video may be too long. Try with shorter content."
+                    )
+                elif "context" in error_msg.lower() or "token" in error_msg.lower():
+                    user_error_msg = (
+                        "Content is too long for the AI model. Try with shorter videos."
+                    )
+                elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+                    user_error_msg = "Network connection failed. Please try again."
+                elif not error_msg.strip():
+                    user_error_msg = "Unknown error occurred during summary generation"
+
                 # Send failed notification
                 send_summary_notification(
                     media_file.user_id,
                     file_id,
                     "failed",
-                    f"AI summary generation failed: {str(e)}",
+                    f"AI summary generation failed: {user_error_msg}",
                     0,
                 )
                 media_file.summary_status = "failed"
                 db.commit()
-        except Exception:
-            logger.exception("Error during cleanup")  # Log the exception
+        except Exception as cleanup_e:
+            logger.error(
+                f"Error during cleanup: {type(cleanup_e).__name__}: {cleanup_e}", exc_info=True
+            )
 
-        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        return {"status": "error", "message": str(e)}
-
-    finally:
-        db.close()
-
-
-@celery_app.task(bind=True, name="translate_transcript")
-def translate_transcript_task(self, file_id: int, target_language: str = "en"):
-    """
-    Translate a transcript to the target language
-
-    Args:
-        file_id: Database ID of the MediaFile to translate
-        target_language: Target language code (default: English)
-    """
-    task_id = self.request.id
-    db = SessionLocal()
-
-    try:
-        # Get media file from database
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not media_file:
-            raise ValueError(f"Media file with ID {file_id} not found")
-
-        # Skip if the file is already in the target language
-        if media_file.language == target_language:
-            return {
-                "status": "skipped",
-                "message": f"File already in {target_language}",
-            }
-
-        # Create task record
-        from app.utils.task_utils import create_task_record
-        from app.utils.task_utils import update_task_status
-
-        create_task_record(db, task_id, media_file.user_id, file_id, "translation")
-
-        # Update task status
-        update_task_status(db, task_id, "in_progress", progress=0.1)
-
-        # Get transcript segments
-        transcript_segments = (
-            db.query(TranscriptSegment)
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
-        )
-
-        if not transcript_segments:
-            raise ValueError(f"No transcript segments found for file {file_id}")
-
-        # Build full transcript text
-        full_transcript = " ".join([segment.text for segment in transcript_segments])
-
-        # Update task progress
-        update_task_status(db, task_id, "in_progress", progress=0.3)
-
-        # In a real implementation, we would:
-        # 1. Use a translation model (e.g., M2M100, NLLB, or MarianMT)
-        # 2. Translate the transcript
-
-        # Simulate translation progress
-        update_task_status(db, task_id, "in_progress", progress=0.7)
-
-        # Simulated translation (placeholder)
-        translated_text = (
-            f"[This is a simulated {target_language} translation of: {full_transcript[:100]}...]"
-        )
-
-        # Save the translated text
-        media_file.translated_text = translated_text
-        db.commit()
-
-        # Update task as completed
-        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-
-        logger.info(f"Successfully translated file {media_file.filename} to {target_language}")
-        return {"status": "success", "file_id": file_id}
-
-    except Exception as e:
-        # Handle errors
-        logger.error(f"Error translating file {file_id}: {str(e)}")
-        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        return {"status": "error", "message": str(e)}
+        update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
+        return {"status": "error", "message": error_msg}
 
     finally:
         db.close()

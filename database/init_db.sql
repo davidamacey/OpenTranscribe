@@ -293,9 +293,8 @@ CREATE TABLE IF NOT EXISTS user_llm_settings (
     model_name VARCHAR(100) NOT NULL,
     api_key TEXT, -- Encrypted API key
     base_url VARCHAR(500), -- Custom endpoint URL
-    max_tokens INTEGER NOT NULL DEFAULT 2000,
+    max_tokens INTEGER NOT NULL DEFAULT 8192, -- Model's context window in tokens (what user configures as max context)
     temperature VARCHAR(10) NOT NULL DEFAULT '0.3', -- Store as string to avoid float precision issues
-    timeout INTEGER NOT NULL DEFAULT 60,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     last_tested TIMESTAMP WITH TIME ZONE,
     test_status VARCHAR(20), -- success, failed, pending

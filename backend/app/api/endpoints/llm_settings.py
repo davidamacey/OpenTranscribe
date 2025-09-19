@@ -531,7 +531,6 @@ async def test_llm_connection(
             model=test_request.model_name,
             api_key=test_request.api_key,
             base_url=test_request.base_url,
-            timeout=test_request.timeout or 30,
         )
 
         # Create and test LLM service
@@ -543,7 +542,7 @@ async def test_llm_connection(
                 f"Testing LLM connection to: {actual_url} (Provider: {service_provider}, Model: {test_request.model_name})"
             )
 
-            success, message = await llm_service.validate_connection()
+            success, message = llm_service.validate_connection()
             response_time = int((time.time() - start_time) * 1000)
 
             return schemas.ConnectionTestResponse(
@@ -555,7 +554,7 @@ async def test_llm_connection(
                 response_time_ms=response_time,
             )
         finally:
-            await llm_service.close()
+            llm_service.close()
 
     except Exception as e:
         response_time = int((time.time() - start_time) * 1000)
@@ -626,7 +625,6 @@ async def test_active_configuration(
         model_name=user_config.model_name,
         api_key=api_key,
         base_url=user_config.base_url,
-        timeout=user_config.timeout,
     )
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)
@@ -681,7 +679,6 @@ async def test_specific_configuration(
         model_name=user_config.model_name,
         api_key=api_key,
         base_url=user_config.base_url,
-        timeout=user_config.timeout,
     )
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)

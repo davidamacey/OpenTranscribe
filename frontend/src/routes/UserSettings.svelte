@@ -172,7 +172,6 @@
       const localStorageSettings = RecordingSettingsHelper.migrateFromLocalStorage();
       
       if (localStorageSettings && !migrationCompleted) {
-        console.log('Migrating recording settings from localStorage to database...');
         
         try {
           // Save migrated settings to database
@@ -187,7 +186,6 @@
           RecordingSettingsHelper.cleanupLocalStorage();
           migrationCompleted = true;
           
-          console.log('Successfully migrated recording settings to database');
           return;
         } catch (migrationError) {
           console.error('Failed to migrate settings to database, will load from server:', migrationError);

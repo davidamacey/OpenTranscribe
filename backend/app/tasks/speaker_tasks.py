@@ -1,13 +1,8 @@
 """
-Helper functions for AI summarization tasks
-
-Contains the LLM summary generation and speaker identification functions.
+Speaker identification and management tasks
 """
 
-import asyncio
 import logging
-from typing import Any
-from typing import Optional
 
 from app.core.celery import celery_app
 from app.db.base import SessionLocal
@@ -15,50 +10,9 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
-from app.services.llm_service import LLMServiceContext
+from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
-
-
-async def generate_llm_summary(
-    transcript: str,
-    speaker_stats: dict[str, Any],
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    user_id: Optional[int] = None,
-) -> dict[str, Any]:
-    """
-    Generate structured summary using LLM service
-
-    Args:
-        transcript: Full transcript text
-        speaker_stats: Speaker statistics
-        provider: Optional LLM provider override
-        model: Optional model override
-        user_id: Optional user ID for custom prompt selection and LLM settings
-
-    Returns:
-        Structured summary data
-    """
-    try:
-        # Use user-specific LLM settings if available
-        async with LLMServiceContext(user_id=user_id) as llm_service:
-            # Override provider/model if specified (for backwards compatibility)
-            if provider:
-                llm_service.config.provider = provider
-            if model:
-                llm_service.config.model = model
-
-            # Generate summary
-            summary_data = await llm_service.generate_summary(
-                transcript=transcript, speaker_data=speaker_stats, user_id=user_id
-            )
-
-            return summary_data
-
-    except Exception as e:
-        logger.error(f"LLM summary generation failed: {e}")
-        raise
 
 
 @celery_app.task(bind=True, name="identify_speakers_llm")
@@ -146,21 +100,31 @@ def identify_speakers_llm_task(self, file_id: int):
         update_task_status(db, task_id, "in_progress", progress=0.5)
 
         # Generate LLM speaker predictions
-        async def _run_speaker_identification():
-            async with LLMServiceContext(user_id=media_file.user_id) as llm_service:
-                return await llm_service.identify_speakers(
-                    transcript=full_transcript,
-                    speaker_segments=speaker_segments,
-                    known_speakers=known_speakers,
-                )
-
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            logger.info(f"Starting LLM speaker identification for file {file_id}")
 
-            predictions = loop.run_until_complete(_run_speaker_identification())
+            # Create LLM service
+            if media_file.user_id:
+                llm_service = LLMService.create_from_user_settings(media_file.user_id)
+            else:
+                llm_service = LLMService.create_from_system_settings()
 
-            loop.close()
+            if not llm_service:
+                raise Exception("Could not create LLM service for speaker identification")
+
+            try:
+                # Check if speaker identification is implemented
+                if hasattr(llm_service, "identify_speakers"):
+                    predictions = llm_service.identify_speakers(
+                        transcript=full_transcript,
+                        speaker_segments=speaker_segments,
+                        known_speakers=known_speakers,
+                    )
+                else:
+                    logger.warning("Speaker identification not implemented - skipping")
+                    predictions = {"speaker_predictions": [], "error": "Feature not implemented"}
+            finally:
+                llm_service.close()
 
             # Store predictions as suggestions in speaker records
             for prediction in predictions.get("speaker_predictions", []):
@@ -187,7 +151,8 @@ def identify_speakers_llm_task(self, file_id: int):
             )
 
         except Exception as e:
-            logger.error(f"LLM speaker identification failed: {e}")
+            logger.error(f"LLM speaker identification failed: {type(e).__name__}: {e}")
+            logger.error("Full traceback:", exc_info=True)
             # Don't fail the task, just log the error
             predictions = {"speaker_predictions": [], "error": str(e)}
 

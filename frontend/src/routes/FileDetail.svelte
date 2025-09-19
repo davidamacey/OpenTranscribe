@@ -20,7 +20,7 @@
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
-  import { llmStatusStore, isLLMAvailable } from '../stores/llmStatus';
+  import { isLLMAvailable } from '../stores/llmStatus';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -397,7 +397,6 @@
 
     // Mark as initialized - all player initialization is now handled by VideoPlayer component
     playerInitialized = true;
-    console.log('Media player initialization is now handled by VideoPlayer component');
   }
 
   /**
@@ -1218,11 +1217,11 @@
     updateCurrentSegment(currentTime);
   }
 
-  function handlePlay(event: CustomEvent) {
+  function handlePlay(_event: CustomEvent) {
     // Handle play event if needed
   }
 
-  function handlePause(event: CustomEvent) {
+  function handlePause(_event: CustomEvent) {
     // Handle pause event if needed
   }
 
@@ -1340,7 +1339,7 @@
       generatingSummary = true;
       summaryError = '';
       
-      const response = await axiosInstance.post(`/api/files/${file.id}/summarize`);
+      await axiosInstance.post(`/api/files/${file.id}/summarize`);
       
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
@@ -1406,12 +1405,9 @@
     }
 
     if (fileId && !isNaN(Number(fileId))) {
-      // Load file details and initialize LLM status
-      Promise.all([
-        fetchFileDetails(),
-        llmStatusStore.initialize()
-      ]).catch(err => {
-        console.error('Error loading page data:', err);
+      // Load file details
+      fetchFileDetails().catch(err => {
+        console.error('Error loading file details:', err);
       });
     } else {
       errorMessage = 'Invalid file ID';
@@ -1428,19 +1424,19 @@
         
         // Find the most recently updated notification for the current file
         const currentFileNotifications = $ws.notifications.filter(n => {
-          const notificationFileId = String(n.data?.file_id || n.fileId || '');
+          const notificationFileId = String(n.data?.file_id || '');
           const currentFileId = String(fileId);
           return notificationFileId === currentFileId;
         });
-        
+
         if (currentFileNotifications.length === 0) {
           return;
         }
-        
-        // Sort by last update time (most recent first)
+
+        // Sort by timestamp (most recent first)
         currentFileNotifications.sort((a, b) => {
-          const aTime = a.lastUpdated || a.timestamp;
-          const bTime = b.lastUpdated || b.timestamp;
+          const aTime = a.timestamp;
+          const bTime = b.timestamp;
           return new Date(bTime).getTime() - new Date(aTime).getTime();
         });
         
@@ -1612,28 +1608,9 @@
   });
 
   onDestroy(() => {
-    if (player) {
-      try {
-        // Clean up any subtitle blob URLs before destroying player
-        const mediaElement = player.media;
-        if (mediaElement) {
-          const tracks = Array.from(mediaElement.querySelectorAll('track[kind="subtitles"]')) as HTMLTrackElement[];
-          tracks.forEach((track: HTMLTrackElement) => {
-            if (track.src && track.src.startsWith('blob:')) {
-              URL.revokeObjectURL(track.src);
-            }
-          });
-        }
-        
-        player.destroy();
-        player = null;
-        playerInitialized = false;
-      } catch (err) {
-        console.error('Error destroying player:', err);
-      }
-    }
-    
-    
+    // Player cleanup is now handled by VideoPlayer component
+    playerInitialized = false;
+
     // LLM status cleanup is handled by the Settings component
     
     // Clean up WebSocket subscription
@@ -1923,7 +1900,7 @@
     fileId={file.id}
     fileName={file?.filename || 'Unknown File'}
     on:close={() => showSummaryModal = false}
-    on:reprocessSummary={async (event) => {
+    on:reprocessSummary={async (_event) => {
       // 1. Close modal immediately
       showSummaryModal = false;
       
@@ -1940,7 +1917,7 @@
       
       // 4. Trigger the API call for reprocessing
       try {
-        const response = await axiosInstance.post(`/api/files/${file.id}/summarize`, {
+        await axiosInstance.post(`/api/files/${file.id}/summarize`, {
           force_regenerate: true
         });
         

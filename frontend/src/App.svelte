@@ -11,6 +11,7 @@
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady } from "$stores/auth";
   import { theme } from "./stores/theme";
+  import { llmStatusStore } from "./stores/llmStatus";
   
   // Import components
   import Navbar from "./components/Navbar.svelte";
@@ -58,7 +59,7 @@
   onMount(async () => {
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
-    
+
     try {
       await initAuth();
 
@@ -70,6 +71,15 @@
         navigate("/login", { replace: true });
       } else if (isAuth && isPublicPath) {
         navigate("/", { replace: true });
+      }
+
+      // Initialize LLM status store after authentication is ready
+      if (isAuth) {
+        try {
+          await llmStatusStore.initialize();
+        } catch (error) {
+          console.warn('[App] Failed to initialize LLM status store:', error);
+        }
       }
 
     } catch (error) {
