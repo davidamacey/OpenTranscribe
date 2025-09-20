@@ -31,6 +31,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
 - **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
+- **Custom File Titles**: Edit display names for media files with real-time search index updates
 - **Advanced Upload Manager**: Floating, draggable upload manager with real-time progress tracking
 - **Concurrent Upload Processing**: Multiple file uploads with queue management and retry logic
 - **Intelligent Upload System**: Duplicate detection, hash verification, and automatic recovery
@@ -293,6 +294,7 @@ The `opentr.sh` script provides comprehensive management for all application ope
 4. **Explore Your Content**
    - **Interactive Transcript**: Click on transcript text to navigate media playback
    - **Waveform Player**: Click on audio waveform for precise seeking
+   - **Custom Titles**: Edit file display names for better organization and searchability
    - **Speaker Management**: Edit speaker names and add custom labels
    - **AI Summaries**: Generate BLUF format summaries with custom prompts
    - **Comments**: Add time-stamped comments and annotations

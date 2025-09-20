@@ -1085,22 +1085,23 @@
   }
   
   .cancel-button {
-    background-color: var(--card-background);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--card-shadow);
-  }
-  
-  .cancel-button:hover {
-    background: #2563eb;
+    background: #6b7280;
     color: white;
-    border: 1px solid #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    border: 1px solid #6b7280;
+    box-shadow: var(--card-shadow);
+    transition: all 0.2s ease;
   }
-  
+
+  .cancel-button:hover {
+    background: #4b5563;
+    border: 1px solid #4b5563;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
+  }
+
   .cancel-button:active {
     transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
   
   .edit-button {

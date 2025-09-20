@@ -547,7 +547,7 @@
   // Enhanced error notification for corrupted/invalid files
   function showEnhancedErrorNotification(file: MediaFile) {
     if (!file.last_error_message) {
-      toastStore.error(`Processing failed for "${file.filename}". Please try again.`);
+      toastStore.error(`Processing failed for "${file.title || file.filename}". Please try again.`);
       return;
     }
 
@@ -555,7 +555,7 @@
     
     if (errorMessage.includes('no audio content') || errorMessage.includes('corrupted') || errorMessage.includes('unsupported format')) {
       toastStore.error(
-        `File Quality Issue: "${file.filename}"\n\n` +
+        `File Quality Issue: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
         `Suggestions:\n` +
         `• Check if the file plays correctly on your device\n` +
@@ -566,7 +566,7 @@
       );
     } else if (errorMessage.includes('no speech') || errorMessage.includes('only music') || errorMessage.includes('background noise')) {
       toastStore.error(
-        `No Speech Detected: "${file.filename}"\n\n` +
+        `No Speech Detected: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
         `This typically happens when:\n` +
         `• The file contains only music or instrumental audio\n` +
@@ -579,7 +579,7 @@
     } else {
       // Generic error with helpful guidance
       toastStore.error(
-        `Processing Failed: "${file.filename}"\n\n` +
+        `Processing Failed: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
         `You can:\n` +
         `• Use the "Retry" button to try processing again\n` +
@@ -896,7 +896,7 @@
                     <div class="file-thumbnail">
                       <img
                         src={file.thumbnail_url}
-                        alt="Thumbnail for {file.filename}"
+                        alt="Thumbnail for {file.title || file.filename}"
                         loading="lazy"
                         class="thumbnail-image"
                       />
@@ -929,7 +929,7 @@
                     </div>
                   {/if}
 
-                  <h2 class="file-name">{file.filename}</h2>
+                  <h2 class="file-name">{file.title || file.filename}</h2>
 
                   <div class="file-meta">
                     <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>

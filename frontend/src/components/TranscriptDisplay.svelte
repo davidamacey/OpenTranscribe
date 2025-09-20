@@ -873,9 +873,9 @@
   }
 
   .cancel-button {
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
+    background: #6b7280;
+    color: white;
+    border: 1px solid #6b7280;
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
@@ -886,16 +886,15 @@
   }
 
   .cancel-button:hover {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: #4b5563;
+    border-color: #4b5563;
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
-  
+
   .cancel-button:active {
     transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
   .transcript-display-container {
@@ -1079,23 +1078,22 @@
   }
 
   .segment-edit-actions .cancel-button {
-    background: var(--surface-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
+    background: #6b7280;
+    color: white;
+    border: 1px solid #6b7280;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .segment-edit-actions .cancel-button:hover {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: #4b5563;
+    border-color: #4b5563;
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
-  
+
   .segment-edit-actions .cancel-button:active {
     transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
   .transcript-actions {
@@ -1335,96 +1333,6 @@
     border-width: 2px;
   }
 
-  /* LLM Suggestion Interface */
-  .llm-suggestion-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    padding: 0.75rem;
-    background: var(--surface-color, #f8fafc);
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
-    border-left: 4px solid var(--primary-color, #3b82f6);
-  }
-
-  :global(.dark) .llm-suggestion-info {
-    background: var(--surface-color, #1e293b);
-    border-color: var(--border-color, #475569);
-  }
-
-  .llm-badge {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--primary-color, #3b82f6);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-  }
-
-  .llm-badge svg {
-    color: var(--primary-color, #3b82f6);
-  }
-
-  .suggestion-button {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    position: relative;
-    color: white;
-  }
-
-  .suggestion-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Color coding for LLM suggestions based on confidence */
-  .suggestion-button.high-confidence {
-    background: #059669;
-  }
-
-  .suggestion-button.high-confidence:hover {
-    background: #047857;
-  }
-
-  .suggestion-button.medium-confidence {
-    background: #0891b2;
-  }
-
-  .suggestion-button.medium-confidence:hover {
-    background: #0e7490;
-  }
-
-  .suggestion-button.low-confidence {
-    background: #7c3aed;
-  }
-
-  .suggestion-button.low-confidence:hover {
-    background: #6d28d9;
-  }
-
-  .confidence-score {
-    font-size: 0.75rem;
-    background: rgba(255, 255, 255, 0.2);
-    padding: 0.125rem 0.375rem;
-    border-radius: 12px;
-    font-weight: 600;
-  }
-
-  .cross-video-note {
-    font-size: 0.7rem;
-    color: var(--text-secondary-color, #6b7280);
-    font-style: italic;
-  }
 
   /* Embedding Suggestion Interface */
   .embedding-suggestion-info {
@@ -1537,298 +1445,9 @@
   
 
 
-  .confidence-badge {
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    color: white;
-    font-weight: 500;
-    font-size: 0.75rem;
-  }
-
-
   .match-confidence {
     font-size: 0.75rem;
     font-weight: normal;
-  }
-
-
-
-
-  .info-icon-inline {
-    font-size: 1rem;
-  }
-
-  .fallback-text {
-    color: var(--text-color-secondary);
-  }
-
-  .cross-video-suggestion-card {
-    margin-top: 0.75rem;
-    margin-bottom: 0.25rem;
-    padding: 0.75rem;
-    background-color: rgba(59, 130, 246, 0.1);
-    border-radius: 8px;
-    border-left: 4px solid var(--primary-color);
-  }
-
-  .suggestion-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .suggestion-icon {
-    color: var(--primary-color);
-    flex-shrink: 0;
-  }
-
-  .suggestion-title {
-    font-weight: 600;
-    color: var(--text-primary);
-    flex: 1;
-    font-size: 0.9rem;
-  }
-
-  .expand-toggle {
-    background: none;
-    border: none;
-    color: var(--text-color-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    padding: 2px;
-    border-radius: 4px;
-  }
-
-  .expand-toggle:hover {
-    background-color: var(--surface-hover);
-    color: var(--text-primary);
-  }
-
-  .expand-toggle svg {
-    transition: transform 0.2s ease;
-  }
-
-  .expand-toggle svg.rotated {
-    transform: rotate(180deg);
-  }
-
-  .suggestion-summary {
-    font-size: 0.85rem;
-    color: var(--text-color-secondary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .confidence-pill {
-    padding: 0.15rem 0.4rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-  }
-
-  .matches-dropdown {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border-light);
-  }
-
-  .matches-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .match-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem;
-    background-color: var(--surface-color);
-    border-radius: 6px;
-    border: 1px solid var(--border-light);
-  }
-
-  .match-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .match-speaker-name {
-    font-weight: 600;
-    color: var(--primary-color);
-    font-size: 0.85rem;
-  }
-
-  .match-video-title {
-    font-size: 0.8rem;
-    color: var(--text-color-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .match-confidence-badge {
-    font-size: 0.8rem;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .suggestion-actions {
-    display: flex;
-    justify-content: center;
-  }
-
-  .label-all-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .label-all-btn:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .clickable-suggestions {
-    margin-top: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(99, 102, 241, 0.05);
-    border-radius: 6px;
-    border: 1px dashed var(--primary-color);
-  }
-
-  .suggestion-label {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    margin-bottom: 0.4rem;
-    font-weight: 500;
-  }
-
-  .suggestion-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.3rem 0.6rem;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 16px;
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    margin-bottom: 0.3rem;
-  }
-
-  .suggestion-pill:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .pill-confidence {
-    background: rgba(255, 255, 255, 0.2);
-    padding: 0.1rem 0.3rem;
-    border-radius: 8px;
-    font-size: 0.7rem;
-  }
-
-  .suggestion-note {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    font-style: italic;
-    display: block;
-    margin-top: 0.2rem;
-  }
-
-  .matches-summary {
-    margin-bottom: 0.75rem;
-    padding: 0.5rem;
-    background-color: var(--background-alt);
-    border-radius: 6px;
-  }
-
-  .confidence-breakdown {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .confidence-group {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.8rem;
-  }
-
-  .confidence-count {
-    font-weight: 600;
-  }
-
-  .auto-apply-note,
-  .suggest-note {
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 8px;
-    font-weight: 500;
-  }
-
-  .auto-apply-note {
-    background-color: rgba(34, 197, 94, 0.1);
-    color: var(--success-color);
-  }
-
-  .suggest-note {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: var(--warning-color);
-  }
-
-  .more-matches-note {
-    text-align: center;
-    font-style: italic;
-    color: var(--text-color-secondary);
-    font-size: 0.8rem;
-    padding: 0.5rem;
-    border-top: 1px solid var(--border-light);
-    margin-top: 0.5rem;
-  }
-
-  .label-all-btn small {
-    display: block;
-    font-size: 0.7rem;
-    opacity: 0.8;
-    margin-top: 0.2rem;
-  }
-
-  .suggestion-help-text {
-    font-size: 0.7rem;
-    color: var(--text-color-secondary);
-    background: rgba(59, 130, 246, 0.05);
-    padding: 0.4rem;
-    border-radius: 4px;
-    margin-top: 0.4rem;
-    border-left: 3px solid var(--primary-color);
-  }
-
-  .cross-video-reference {
-    font-size: 0.7rem;
-    color: var(--text-color-secondary);
-    font-style: italic;
-    margin-top: 0.2rem;
   }
 
   .save-speakers-button {
@@ -2104,48 +1723,6 @@
     background: var(--text-color-secondary);
   }
 
-  /* New Combined Suggestions Styling */
-  .embedding-quick-suggestions {
-    margin-top: 0.4rem;
-    padding: 0.4rem;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--surface-color);
-  }
-
-  .embedding-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    align-items: center;
-    margin-top: 0.3rem;
-  }
-
-  .suggestion-pill.embedding-pill.high-confidence {
-    background: #059669;
-    color: white;
-  }
-
-  .suggestion-pill.embedding-pill.medium-confidence {
-    background: #0891b2;
-    color: white;
-  }
-
-  .suggestion-pill.embedding-pill.low-confidence {
-    background: #7c3aed;
-    color: white;
-  }
-
-  .more-suggestions {
-    font-size: 0.7rem;
-    color: var(--text-secondary-color);
-    font-style: italic;
-  }
-
-  /* Collapsible suggestions styling */
-  .suggestions-collapsed {
-    margin-top: 0.4rem;
-  }
 
   .suggestions-toggle {
     display: flex;
@@ -2185,55 +1762,6 @@
     padding: 0.4rem;
   }
 
-  .suggestion-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.3rem;
-  }
-
-  .suggestion-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .suggestion-type {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--text-secondary-color);
-    min-width: 40px;
-  }
-
-  .suggestion-pill-small {
-    padding: 0.2rem 0.4rem;
-    border: none;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    color: white;
-  }
-
-  .suggestion-pill-small.llm-pill {
-    background: var(--primary-color);
-  }
-
-  .suggestion-pill-small.embedding-pill.high-confidence {
-    background: #059669;
-  }
-
-  .suggestion-pill-small.embedding-pill.medium-confidence {
-    background: #0891b2;
-  }
-
-  .suggestion-pill-small.embedding-pill.low-confidence {
-    background: #7c3aed;
-  }
-
-  .suggestion-pill-small:hover {
-    transform: translateY(-1px);
-    opacity: 0.9;
-  }
 
   /* Unified Suggestions Section */
   .suggestions-section {

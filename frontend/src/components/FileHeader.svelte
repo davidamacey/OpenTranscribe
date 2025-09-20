@@ -1,26 +1,152 @@
 <script lang="ts">
+  import axiosInstance from '$lib/axios';
+
   export let file: any = null;
   export let currentProcessingStep: string = '';
-  
+
   let isExpanded = false;
-  
+  let isEditingTitle = false;
+  let editedTitle = '';
+  let isSaving = false;
+
   // Helper function to determine if text should be truncated
   function shouldTruncate(text: string): boolean {
     if (!text) return false;
-    
+
     // Lowered threshold to ~80 characters to test (roughly 1.5 lines)
     return text.length > 80;
   }
-  
+
   function toggleExpanded() {
     isExpanded = !isExpanded;
+  }
+
+  function getDisplayName(file: any): string {
+    return file?.title || file?.filename || 'Unknown File';
+  }
+
+  function startEditingTitle() {
+    if (!file) return;
+    isEditingTitle = true;
+    editedTitle = file.title || file.filename || '';
+  }
+
+  function cancelEditingTitle() {
+    isEditingTitle = false;
+    editedTitle = '';
+  }
+
+  async function saveTitle() {
+    if (!file || isSaving) return;
+
+    const trimmedTitle = editedTitle.trim();
+    if (trimmedTitle.length === 0) {
+      cancelEditingTitle();
+      return;
+    }
+
+    if (trimmedTitle.length > 255) {
+      alert('Display name must be 255 characters or less');
+      return;
+    }
+
+    isSaving = true;
+
+    try {
+      const response = await axiosInstance.put(`/api/files/${file.id}`, {
+        title: trimmedTitle
+      });
+
+      if (response.data) {
+        // Update the file object with the new title
+        file.title = response.data.title;
+        isEditingTitle = false;
+        editedTitle = '';
+      } else {
+        throw new Error('Failed to update display name');
+      }
+    } catch (error) {
+      console.error('Error updating display name:', error);
+      alert('Failed to update display name. Please try again.');
+    } finally {
+      isSaving = false;
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveTitle();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelEditingTitle();
+    }
   }
 
 </script>
 
 <div class="file-header-main">
   <div class="file-title">
-    <h1>{file?.filename || 'Unknown File'}</h1>
+    {#if isEditingTitle}
+      <div class="title-edit-container">
+        <input
+          type="text"
+          bind:value={editedTitle}
+          on:keydown={handleKeydown}
+          class="title-input"
+          placeholder="Enter display name"
+          maxlength="255"
+          disabled={isSaving}
+        />
+        <div class="edit-buttons">
+          <button
+            type="button"
+            on:click={saveTitle}
+            disabled={isSaving}
+            class="save-btn"
+            title="Save (Enter)"
+          >
+            {#if isSaving}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spinning">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            {/if}
+          </button>
+          <button
+            type="button"
+            on:click={cancelEditingTitle}
+            disabled={isSaving}
+            class="cancel-btn"
+            title="Cancel (Escape)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+    {:else}
+      <div class="title-display-container">
+        <h1>{getDisplayName(file)}</h1>
+        <button
+          type="button"
+          on:click={startEditingTitle}
+          class="edit-btn"
+          title="Edit display name"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m18 2 4 4-14 14H4v-4z"></path>
+            <path d="m14.5 5.5 4 4"></path>
+          </svg>
+        </button>
+      </div>
+    {/if}
   </div>
 
   <!-- Processing Status Display -->
@@ -350,6 +476,143 @@
   }
 
 
+  /* Title editing styles */
+  .title-display-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .title-display-container h1 {
+    margin: 0 0 16px 0;
+    flex: 1;
+  }
+
+  .edit-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+  }
+
+  .edit-btn:hover {
+    background: var(--surface-hover);
+    color: var(--primary-color);
+  }
+
+  .edit-btn:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .title-edit-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0 0 16px 0;
+    min-height: calc(28px * 1.2);
+  }
+
+  .title-input {
+    flex: 1;
+    padding: 8px 12px;
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
+    font-family: inherit;
+  }
+
+  .title-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+
+  .title-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .edit-buttons {
+    display: flex;
+    gap: 4px;
+    align-self: flex-start;
+    margin-top: 8px;
+  }
+
+  .save-btn,
+  .cancel-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid;
+    height: 32px;
+    box-sizing: border-box;
+  }
+
+  .save-btn {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+    color: white;
+    padding: 0.5rem 0.5rem;
+  }
+
+  .save-btn:hover:not(:disabled) {
+    background-color: #059669;
+    border-color: #059669;
+  }
+
+  .cancel-btn {
+    background-color: #6b7280;
+    border-color: #6b7280;
+    color: white;
+  }
+
+  .cancel-btn:hover:not(:disabled) {
+    background-color: #4b5563;
+    border-color: #4b5563;
+    color: white;
+  }
+
+  .save-btn:disabled,
+  .cancel-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .save-btn:focus,
+  .cancel-btn:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   @media (max-width: 768px) {
     .file-title h1 {
       font-size: 24px;
@@ -358,10 +621,22 @@
     .summary-text {
       font-size: 14px;
     }
-    
+
     .expand-link {
       font-size: 0.9em;
     }
 
+    .title-input {
+      font-size: 24px;
+      padding: 6px 8px;
+    }
+
+    .title-display-container {
+      gap: 8px;
+    }
+
+    .edit-buttons {
+      flex-direction: column;
+    }
   }
 </style>

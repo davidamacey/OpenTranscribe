@@ -37,8 +37,11 @@ show_help() {
   echo "  shell [service]     - Open a shell in a container"
   echo "  build               - Rebuild all containers without starting"
   echo ""
+  echo "Cleanup Commands:"
+  echo "  remove              - Stop containers and remove data volumes"
+  echo "  purge               - Remove everything including images (most destructive)"
+  echo ""
   echo "Advanced Commands:"
-  echo "  clean               - Clean up OpenTranscribe containers and images"
   echo "  init-db             - Initialize the database without resetting containers"
   echo "  health              - Check health status of all services"
   echo "  help                - Show this help menu"
@@ -363,26 +366,35 @@ init_db() {
   echo "✅ Database initialization complete."
 }
 
-# Function to clean up OpenTranscribe-specific resources
-clean_system() {
-  echo "🧹 Cleaning up OpenTranscribe resources..."
-  
+# Function to remove containers and data volumes (but preserve images)
+remove_system() {
+  echo "🗑️ Removing OpenTranscribe containers and data volumes..."
+
   COMPOSE_FILE="docker-compose.yml"
-  
-  # Stop and remove OpenTranscribe containers
-  echo "🗑️ Stopping and removing OpenTranscribe containers..."
-  docker compose -f $COMPOSE_FILE down --rmi local
-  
-  # Remove OpenTranscribe images specifically
-  echo "🗑️ Removing OpenTranscribe images..."
+
+  # Stop and remove containers and volumes
+  echo "🗑️ Stopping containers and removing data volumes..."
+  docker compose -f $COMPOSE_FILE down -v
+
+  echo "✅ Containers and data volumes removed. Images preserved for faster rebuilds."
+}
+
+# Function to purge everything including images (most destructive)
+purge_system() {
+  echo "💥 Purging ALL OpenTranscribe resources including images..."
+
+  COMPOSE_FILE="docker-compose.yml"
+
+  # Stop and remove everything
+  echo "🗑️ Stopping and removing containers, volumes, and images..."
+  docker compose -f $COMPOSE_FILE down -v --rmi all
+
+  # Remove any remaining OpenTranscribe images
+  echo "🗑️ Removing any remaining OpenTranscribe images..."
   docker images --filter "reference=transcribe-app*" -q | xargs -r docker rmi -f
   docker images --filter "reference=*opentranscribe*" -q | xargs -r docker rmi -f
-  
-  # Remove OpenTranscribe volumes (if not in use)
-  echo "🗑️ Removing OpenTranscribe volumes..."
-  docker volume ls --filter "name=transcribe-app" -q | xargs -r docker volume rm
-  
-  echo "✅ OpenTranscribe cleanup complete."
+
+  echo "✅ Complete purge finished. Everything removed."
 }
 
 # Function to check health of all services
@@ -514,8 +526,24 @@ case "$1" in
     init_db
     ;;
     
-  clean)
-    clean_system
+  remove)
+    echo "⚠️ Warning: This will remove all data volumes! Continue? (y/n)"
+    read -r confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+      remove_system
+    else
+      echo "❌ Remove cancelled."
+    fi
+    ;;
+
+  purge)
+    echo "⚠️ WARNING: This will remove EVERYTHING including images! Continue? (y/n)"
+    read -r confirm
+    if [[ $confirm =~ ^[Yy]$ ]]; then
+      purge_system
+    else
+      echo "❌ Purge cancelled."
+    fi
     ;;
     
   health)

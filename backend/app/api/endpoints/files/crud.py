@@ -17,6 +17,7 @@ from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.minio_service import delete_file
+from app.services.opensearch_service import update_transcript_title
 
 logger = logging.getLogger(__name__)
 
@@ -225,12 +226,24 @@ def update_media_file(
     is_admin = current_user.role == "admin"
     db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
 
+    # Track if title was updated for OpenSearch reindexing
+    update_data = media_file_update.model_dump(exclude_unset=True)
+    title_updated = "title" in update_data and update_data["title"] != db_file.title
+
     # Update fields
-    for field, value in media_file_update.model_dump(exclude_unset=True).items():
+    for field, value in update_data.items():
         setattr(db_file, field, value)
 
     db.commit()
     db.refresh(db_file)
+
+    # Update OpenSearch index if title was changed
+    if title_updated:
+        try:
+            new_title = db_file.title or db_file.filename
+            update_transcript_title(file_id, new_title)
+        except Exception as e:
+            logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
 
     return db_file
 

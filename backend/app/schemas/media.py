@@ -169,6 +169,7 @@ class MediaFileCreate(MediaFileBase):
 
 class MediaFileUpdate(BaseModel):
     filename: Optional[str] = None
+    title: Optional[str] = None
     status: Optional[FileStatus] = None
     summary: Optional[str] = None
     translated_text: Optional[str] = None

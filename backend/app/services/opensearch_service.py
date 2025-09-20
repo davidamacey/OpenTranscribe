@@ -173,6 +173,43 @@ def index_transcript(
         logger.error(f"Error indexing transcript for file {file_id}: {e}")
 
 
+def update_transcript_title(file_id: int, new_title: str):
+    """
+    Update the title of an indexed transcript in OpenSearch
+
+    Args:
+        file_id: ID of the media file
+        new_title: New title to update
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized, skipping title update")
+        return
+
+    try:
+        # Update the document with the new title
+        update_body = {
+            "doc": {
+                "title": new_title
+            }
+        }
+
+        response = opensearch_client.update(
+            index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
+            id=str(file_id),
+            body=update_body,
+        )
+
+        logger.info(f"Updated transcript title for file {file_id}: {response}")
+        return response
+
+    except Exception as e:
+        # If the document doesn't exist yet, that's okay - it will be indexed later
+        if "not_found" in str(e).lower():
+            logger.info(f"Document not found for file {file_id}, will be indexed when transcription completes")
+        else:
+            logger.error(f"Error updating transcript title for file {file_id}: {e}")
+
+
 def add_speaker_embedding(
     speaker_id: int,
     user_id: int,

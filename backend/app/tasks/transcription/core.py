@@ -312,7 +312,7 @@ def transcribe_audio_task(self, file_id: int):
 
                     with session_scope() as db:
                         media_file = get_refreshed_object(db, MediaFile, file_id)
-                        file_title = media_file.filename if media_file else f"File {file_id}"
+                        file_title = (media_file.title or media_file.filename) if media_file else f"File {file_id}"
 
                     index_transcript(file_id, user_id, full_transcript, speaker_names, file_title)
                 except Exception as e:
