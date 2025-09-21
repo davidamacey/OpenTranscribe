@@ -1105,7 +1105,7 @@ display_summary() {
     echo "  • ./opentranscribe.sh help    # Show all commands"
     echo "  • ./opentranscribe.sh status  # Check service status"
     echo "  • ./opentranscribe.sh logs    # View logs"
-    echo "  • ./opentranscribe.sh config  # Show current config"
+    echo "  • ./opentranscribe.sh health  # Check service health"
 }
 
 #######################
