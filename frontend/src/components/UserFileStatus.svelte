@@ -13,8 +13,7 @@
   let detailedStatus = null;
   let retryingFiles = new Set();
   
-  // Auto-refresh settings (per session, not persistent)
-  let autoRefresh = false;
+  // Auto-refresh settings (enabled by default)
   let refreshInterval = null;
   
   // Tasks section state
@@ -22,6 +21,14 @@
   let tasksLoading = false;
   let tasksError = null;
   let showTasksSection = false;
+  
+  // Restore tasks section state from session storage
+  if (typeof window !== 'undefined') {
+    const savedTasksSection = sessionStorage.getItem('showTasksSection');
+    if (savedTasksSection === 'true') {
+      showTasksSection = true;
+    }
+  }
   
   // Task filtering
   let taskFilter = 'all'; // 'all', 'pending', 'in_progress', 'completed', 'failed'
@@ -38,10 +45,18 @@
   onMount(() => {
     fetchFileStatus();
     setupWebSocketUpdates();
+    startAutoRefresh();
+    
+    // Load tasks if section should be shown
+    if (showTasksSection && tasks.length === 0) {
+      fetchTasks();
+    }
   });
   
-  async function fetchFileStatus() {
-    loading = true;
+  async function fetchFileStatus(silent = false) {
+    if (!silent) {
+      loading = true;
+    }
     error = null;
     
     try {
@@ -49,14 +64,20 @@
       fileStatus = response.data;
     } catch (err) {
       console.error('Error fetching file status:', err);
-      error = err.response?.data?.detail || 'Failed to load file status';
+      if (!silent) {
+        error = err.response?.data?.detail || 'Failed to load file status';
+      }
     } finally {
-      loading = false;
+      if (!silent) {
+        loading = false;
+      }
     }
   }
   
-  async function fetchTasks() {
-    tasksLoading = true;
+  async function fetchTasks(silent = false) {
+    if (!silent) {
+      tasksLoading = true;
+    }
     tasksError = null;
     
     try {
@@ -65,9 +86,13 @@
       filterTasks();
     } catch (err) {
       console.error('Error fetching tasks:', err);
-      tasksError = err.response?.data?.detail || 'Failed to load tasks';
+      if (!silent) {
+        tasksError = err.response?.data?.detail || 'Failed to load tasks';
+      }
     } finally {
-      tasksLoading = false;
+      if (!silent) {
+        tasksLoading = false;
+      }
     }
   }
   
@@ -127,6 +152,12 @@
   
   function toggleTasksSection() {
     showTasksSection = !showTasksSection;
+    
+    // Save state to session storage
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('showTasksSection', showTasksSection.toString());
+    }
+    
     if (showTasksSection && tasks.length === 0) {
       fetchTasks();
     }
@@ -135,7 +166,7 @@
   function openFlowerDashboard() {
     const protocol = window.location.protocol;
     const host = window.location.hostname;
-    const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+    const port = import.meta.env.VITE_FLOWER_PORT || '5175';
     const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
     const url = urlPrefix 
       ? `${protocol}//${host}:${port}/${urlPrefix}/` 
@@ -148,10 +179,19 @@
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
       selectedFile = fileId;
+      // Disable body scrolling when modal opens
+      document.body.style.overflow = 'hidden';
     } catch (err) {
       console.error('Error fetching detailed status:', err);
       error = err.response?.data?.detail || 'Failed to load file details';
     }
+  }
+
+  function closeModal() {
+    detailedStatus = null;
+    selectedFile = null;
+    // Re-enable body scrolling when modal closes
+    document.body.style.overflow = '';
   }
   
   async function retryFile(fileId) {
@@ -164,7 +204,7 @@
       await axiosInstance.post(`/my-files/${fileId}/retry`);
       
       // Refresh status after retry
-      await fetchFileStatus();
+      await fetchFileStatus(true); // Silent refresh
       if (selectedFile === fileId) {
         await fetchDetailedStatus(fileId);
       }
@@ -191,7 +231,7 @@
       
       // Refresh status after a delay
       setTimeout(() => {
-        fetchFileStatus();
+        fetchFileStatus(true); // Silent refresh
       }, 2000);
       
     } catch (err) {
@@ -203,15 +243,13 @@
     }
   }
   
-  function toggleAutoRefresh() {
-    if (autoRefresh) {
-      refreshInterval = setInterval(fetchFileStatus, 30000); // Refresh every 30 seconds
-    } else {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-        refreshInterval = null;
+  function startAutoRefresh() {
+    refreshInterval = setInterval(() => {
+      fetchFileStatus(true); // Silent refresh
+      if (showTasksSection) {
+        fetchTasks(true); // Silent refresh
       }
-    }
+    }, 30000); // Refresh every 30 seconds
   }
   
   function showMessage(message, type) {
@@ -300,14 +338,13 @@
           
           // Check if this notification is for transcription status
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
-            console.log('UserFileStatus received WebSocket update for file:', latestNotification.data.file_id, 'Status:', latestNotification.data.status);
             
             // Refresh file status when we get updates
-            fetchFileStatus();
+            fetchFileStatus(true); // Silent refresh
             
             // Also refresh tasks if tasks section is open
             if (showTasksSection) {
-              fetchTasks();
+              fetchTasks(true); // Silent refresh
             }
           }
         }
@@ -322,6 +359,10 @@
     }
     if (unsubscribeWebSocket) {
       unsubscribeWebSocket();
+    }
+    // Ensure body scrolling is restored if component is destroyed while modal is open
+    if (document.body.style.overflow === 'hidden') {
+      document.body.style.overflow = '';
     }
   });
 </script>
@@ -342,17 +383,6 @@
       </button>
       
       <button 
-        class="refresh-btn" 
-        on:click={() => {
-          fetchFileStatus();
-          if (showTasksSection) fetchTasks();
-        }}
-        disabled={loading || tasksLoading}
-      >
-        {(loading || tasksLoading) ? 'Refreshing...' : 'Refresh'}
-      </button>
-      
-      <button 
         class="tasks-toggle-btn" 
         on:click={toggleTasksSection}
         title="Show/hide detailed tasks view"
@@ -364,14 +394,14 @@
         {showTasksSection ? 'Hide Tasks' : 'Show All Tasks'}
       </button>
       
-      <label class="auto-refresh-toggle">
-        <input 
-          type="checkbox" 
-          bind:checked={autoRefresh} 
-          on:change={() => toggleAutoRefresh()}
-        />
-        Auto-refresh
-      </label>
+      <div class="auto-refresh-info">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 16v-4"/>
+          <path d="M12 8h.01"/>
+        </svg>
+        Auto-refreshes every 30s
+      </div>
     </div>
   </div>
   
@@ -474,7 +504,7 @@
         </div>
       {:else}
         <div class="no-problems">
-          <p>✅ All your files are processing normally!</p>
+          <p>✓ All your files are processing normally!</p>
         </div>
       {/if}
       
@@ -687,11 +717,11 @@
   {/if}
   
   {#if detailedStatus && selectedFile}
-    <div class="detailed-status-modal" on:click={() => { detailedStatus = null; selectedFile = null; }}>
+    <div class="detailed-status-modal" on:click={closeModal}>
       <div class="modal-content" on:click|stopPropagation>
         <div class="modal-header">
           <h3>File Details: {detailedStatus.file.filename}</h3>
-          <button class="close-btn" on:click={() => { detailedStatus = null; selectedFile = null; }}>×</button>
+          <button class="close-btn" on:click={closeModal}>×</button>
         </div>
         
         <div class="modal-body">
@@ -739,7 +769,12 @@
             
             {#if detailedStatus.is_stuck}
               <div class="warning">
-                ⚠️ This file appears to be stuck in processing
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-right: 4px;">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                  <path d="M12 9v4"/>
+                  <path d="m12 17 .01 0"/>
+                </svg>
+                This file appears to be stuck in processing
               </div>
             {/if}
             
@@ -837,19 +872,20 @@
     align-items: center;
   }
   
-  .refresh-btn, .recovery-btn, .flower-btn, .tasks-toggle-btn {
-    padding: 0.5rem 1rem;
-    background: var(--primary-color);
+  .recovery-btn, .flower-btn, .tasks-toggle-btn {
+    padding: 0.6rem 1.2rem;
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
     font-weight: 500;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
   .flower-btn {
@@ -858,9 +894,14 @@
     border: 1px solid var(--border-color);
   }
   
-  .refresh-btn:hover, .recovery-btn:hover, .tasks-toggle-btn:hover {
-    background: var(--primary-hover);
+  .recovery-btn:hover, .tasks-toggle-btn:hover {
+    background: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .recovery-btn:active, .tasks-toggle-btn:active {
+    transform: translateY(0);
   }
   
   .flower-btn:hover {
@@ -868,25 +909,41 @@
     border-color: var(--border-hover);
   }
   
-  .refresh-btn:disabled, .recovery-btn:disabled, .tasks-toggle-btn:disabled {
+  .recovery-btn:disabled, .tasks-toggle-btn:disabled {
     background: var(--text-light);
     cursor: not-allowed;
     transform: none;
   }
+
+  .spinner-mini {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
   
-  .auto-refresh-toggle {
+  .auto-refresh-info {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    cursor: pointer;
-    color: var(--text-color);
+    color: var(--text-secondary);
+    font-size: 0.875rem;
     font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
   }
   
-  .auto-refresh-toggle input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
+  .auto-refresh-info svg {
+    opacity: 0.7;
   }
   
   .status-cards {

@@ -50,7 +50,7 @@
     transition:fade={{ duration: 200 }}
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
-    tabindex="0"
+    tabindex="-1"
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"
@@ -78,18 +78,19 @@
         </div>
         
         <div class="modal-footer">
-          <button 
-            class="modal-button {cancelButtonClass}" 
-            on:click={handleCancel}
-            type="button"
-          >
-            {cancelText}
-          </button>
-          <button 
-            class="modal-button {confirmButtonClass}" 
+          {#if cancelText}
+            <button 
+              class="modal-button {cancelButtonClass}" 
+              on:click={handleCancel}
+              type="button"
+            >
+              {cancelText}
+            </button>
+          {/if}
+          <button
+            class="modal-button {confirmButtonClass}"
             on:click={handleConfirm}
             type="button"
-            autofocus
           >
             {confirmText}
           </button>
@@ -207,9 +208,23 @@
   }
 
   .cancel-button {
-    background: var(--surface-color);
+    background: var(--card-background);
     color: var(--text-color);
     border: 1px solid var(--border-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-shadow: var(--card-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 120px;
+    /* Ensure high contrast */
+    opacity: 1;
   }
 
   .cancel-button:hover {
@@ -226,13 +241,13 @@
   }
 
   .confirm-button {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .confirm-button:hover {
-    background: var(--primary-hover, #2563eb);
+    background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
   }
@@ -258,9 +273,9 @@
   }
 
   :global([data-theme='dark']) .cancel-button:hover {
-    background: var(--primary-color);
+    background: #3b82f6;
     color: white;
-    border-color: var(--primary-color);
+    border-color: #3b82f6;
   }
 
   :global([data-theme='dark']) .modal-footer {
@@ -285,7 +300,7 @@
 
   /* Focus styles for accessibility */
   .modal-button:focus {
-    outline: 2px solid var(--primary-color);
+    outline: 2px solid #3b82f6;
     outline-offset: 2px;
   }
 

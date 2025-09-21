@@ -43,20 +43,20 @@
   export let searchQuery = '';
   
   /** @type {string[]} */
-  export let selectedTags = [];
+  export let selectedTags: string[] = [];
   
   /** @type {string[]} */
-  export let selectedSpeakers = [];
+  export let selectedSpeakers: string[] = [];
   
   /** @type {DateRange} */
-  export let dateRange = { from: null, to: null };
+  export let dateRange: { from: Date | null, to: Date | null } = { from: null, to: null };
   
   /** @type {number|null} */
-  export let selectedCollectionId = null;
+  export let selectedCollectionId: number | null = null;
 
   // Duration range for filtering
   /** @type {{ min: number|null, max: number|null }} */
-  export let durationRange = {
+  export let durationRange: { min: number | null, max: number | null } = {
     min: null,
     max: null
   };
@@ -70,16 +70,16 @@
 
   // File size range for filtering (in MB)
   /** @type {{ min: number|null, max: number|null }} */
-  export let fileSizeRange = {
+  export let fileSizeRange: { min: number | null, max: number | null } = {
     min: null,
     max: null
   };
 
   /** @type {string[]} */
-  export let selectedFileTypes = []; // ['audio', 'video']
+  export let selectedFileTypes: string[] = []; // ['audio', 'video']
 
   /** @type {string[]} */
-  export let selectedStatuses = []; // ['pending', 'processing', 'completed', 'error']
+  export let selectedStatuses: string[] = []; // ['pending', 'processing', 'completed', 'error']
 
   /** @type {string} */
   export let transcriptSearch = '';
@@ -89,13 +89,13 @@
   
   // State
   /** @type {Tag[]} */
-  let allTags = [];
+  let allTags: any[] = [];
   
   // Component refs
   let collectionsFilterRef: any;
   
   /** @type {Speaker[]} */
-  let allSpeakers = [];
+  let allSpeakers: any[] = [];
   
   /** @type {boolean} */
   let loadingTags = false;
@@ -104,10 +104,10 @@
   let loadingSpeakers = false;
   
   /** @type {string|null} */
-  let errorTags = null;
+  let errorTags: string | null = null;
   
   /** @type {string|null} */
-  let errorSpeakers = null;
+  let errorSpeakers: string | null = null;
   
   // Available options for filters
   /** @type {string[]} */
@@ -177,7 +177,7 @@
    * Handle tag selection
    * @param {string} tag - The tag to toggle
    */
-  function toggleTag(tag) {
+  function toggleTag(tag: string) {
     const index = selectedTags.indexOf(tag);
     
     if (index === -1) {
@@ -191,7 +191,7 @@
    * Handle speaker selection (multi-select like tags)
    * @param {string} speaker - The speaker to toggle
    */
-  function toggleSpeaker(speaker) {
+  function toggleSpeaker(speaker: string) {
     const index = selectedSpeakers.indexOf(speaker);
     
     if (index === -1) {
@@ -205,7 +205,7 @@
    * Handle from date input changes
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleFromDateChange(event) {
+  function handleFromDateChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     if (value) {
       const date = new Date(value);
@@ -221,7 +221,7 @@
    * Handle to date input changes
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleToDateChange(event) {
+  function handleToDateChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     if (value) {
       const date = new Date(value);
@@ -255,7 +255,7 @@
    * Toggle a file type in the filter
    * @param {string} fileType - The file type to toggle
    */
-  function toggleFileType(fileType) {
+  function toggleFileType(fileType: string) {
     const index = selectedFileTypes.indexOf(fileType);
     
     if (index === -1) {
@@ -269,7 +269,7 @@
    * Toggle a status in the filter
    * @param {string} status - The status to toggle
    */
-  function toggleStatus(status) {
+  function toggleStatus(status: string) {
     const index = selectedStatuses.indexOf(status);
     
     if (index === -1) {
@@ -283,7 +283,7 @@
    * Handle min duration input change
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleMinDurationChange(event) {
+  function handleMinDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     durationRange.min = value ? parseFloat(value) : null;
   }
@@ -292,7 +292,7 @@
    * Handle max duration input change
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleMaxDurationChange(event) {
+  function handleMaxDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     durationRange.max = value ? parseFloat(value) : null;
   }
@@ -302,7 +302,7 @@
    * @param {'min'|'max'} field - The field to update
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
    */
-  function handleFileSizeChange(field, event) {
+  function handleFileSizeChange(field: 'min' | 'max', event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     fileSizeRange[field] = value ? parseFloat(value) : null;
   }

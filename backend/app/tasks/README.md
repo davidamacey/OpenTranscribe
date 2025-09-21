@@ -21,6 +21,7 @@ API Request → Task Dispatch → Celery Worker → AI Processing → Database U
 - **Flower**: Task monitoring and management UI
 - **WhisperX**: Advanced speech recognition with alignment
 - **PyAnnote**: Speaker diarization and voice analysis
+- **Multi-Provider LLMs**: Intelligent summarization with context processing
 - **FFmpeg**: Media processing and conversion
 
 ## 📁 Task Structure
@@ -38,8 +39,10 @@ tasks/
 │   └── notifications.py       # WebSocket notifications
 ├── analytics.py               # Analytics and insights processing
 ├── cleanup.py                 # File recovery and cleanup tasks
-├── summarization.py           # Text summarization tasks
-└── transcription.py           # Main transcription task router
+├── summarization.py           # Multi-provider AI summarization with intelligent section processing
+├── speaker_tasks.py           # LLM-powered speaker identification and management
+├── transcription.py           # Main transcription task router
+└── youtube_processing.py      # NEW: Enhanced YouTube URL processing with metadata extraction
 ```
 
 ## 🎙️ Transcription Pipeline (`transcription/`)
@@ -232,30 +235,56 @@ def analyze_transcript_task(file_id: int):
 - **Language Insights**: Vocabulary analysis, complexity metrics
 - **Engagement Metrics**: Turn-taking patterns, interruption analysis
 
-## 📝 Summarization Tasks (`summarization.py`)
+## 📝 AI Summarization Tasks (`summarization.py`)
 
 ### Purpose
-Generate automatic summaries of transcribed content:
+Generate comprehensive BLUF-format summaries using multi-provider LLMs with intelligent context processing:
 
 ```python
 @celery_app.task(name="summarize_transcript")
 def summarize_transcript_task(file_id: int):
     """
-    Generate a summary of a transcript using extractive summarization.
+    Generate AI-powered summary with intelligent section processing.
     
-    Approach:
-    1. Sentence tokenization
-    2. Word frequency analysis
-    3. Sentence scoring
-    4. Top sentence extraction
+    Workflow:
+    1. Retrieve transcript and speaker data from database
+    2. Query LLM model for context length capabilities  
+    3. Automatically chunk long transcripts at natural boundaries
+    4. Process each section individually for comprehensive analysis
+    5. Stitch section summaries into final BLUF format
+    6. Store results in both PostgreSQL and OpenSearch for search
     """
 ```
 
-**Summarization Features:**
-- **Extractive Summarization**: Key sentence extraction using NLTK
-- **Configurable Length**: Adjustable summary length (sentences/words)
-- **Quality Filtering**: Stop word removal and frequency analysis
-- **Fallback Handling**: Graceful degradation when processing fails
+### Intelligent Context Processing
+
+```python
+# Example: Long transcript processing
+context_length = await llm_service.get_model_context_length()  # 4096 for small Ollama model
+transcript_chunks = chunk_transcript_intelligently(transcript, context_length)
+
+if len(chunks) == 1:
+    # Single-pass processing
+    summary = await llm_service.generate_summary(transcript_chunks[0])
+else:
+    # Multi-section processing  
+    section_summaries = []
+    for i, chunk in enumerate(transcript_chunks):
+        section_summary = await llm_service.summarize_transcript_section(chunk, i+1, len(chunks))
+        section_summaries.append(section_summary)
+    
+    # Stitch into comprehensive BLUF summary
+    summary = await llm_service.stitch_section_summaries(section_summaries)
+```
+
+**AI Summarization Features:**
+- **BLUF Format**: Bottom Line Up Front executive summaries
+- **Multi-Provider Support**: vLLM, OpenAI, Ollama, Claude, OpenRouter
+- **Intelligent Chunking**: Natural boundaries (speaker changes, topics, sentences)
+- **Context-Aware Processing**: Automatic model capability detection
+- **Universal Compatibility**: Works with 4K to 200K+ token models
+- **No Content Loss**: Complete transcript analysis regardless of length
+- **Structured Output**: Action items, decisions, speaker analysis, key points
 
 ## 🧹 File Cleanup Tasks (`cleanup.py`)
 

@@ -1,6 +1,9 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel
+from pydantic import EmailStr
+from pydantic import Field
 
 
 class UserBase(BaseModel):
@@ -30,8 +33,7 @@ class UserInDB(UserBase):
     is_active: bool
     is_superuser: bool
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class User(UserInDB):

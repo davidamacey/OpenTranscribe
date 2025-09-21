@@ -20,7 +20,7 @@ numpy>=1.25.2
 httpx>=0.24.1
 python-dotenv>=1.0.0
 pytest>=7.4.2
-whisperx==3.3.1
+whisperx==3.4.2
 ctranslate2==4.4.0
 pyannote.audio>=3.1.1
 ffmpeg-python>=0.2.0

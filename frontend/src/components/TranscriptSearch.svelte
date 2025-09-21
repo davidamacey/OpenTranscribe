@@ -417,12 +417,15 @@
 
 <style>
   .search-container {
-    margin-bottom: 16px;
-    padding: 12px;
+    margin: 0 0 6px 0;
+    padding: 0;
     background: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    animation: slideDown 0.2s ease-out;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease-out;
+    width: 100%;
+    height: 40px;
   }
   
   .search-container.disabled {
@@ -430,22 +433,14 @@
     pointer-events: none;
   }
   
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
   .search-input-wrapper {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 0 8px;
   }
   
   .search-icon {
@@ -461,27 +456,33 @@
   
   .search-input {
     flex: 1;
-    padding: 8px 12px;
+    padding: 4px 6px;
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 4px;
     background: var(--background-color);
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
+    height: 24px;
   }
   
   .search-input:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
   }
+
+  .search-input::placeholder {
+    font-size: 12px;
+  }
   
   .search-results-info {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 12px;
+    gap: 6px;
+    font-size: 11px;
     color: var(--text-secondary);
     white-space: nowrap;
+    flex-shrink: 0;
   }
   
   .results-count {
@@ -500,7 +501,7 @@
   .navigation-controls {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
   
   .navigation-buttons {
@@ -512,11 +513,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 3px;
     color: var(--text-secondary);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -546,14 +547,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 28px;
-    padding: 0 8px;
+    height: 24px;
+    padding: 0 6px;
     background: var(--primary-color);
     border: 1px solid var(--primary-color);
-    border-radius: 4px;
+    border-radius: 3px;
     color: white;
     cursor: pointer;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
     transition: all 0.2s ease;
   }
@@ -572,14 +573,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     background: none;
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 3px;
     transition: all 0.2s ease;
+    flex-shrink: 0;
   }
   
   .close-button svg {
@@ -593,21 +595,35 @@
   }
   
   .search-trigger {
-    margin-bottom: 16px;
+    margin: 0 0 6px 0;
+    padding: 0;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    width: fit-content;
+    min-width: 120px;
   }
   
   .search-trigger-button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
+    gap: 6px;
+    padding: 0.6rem 1rem;
+    background: transparent;
+    border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 0.9rem;
+    font-weight: 500;
     transition: all 0.2s ease;
+    border-radius: 6px;
+    justify-content: flex-start;
+    height: 100%;
+    width: 100%;
   }
   
   .search-trigger-button svg {
@@ -616,9 +632,10 @@
   }
   
   .search-trigger-button:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
+    background: var(--hover-bg);
+    border: 1px solid var(--primary-color);
     color: var(--text-primary);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
   
   .search-trigger-button:disabled {

@@ -14,6 +14,7 @@
   export let isEditingTranscript: boolean = false;
   export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
+  export let savingSpeakers: boolean = false;
   export let transcriptError: string = '';
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
@@ -237,7 +238,6 @@
           // If we're still in processing after 3 seconds, it's likely done
           if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
-            console.log('Download completed (cached video detected)');
             clearInterval(checkInterval);
             return;
           }
@@ -245,7 +245,6 @@
           // For actual processing, give it more time (up to 60 seconds)
           if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
-            console.log('Download completed (timeout)');
             clearInterval(checkInterval);
           }
         }, 1000); // Check every second
@@ -262,9 +261,16 @@
 
 <section class="transcript-column">
   <div class="transcript-header">
-    <h4>Transcript</h4>
-    <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
+    <!-- Search component moved to header -->
+    <TranscriptSearch 
+      {transcriptSegments}
+      {speakerList}
+      disabled={!file?.transcript_segments?.length}
+      on:searchResults={handleSearchResults}
+      on:navigateToMatch={handleNavigateToMatch}
+    />
   </div>
+  
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
@@ -286,15 +292,6 @@
         <p class="error-message small">{transcriptError}</p>
       {/if}
     {:else}
-      <!-- Search component -->
-      <TranscriptSearch 
-        {transcriptSegments}
-        {speakerList}
-        disabled={!file?.transcript_segments?.length}
-        on:searchResults={handleSearchResults}
-        on:navigateToMatch={handleNavigateToMatch}
-      />
-      
       <div bind:this={transcriptContainer} class="transcript-display-container">
         <div class="transcript-display">
         {#each file.transcript_segments as segment}
@@ -310,6 +307,11 @@
                   <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                   <div class="segment-edit-actions">
                     <button 
+                      class="cancel-button" 
+                      on:click={cancelEditSegment}
+                      title="Cancel editing this segment and discard changes"
+                    >Cancel</button>
+                    <button 
                       class="save-button" 
                       on:click={() => saveSegment(segment)} 
                       disabled={savingTranscript}
@@ -317,11 +319,6 @@
                     >
                       {savingTranscript ? 'Saving...' : 'Save'}
                     </button>
-                    <button 
-                      class="cancel-button" 
-                      on:click={cancelEditSegment}
-                      title="Cancel editing this segment and discard changes"
-                    >Cancel</button>
                   </div>
                   {#if transcriptError}
                     <p class="error-message small">{transcriptError}</p>
@@ -554,68 +551,82 @@
                         }
                       }}
                     />
-                    <!-- Auto-suggestion for high confidence matches when user hasn't manually edited -->
-                    {#if speaker.confidence && speaker.confidence >= 0.75 && speaker.suggested_name && !speaker.display_name}
-                      <div class="auto-suggestion-info">
-                        <span class="auto-suggestion-text">Auto-suggested: "{speaker.suggested_name}"</span>
-                        <span class="confidence-badge" style="background-color: var(--success-color);">
-                          {Math.round(speaker.confidence * 100)}% match
-                        </span>
-                      </div>
-                    {/if}
                     
-                    <!-- Manual verification needed for medium confidence -->
-                    {#if speaker.confidence && speaker.confidence >= 0.5 && speaker.confidence < 0.75 && speaker.suggested_name && !speaker.display_name}
-                      <div class="suggestion-info">
-                        <span class="suggestion-text">
-                          {!speaker.display_name ? 'Suggested:' : 'Matches:'} "{speaker.suggested_name}"
-                        </span>
-                        <span class="confidence-badge" style="background-color: var(--warning-color);">
-                          {Math.round(speaker.confidence * 100)}% match - {!speaker.display_name ? 'verify' : 'verified'}
-                        </span>
-                        {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                          <span class="cross-video-reference">See cross-video matches below for details</span>
-                        {/if}
-                        <div class="suggestion-help-text">
-                          {#if speaker.confidence >= 0.75}
-                            🎯 <strong>High confidence match:</strong> This speaker appears very similar to "{speaker.suggested_name}" from other videos. Consider using this label.
-                          {:else if speaker.cross_video_matches && speaker.cross_video_matches.length > 0}
-                            {@const maxCrossVideoConfidence = Math.max(...speaker.cross_video_matches.map(m => m.confidence))}
-                            {#if maxCrossVideoConfidence > speaker.confidence + 0.2}
-                              ⚖️ <strong>Mixed signals:</strong> Moderate match to "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}%), but check cross-video matches below for potentially stronger unlabeled matches.
-                            {:else}
-                              💡 <strong>Moderate match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). Cross-video matches below show similar confidence levels.
-                            {/if}
-                          {:else}
-                            💡 <strong>Possible match:</strong> This speaker might be "{speaker.suggested_name}" ({Math.round(speaker.confidence * 100)}% confidence). No other cross-video matches found.
-                          {/if}
-                        </div>
-                      </div>
-                    {/if}
-                    
-                    <!-- Clickable suggestions below input -->
-                    {#if speaker.suggested_name && !speaker.display_name}
-                      <div class="clickable-suggestions">
-                        <div class="suggestion-label">Quick select:</div>
+                    <!-- Unified Suggestions Section -->
+                    {#if speaker.suggested_name || (speaker.cross_video_matches && speaker.cross_video_matches.length > 0)}
+                      {@const hasLLMSuggestion = speaker.suggested_name && speaker.confidence}
+                      {@const validEmbeddingMatches = speaker.cross_video_matches ? speaker.cross_video_matches.filter(match => {
+                        const suggestedName = match.display_name || match.speaker_name;
+                        return suggestedName && suggestedName.trim() && !suggestedName.startsWith('SPEAKER_');
+                      }) : []}
+                      {@const totalSuggestions = (hasLLMSuggestion ? 1 : 0) + validEmbeddingMatches.length}
+                      
+                      {#if totalSuggestions > 0}
+                      <div class="suggestions-section">
                         <button 
-                          class="suggestion-pill"
-                          on:click={() => { speaker.display_name = speaker.suggested_name; }}
-                          title="Click to apply this suggestion"
+                          class="suggestions-toggle"
+                          on:click={() => speaker.showSuggestions = !speaker.showSuggestions}
+                          title="View available suggestions for speaker identification"
                         >
-                          {speaker.suggested_name}
-                          <span class="pill-confidence">
-                            {Math.round(speaker.confidence * 100)}%
-                          </span>
-                        </button>
-                        {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 1}
-                          {#if speaker.cross_video_matches}
-                            {@const autoApplyCount = speaker.cross_video_matches.filter(m => m.confidence >= 0.75).length}
-                            <span class="suggestion-note">
-                              Will apply to {autoApplyCount} other video{autoApplyCount !== 1 ? 's' : ''} automatically
-                            </span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showSuggestions}>
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                          </svg>
+                          {totalSuggestions} suggestion{totalSuggestions !== 1 ? 's' : ''} available
+                          {#if !speaker.display_name}
+                            <span class="expand-hint">(click to expand)</span>
                           {/if}
+                        </button>
+                        
+                        {#if speaker.showSuggestions}
+                          <div class="suggestions-dropdown" transition:slide={{ duration: 200 }}>
+                            <!-- Horizontal chip layout -->
+                            <div class="suggestion-chips-container">
+                              {#if hasLLMSuggestion}
+                                <div class="chip-row">
+                                  <span class="chip-label">AI:</span>
+                                  <button 
+                                    class="suggestion-chip llm-chip"
+                                    class:high-confidence={speaker.confidence >= 0.85}
+                                    class:medium-confidence={speaker.confidence >= 0.7 && speaker.confidence < 0.85}
+                                    class:low-confidence={speaker.confidence < 0.7}
+                                    on:click={() => { speaker.display_name = speaker.suggested_name; }}
+                                    title="AI suggested based on conversation context"
+                                  >
+                                    {speaker.suggested_name}
+                                    <span class="chip-confidence">{Math.round(speaker.confidence * 100)}%</span>
+                                  </button>
+                                </div>
+                              {/if}
+                              
+                              {#if validEmbeddingMatches.length > 0}
+                                <div class="chip-row">
+                                  <span class="chip-label">Voice:</span>
+                                  <div class="chips-wrap">
+                                    {#each validEmbeddingMatches.slice(0, 6) as match}
+                                      {@const suggestedName = match.display_name || match.speaker_name}
+                                      <button 
+                                        class="suggestion-chip voice-chip"
+                                        class:high-confidence={match.confidence >= 0.85}
+                                        class:medium-confidence={match.confidence >= 0.7 && match.confidence < 0.85}
+                                        class:low-confidence={match.confidence < 0.7}
+                                        on:click={() => { speaker.display_name = suggestedName; }}
+                                        title="Voice match from: {match.media_file_title}"
+                                      >
+                                        {suggestedName}
+                                        <span class="chip-confidence">{Math.round(match.confidence * 100)}%</span>
+                                      </button>
+                                    {/each}
+                                    {#if validEmbeddingMatches.length > 6}
+                                      <span class="more-chips">+{validEmbeddingMatches.length - 6}</span>
+                                    {/if}
+                                  </div>
+                                </div>
+                              {/if}
+                            </div>
+                          </div>
                         {/if}
                       </div>
+                      {/if}
                     {/if}
                     
                     <!-- Cross-video speaker detection - Below text input -->
@@ -669,14 +680,14 @@
                               <div class="compact-matches">
                                 <!-- Current file -->
                                 <div class="compact-match current-file">
-                                  <span class="match-text">📄 This video (current)</span>
+                                  <span class="match-text">This video (current)</span>
                                   <span class="match-confidence">✓ Labeled</span>
                                 </div>
                                 
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
                                   <div class="compact-match" title={match.media_file_title}>
-                                    <span class="match-text">📄 {match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}</span>
+                                    <span class="match-text">{match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}</span>
                                     <span class="match-confidence">
                                       ✓ {Math.round(match.confidence * 100)}%
                                     </span>
@@ -701,33 +712,60 @@
                               {@const topMatches = sortedMatches.slice(0, 5)}
                               {@const remainingCount = sortedMatches.length - topMatches.length}
                               
-                              <!-- Before labeling: Show matches to encourage labeling -->
-                              <div class="matches-help">
-                                Enter a name above to label across all matching videos:
-                              </div>
-                              <div class="compact-matches">
-                                <div class="matches-scroll-container">
+                              <!-- Embedding-based Speaker Suggestions -->
+                              <div class="embedding-suggestion-info">
+                                <div class="embedding-badge">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                                  </svg>
+                                  Voice Embedding Matches
+                                </div>
+                                <div class="embedding-suggestions">
                                   {#each topMatches as match}
-                                    <div class="compact-match" title={match.media_file_title}>
-                                      <span class="match-text">{match.speaker_name} in "{match.media_file_title.length > 20 ? match.media_file_title.substring(0, 20) + '...' : match.media_file_title}"</span>
-                                      <span class="match-confidence">
-                                        {Math.round(match.confidence * 100)}%
-                                      </span>
-                                    </div>
+                                    {@const suggestedName = match.display_name || match.speaker_name}
+                                    {#if suggestedName && suggestedName.trim() && !suggestedName.startsWith('SPEAKER_')}
+                                      <button 
+                                        class="embedding-suggestion-button"
+                                        class:high-confidence={match.confidence >= 0.85}
+                                        class:medium-confidence={match.confidence >= 0.7 && match.confidence < 0.85}
+                                        class:low-confidence={match.confidence < 0.7}
+                                        on:click={() => {
+                                          speaker.display_name = suggestedName;
+                                        }}
+                                        title="Use voice embedding match: {suggestedName} from {match.media_file_title}"
+                                      >
+                                        <span class="suggestion-name">"{suggestedName}"</span>
+                                        <span class="embedding-confidence">{Math.round(match.confidence * 100)}%</span>
+                                      </button>
+                                    {/if}
                                   {/each}
                                 </div>
-                                {#if remainingCount > 0}
-                                  <div class="more-matches-compact">
-                                    {#if remainingCount < 10}
-                                      +{remainingCount} more matches
-                                    {:else if remainingCount < 50}
-                                      +{remainingCount} more (showing highest confidence)
-                                    {:else}
-                                      +{remainingCount} more matches (top confidence shown)
-                                    {/if}
+                                {#if topMatches.some(match => {
+                                  const suggestedName = match.display_name || match.speaker_name;
+                                  return suggestedName && suggestedName.trim() && !suggestedName.startsWith('SPEAKER_');
+                                })}
+                                  <div class="embedding-help">
+                                    Click a name above to use voice-based speaker matching from other videos
+                                  </div>
+                                {:else}
+                                  <div class="no-matches-message">
+                                    No labeled speakers found in other videos. 
+                                    Label speakers in other videos first to enable cross-video matching.
                                   </div>
                                 {/if}
                               </div>
+                              
+                              {#if remainingCount > 0}
+                                <div class="more-matches-compact">
+                                  {#if remainingCount < 10}
+                                    +{remainingCount} more embedding matches available
+                                  {:else if remainingCount < 50}
+                                    +{remainingCount} more matches (showing highest confidence)
+                                  {:else}
+                                    +{remainingCount} more matches (top confidence shown)
+                                  {/if}
+                                </div>
+                              {/if}
                             {/if}
                           </div>
                         {/if}
@@ -739,8 +777,18 @@
               <button 
                 class="save-speakers-button" 
                 on:click={saveSpeakerNames}
+                disabled={savingSpeakers}
                 title="Save all speaker name changes and update the transcript"
-              >Save Speaker Names</button>
+              >
+                {#if savingSpeakers}
+                  <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                  </svg>
+                  Saving...
+                {:else}
+                  Save Speaker Names
+                {/if}
+              </button>
             </div>
           {:else}
             <p>No speakers found in this transcript.</p>
@@ -768,7 +816,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
+    min-height: 32px;
   }
 
   .transcript-column h4 {
@@ -824,14 +873,28 @@
   }
 
   .cancel-button {
-    background: var(--surface-color, #f8f9fa);
-    color: var(--text-primary, #374151);
-    border: 1px solid var(--border-color, #d1d5db);
+    background: #6b7280;
+    color: white;
+    border: 1px solid #6b7280;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   .cancel-button:hover {
-    background: var(--surface-hover, #f3f4f6);
-    border-color: var(--border-hover, #9ca3af);
+    background: #4b5563;
+    border-color: #4b5563;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
+  }
+
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
   .transcript-display-container {
@@ -973,32 +1036,64 @@
 
   .segment-edit-actions {
     display: flex;
-    gap: 8px;
+    justify-content: flex-end;
+    gap: 0.5rem;
     margin-top: 8px;
   }
 
-  .segment-edit-actions button {
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 12px;
+  .segment-edit-actions .save-button, 
+  .segment-edit-actions .cancel-button {
+    padding: 0.4rem 0.8rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-  }
-
-  .save-button {
-    background: var(--primary-color, #3b82f6);
-    color: white;
     border: none;
+    min-width: 60px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .save-button:hover:not(:disabled) {
-    background: var(--primary-hover, #1d4ed8);
+  .segment-edit-actions .save-button {
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
-  .save-button:disabled {
+  .segment-edit-actions .save-button:hover:not(:disabled) {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .segment-edit-actions .save-button:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .segment-edit-actions .save-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .segment-edit-actions .cancel-button {
+    background: #6b7280;
+    color: white;
+    border: 1px solid #6b7280;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .segment-edit-actions .cancel-button:hover {
+    background: #4b5563;
+    border-color: #4b5563;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
+  }
+
+  .segment-edit-actions .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
   .transcript-actions {
@@ -1238,53 +1333,116 @@
     border-width: 2px;
   }
 
-  .auto-suggestion-info {
+
+  /* Embedding Suggestion Interface */
+  .embedding-suggestion-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--surface-color, #f1f5f9);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    border-left: 4px solid var(--accent-color, #8b5cf6);
+  }
+
+  :global(.dark) .embedding-suggestion-info {
+    background: var(--surface-color, #1e293b);
+    border-color: var(--border-color, #475569);
+  }
+
+  .embedding-badge {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.25rem;
-    font-size: 0.8rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(34, 197, 94, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid var(--success-color);
-  }
-  
-  .auto-suggestion-text {
-    color: var(--text-primary);
-    font-weight: 500;
-  }
-  
-  .suggestion-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.25rem;
-    font-size: 0.8rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(245, 158, 11, 0.1);
-    border-radius: 6px;
-    border-left: 3px solid var(--warning-color);
-    flex-wrap: wrap;
-  }
-  
-  .suggestion-text {
-    color: var(--text-primary);
-    font-weight: 500;
-  }
-  
-  
-
-
-  .confidence-badge {
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    color: white;
-    font-weight: 500;
+    gap: 0.25rem;
     font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent-color, #8b5cf6);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
   }
+
+  .embedding-badge svg {
+    color: var(--accent-color, #8b5cf6);
+  }
+
+  .embedding-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .embedding-suggestion-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    color: white;
+  }
+
+  .embedding-suggestion-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Color coding based on confidence */
+  .embedding-suggestion-button.high-confidence {
+    background: #059669;
+  }
+
+  .embedding-suggestion-button.high-confidence:hover {
+    background: #047857;
+  }
+
+  .embedding-suggestion-button.medium-confidence {
+    background: #0891b2;
+  }
+
+  .embedding-suggestion-button.medium-confidence:hover {
+    background: #0e7490;
+  }
+
+  .embedding-suggestion-button.low-confidence {
+    background: #7c3aed;
+  }
+
+  .embedding-suggestion-button.low-confidence:hover {
+    background: #6d28d9;
+  }
+
+  .embedding-confidence {
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.125rem 0.375rem;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+
+  .embedding-help {
+    font-size: 0.7rem;
+    color: var(--text-secondary-color, #6b7280);
+    text-align: center;
+    font-style: italic;
+  }
+
+  .no-matches-message {
+    font-size: 0.75rem;
+    color: var(--warning-color, #f59e0b);
+    text-align: center;
+    font-style: italic;
+    padding: 8px;
+    background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+    border-radius: 4px;
+    border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.3));
+  }
+  
+  
 
 
   .match-confidence {
@@ -1292,301 +1450,45 @@
     font-weight: normal;
   }
 
-
-
-
-  .info-icon-inline {
-    font-size: 1rem;
-  }
-
-  .fallback-text {
-    color: var(--text-color-secondary);
-  }
-
-  .cross-video-suggestion-card {
-    margin-top: 0.75rem;
-    margin-bottom: 0.25rem;
-    padding: 0.75rem;
-    background-color: rgba(59, 130, 246, 0.1);
-    border-radius: 8px;
-    border-left: 4px solid var(--primary-color);
-  }
-
-  .suggestion-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .suggestion-icon {
-    color: var(--primary-color);
-    flex-shrink: 0;
-  }
-
-  .suggestion-title {
-    font-weight: 600;
-    color: var(--text-primary);
-    flex: 1;
-    font-size: 0.9rem;
-  }
-
-  .expand-toggle {
-    background: none;
-    border: none;
-    color: var(--text-color-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    padding: 2px;
-    border-radius: 4px;
-  }
-
-  .expand-toggle:hover {
-    background-color: var(--surface-hover);
-    color: var(--text-primary);
-  }
-
-  .expand-toggle svg {
-    transition: transform 0.2s ease;
-  }
-
-  .expand-toggle svg.rotated {
-    transform: rotate(180deg);
-  }
-
-  .suggestion-summary {
-    font-size: 0.85rem;
-    color: var(--text-color-secondary);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .confidence-pill {
-    padding: 0.15rem 0.4rem;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-  }
-
-  .matches-dropdown {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border-light);
-  }
-
-  .matches-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .match-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem;
-    background-color: var(--surface-color);
-    border-radius: 6px;
-    border: 1px solid var(--border-light);
-  }
-
-  .match-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .match-speaker-name {
-    font-weight: 600;
-    color: var(--primary-color);
-    font-size: 0.85rem;
-  }
-
-  .match-video-title {
-    font-size: 0.8rem;
-    color: var(--text-color-secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .match-confidence-badge {
-    font-size: 0.8rem;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .suggestion-actions {
-    display: flex;
-    justify-content: center;
-  }
-
-  .label-all-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .label-all-btn:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-  }
-
-  .clickable-suggestions {
-    margin-top: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(99, 102, 241, 0.05);
-    border-radius: 6px;
-    border: 1px dashed var(--primary-color);
-  }
-
-  .suggestion-label {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    margin-bottom: 0.4rem;
-    font-weight: 500;
-  }
-
-  .suggestion-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.3rem 0.6rem;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 16px;
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    margin-bottom: 0.3rem;
-  }
-
-  .suggestion-pill:hover {
-    background: var(--primary-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .pill-confidence {
-    background: rgba(255, 255, 255, 0.2);
-    padding: 0.1rem 0.3rem;
-    border-radius: 8px;
-    font-size: 0.7rem;
-  }
-
-  .suggestion-note {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    font-style: italic;
-    display: block;
-    margin-top: 0.2rem;
-  }
-
-  .matches-summary {
-    margin-bottom: 0.75rem;
-    padding: 0.5rem;
-    background-color: var(--background-alt);
-    border-radius: 6px;
-  }
-
-  .confidence-breakdown {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .confidence-group {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.8rem;
-  }
-
-  .confidence-count {
-    font-weight: 600;
-  }
-
-  .auto-apply-note,
-  .suggest-note {
-    font-size: 0.7rem;
-    padding: 0.1rem 0.4rem;
-    border-radius: 8px;
-    font-weight: 500;
-  }
-
-  .auto-apply-note {
-    background-color: rgba(34, 197, 94, 0.1);
-    color: var(--success-color);
-  }
-
-  .suggest-note {
-    background-color: rgba(245, 158, 11, 0.1);
-    color: var(--warning-color);
-  }
-
-  .more-matches-note {
-    text-align: center;
-    font-style: italic;
-    color: var(--text-color-secondary);
-    font-size: 0.8rem;
-    padding: 0.5rem;
-    border-top: 1px solid var(--border-light);
-    margin-top: 0.5rem;
-  }
-
-  .label-all-btn small {
-    display: block;
-    font-size: 0.7rem;
-    opacity: 0.8;
-    margin-top: 0.2rem;
-  }
-
-  .suggestion-help-text {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    background: rgba(59, 130, 246, 0.05);
-    padding: 0.5rem;
-    border-radius: 4px;
-    margin-top: 0.5rem;
-    border-left: 3px solid var(--primary-color);
-  }
-
-  .cross-video-reference {
-    font-size: 0.75rem;
-    color: var(--text-color-secondary);
-    font-style: italic;
-    margin-top: 0.25rem;
-  }
-
   .save-speakers-button {
     margin-top: 16px;
-    padding: 10px 20px;
-    background: var(--primary-color);
+    padding: 0.6rem 1.2rem;
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .save-speakers-button:hover {
-    background: var(--primary-hover);
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .save-speakers-button:active {
+    transform: translateY(0);
+  }
+  
+  .save-speakers-button:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  
+  .save-speakers-button:disabled:hover {
+    background: #94a3b8;
+    transform: none;
+    box-shadow: none;
+  }
+  
+  .save-speakers-button .spinner {
+    margin-right: 0.5rem;
   }
 
   .error-message {
@@ -1698,7 +1600,7 @@
   .compact-text {
     color: var(--text-color);
     flex: 1;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
   }
   
   .compact-controls {
@@ -1739,9 +1641,9 @@
   }
   
   .matches-help {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--text-color-secondary);
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.3rem;
     font-style: italic;
   }
   
@@ -1755,11 +1657,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.2rem 0.4rem;
+    padding: 0.15rem 0.35rem;
     background-color: var(--background-alt);
     border: 1px solid var(--border-color-soft);
     border-radius: 3px;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     cursor: help;
     transition: background-color 0.2s ease;
   }
@@ -1819,5 +1721,155 @@
   
   .matches-scroll-container::-webkit-scrollbar-thumb:hover {
     background: var(--text-color-secondary);
+  }
+
+
+  .suggestions-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary-color);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+    text-align: left;
+  }
+
+  .suggestions-toggle:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .suggestions-toggle svg {
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .suggestions-toggle svg.rotated {
+    transform: rotate(180deg);
+  }
+
+  .suggestions-dropdown {
+    margin-top: 0.3rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    padding: 0.4rem;
+  }
+
+
+  /* Unified Suggestions Section */
+  .suggestions-section {
+    margin-top: 0.4rem;
+  }
+
+  .expand-hint {
+    font-size: 0.65rem;
+    color: var(--text-secondary-color);
+    font-style: italic;
+    margin-left: 0.3rem;
+  }
+
+  /* Chip-based layout */
+  .suggestion-chips-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .chip-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .chip-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-secondary-color);
+    min-width: 35px;
+    padding-top: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+    flex: 1;
+  }
+
+  .suggestion-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.5rem;
+    border: none;
+    border-radius: 16px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: white;
+    white-space: nowrap;
+  }
+
+  .suggestion-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  }
+
+  .suggestion-chip.llm-chip {
+    background: var(--primary-color);
+  }
+
+  .suggestion-chip.llm-chip:hover {
+    background: #2563eb;
+  }
+
+  /* Voice chip colors based on confidence */
+  .suggestion-chip.voice-chip.high-confidence {
+    background: #059669;
+  }
+
+  .suggestion-chip.voice-chip.high-confidence:hover {
+    background: #047857;
+  }
+
+  .suggestion-chip.voice-chip.medium-confidence {
+    background: #0891b2;
+  }
+
+  .suggestion-chip.voice-chip.medium-confidence:hover {
+    background: #0e7490;
+  }
+
+  .suggestion-chip.voice-chip.low-confidence {
+    background: #7c3aed;
+  }
+
+  .suggestion-chip.voice-chip.low-confidence:hover {
+    background: #6d28d9;
+  }
+
+  .chip-confidence {
+    font-size: 0.65rem;
+    background: rgba(255, 255, 255, 0.25);
+    padding: 0.1rem 0.3rem;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  .more-chips {
+    font-size: 0.65rem;
+    color: var(--text-secondary-color);
+    font-style: italic;
+    padding: 0.25rem 0.5rem;
   }
 </style>

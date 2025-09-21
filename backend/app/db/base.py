@@ -13,6 +13,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create base class for models
 Base = declarative_base()
 
+
 # Dependency for database session
 def get_db():
     db = SessionLocal()

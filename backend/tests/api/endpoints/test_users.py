@@ -1,6 +1,3 @@
-import pytest
-from fastapi.testclient import TestClient
-
 def test_get_users(client, admin_token_headers):
     """Test listing all users (admin only endpoint)"""
     response = client.get("/api/users/", headers=admin_token_headers)
@@ -8,7 +5,7 @@ def test_get_users(client, admin_token_headers):
     users = response.json()
     assert isinstance(users, list)
     assert len(users) > 0
-    
+
     # Basic schema validation
     assert "id" in users[0]
     assert "email" in users[0]
@@ -35,9 +32,7 @@ def test_get_current_user(client, user_token_headers, normal_user):
 
 def test_update_current_user(client, user_token_headers):
     """Test updating current user info"""
-    update_data = {
-        "full_name": "Updated Name"
-    }
+    update_data = {"full_name": "Updated Name"}
     response = client.put("/api/users/me", headers=user_token_headers, json=update_data)
     assert response.status_code == 200
     user_data = response.json()
@@ -61,14 +56,9 @@ def test_get_user_by_id_unauthorized(client, user_token_headers, admin_user):
 
 def test_update_user(client, admin_token_headers, normal_user):
     """Test updating a user (admin only)"""
-    update_data = {
-        "full_name": "Admin Updated User",
-        "is_active": False
-    }
+    update_data = {"full_name": "Admin Updated User", "is_active": False}
     response = client.put(
-        f"/api/users/{normal_user.id}",
-        headers=admin_token_headers,
-        json=update_data
+        f"/api/users/{normal_user.id}", headers=admin_token_headers, json=update_data
     )
     assert response.status_code == 200
     user_data = response.json()
@@ -80,31 +70,24 @@ def test_update_user_unauthorized(client, user_token_headers, admin_user):
     """Test that regular users cannot update other users"""
     update_data = {"full_name": "Should Fail"}
     response = client.put(
-        f"/api/users/{admin_user.id}",
-        headers=user_token_headers,
-        json=update_data
+        f"/api/users/{admin_user.id}", headers=user_token_headers, json=update_data
     )
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden
 
 
 def test_delete_user(client, admin_token_headers, normal_user, db_session):
     """Test deleting a user (admin only)"""
-    response = client.delete(
-        f"/api/users/{normal_user.id}",
-        headers=admin_token_headers
-    )
+    response = client.delete(f"/api/users/{normal_user.id}", headers=admin_token_headers)
     assert response.status_code == 204
-    
+
     # Verify the user is deleted from the database
     from app.models.user import User
+
     deleted_user = db_session.query(User).filter(User.id == normal_user.id).first()
     assert deleted_user is None
 
 
 def test_delete_user_unauthorized(client, user_token_headers, admin_user):
     """Test that regular users cannot delete other users"""
-    response = client.delete(
-        f"/api/users/{admin_user.id}",
-        headers=user_token_headers
-    )
+    response = client.delete(f"/api/users/{admin_user.id}", headers=user_token_headers)
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden

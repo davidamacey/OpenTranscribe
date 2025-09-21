@@ -1,8 +1,7 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
-  import axiosInstance from '$lib/axios';
-  import { toastStore } from '$stores/toast';
+  import CollectionsEditor from './CollectionsEditor.svelte';
   
   export let collections: any[] = [];
   export let isExpanded: boolean = false;
@@ -14,27 +13,10 @@
     isExpanded = !isExpanded;
   }
   
-  async function removeFromCollection(collectionId: number, collectionName: string) {
-    if (!confirm(`Remove this file from "${collectionName}"?`)) {
-      return;
-    }
-    
-    try {
-      await axiosInstance.delete(`/api/collections/${collectionId}/media`, {
-        data: { media_file_ids: [fileId] }
-      });
-      
-      // Remove collection from local list
-      collections = collections.filter(c => c.id !== collectionId);
-      
-      // Dispatch event to parent to refresh file data
-      dispatch('collectionRemoved', { collectionId });
-      
-      toastStore.success(`Removed from "${collectionName}"`);
-    } catch (error) {
-      console.error('Error removing from collection:', error);
-      toastStore.error('Failed to remove from collection');
-    }
+  function handleCollectionsUpdated(event: any) {
+    // Re-emit the event to parent component
+    collections = event.detail.collections;
+    dispatch('collectionsUpdated', { collections: event.detail.collections });
   }
 </script>
 
@@ -43,7 +25,7 @@
     class="collections-header" 
     on:click={toggleExpanded} 
     on:keydown={e => e.key === 'Enter' && toggleExpanded()}
-    title="Show or hide the collections this file belongs to" 
+    title="Show or hide the collections editor to add, remove, or manage collections for this file" 
     aria-expanded={isExpanded}
   >
     <h4 class="section-heading">Collections</h4>
@@ -68,36 +50,22 @@
   
   {#if isExpanded}
     <div class="collections-content" transition:slide={{ duration: 200 }}>
-      <div class="collections-full-list">
-        {#if collections && collections.length > 0}
-          {#each collections as collection}
-            <div class="collection-item">
-              <div class="collection-info">
-                <span class="collection-name">{collection.name || 'Unnamed'}</span>
-                {#if collection.description}
-                  <span class="collection-description">{collection.description}</span>
-                {/if}
-              </div>
-              <button 
-                class="remove-btn"
-                on:click={() => removeFromCollection(collection.id, collection.name || 'Unnamed')}
-                title="Remove this file from the collection"
-              >
-                ✕
-              </button>
-            </div>
-          {/each}
-        {:else}
-          <p class="no-collections-message">This file is not in any collections.</p>
-        {/if}
-      </div>
+      {#if fileId}
+        <CollectionsEditor 
+          {fileId} 
+          {collections} 
+          on:collectionsUpdated={handleCollectionsUpdated} 
+        />
+      {:else}
+        <p>Loading collections...</p>
+      {/if}
     </div>
   {/if}
 </div>
 
 <style>
   .collections-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: 0;
   }
 
   .collections-header {
@@ -160,87 +128,19 @@
   }
 
   .collections-content {
-    background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-top: none;
     border-radius: 0 0 8px 8px;
-    padding: 16px;
+    background: var(--surface-color);
+    padding: 20px;
   }
 
-  .collections-full-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .collection-item {
-    padding: 10px 12px;
-    background: var(--card-background);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    transition: all 0.2s;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .collection-item:hover {
-    background: var(--card-hover);
-    border-color: var(--primary-color);
-  }
-  
-  .collection-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .collection-name {
-    font-weight: 500;
-    color: var(--text-primary);
-    display: block;
-  }
-
-  .collection-description {
-    font-size: 13px;
-    color: var(--text-secondary);
-    display: block;
-    margin-top: 4px;
-  }
-
-  .no-collections-message {
-    color: var(--text-secondary);
-    font-size: 14px;
-    text-align: center;
-    padding: 8px;
+  .collections-content p {
     margin: 0;
-  }
-  
-  .remove-btn {
-    width: 24px;
-    height: 24px;
-    border: none;
-    background-color: #ef4444;
-    color: white;
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-  }
-  
-  .remove-btn:hover {
-    background-color: #dc2626;
-    transform: scale(1.1);
-  }
-  
-  .remove-btn {
-    font-size: 14px;
-    line-height: 1;
-    color: white !important;
-    font-weight: bold;
+    color: var(--text-secondary);
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
   }
   
   /* Dark mode support */

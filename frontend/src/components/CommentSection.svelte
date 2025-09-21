@@ -1,11 +1,11 @@
 <script>
-  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
-  import { fly } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
   import axiosInstance from '../lib/axios';
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
+  import ConfirmationModal from './ConfirmationModal.svelte';
   
   // The Svelte component is exported by default automatically
   
@@ -29,14 +29,18 @@
   /** @type {string} */
   let editingCommentText = '';
   
+  // Confirmation modal state
+  let showConfirmModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
+  
   // Event dispatcher
   const dispatch = createEventDispatcher();
   
   // Event listener for getComments events from parent components
-  /** @param {Event} event */
-  function handleGetCommentsEvent(event) {
-    // Cast standard Event to CustomEvent to access detail property
-    const customEvent = /** @type {CustomEvent} */ (event);
+  function handleGetCommentsEvent() {
     // Send comments data back through the event
     dispatch('getComments', { comments: comments });
   }
@@ -84,22 +88,17 @@
         return;
       }
       
-      // Fetching comments for file
-      
       // Create custom headers with authentication token
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
       
-      // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
-        // Use the correct endpoint structure: /comments/files/{fileId}/comments
         const endpoint = `/comments/files/${numericFileId}/comments`;
         response = await axiosInstance.get(endpoint, { headers });
       } catch (/** @type {any} */ error) {
-        // Log error information for debugging
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
         
         // If the error is a 401, this is an authentication issue
@@ -113,18 +112,14 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint without leading slash as fallback
-            // Trying legacy endpoint
             response = await axiosInstance.get(`files/${numericFileId}/comments`, { headers });
-            // Successfully fetched comments using legacy endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
-              // Trying query parameter approach as last resort
               response = await axiosInstance.get('/comments', { 
                 params: { media_file_id: numericFileId },
                 headers 
               });
-              // Successfully fetched comments using query param
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
               error = `Failed to load comments: ${lastError.message}`;
@@ -196,22 +191,12 @@
       event.stopPropagation();
     }
     
-    // Adding comment with button click
-    
     if (!newComment.trim()) return;
     
     // Use the timestamp input if it was explicitly set, otherwise use null
     const timestamp = timestampInput !== null ? timestampInput : null;
     
-    // If timestamp is null at this point, inform the user they need to mark a time
-    if (timestamp === null) {
-      error = 'Please use "Mark Current Time" to set a timestamp for your comment.';
-      return;
-    }
-    
     // Store locally for optimistic UI updates
-    const commentText = newComment.trim();
-    const currentTimestamp = timestamp;
     try {
       // Get user data from localStorage
       const userData = JSON.parse(localStorage.getItem('user') || '{}');
@@ -220,8 +205,6 @@
       const token = localStorage.getItem('token');
       const numericFileId = Number(fileId);
       
-      // Adding comment for file
-
       if (!token) {
         console.error('No auth token found in localStorage');
         error = 'You need to be logged in to add comments';
@@ -234,25 +217,12 @@
         'Content-Type': 'application/json'
       };
 
-      // Prepare the comment data
-      const commentData = {
-        text: newComment,
-        timestamp,
-        media_file_id: numericFileId
-      };
-      
       // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
         // The correct endpoint without leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
         const endpoint = `comments/files/${numericFileId}/comments`;
-        // Adding comment with endpoint
-        
-        // Log the full URL that will be used
-        const baseURL = axiosInstance.defaults.baseURL || '';
-        const fullURL = baseURL + (baseURL.endsWith('/') ? '' : '/') + endpoint;
-        // Full URL for adding comment
         
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
@@ -353,32 +323,6 @@
   
   // Edit a comment
   /**
-   * Set a comment for editing
-   * @param {number} id - The ID of the comment to edit
-   * @param {string} text - The current text of the comment
-   */
-  function startEditing(id, text) {
-    editingCommentId = id;
-    editingCommentText = text;
-  }
-  
-  /**
-   * Cancel editing a comment
-   */
-  function cancelEditing() {
-    editingCommentId = null;
-    editingCommentText = '';
-  }
-  
-  /**
-   * Save edited comment
-   */
-  function saveEdit() {
-    if (editingCommentId === null) return;
-    editComment(editingCommentId, editingCommentText);
-  }
-
-  /**
    * Edit an existing comment
    * @param {number} commentId - The ID of the comment to edit
    * @param {string} newText - The new text for the comment
@@ -417,7 +361,7 @@
         // Request details for editing comment
       }
       
-      const response = await axiosInstance.put(`comments/${commentId}`, {
+      await axiosInstance.put(`comments/${commentId}`, {
         text: newText
       }, { headers });
       
@@ -450,18 +394,55 @@
     }
   }
   
-  // Delete a comment
   /**
-   * Delete a comment by ID
-   * @param {number} commentId - The ID of the comment to delete
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message
+   * @param {() => void} callback - The callback to execute on confirmation
    */
+  function showConfirmation(title, message, callback) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
+  }
+
   /**
    * Delete a comment
    * @param {number} commentId - The ID of the comment to delete
    */
   async function deleteComment(commentId) {
-    if (!confirm('Are you sure you want to delete this comment?')) return;
-    
+    showConfirmation(
+      'Delete Comment',
+      'Are you sure you want to delete this comment?',
+      () => executeDeleteComment(commentId)
+    );
+  }
+
+  /**
+   * Execute comment deletion after confirmation
+   * @param {number} commentId - The ID of the comment to delete
+   */
+  async function executeDeleteComment(commentId) {
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
@@ -551,6 +532,16 @@
 
 <!-- Main wrapper with fixed header and scrollable comments -->
 <div class="comments-wrapper">
+  <div class="comments-header-internal">
+    <h4 class="section-heading">Comments & Notes</h4>
+    <div class="comments-preview">
+      {#if comments && comments.length > 0}
+        <span class="tag-chip">{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>
+      {:else}
+        <span class="no-comments">No comments</span>
+      {/if}
+    </div>
+  </div>
   <!-- Error message if needed -->
   {#if error}
     <div class="error-message">
@@ -567,9 +558,9 @@
     <form class="comment-form" on:submit={addComment}>
       <textarea
         bind:value={newComment}
-        placeholder="Add your comment here..."
+        placeholder="Type your comment or note here..."
         rows="2"
-        title="Type your comment here. You can optionally mark a timestamp to link your comment to a specific moment in the video."
+        title="Enter your comment or note. You must mark a timestamp and add text before you can submit."
       ></textarea>
       <div class="form-actions">
         <div class="timestamp-actions">
@@ -578,9 +569,14 @@
               type="button"
               class="timestamp-button"
               on:click={useCurrentTime}
-              title="Mark the current video playback time to link this comment to that moment"
+              title="Click to mark the current video time - required before you can add your comment"
             >
-              <span class="button-icon">⏱</span>
+              <span class="button-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12,6 12,12 16,14"/>
+                </svg>
+              </span>
               <span>Mark Current Time</span>
             </button>
           {:else}
@@ -590,7 +586,7 @@
                 type="button"
                 class="clear-button"
                 on:click|stopPropagation={() => timestampInput = null}
-                title="Clear timestamp"
+                title="Clear the marked timestamp (you'll need to mark time again to submit)"
               >
                 ✖
               </button>
@@ -600,8 +596,10 @@
         <button
           type="submit"
           class="submit-button"
-          disabled={!newComment.trim()}
-          title="Add your comment to this file{timestampInput !== null ? ' at the marked timestamp' : ''}"
+          disabled={!newComment.trim() || timestampInput === null}
+          title={!newComment.trim() || timestampInput === null 
+            ? 'You must add text and mark a timestamp before submitting' 
+            : `Add your comment at ${formatTimestamp(timestampInput)}`}
         >
           Add Comment
         </button>
@@ -703,13 +701,71 @@
   </div>
 </div>
 
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Delete"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
+
 <style>
+  .comments-header-internal {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary, var(--surface-color));
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .section-heading {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .comments-preview {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .tag-chip {
+    background: var(--primary-light);
+    color: var(--primary-color);
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .no-comments {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
+  }
+
   /* Main wrapper for the entire comments component */
   .comments-wrapper {
     display: flex;
     flex-direction: column;
     gap: 0;
-    max-height: 600px;
+    max-height: 1200px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     overflow: hidden;
   }
   
@@ -734,7 +790,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 0.5rem;
-    max-height: 400px;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -901,20 +957,26 @@
   }
   
   .submit-button {
-    background-color: var(--primary-color, #3b82f6);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
   .submit-button:hover:not(:disabled) {
-    background-color: var(--primary-color-dark, #2563eb);
+    background-color: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .submit-button:active:not(:disabled) {
+    transform: translateY(0);
   }
   
   .submit-button:disabled {
@@ -993,21 +1055,53 @@
   }
   
   .save-button, .cancel-button {
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    transition: all 0.2s ease;
+    border: none;
+    min-width: 60px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   
   .save-button {
-    background-color: var(--primary-color);
+    background: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+  
+  .save-button:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .save-button:active {
+    transform: translateY(0);
   }
   
   .cancel-button {
-    color: var(--text-color);
+    background: #6b7280;
+    color: white;
+    border: 1px solid #6b7280;
+    box-shadow: var(--card-shadow);
+    transition: all 0.2s ease;
+  }
+
+  .cancel-button:hover {
+    background: #4b5563;
+    border: 1px solid #4b5563;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
+  }
+
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
   
   .edit-button {
@@ -1060,5 +1154,48 @@
     border-radius: 4px;
     font-size: 0.8rem;
     cursor: pointer;
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

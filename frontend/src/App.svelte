@@ -1,6 +1,6 @@
-<script>
-  import { Router, Route, Link, navigate } from "svelte-navigator";
-  import { onMount, onDestroy } from "svelte";
+<script lang="ts">
+  import { Router, Route, navigate } from "svelte-navigator";
+  import { onMount } from "svelte";
   import { get } from 'svelte/store';
   
   // Import theme styles
@@ -9,13 +9,15 @@
   import "./styles/tables.css";
   
   // Import auth store
-  import { authStore, user, isAuthenticated, initAuth, authReady } from "$stores/auth";
+  import { authStore, isAuthenticated, initAuth, authReady } from "$stores/auth";
   import { theme } from "./stores/theme";
+  import { llmStatusStore } from "./stores/llmStatus";
   
   // Import components
   import Navbar from "./components/Navbar.svelte";
   import NotificationsPanel from "./components/NotificationsPanel.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
+  import UploadManager from "./components/UploadManager.svelte";
   
   // Import routes
   import Login from "./routes/Login.svelte";
@@ -25,16 +27,13 @@
   import UserSettings from "./routes/UserSettings.svelte";
   import AdminDashboard from "./routes/AdminDashboard.svelte";
   import FileStatus from "./routes/FileStatus.svelte";
-  
-  // Store the current path to handle redirects
-  let currentPath = window.location.pathname;
+  import AppContent from "./components/AppContent.svelte";
+
   
   /**
    * Auth guard for protected routes
-   * @param {any} context - The router context
-   * @returns {string|null} Redirect path or null
    */
-  function authGuard(context) {
+  function authGuard(_context: any): string | null {
     if (!get(authStore).ready) return null;
     if (!get(authStore).isAuthenticated) {
       return "/login";
@@ -44,10 +43,8 @@
   
   /**
    * Admin guard for admin-only routes
-   * @param {any} context - The router context
-   * @returns {string|null} Redirect path or null
    */
-  function adminGuard(context) {
+  function adminGuard(_context: any): string | null {
     if (!get(authStore).ready) return null;
     const currentAuth = get(authStore);
     if (!currentAuth.isAuthenticated) {
@@ -62,13 +59,13 @@
   onMount(async () => {
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
-    
+
     try {
       await initAuth();
 
       const isAuth = get(isAuthenticated);
       const publicPaths = ["/login", "/register"];
-      const isPublicPath = publicPaths.includes(currentPath);
+      const isPublicPath = publicPaths.includes(window.location.pathname);
 
       if (!isAuth && !isPublicPath) {
         navigate("/login", { replace: true });
@@ -76,9 +73,18 @@
         navigate("/", { replace: true });
       }
 
+      // Initialize LLM status store after authentication is ready
+      if (isAuth) {
+        try {
+          await llmStatusStore.initialize();
+        } catch (error) {
+          console.warn('[App] Failed to initialize LLM status store:', error);
+        }
+      }
+
     } catch (error) {
       console.error('App.svelte: onMount - Error during initAuth or subsequent logic:', error);
-      if (currentPath !== "/login" && currentPath !== "/register") {
+      if (window.location.pathname !== "/login" && window.location.pathname !== "/register") {
         navigate("/login", { replace: true });
       }
     }
@@ -92,22 +98,28 @@
       <ToastContainer />
       {#if $isAuthenticated}
         <Navbar />
-        <NotificationsPanel hideButton={true} />
+        <NotificationsPanel />
+        <UploadManager />
       {/if}
-      
-      <main class="content {!$isAuthenticated ? 'no-navbar' : ''}">
-        <Route path="/login" component={Login} />
-        <Route path="/register" component={Register} />
-        <Route path="/" condition={authGuard}>
-          <MediaLibrary />
-        </Route>
-        <Route path="/files/:id" let:params primary={false}>
-          <FileDetail id={params.id} />
-        </Route>
-        <Route path="/file-status" component={FileStatus} condition={authGuard} />
-        <Route path="/settings" component={UserSettings} condition={authGuard} />
-        <Route path="/admin" component={AdminDashboard} condition={adminGuard} />
-      </main>
+
+      {#if $isAuthenticated}
+        <AppContent>
+          <Route path="/" condition={authGuard}>
+            <MediaLibrary />
+          </Route>
+          <Route path="/files/:id" let:params primary={false}>
+            <FileDetail id={params.id} />
+          </Route>
+          <Route path="/file-status" component={FileStatus} condition={authGuard} />
+          <Route path="/settings" component={UserSettings} condition={authGuard} />
+          <Route path="/admin" component={AdminDashboard} condition={adminGuard} />
+        </AppContent>
+      {:else}
+        <main class="content no-navbar">
+          <Route path="/login" component={Login} />
+          <Route path="/register" component={Register} />
+        </main>
+      {/if}
     </div>
   </Router>
 {:else}
@@ -126,11 +138,11 @@
     padding: 1rem;
     margin-top: 60px; /* Navbar height */
   }
-  
+
   .content.no-navbar {
     margin-top: 0;
   }
-  
+
   @media (min-width: 768px) {
     .content {
       padding: 2rem;

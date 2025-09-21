@@ -13,7 +13,7 @@
   let showConfirmModal = false;
   let newProfileName = '';
   let selectedAction = '';
-  let selectedProfileId = null;
+  let selectedProfileId: number | null = null;
   let confirmMessage = '';
   
   function getConfidenceColor(confidence: number): string {
@@ -215,8 +215,19 @@
 
 <!-- New Profile Modal -->
 {#if showNewProfileModal}
-  <div class="modal-backdrop" transition:fade on:click={() => { showNewProfileModal = false; newProfileName = ''; }}>
-    <div class="modal-container" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-backdrop"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    transition:fade
+    on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
+    on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <div class="modal-container" role="button" tabindex="0" on:click|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">

@@ -11,8 +11,8 @@
   const icons = {
     success: '✓',
     error: '✗',
-    warning: '⚠',
-    info: 'ℹ'
+    warning: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`,
+    info: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`
   };
   
   const colors = {
@@ -40,7 +40,7 @@
   transition:fly={{ y: -20, duration: 300 }}
   role="alert"
 >
-  <span class="toast-icon">{icons[type]}</span>
+  <span class="toast-icon">{@html icons[type]}</span>
   <span class="toast-message">{message}</span>
   <button class="toast-close" on:click={dismiss} aria-label="Dismiss notification">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

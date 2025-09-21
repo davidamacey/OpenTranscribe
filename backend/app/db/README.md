@@ -138,6 +138,43 @@ OpenTranscribe uses a dual approach for database management:
 - SQLAlchemy models in `app/models/` reflect the schema
 - Pydantic schemas in `app/schemas/` handle API validation
 
+### Enhanced Database Schema Features
+
+The current database includes several new tables and enhancements for advanced functionality:
+
+#### User Settings Tables
+- **`user_settings`**: User-specific configuration storage with key-value pairs
+  - Recording preferences (duration, quality, auto-stop settings)
+  - LLM provider configurations with encrypted API key storage
+  - Custom user interface preferences
+
+#### AI Integration Tables
+- **`user_llm_configurations`**: Per-user LLM provider settings
+  - Support for multiple providers (OpenAI, Claude, vLLM, Ollama, etc.)
+  - Encrypted API key storage with user-specific encryption
+  - Connection testing and validation history
+
+- **`summary_prompts`**: Custom AI prompts for different content types
+  - User-created prompt templates for meetings, interviews, podcasts
+  - Content type categorization and organization
+  - Prompt versioning and management
+
+- **`file_summaries`**: AI-generated summaries with metadata
+  - BLUF format structured summaries
+  - Processing status and error tracking
+  - OpenSearch integration for searchable summaries
+
+#### Enhanced Media Processing
+- **Enhanced `media_files` table**: Additional fields for improved processing
+  - YouTube URL processing metadata
+  - Enhanced error tracking and recovery information
+  - Improved file status management with granular progress tracking
+
+- **Notification System Tables**: Enhanced WebSocket notification persistence
+  - User-specific notification preferences
+  - Progress tracking for long-running AI operations
+  - Real-time status updates for uploads and processing
+
 ### Development Workflow
 1. **Schema Changes**: Update `database/init_db.sql` directly
 2. **Model Updates**: Modify SQLAlchemy models in `app/models/`

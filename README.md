@@ -15,6 +15,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Word-Level Timestamps**: Precise timing for every word using WAV2VEC2 alignment
 - **Multi-Language Support**: Transcribe in multiple languages with automatic English translation
 - **Batch Processing**: 70x realtime speed with large-v2 model on GPU
+- **Audio Waveform Visualization**: Interactive waveform player with precise timing and click-to-seek
+- **Browser Recording**: Built-in microphone recording with real-time audio level monitoring
+- **Recording Controls**: Pause/resume recording with duration tracking and quality settings
 
 ### 👥 **Smart Speaker Management**
 - **Automatic Speaker Diarization**: Identify different speakers using PyAnnote.audio
@@ -28,6 +31,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
 - **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
+- **Custom File Titles**: Edit display names for media files with real-time search index updates
+- **Advanced Upload Manager**: Floating, draggable upload manager with real-time progress tracking
+- **Concurrent Upload Processing**: Multiple file uploads with queue management and retry logic
+- **Intelligent Upload System**: Duplicate detection, hash verification, and automatic recovery
 - **Metadata Extraction**: Comprehensive file information using ExifTool
 - **Subtitle Export**: Generate SRT/VTT files for accessibility
 - **File Reprocessing**: Re-run AI analysis while preserving user comments and annotations
@@ -44,24 +51,64 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Content Analysis**: Word count, speaking time, and conversation flow
 - **Speaker Statistics**: Individual speaker metrics and participation
 - **Sentiment Analysis**: Understand tone and emotional content
-- **Automated Summaries**: Generate concise summaries using local LLMs
+- **AI-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with meeting insights
+- **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
+- **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
+- **Custom AI Prompts**: Create and manage custom summarization prompts for different content types
+- **LLM Configuration Management**: User-specific LLM settings with encrypted API key storage
+- **Provider Testing**: Test LLM connections and validate configurations before use
 
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
-- **User Management**: Role-based access control (admin/user)
+- **User Management**: Role-based access control (admin/user) with personalized settings
+- **Recording Settings Management**: User-specific audio recording preferences with quality controls
 - **Export Options**: Download transcripts in multiple formats
 - **Real-Time Updates**: Live progress tracking with detailed WebSocket notifications
 - **Enhanced Progress Tracking**: 13 granular processing stages with descriptive messages
+- **Smart Notification System**: Persistent notifications with unread count badges and progress updates
+- **WebSocket Integration**: Real-time updates for transcription, summarization, and upload progress
 - **Collection Management**: Create, organize, and share collections of related media files
 - **Smart Error Recovery**: User-friendly error messages with specific guidance and auto-recovery options
+- **Full-Screen Transcript View**: Dedicated modal for reading and searching long transcripts
+- **Auto-Refresh Systems**: Background updates for file status without manual refreshing
+
+### 🎙️ **Recording & Audio Features**
+- **Browser-Based Recording**: Direct microphone recording with no plugins required
+- **Real-Time Audio Level Monitoring**: Visual audio level feedback during recording
+- **Multi-Device Support**: Choose from available microphone devices
+- **Recording Quality Control**: Configurable bitrate and format settings
+- **Pause/Resume Recording**: Full recording session control with duration tracking
+- **Background Upload Processing**: Seamless integration with upload queue system
+- **Recording Session Management**: Persistent recording state with navigation warnings
+
+### 🤖 **AI-Powered Features**
+- **Comprehensive LLM Integration**: Support for 6+ providers (OpenAI, Claude, vLLM, Ollama, etc.)
+- **Custom Prompt Management**: Create and manage AI prompts for different content types
+- **Encrypted Configuration Storage**: Secure API key storage with user-specific settings
+- **Provider Connection Testing**: Validate LLM configurations before use
+- **Intelligent Content Processing**: Context-aware summarization with section-by-section analysis
+- **BLUF Format Summaries**: Bottom Line Up Front structured summaries with action items
+- **Multi-Model Support**: Works with models from 3B to 200B+ parameters
+- **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
+
+### 📱 **Enhanced User Experience**
+- **Progressive Web App**: Installable app experience with offline capabilities
+- **Responsive Design**: Optimized for desktop, tablet, and mobile devices
+- **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
+- **Floating Upload Manager**: Draggable upload interface with real-time progress
+- **Smart Modal System**: Consistent modal design with improved accessibility
+- **Theme Support**: Seamless dark/light mode switching
+- **Keyboard Shortcuts**: Efficient navigation and control via hotkeys
 
 ## 🛠️ Technology Stack
 
 ### **Frontend**
 - **Svelte** - Reactive UI framework with excellent performance
-- **TypeScript** - Type-safe development with modern JavaScript
+- **TypeScript** - Type-safe development with modern JavaScript and comprehensive ESLint integration
 - **Progressive Web App** - Offline capabilities and native-like experience
 - **Responsive Design** - Seamless experience across all devices
+- **Advanced UI Components** - Draggable upload manager, modal consistency, and real-time status updates
+- **Code Quality Tooling** - ESLint, TypeScript strict mode, and automated formatting
 
 ### **Backend**
 - **FastAPI** - High-performance async Python web framework
@@ -73,7 +120,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **WhisperX** - Advanced speech recognition with alignment
 - **PyAnnote.audio** - Speaker diarization and voice analysis
 - **Faster-Whisper** - Optimized inference engine
-- **Local LLMs** - Privacy-focused text processing
+- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
+- **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
+- **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
+- **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database
@@ -228,23 +278,53 @@ The `opentr.sh` script provides comprehensive management for all application ope
    - Create an account or use default admin credentials
    - Set up your profile and preferences
 
-2. **Upload Your First File**
-   - Click \"Upload Files\" or drag-and-drop media files (up to 4GB)
+2. **Upload or Record Content**
+   - **File Upload**: Click \"Upload Files\" or drag-and-drop media files (up to 4GB)
+   - **Direct Recording**: Use the microphone button in the navbar for browser-based recording
+   - **URL Processing**: Paste YouTube or media URLs for automatic processing
    - Supported formats: MP3, WAV, MP4, MOV, and more
-   - Files are automatically queued for processing
+   - Files are automatically queued for concurrent processing
 
 3. **Monitor Processing**
    - Watch detailed real-time progress with 13 processing stages
-   - View task status in Flower monitor
+   - Use the floating upload manager for multi-file progress tracking
+   - View task status in Flower monitor or notifications panel
    - Receive live WebSocket notifications for all status changes
 
-4. **Explore Your Transcript**
-   - Click on transcript text to navigate media playback
-   - Edit speaker names and add custom labels
-   - Add time-stamped comments and annotations
-   - Reprocess files to improve accuracy while preserving your edits
+4. **Explore Your Content**
+   - **Interactive Transcript**: Click on transcript text to navigate media playback
+   - **Waveform Player**: Click on audio waveform for precise seeking
+   - **Custom Titles**: Edit file display names for better organization and searchability
+   - **Speaker Management**: Edit speaker names and add custom labels
+   - **AI Summaries**: Generate BLUF format summaries with custom prompts
+   - **Comments**: Add time-stamped comments and annotations
+   - **Collections**: Organize files into themed collections
+   - **Full-Screen View**: Use transcript modal for detailed reading and searching
+
+5. **Configure AI Features** (Optional)
+   - Set up LLM providers in User Settings for AI summarization
+   - Create custom prompts for different content types
+   - Test provider connections before processing
 
 ### **Advanced Features**
+
+#### **Recording Workflow**
+```
+🎙️ Device Selection → 📊 Level Monitoring → ⏸️ Session Control → ⬆️ Background Upload
+```
+- Choose from available microphone devices
+- Monitor real-time audio levels during recording
+- Pause/resume recording sessions with duration tracking
+- Seamless integration with background upload processing
+
+#### **AI-Powered Processing**
+```
+🤖 LLM Configuration → 📝 Custom Prompts → 🔍 Content Analysis → 📊 BLUF Summaries
+```
+- Configure multiple LLM providers (OpenAI, Claude, vLLM, Ollama, etc.)
+- Create custom prompts for different content types (meetings, interviews, podcasts)
+- Test provider connections and validate configurations
+- Generate structured summaries with action items and key decisions
 
 #### **Speaker Management**
 ```
@@ -256,30 +336,50 @@ The `opentr.sh` script provides comprehensive management for all application ope
 - Accept or reject AI suggestions with confidence scores to improve accuracy over time
 - Track speaker appearances across multiple media files with detailed analytics
 
+#### **Advanced Upload Management**
+```
+⬆️ Concurrent Uploads → 📊 Progress Tracking → 🔄 Retry Logic → 📋 Queue Management
+```
+- Floating, draggable upload manager with real-time progress
+- Multiple file uploads with intelligent queue processing
+- Automatic retry logic for failed uploads with exponential backoff
+- Duplicate detection with hash verification
+
 #### **Search and Discovery**
 ```
-🔍 Keyword Search → 🧠 Semantic Search → 🏷️ Smart Filtering
+🔍 Keyword Search → 🧠 Semantic Search → 🏷️ Smart Filtering → 🎯 Waveform Navigation
 ```
 - Search transcript content with advanced filters
 - Use semantic search to find related concepts
+- Click-to-seek navigation via interactive waveform visualization
 - Organize content with custom tags and categories
 
 #### **Collections Management**
 ```
-📁 Create Collections → 📂 Organize Files → 🏷️ Bulk Operations
+📁 Create Collections → 📂 Organize Files → 🏷️ Bulk Operations → 🎯 Inline Editing
 ```
 - Group related media files into named collections
+- Inline collection editing with tag-style interface
 - Filter library view by specific collections
-- Bulk add/remove files from collections
-- Manage collection metadata and descriptions
+- Bulk add/remove files from collections with drag-and-drop support
+
+#### **Real-Time Notifications**
+```
+🔔 Progress Updates → 📊 Status Tracking → 🔄 WebSocket Integration → ✅ Completion Alerts
+```
+- Persistent notification panel with unread count badges
+- Real-time updates for transcription, summarization, and upload progress
+- WebSocket integration for instant status updates
+- Smart notification grouping and auto-refresh systems
 
 #### **Export and Integration**
 ```
-📄 Multiple Formats → 📺 Subtitle Files → 🔗 API Access
+📄 Multiple Formats → 📺 Subtitle Files → 🔗 API Access → 🎬 Media Downloads
 ```
 - Export transcripts as TXT, JSON, or CSV
-- Generate SRT/VTT subtitle files
-- Access data programmatically via REST API
+- Generate SRT/VTT subtitle files with embedded timing
+- Access data programmatically via comprehensive REST API
+- Download media files with embedded subtitles
 
 ## 📁 Project Structure
 
@@ -347,6 +447,65 @@ MAX_SPEAKERS=10                     # Maximum speakers to detect
 # Model caching (recommended)
 MODEL_CACHE_DIR=./models            # Directory to store downloaded AI models
 ```
+
+#### **LLM Configuration (AI Features)**
+OpenTranscribe offers flexible AI deployment options. Choose the approach that best fits your infrastructure:
+
+**🔧 Quick Setup Options:**
+
+1. **Cloud-Only (Recommended for Most Users)**
+   ```bash
+   # Configure for OpenAI in .env
+   LLM_PROVIDER=openai
+   OPENAI_API_KEY=your_openai_key
+   OPENAI_MODEL_NAME=gpt-4o-mini
+   
+   # Start without local LLM
+   ./opentr.sh start dev
+   ```
+
+2. **Local vLLM (High-Performance GPUs)**
+   ```bash
+   # Configure for vLLM in .env
+   LLM_PROVIDER=vllm
+   VLLM_MODEL_NAME=gpt-oss-20b
+   
+   # Start with vLLM service (requires 16GB+ VRAM)
+   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   ```
+
+3. **Local Ollama (Consumer GPUs)**
+   ```bash
+   # Configure for Ollama in .env
+   LLM_PROVIDER=ollama
+   OLLAMA_MODEL_NAME=llama3.2:3b-instruct-q4_K_M
+   
+   # Edit docker-compose.vllm.yml and uncomment ollama service
+   # Then start with both compose files
+   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   ```
+
+**📋 Complete Provider Configuration:**
+```bash
+# Cloud Providers (configure in .env)
+LLM_PROVIDER=openai                  # openai, anthropic, custom (openrouter)
+OPENAI_API_KEY=your_openai_key       # OpenAI GPT models
+ANTHROPIC_API_KEY=your_claude_key    # Anthropic Claude models  
+OPENROUTER_API_KEY=your_or_key       # OpenRouter (multi-provider)
+
+# Local Providers (requires additional Docker services)
+LLM_PROVIDER=vllm                    # Local vLLM server
+LLM_PROVIDER=ollama                  # Local Ollama server
+```
+
+**🎯 Deployment Scenarios:**
+- **💰 Cost-Effective**: OpenRouter with Claude Haiku (~$0.25/1M tokens)
+- **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)  
+- **⚡ Performance**: OpenAI GPT-4o-mini (fastest cloud option)
+- **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
+- **🚫 No LLM**: Leave `LLM_PROVIDER` empty for transcription-only mode
+
+See [LLM_DEPLOYMENT_OPTIONS.md](LLM_DEPLOYMENT_OPTIONS.md) for detailed setup instructions.
 
 #### **🗂️ Model Caching**
 

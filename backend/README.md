@@ -60,6 +60,8 @@ OpenTranscribe backend is built with modern Python technologies:
 ### AI/ML Stack
 - **WhisperX** - Advanced speech recognition with word-level alignment
 - **PyAnnote** - Speaker diarization, voice fingerprinting, and cross-video speaker matching
+- **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Claude, OpenRouter
+- **Intelligent Context Processing** - Section-by-section analysis for unlimited transcript lengths
 - **FFmpeg** - Media processing and conversion
 - **OpenSearch Vector Search** - Embedding-based speaker similarity matching
 
@@ -70,6 +72,9 @@ OpenTranscribe backend is built with modern Python technologies:
 - **Cross-Video Speaker Recognition**: AI-powered matching of speakers across different media files using embedding similarity
 - **Speaker Profile Management**: Global speaker profiles that persist across all transcriptions
 - **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scoring and verification workflow
+- **LLM-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with action items, decisions, and speaker analysis
+- **Intelligent Section Processing**: Automatically handles transcripts of any length using context-aware chunking and summary stitching
+- **Universal Model Compatibility**: Works with models from 3B parameters (Ollama) to 200B+ parameters (Claude) via adaptive processing
 - **Automatic Translation**: Always converts audio to English transcripts
 - **Video Metadata Extraction**: Extracts detailed metadata from video files using ExifTool (resolution, frame rate, codec, etc.)
 
@@ -201,12 +206,26 @@ backend/
 
 ### Adding New Features
 
-1. **API Endpoints**: Add to `app/api/endpoints/`
+1. **API Endpoints**: Add to `app/api/endpoints/` (organize by feature like `/files/`, `/user-settings/`)
 2. **Database Models**: Add to `app/models/`
 3. **Validation Schemas**: Add to `app/schemas/`
-4. **Business Logic**: Add to `app/services/`
-5. **Background Tasks**: Add to `app/tasks/`
-6. **Tests**: Add to `tests/`
+4. **Business Logic**: Add to `app/services/` (LLM service, upload service, etc.)
+5. **Background Tasks**: Add to `app/tasks/` (transcription, summarization, notifications)
+6. **Core Components**: Add shared utilities to `app/core/` (constants, configurations)
+7. **Tests**: Add to `tests/`
+
+### New API Endpoints Added
+
+- **User Settings API** (`/api/user-settings/`):
+  - GET `/recording` - Get user recording preferences
+  - PUT `/recording` - Update recording settings (duration, quality, auto-stop)
+  - DELETE `/recording` - Reset to default settings
+  - GET `/all` - Get all user settings for debugging
+
+- **Enhanced File Processing**:
+  - Improved upload handling with concurrency control
+  - Better streaming support for large files
+  - Enhanced URL processing with metadata extraction
 
 ## 📚 API Documentation
 
@@ -217,16 +236,22 @@ backend/
 ### API Structure
 ```
 /api/
-├── /auth          # Authentication endpoints
-├── /files         # File management
-├── /users         # User management
-├── /comments      # Comment system
-├── /tags          # Tag management
-├── /speakers      # Speaker management and cross-video matching
-├── /speaker-profiles # Global speaker profile management
-├── /tasks         # Task monitoring
-├── /search        # Search functionality
-└── /admin         # Admin operations
+├── /auth              # Authentication endpoints
+├── /files             # File management with streaming support
+├── /files/streaming   # Streaming and upload progress endpoints
+├── /files/upload      # Enhanced upload handling with concurrency
+├── /files/url-processing # URL processing for video links
+├── /users             # User management
+├── /user-settings     # User-specific settings management (recording preferences)
+├── /comments          # Comment system
+├── /tags              # Tag management
+├── /speakers          # Speaker management and cross-video matching
+├── /speaker-profiles  # Global speaker profile management
+├── /summarization     # LLM-powered summarization endpoints
+├── /llm-settings      # User-specific LLM configuration management
+├── /tasks             # Task monitoring with enhanced progress tracking
+├── /search            # Search functionality
+└── /admin             # Admin operations
 ```
 
 ### Authentication
@@ -287,8 +312,10 @@ alembic revision --autogenerate    # Generate migration
 ### Available Tasks
 - **Transcription**: WhisperX + speaker diarization with voice fingerprinting
 - **Speaker Matching**: Cross-video speaker identification and profile matching
+- **YouTube Processing**: Enhanced URL processing for video links with metadata extraction
 - **Analysis**: Transcript analysis and metrics
-- **Summarization**: Automated transcript summaries
+- **Summarization**: Multi-provider LLM-powered summarization with BLUF format
+- **Notification System**: Real-time WebSocket updates for all processing stages
 
 ### Task Monitoring
 ```bash

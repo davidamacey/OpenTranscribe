@@ -1,13 +1,17 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from typing import Optional
 
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import status
+from sqlalchemy.orm import Session
+
+from app.api.endpoints.auth import get_current_user
 from app.db.base import get_db
-from app.models.media import MediaFile, FileStatus
+from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import delete_file
-from app.api.endpoints.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -18,22 +22,26 @@ router = APIRouter()
 async def cancel_upload(
     file_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
     Cancel an in-progress file upload and clean up any uploaded data.
     """
     # Get the media file
-    db_file = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        MediaFile.user_id == current_user.id,
-        MediaFile.status == FileStatus.PENDING
-    ).first()
+    db_file = (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.id == file_id,
+            MediaFile.user_id == current_user.id,
+            MediaFile.status == FileStatus.PENDING,
+        )
+        .first()
+    )
 
     if not db_file:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No pending upload found with this ID"
+            detail="No pending upload found with this ID",
         )
 
     try:
@@ -56,7 +64,7 @@ async def cancel_upload(
         logger.error(f"Error cancelling upload {file_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel upload"
-        )
+            detail="Failed to cancel upload",
+        ) from e
 
     return None

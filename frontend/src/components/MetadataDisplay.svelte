@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { slide, fade } from 'svelte/transition';
+  import { slide } from 'svelte/transition';
   import { formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   
@@ -86,6 +86,21 @@
           <span class="metadata-label">Transcript status:</span>
           <span class="metadata-value">
             <span class="status-completed">Completed <i class="fas fa-check-circle"></i></span>
+          </span>
+        </div>
+        
+        <div class="metadata-item">
+          <span class="metadata-label">AI Summary status:</span>
+          <span class="metadata-value">
+            {#if file?.summary_status === 'completed' || file?.summary || file?.summary_opensearch_id}
+              <span class="status-completed">Available <i class="fas fa-check-circle"></i></span>
+            {:else if file?.summary_status === 'processing'}
+              <span class="status-processing">Processing... <i class="fas fa-spinner fa-spin"></i></span>
+            {:else if file?.summary_status === 'failed'}
+              <span class="status-error">Failed <i class="fas fa-exclamation-triangle"></i></span>
+            {:else}
+              <span class="status-pending">Pending</span>
+            {/if}
           </span>
         </div>
         
@@ -229,6 +244,27 @@
 
   .status-completed {
     color: var(--success-color);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .status-processing {
+    color: var(--warning-color);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .status-error {
+    color: var(--error-color);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .status-pending {
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     gap: 4px;

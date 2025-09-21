@@ -20,8 +20,8 @@
     }) : '';
   $: combinedKey = `${speakerKey}-${analyticsKey}-${refreshCounter}`;
   
-  // Watch for changes and force refresh
-  $: if (file?.analytics) {
+  // Watch for changes and force refresh only when analytics data actually changes
+  $: if (file?.analytics && analyticsKey) {
     refreshCounter++;
   }
 
@@ -79,7 +79,7 @@
 
 <style>
   .analytics-dropdown-section {
-    margin-bottom: 20px;
+    margin-bottom: 0;
   }
 
   .analytics-header {

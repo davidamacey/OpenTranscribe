@@ -1,14 +1,12 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { derived } from 'svelte/store';
   import { Link } from 'svelte-navigator';
   import { token } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
-  
-  // Prop to control whether to show the notification bell button
-  export let hideButton = false;
-  
+
+
   // Subscribe to the showNotificationsPanel store
   let showPanel = false;
   const unsubscribePanel = showNotificationsPanel.subscribe(value => {
@@ -29,9 +27,9 @@
   /** @type {Date} */
   let lastRead = new Date();
   
-  // Derived store for unread count
+  // Derived store for unread count (excluding silent notifications)
   const wsUnreadCount = derived(websocketStore, ($store) => {
-    return $store.notifications ? $store.notifications.filter(n => !n.read).length : 0;
+    return $store.notifications ? $store.notifications.filter(n => !n.read && !n.silent).length : 0;
   });
   
   // Toggle notification panel
@@ -49,7 +47,7 @@
    * Close panel when clicking outside
    * @param {MouseEvent} event - The click event
    */
-  function handleClickOutside(event) {
+  function handleClickOutside(event: MouseEvent) {
     const panel = document.querySelector('.notifications-panel');
     const button = document.querySelector('.notifications-button');
     const target = event.target;
@@ -63,8 +61,14 @@
    * Remove a notification
    * @param {string} id - The notification ID
    */
-  function removeNotification(id) {
-    websocketStore.markAsRead(id);
+  function removeNotification(id: string) {
+    // Use the new removeNotification method from websocket store
+    if (websocketStore.removeNotification) {
+      websocketStore.removeNotification(id);
+    } else {
+      // Fallback to marking as read
+      websocketStore.markAsRead(id);
+    }
   }
   
   // Clear all notifications
@@ -84,12 +88,14 @@
    * @param {string} type - The notification type
    * @returns {string} - Icon name
    */
-  function getNotificationIcon(type) {
+  function getNotificationIcon(type: string) {
     switch (type) {
       case 'transcription_status':
         return 'file-text';
       case 'summarization_status':
         return 'file-text';
+      case 'youtube_processing_status':
+        return 'video';
       case 'analytics_status':
         return 'bar-chart';
       default:
@@ -102,7 +108,7 @@
    * @param {Date} date - The date to format
    * @returns {string} - Formatted relative time
    */
-  function formatTimestamp(date) {
+  function formatTimestamp(date: Date) {
     const now = new Date();
     const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
     
@@ -127,7 +133,7 @@
    * @param {string} [notification.data.file_id] - Optional file ID
    * @returns {string|null} - File link or null if no file_id
    */
-  function getFileLink(notification) {
+  function getFileLink(notification: { data?: { file_id?: string } }) {
     if (notification.data && notification.data.file_id) {
       return `/files/${notification.data.file_id}`;
     }
@@ -135,13 +141,44 @@
   }
 
   /**
+   * Get display text for file link
+   * @param {Object} notification - The notification object
+   * @returns {string} - Display text for the file link
+   */
+  function getFileLinkText(notification: any): string {
+    const fileId = notification.data?.file_id;
+    if (!fileId) return 'View File →';
+    
+    // If we have filename in the notification data, use it
+    if (notification.data?.filename) {
+      const filename = notification.data.filename;
+      // Truncate long filenames to ensure single line display
+      if (filename.length > 40) {
+        const extension = filename.split('.').pop() || '';
+        const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.'));
+        // Truncate from the end, keep beginning + ... + extension
+        const maxNameLength = 35; // Leave room for extension and arrow
+        if (nameWithoutExt.length > maxNameLength) {
+          const truncated = nameWithoutExt.substring(0, maxNameLength) + '...';
+          return `${truncated}.${extension} →`;
+        }
+      }
+      return `${filename} →`;
+    }
+    
+    // Fallback: show file ID in a user-friendly way
+    return `File ${fileId} →`;
+  }
+
+  /**
    * Get status color for notification type
    * @param {Object} notification - The notification object
    * @returns {string} - CSS class for status
    */
-  function getNotificationStatus(notification) {
-    if (notification.data?.status) {
-      const status = notification.data.status;
+  function getNotificationStatus(notification: { data?: { status?: string } }) {
+    const notificationData = notification.data || {};
+    if (notificationData.status) {
+      const status = notificationData.status;
       switch (status) {
         case 'completed':
           return 'success';
@@ -177,7 +214,7 @@
 
 {#if showPanel}
   <!-- Backdrop for mobile/tablet -->
-  <div class="notifications-backdrop" on:click={closePanel}></div>
+  <div class="notifications-backdrop" on:click={closePanel} on:keydown={closePanel} role="button" tabindex="0" aria-label="Close notifications panel"></div>
   
   <div class="notifications-panel">
     <!-- Header -->
@@ -191,33 +228,34 @@
       <div class="header-actions">
         {#if $wsUnreadCount > 0}
           <button 
-            class="action-btn mark-read-btn" 
+            class="icon-btn mark-read-btn" 
             on:click={markAllWebSocketNotificationsAsRead}
             title="Mark all notifications as read"
+            aria-label="Mark all notifications as read"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            Mark read
           </button>
         {/if}
-        {#if $websocketStore.notifications.length > 0}
+        {#if $websocketStore.notifications.filter(n => !n.silent).length > 0}
           <button 
-            class="action-btn clear-btn" 
+            class="icon-btn clear-btn" 
             on:click={clearAllNotifications}
             title="Clear all notifications"
+            aria-label="Clear all notifications"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
-            Clear all
           </button>
         {/if}
         <button 
-          class="action-btn close-btn" 
+          class="icon-btn close-btn" 
           on:click={closePanel}
           title="Close notifications panel"
+          aria-label="Close notifications panel"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -229,7 +267,7 @@
     
     <!-- Notifications List -->
     <div class="notifications-content">
-      {#if $websocketStore.notifications.length === 0}
+      {#if $websocketStore.notifications.filter(n => !n.silent).length === 0}
         <div class="empty-state">
           <div class="empty-icon">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -242,8 +280,8 @@
         </div>
       {:else}
         <div class="notifications-list">
-          {#each $websocketStore.notifications as notification (notification.id)}
-            <div class="notification-item {notification.read ? 'read' : 'unread'} status-{getNotificationStatus(notification)}">
+          {#each $websocketStore.notifications.filter(n => !n.silent) as notification (notification.id)}
+            <div class="notification-item {notification.read ? 'read' : 'unread'} status-{getNotificationStatus(notification)} {notification.status === 'processing' ? 'processing' : ''}">
               <!-- Status indicator -->
               <div class="notification-indicator"></div>
               
@@ -276,6 +314,16 @@
                   <h4 class="notification-title">{notification.title}</h4>
                   <p class="notification-message">{notification.message}</p>
                   
+                  <!-- Progressive notification progress bar -->
+                  {#if notification.progress && notification.status === 'processing'}
+                    <div class="progress-container">
+                      <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: {notification.progress.percentage}%"></div>
+                      </div>
+                      <span class="progress-text">{notification.progress.percentage}%</span>
+                    </div>
+                  {/if}
+                  
                   <!-- Action link if available -->
                   {#if getFileLink(notification) !== null}
                     <Link 
@@ -289,7 +337,7 @@
                         }
                       }}
                     >
-                      View File →
+{getFileLinkText(notification)}
                     </Link>
                   {/if}
                 </div>
@@ -301,9 +349,10 @@
               
               <!-- Dismiss button -->
               <button 
-                class="notification-dismiss" 
+                class="notification-dismiss {!notification.dismissible ? 'non-dismissible' : ''}" 
                 on:click={() => removeNotification(notification.id)}
-                title="Dismiss notification"
+                title={notification.dismissible ? 'Dismiss notification' : 'Processing notifications cannot be dismissed'}
+                disabled={!notification.dismissible}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -400,46 +449,52 @@
     gap: 8px;
   }
   
-  .action-btn {
+  .icon-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    background: none;
-    border: none;
-    border-radius: 6px;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0.5rem;
+    border-radius: 4px;
     cursor: pointer;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 500;
     transition: all 0.2s ease;
-  }
-  
-  .action-btn:hover {
-    background: var(--hover-color, rgba(0, 0, 0, 0.05));
-    color: var(--text-color);
+    border: 1px solid;
+    box-sizing: border-box;
   }
   
   .mark-read-btn {
+    background-color: transparent;
+    border-color: var(--success-color);
     color: var(--success-color);
   }
   
   .mark-read-btn:hover {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--success-color);
+    background-color: var(--success-color);
+    color: white;
   }
 
   .clear-btn {
+    background-color: transparent;
+    border-color: var(--error-color);
     color: var(--error-color);
   }
   
   .clear-btn:hover {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
+    background-color: var(--error-color);
+    color: white;
   }
   
   .close-btn {
-    padding: 6px;
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-color);
+  }
+
+  .close-btn:hover {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
   }
   
   /* Content */
@@ -537,6 +592,20 @@
     background: var(--primary-color);
   }
   
+  .notification-item.processing .notification-indicator {
+    background: var(--primary-color);
+    animation: pulse 1.5s infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+  
   /* Icon */
   .notification-icon {
     flex-shrink: 0;
@@ -597,13 +666,17 @@
   }
   
   .notification-action {
-    display: inline-flex;
-    align-items: center;
+    display: inline-block;
     font-size: 12px;
     font-weight: 600;
     color: var(--primary-color);
     text-decoration: none;
     transition: color 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+    line-height: 1.2;
   }
   
   .notification-action:hover {
@@ -645,6 +718,69 @@
     background: var(--error-background, rgba(239, 68, 68, 0.1));
     color: var(--error-color);
     opacity: 1;
+  }
+  
+  .notification-dismiss.non-dismissible {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  
+  .notification-dismiss.non-dismissible:hover {
+    background: none;
+    color: var(--text-secondary);
+    opacity: 0.3;
+  }
+  
+  /* Progress Bar Styles */
+  .progress-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  
+  .progress-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    animation: progress-shimmer 1.5s infinite;
+  }
+  
+  @keyframes progress-shimmer {
+    0% {
+      background-position: -200px 0;
+    }
+    100% {
+      background-position: calc(200px + 100%) 0;
+    }
+  }
+  
+  .progress-bar-fill {
+    background: linear-gradient(
+      90deg,
+      var(--primary-color) 0%,
+      rgba(var(--primary-color-rgb), 0.8) 50%,
+      var(--primary-color) 100%
+    );
+    background-size: 200px 100%;
+    animation: progress-shimmer 1.5s infinite linear;
+  }
+  
+  .progress-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
   }
   
   /* Scrollbar Styling */
@@ -691,15 +827,32 @@
     .header-title {
       font-size: 15px;
     }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+    }
+
+    .header-actions {
+      gap: 6px;
+    }
   }
   
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     .notification-item,
-    .action-btn,
+    .icon-btn,
     .notification-dismiss,
     .notification-action {
       transition: none;
+    }
+
+    .icon-btn:hover {
+      transform: none;
+    }
+
+    .icon-btn:active {
+      transform: none;
     }
   }
   

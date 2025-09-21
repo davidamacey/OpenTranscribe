@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { writable } from 'svelte/store';
-  import Plyr from 'plyr';
-  import 'plyr/dist/plyr.css';
   import axiosInstance from '$lib/axios';
   import { formatTimestampWithMillis } from '$lib/utils/formatting';
   import { websocketStore } from '$stores/websocket';
@@ -18,7 +16,11 @@
   import CommentSection from '$components/CommentSection.svelte';
   import CollectionsSection from '$components/CollectionsSection.svelte';
   import ReprocessButton from '$components/ReprocessButton.svelte';
+  import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import SummaryModal from '$components/SummaryModal.svelte';
+  import TranscriptModal from '$components/TranscriptModal.svelte';
+  import { isLLMAvailable } from '../stores/llmStatus';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -31,7 +33,7 @@
   let videoUrl = '';
   let errorMessage = '';
   let apiBaseUrl = '';
-  let player: Plyr | null = null;
+  let videoPlayerComponent: any = null;
   let currentTime = 0;
   let duration = 0;
   let isLoading = true;
@@ -49,12 +51,24 @@
   let isEditingTranscript = false;
   let editedTranscript = '';
   let savingTranscript = false;
+  let savingSpeakers = false;
   let transcriptError = '';
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
   let reprocessing = false;
+  let summaryData: any = null;
+  let showSummaryModal = false;
+  let showTranscriptModal = false;
+  let generatingSummary = false;
+  let summaryError = '';
+  let summaryGenerating = false; // WebSocket-driven summary generation status
+  let currentProcessingStep = ''; // Current processing step from WebSocket notifications
+  let lastProcessedNotificationState = ''; // Track processed notification state globally
+  // LLM availability for summary functionality
+  $: llmAvailable = $isLLMAvailable;
+  
   
 
   // Confirmation modal state
@@ -64,12 +78,53 @@
   // Reactive store for file updates
   const reactiveFile = writable(null);
   
-  // Debounce timer for subtitle refresh
-  let subtitleRefreshTimer: number;
 
   /**
    * Fetches file details from the API
    */
+  /**
+   * Fetch transcript and related data to update the page without overwriting file state
+   */
+  async function fetchTranscriptData(): Promise<void> {
+    if (!fileId) {
+      console.error('FileDetail: No file ID provided to fetchTranscriptData');
+      return;
+    }
+
+    try {
+      const response = await axiosInstance.get(`/api/files/${fileId}`);
+      
+      if (response.data && typeof response.data === 'object' && file) {
+        // Update all transcript and processing-related fields while preserving UI state flags
+        file.transcript_segments = response.data.transcript_segments || [];
+        file.speakers = response.data.speakers || [];
+        file.waveform_data = response.data.waveform_data;
+        file.duration = response.data.duration;
+        file.duration_seconds = response.data.duration_seconds;
+        
+        // Update metadata and processing info
+        file.processed_at = response.data.processed_at;
+        file.analytics = response.data.analytics;
+        
+        // Update collections if they changed
+        collections = response.data.collections || [];
+        
+        // Update file object
+        file = { ...file };
+        reactiveFile.set(file);
+        
+        // Process the new transcript data
+        processTranscriptData();
+        
+        // Fetch analytics separately to get the latest data
+        await fetchAnalytics(fileId);
+        
+      }
+    } catch (error) {
+      console.error('Error fetching transcript data:', error);
+    }
+  }
+
   async function fetchFileDetails(fileIdOrEvent?: string): Promise<void> {
     const targetFileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : fileId;
     
@@ -244,7 +299,6 @@
       });
       
       if (response.data && Array.isArray(response.data)) {
-        console.log('Raw speaker data from API:', response.data);
         speakerList = response.data
           .map((speaker: any) => ({
             id: speaker.id,
@@ -255,7 +309,7 @@
             verified: speaker.verified,
             confidence: speaker.confidence,
             profile: speaker.profile,
-            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.75), // Only high-confidence matches (≥75%)
+            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.50), // Show high and medium confidence matches (≥50%)
             showMatches: false  // Add this for the collapsible UI
           }))
           .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
@@ -320,100 +374,12 @@
   }
 
 
-  /**
-   * Add subtitle track to video element dynamically
-   */
-  async function addSubtitleTrack() {
-    if (!file || !player) return;
-    
-    try {
-      // Get the video element from Plyr
-      const videoElement = player.media;
-      if (!videoElement) return;
-      
-      // Fetch subtitles using axios to include authentication
-      const timestamp = Date.now();
-      const response = await axiosInstance.get(`/files/${file.id}/subtitles`, {
-        params: {
-          format: 'webvtt',
-          include_speakers: true,
-          t: timestamp
-        },
-        responseType: 'text'
-      });
-      
-      // Create a blob URL from the subtitle content
-      const blob = new Blob([response.data], { type: 'text/vtt' });
-      const subtitleUrl = URL.createObjectURL(blob);
-      
-      // Create subtitle track element
-      const track = document.createElement('track');
-      track.kind = 'subtitles';
-      track.label = 'English (Auto-generated)';
-      track.srclang = 'en';
-      track.default = true;
-      track.src = subtitleUrl;
-      
-      // Add track to video element
-      videoElement.appendChild(track);
-      
-      // Enable the track
-      track.addEventListener('load', () => {
-        if (videoElement.textTracks && videoElement.textTracks.length > 0) {
-          const textTrack = videoElement.textTracks[videoElement.textTracks.length - 1];
-          textTrack.mode = 'showing';
-          
-          // Enable captions in Plyr
-          if (player && player.captions) {
-            player.captions.active = true;
-          }
-          
-          console.log('Subtitle track loaded and enabled');
-        }
-      });
-      
-      // Clean up blob URL when track is removed
-      track.addEventListener('error', () => {
-        URL.revokeObjectURL(subtitleUrl);
-      });
-      
-    } catch (error) {
-      console.error('Error adding subtitle track:', error);
-    }
-  }
+
+
 
   /**
    * Refresh subtitle track when transcript changes (debounced)
    */
-  function refreshSubtitleTrack() {
-    // Clear existing timer
-    if (subtitleRefreshTimer) {
-      clearTimeout(subtitleRefreshTimer);
-    }
-    
-    // Set new timer for 1 second debounce
-    subtitleRefreshTimer = setTimeout(() => {
-      if (!player || !file) return;
-      
-      const videoElement = player.media;
-      if (!videoElement) return;
-      
-      // Remove existing subtitle tracks and clean up blob URLs
-      const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
-      tracks.forEach(track => {
-        // Clean up blob URL if it's a blob URL
-        if (track.src && track.src.startsWith('blob:')) {
-          URL.revokeObjectURL(track.src);
-        }
-        track.remove();
-      });
-      
-      // Add updated subtitle track with cache-busting timestamp
-      addSubtitleTrack();
-      
-      console.log('Subtitle track refreshed due to transcript changes');
-    }, 1000);
-  }
 
   /**
    * Initialize the video player with enhanced streaming capabilities
@@ -423,93 +389,14 @@
       return;
     }
     
-    const videoElement = document.querySelector('#player') as HTMLVideoElement;
+    const mediaElement = document.querySelector('#player') as HTMLMediaElement;
     
-    if (!videoElement) {
+    if (!mediaElement) {
       return;
     }
 
-    try {
-      // Configure video element
-      videoElement.preload = 'metadata';
-      videoElement.crossOrigin = 'anonymous';
-      videoElement.playsInline = true;
-
-      // Check if this video has embedded subtitles
-      const isVideo = file?.content_type && file.content_type.startsWith('video/');
-      const hasTranscript = file?.status === 'completed';
-      const hasEmbeddedSubtitles = isVideo && hasTranscript;
-
-      // Initialize Plyr with subtitle support
-      const plyrControls = ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'];
-      const plyrSettings = ['quality', 'speed'];
-      
-      // Add captions/subtitles controls if the video has embedded subtitles
-      if (hasEmbeddedSubtitles) {
-        plyrControls.splice(-1, 0, 'captions'); // Add captions button before fullscreen
-        plyrSettings.push('captions'); // Add captions to settings menu
-      }
-
-      player = new Plyr(videoElement, {
-        controls: plyrControls,
-        settings: plyrSettings,
-        quality: { default: 720, options: [1080, 720, 480, 360] },
-        speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] },
-        ratio: '16:9',
-        fullscreen: { enabled: true, fallback: true, iosNative: true },
-        captions: { 
-          active: true, // Enable captions by default if available
-          language: 'auto',
-          update: true
-        }
-      });
-
-      // Set up event listeners
-      player.on('ready', () => {
-        playerInitialized = true;
-        
-        // Add subtitle tracks dynamically if video has completed transcription
-        if (hasEmbeddedSubtitles) {
-          addSubtitleTrack();
-        }
-      });
-
-      player.on('timeupdate', () => {
-        currentTime = player?.currentTime || 0;
-        updateCurrentSegment(currentTime);
-      });
-
-      player.on('loadedmetadata', () => {
-        duration = player?.duration || 0;
-      });
-
-      player.on('loadstart', () => {
-        isPlayerBuffering = true;
-      });
-
-      player.on('canplay', () => {
-        isPlayerBuffering = false;
-      });
-
-      player.on('waiting', () => {
-        isPlayerBuffering = true;
-      });
-
-      player.on('playing', () => {
-        isPlayerBuffering = false;
-      });
-
-      player.on('progress', () => {
-        if (videoElement.buffered.length > 0) {
-          loadProgress = (videoElement.buffered.end(0) / videoElement.duration) * 100;
-        }
-      });
-      
-    } catch (error) {
-      console.error('Error initializing player:', error);
-      errorMessage = 'Failed to initialize video player';
-      playerInitialized = false;
-    }
+    // Mark as initialized - all player initialization is now handled by VideoPlayer component
+    playerInitialized = true;
   }
 
   /**
@@ -546,7 +433,7 @@
   // Handle speaker name updates
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
-    
+
     // Update the speaker in the speakerList and maintain sort order
     speakerList = speakerList
       .map(speaker => {
@@ -556,7 +443,7 @@
         return speaker;
       })
       .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
-    
+
     // Update transcript data with new speaker name
     const transcriptData = file?.transcript_segments;
     if (transcriptData && Array.isArray(transcriptData)) {
@@ -565,16 +452,23 @@
           segment.speaker = newName;
         }
       });
-      
+
       // Update file data
       file.transcript_segments = [...transcriptData];
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
-      
-      // Refresh subtitle track with debounce since speaker labels changed
-      refreshSubtitleTrack();
+
     }
-    
+
+    // Update subtitles in the video player with new speaker names
+    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+      try {
+        await videoPlayerComponent.updateSubtitles();
+      } catch (error) {
+        console.warn('Failed to update subtitles after speaker update:', error);
+      }
+    }
+
     // Persist to database
     try {
       const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
@@ -658,13 +552,10 @@
             };
             reactiveFile.set(file);
             
-            // Refresh subtitle track with debounce
-            refreshSubtitleTrack();
             
             // Clear cached processed videos so downloads will use updated transcript
             try {
               await axiosInstance.delete(`/api/files/${file.id}/cache`);
-              console.log('Cleared video cache to ensure downloads use updated transcript');
             } catch (error) {
               console.warn('Could not clear video cache:', error);
             }
@@ -674,6 +565,15 @@
         editingSegmentId = null;
         editingSegmentText = '';
         transcriptError = '';
+
+        // Update subtitles in the video player
+        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+          try {
+            await videoPlayerComponent.updateSubtitles();
+          } catch (error) {
+            console.warn('Failed to update subtitles after segment edit:', error);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error saving segment:', error);
@@ -1132,6 +1032,8 @@
   async function handleSaveSpeakerNames() {
     if (!speakerList || speakerList.length === 0) return;
     
+    savingSpeakers = true;
+    
     try {
       // Update speakers in the backend (only meaningful names)
       const updatePromises = speakerList
@@ -1185,22 +1087,29 @@
       if (file?.id) {
         await fetchAnalytics(file.id.toString());
       }
-      
-      // Refresh video subtitles with updated speaker names
-      refreshSubtitleTrack();
-      
+
+      // Update subtitles in the video player with new speaker names
+      if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+        try {
+          await videoPlayerComponent.updateSubtitles();
+        } catch (error) {
+          console.warn('Failed to update subtitles after saving speaker names:', error);
+        }
+      }
+
       // Clear cached processed videos so downloads will use updated speaker names
       try {
         await axiosInstance.delete(`/api/files/${file.id}/cache`);
-        console.log('Cleared video cache to ensure downloads use updated speaker names');
         // Note: No user notification needed - this is automatic background cleanup
       } catch (error) {
         console.warn('Could not clear video cache:', error);
       }
-      
+
       // Speaker names saved to database and updated locally
+      toastStore.success('Speaker names saved successfully!');
     } catch (error) {
       console.error('Error saving speaker names:', error);
+      toastStore.error('Failed to save speaker names. Changes applied locally only.');
       // Fall back to local-only updates
       const transcriptData = file?.transcript_segments;
       if (transcriptData) {
@@ -1232,20 +1141,27 @@
         if (file?.id) {
           await fetchAnalytics(file.id.toString());
         }
-        
-        // Refresh video subtitles with updated speaker names (fallback)
-        refreshSubtitleTrack();
-        
+
+        // Update subtitles in the video player with new speaker names (fallback)
+        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+          try {
+            await videoPlayerComponent.updateSubtitles();
+          } catch (error) {
+            console.warn('Failed to update subtitles after fallback speaker update:', error);
+          }
+        }
+
         // Clear cached processed videos so downloads will use updated speaker names (fallback)
         try {
           await axiosInstance.delete(`/api/files/${file.id}/cache`);
-          console.log('Cleared video cache to ensure downloads use updated speaker names (fallback)');
         } catch (error) {
           console.warn('Could not clear video cache (fallback):', error);
         }
-        
+
         // Speaker names updated locally only (database update failed)
       }
+    } finally {
+      savingSpeakers = false;
     }
   }
 
@@ -1258,26 +1174,14 @@
   // Speaker verification event handlers
 
   function seekToTime(time: number) {
-    if (player) {
-      // Add 0.5 second padding before the target time for better context
-      const paddedTime = Math.max(0, time - 0.5);
-      player.currentTime = paddedTime;
-      
-      // Flash player controls briefly to show timestamp
-      const playerContainer = document.querySelector('.plyr');
-      if (playerContainer) {
-        playerContainer.classList.add('plyr--show-controls');
-        setTimeout(() => {
-          playerContainer.classList.remove('plyr--show-controls');
-        }, 3000); // Show controls for 3 seconds
-      }
-      
-      if (player.paused) {
-        const playPromise = player.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(console.error);
-        }
-      }
+    // Add 0.5 second padding before the target time for better context
+    const paddedTime = Math.max(0, time - 0.5);
+
+    // Use VideoPlayer component's seek function for all media types
+    if (videoPlayerComponent && videoPlayerComponent.seekToTime) {
+      videoPlayerComponent.seekToTime(paddedTime);
+    } else {
+      console.warn('VideoPlayer component not available for seeking');
     }
   }
 
@@ -1288,15 +1192,15 @@
     }
   }
 
-  function handleCollectionRemoved(event: any) {
-    const { collectionId } = event.detail;
+  function handleCollectionsUpdated(event: any) {
+    const { collections: updatedCollections } = event.detail;
     
-    // Update collections array by removing the collection
-    collections = collections.filter(c => c.id !== collectionId);
+    // Update collections array
+    collections = updatedCollections;
     
-    // Update file object if it has collections
-    if (file && file.collections) {
-      file.collections = file.collections.filter((c: any) => c.id !== collectionId);
+    // Update file object if it exists
+    if (file) {
+      file.collections = updatedCollections;
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
     }
@@ -1304,6 +1208,25 @@
 
   function handleVideoRetry() {
     fetchFileDetails();
+  }
+
+  // Audio player event handlers for custom player
+  function handleTimeUpdate(event: CustomEvent) {
+    currentTime = event.detail.currentTime;
+    duration = event.detail.duration;
+    updateCurrentSegment(currentTime);
+  }
+
+  function handlePlay(_event: CustomEvent) {
+    // Handle play event if needed
+  }
+
+  function handlePause(_event: CustomEvent) {
+    // Handle pause event if needed
+  }
+
+  function handleLoadedMetadata(event: CustomEvent) {
+    duration = event.detail.duration;
   }
 
   function handleWaveformSeek(event: CustomEvent) {
@@ -1314,19 +1237,153 @@
   async function handleReprocess(event: CustomEvent) {
     const { fileId } = event.detail;
     
+    
     try {
       reprocessing = true;
+      
+      // Reset notification processing state for reprocessing
+      lastProcessedNotificationState = '';
+      
+      // Optimistically set file to processing state for immediate UI feedback
+      if (file) {
+        file.status = 'processing';
+        file.progress = 0;
+        // Clear transcript data to show placeholder state during reprocessing
+        file.transcript_segments = [];
+        file.summary = null;
+        file.summary_opensearch_id = null;
+        
+        // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
+        if (llmAvailable) {
+          summaryGenerating = true;
+          generatingSummary = true;
+          summaryError = '';
+        }
+        
+        file = file; // Trigger reactivity
+      }
+      
       await axiosInstance.post(`/api/files/${fileId}/reprocess`);
       
-      // Refresh file details to show updated status
-      await fetchFileDetails(fileId);
+      // Don't immediately fetch - let WebSocket notifications handle updates
+      // The file is now pending/processing and notifications will update the UI
       
-      console.log('File reprocessing started');
     } catch (error) {
-      console.error('Error starting reprocess:', error);
-      errorMessage = 'Failed to start reprocessing. Please try again.';
+      console.error('❌ Error starting reprocess:', error);
+      toastStore.error('Failed to start reprocessing. Please try again.');
+      
+      // Revert optimistic update on error
+      if (file) {
+        await fetchFileDetails(fileId);
+      }
     } finally {
       reprocessing = false;
+    }
+  }
+
+  async function handleReprocessHeader() {
+    if (!file?.id) return;
+    
+    try {
+      reprocessing = true;
+      
+      // Reset notification processing state for reprocessing
+      lastProcessedNotificationState = '';
+      
+      // Optimistically set file to processing state for immediate UI feedback
+      file.status = 'processing';
+      file.progress = 0;
+      // Clear transcript data to show placeholder state during reprocessing
+      file.transcript_segments = [];
+      file.summary = null;
+      file.summary_opensearch_id = null;
+      
+      // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
+      if (llmAvailable) {
+        summaryGenerating = true;
+        generatingSummary = true;
+        summaryError = '';
+      }
+      
+      file = file; // Trigger reactivity
+      
+      await axiosInstance.post(`/api/files/${file.id}/reprocess`);
+      
+      // Don't immediately fetch - let WebSocket notifications handle updates
+      toastStore.success('Reprocessing started successfully');
+      
+    } catch (error) {
+      console.error('❌ Error starting reprocess (header):', error);
+      toastStore.error('Failed to start reprocessing. Please try again.');
+      
+      // Revert optimistic update on error
+      await fetchFileDetails(file.id);
+    } finally {
+      reprocessing = false;
+    }
+  }
+
+
+  /**
+   * Generate summary for the transcript
+   */
+  async function handleGenerateSummary() {
+    if (!file?.id) return;
+    
+    // Check if LLM is available
+    if (!$isLLMAvailable) {
+      return;
+    }
+    
+    try {
+      generatingSummary = true;
+      summaryError = '';
+      
+      await axiosInstance.post(`/api/files/${file.id}/summarize`);
+      
+      // Don't refresh page - let WebSocket notifications handle status updates
+      // This preserves user's editing state
+      
+      // The WebSocket will update summaryGenerating = true when processing starts
+    } catch (error: any) {
+      console.error('Error generating summary:', error);
+      const errorMessage = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
+      
+      summaryError = errorMessage;
+    } finally {
+      generatingSummary = false;
+    }
+  }
+
+  /**
+   * Load summary data from the backend
+   */
+  async function loadSummary() {
+    if (!file?.id) return;
+    
+    try {
+      const response = await axiosInstance.get(`/api/files/${file.id}/summary`);
+      summaryData = response.data.summary_data;
+    } catch (error: any) {
+      console.error('Error loading summary:', error);
+      if (error.response?.status !== 404) {
+        summaryError = 'Failed to load summary.';
+      }
+    }
+  }
+
+  /**
+   * Show the summary modal
+   */
+  function handleShowSummary() {
+    if (summaryData) {
+      showSummaryModal = true;
+    } else {
+      loadSummary().then(() => {
+        if (summaryData) {
+          showSummaryModal = true;
+        }
+      });
     }
   }
 
@@ -1335,86 +1392,226 @@
 
   // Component mount logic
   onMount(() => {
-    apiBaseUrl = window.location.origin;
+    // Use the correct backend API base URL (port 5174, not frontend port 5173)
+    apiBaseUrl = window.location.protocol + '//' + window.location.hostname + ':5174';
     
     if (id) {
       fileId = id;
     } else {
+      console.error('FileDetail: No id parameter provided');
       const urlParams = new URLSearchParams(window.location.search);
       const pathParts = window.location.pathname.split('/');
       fileId = urlParams.get('id') || pathParts[pathParts.length - 1] || '';
     }
 
     if (fileId && !isNaN(Number(fileId))) {
-      fetchFileDetails();
+      // Load file details
+      fetchFileDetails().catch(err => {
+        console.error('Error loading file details:', err);
+      });
     } else {
       errorMessage = 'Invalid file ID';
       isLoading = false;
     }
 
-    // Track last processed notification to avoid duplicate processing
-    let lastProcessedNotificationId = '';
+    // LLM status monitoring is now handled by the Settings component and reactive store
 
     // Subscribe to WebSocket notifications for real-time updates
     wsUnsubscribe = websocketStore.subscribe(($ws) => {
+      
+      
       if ($ws.notifications.length > 0) {
-        const latestNotification = $ws.notifications[0];
         
-        // Only process if this is a new notification we haven't handled
-        if (latestNotification.id !== lastProcessedNotificationId) {
-          lastProcessedNotificationId = latestNotification.id;
+        // Find the most recently updated notification for the current file
+        const currentFileNotifications = $ws.notifications.filter(n => {
+          const notificationFileId = String(n.data?.file_id || '');
+          const currentFileId = String(fileId);
+          return notificationFileId === currentFileId;
+        });
+
+        if (currentFileNotifications.length === 0) {
+          return;
+        }
+
+        // Sort by timestamp (most recent first)
+        currentFileNotifications.sort((a, b) => {
+          const aTime = a.timestamp;
+          const bTime = b.timestamp;
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
+        
+        const latestNotification = currentFileNotifications[0];
+        
+        
+        // Create a unique state signature to detect content changes, not just ID changes
+        const notificationState = `${latestNotification.id}_${latestNotification.status}_${latestNotification.progress?.percentage}_${latestNotification.currentStep}_${latestNotification.timestamp}`;
+        
+        // Only process if the notification content has changed (not just new ID)
+        if (notificationState !== lastProcessedNotificationState) {
+          lastProcessedNotificationState = notificationState;
           
           // Check if this notification is for our current file
-          // Convert both to strings for comparison since notification sends file_id as string
-          if (String(latestNotification.data?.file_id) === String(fileId) && 
-              latestNotification.type === 'transcription_status') {
-            
-            // Update progress in real-time without full refresh for progress updates
-            if (latestNotification.data?.status === 'processing' && latestNotification.data?.progress !== undefined) {
-              if (file) {
-                file.progress = latestNotification.data.progress;
-                file.status = 'processing';
-                file = { ...file }; // Trigger reactivity
-                reactiveFile.set(file);
-              }
-              console.log('Progress update for file:', fileId, 'Progress:', latestNotification.data.progress + '%', 'Message:', latestNotification.data.message);
-            } else {
-              // For status changes (completed, error), do a full refresh
-              console.log('Status change for file:', fileId, 'Status:', latestNotification.data?.status);
-              fetchFileDetails();
-            }
+          // Skip if fileId is not set yet (component still initializing)
+          if (!fileId) {
+            return;
           }
+          
+          // Convert both to strings for comparison since notification sends file_id as string
+          const notificationFileId = String(latestNotification.data?.file_id);
+          const currentFileId = String(fileId);
+          
+          
+          if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
+            
+            // Handle transcription status updates
+            if (latestNotification.type === 'transcription_status') {
+              
+              // Get status from notification (progressive notifications set it at root level)
+              const notificationStatus = latestNotification.status || latestNotification.data?.status;
+              const notificationProgress = latestNotification.progress?.percentage || latestNotification.data?.progress;
+              
+              
+              // Update progress in real-time for processing updates
+              if (notificationStatus === 'processing' && notificationProgress !== undefined) {
+                if (file) {
+                  file.progress = notificationProgress;
+                  file.status = 'processing';
+                  // Update the current processing step from the progressive notification
+                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || 'Processing...';
+                  file = { ...file }; // Trigger reactivity
+                  reactiveFile.set(file);
+                  
+                }
+              } else if (notificationStatus === 'completed' || notificationStatus === 'success' || notificationStatus === 'complete' || notificationStatus === 'finished') {
+                // Transcription completed - show completion and refresh
+                if (file) {
+                  file.progress = 100;
+                  file.status = 'completed';
+                  currentProcessingStep = 'Processing complete!';
+                  
+                  // If LLM is available, always show AI summary spinner after transcription completion
+                  // This handles the automatic summarization that triggers after transcription
+                  if (llmAvailable) {
+                    summaryGenerating = true;
+                    generatingSummary = true;
+                    summaryError = '';
+                    // Keep reprocessing flag true until summary completes to maintain proper UI state
+                  } else {
+                    // No LLM available, safe to reset reprocessing flag
+                    reprocessing = false;
+                  }
+                  
+                  file = { ...file }; // Trigger reactivity
+                  reactiveFile.set(file);
+                }
+                
+                // Clear processing step and refresh transcript data after completion
+                setTimeout(async () => {
+                  currentProcessingStep = ''; // Clear processing step
+
+                  // Only refresh the transcript data, not the entire file object to preserve spinner state
+                  if (file?.id && (file.status === 'completed' || file.status === 'success')) {
+                    await fetchTranscriptData();
+
+                    // Refresh subtitles in the video player now that transcript is available
+                    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+                      try {
+                        await videoPlayerComponent.updateSubtitles();
+                      } catch (error) {
+                        console.warn('Failed to update subtitles:', error);
+                      }
+                    }
+                  }
+                }, 1000);
+              } else if (notificationStatus === 'error' || notificationStatus === 'failed') {
+                // Error state - refresh immediately
+                currentProcessingStep = ''; // Clear processing step
+                fetchFileDetails();
+              }
+            }
+            
+            // WebSocket notifications for file updates
+            
+            // Handle summarization status updates  
+            if (latestNotification.type === 'summarization_status') {
+              // Only process notifications for the current file
+              const notificationFileId = String(latestNotification.data?.file_id || '');
+              const currentFileId = String(fileId || '');
+              
+              if (notificationFileId !== currentFileId) {
+              } else {
+              
+              // Get status from notification (progressive notifications set it at root level)
+              const status = latestNotification.status || latestNotification.data?.status;
+              
+              
+              if (status === 'queued' || status === 'processing' || status === 'generating') {
+                // Summary generation started - show spinner
+                summaryGenerating = true;
+                generatingSummary = true;
+                summaryError = '';
+                
+              } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
+                // Summary completed - stop spinners and update file
+                
+                summaryGenerating = false;
+                generatingSummary = false;
+                summaryError = '';
+                
+                // Reset reprocessing flag when summary completes (final step of reprocessing)
+                reprocessing = false;
+                
+                if (file) {
+                  // Update summary-related fields from notification data
+                  const summaryContent = latestNotification.data?.summary;
+                  const summaryId = latestNotification.data?.summary_opensearch_id;
+                  
+                  
+                  if (summaryContent) {
+                    file.summary = summaryContent;
+                  }
+                  if (summaryId) {
+                    file.summary_opensearch_id = summaryId;
+                  }
+                  
+                  
+                  // Force reactivity update
+                  file = { ...file };
+                  reactiveFile.set(file);
+                  
+                }
+              } else if (status === 'failed' || status === 'error') {
+                // Summary failed - stop spinners and show error
+                summaryGenerating = false;
+                generatingSummary = false;
+                
+                // Get error message from notification
+                const errorMessage = latestNotification.data?.message || latestNotification.message || 'Failed to generate summary';
+                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') || 
+                                       errorMessage.toLowerCase().includes('configure an llm provider') ||
+                                       errorMessage.toLowerCase().includes('llm provider');
+                
+                if (!isLLMConfigError) {
+                  summaryError = errorMessage;
+                }
+                
+              }
+              } // Close the else block for file ID matching
+            }
+          } else {
+          }
+        } else {
         }
+      } else {
       }
     });
   });
 
   onDestroy(() => {
-    if (player) {
-      try {
-        // Clean up any subtitle blob URLs before destroying player
-        const videoElement = player.media;
-        if (videoElement) {
-          const tracks = Array.from(videoElement.querySelectorAll('track[kind="subtitles"]'));
-          tracks.forEach(track => {
-            if (track.src && track.src.startsWith('blob:')) {
-              URL.revokeObjectURL(track.src);
-            }
-          });
-        }
-        
-        player.destroy();
-        player = null;
-        playerInitialized = false;
-      } catch (err) {
-        console.error('Error destroying player:', err);
-      }
-    }
-    
-    // Clear any pending subtitle refresh timer
-    if (subtitleRefreshTimer) {
-      clearTimeout(subtitleRefreshTimer);
-    }
+    // Player cleanup is now handled by VideoPlayer component
+    playerInitialized = false;
+
+    // LLM status cleanup is handled by the Settings component
     
     // Clean up WebSocket subscription
     if (wsUnsubscribe) {
@@ -1467,7 +1664,8 @@
     </div>
   {:else if file}
     <div class="file-header">
-      <FileHeader {file} />
+      <FileHeader {file} {currentProcessingStep} />
+      
       
       <MetadataDisplay 
         {file} 
@@ -1478,16 +1676,119 @@
     <div class="main-content-grid">
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
-        <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+        <div class="video-header">
+          <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+          <!-- Action Buttons - right aligned above video -->
+          <div class="header-buttons">
+            <!-- View Full Transcript Button - LEFT of AI Summary -->
+            {#if file && file.transcript_segments && file.transcript_segments.length > 0 && file.status !== 'processing'}
+              <button 
+                class="view-transcript-btn"
+                on:click={() => showTranscriptModal = true}
+                title="View full transcript in modal"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="transcript-icon">
+                  <path d="M4 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+                  <path d="M5 5h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
+                </svg>
+                Transcript
+              </button>
+            {/if}
+          <!-- Debug: Summary button state: hasSummary={!!(file?.summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
+          {#if file?.summary || file?.summary_opensearch_id}
+            <button 
+              class="view-summary-btn"
+              on:click={handleShowSummary}
+              title="View AI-generated summary in BLUF format"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
+                <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
+              </svg>
+              Summary
+            </button>
+          {:else if summaryGenerating || generatingSummary}
+            <!-- Show generating state even when no summary exists yet -->
+            <button 
+              class="generate-summary-btn"
+              disabled
+              title="AI summary is being generated..."
+            >
+              <div class="spinner-small"></div>
+              <span>AI Summary</span>
+            </button>
+          {:else if file?.status === 'completed'}
+            <button 
+              class="generate-summary-btn"
+              on:click={handleGenerateSummary}
+              disabled={generatingSummary || summaryGenerating || !llmAvailable}
+              title={!llmAvailable ? 'AI summary features are not available. Configure an LLM provider in Settings.' : 
+                     (generatingSummary || summaryGenerating) ? 'AI summary is being generated...' : 
+                     'Generate AI-powered summary with key insights and action items'}
+            >
+              {#if generatingSummary || summaryGenerating}
+                <div class="spinner-small"></div>
+                <span>AI Summary</span>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
+                  <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
+                </svg>
+                Generate AI Summary
+              {/if}
+            </button>
+          {/if}
+          <!-- Reprocess Button - icon only with tooltip -->
+          {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
+            <button 
+              class="reprocess-button-header" 
+              on:click={handleReprocessHeader}
+              disabled={reprocessing}
+              title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+              </svg>
+              {#if reprocessing}
+                <div class="spinner-small"></div>
+              {/if}
+            </button>
+          {/if}
+          </div>
+        </div>
         
-        <VideoPlayer 
-          {videoUrl} 
-          {file} 
-          {isPlayerBuffering} 
-          {loadProgress} 
+        <VideoPlayer
+          bind:this={videoPlayerComponent}
+          {videoUrl}
+          {file}
+          {isPlayerBuffering}
+          {loadProgress}
           {errorMessage}
+          {speakerList}
           on:retry={handleVideoRetry}
+          on:timeupdate={handleTimeUpdate}
+          on:play={handlePlay}
+          on:pause={handlePause}
+          on:loadedmetadata={handleLoadedMetadata}
         />
+
+        <!-- Error Messages -->
+        {#if summaryError}
+          <div class="summary-error-container">
+            <div class="error-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="error-icon">
+                <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+              </svg>
+              <span>{summaryError}</span>
+            </div>
+            <button 
+              class="dismiss-error-btn" 
+              on:click={() => summaryError = ''}
+              title="Dismiss error"
+            >
+              ✕
+            </button>
+          </div>
+        {/if}
         
         <!-- Waveform visualization -->
         {#if file && file.id && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
@@ -1512,7 +1813,7 @@
           bind:collections 
           fileId={file?.id}
           bind:isExpanded={isCollectionsExpanded}
-          on:collectionRemoved={handleCollectionRemoved}
+          on:collectionsUpdated={handleCollectionsUpdated}
         />
 
         <AnalyticsSection 
@@ -1521,26 +1822,23 @@
           {speakerList}
         />
 
-        <div class="comments-section">
-          <h4 class="comments-heading">Comments & Discussion</h4>
-          <div class="comments-section-wrapper">
-            <CommentSection 
-              fileId={file?.id ? String(file.id) : ''} 
-              {currentTime} 
-              on:seekTo={handleSeekTo}
-            />
-          </div>
-        </div>
+        <CommentSection 
+          fileId={file?.id ? String(file.id) : ''} 
+          {currentTime} 
+          on:seekTo={handleSeekTo}
+        />
       </section>
       
-      <!-- Transcript section - right side -->
+      <!-- Right column: Transcript -->
       {#if file && file.transcript_segments}
-        <TranscriptDisplay 
+        <section class="transcript-column">
+          <TranscriptDisplay 
           {file}
           {currentTime}
           {isEditingTranscript}
           {editedTranscript}
           {savingTranscript}
+          {savingSpeakers}
           {transcriptError}
           {editingSegmentId}
           bind:editingSegmentText
@@ -1558,17 +1856,19 @@
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
         />
-
+        </section>
       {:else}
         <section class="transcript-column">
-          <div class="transcript-header">
-            <h4>Transcript</h4>
-            <div class="reprocess-button-wrapper">
-              <ReprocessButton {file} {reprocessing} on:reprocess={handleReprocess} />
-            </div>
-          </div>
           <div class="no-transcript">
-            <p>No transcript available for this file.</p>
+            {#if file?.status === 'processing' || file?.status === 'pending'}
+              <div class="processing-placeholder">
+                <div class="spinner-large"></div>
+                <p>Generating transcript...</p>
+                <small>This may take a few minutes depending on the length of your file.</small>
+              </div>
+            {:else}
+              <p>No transcript available for this file.</p>
+            {/if}
           </div>
         </section>
       {/if}
@@ -1593,6 +1893,54 @@
   on:close={handleExportModalClose}
 />
 
+<!-- Summary Modal -->
+{#if file?.id}
+  <SummaryModal
+    bind:isOpen={showSummaryModal}
+    fileId={file.id}
+    fileName={file?.filename || 'Unknown File'}
+    on:close={() => showSummaryModal = false}
+    on:reprocessSummary={async (_event) => {
+      // 1. Close modal immediately
+      showSummaryModal = false;
+      
+      // 2. Update button to show spinner state
+      summaryGenerating = true;
+      summaryError = '';
+      
+      // 3. Clear the summary from file object to trigger "generating" button state
+      if (file) {
+        file.summary = null;
+        file.summary_opensearch_id = null;
+        file = { ...file }; // Trigger reactivity
+      }
+      
+      // 4. Trigger the API call for reprocessing
+      try {
+        await axiosInstance.post(`/api/files/${file.id}/summarize`, {
+          force_regenerate: true
+        });
+        
+        // WebSocket will handle the rest of the status updates
+      } catch (error) {
+        console.error('Failed to start reprocess:', error);
+        summaryError = 'Failed to start summary reprocessing';
+        summaryGenerating = false;
+      }
+    }}
+  />
+{/if}
+
+<!-- Transcript Modal -->
+{#if file?.id}
+  <TranscriptModal
+    bind:isOpen={showTranscriptModal}
+    fileId={file.id}
+    fileName={file?.filename || 'Unknown File'}
+    transcriptSegments={file?.transcript_segments || []}
+    on:close={() => showTranscriptModal = false}
+  />
+{/if}
 
 <style>
   .file-detail-page {
@@ -1649,20 +1997,19 @@
     background: var(--primary-hover);
   }
   
-  .reprocess-button-wrapper {
-    display: inline-block;
-  }
   
   .transcript-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
+    width: 100%;
+    min-height: 32px;
   }
 
   .file-header {
     margin-bottom: 24px;
   }
+
 
   .main-content-grid {
     display: grid;
@@ -1674,14 +2021,96 @@
   .video-column {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
   }
 
   .video-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 0px;
+    min-height: 32px;
+  }
+
+  .header-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .view-transcript-btn {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
+  }
+
+  .view-transcript-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .view-transcript-btn:active {
+    transform: scale(0.98);
+  }
+
+  .view-transcript-btn .transcript-icon {
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .reprocess-button-header {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    width: 40px;
+    height: 40px;
+  }
+
+  .reprocess-button-header:hover:not(:disabled) {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .reprocess-button-header:active {
+    transform: scale(0.98);
+  }
+
+  .reprocess-button-header:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .reprocess-button-header .spinner-small {
+    border: 2px solid rgba(128, 128, 128, 0.3);
+    border-top: 2px solid var(--primary-color);
+    border-radius: 50%;
+    width: 12px;
+    height: 12px;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
   }
 
   .video-column h4 {
@@ -1691,30 +2120,174 @@
     color: var(--text-primary);
   }
 
+  .transcript-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .view-summary-btn {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
+  }
+
+  .view-summary-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+  
+  .view-summary-btn:active {
+    transform: scale(0.98);
+  }
+
+  .view-summary-btn .ai-icon {
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .generate-summary-btn {
+    background-color: var(--primary-color, #3b82f6);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .generate-summary-btn:hover:not(:disabled) {
+    background-color: var(--primary-color-dark, #2563eb);
+    transform: translateY(-1px);
+  }
+
+  .generate-summary-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+
+  .status-text {
+    white-space: nowrap;
+  }
+
+  .generate-summary-btn.checking {
+    background-color: var(--warning-color, #f59e0b);
+    opacity: 0.8;
+  }
+
+  .generate-summary-btn.unavailable {
+    background-color: var(--error-color, #ef4444);
+    color: white;
+  }
+
+  .generate-summary-btn.unavailable:hover {
+    background-color: var(--error-color-dark, #dc2626);
+  }
+
+  .spinner-small {
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .warning-icon {
+    flex-shrink: 0;
+    margin-right: 0.3rem;
+    opacity: 0.9;
+  }
+
+  .summary-error-container {
+    background-color: var(--error-bg, #fef2f2);
+    border: 1px solid var(--error-border, #fecaca);
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    position: relative;
+  }
+
+  .error-message {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--error-color, #dc2626);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+
+  .error-icon {
+    flex-shrink: 0;
+  }
+
+
+  .dismiss-error-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    line-height: 1;
+  }
+
+  .dismiss-error-btn:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+  }
 
 
   .waveform-section {
-    margin-top: 12px;
     width: 100%;
   }
 
-  .comments-section {
-    margin-top: 20px;
+
+  .ai-summary-section {
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
   }
 
-  .comments-heading {
-    margin: 0 0 16px 0;
+  .summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .summary-header h4 {
+    margin: 0;
     font-size: 16px;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .comments-section-wrapper {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 20px;
-  }
 
   @media (max-width: 1024px) {
     .main-content-grid {
@@ -1734,9 +2307,15 @@
   }
 
   /* Transcript segment highlighting styles */
+  :global(.transcript-segment .segment-content) {
+    border: 1px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0);
+    transition: all 0.2s ease;
+  }
+
   :global(.transcript-segment.active-segment .segment-content) {
     background-color: rgba(59, 130, 246, 0.12);
-    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.3);
     box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
   }
 
@@ -1745,89 +2324,7 @@
     border-color: rgba(59, 130, 246, 0.4);
   }
 
-  /* Player controls flash styling */
-  :global(.plyr--show-controls .plyr__controls) {
-    opacity: 1 !important;
-    transform: translateY(0) !important;
-  }
+  /* All Plyr styling is now handled in VideoPlayer.svelte */
 
-  /* Speaker verification section */
-  .speaker-verification-section {
-    margin-top: 20px;
-    padding: 16px;
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-  }
 
-  .speaker-verification-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    gap: 12px;
-  }
-
-  .speaker-verification-header h4 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .verify-speakers-btn {
-    background: var(--warning-color);
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .verify-speakers-btn:hover {
-    background: var(--warning-hover);
-  }
-
-  .manage-profiles-btn {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .manage-profiles-btn:hover {
-    background: var(--primary-hover);
-  }
-
-  .verification-notice {
-    padding: 12px;
-    background: rgba(251, 191, 36, 0.1);
-    border: 1px solid rgba(251, 191, 36, 0.3);
-    border-radius: 6px;
-  }
-
-  .notice-text {
-    margin: 0;
-    font-size: 14px;
-    color: var(--text-secondary);
-  }
-
-  @media (max-width: 768px) {
-    .speaker-verification-header {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    
-    .speaker-verification-header button {
-      width: 100%;
-    }
-  }
 </style>

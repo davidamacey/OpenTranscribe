@@ -1,15 +1,18 @@
 import contextlib
-from sqlalchemy.orm import Session
-from app.db.base import SessionLocal, engine
-from sqlalchemy.exc import SQLAlchemyError
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.db.base import SessionLocal
+
 logger = logging.getLogger(__name__)
+
 
 @contextlib.contextmanager
 def session_scope():
     """Provide a transactional scope around a series of operations.
-    
+
     Usage:
         with session_scope() as db:
             db_obj = db.query(Model).get(id)
@@ -27,9 +30,10 @@ def session_scope():
     finally:
         session.close()
 
+
 def get_refreshed_object(db: Session, model_class, obj_id: int):
     """Get a fresh copy of an object from the database.
-    
+
     Useful for celery tasks that need to get a fresh instance of a model
     after it's been detached from a previous session.
     """
@@ -45,24 +49,25 @@ def get_refreshed_object(db: Session, model_class, obj_id: int):
         finally:
             temp_session.close()
 
+
 def refresh_session_object(obj, session=None):
     """Refresh a detached object with a new session if needed.
-    
+
     Args:
         obj: The object to refresh
         session: Optional session to use (creates a new one if not provided)
-    
+
     Returns:
         The refreshed object and the session used (to be closed by the caller)
     """
     if obj is None:
         return None, None
-    
+
     close_session = False
     if session is None:
         session = SessionLocal()
         close_session = True
-    
+
     try:
         # Check if object is attached to this session
         if obj in session:

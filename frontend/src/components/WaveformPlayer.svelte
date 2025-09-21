@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
+  import { theme } from '../stores/theme.js';
 
   // Props
   export let fileId: string | number;
@@ -88,25 +89,12 @@
 
       if (response.data && Array.isArray(response.data.waveform) && response.data.waveform.length > 0) {
         waveformData = response.data.waveform;
-        console.log('WaveformPlayer: Loaded waveform data', {
-          fileId,
-          samples: targetSamples,
-          dataLength: waveformData.length,
-          firstFewValues: waveformData.slice(0, 5),
-          lastFewValues: waveformData.slice(-5),
-          maxValue: Math.max(...waveformData),
-          duration: response.data.duration,
-          expectedDuration: response.data.expected_duration,
-          extractedSamples: response.data.extracted_samples,
-          secondsPerPoint: response.data.seconds_per_point
-        });
         
         // Use the actual extracted duration from waveform if available
         // This ensures waveform aligns with actual audio content
         if (response.data.duration) {
           // Only update if significantly different or not set
           if (!duration || Math.abs(duration - response.data.duration) > 0.1) {
-            console.log(`WaveformPlayer: Updating duration from ${duration} to ${response.data.duration}`);
             duration = response.data.duration;
           }
         }
@@ -290,6 +278,11 @@
   
   // Redraw when currentTime changes (playhead movement)
   $: if (canvas && ctx && waveformData.length > 0 && currentTime !== undefined) {
+    drawWaveform();
+  }
+
+  // Redraw when theme changes to pick up new CSS custom property values
+  $: if (canvas && ctx && waveformData.length > 0 && $theme) {
     drawWaveform();
   }
 

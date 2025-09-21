@@ -1,13 +1,14 @@
-<script>
+<script lang="ts">
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user as userStore } from '../stores/auth';
   import UserManagementTable from '../components/UserManagementTable.svelte';
+  import ConfirmationModal from '../components/ConfirmationModal.svelte';
   
   // Explicitly declare router props to prevent warnings
-  export let location = null;
-  export let navigate = null;
-  export let condition = true;
+  export const location = null;
+  export const navigate = null;
+  export const condition = true;
   
   // Component state
   /** @type {Array<any>} */
@@ -30,6 +31,16 @@
   let healthError = null;
   /** @type {boolean} */
   let recoveryInProgress = false;
+  
+  // Modal states
+  let showConfirmModal = false;
+  let showAlertModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  let alertModalTitle = '';
+  let alertModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
   
   // System stats
   /** @type {{ 
@@ -134,11 +145,11 @@
       // Refresh data after recovery
       await fetchTaskHealth();
       // Show success message or handle response as needed
-      alert(`Recovery completed: ${response.data.count} tasks processed`);
+      showAlert('Recovery Completed', `Recovery completed: ${response.data.count} tasks processed`);
     } catch (err) {
       console.error('Error recovering tasks:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to recover tasks: ${errorMsg}`);
+      showAlert('Recovery Failed', `Failed to recover tasks: ${errorMsg}`);
     } finally {
       recoveryInProgress = false;
     }
@@ -156,11 +167,11 @@
       // Refresh data after fix
       await fetchTaskHealth();
       // Show success message or handle response as needed
-      alert(`Files fixed: ${response.data.count} files processed`);
+      showAlert('Files Fixed', `Files fixed: ${response.data.count} files processed`);
     } catch (err) {
       console.error('Error fixing files:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to fix files: ${errorMsg}`);
+      showAlert('Fix Failed', `Failed to fix files: ${errorMsg}`);
     } finally {
       recoveryInProgress = false;
     }
@@ -173,13 +184,13 @@
   async function recoverTask(taskId) {
     try {
       await axiosInstance.post(`/tasks/system/recover-task/${taskId}`);
-      alert('Task recovery initiated successfully');
+      showAlert('Recovery Initiated', 'Task recovery initiated successfully');
       // Refresh health data
       fetchTaskHealth();
     } catch (err) {
       console.error('Error recovering task:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to recover task: ${errorMsg}`);
+      showAlert('Recovery Failed', `Failed to recover task: ${errorMsg}`);
     }
   }
 
@@ -190,13 +201,13 @@
   async function retryTask(fileId) {
     try {
       await axiosInstance.post(`/tasks/retry-file/${fileId}`);
-      alert('File processing restarted successfully');
+      showAlert('Processing Restarted', 'File processing restarted successfully');
       // Refresh health data
       fetchTaskHealth();
     } catch (err) {
       console.error('Error retrying task:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to retry task: ${errorMsg}`);
+      showAlert('Retry Failed', `Failed to retry task: ${errorMsg}`);
     }
   }
 
@@ -209,13 +220,13 @@
     recoveryInProgress = true;
     try {
       const response = await axiosInstance.post('/tasks/system/startup-recovery');
-      alert('Startup recovery triggered successfully');
+      showAlert('Recovery Triggered', 'Startup recovery triggered successfully');
       // Refresh health data after a delay
       setTimeout(() => fetchTaskHealth(), 2000);
     } catch (err) {
       console.error('Error triggering startup recovery:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to trigger startup recovery: ${errorMsg}`);
+      showAlert('Recovery Failed', `Failed to trigger startup recovery: ${errorMsg}`);
     } finally {
       recoveryInProgress = false;
     }
@@ -227,20 +238,27 @@
   async function triggerAllUserRecovery() {
     if (recoveryInProgress) return;
     
-    if (!confirm('This will recover files for all users. Are you sure?')) {
-      return;
-    }
-    
+    showConfirmation(
+      'Recover All User Files',
+      'This will recover files for all users. Are you sure you want to continue?',
+      () => executeAllUserRecovery()
+    );
+  }
+
+  /**
+   * Execute all user recovery after confirmation
+   */
+  async function executeAllUserRecovery() {
     recoveryInProgress = true;
     try {
       const response = await axiosInstance.post('/tasks/system/recover-all-user-files');
-      alert('All user file recovery triggered successfully');
+      showAlert('Recovery Triggered', 'All user file recovery triggered successfully');
       // Refresh health data after a delay
       setTimeout(() => fetchTaskHealth(), 2000);
     } catch (err) {
       console.error('Error triggering all user recovery:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to trigger all user recovery: ${errorMsg}`);
+      showAlert('Recovery Failed', `Failed to trigger all user recovery: ${errorMsg}`);
     } finally {
       recoveryInProgress = false;
     }
@@ -256,16 +274,59 @@
     recoveryInProgress = true;
     try {
       const response = await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
-      alert(`File recovery triggered for user: ${response.data.message}`);
+      showAlert('Recovery Triggered', response.data.message);
       // Refresh health data after a delay
       setTimeout(() => fetchTaskHealth(), 2000);
     } catch (err) {
       console.error('Error triggering user recovery:', err);
       const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-      alert(`Failed to trigger user recovery: ${errorMsg}`);
+      showAlert('Recovery Failed', `Failed to trigger user recovery: ${errorMsg}`);
     } finally {
       recoveryInProgress = false;
     }
+  }
+
+  /**
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message 
+   * @param {() => void} callback - The callback to execute on confirmation
+   */
+  function showConfirmation(title, message, callback) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Show alert modal
+   * @param {string} title - The alert title
+   * @param {string} message - The alert message
+   */
+  function showAlert(title, message) {
+    alertModalTitle = title;
+    alertModalMessage = message;
+    showAlertModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
   }
 
   /**
@@ -713,6 +774,33 @@
   {/if}
 </div>
 
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Start Recovery"
+  cancelText="Cancel"
+  confirmButtonClass="modal-primary-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
+/>
+
+<!-- Alert Modal -->
+<ConfirmationModal
+  bind:isOpen={showAlertModal}
+  title={alertModalTitle}
+  message={alertModalMessage}
+  confirmText="OK"
+  cancelText=""
+  confirmButtonClass="modal-primary-button"
+  cancelButtonClass=""
+  on:confirm={() => showAlertModal = false}
+  on:close={() => showAlertModal = false}
+/>
+
 <style>
   .admin-container {
     max-width: 1200px;
@@ -1064,5 +1152,73 @@
     .admin-container {
       padding: 2rem;
     }
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-delete-button:active) {
+    transform: translateY(0) !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+    font-display: block !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  :global(.modal-primary-button) {
+    background-color: var(--primary-color) !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2) !important;
+  }
+
+  :global(.modal-primary-button:hover) {
+    background-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

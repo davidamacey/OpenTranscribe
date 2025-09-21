@@ -1,15 +1,23 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Link, useNavigate } from 'svelte-navigator';
+  import { Link } from 'svelte-navigator';
+  import { flip } from 'svelte/animate';
+  import { fade, scale } from 'svelte/transition';
   import { websocketStore } from '$stores/websocket';
-  import { authStore } from '../stores/auth';
   import { toastStore } from '$stores/toast';
-  
-  // Define navigate for routing
-  const navigateHook = useNavigate();
+  import { hasActiveUploads, uploadsStore } from '$stores/uploads';
+  import { galleryStore, galleryState, selectedCount } from '$stores/gallery';
+  import ConfirmationModal from '../components/ConfirmationModal.svelte';
   
   // Modal state
   let showUploadModal = false;
+  
+  // Confirmation modal state
+  let showConfirmModal = false;
+  let confirmModalTitle = '';
+  let confirmModalMessage = '';
+  /** @type {(() => void) | null} */
+  let confirmCallback = null;
   
   // Define types
   interface MediaFile {
@@ -57,13 +65,6 @@
     max: number | null;
   }
   
-  interface ResolutionRange {
-    minWidth: number | null;
-    maxWidth: number | null;
-    minHeight: number | null;
-    maxHeight: number | null;
-  }
-  
   interface FilterEvent {
     detail: {
       search: string;
@@ -84,10 +85,6 @@
     to: Date | null;
   }
   
-  interface DeleteResult {
-    success: boolean;
-    id: number;
-  }
   
   import axiosInstance from '../lib/axios';
   import { format } from 'date-fns';
@@ -98,25 +95,26 @@
   import FilterSidebar from '../components/FilterSidebar.svelte';
   import CollectionsPanel from '../components/CollectionsPanel.svelte';
   import UserFileStatus from '../components/UserFileStatus.svelte';
-  import AutoRecoverModal from '../components/AutoRecoverModal.svelte';
   
   // Media files state
   let files: MediaFile[] = [];
   let loading: boolean = true;
   let error: string | null = null;
   
-  // Selection state
-  let selectedFiles = new Set<number>();
-  let isSelecting: boolean = false;
+  // Animation and smooth update state
+  let fileMap = new Map<number, MediaFile>();
+  let pendingNewFiles = new Set<number>();
+  let pendingDeletions = new Set<number>();
+  let refreshTimeouts = new Map<string, number>();
   
   // View state
   let selectedCollectionId: number | null = null;
   let showCollectionsModal = false;
-  let activeTab: 'gallery' | 'status' = 'gallery';
-  
-  // Auto-recover modal state
-  let showAutoRecoverModal = false;
-  let stuckFilesForRecovery = [];
+
+  // Use gallery store for state management
+  $: activeTab = $galleryState.activeTab;
+  $: isSelecting = $galleryState.isSelecting;
+  $: selectedFiles = $galleryState.selectedFiles;
   
   // Component refs
   let filterSidebarRef: any;
@@ -131,15 +129,6 @@
     progress?: number;
   }
   
-  interface FileStatusUpdates {
-    [key: string]: FileStatusUpdate;
-  }
-  
-  interface Notification {
-    type: string;
-    data: any;
-  }
-  
   // Filter state
   let searchQuery: string = '';
   let selectedTags: string[] = [];
@@ -150,11 +139,76 @@
   let selectedFileTypes: string[] = [];
   let selectedStatuses: string[] = [];
   let transcriptSearch: string = '';
-  let showFilters: boolean = false; // For mobile
+  // Use store for showFilters
+  $: showFilters = $galleryState.showFilters;
   
-  // Fetch media files
-  async function fetchFiles() {
-    loading = true;
+  /**
+   * Show confirmation modal
+   * @param {string} title - The modal title
+   * @param {string} message - The confirmation message
+   * @param {() => void} callback - The callback to execute on confirmation
+   */
+  function showConfirmation(title: string, message: string, callback: () => void) {
+    confirmModalTitle = title;
+    confirmModalMessage = message;
+    confirmCallback = callback;
+    showConfirmModal = true;
+  }
+
+  /**
+   * Handle confirmation modal confirm
+   */
+  function handleConfirmModalConfirm() {
+    if (confirmCallback) {
+      confirmCallback();
+      confirmCallback = null;
+    }
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle confirmation modal cancel
+   */
+  function handleConfirmModalCancel() {
+    confirmCallback = null;
+    showConfirmModal = false;
+  }
+
+  /**
+   * Handle force delete of processing files
+   */
+  async function handleForceDelete(conflictFileIds: number[]) {
+    try {
+      // Try force deletion for conflicted files
+      const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: conflictFileIds,
+        action: 'delete',
+        force: true
+      });
+      
+      const forceResults = forceResponse.data;
+      const forceSuccessful = forceResults.filter((r: any) => r.success);
+      
+      if (forceSuccessful.length > 0) {
+        toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
+        // Remove force deleted files smoothly
+        const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_id);
+        removeFilesSmooth(forceSuccessfulIds);
+      }
+    } catch (forceErr) {
+      console.error('Error force deleting files:', forceErr);
+      toastStore.error('Failed to force delete some files. They may require admin intervention.');
+    }
+    
+    clearSelection();
+  }
+  
+  // Fetch media files with smooth update support
+  async function fetchFiles(isInitialLoad: boolean = false, skipAnimation: boolean = false) {
+    // Only show loading state on initial load
+    if (isInitialLoad || files.length === 0) {
+      loading = true;
+    }
     error = null;
     
     try {
@@ -214,20 +268,122 @@
         params.append('transcript_search', transcriptSearch.trim());
       }
       
+      let newFiles: MediaFile[] = [];
+      
       // If a collection is selected, fetch files from that collection
       if (selectedCollectionId !== null) {
         const response = await axiosInstance.get(`/api/collections/${selectedCollectionId}/media`, { params });
-        files = response.data;
+        newFiles = response.data;
       } else {
         const response = await axiosInstance.get('/files', { params });
-        files = response.data;
+        newFiles = response.data;
       }
+      
+      // Update files with smooth transitions
+      if (!skipAnimation && files.length > 0) {
+        updateFilesSmooth(newFiles);
+      } else {
+        files = newFiles;
+        galleryStore.setFiles(newFiles);
+        updateFileMap();
+      }
+      
     } catch (err) {
       console.error('Error fetching files:', err);
       error = 'Failed to load media files. Please try again.';
     } finally {
       loading = false;
     }
+  }
+  
+  // Update file map for efficient lookups
+  function updateFileMap() {
+    fileMap.clear();
+    files.forEach(file => {
+      fileMap.set(file.id, file);
+    });
+  }
+  
+  // Smooth file list updates without full re-render
+  function updateFilesSmooth(newFiles: MediaFile[]) {
+    const newFileMap = new Map<number, MediaFile>();
+    newFiles.forEach(file => newFileMap.set(file.id, file));
+    
+    // Identify truly new files (not in current list)
+    const existingIds = new Set(files.map(f => f.id));
+    const newIds = newFiles.map(f => f.id).filter(id => !existingIds.has(id));
+    
+    // Mark new files for entrance animation
+    newIds.forEach(id => pendingNewFiles.add(id));
+    
+    // Update the files array
+    files = newFiles;
+    galleryStore.setFiles(newFiles);
+    updateFileMap();
+    
+    // Clear new file markers after animation
+    setTimeout(() => {
+      newIds.forEach(id => pendingNewFiles.delete(id));
+    }, 600);
+  }
+  
+  // Add a single new file smoothly to the top
+  function addNewFileSmooth(newFile: MediaFile) {
+    // Check if file already exists
+    if (fileMap.has(newFile.id)) {
+      // Update existing file
+      files = files.map(f => f.id === newFile.id ? newFile : f);
+      fileMap.set(newFile.id, newFile);
+      return;
+    }
+    
+    // Add new file to the beginning
+    pendingNewFiles.add(newFile.id);
+    files = [newFile, ...files];
+    fileMap.set(newFile.id, newFile);
+    
+    // Clear new file marker after animation
+    setTimeout(() => {
+      pendingNewFiles.delete(newFile.id);
+    }, 600);
+  }
+  
+  // Throttled refresh function to prevent spam
+  function throttledRefresh(key: string, delay: number = 500) {
+    if (refreshTimeouts.has(key)) {
+      clearTimeout(refreshTimeouts.get(key));
+    }
+    
+    const timeoutId = setTimeout(() => {
+      fetchFiles(false, true); // Skip animation for throttled refreshes
+      refreshTimeouts.delete(key);
+    }, delay);
+    
+    refreshTimeouts.set(key, timeoutId);
+  }
+  
+  // Remove files smoothly with animation
+  function removeFilesSmooth(fileIds: number[]) {
+    // Mark files for deletion animation
+    fileIds.forEach(id => {
+      if (fileMap.has(id)) {
+        pendingDeletions.add(id);
+      }
+    });
+    
+    // Wait for exit animation to complete, then remove from array
+    setTimeout(() => {
+      files = files.filter(file => !fileIds.includes(file.id));
+      fileIds.forEach(id => {
+        fileMap.delete(id);
+        pendingDeletions.delete(id);
+      });
+    }, 250); // Match fade out animation duration
+  }
+  
+  // Remove single file smoothly
+  function removeFileSmooth(fileId: number) {
+    removeFilesSmooth([fileId]);
   }
   
   // Handle filter changes
@@ -250,120 +406,31 @@
     fetchFiles();
   }
   
+  
+  
   // Toggle file selection
   function toggleFileSelection(fileId: number, event: Event) {
     if (event) {
       event.stopPropagation();
       event.preventDefault();
     }
-    
-    const newSelection = new Set(selectedFiles);
-    if (newSelection.has(fileId)) {
-      newSelection.delete(fileId);
-    } else {
-      newSelection.add(fileId);
-    }
-    
-    selectedFiles = newSelection;
-    isSelecting = newSelection.size > 0;
+
+    galleryStore.toggleFileSelection(fileId);
   }
-  
+
   // Select all files
   function selectAllFiles() {
-    if (selectedFiles.size === files.length) {
-      // If all are selected, deselect all but stay in selection mode
-      selectedFiles = new Set();
-    } else {
-      // Select all visible files
-      selectedFiles = new Set(files.map(file => file.id));
-    }
+    galleryStore.selectAllFiles();
   }
-  
+
   // Clear selection
   function clearSelection() {
-    selectedFiles = new Set();
-    isSelecting = false;
+    galleryStore.clearSelection();
   }
-  
-  // Delete selected files with enhanced error handling
-  async function deleteSelectedFiles() {
-    if (selectedFiles.size === 0) return;
-    
-    if (!confirm(`Are you sure you want to delete ${selectedFiles.size} selected file(s)? This action cannot be undone.`)) {
-      return;
-    }
-    
-    try {
-      loading = true;
-      
-      // Use bulk action API for better error handling
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: Array.from(selectedFiles),
-        action: 'delete',
-        force: false
-      });
-      
-      const results = response.data;
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-      
-      // Handle conflicts (files that can't be deleted)
-      const conflicts = failed.filter(r => r.error === 'HTTP_ERROR' && r.message.includes('FILE_NOT_SAFE_TO_DELETE'));
-      
-      if (conflicts.length > 0) {
-        const conflictFileIds = conflicts.map(c => c.file_id);
-        const proceed = confirm(
-          `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
-          `Would you like to cancel their processing and delete them? ` +
-          `(This action cannot be undone)`
-        );
-        
-        if (proceed) {
-          // Try force deletion for conflicted files
-          try {
-            const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
-              file_ids: conflictFileIds,
-              action: 'delete',
-              force: true
-            });
-            
-            const forceResults = forceResponse.data;
-            const forceSuccessful = forceResults.filter(r => r.success);
-            
-            toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
-          } catch (forceErr) {
-            console.error('Error force deleting files:', forceErr);
-            toastStore.error('Failed to force delete some files. They may require admin intervention.');
-          }
-        }
-      }
-      
-      // Report on regular deletion results
-      if (successful.length > 0) {
-        toastStore.success(`Successfully deleted ${successful.length} file(s).`);
-      }
-      
-      const regularFailures = failed.filter(r => !conflicts.some(c => c.file_id === r.file_id));
-      if (regularFailures.length > 0) {
-        toastStore.error(`Failed to delete ${regularFailures.length} file(s). Please try again.`);
-      }
-      
-      // Refresh the file list
-      await fetchFiles();
-      clearSelection();
-      
-    } catch (err) {
-      console.error('Error deleting files:', err);
-      const errorMessage = err.response?.data?.detail || 'An error occurred while deleting files. Please try again.';
-      toastStore.error(errorMessage);
-    } finally {
-      loading = false;
-    }
-  }
-  
+
   // Toggle filter sidebar for mobile
   function toggleFilters() {
-    showFilters = !showFilters;
+    galleryStore.toggleFilters();
   }
   
   // Toggle upload modal
@@ -371,10 +438,6 @@
     showUploadModal = !showUploadModal;
   }
   
-  // Handle search input
-  function handleSearch() {
-    fetchFiles();
-  }
   
   // Reset all filters
   function resetFilters() {
@@ -392,167 +455,99 @@
     fetchFiles();
   }
   
+  // Delete selected files with enhanced error handling
+  async function deleteSelectedFiles() {
+    if (selectedFiles.size === 0) return;
+    
+    showConfirmation(
+      'Delete Selected Files',
+      `Are you sure you want to delete ${selectedFiles.size} selected file(s)? This action cannot be undone.`,
+      () => executeDeleteSelectedFiles()
+    );
+  }
+
+  /**
+   * Execute delete selected files after confirmation
+   */
+  async function executeDeleteSelectedFiles() {
+    try {
+      // Don't show loading state - use smooth animations instead
+      
+      // Use bulk action API for better error handling
+      const response = await axiosInstance.post('/files/management/bulk-action', {
+        file_ids: Array.from(selectedFiles),
+        action: 'delete',
+        force: false
+      });
+      
+      const results = response.data;
+      const successful = results.filter((r: any) => r.success);
+      const failed = results.filter((r: any) => !r.success);
+      
+      // Handle conflicts (files that can't be deleted)
+      const conflicts = failed.filter((r: any) => r.error === 'HTTP_ERROR' && r.message.includes('FILE_NOT_SAFE_TO_DELETE'));
+      
+      if (conflicts.length > 0) {
+        const conflictFileIds = conflicts.map((c: any) => c.file_id);
+        showConfirmation(
+          'Force Delete Processing Files',
+          `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
+          `Would you like to cancel their processing and delete them? ` +
+          `(This action cannot be undone)`,
+          () => handleForceDelete(conflictFileIds)
+        );
+        return; // Exit early to wait for user confirmation
+      }
+      
+      // Report on regular deletion results
+      if (successful.length > 0) {
+        toastStore.success(`Successfully deleted ${successful.length} file(s).`);
+        // Remove successfully deleted files smoothly
+        const successfulIds = successful.map((r: any) => r.file_id);
+        removeFilesSmooth(successfulIds);
+      }
+      
+      if (failed.length > 0) {
+        toastStore.error(`Failed to delete ${failed.length} file(s). Please try again.`);
+      }
+      
+      clearSelection();
+      
+    } catch (err: any) {
+      console.error('Error deleting files:', err);
+      const errorMessage = err.response?.data?.detail || 'An error occurred while deleting files. Please try again.';
+      toastStore.error(errorMessage);
+    } finally {
+      // No need to set loading = false since we didn't set it to true
+    }
+  }
+
   // File upload completed handler
   function handleUploadComplete(event: CustomEvent) {
-    // Refresh the file list
-    fetchFiles();
+    // For URL uploads, don't immediately refresh - let WebSocket notifications handle it
+    // This prevents showing loading state while YouTube/URL processing happens in background
+    const isUrl = event.detail?.isUrl || false;
+    const isDuplicate = event.detail?.isDuplicate || false;
+    
+    if (!isUrl) {
+      // For file uploads, do a smooth refresh since files are ready to display
+      throttledRefresh('upload-complete', 300);
+    }
+    // For URL uploads, the gallery will refresh when WebSocket notifications arrive
     
     // Only close the modal if not a duplicate file
     // For duplicates, we want to keep the modal open to show the notification
-    const isDuplicate = event.detail?.isDuplicate || false;
-    
     if (!isDuplicate) {
       showUploadModal = false;
     }
   }
 
-  // Bulk retry selected files
-  async function retrySelectedFiles() {
-    if (selectedFiles.size === 0) return;
-    
-    try {
-      loading = true;
-      
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: Array.from(selectedFiles),
-        action: 'retry',
-        reset_retry_count: false
-      });
-      
-      const results = response.data;
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-      
-      if (successful.length > 0) {
-        toastStore.success(`Started retry for ${successful.length} file(s).`);
-      }
-      
-      if (failed.length > 0) {
-        const retryLimitFiles = failed.filter(r => r.message.includes('maximum retry'));
-        if (retryLimitFiles.length > 0) {
-          toastStore.warning(`${retryLimitFiles.length} file(s) have reached retry limits. Contact admin for help.`);
-        } else {
-          toastStore.error(`Failed to retry ${failed.length} file(s). Please try again.`);
-        }
-      }
-      
-      await fetchFiles();
-      clearSelection();
-      
-    } catch (err) {
-      console.error('Error retrying files:', err);
-      toastStore.error('An error occurred while retrying files. Please try again.');
-    } finally {
-      loading = false;
-    }
-  }
 
-  // Bulk cancel selected files
-  async function cancelSelectedFiles() {
-    if (selectedFiles.size === 0) return;
-    
-    if (!confirm(`Cancel processing for ${selectedFiles.size} selected file(s)?`)) {
-      return;
-    }
-    
-    try {
-      loading = true;
-      
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: Array.from(selectedFiles),
-        action: 'cancel'
-      });
-      
-      const results = response.data;
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
-      
-      if (successful.length > 0) {
-        toastStore.success(`Cancelled processing for ${successful.length} file(s).`);
-      }
-      
-      if (failed.length > 0) {
-        toastStore.error(`Failed to cancel ${failed.length} file(s). They may not have active tasks.`);
-      }
-      
-      await fetchFiles();
-      clearSelection();
-      
-    } catch (err) {
-      console.error('Error cancelling files:', err);
-      toastStore.error('An error occurred while cancelling files. Please try again.');
-    } finally {
-      loading = false;
-    }
-  }
-
-  // Auto-recover stuck files
-  async function recoverStuckFiles() {
-    try {
-      loading = true;
-      
-      // First get stuck files (use 1 minute for immediate detection)
-      const stuckResponse = await axiosInstance.get('/files/management/stuck?threshold_hours=0.017');
-      const stuckFiles = stuckResponse.data.stuck_files;
-      
-      if (stuckFiles.length === 0) {
-        toastStore.info('No files need recovery. All files are processing normally.');
-        return;
-      }
-      
-      // Store the stuck files and show the professional modal
-      stuckFilesForRecovery = stuckFiles;
-      showAutoRecoverModal = true;
-      
-    } catch (err) {
-      console.error('Error checking for stuck files:', err);
-      toastStore.error('An error occurred while checking for stuck files.');
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function handleAutoRecoverConfirm() {
-    try {
-      loading = true;
-      
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: stuckFilesForRecovery.map(f => f.id),
-        action: 'recover'
-      });
-      
-      const results = response.data;
-      const successful = results.filter(r => r.success);
-      
-      if (successful.length > 0) {
-        toastStore.success(`Successfully recovered ${successful.length} file(s). Processing will restart automatically.`);
-      } else {
-        toastStore.warning('No files could be automatically recovered. Manual intervention may be required.');
-      }
-      
-      // Close modal and refresh files
-      showAutoRecoverModal = false;
-      stuckFilesForRecovery = [];
-      await fetchFiles();
-      
-    } catch (err) {
-      console.error('Error recovering stuck files:', err);
-      toastStore.error('An error occurred while recovering stuck files.');
-    } finally {
-      loading = false;
-    }
-  }
-
-  function handleAutoRecoverCancel() {
-    showAutoRecoverModal = false;
-    stuckFilesForRecovery = [];
-    loading = false; // Reset loading state if user cancels during processing
-  }
 
   // Enhanced error notification for corrupted/invalid files
   function showEnhancedErrorNotification(file: MediaFile) {
     if (!file.last_error_message) {
-      toastStore.error(`Processing failed for "${file.filename}". Please try again.`);
+      toastStore.error(`Processing failed for "${file.title || file.filename}". Please try again.`);
       return;
     }
 
@@ -560,9 +555,9 @@
     
     if (errorMessage.includes('no audio content') || errorMessage.includes('corrupted') || errorMessage.includes('unsupported format')) {
       toastStore.error(
-        `❌ File Quality Issue: "${file.filename}"\n\n` +
+        `File Quality Issue: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 Suggestions:\n` +
+        `Suggestions:\n` +
         `• Check if the file plays correctly on your device\n` +
         `• Try converting to MP3, WAV, or MP4 format\n` +
         `• Ensure the file isn't password protected or DRM-locked\n` +
@@ -571,9 +566,9 @@
       );
     } else if (errorMessage.includes('no speech') || errorMessage.includes('only music') || errorMessage.includes('background noise')) {
       toastStore.error(
-        `🎵 No Speech Detected: "${file.filename}"\n\n` +
+        `No Speech Detected: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 This typically happens when:\n` +
+        `This typically happens when:\n` +
         `• The file contains only music or instrumental audio\n` +
         `• Speech is too quiet or unclear\n` +
         `• The file has excessive background noise\n` +
@@ -584,9 +579,9 @@
     } else {
       // Generic error with helpful guidance
       toastStore.error(
-        `⚠️ Processing Failed: "${file.filename}"\n\n` +
+        `Processing Failed: "${file.title || file.filename}"\n\n` +
         `${file.last_error_message}\n\n` +
-        `💡 You can:\n` +
+        `You can:\n` +
         `• Use the "Retry" button to try processing again\n` +
         `• Check the file format and quality\n` +
         `• Contact support if the problem persists`,
@@ -598,6 +593,7 @@
   // Subscribe to WebSocket file status updates to update file status in real-time
   // Track last processed notification to avoid duplicate processing
   let lastProcessedNotificationId = '';
+  let previousActiveUploadCount = 0;
   
   function setupWebSocketUpdates() {
     unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
@@ -609,7 +605,11 @@
           lastProcessedNotificationId = latestNotification.id;
           
           // Handle different notification types
-          if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
+          if (latestNotification.type === 'file_deleted' && latestNotification.data?.file_id) {
+            const fileId = parseInt(String(latestNotification.data.file_id));
+            removeFileSmooth(fileId);
+          }
+          else if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             const fileId = String(latestNotification.data.file_id);
             const status = latestNotification.data.status;
             
@@ -626,32 +626,86 @@
               return file;
             });
             
-            // If the file status changed to error, refresh to get the latest error message and show enhanced notification
+            // If the file status changed to error, refresh to get the latest error message
             if (status === 'error') {
-              fetchFiles().then(() => {
-                // Find the updated file with error message
-                const errorFile = files.find(f => String(f.id) === fileId);
-                if (errorFile) {
-                  showEnhancedErrorNotification(errorFile);
-                }
-              });
+              throttledRefresh('error-' + fileId, 300);
             }
             
-            console.log('MediaLibrary updated from WebSocket notification for file:', fileId, 'Status:', status);
+            // If processing completed, do a smooth refresh
+            if (status === 'completed') {
+              throttledRefresh('completed-' + fileId, 200);
+            }
+            
           } 
-          // Handle new file uploads
+          // Handle new file uploads with smooth addition
           else if (latestNotification.type === 'file_upload' || latestNotification.type === 'file_created') {
-            console.log('New file uploaded, refreshing file list');
-            fetchFiles();
+            if (latestNotification.data?.file) {
+              // Add the new file smoothly without full refresh
+              addNewFileSmooth(latestNotification.data.file);
+            } else {
+              // Fallback to throttled refresh if no file data provided
+              throttledRefresh('new-file', 500);
+            }
           }
           // Handle file updates (metadata, processing completion, etc.)
           else if (latestNotification.type === 'file_updated' && latestNotification.data?.file_id) {
-            console.log('File updated, refreshing file list');
-            fetchFiles();
+            const fileId = String(latestNotification.data.file_id);
+
+            // Try to update the file in place first
+            let fileExists = false;
+            files = files.map(file => {
+              if (String(file.id) === fileId) {
+                fileExists = true;
+                // If we have full file data, use it; otherwise merge notification data
+                if (latestNotification.data.file) {
+                  return {
+                    ...file,
+                    ...latestNotification.data.file
+                  };
+                } else {
+                  return {
+                    ...file,
+                    status: latestNotification.data.status || file.status,
+                    thumbnail_url: latestNotification.data.thumbnail_url || file.thumbnail_url,
+                  };
+                }
+              }
+              return file;
+            });
+
+            // Only fetch if file doesn't exist in current list (new file)
+            if (!fileExists) {
+              if (latestNotification.data.file) {
+                addNewFileSmooth(latestNotification.data.file);
+              } else {
+                throttledRefresh('update-' + fileId, 300);
+              }
+            }
           }
         }
       }
     });
+    
+    // Also subscribe to upload store to detect when uploads finish
+    const unsubscribeUploads = uploadsStore.subscribe(($uploads) => {
+      const currentActiveUploadCount = $uploads.uploads.filter(u => 
+        ['uploading', 'processing', 'preparing'].includes(u.status)
+      ).length;
+      
+      // If active upload count decreased to 0, do a smooth refresh
+      if (previousActiveUploadCount > 0 && currentActiveUploadCount === 0) {
+        throttledRefresh('uploads-complete', 800); // Slightly longer delay for upload completion
+      }
+      
+      previousActiveUploadCount = currentActiveUploadCount;
+    });
+    
+    // Return cleanup function for uploads subscription
+    const originalUnsubscribe = unsubscribeFileStatus;
+    unsubscribeFileStatus = () => {
+      if (originalUnsubscribe) originalUnsubscribe();
+      if (unsubscribeUploads) unsubscribeUploads();
+    };
   }
   
   onMount(() => {
@@ -661,7 +715,42 @@
     // Setup WebSocket subscription for real-time updates
     setupWebSocketUpdates();
     
-    fetchFiles();
+    // Listen for events to open Add Media modal
+    const handleOpenModalEvent = (event: CustomEvent) => {
+      showUploadModal = true;
+      // Dispatch a separate event for the FileUploader after the modal is shown
+      setTimeout(() => {
+        if (event.detail?.activeTab) {
+          window.dispatchEvent(new CustomEvent('setFileUploaderTab', {
+            detail: { activeTab: event.detail.activeTab }
+          }));
+        }
+      }, 50);
+    };
+
+    // Listen for direct file upload from recording popup
+    const handleUploadRecordedFile = (event: CustomEvent) => {
+      if (event.detail?.file) {
+        showUploadModal = true;
+        // Trigger file upload directly
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('directFileUpload', {
+            detail: { file: event.detail.file }
+          }));
+        }, 100);
+      }
+    };
+    
+    window.addEventListener('openAddMediaModal', handleOpenModalEvent);
+    window.addEventListener('uploadRecordedFile', handleUploadRecordedFile);
+    
+    fetchFiles(true); // Initial load
+    
+    // Return cleanup function
+    return () => {
+      window.removeEventListener('openAddMediaModal', handleOpenModalEvent);
+      window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile);
+    };
   });
   
   onDestroy(() => {
@@ -669,170 +758,90 @@
     if (unsubscribeFileStatus) {
       unsubscribeFileStatus();
     }
+    
+    // Clean up any pending refresh timeouts
+    refreshTimeouts.forEach((timeoutId) => {
+      clearTimeout(timeoutId);
+    });
+    refreshTimeouts.clear();
+  });
+
+  // Set up store-based action triggers
+  onMount(() => {
+    // Subscribe to gallery action triggers (initial values are now handled in store)
+    const unsubscribeUpload = galleryStore.onUploadTrigger(() => {
+      toggleUploadModal();
+    });
+
+    const unsubscribeCollections = galleryStore.onCollectionsTrigger(() => {
+      showCollectionsModal = true;
+    });
+
+    const unsubscribeAddToCollection = galleryStore.onAddToCollectionTrigger(() => {
+      showCollectionsModal = true;
+    });
+
+    const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
+      deleteSelectedFiles();
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeUpload();
+      unsubscribeCollections();
+      unsubscribeAddToCollection();
+      unsubscribeDeleteSelected();
+    };
   });
 </script>
 
-<div class="media-library">
-  <header class="library-header">
-    <div class="header-row">
-      <div class="title-and-tabs">
-        <h1>Media Library</h1>
-        <div class="tabs">
-          <button 
-            class="tab-button {activeTab === 'gallery' ? 'active' : ''}"
-            on:click={() => activeTab = 'gallery'}
+<!-- Main container with fixed height -->
+<div class="media-library-container">
+  {#if activeTab === 'gallery'}
+    <div class="gallery-tab-wrapper">
+      <!-- Left Sidebar: Filters (Sticky) -->
+      <div class="filter-sidebar {showFilters ? 'show' : ''}">
+        <!-- Filters Toggle Button (always visible) -->
+        <div class="filter-toggle-container">
+          <button
+            class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
+            on:click={toggleFilters}
+            title="{showFilters ? 'Hide' : 'Show'} filters panel"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-              <circle cx="8.5" cy="8.5" r="1.5"></circle>
-              <polyline points="21 15 16 10 5 21"></polyline>
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
-            Gallery
-          </button>
-          <button 
-            class="tab-button {activeTab === 'status' ? 'active' : ''}"
-            on:click={() => activeTab = 'status'}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            File Status
+            {#if showFilters}
+              <span class="filter-toggle-text">Hide Filters</span>
+            {/if}
           </button>
         </div>
-      </div>
-      
-      {#if activeTab === 'gallery'}
-        <div class="header-actions">
-          {#if isSelecting}
-          <div class="selection-controls">
-            <button 
-              class="select-all-btn" 
-              on:click={selectAllFiles}
-              title="{selectedFiles.size === files.length ? 'Remove all files from selection' : 'Add all visible files to selection'}"
-            >
-              {selectedFiles.size === files.length ? 'Deselect all' : 'Select all'}
-            </button>
-            <button
-              class="add-to-collection-btn"
-              on:click={() => showCollectionsModal = true}
-              title="Add selected files to a collection"
-            >
-              Add to Collection
-            </button>
-            <button 
-              class="retry-selected-btn" 
-              on:click={retrySelectedFiles}
-              title="Retry processing for selected failed files"
-            >
-              Retry {selectedFiles.size} selected
-            </button>
-            <button 
-              class="cancel-selected-btn" 
-              on:click={cancelSelectedFiles}
-              title="Cancel processing for selected files"
-            >
-              Cancel Processing
-            </button>
-            <button 
-              class="delete-selected-btn" 
-              on:click={deleteSelectedFiles}
-              title="Permanently delete the {selectedFiles.size} selected file{selectedFiles.size === 1 ? '' : 's'} - this action cannot be undone"
-            >
-              Delete {selectedFiles.size} selected
-            </button>
-            <button 
-              class="cancel-selection-btn" 
-              on:click={clearSelection}
-              title="Exit selection mode and clear all selected files"
-            >
-              Cancel Selection
-            </button>
-          </div>
-        {:else}
-          <div class="normal-actions">
-            <button 
-              class="upload-button" 
-              on:click={toggleUploadModal}
-              title="Upload new audio or video files for transcription"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              Upload Media
-            </button>
-            <button 
-              class="collections-btn"
-              on:click={() => showCollectionsModal = true}
-              title="Manage your collections"
-            >
-              Collections
-            </button>
-            <button 
-              class="recover-btn"
-              on:click={recoverStuckFiles}
-              title="Auto-recover stuck files"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              Auto-Recover
-            </button>
-            <button 
-              class="select-files-btn" 
-              on:click={() => isSelecting = true}
-              title="Enter selection mode to choose multiple files for batch operations"
-            >
-              Select Files
-            </button>
+
+        <!-- Filter Content (hidden when collapsed) -->
+        {#if showFilters}
+          <div class="filter-content">
+            <FilterSidebar
+              bind:this={filterSidebarRef}
+              searchQuery={searchQuery}
+              selectedTags={selectedTags}
+              selectedSpeakers={selectedSpeakers}
+              selectedCollectionId={selectedCollectionId}
+              dateRange={{from: null, to: null}}
+              durationRange={{min: null, max: null}}
+              fileSizeRange={{min: null, max: null}}
+              selectedFileTypes={selectedFileTypes}
+              selectedStatuses={selectedStatuses}
+              transcriptSearch={transcriptSearch}
+              on:filter={applyFilters}
+              on:reset={resetFilters}
+            />
           </div>
         {/if}
-        </div>
-      {/if}
-    </div>
-    
-    {#if activeTab === 'gallery'}
-      <div class="mobile-filter-toggle">
-        <button 
-          on:click={toggleFilters}
-          title="Show or hide the filter sidebar to search and filter your media files"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-          </svg>
-          Filters
-        </button>
       </div>
-    {/if}
-  </header>
 
-  <div class="library-content">
-    {#if activeTab === 'gallery'}
-      <div class="filter-sidebar {showFilters ? 'show' : ''}">
-        <FilterSidebar 
-        bind:this={filterSidebarRef}
-        searchQuery={searchQuery}
-        selectedTags={selectedTags}
-        selectedSpeakers={selectedSpeakers}
-        selectedCollectionId={selectedCollectionId}
-        dateRange={{from: null, to: null}}
-        durationRange={{min: null, max: null}}
-        fileSizeRange={{min: null, max: null}}
-        selectedFileTypes={selectedFileTypes}
-        selectedStatuses={selectedStatuses}
-        transcriptSearch={transcriptSearch}
-        on:filter={applyFilters}
-        on:reset={resetFilters}
-      />
-    </div>
-    
-    <div class="file-list-container">
+      <!-- Right Content: Scrollable Media Grid -->
+      <div class="content-area">
+        <div class="scrollable-content">
       {#if loading}
         <div class="loading-state">
           <p>Loading files...</p>
@@ -840,8 +849,8 @@
       {:else if error}
         <div class="error-state">
           <p>Unable to connect to the server. Please check your connection and try again.</p>
-          <button 
-            class="retry-button" 
+          <button
+            class="retry-button"
             on:click={fetchFiles}
             title="Retry loading your media files"
           >Retry</button>
@@ -854,23 +863,26 @@
       {:else}
         <div class="file-grid">
           {#each files as file (file.id)}
-              <div 
-                class="file-card {selectedFiles.has(file.id) ? 'selected' : ''}"
-              >
+            <div
+              class="file-card {selectedFiles.has(file.id) ? 'selected' : ''} {pendingNewFiles.has(file.id) ? 'new-file' : ''} {pendingDeletions.has(file.id) ? 'deleting' : ''}"
+              animate:flip={{ duration: 300 }}
+              in:scale={{ duration: 300, start: 0.8 }}
+              out:fade={{ duration: 250 }}
+            >
                 {#if isSelecting}
                   <label class="file-selector">
-                    <input 
-                      type="checkbox" 
-                      class="file-checkbox" 
-                      checked={selectedFiles.has(file.id)} 
+                    <input
+                      type="checkbox"
+                      class="file-checkbox"
+                      checked={selectedFiles.has(file.id)}
                       on:change={(e) => toggleFileSelection(file.id, e)}
                       title="Select or deselect this file for batch operations"
                     />
                     <span class="checkmark"></span>
                   </label>
                 {/if}
-                <Link 
-                  to={isSelecting ? '#' : `/files/${file.id}`} 
+                <Link
+                  to={isSelecting ? '#' : `/files/${file.id}`}
                   class="file-card-link"
                   on:click={(e) => {
                     if (isSelecting) {
@@ -882,9 +894,9 @@
                 <div class="file-content">
                   {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
                     <div class="file-thumbnail">
-                      <img 
-                        src={file.thumbnail_url} 
-                        alt="Thumbnail for {file.filename}" 
+                      <img
+                        src={file.thumbnail_url}
+                        alt="Thumbnail for {file.title || file.filename}"
                         loading="lazy"
                         class="thumbnail-image"
                       />
@@ -916,16 +928,16 @@
                       </svg>
                     </div>
                   {/if}
-                  
-                  <h2 class="file-name">{file.filename}</h2>
-                  
+
+                  <h2 class="file-name">{file.title || file.filename}</h2>
+
                   <div class="file-meta">
                     <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
                     {#if file.duration}
                       <span class="file-duration">{formatDuration(file.duration)}</span>
                     {/if}
                   </div>
-                  
+
                   <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                     <span class="status-dot"></span>
                     {#if file.status === 'pending'}
@@ -938,8 +950,8 @@
                       {#if file.last_error_message}
                         <!-- svelte-ignore a11y-click-events-have-key-events -->
                         <!-- svelte-ignore a11y-no-static-element-interactions -->
-                        <span 
-                          class="error-details-trigger" 
+                        <span
+                          class="error-details-trigger"
                           on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
                           title="Click for error details"
                         >
@@ -965,15 +977,13 @@
         </div>
       {/if}
     </div>
-  
+  </div>
+    </div>
   {:else if activeTab === 'status'}
     <div class="status-tab-content">
       <UserFileStatus />
     </div>
   {/if}
-  </div>
-    
-  
 </div>
 
 <!-- Upload Modal -->
@@ -981,26 +991,28 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- The modal backdrop that closes on click -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div 
-    class="modal-backdrop" 
+  <div
+    class="modal-backdrop"
     role="dialog"
     aria-modal="true"
     tabindex="0"
+    transition:fade={{ duration: 400 }}
     on:click|self={toggleUploadModal}
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
   >
     <!-- The actual modal dialog -->
-    <div 
-      class="modal-container" 
+    <div
+      class="modal-container"
       role="dialog"
       aria-labelledby="upload-modal-title"
       aria-modal="true"
       tabindex="-1"
+      transition:scale={{ duration: 350, start: 0.9 }}
       on:click|stopPropagation
       on:keydown|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="upload-modal-title">Upload Media</h2>
+          <h2 id="upload-modal-title">Add Media</h2>
           <button 
             class="modal-close" 
             on:click={toggleUploadModal}
@@ -1023,11 +1035,19 @@
 
 <!-- Collections Modal -->
 {#if showCollectionsModal}
-  <div class="modal-backdrop" on:click={() => showCollectionsModal = false}>
-    <div class="modal-container" on:click|stopPropagation>
+  <div
+    class="modal-backdrop"
+    transition:fade={{ duration: 400 }}
+    on:click={() => showCollectionsModal = false}
+  >
+    <div
+      class="modal-container"
+      transition:scale={{ duration: 350, start: 0.9 }}
+      on:click|stopPropagation
+    >
       <div class="modal-content">
         <div class="modal-header">
-          <h2>{selectedFiles.size > 0 ? 'Add to Collection' : 'Manage Collections'}</h2>
+          <h2>Manage Collections</h2>
           <button 
             class="modal-close" 
             on:click={() => showCollectionsModal = false}
@@ -1044,10 +1064,13 @@
             selectedMediaIds={Array.from(selectedFiles)}
             viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
             onCollectionSelect={() => {
-              showCollectionsModal = false;
+              // Only close modal if we're in 'add' mode and actually adding files
               if (selectedFiles.size > 0) {
+                showCollectionsModal = false;
                 clearSelection();
               }
+              // In manage mode, keep the modal open for multiple collections
+              
               // Refresh collections in filter
               if (filterSidebarRef && filterSidebarRef.refreshCollections) {
                 filterSidebarRef.refreshCollections();
@@ -1064,30 +1087,22 @@
   </div>
 {/if}
 
-<!-- Auto-Recover Modal -->
-<AutoRecoverModal
-  bind:isOpen={showAutoRecoverModal}
-  stuckFiles={stuckFilesForRecovery}
-  on:confirm={handleAutoRecoverConfirm}
-  on:cancel={handleAutoRecoverCancel}
-  on:close={handleAutoRecoverCancel}
+<!-- Confirmation Modal -->
+<ConfirmationModal
+  bind:isOpen={showConfirmModal}
+  title={confirmModalTitle}
+  message={confirmModalMessage}
+  confirmText="Confirm"
+  cancelText="Cancel"
+  confirmButtonClass="modal-delete-button"
+  cancelButtonClass="modal-cancel-button"
+  on:confirm={handleConfirmModalConfirm}
+  on:cancel={handleConfirmModalCancel}
+  on:close={handleConfirmModalCancel}
 />
 
 <style>
   /* Selection controls */
-  .header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 1rem;
-  }
-  
-  .header-actions {
-    display: flex;
-    gap: 0.75rem;
-  }
-  
   .select-files-btn {
     background-color: #3b82f6;
     color: white;
@@ -1165,7 +1180,32 @@
     gap: 0.75rem;
     align-items: center;
   }
+  
+  .add-to-collection-btn {
+    background-color: #10b981;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .add-to-collection-btn:hover {
+    background-color: #059669;
+  }
 
+  .header-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  
+  
+
+  
   /* File selector checkbox - bottom right */
   .file-selector {
     position: absolute;
@@ -1189,12 +1229,12 @@
   }
   
   .file-selector:hover .checkmark {
-    border-color: var(--primary-color);
+    border-color: #3b82f6;
   }
   
   .file-checkbox:checked ~ .checkmark {
-    background-color: var(--primary-color);
-    border-color: var(--primary-color);
+    background-color: #3b82f6;
+    border-color: #3b82f6;
   }
   
   .file-checkbox {
@@ -1222,51 +1262,34 @@
   .file-checkbox:checked ~ .checkmark:after {
     display: block;
   }
-  
-  .media-library {
+
+  /* Main Container - Fixed Height Layout */
+  .media-library-container {
+    height: calc(100vh - 60px); /* Full viewport minus navbar only */
     display: flex;
-    flex-direction: column;
+    overflow: hidden;
+    padding-top: 0;
+  }
+
+  /* Gallery Tab Wrapper */
+  .gallery-tab-wrapper {
+    display: flex;
     height: 100%;
-  }
-  
-  .library-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-  
-  .library-header h1 {
-    font-size: 1.5rem;
-    margin: 0;
-  }
-  
-  .title-and-tabs {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-  
-  .tabs {
-    display: flex;
-    gap: 0.5rem;
-    margin-left: 2rem;
+    width: 100%;
   }
   
   .tab-button {
     color: var(--text-color);
     background: none;
     border: none;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.8rem;
     border-radius: 6px;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     font-family: inherit;
-    font-size: 1rem;
+    font-size: 0.9rem;
     cursor: pointer;
     position: relative;
     font-weight: 500;
@@ -1337,24 +1360,109 @@
     width: 100%;
   }
   
-  /* Search functionality is now handled in the FilterSidebar component */
-  
-  .library-content {
-    display: flex;
-    gap: 2rem;
-    height: 100%;
-  }
-  
+  /* Left Sidebar - Sticky Filters */
   .filter-sidebar {
-    width: 250px;
+    flex-shrink: 0;
+    background-color: var(--surface-color);
+    border-right: 1px solid var(--border-color);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+    padding-top: 2rem; /* Additional spacing from navbar */
+  }
+
+  /* Expanded state */
+  .filter-sidebar.show {
+    width: 280px;
+  }
+
+  /* Collapsed state */
+  .filter-sidebar:not(.show) {
+    width: 50px; /* Just enough for the toggle button */
+  }
+
+  .filter-toggle-container {
+    padding: 0 0.5rem;
+    margin-bottom: 1rem;
     flex-shrink: 0;
   }
-  
-  .file-list-container {
+
+  .filter-sidebar.show .filter-toggle-container {
+    padding: 0 1rem;
+  }
+
+  .filter-toggle-btn {
+    width: 100%;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    height: 40px;
+    white-space: nowrap;
+  }
+
+  .filter-toggle-btn:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  .filter-toggle-btn:active {
+    transform: scale(0.98);
+  }
+
+  .filter-toggle-btn svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+  }
+
+  .filter-toggle-btn.collapsed {
+    justify-content: center;
+    padding: 0.6rem;
+    width: auto;
+  }
+
+  .filter-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1rem;
+  }
+
+  /* Right Content Area - Scrollable */
+  .content-area {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    min-width: 0; /* Allow flex shrinking */
+  }
+
+  .scrollable-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    padding-top: 1.5rem; /* Match filter sidebar padding */
+  }
+
+  /* Compact Button Styles */
+  .compact {
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+  }
+
+  .compact svg {
+    width: 14px !important;
+    height: 14px !important;
   }
   
   /* Upload Button in Header */
@@ -1427,87 +1535,103 @@
     background-color: #d97706;
   }
   
-  /* Add to collection button */
-  .add-to-collection-btn {
-    background-color: #10b981;
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
   
-  .add-to-collection-btn:hover {
-    background-color: #059669;
-  }
-  
-  /* Retry selected button */
-  .retry-selected-btn {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  
-  .retry-selected-btn:hover {
-    background-color: #2563eb;
-  }
-  
-  /* Cancel selected button */
-  .cancel-selected-btn {
-    background-color: #f59e0b;
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  
-  .cancel-selected-btn:hover {
-    background-color: #d97706;
-  }
-  
-  /* File grid */
-  .file-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-  }
+  /* File grid - moved to combined section below */
   
   .file-card {
     position: relative;
     border: 1px solid var(--border-color);
     background-color: var(--surface-color);
     border-radius: 12px;
-    padding: 1.5rem;
-    transition: all 0.2s ease-in-out;
+    transition: all 0.3s ease-in-out;
     cursor: pointer;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    transform: translateZ(0); /* Enable hardware acceleration */
+  }
+  
+  /* New file animation */
+  .file-card.new-file {
+    animation: newFileGlow 0.8s ease-out;
+    border-color: #3b82f6;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+  
+  /* Dark mode new file animation */
+  :global(.dark) .file-card.new-file {
+    border-color: #60a5fa;
+    box-shadow: 0 0 20px rgba(96, 165, 250, 0.4);
+  }
+  
+  /* Deleting file animation */
+  .file-card.deleting {
+    opacity: 0.5;
+    transform: scale(0.95);
+    transition: all 0.25s ease-out;
+    pointer-events: none;
+  }
+  
+  @keyframes newFileGlow {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+      border-color: #60a5fa;
+    }
+    50% {
+      transform: scale(1.02);
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.4);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+      border-color: #3b82f6;
+    }
+  }
+  
+  /* Smooth loading state for existing cards */
+  .file-card.loading {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  
+  /* Grid container for smooth transitions */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    /* Enable smooth grid transitions */
+    transition: all 0.3s ease;
   }
   
   .file-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
   }
   
-  .file-card.selected {
-    border: 2px solid var(--accent-color);
-    background-color: var(--selection-background);
+  /* Smooth hover for thumbnails */
+  .file-card:hover .thumbnail-image {
+    transform: scale(1.05);
   }
+  
+  /* Staggered animation for initial load */
+  .file-card {
+    animation-delay: calc(var(--animation-order, 0) * 0.05s);
+  }
+  
+  .file-card.selected {
+    border: 2px solid #3b82f6;
+    background-color: rgba(59, 130, 246, 0.05);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+  
+  :global(.dark) .file-card.selected {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-color: #60a5fa;
+    box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+  }
+  
   
   .file-thumbnail {
     position: relative;
@@ -1568,16 +1692,13 @@
     color: var(--text-secondary);
   }
   
-  :global(.dark) .file-card.selected {
-    background-color: rgba(59, 130, 246, 0.1);
-    border-color: var(--primary-color);
-  }
   
   .file-content {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    flex: 1;
   }
   
   .file-card-link {
@@ -1885,112 +2006,67 @@
     color: #a5b4fc;
   }
   
+  /* Mobile Filter Toggle */
+  .mobile-filter-toggle {
+    display: none;
+    margin-left: auto;
+  }
+
+  .mobile-filter-toggle button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .mobile-filter-toggle button:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
   /* Responsive design */
   @media (max-width: 768px) {
-    .library-header {
+    .media-library-container {
       flex-direction: column;
-      align-items: flex-start;
     }
-    
-    .header-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-    
-    .header-actions {
-      width: 100%;
-    }
-    
-    .selection-controls {
-      flex-wrap: wrap;
-      width: 100%;
-    }
-    
-    .selection-controls button {
-      flex: 1;
-      min-width: 120px;
-    }
-    
+
     .filter-sidebar {
       position: fixed;
-      top: 0;
+      top: 60px;
       left: -100%;
       width: 100%;
-      height: 100%;
-      background: white;
-      z-index: 100;
-      transition: left 0.3s ease;
-      overflow-y: auto;
-      padding: 1rem;
-    }
-    
-    :global(.dark) .filter-sidebar {
+      height: calc(100vh - 60px);
       background: var(--surface-color);
+      z-index: 1000;
+      transition: left 0.3s ease;
+      border-right: none;
+      border-top: 1px solid var(--border-color);
     }
-    
+
     .filter-sidebar.show {
       left: 0;
     }
-    
-    .mobile-filter-toggle {
-      display: block;
-      margin-top: 1rem;
+
+    .content-area {
+      width: 100%;
     }
-    
-    .mobile-filter-toggle button {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background-color: #3b82f6;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 0.6rem 1.2rem;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 500;
-      transition: all 0.2s ease;
-      box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+
+    .scrollable-content {
+      padding: 1rem;
     }
-    
-    .mobile-filter-toggle button:hover:not(:disabled) {
-      background-color: #2563eb;
-      color: white;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-      text-decoration: none;
-    }
-    
-    .mobile-filter-toggle button:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    
-    .library-content {
-      flex-direction: column;
-      gap: 1rem;
-    }
-    
+
     .file-grid {
       grid-template-columns: 1fr;
-    }
-    
-    .tabs {
-      margin-left: 0;
-    }
-    
-    .tab-button {
-      padding: 0.4rem 0.8rem;
-      font-size: 0.9rem;
-    }
-    
-    .tab-button.active::after {
-      bottom: -6px;
-      height: 2px;
-    }
-    
-    .tab-button.active:hover::after {
-      height: 3px;
     }
   }
   
@@ -2019,9 +2095,123 @@
   @media (prefers-reduced-motion: reduce) {
     .tab-button,
     .tab-button.active,
-    .tab-button.active::after {
+    .tab-button.active::after,
+    .file-card,
+    .file-card.new-file,
+    .thumbnail-image {
       transition: none;
       animation: none;
     }
+    
+    .file-card:hover {
+      transform: none;
+    }
+    
+    .file-card:hover .thumbnail-image {
+      transform: none;
+    }
+  }
+  
+  /* Smooth state transitions for better UX */
+  .loading-state {
+    transition: opacity 0.3s ease;
+  }
+  
+  .loading-state.entering {
+    opacity: 0;
+  }
+  
+  .loading-state.entered {
+    opacity: 1;
+  }
+  
+  /* Performance optimizations */
+  .file-card {
+    will-change: transform;
+  }
+  
+  .thumbnail-image {
+    will-change: transform;
+  }
+  
+  /* Loading shimmer effect for better perceived performance */
+  @keyframes shimmer {
+    0% {
+      background-position: -200px 0;
+    }
+    100% {
+      background-position: calc(200px + 100%) 0;
+    }
+  }
+  
+  .file-card.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+    background-size: 200px 100%;
+    animation: shimmer 1.5s infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+  
+  :global(.dark) .file-card.loading::after {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.1),
+      transparent
+    );
+  }
+
+  /* Modal button styling to match app design */
+  :global(.modal-delete-button) {
+    background-color: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2) !important;
+  }
+
+  :global(.modal-delete-button:hover) {
+    background-color: #dc2626 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25) !important;
+  }
+
+  :global(.modal-cancel-button) {
+    background-color: var(--card-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    padding: 0.6rem 1.2rem !important;
+    border-radius: 10px !important;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: var(--card-shadow) !important;
+    /* Ensure text is always visible */
+    opacity: 1 !important;
+  }
+
+  :global(.modal-cancel-button:hover) {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-color: #2563eb !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
   }
 </style>

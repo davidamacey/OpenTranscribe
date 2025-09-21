@@ -2,18 +2,15 @@ import os
 import sys
 from logging.config import fileConfig
 
+# Add the parent directory to Python path BEFORE app imports
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
-
-# Add the parent directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-# Import models and config
 from app.db.base import Base
-from app.models.user import User
-from app.models.media import MediaFile, TranscriptSegment, Speaker, Comment, Tag, FileTag, Task, Analytics
 
 # NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema
 # until the application reaches releases. After that, we will use Alembic migrations.
@@ -23,7 +20,7 @@ from app.models.media import MediaFile, TranscriptSegment, Speaker, Comment, Tag
 config = context.config
 
 # Setup the connection string
-from dotenv import load_dotenv
+
 load_dotenv()
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -32,7 +29,10 @@ DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "transcribe_app")
 
-config.set_main_option("sqlalchemy.url", f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
+config.set_main_option(
+    "sqlalchemy.url",
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -87,9 +87,7 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

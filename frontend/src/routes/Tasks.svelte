@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { slide, fade } from 'svelte/transition';
   import { Link } from "svelte-navigator";
@@ -6,58 +6,57 @@
   import { websocketStore } from "$stores/websocket";
   
   // Explicitly declare router props to prevent warnings
-  export let location = null;
-  export let navigate = null;
-  export let condition = true;
+  export const location = null;
+  export const navigate = null;
+  export const condition = true;
   
-  /** @typedef {object} MediaFile
-   * @property {number} id
-   * @property {string} filename
-   * @property {number} [file_size]
-   * @property {string} [content_type]
-   * @property {string} [language]
-   * @property {string} [upload_time]
-   * @property {number} [duration]
-   * @property {string} [format]
-   * @property {string} [media_format]
-   * @property {string} [codec]
-   */
+  interface MediaFile {
+    id: number;
+    filename: string;
+    file_size?: number;
+    content_type?: string;
+    language?: string;
+    upload_time?: string;
+    duration?: number;
+    format?: string;
+    media_format?: string;
+    codec?: string;
+  }
 
-  /** @typedef {object} Task
-   * @property {string} id
-   * @property {number|null} media_file_id
-   * @property {string} task_type
-   * @property {string} status
-   * @property {number} progress
-   * @property {string} created_at
-   * @property {string} updated_at
-   * @property {string|null} completed_at
-   * @property {string|null} error_message
-   * @property {MediaFile|null} media_file
-   * @property {boolean} [showMetadata]
-   */
+  interface Task {
+    id: string;
+    media_file_id: number | null;
+    task_type: string;
+    status: string;
+    progress: number;
+    created_at: string;
+    updated_at: string;
+    completed_at: string | null;
+    error_message: string | null;
+    media_file: MediaFile | null;
+    showMetadata?: boolean;
+  }
 
-  /** @type {Array<Task>} */
-  let tasks = [];
+  let tasks: Task[] = [];
   
   /** @type {boolean} */
   let loading = true;
   
   /** @type {string | null} */
-  let error = null;
+  let error: string | null = null;
   
   /** @type {number | null} */
-  let refreshInterval = null;
+  let refreshInterval: number | null = null;
   
   // Track which metadata popups are open
   /** @type {string|null} */
-  let openMetadataId = null;
+  let openMetadataId: string | null = null;
   
   // Track last processed notification to avoid duplicate processing
   let lastProcessedNotificationId = '';
   
   // Subscribe to WebSocket notifications for real-time task updates
-  let wsUnsubscribe = null;
+  let wsUnsubscribe: any = null;
   
   function setupWebSocketSubscription() {
     if (wsUnsubscribe) {
@@ -108,7 +107,6 @@
               return task;
             });
             
-            console.log('Tasks updated from WebSocket notification for file:', fileId, 'Status:', status, 'Progress:', progress);
           }
         }
       }
@@ -140,7 +138,7 @@
    * @param {string} dateString - ISO date string
    * @return {string} Formatted date string
    */
-  function formatDate(dateString) {
+  function formatDate(dateString: string) {
     if (!dateString) return 'N/A';
     
     const date = new Date(dateString);
@@ -158,7 +156,7 @@
    * @param {number} seconds - Duration in seconds
    * @return {string} Formatted duration
    */
-  function formatDuration(seconds) {
+  function formatDuration(seconds: number) {
     if (!seconds && seconds !== 0) return "Unknown";
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -177,7 +175,7 @@
    * @param {string} dateString - ISO date string
    * @return {string} Time elapsed in human-readable format
    */
-  function timeElapsed(dateString) {
+  function timeElapsed(dateString: string) {
     if (!dateString) return 'N/A';
     
     const date = new Date(dateString);
@@ -200,7 +198,7 @@
    * @param {string} status - Task status
    * @return {string} CSS class name
    */
-  function getStatusClass(status) {
+  function getStatusClass(status: string) {
     switch (status) {
       case 'pending':
         return 'status-pending';
@@ -220,7 +218,7 @@
    * @param {number|string} bytes - File size in bytes
    * @return {string} Formatted file size
    */
-  function formatFileSize(bytes) {
+  function formatFileSize(bytes: number | string) {
     // Convert to number if it's a string
     const sizeInBytes = typeof bytes === 'string' ? Number(bytes) : bytes;
     
@@ -237,7 +235,7 @@
    * Toggle metadata info display for a specific task
    * @param {string} taskId - Task ID
    */
-  function toggleMetadataInfo(taskId) {
+  function toggleMetadataInfo(taskId: string) {
     // If clicking the same task, toggle it off/on
     if (openMetadataId === taskId) {
       openMetadataId = null;
@@ -288,7 +286,7 @@
         on:click={() => {
           const protocol = window.location.protocol;
           const host = window.location.hostname;
-          const port = import.meta.env.VITE_FLOWER_PORT || '5555';
+          const port = import.meta.env.VITE_FLOWER_PORT || '5175';
           const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
           // Construct the URL properly with trailing slash
           const url = urlPrefix 
@@ -452,7 +450,7 @@
                     </div>
                     <div class="metadata-item">
                       <span class="metadata-label">Upload Time:</span>
-                      <span class="metadata-value">{formatDate(task.media_file.upload_time)}</span>
+                      <span class="metadata-value">{formatDate(task.media_file.upload_time || '')}</span>
                     </div>
                   {/if}
                   <div class="metadata-item">
@@ -589,14 +587,22 @@
   }
 
   .retry-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
     font-family: inherit;
     font-weight: 500;
     cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .retry-button:hover {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
 
   .empty-container {

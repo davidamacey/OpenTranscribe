@@ -3,9 +3,10 @@ import * as authStore from './auth';
 import { downloadStore } from './downloads';
 
 // Define notification types
-export type NotificationType = 
-  | 'transcription_status' 
+export type NotificationType =
+  | 'transcription_status'
   | 'summarization_status'
+  | 'youtube_processing_status'
   | 'analytics_status'
   | 'download_progress'
   | 'connection_established'
@@ -20,6 +21,17 @@ export interface Notification {
   timestamp: Date;
   read: boolean;
   data?: any;
+  // Progressive notification fields
+  progressId?: string; // Used to group progressive notifications
+  currentStep?: string; // Current processing step
+  progress?: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  status?: 'processing' | 'completed' | 'error';
+  dismissible?: boolean; // false while processing
+  silent?: boolean; // if true, don't show in notification panel (for gallery-only updates)
 }
 
 // WebSocket connection status
@@ -146,7 +158,7 @@ function createWebSocketStore() {
             // Don't attempt to reconnect if closed cleanly or if page is hidden
             const shouldReconnect = event.code !== 1000 && 
                                   event.code !== 1001 && 
-                                  !document.hidden;
+                                  (typeof document === 'undefined' || !document.hidden);
             
             if (shouldReconnect) {
               tryReconnect(token);
@@ -180,24 +192,111 @@ function createWebSocketStore() {
               handleDownloadProgress(data);
               return;
             }
+
+            // Handle progressive notifications
+            const isProgressiveType = data.type === 'transcription_status' || data.type === 'summarization_status' || data.type === 'youtube_processing_status';
+
+            // Handle silent notifications (gallery-only updates)
+            const isSilentType = data.type === 'file_created' || data.type === 'file_updated';
             
-            // Create a notification for other message types
-            const notification: Notification = {
-              id: generateId(),
-              type: data.type as NotificationType,
-              title: getNotificationTitle(data.type),
-              message: data.data.message || 'No message provided',
-              timestamp: new Date(),
-              read: false,
-              data: data.data
-            };
             
-            // Add notification
-            update((s: WebSocketState) => {
-              s.notifications = [notification, ...s.notifications.slice(0, 99)]; // Keep max 100 notifications
-              saveNotificationsToStorage(s.notifications);
-              return s;
-            });
+            if (isProgressiveType && data.data.file_id) {
+              const progressId = `${data.type}_${data.data.file_id}`;
+              const currentStep = data.data.message || 'Processing...';
+              const status = data.data.status || 'processing';
+              const progress = {
+                current: Math.floor(data.data.progress || 0),
+                total: 100,
+                percentage: data.data.progress || 0
+              };
+              
+              
+              update((s: WebSocketState) => {
+                // Find existing progressive notification
+                const existingIndex = s.notifications.findIndex(n => n.progressId === progressId);
+                
+                if (existingIndex !== -1) {
+                  // Update existing notification with new data (important for summary completion)
+                  const updatedNotification = {
+                    ...s.notifications[existingIndex],
+                    message: currentStep,
+                    timestamp: new Date(),
+                    currentStep,
+                    progress,
+                    status: status as 'processing' | 'completed' | 'error',
+                    dismissible: status === 'completed' || status === 'failed' || status === 'error' || (data.type === 'youtube_processing_status' && status === 'pending'),
+                    read: false, // Mark as unread for updates
+                    data: { ...s.notifications[existingIndex].data, ...data.data } // Merge old and new data
+                  };
+                  
+                  // Remove from current position and add to front to maintain most-recent-first ordering
+                  s.notifications.splice(existingIndex, 1);
+                  s.notifications.unshift(updatedNotification);
+                  
+                } else {
+                  // Create new progressive notification
+                  const notification: Notification = {
+                    id: generateId(),
+                    progressId,
+                    type: data.type as NotificationType,
+                    title: getNotificationTitle(data.type),
+                    message: currentStep,
+                    timestamp: new Date(),
+                    read: false,
+                    data: data.data,
+                    currentStep,
+                    progress,
+                    status: status as 'processing' | 'completed' | 'error',
+                    dismissible: status === 'completed' || status === 'failed' || status === 'error' || (data.type === 'youtube_processing_status' && status === 'pending')
+                  };
+                  
+                  s.notifications = [notification, ...s.notifications.slice(0, 99)];
+                  
+                }
+                
+                saveNotificationsToStorage(s.notifications);
+                return s;
+              });
+            } else if (isSilentType) {
+              // Create a silent notification for gallery updates only
+              const notification: Notification = {
+                id: generateId(),
+                type: data.type as NotificationType,
+                title: getNotificationTitle(data.type),
+                message: data.data.message || 'Gallery update',
+                timestamp: new Date(),
+                read: false,
+                data: data.data,
+                dismissible: true,
+                silent: true // This prevents it from showing in notification panel
+              };
+
+              // Add notification (MediaLibrary will see it, but NotificationsPanel will filter it out)
+              update((s: WebSocketState) => {
+                s.notifications = [notification, ...s.notifications.slice(0, 99)];
+                // Don't save silent notifications to localStorage to keep it clean
+                return s;
+              });
+            } else {
+              // Create a regular notification for other non-progressive types
+              const notification: Notification = {
+                id: generateId(),
+                type: data.type as NotificationType,
+                title: getNotificationTitle(data.type),
+                message: data.data.message || 'No message provided',
+                timestamp: new Date(),
+                read: false,
+                data: data.data,
+                dismissible: true
+              };
+
+              // Add notification
+              update((s: WebSocketState) => {
+                s.notifications = [notification, ...s.notifications.slice(0, 99)]; // Keep max 100 notifications
+                saveNotificationsToStorage(s.notifications);
+                return s;
+              });
+            }
           } catch (error) {
             console.error('Error processing WebSocket message:', error);
           }
@@ -257,12 +356,33 @@ function createWebSocketStore() {
     });
   };
   
-  // Mark notification as read
+  // Mark notification as read (with auto-regeneration for processing notifications)
   const markAsRead = (id: string) => {
     update((state: WebSocketState) => {
       const index = state.notifications.findIndex((n: Notification) => n.id === id);
       if (index !== -1) {
-        state.notifications[index].read = true;
+        const notification = state.notifications[index];
+        
+        // If it's a processing notification, auto-regenerate it
+        if (notification.status === 'processing' && !notification.dismissible) {
+          // Mark as read but keep the notification
+          state.notifications[index].read = true;
+          // Re-add as unread after a short delay (simulated by creating a duplicate)
+          setTimeout(() => {
+            update((s: WebSocketState) => {
+              const stillExists = s.notifications.find(n => n.id === id && n.status === 'processing');
+              if (stillExists) {
+                stillExists.read = false;
+                saveNotificationsToStorage(s.notifications);
+              }
+              return s;
+            });
+          }, 100);
+        } else {
+          // Regular dismissal for completed/error notifications
+          state.notifications[index].read = true;
+        }
+        
         saveNotificationsToStorage(state.notifications);
       }
       return state;
@@ -303,6 +423,8 @@ function createWebSocketStore() {
         return 'Transcription Update';
       case 'summarization_status':
         return 'Summarization Update';
+      case 'youtube_processing_status':
+        return 'YouTube Processing';
       case 'analytics_status':
         return 'Analytics Update';
       case 'download_progress':
@@ -312,6 +434,39 @@ function createWebSocketStore() {
     }
   };
   
+  // Remove notification (with auto-regeneration for processing notifications)
+  const removeNotification = (id: string) => {
+    update((state: WebSocketState) => {
+      const notification = state.notifications.find(n => n.id === id);
+      
+      if (notification && notification.status === 'processing' && !notification.dismissible) {
+        // Auto-regenerate processing notifications
+        setTimeout(() => {
+          update((s: WebSocketState) => {
+            // Only re-add if it doesn't already exist
+            const exists = s.notifications.find(n => n.progressId === notification.progressId && n.status === 'processing');
+            if (!exists) {
+              const regenerated: Notification = {
+                ...notification,
+                id: generateId(),
+                timestamp: new Date(),
+                read: false
+              };
+              s.notifications = [regenerated, ...s.notifications];
+              saveNotificationsToStorage(s.notifications);
+            }
+            return s;
+          });
+        }, 100);
+      }
+      
+      // Remove the notification
+      state.notifications = state.notifications.filter(n => n.id !== id);
+      saveNotificationsToStorage(state.notifications);
+      return state;
+    });
+  };
+
   return {
     subscribe,
     connect,
@@ -319,17 +474,18 @@ function createWebSocketStore() {
     send,
     markAsRead,
     markAllAsRead,
-    clearAll
+    clearAll,
+    removeNotification
   };
 }
 
 // Create the WebSocket store
 export const websocketStore = createWebSocketStore();
 
-// Derived store for unread notifications count
+// Derived store for unread notifications count (excluding silent notifications)
 export const unreadCount = derived(
   websocketStore,
-  ($websocketStore: WebSocketState) => $websocketStore.notifications.filter((n: Notification) => !n.read).length
+  ($websocketStore: WebSocketState) => $websocketStore.notifications.filter((n: Notification) => !n.read && !n.silent).length
 );
 
 // Initialize WebSocket when auth changes

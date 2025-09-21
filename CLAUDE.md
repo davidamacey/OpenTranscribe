@@ -141,8 +141,43 @@ For production deployments, migrations will be handled differently.
 3. Celery task dispatch to worker with GPU support
 4. WhisperX transcription with word-level alignment
 5. PyAnnote speaker diarization and voice fingerprinting
-6. Database storage and OpenSearch indexing
-7. WebSocket notification to frontend
+6. **LLM speaker identification suggestions** (optional - manual verification required)
+7. **LLM-powered summarization** with BLUF format (optional - user-triggered)
+   - Automatic context-aware processing (single or multi-section based on transcript length)
+   - Intelligent chunking at speaker/topic boundaries for long content
+   - Section-by-section analysis with final summary stitching
+8. Database storage and OpenSearch indexing
+9. WebSocket notification to frontend
+
+### LLM Features (New in v2.0)
+
+The application now includes optional AI-powered features using Large Language Models:
+
+**AI Summarization:**
+- BLUF (Bottom Line Up Front) format summaries
+- Speaker analysis with talk time and key contributions
+- Action items extraction with priorities and assignments
+- Key decisions and follow-up items identification
+- Support for multiple LLM providers (vLLM, OpenAI, Ollama, Claude)
+- Intelligent section-by-section processing for transcripts of any length
+- Automatic context-aware chunking and summary stitching
+
+**Speaker Identification:**
+- LLM-powered speaker name suggestions based on conversation context
+- Confidence scoring for identification accuracy
+- Manual verification workflow (suggestions are not auto-applied)
+- Cross-video speaker matching with embedding analysis
+
+**Configuration:**
+- Set `LLM_PROVIDER` in .env file (vllm, openai, ollama, anthropic, openrouter)
+- Configure provider-specific settings (API keys, endpoints, models)
+- Features work independently - transcription works without LLM configuration
+
+**Deployment Options:**
+- **Cloud-Only**: Use `.env` configuration with external providers (OpenAI, Claude, etc.)
+- **Local vLLM**: Run `docker compose -f docker-compose.yml -f docker-compose.vllm.yml up` 
+- **Local Ollama**: Uncomment ollama service in `docker-compose.vllm.yml` and use same command
+- **No LLM**: Leave LLM_PROVIDER empty for transcription-only mode
 
 ## Model Caching System
 

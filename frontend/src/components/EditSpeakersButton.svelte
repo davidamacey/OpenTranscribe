@@ -40,7 +40,8 @@
   }
 
   .edit-speakers-button:hover {
-    background: var(--surface-hover);
-    border-color: var(--border-hover);
+    background: var(--hover-bg);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
 </style>

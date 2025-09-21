@@ -196,16 +196,47 @@ export async function login(email: string, password: string) {
     authStore.setReady(true);
     
     return { success: true };
-  } catch (err) {
+  } catch (err: any) {
     console.error("auth.ts: Login error:", err);
     
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     authStore.reset();
     
+    // Extract meaningful error message from backend response
+    let errorMessage = 'Login failed. Please check your credentials and try again.';
+    
+    if (err.response) {
+      // Server responded with an error status
+      switch (err.response.status) {
+        case 401:
+          errorMessage = err.response.data?.detail || 'Invalid email or password. Please try again.';
+          break;
+        case 400:
+          errorMessage = err.response.data?.detail || 'Invalid request. Please check your input.';
+          break;
+        case 429:
+          errorMessage = 'Too many login attempts. Please try again later.';
+          break;
+        case 500:
+        case 502:
+        case 503:
+          errorMessage = 'Server error. Please try again later.';
+          break;
+        default:
+          errorMessage = err.response.data?.detail || err.response.data?.message || 'Login failed. Please try again.';
+      }
+    } else if (err.request) {
+      // Network error - no response received
+      errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+    } else if (err.message) {
+      // Something else happened
+      errorMessage = 'An unexpected error occurred. Please try again.';
+    }
+    
     return {
       success: false,
-      message: err instanceof Error ? err.message : 'Login failed'
+      message: errorMessage
     };
   }
 }

@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
   import { useNavigate, Link } from "svelte-navigator";
   import { login, authStore, isAuthenticated } from "../stores/auth";
   import { onMount } from 'svelte';
@@ -7,8 +7,8 @@
   import logoBanner from '../assets/logo-banner.png';
   
   // Explicitly declare props to prevent warnings
-  export let location = null;
-  export let navigate = null;
+  export const location = null;
+  export const navigate = null;
   const navigateHook = useNavigate();
   
   // Form data
@@ -36,7 +36,7 @@
    * @param {string} email - The email address to validate
    * @returns {boolean} True if the email is valid, false otherwise
    */
-  function validateEmail(email) {
+  function validateEmail(email: string) {
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return regex.test(String(email).toLowerCase());
   }
@@ -54,6 +54,25 @@
   async function handleSubmit() {
     error = "";
     successMessage = "";
+    
+    // Validate required fields first
+    if (!email.trim()) {
+      error = "Email address is required.";
+      document.getElementById('email')?.focus();
+      return;
+    }
+    
+    if (!validateEmail(email.trim())) {
+      error = "Please enter a valid email address.";
+      document.getElementById('email')?.focus();
+      return;
+    }
+    
+    if (!password.trim()) {
+      error = "Password is required.";
+      document.getElementById('password')?.focus();
+      return;
+    }
     
     if (!validateForm()) {
       return;
@@ -76,6 +95,15 @@
       } else {
         console.error('Login.svelte: Login failed:', result.message);
         error = result.message || "Login failed. Please check your credentials and try again.";
+        
+        // Focus appropriate field based on error type
+        if (result.message && result.message.toLowerCase().includes('email')) {
+          document.getElementById('email')?.focus();
+        } else if (result.message && (result.message.toLowerCase().includes('password') || result.message.toLowerCase().includes('credentials'))) {
+          document.getElementById('password')?.focus();
+          // Clear password on failed authentication for security
+          password = "";
+        }
       }
     } catch (err) {
       console.error("Login.svelte: Login error:", err);
@@ -99,23 +127,26 @@
       </div>
       <h1>Login</h1>
       <p>Sign in to your account</p>
-      <div class="info-message">
-        <p><strong>Default Admin Credentials:</strong></p>
-        <p>Email: admin@example.com</p>
-        <p>Password: password</p>
-      </div>
     </div>
     
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if error}
-        <div class="error-message">
-          {error}
+        <div class="error-message" role="alert" aria-live="polite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+          <span>{error}</span>
         </div>
       {/if}
       
       {#if successMessage}
-        <div class="success-message">
-          {successMessage}
+        <div class="success-message" role="alert" aria-live="polite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20,6 9,17 4,12"/>
+          </svg>
+          <span>{successMessage}</span>
         </div>
       {/if}
       
@@ -136,29 +167,8 @@
       </div>
       
       <div class="form-group {!passwordValid && formSubmitted ? 'has-error' : ''}">
-        <label for="password">Password</label>
-        <div class="password-container">
-          {#if showPassword}
-            <input 
-              type="text"
-              id="password" 
-              bind:value={password} 
-              placeholder="Enter your password"
-              aria-invalid={!passwordValid && formSubmitted}
-              autocomplete="current-password"
-              title="Enter your account password"
-            />
-          {:else}
-            <input 
-              type="password"
-              id="password" 
-              bind:value={password} 
-              placeholder="Enter your password"
-              aria-invalid={!passwordValid && formSubmitted}
-              autocomplete="current-password"
-              title="Enter your account password"
-            />
-          {/if}
+        <div class="password-header">
+          <label for="password">Password</label>
           <button 
             type="button" 
             class="toggle-password" 
@@ -166,9 +176,44 @@
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             title={showPassword ? 'Hide password text' : 'Show password text'}
           >
-            {showPassword ? '👁️' : '👁️‍🗨️'}
+            {#if showPassword}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-.722-3.25"/>
+                <path d="m2 2 20 20"/>
+                <path d="m9 9-.637 3.181"/>
+                <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                <path d="m18.147 8.476.853 3.524"/>
+              </svg>
+            {/if}
           </button>
         </div>
+        {#if showPassword}
+          <input 
+            type="text"
+            id="password" 
+            bind:value={password} 
+            placeholder="Enter your password"
+            aria-invalid={!passwordValid && formSubmitted}
+            autocomplete="current-password"
+            title="Enter your account password"
+          />
+        {:else}
+          <input 
+            type="password"
+            id="password" 
+            bind:value={password} 
+            placeholder="Enter your password"
+            aria-invalid={!passwordValid && formSubmitted}
+            autocomplete="current-password"
+            title="Enter your account password"
+          />
+        {/if}
         {#if !passwordValid && formSubmitted}
           <div class="field-error">Password is required</div>
         {/if}
@@ -264,19 +309,30 @@
   }
   
   .auth-button {
-    background-color: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    font-size: 1rem;
+    border-radius: 10px;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
   }
   
-  .auth-button:hover {
-    background-color: var(--primary-dark);
+  .auth-button:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+  
+  .auth-button:active:not(:disabled) {
+    transform: translateY(0);
   }
   
   .auth-button:disabled {
@@ -284,17 +340,6 @@
     cursor: not-allowed;
   }
   
-  .info-message {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 0.5rem;
-    font-size: 0.9rem;
-  }
-  
-  .info-message p {
-    margin: 0.25rem 0;
-  }
   
   .auth-links {
     margin-top: 1.5rem;
@@ -303,21 +348,27 @@
   }
   
   
-  .password-container {
-    position: relative;
+  .password-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
   }
   
   .toggle-password {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 1.2rem;
-    padding: 0;
+    padding: 4px;
     color: var(--text-light);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+  
+  .toggle-password:hover {
+    background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
   }
   
   .field-error {
@@ -333,10 +384,18 @@
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
-    padding: 1rem;
+    padding: 0.75rem;
     border-radius: 4px;
-    margin-bottom: 1rem;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     font-weight: 500;
+  }
+  
+  .success-message svg {
+    flex-shrink: 0;
+    opacity: 0.8;
   }
   
   .spinner {
@@ -359,6 +418,16 @@
     color: var(--error-color);
     padding: 0.75rem;
     border-radius: 4px;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+  }
+  
+  .error-message svg {
+    flex-shrink: 0;
+    opacity: 0.8;
   }
   
   .auth-logo {
