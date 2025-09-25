@@ -913,7 +913,7 @@ main() {
     setup_project_directory
     create_configuration_files
     configure_environment
-    validate_setup
+ia     validate_setup
     display_summary
 }
 

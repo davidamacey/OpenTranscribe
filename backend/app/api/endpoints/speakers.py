@@ -7,7 +7,9 @@ from typing import Optional
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Response
 from fastapi import status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -375,11 +377,26 @@ def list_speakers(
 
             result.append(speaker_dict)
 
-        return result
+        # Return with cache-busting headers
+        return JSONResponse(
+            content=result,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+        )
     except Exception as e:
         logger.error(f"Error in list_speakers: {e}")
         # If there's an error or no speakers, return an empty list
-        return []
+        return JSONResponse(
+            content=[],
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
+        )
 
 
 @router.get("/{speaker_id}", response_model=SpeakerSchema)
@@ -505,7 +522,8 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
 
         minio_service = MinIOService()
         video_processing_service = VideoProcessingService(minio_service)
-        video_processing_service.clear_cache_for_media_file(media_file_id)
+        # Fix: Pass the correct arguments to clear_cache_for_media_file
+        video_processing_service.clear_cache_for_media_file(str(media_file_id), media_file_id)
     except Exception as e:
         logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
 
@@ -514,6 +532,7 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
 def update_speaker(
     speaker_id: int,
     speaker_update: SpeakerUpdate,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -636,8 +655,36 @@ def update_speaker(
     # Clear video cache
     _clear_video_cache_for_speaker(speaker.media_file_id)
 
+    # Send WebSocket notification for real-time UI updates
+    try:
+        import asyncio
+        from app.api.websockets import publish_notification
+
+        # Notify about speaker update
+        asyncio.create_task(
+            publish_notification(
+                user_id=current_user.id,
+                notification_type="speaker_updated",
+                data={
+                    "speaker_id": speaker.id,
+                    "media_file_id": speaker.media_file_id,
+                    "display_name": speaker.display_name,
+                    "verified": speaker.verified,
+                    "profile_id": speaker.profile_id,
+                },
+            )
+        )
+        logger.info(f"Sent WebSocket notification for speaker {speaker.id} update")
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for speaker update: {e}")
+
     # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
+
+    # Prevent caching to ensure frontend gets fresh data
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
 
     return speaker
 
