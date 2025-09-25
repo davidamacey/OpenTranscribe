@@ -217,6 +217,18 @@ export const speakerColors = [
 ];
 
 /**
+ * Get speaker color for transcript segments
+ * Uses speaker_label which now ALWAYS contains the original "SPEAKER_##" ID
+ * @param segment - Transcript segment object
+ * @returns Color object with bg, border, text colors
+ */
+export function getSpeakerColorForSegment(segment: any) {
+  // speaker_label now consistently contains the original ID like "SPEAKER_01"
+  const originalId = segment.speaker_label || 'Unknown';
+  return getSpeakerColor(originalId);
+}
+
+/**
  * Get speaker color based on speaker name using consistent hashing
  * Scales robustly to 30+ speakers with curated pleasant colors
  * Returns colors with CSS custom properties for theme awareness
@@ -234,7 +246,7 @@ export function getSpeakerColor(speakerName: string) {
       solid: color.solid
     };
   }
-  
+
   // Create a consistent hash from speaker name
   let hash = 0;
   for (let i = 0; i < speakerName.length; i++) {
@@ -242,10 +254,10 @@ export function getSpeakerColor(speakerName: string) {
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32-bit integer
   }
-  
+
   const index = Math.abs(hash) % speakerColors.length;
   const color = speakerColors[index];
-  
+
   return {
     bg: color.bg,
     border: color.border,

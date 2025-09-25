@@ -3,6 +3,7 @@
   import type { SummaryData, SummaryResponse } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
   import { isLLMAvailable } from '../stores/llmStatus';
+  import { copyToClipboard } from '$lib/utils/clipboard';
   
   // Import smaller components
   import SummaryDisplay from './SummaryDisplay.svelte';
@@ -282,36 +283,24 @@
   
   function handleCopy() {
     if (!summary) return;
-    
+
     const markdown = formatSummaryAsMarkdown(summary);
-    
-    navigator.clipboard.writeText(markdown).then(() => {
-      copyButtonText = 'Copied!';
-      setTimeout(() => {
-        copyButtonText = 'Copy';
-      }, 2000);
-    }).catch(err => {
-      console.error('Failed to copy:', err);
-      // Fallback for browsers that don't support clipboard API
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = markdown;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
+
+    copyToClipboard(
+      markdown,
+      () => {
         copyButtonText = 'Copied!';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
-      } catch (fallbackError) {
-        console.error('Fallback copy failed:', fallbackError);
+      },
+      (error) => {
         copyButtonText = 'Copy failed';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
       }
-    });
+    );
   }
   
   function removeEmojis(text: string): string {

@@ -29,12 +29,8 @@ class UserLLMSettings(Base):
     __tablename__ = "user_llm_settings"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(
-        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    name = Column(
-        String(100), nullable=False
-    )  # User-friendly name for the configuration
+    user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)  # User-friendly name for the configuration
 
     # Provider configuration
     provider = Column(
@@ -45,7 +41,9 @@ class UserLLMSettings(Base):
     base_url = Column(String(500), nullable=True)  # Custom endpoint URL
 
     # Optional settings
-    max_tokens = Column(Integer, default=8192, nullable=False)  # Model's context window in tokens (user-configured)
+    max_tokens = Column(
+        Integer, default=8192, nullable=False
+    )  # Model's context window in tokens (user-configured)
     temperature = Column(
         String(10), default="0.3", nullable=False
     )  # Store as string to avoid float precision issues
@@ -58,9 +56,7 @@ class UserLLMSettings(Base):
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     user = relationship("User", back_populates="llm_settings")

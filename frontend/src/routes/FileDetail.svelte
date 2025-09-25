@@ -2,7 +2,6 @@
   import { onMount, onDestroy, afterUpdate } from 'svelte';
   import { writable } from 'svelte/store';
   import axiosInstance from '$lib/axios';
-  import { formatTimestampWithMillis } from '$lib/utils/formatting';
   import { websocketStore } from '$stores/websocket';
   
   // Import new components
@@ -21,6 +20,7 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
   import { isLLMAvailable } from '../stores/llmStatus';
+  import { transcriptStore, processedTranscriptSegments } from '../stores/transcriptStore';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -68,12 +68,31 @@
   let lastProcessedNotificationState = ''; // Track processed notification state globally
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
+
+  // Reset spinners when LLM becomes unavailable
+  $: if (!llmAvailable && (summaryGenerating || generatingSummary)) {
+    summaryGenerating = false;
+    generatingSummary = false;
+    summaryError = '';
+  }
   
   
 
   // Confirmation modal state
   let showExportConfirmation = false;
   let pendingExportFormat = '';
+
+  // Speaker profile confirmation modal state
+  let showSpeakerProfileConfirmation = false;
+  let pendingSpeakerUpdate = null;
+  let profileUpdateMessage = '';
+  let profileUpdateTitle = '';
+
+  // Bulk speaker save confirmation state
+  let speakerConfirmationQueue = [];
+  let currentConfirmationIndex = 0;
+  let bulkSaveInProgress = false;
+  let bulkSaveDecisions = new Map();
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
@@ -167,153 +186,108 @@
   }
 
   /**
-   * Fetch analytics data for a file
+   * Analytics are provided by the backend - no client-side computation needed
    */
   async function fetchAnalytics(fileId: string) {
-    try {
-      // Since there's no dedicated analytics endpoint, create analytics from available data
-      const transcriptData = file?.transcript_segments;
-      if (file && transcriptData && transcriptData.length > 0) {
-        const speakerCounts: any = {};
-        const speakerTimes: any = {};
-        let totalWords = 0;
-        let totalDuration = 0;
-        
-        // Create a speaker mapping from current speakerList for latest display names
-        const speakerMapping = new Map();
-        speakerList.forEach((speaker: any) => {
-          // Map both the original name and any existing display names to the current display name
-          speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
-          if (speaker.display_name) {
-            speakerMapping.set(speaker.display_name, speaker.display_name);
-          }
-        });
-        
-        transcriptData.forEach((segment: any) => {
-          // Get the speaker identifier from the segment
-          const segmentSpeakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
-          // Use the latest display name from speakerList, or fall back to segment data
-          const speaker = speakerMapping.get(segmentSpeakerLabel) || 
-                         segment.speaker?.display_name || 
-                         segmentSpeakerLabel;
-          
-          const words = segment.text.split(/\s+/).filter(Boolean).length;
-          const segmentDuration = (segment.end_time || 0) - (segment.start_time || 0);
-          
-          speakerCounts[speaker] = (speakerCounts[speaker] || 0) + words;
-          speakerTimes[speaker] = (speakerTimes[speaker] || 0) + segmentDuration;
-          totalWords += words;
-          totalDuration += segmentDuration;
-        });
-        
-        // Create new analytics object
-        const newAnalytics = {
-          overall: {
-            word_count: totalWords,
-            duration_seconds: file.duration || totalDuration,
-            talk_time: {
-              by_speaker: speakerTimes,
-              total: totalDuration
-            },
-            interruptions: {
-              by_speaker: {},
-              total: 0
-            },
-            turn_taking: {
-              by_speaker: speakerCounts,
-              total_turns: transcriptData.length
-            },
-            questions: {
-              by_speaker: {},
-              total: 0
-            }
-          }
-        };
-        
-        // Create a new file object to trigger reactivity
-        file = {
-          ...file,
-          analytics: newAnalytics
-        };
-        
-        reactiveFile.set(file);
-      } else {
-        console.warn('FileDetail: No transcript data available for analytics');
-      }
-    } catch (error) {
-      console.error('Error creating analytics:', error);
-    }
+    // Analytics are pre-computed by the backend and included in the API response
+    // No client-side processing required - just use what the backend provides
   }
 
   /**
    * Process transcript data from the main file response
    */
   function processTranscriptData() {
-    // Use transcript_segments from backend
+    // Use transcript_segments from backend (already sorted by backend)
     let transcriptData = file?.transcript_segments;
-    
+
     if (!file || !transcriptData || !Array.isArray(transcriptData)) {
       return;
     }
-    
+
     try {
-      // Sort transcript segments by start_time to ensure proper ordering
-      transcriptData = [...transcriptData].sort((a: any, b: any) => {
-        const aStart = parseFloat(a.start_time || a.start || 0);
-        const bStart = parseFloat(b.start_time || b.start || 0);
-        return aStart - bStart;
-      });
-      
+      // Backend now provides pre-sorted transcript segments - no client-side sorting needed
+
       // Update the file with sorted data
       file.transcript_segments = transcriptData;
-      
+
       // Update transcript text for editing
-      editedTranscript = transcriptData.map((seg: any) => 
-        `${formatTimestampWithMillis(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
+      editedTranscript = transcriptData.map((seg: any) =>
+        `${seg.display_timestamp || seg.formatted_timestamp || formatSimpleTimestamp(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
       ).join('\n');
-      
+
+      // Load speakers and update store after they're loaded
       loadSpeakers();
     } catch (error) {
       console.error('Error processing transcript:', error);
     }
   }
 
+  // Speaker sorting is now handled by the backend
+
   /**
-   * Extract speaker number from SPEAKER_XX format for sorting
+   * Load cross-media appearances for labeled speakers
    */
-  function getSpeakerNumber(speakerName: string): number {
-    const match = speakerName.match(/^SPEAKER_(\d+)$/);
-    return match ? parseInt(match[1], 10) : 999; // Unknown speakers go to end
+  async function loadCrossMediaDataForLabeledSpeakers(): Promise<void> {
+    if (!speakerList || speakerList.length === 0) return;
+
+    // Find speakers that need cross-media data (labeled speakers without individual matches)
+    const speakersNeedingCrossMedia = speakerList.filter(speaker => speaker.needsCrossMediaCall);
+
+    // Load cross-media data for each labeled speaker
+    for (const speaker of speakersNeedingCrossMedia) {
+      try {
+        const response = await axiosInstance.get(`/api/speakers/${speaker.id}/cross-media`);
+
+        // Update the speaker's cross_video_matches with actual file appearances
+        speaker.cross_video_matches = response.data || [];
+
+      } catch (error) {
+        console.error(`Error loading cross-media data for speaker ${speaker.id}:`, error);
+        speaker.cross_video_matches = [];
+      }
+    }
+
+
+    // Trigger reactivity by updating the speakerList reference
+    speakerList = [...speakerList];
+
+    // Update transcript store with the new cross-media data
+    if (file?.id && file.transcript_segments) {
+      transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+    }
   }
 
   /**
    * Load speakers for the current file
    */
-  async function loadSpeakers() {
+  async function loadSpeakers(): Promise<void> {
     if (!file?.id) return;
-    
+
     try {
       // Load speakers from the backend API
       const response = await axiosInstance.get(`/api/speakers/`, {
         params: { file_id: file.id }
       });
-      
+
       if (response.data && Array.isArray(response.data)) {
-        speakerList = response.data
-          .map((speaker: any) => ({
-            id: speaker.id,
-            name: speaker.name,
-            display_name: speaker.display_name || '',  // Empty for unlabeled speakers to show suggestions
-            suggested_name: speaker.suggested_name,
-            uuid: speaker.uuid,
-            verified: speaker.verified,
-            confidence: speaker.confidence,
-            profile: speaker.profile,
-            cross_video_matches: (speaker.cross_video_matches || []).filter((match) => parseFloat(match.confidence) >= 0.50), // Show high and medium confidence matches (≥50%)
-            showMatches: false  // Add this for the collapsible UI
-          }))
-          .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
-        
+        // Use pre-processed data directly from backend - no frontend business logic
+        speakerList = response.data.map((speaker: any) => ({
+            ...speaker,
+            showMatches: false,  // Only UI state, not business logic
+            showSuggestions: false  // Only UI state, not business logic
+          }));
+
+
+          // Speakers are now pre-sorted by the backend
+
+        // Load cross-media data for labeled speakers
+        await loadCrossMediaDataForLabeledSpeakers();
+
+        // Load data into the transcript store for reactive updates
+        if (file?.id && file.transcript_segments) {
+          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        }
+
       } else {
         // Fallback: extract from transcript data
         const transcriptData = file?.transcript_segments;
@@ -328,8 +302,13 @@
               });
             }
           });
-          speakerList = Array.from(speakers.values())
-            .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
+          speakerList = Array.from(speakers.values());
+          // Backend provides pre-sorted speakers
+
+          // Load data into the transcript store for fallback case
+          if (file?.id && file.transcript_segments) {
+            transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+          }
         }
       }
     } catch (error) {
@@ -347,8 +326,13 @@
             });
           }
         });
-        speakerList = Array.from(speakers.values())
-          .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
+        speakerList = Array.from(speakers.values());
+        // Backend provides pre-sorted speakers
+
+        // Load data into the transcript store for error fallback case
+        if (file?.id && file.transcript_segments) {
+          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        }
       }
     }
   }
@@ -430,34 +414,174 @@
     seekToTime(startTime);
   }
 
+
+  // Validate speaker name
+  function validateSpeakerName(name: string, speakerId: number): { isValid: boolean; error?: string } {
+    if (!name || typeof name !== 'string') {
+      return { isValid: false, error: 'Speaker name is required' };
+    }
+
+    const trimmedName = name.trim();
+    if (trimmedName.length === 0) {
+      return { isValid: false, error: 'Speaker name cannot be empty' };
+    }
+
+    if (trimmedName.length > 100) {
+      return { isValid: false, error: 'Speaker name must be 100 characters or less' };
+    }
+
+    // Check for duplicate names (excluding the current speaker)
+    const existingNames = speakerList
+      .filter(s => s.id !== speakerId)
+      .map(s => (s.display_name || s.name).toLowerCase());
+
+    if (existingNames.includes(trimmedName.toLowerCase())) {
+      return { isValid: false, error: 'This speaker name is already in use' };
+    }
+
+    return { isValid: true };
+  }
+
   // Handle speaker name updates
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
 
+    // Validate the speaker name
+    const validation = validateSpeakerName(newName, speakerId);
+    if (!validation.isValid) {
+      toastStore.error(validation.error);
+      return;
+    }
+
+    // Find the speaker to check if they have a profile
+    const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
+
+    // Check if this speaker has a profile and the name is changing
+    if (speaker && speaker.profile && speaker.profile.name !== newName) {
+      // Show confirmation modal for profile update decision
+      pendingSpeakerUpdate = { speakerId, newName, speaker };
+      profileUpdateTitle = 'Update Speaker Profile';
+      profileUpdateMessage = `"${speaker.display_name || speaker.name}" is currently linked to the profile "${speaker.profile.name}". What would you like to do?`;
+      showSpeakerProfileConfirmation = true;
+      return;
+    }
+
+    // If no profile or name is the same, proceed with normal update
+    await performSpeakerUpdate(speakerId, newName, 'normal');
+  }
+
+  // Handle speaker profile confirmation decision
+  async function handleProfileConfirmation(decision: 'update_profile' | 'create_new_profile') {
+    if (bulkSaveInProgress) {
+      // Handle bulk save confirmation
+      await handleBulkConfirmation(decision);
+    } else if (pendingSpeakerUpdate) {
+      // Handle individual speaker confirmation
+      const { speakerId, newName } = pendingSpeakerUpdate;
+      await performSpeakerUpdate(speakerId, newName, decision);
+
+      // Reset modal state
+      showSpeakerProfileConfirmation = false;
+      pendingSpeakerUpdate = null;
+      profileUpdateMessage = '';
+      profileUpdateTitle = '';
+    }
+  }
+
+  // Handle modal cancellation
+  function handleProfileConfirmationCancel() {
+    showSpeakerProfileConfirmation = false;
+    pendingSpeakerUpdate = null;
+    profileUpdateMessage = '';
+    profileUpdateTitle = '';
+
+    // Reset bulk save state if it was in progress
+    if (bulkSaveInProgress) {
+      bulkSaveInProgress = false;
+      speakerConfirmationQueue = [];
+      currentConfirmationIndex = 0;
+      bulkSaveDecisions.clear();
+      savingSpeakers = false;
+    }
+  }
+
+  // Handle bulk save confirmation
+  async function handleBulkConfirmation(decision: 'update_profile' | 'create_new_profile') {
+    if (!pendingSpeakerUpdate || speakerConfirmationQueue.length === 0) return;
+
+    const { speakerId, newName } = pendingSpeakerUpdate;
+
+    // Store the decision for this speaker
+    bulkSaveDecisions.set(speakerId, { decision, newName });
+
+    // Move to next confirmation or finish
+    currentConfirmationIndex++;
+
+    if (currentConfirmationIndex < speakerConfirmationQueue.length) {
+      // Show next confirmation
+      showNextConfirmation();
+    } else {
+      // All confirmations done, proceed with bulk save
+      showSpeakerProfileConfirmation = false;
+      await performBulkSaveWithDecisions();
+    }
+  }
+
+  // Show next confirmation in the queue
+  function showNextConfirmation() {
+    if (currentConfirmationIndex < speakerConfirmationQueue.length) {
+      const speaker = speakerConfirmationQueue[currentConfirmationIndex];
+      pendingSpeakerUpdate = {
+        speakerId: speaker.id,
+        newName: speaker.display_name,
+        speaker
+      };
+      profileUpdateTitle = `Update Speaker Profile (${currentConfirmationIndex + 1} of ${speakerConfirmationQueue.length})`;
+      profileUpdateMessage = `"${speaker.display_name || speaker.name}" is currently linked to the profile "${speaker.profile.name}". What would you like to do?`;
+      showSpeakerProfileConfirmation = true;
+    }
+  }
+
+  // Perform the actual speaker update with the specified action
+  async function performSpeakerUpdate(speakerId: number | string, newName: string, action: 'normal' | 'update_profile' | 'create_new_profile') {
     // Update the speaker in the speakerList and maintain sort order
+    // IMPORTANT: Only update display_name, NEVER change name (original speaker ID for color consistency)
     speakerList = speakerList
       .map(speaker => {
         if (speaker.id === speakerId || speaker.uuid === speakerId) {
-          return { ...speaker, display_name: newName, name: newName };
+          return { ...speaker, display_name: newName };
         }
         return speaker;
-      })
-      .sort((a, b) => getSpeakerNumber(a.name) - getSpeakerNumber(b.name));
+      });
+      // Backend provides pre-sorted speakers
 
-    // Update transcript data with new speaker name
+    // Update the transcript store FIRST - this will trigger reactive updates in TranscriptModal
+    transcriptStore.updateSpeakerName(speakerId, newName);
+
+    // Update transcript segment speaker names in file object (for other components)
     const transcriptData = file?.transcript_segments;
     if (transcriptData && Array.isArray(transcriptData)) {
       transcriptData.forEach(segment => {
         if (segment.speaker_id === speakerId) {
-          segment.speaker = newName;
+          // Update ALL speaker name fields that components might use
+          segment.resolved_speaker_name = newName;
+          if (segment.speaker) {
+            segment.speaker.display_name = newName;
+          } else {
+            // Create speaker object if it doesn't exist
+            segment.speaker = {
+              id: speakerId,
+              name: segment.speaker_label || `SPEAKER_${speakerId}`,
+              display_name: newName
+            };
+          }
         }
       });
 
       // Update file data
-      file.transcript_segments = [...transcriptData];
+      file.transcript_segments = transcriptData.map(segment => ({ ...segment }));
       file = { ...file }; // Trigger reactivity
       reactiveFile.set(file);
-
     }
 
     // Update subtitles in the video player with new speaker names
@@ -469,17 +593,44 @@
       }
     }
 
-    // Persist to database
+    // Persist to database with the action decision
     try {
       const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
       if (speaker && speaker.id) {
-        await axiosInstance.put(`/api/speakers/${speaker.id}`, {
-          display_name: newName,
-          name: newName
-        });
+        const payload: any = {
+          display_name: newName
+          // NEVER update 'name' field - it contains the original speaker ID for color consistency
+        };
+
+        // Add profile action if needed
+        if (action !== 'normal') {
+          payload.profile_action = action;
+        }
+
+        await axiosInstance.put(`/api/speakers/${speaker.id}`, payload);
+
+        // Show success feedback with appropriate message
+        const successMessage = action === 'update_profile'
+          ? `Profile "${newName}" updated globally`
+          : action === 'create_new_profile'
+          ? `New profile "${newName}" created`
+          : `Speaker renamed to "${newName}"`;
+
+        toastStore.success(successMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to update speaker name in database:', error);
+
+      // Show user-friendly error with option to retry
+      const errorMessage = error.response?.status === 404
+        ? 'Speaker not found in database'
+        : error.response?.status === 403
+        ? 'Permission denied to update speaker'
+        : 'Failed to save speaker name to database';
+
+      toastStore.error(`${errorMessage}. Changes are saved locally only.`);
+
+      // Note: We don't revert frontend changes as they're useful even without backend persistence
     }
   }
 
@@ -535,15 +686,30 @@
       const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segment.id}`, segmentUpdate);
       
       if (response.data) {
+        // Update the transcript store FIRST for reactivity
+        transcriptStore.updateSegmentText(segment.id, editingSegmentText);
+
         // Update the specific segment in local data
         const transcriptData = file?.transcript_segments;
         if (transcriptData && file) {
           const segmentIndex = transcriptData.findIndex((s: any) => s.id === segment.id);
-          
+
           if (segmentIndex !== -1) {
-            // Create a new array with the updated segment
+            // Create a new array with the updated segment, preserving speaker data
             const updatedSegments = [...transcriptData];
-            updatedSegments[segmentIndex] = response.data;
+            const originalSegment = updatedSegments[segmentIndex];
+
+            // CRITICAL: Merge response data but preserve original speaker information
+            updatedSegments[segmentIndex] = {
+              ...originalSegment, // Keep all original data (including speaker info)
+              ...response.data,   // Apply backend updates
+              // Explicitly preserve speaker-related fields that determine colors
+              speaker_label: originalSegment.speaker_label,
+              speaker_id: originalSegment.speaker_id,
+              speaker: originalSegment.speaker,
+              resolved_speaker_name: originalSegment.resolved_speaker_name
+            };
+
             
             // Update file with new segments array
             file = { 
@@ -606,8 +772,12 @@
       });
       
       if (response.data) {
-        // Refresh file data
+        // Refresh file data to get updated segments
         await fetchFileDetails(fileId);
+
+        // The fetchFileDetails will reload the transcript store via processTranscriptData() and loadSpeakers()
+        // so the transcript modal will automatically update
+
         isEditingTranscript = false;
         transcriptError = '';
       }
@@ -733,8 +903,8 @@
       switch (format) {
         case 'txt':
           // Create transcript content with segments
-          let segments = transcriptData.map((seg: any) => 
-            `[${formatSimpleTimestamp(seg.start_time)}] ${getSpeakerDisplayName(seg)}: ${seg.text}`
+          let segments = transcriptData.map((seg: any) =>
+            `[${formatSimpleTimestamp(seg.start_time || seg.start || 0)} --> ${formatSimpleTimestamp(seg.end_time || seg.end || 0)}] ${getSpeakerDisplayName(seg)}: ${seg.text}`
           );
           
           // Add comments if requested
@@ -1031,138 +1201,173 @@
 
   async function handleSaveSpeakerNames() {
     if (!speakerList || speakerList.length === 0) return;
-    
-    savingSpeakers = true;
-    
-    try {
-      // Update speakers in the backend (only meaningful names)
-      const updatePromises = speakerList
-        .filter(speaker => 
-          speaker.id && 
-          speaker.display_name && 
-          speaker.display_name.trim() !== "" && 
-          !speaker.display_name.startsWith('SPEAKER_')
-        )
-        .map(async (speaker: any) => {
-          // Update existing speaker with meaningful display name
-          return axiosInstance.put(`/api/speakers/${speaker.id}`, {
-            display_name: speaker.display_name.trim(),
-            name: speaker.name
-          });
-        });
-      
-      await Promise.all(updatePromises);
-      
-      // Update local transcript data with new display names
-      const transcriptData = file?.transcript_segments;
-      if (transcriptData) {
-        const speakerMapping = new Map();
-        speakerList.forEach((speaker: any) => {
-          speakerMapping.set(speaker.name, speaker.display_name);
-        });
-        
-        transcriptData.forEach((segment: any) => {
-          const speakerName = segment.speaker_label || segment.speaker?.name;
-          const newDisplayName = speakerMapping.get(speakerName);
-          if (newDisplayName && segment.speaker) {
-            segment.speaker.display_name = newDisplayName;
-          } else if (newDisplayName) {
-            segment.speaker = {
-              name: speakerName,
-              display_name: newDisplayName
-            };
-          }
-        });
-        
-        // Update file data
-        file.transcript_segments = [...transcriptData];
-        file = { ...file }; // Trigger reactivity
-        reactiveFile.set(file);
-      }
-      
-      // Reload speakers to ensure consistent data and sort order
-      await loadSpeakers();
-      
-      // Regenerate analytics with updated speaker names
-      if (file?.id) {
-        await fetchAnalytics(file.id.toString());
-      }
 
-      // Update subtitles in the video player with new speaker names
-      if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-        try {
-          await videoPlayerComponent.updateSubtitles();
-        } catch (error) {
-          console.warn('Failed to update subtitles after saving speaker names:', error);
+    savingSpeakers = true;
+
+    try {
+      // Validate all speaker names first
+      const speakersToUpdate = speakerList.filter(speaker =>
+        speaker.id &&
+        speaker.display_name &&
+        speaker.display_name.trim() !== "" &&
+        !speaker.display_name.startsWith('SPEAKER_')
+      );
+
+      // Validate each speaker name
+      for (const speaker of speakersToUpdate) {
+        const validation = validateSpeakerName(speaker.display_name, speaker.id);
+        if (!validation.isValid) {
+          toastStore.error(`${speaker.name}: ${validation.error}`);
+          savingSpeakers = false;
+          return;
         }
       }
 
-      // Clear cached processed videos so downloads will use updated speaker names
-      try {
-        await axiosInstance.delete(`/api/files/${file.id}/cache`);
-        // Note: No user notification needed - this is automatic background cleanup
-      } catch (error) {
-        console.warn('Could not clear video cache:', error);
+      // Check for speakers that need profile confirmation
+      const speakersNeedingConfirmation = speakersToUpdate.filter(speaker =>
+        speaker.profile && speaker.profile.name !== speaker.display_name.trim()
+      );
+
+      if (speakersNeedingConfirmation.length > 0) {
+        // Start bulk confirmation process
+        speakerConfirmationQueue = speakersNeedingConfirmation;
+        currentConfirmationIndex = 0;
+        bulkSaveInProgress = true;
+        bulkSaveDecisions.clear();
+
+        // Start with first confirmation
+        showNextConfirmation();
+        return;
       }
 
-      // Speaker names saved to database and updated locally
-      toastStore.success('Speaker names saved successfully!');
+      // No confirmations needed, proceed with regular save
+      await performBulkSave(speakersToUpdate);
+
     } catch (error) {
       console.error('Error saving speaker names:', error);
-      toastStore.error('Failed to save speaker names. Changes applied locally only.');
-      // Fall back to local-only updates
-      const transcriptData = file?.transcript_segments;
-      if (transcriptData) {
-        const speakerMapping = new Map();
-        speakerList.forEach((speaker: any) => {
-          speakerMapping.set(speaker.name, speaker.display_name);
-        });
-        
-        transcriptData.forEach((segment: any) => {
-          const speakerName = segment.speaker_label || segment.speaker?.name;
-          const newDisplayName = speakerMapping.get(speakerName);
-          if (newDisplayName && segment.speaker) {
+      toastStore.error('Failed to save speaker names. Please try again.');
+      savingSpeakers = false;
+    }
+  }
+
+  // Perform bulk save with confirmation decisions
+  async function performBulkSaveWithDecisions() {
+    try {
+      const speakersToUpdate = speakerList.filter(speaker =>
+        speaker.id &&
+        speaker.display_name &&
+        speaker.display_name.trim() !== "" &&
+        !speaker.display_name.startsWith('SPEAKER_')
+      );
+
+      await performBulkSave(speakersToUpdate, bulkSaveDecisions);
+
+      // Reset bulk save state
+      bulkSaveInProgress = false;
+      speakerConfirmationQueue = [];
+      currentConfirmationIndex = 0;
+      bulkSaveDecisions.clear();
+
+    } catch (error) {
+      console.error('Error in bulk save with decisions:', error);
+      toastStore.error('Failed to save speaker names. Please try again.');
+      savingSpeakers = false;
+
+      // Reset bulk save state
+      bulkSaveInProgress = false;
+      speakerConfirmationQueue = [];
+      currentConfirmationIndex = 0;
+      bulkSaveDecisions.clear();
+    }
+  }
+
+  // Perform the actual bulk save operation
+  async function performBulkSave(speakersToUpdate, decisions = new Map()) {
+    // Update speakers in the backend with decisions
+    const updatePromises = speakersToUpdate.map(async (speaker: any) => {
+      const decision = decisions.get(speaker.id);
+      const payload: any = {
+        display_name: speaker.display_name.trim(),
+        name: speaker.name
+      };
+
+      // Add profile action if there's a decision for this speaker
+      if (decision) {
+        payload.profile_action = decision.decision;
+      }
+
+      return axiosInstance.put(`/api/speakers/${speaker.id}`, payload);
+    });
+
+    await Promise.all(updatePromises);
+
+    // Update the transcript store for reactive updates
+    speakerList.forEach((speaker: any) => {
+      if (speaker.id && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
+        transcriptStore.updateSpeakerName(speaker.id, speaker.display_name.trim());
+      }
+    });
+
+    // Update local transcript data with new display names
+    const transcriptData = file?.transcript_segments;
+    if (transcriptData) {
+      const speakerMapping = new Map();
+      speakerList.forEach((speaker: any) => {
+        if (speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
+          speakerMapping.set(speaker.name, speaker.display_name.trim());
+        }
+      });
+
+      transcriptData.forEach((segment: any) => {
+        const speakerName = segment.speaker_label || segment.speaker?.name;
+        const newDisplayName = speakerMapping.get(speakerName);
+        if (newDisplayName) {
+          segment.resolved_speaker_name = newDisplayName;
+          if (segment.speaker) {
             segment.speaker.display_name = newDisplayName;
-          } else if (newDisplayName) {
+          } else {
             segment.speaker = {
+              id: segment.speaker_id,
               name: speakerName,
               display_name: newDisplayName
             };
           }
-        });
-        
-        file = { ...file };
-        reactiveFile.set(file);
-        
-        // Reload speakers to ensure consistent data and sort order
-        await loadSpeakers();
-        
-        // Regenerate analytics with updated speaker names
-        if (file?.id) {
-          await fetchAnalytics(file.id.toString());
         }
+      });
 
-        // Update subtitles in the video player with new speaker names (fallback)
-        if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-          try {
-            await videoPlayerComponent.updateSubtitles();
-          } catch (error) {
-            console.warn('Failed to update subtitles after fallback speaker update:', error);
-          }
-        }
-
-        // Clear cached processed videos so downloads will use updated speaker names (fallback)
-        try {
-          await axiosInstance.delete(`/api/files/${file.id}/cache`);
-        } catch (error) {
-          console.warn('Could not clear video cache (fallback):', error);
-        }
-
-        // Speaker names updated locally only (database update failed)
-      }
-    } finally {
-      savingSpeakers = false;
+      file.transcript_segments = [...transcriptData];
+      file = { ...file };
+      reactiveFile.set(file);
     }
+
+    // Reload speakers to ensure consistent data
+    await loadSpeakers();
+
+    // Update subtitles and clear cache
+    if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
+      try {
+        await videoPlayerComponent.updateSubtitles();
+      } catch (error) {
+        console.warn('Failed to update subtitles after saving speaker names:', error);
+      }
+    }
+
+    try {
+      await axiosInstance.delete(`/api/files/${file.id}/cache`);
+    } catch (error) {
+      console.warn('Could not clear video cache:', error);
+    }
+
+    toastStore.success('Speaker names saved successfully!');
+    isEditingSpeakers = false;
+    savingSpeakers = false;
+
+    // Refresh speakers from the backend to sync local state
+    speakerList.forEach((speaker: any) => {
+      if (speaker.id && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
+        transcriptStore.updateSpeakerName(speaker.id, speaker.display_name.trim());
+      }
+    });
   }
 
   function handleSeekTo(event: any) {
@@ -1394,7 +1599,8 @@
   onMount(() => {
     // Use the correct backend API base URL (port 5174, not frontend port 5173)
     apiBaseUrl = window.location.protocol + '//' + window.location.hostname + ':5174';
-    
+
+
     if (id) {
       fileId = id;
     } else {
@@ -1489,15 +1695,16 @@
                   file.status = 'completed';
                   currentProcessingStep = 'Processing complete!';
                   
-                  // If LLM is available, always show AI summary spinner after transcription completion
-                  // This handles the automatic summarization that triggers after transcription
+                  // Show AI summary spinner only if LLM is available after transcription completion
                   if (llmAvailable) {
                     summaryGenerating = true;
                     generatingSummary = true;
                     summaryError = '';
                     // Keep reprocessing flag true until summary completes to maintain proper UI state
                   } else {
-                    // No LLM available, safe to reset reprocessing flag
+                    // No LLM available, ensure spinners are off and reset reprocessing flag
+                    summaryGenerating = false;
+                    generatingSummary = false;
                     reprocessing = false;
                   }
                   
@@ -1546,11 +1753,17 @@
               
               
               if (status === 'queued' || status === 'processing' || status === 'generating') {
-                // Summary generation started - show spinner
-                summaryGenerating = true;
-                generatingSummary = true;
-                summaryError = '';
-                
+                // Summary generation started - show spinner only if LLM is available
+                if (llmAvailable) {
+                  summaryGenerating = true;
+                  generatingSummary = true;
+                  summaryError = '';
+                } else {
+                  // LLM not available, ensure spinners are off
+                  summaryGenerating = false;
+                  generatingSummary = false;
+                }
+
               } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
                 // Summary completed - stop spinners and update file
                 
@@ -1612,11 +1825,14 @@
     playerInitialized = false;
 
     // LLM status cleanup is handled by the Settings component
-    
+
     // Clean up WebSocket subscription
     if (wsUnsubscribe) {
       wsUnsubscribe();
     }
+
+    // Clear the transcript store when leaving the page
+    transcriptStore.clear();
   });
 
   afterUpdate(() => {
@@ -1816,10 +2032,11 @@
           on:collectionsUpdated={handleCollectionsUpdated}
         />
 
-        <AnalyticsSection 
-          {file} 
-          bind:isAnalyticsExpanded 
+        <AnalyticsSection
+          {file}
+          bind:isAnalyticsExpanded
           {speakerList}
+          transcriptStore={$transcriptStore}
         />
 
         <CommentSection 
@@ -1893,6 +2110,51 @@
   on:close={handleExportModalClose}
 />
 
+<!-- Speaker Profile Confirmation Modal -->
+{#if showSpeakerProfileConfirmation}
+  <div class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title">{profileUpdateTitle}</h2>
+          <button
+            class="modal-close-btn"
+            on:click={handleProfileConfirmationCancel}
+            aria-label="Close dialog"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-message">{profileUpdateMessage}</p>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            class="btn btn-primary"
+            on:click={() => handleProfileConfirmation('update_profile')}
+          >
+            Update Profile Globally
+          </button>
+          <button
+            class="btn btn-secondary"
+            on:click={() => handleProfileConfirmation('create_new_profile')}
+          >
+            Create New Profile
+          </button>
+          <button
+            class="btn btn-cancel"
+            on:click={handleProfileConfirmationCancel}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Summary Modal -->
 {#if file?.id}
   <SummaryModal
@@ -1937,7 +2199,6 @@
     bind:isOpen={showTranscriptModal}
     fileId={file.id}
     fileName={file?.filename || 'Unknown File'}
-    transcriptSegments={file?.transcript_segments || []}
     on:close={() => showTranscriptModal = false}
   />
 {/if}
@@ -2326,5 +2587,174 @@
 
   /* All Plyr styling is now handled in VideoPlayer.svelte */
 
+  /* Speaker Profile Confirmation Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .modal-dialog {
+    background: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    max-width: 500px;
+    width: 100%;
+    overflow: hidden;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    animation: slideIn 0.2s ease-out;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(-20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .modal-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.4;
+  }
+
+  .modal-close-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .modal-close-btn:hover {
+    color: var(--text-color);
+    background: var(--button-hover);
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-message {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-size: 0.95rem;
+  }
+
+  .modal-footer {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem 1.5rem;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-color);
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 120px;
+  }
+
+  .btn-primary {
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-primary:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+
+  .btn-secondary {
+    background: var(--success-color);
+    color: white;
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+  }
+
+  .btn-secondary:hover {
+    background: #059669; /* Darker green to match app pattern */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+  }
+
+  .btn-cancel {
+    background: var(--card-background);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--card-shadow);
+  }
+
+  .btn-cancel:hover {
+    background: var(--button-hover);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+  }
+
+  /* Responsive design */
+  @media (max-width: 480px) {
+    .modal-dialog {
+      margin: 1rem;
+      max-width: none;
+    }
+
+    .modal-footer {
+      flex-direction: column-reverse;
+    }
+
+    .btn {
+      width: 100%;
+    }
+  }
+
+  /* Dark mode adjustments */
+  :global([data-theme='dark']) .modal-overlay {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  :global([data-theme='dark']) .modal-dialog {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  }
 
 </style>

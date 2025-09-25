@@ -20,6 +20,11 @@
       name: string;
       description?: string;
     };
+    // Backend computed fields
+    computed_status?: string;
+    status_text?: string;
+    status_color?: string;
+    resolved_display_name?: string;
   }
 
   interface SpeakerProfile {
@@ -75,24 +80,36 @@
   async function handleSpeakerClick(speaker: Speaker) {
     try {
       selectedSpeaker = speaker;
-      
+      errorMessage = '';
+
       // Get suggestions and cross-media occurrences
       const [suggestionsResponse, occurrencesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speakers/${speaker.id}/suggestions`).catch(() => ({ data: [] })),
-        axiosInstance.get(`/api/speakers/${speaker.id}/cross-media`).catch(() => ({ data: [] }))
+        axiosInstance.get(`/api/speaker-profiles/speakers/${speaker.id}/suggestions`).catch((err) => {
+          console.error('Failed to load speaker suggestions:', err);
+          return { data: [] };
+        }),
+        axiosInstance.get(`/api/speakers/${speaker.id}/cross-media`).catch((err) => {
+          console.error('Failed to load cross-media occurrences:', err);
+          return { data: [] };
+        })
       ]);
-      
-      suggestions = suggestionsResponse.data;
-      crossMediaOccurrences = occurrencesResponse.data;
+
+      suggestions = suggestionsResponse.data || [];
+      crossMediaOccurrences = occurrencesResponse.data || [];
       showVerification = true;
-      
+
     } catch (error) {
       console.error('Error loading speaker suggestions:', error);
       errorMessage = 'Failed to load speaker suggestions';
     }
   }
 
-  async function handleVerification(event: CustomEvent) {
+  async function handleVerification(event: CustomEvent<{
+    action: string;
+    speaker_id: number;
+    profile_id?: number;
+    profile_name?: string;
+  }>) {
     try {
       const { action, speaker_id, profile_id, profile_name } = event.detail;
       
@@ -124,32 +141,17 @@
     crossMediaOccurrences = [];
   }
 
+  // Speaker status computation is now handled by the backend
   function getSpeakerStatus(speaker: Speaker): string {
-    if (speaker.verified && speaker.profile) {
-      return 'verified';
-    } else if (speaker.confidence && speaker.confidence >= 0.5) {
-      return 'suggested';
-    }
-    return 'unverified';
+    return speaker.computed_status || 'unverified';
   }
 
-  function getStatusColor(status: string): string {
-    switch (status) {
-      case 'verified': return 'var(--success-color)';
-      case 'suggested': return 'var(--warning-color)';
-      default: return 'var(--error-color)';
-    }
+  function getStatusColor(speaker: Speaker): string {
+    return speaker.status_color || 'var(--error-color)';
   }
 
   function getStatusText(speaker: Speaker): string {
-    if (speaker.verified && speaker.profile) {
-      return `Verified as ${speaker.profile.name}`;
-    } else if (speaker.confidence && speaker.confidence >= 0.75) {
-      return 'High confidence match - click to verify';
-    } else if (speaker.confidence && speaker.confidence >= 0.5) {
-      return 'Medium confidence match - review needed';
-    }
-    return 'Needs identification';
+    return speaker.status_text || 'Needs identification';
   }
 </script>
 
@@ -191,7 +193,7 @@
                 <div class="speaker-info">
                   <div class="speaker-header">
                     <span class="speaker-name">{speaker.display_name || speaker.name}</span>
-                    <div class="speaker-status" style="color: {getStatusColor(status)}">
+                    <div class="speaker-status" style="color: {getStatusColor(speaker)}">
                       {#if status === 'verified'}
                         ✓
                       {:else if status === 'suggested'}
@@ -215,7 +217,7 @@
                       <div class="confidence-bar">
                         <div 
                           class="confidence-fill" 
-                          style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(status)}"
+                          style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
                       <span class="confidence-text">{Math.round(speaker.confidence * 100)}%</span>
@@ -230,11 +232,14 @@
                 </div>
               </button>
             {:else}
-              <div class="speaker-card {status}">
+              <button
+                class="speaker-card {status} clickable"
+                on:click={() => handleSpeakerClick(speaker)}
+              >
                 <div class="speaker-info">
                   <div class="speaker-header">
                     <span class="speaker-name">{speaker.display_name || speaker.name}</span>
-                    <div class="speaker-status" style="color: {getStatusColor(status)}">
+                    <div class="speaker-status" style="color: {getStatusColor(speaker)}">
                       ✓
                     </div>
                   </div>
@@ -248,14 +253,20 @@
                       <div class="confidence-bar">
                         <div 
                           class="confidence-fill" 
-                          style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(status)}"
+                          style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
                       <span class="confidence-text">{Math.round(speaker.confidence * 100)}%</span>
                     </div>
                   {/if}
                 </div>
-              </div>
+
+                <div class="speaker-action">
+                  <span class="verify-text">
+                    Click to View Profile Details
+                  </span>
+                </div>
+              </button>
             {/if}
           {/each}
         </div>

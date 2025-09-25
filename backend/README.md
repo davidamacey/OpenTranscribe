@@ -22,14 +22,14 @@ cd transcribe-app
 ./opentr.sh start dev
 
 # Check health
-curl http://localhost:8080/health
+curl http://localhost:5174/health
 ```
 
 ### API Access
-- **API Base URL**: http://localhost:8080/api
-- **Interactive Docs**: http://localhost:8080/docs
-- **ReDoc**: http://localhost:8080/redoc
-- **Flower Dashboard**: http://localhost:5555/flower
+- **API Base URL**: http://localhost:5174/api
+- **Interactive Docs**: http://localhost:5174/docs
+- **ReDoc**: http://localhost:5174/redoc
+- **Flower Dashboard**: http://localhost:5175/flower
 
 ## 📋 Table of Contents
 
@@ -226,12 +226,25 @@ backend/
   - Improved upload handling with concurrency control
   - Better streaming support for large files
   - Enhanced URL processing with metadata extraction
+  - POST `/{file_id}/analytics/refresh` - Refresh analytics computation for a media file
+
+- **Advanced Speaker Management**:
+  - Enhanced speaker suggestions with consolidated profile matching
+  - Automatic profile creation and assignment workflow
+  - Cross-video speaker recognition with embedding similarity
+  - LLM-powered speaker identification using conversational context
+
+- **Enhanced Data Processing**:
+  - Server-side analytics computation with comprehensive speaker metrics
+  - Intelligent data formatting service for consistent display
+  - Error categorization service with user-friendly suggestions
+  - Task filtering service for optimized data retrieval
 
 ## 📚 API Documentation
 
 ### Interactive Documentation
-- **Swagger UI**: http://localhost:8080/docs
-- **ReDoc**: http://localhost:8080/redoc
+- **Swagger UI**: http://localhost:5174/docs
+- **ReDoc**: http://localhost:5174/redoc
 
 ### API Structure
 ```
@@ -306,7 +319,7 @@ alembic revision --autogenerate    # Generate migration
 
 ### Task System
 - **Celery** with Redis broker
-- **Flower** monitoring at http://localhost:5555/flower
+- **Flower** monitoring at http://localhost:5175/flower
 - **Async processing** for CPU-intensive operations
 
 ### Available Tasks
@@ -323,7 +336,7 @@ alembic revision --autogenerate    # Generate migration
 ./opentr.sh logs celery-worker
 
 # Monitor with Flower
-# http://localhost:5555/flower
+# http://localhost:5175/flower
 ```
 
 ## 🧪 Testing
@@ -414,7 +427,7 @@ OPENSEARCH_URL=your-opensearch-url
 ## 📞 Support
 
 ### Documentation
-- **API Docs**: http://localhost:8080/docs
+- **API Docs**: http://localhost:5174/docs
 - **Architecture**: [app/README.md](app/README.md)
 - **Database**: [app/db/README.md](app/db/README.md)
 - **Scripts**: [scripts/README.md](scripts/README.md)

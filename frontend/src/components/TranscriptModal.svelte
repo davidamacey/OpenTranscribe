@@ -1,29 +1,38 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { getSpeakerColorForSegment } from '$lib/utils/speakerColors';
+  import { processedTranscriptSegments, transcriptStore } from '../stores/transcriptStore';
+  import { copyToClipboard } from '$lib/utils/clipboard';
 
   export let fileId: number;
   export let fileName: string = '';
   export let isOpen: boolean = false;
-  export let transcriptSegments: any[] = [];
-  
+  // Remove transcriptSegments prop - we'll get data from the store
+
   const dispatch = createEventDispatcher<{
     close: void;
   }>();
-  
+
   let loading = false;
   let error: string | null = null;
   let consolidatedTranscript = '';
-  let displaySegments: any[] = [];
-  
+
   // Search functionality
   let searchQuery = '';
   let currentMatchIndex = 0;
   let totalMatches = 0;
   let copyButtonText = 'Copy';
-  
-  $: if (isOpen && transcriptSegments) {
-    processTranscriptSegments();
+
+  // Subscribe to the processed transcript segments from the store
+  $: displaySegments = $processedTranscriptSegments;
+
+  // Generate consolidated transcript when display segments change
+  $: if (displaySegments && displaySegments.length > 0) {
+    consolidatedTranscript = displaySegments
+      .map(block => `${block.speakerName} [${formatSimpleTimestamp(block.startTime)}-${formatSimpleTimestamp(block.endTime)}]: ${block.text}`)
+      .join('\n\n');
+  } else {
+    consolidatedTranscript = '';
   }
   
   $: if (searchQuery && displaySegments.length > 0) {
@@ -42,80 +51,6 @@
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
-    }
-  }
-  
-  function processTranscriptSegments() {
-    if (!transcriptSegments || !Array.isArray(transcriptSegments)) {
-      consolidatedTranscript = '';
-      displaySegments = [];
-      return;
-    }
-
-    try {
-      // Sort segments by start_time to ensure proper ordering
-      const sortedSegments = [...transcriptSegments].sort((a: any, b: any) => {
-        const aStart = parseFloat(a.start_time || a.start || 0);
-        const bStart = parseFloat(b.start_time || b.start || 0);
-        return aStart - bStart;
-      });
-
-      // Group consecutive segments from the same speaker for display
-      const groupedSegments = [];
-      let currentSpeaker = null;
-      let currentSpeakerLabel = null;
-      let currentText = [];
-      let currentStartTime = null;
-      let currentEndTime = null;
-
-      sortedSegments.forEach((segment: any) => {
-        const speakerName = segment.speaker_label || segment.speaker?.display_name || segment.speaker?.name || 'Unknown Speaker';
-        const startTime = parseFloat(segment.start_time || segment.start || 0);
-        const endTime = parseFloat(segment.end_time || segment.end || 0);
-
-        if (speakerName !== currentSpeaker) {
-          if (currentSpeaker && currentText.length > 0) {
-            groupedSegments.push({
-              speakerName: currentSpeaker,
-              speaker_label: currentSpeakerLabel, // Preserve for color mapping
-              text: currentText.join(' '),
-              startTime: currentStartTime,
-              endTime: currentEndTime
-            });
-          }
-          currentSpeaker = speakerName;
-          currentSpeakerLabel = segment.speaker_label || segment.speaker?.name; // Store original label
-          currentText = [segment.text];
-          currentStartTime = startTime;
-          currentEndTime = endTime;
-        } else {
-          currentText.push(segment.text);
-          currentEndTime = endTime; // Update end time to last segment
-        }
-      });
-
-      // Add the last speaker block
-      if (currentSpeaker && currentText.length > 0) {
-        groupedSegments.push({
-          speakerName: currentSpeaker,
-          speaker_label: currentSpeakerLabel, // Preserve for color mapping
-          text: currentText.join(' '),
-          startTime: currentStartTime,
-          endTime: currentEndTime
-        });
-      }
-
-      displaySegments = groupedSegments;
-
-      // Generate consolidated transcript for copy functionality - exactly as displayed
-      consolidatedTranscript = displaySegments
-        .map(block => `${block.speakerName} [${formatSimpleTimestamp(block.startTime)}-${formatSimpleTimestamp(block.endTime)}]: ${block.text}`)
-        .join('\n\n');
-
-    } catch (error) {
-      console.error('TranscriptModal: Error processing transcript segments:', error);
-      consolidatedTranscript = '';
-      displaySegments = [];
     }
   }
   
@@ -205,46 +140,36 @@
   }
   
   function handleCopy() {
-    if (!consolidatedTranscript) return;
-
-    navigator.clipboard.writeText(consolidatedTranscript).then(() => {
-      copyButtonText = 'Copied!';
+    if (!consolidatedTranscript) {
+      copyButtonText = 'No content';
       setTimeout(() => {
         copyButtonText = 'Copy';
       }, 2000);
-    }).catch(err => {
-      console.error('TranscriptModal: Failed to copy to clipboard:', err);
-      // Fallback for browsers that don't support clipboard API
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = consolidatedTranscript;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
+      return;
+    }
+
+    copyToClipboard(
+      consolidatedTranscript,
+      () => {
         copyButtonText = 'Copied!';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
-      } catch (fallbackError) {
-        console.error('TranscriptModal: Fallback copy failed:', fallbackError);
+      },
+      (error) => {
         copyButtonText = 'Copy failed';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
       }
-    });
+    );
   }
+
   
   function clearSearch() {
     searchQuery = '';
   }
 
-  // Helper function to get consistent speaker name for color mapping
-  function getSpeakerNameForColor(segment: any): string {
-    // Use the original speaker name/label for consistent color mapping
-    return segment.speaker_label || segment.speaker?.name || 'Unknown';
-  }
 
   function formatSimpleTimestamp(seconds: number): string {
     const minutes = Math.floor(seconds / 60);
@@ -399,7 +324,7 @@
                 <div class="segment-header">
                   <div
                     class="segment-speaker"
-                    style="background-color: {getSpeakerColor(getSpeakerNameForColor(segment)).bg}; border-color: {getSpeakerColor(getSpeakerNameForColor(segment)).border}; --speaker-light: {getSpeakerColor(getSpeakerNameForColor(segment)).textLight}; --speaker-dark: {getSpeakerColor(getSpeakerNameForColor(segment)).textDark};"
+                    style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
                   >{segment.speakerName}</div>
                   <div class="segment-time">{formatSimpleTimestamp(segment.startTime)}-{formatSimpleTimestamp(segment.endTime)}</div>
                 </div>

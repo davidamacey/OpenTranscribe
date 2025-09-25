@@ -6,18 +6,23 @@ from fastapi import status
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
+from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
+from app.models.media import FileStatus
 from app.models.media import FileTag
 from app.models.media import MediaFile
+from app.models.media import Speaker
 from app.models.media import Tag
 from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
 from app.schemas.media import TranscriptSegmentUpdate
+from app.services.formatting_service import FormattingService
 from app.services.minio_service import delete_file
 from app.services.opensearch_service import update_transcript_title
+from app.services.speaker_status_service import SpeakerStatusService
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +168,7 @@ def set_file_urls(db_file: MediaFile) -> None:
 
 def get_media_file_detail(db: Session, file_id: int, current_user: User) -> MediaFileDetail:
     """
-    Get detailed media file information including tags.
+    Get detailed media file information including tags, analytics, and formatted fields.
 
     Args:
         db: Database session
@@ -171,29 +176,94 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
         current_user: Current user
 
     Returns:
-        MediaFileDetail object
+        MediaFileDetail object with all computed and formatted data
     """
     try:
         # Get the file by id and user id (admin can access any file)
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
 
-        # Get tags for this file
+        # Get related data
         tags = get_file_tags(db, file_id)
-
-        # Get collections for this file
         collections = get_file_collections(db, file_id, current_user.id)
+
+        # Get speakers for speaker summary
+        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+
+        # Add computed status to speakers
+        for speaker in speakers:
+            SpeakerStatusService.add_computed_status(speaker)
+
+        # Get analytics - compute them if they don't exist
+        analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+
+        # If analytics don't exist and file is completed, compute them now
+        if not analytics and db_file.status == "completed":
+            from app.services.analytics_service import AnalyticsService
+
+            logger.info(f"Computing missing analytics on-demand for file {file_id}")
+            success = AnalyticsService.compute_and_save_analytics(db, file_id)
+            if success:
+                analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+
+        # Get transcript segments (sorted by start_time for consistent ordering)
+        transcript_segments = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .order_by(TranscriptSegment.start_time)
+            .all()
+        )
 
         # Set URLs
         set_file_urls(db_file)
 
-        # Ensure changes are committed
-        db.commit()
-
-        # Prepare the response
+        # Prepare the response with formatted fields
         response = MediaFileDetail.model_validate(db_file)
         response.tags = tags
         response.collections = collections
+        # Convert analytics to schema if it exists
+        if analytics:
+            from app.schemas.media import Analytics as AnalyticsSchema
+
+            response.analytics = AnalyticsSchema.model_validate(analytics)
+        else:
+            response.analytics = None
+        response.speakers = speakers
+
+        # Add formatted fields using enhanced service
+        response.formatted_duration = FormattingService.format_duration(db_file.duration)
+        response.formatted_upload_date = FormattingService.format_upload_date(db_file.upload_time)
+        response.formatted_file_age = FormattingService.format_file_age(db_file.upload_time)
+        response.formatted_file_size = FormattingService.format_bytes_detailed(db_file.file_size)
+        response.display_status = FormattingService.format_status(db_file.status)
+        response.status_badge_class = FormattingService.get_status_badge_class(db_file.status.value)
+        response.speaker_summary = FormattingService.create_speaker_summary(speakers)
+
+        # Add error categorization for failed files
+        if db_file.status == FileStatus.ERROR and hasattr(db_file, "last_error_message"):
+            from app.services.error_categorization_service import ErrorCategorizationService
+
+            error_info = ErrorCategorizationService.get_error_info(db_file.last_error_message)
+            response.error_category = error_info["category"]
+            response.error_suggestions = error_info["suggestions"]
+            response.is_retryable = error_info["is_retryable"]
+
+        # Format transcript segments with speaker labels and timestamps
+        formatted_segments = []
+        speaker_mapping = {
+            speaker.name: FormattingService.format_speaker_name(speaker) for speaker in speakers
+        }
+
+        for segment in transcript_segments:
+            formatted_segment = FormattingService.format_transcript_segment(
+                segment, speaker_mapping
+            )
+            formatted_segments.append(formatted_segment)
+
+        response.transcript_segments = formatted_segments
+
+        # Ensure changes are committed
+        db.commit()
 
         return response
 
@@ -246,6 +316,49 @@ def update_media_file(
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
 
     return db_file
+
+
+def _cleanup_opensearch_data(db: Session, file_id: int) -> None:
+    """Clean up OpenSearch data for a file being deleted."""
+    try:
+        # Get all speakers for this file before deletion
+        speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+        speaker_ids = [speaker.id for speaker in speakers]
+
+        if speaker_ids:
+            # Delete speaker embeddings from OpenSearch
+            from app.services.opensearch_service import opensearch_client
+            from app.services.opensearch_service import settings
+
+            if opensearch_client:
+                deleted_count = 0
+                for speaker_id in speaker_ids:
+                    try:
+                        opensearch_client.delete(
+                            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_id)
+                        )
+                        deleted_count += 1
+                    except Exception as e:
+                        logger.warning(f"Error deleting speaker {speaker_id} from OpenSearch: {e}")
+
+                logger.info(
+                    f"Deleted {deleted_count}/{len(speaker_ids)} speaker embeddings from OpenSearch for file {file_id}"
+                )
+            else:
+                logger.warning("OpenSearch client not available for cleanup")
+
+        # Delete transcript from OpenSearch
+        try:
+            from app.services.opensearch_service import delete_transcript
+
+            delete_transcript(file_id)
+            logger.info(f"Deleted transcript for file {file_id} from OpenSearch")
+        except Exception as e:
+            logger.warning(f"Error deleting transcript from OpenSearch: {e}")
+
+    except Exception as e:
+        logger.warning(f"Error cleaning up OpenSearch data for file {file_id}: {e}")
+        # Don't fail deletion if OpenSearch cleanup fails
 
 
 def delete_media_file(db: Session, file_id: int, current_user: User, force: bool = False) -> None:
@@ -302,6 +415,9 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
     except Exception as e:
         logger.warning(f"Error deleting file from storage: {e}")
         # Don't fail the entire operation if storage deletion fails
+
+    # Delete associated data from OpenSearch before deleting from database
+    _cleanup_opensearch_data(db, file_id)
 
     try:
         # Delete from database (cascade will handle related records)

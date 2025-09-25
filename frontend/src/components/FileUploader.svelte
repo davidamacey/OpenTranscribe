@@ -1901,49 +1901,71 @@
   }
   
   .cancel-button {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
+    background-color: var(--card-background);
     color: var(--text-color);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    cursor: pointer;
+    border-radius: 10px;
     font-size: 0.95rem;
     font-weight: 500;
+    cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--card-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 120px;
+    opacity: 1;
+  }
+
+  .cancel-button:hover:not(:disabled) {
+    background: var(--button-hover);
+    border-color: var(--border-color);
+    transform: translateY(-1px);
+    box-shadow: var(--card-shadow);
+  }
+
+  .cancel-button:active {
+    transform: translateY(0);
+    box-shadow: var(--card-shadow);
   }
   
-  .cancel-button:hover:not(:disabled) {
-    background-color: #3b82f6;
+  .upload-button {
+    background-color: var(--primary-color);
     color: white;
-    border-color: #3b82f6;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 120px;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .upload-button:hover:not(:disabled) {
+    background-color: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
-  .cancel-button:active {
+
+  .upload-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
   
-  .upload-button {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    font-size: 0.9rem;
-  }
-  
-  .upload-button:hover:not(:disabled) {
-    background-color: #2563eb;
-  }
-  
   .upload-button:disabled,
   .cancel-button:disabled {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
   
   .progress-container {
@@ -2206,34 +2228,41 @@
   }
   
   .cancel-url-button {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
+    background-color: var(--card-background);
     color: var(--text-color);
-    border-radius: 10px;
+    border: 1px solid var(--border-color);
     padding: 0.6rem 1.2rem;
-    cursor: pointer;
+    border-radius: 10px;
     font-size: 0.95rem;
     font-weight: 500;
+    cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--card-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 120px;
+    opacity: 1;
   }
-  
+
   .cancel-url-button:hover:not(:disabled) {
-    background-color: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
+    background: var(--button-hover);
+    border-color: var(--border-color);
     transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+    box-shadow: var(--card-shadow);
   }
-  
+
   .cancel-url-button:active {
     transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+    box-shadow: var(--card-shadow);
   }
-  
+
   .cancel-url-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
   
   .process-url-button {

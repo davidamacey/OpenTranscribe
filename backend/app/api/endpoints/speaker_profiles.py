@@ -254,6 +254,109 @@ def assign_speaker_to_profile(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
+def _get_embedding_suggestions(
+    db: Session, speaker_id: int, current_user: User, threshold: float
+) -> list[dict[str, Any]]:
+    """Get profile suggestions based on voice embeddings."""
+    from app.core.constants import SPEAKER_CONFIDENCE_HIGH
+    from app.services.opensearch_service import get_speaker_embedding
+    from app.services.profile_embedding_service import ProfileEmbeddingService
+    from app.services.speaker_matching_service import SpeakerMatchingService
+
+    suggestions = []
+    speaker_embedding = get_speaker_embedding(speaker_id)
+    if speaker_embedding:
+        profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
+            db, speaker_embedding, current_user.id, threshold=threshold
+        )
+
+        for match in profile_matches:
+            confidence = match["similarity"]
+            matching_service = SpeakerMatchingService(db, None)
+            confidence_level = matching_service.get_confidence_level(confidence)
+            auto_accept = confidence >= SPEAKER_CONFIDENCE_HIGH
+
+            # Generate reason based on confidence
+            if confidence >= 0.9:
+                reason = f"Very strong voice match (based on {match['embedding_count']} recordings)"
+            elif confidence >= 0.8:
+                reason = f"Strong voice match (based on {match['embedding_count']} recordings)"
+            elif confidence >= 0.7:
+                reason = f"Good voice match (based on {match['embedding_count']} recordings)"
+            else:
+                reason = f"Possible voice match (based on {match['embedding_count']} recordings)"
+
+            suggestions.append(
+                {
+                    "profile_id": match["profile_id"],
+                    "profile_name": match["profile_name"],
+                    "confidence": confidence,
+                    "confidence_level": confidence_level,
+                    "auto_accept": auto_accept,
+                    "reason": reason,
+                    "source": "voice_embedding",
+                    "embedding_count": match["embedding_count"],
+                    "last_update": match.get("last_update"),
+                }
+            )
+    else:
+        logger.warning(f"No embedding found for speaker {speaker_id}")
+
+    return suggestions
+
+
+def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> list[dict[str, Any]]:
+    """Get profile suggestions based on LLM analysis."""
+    from app.services.speaker_matching_service import SpeakerMatchingService
+
+    suggestions = []
+    if speaker.suggested_name and speaker.confidence:
+        # Check if suggested_name matches any existing profiles
+        suggested_profile = (
+            db.query(SpeakerProfile)
+            .filter(
+                SpeakerProfile.user_id == current_user.id,
+                SpeakerProfile.name.ilike(f"%{speaker.suggested_name}%"),
+            )
+            .first()
+        )
+
+        matching_service = SpeakerMatchingService(db, None)
+        confidence_level = matching_service.get_confidence_level(speaker.confidence)
+
+        if suggested_profile:
+            # Add LLM suggestion for existing profile
+            suggestions.append(
+                {
+                    "profile_id": suggested_profile.id,
+                    "profile_name": suggested_profile.name,
+                    "confidence": speaker.confidence,
+                    "confidence_level": confidence_level,
+                    "auto_accept": speaker.confidence >= 0.8,
+                    "reason": f"AI content analysis suggests this speaker is '{speaker.suggested_name}'",
+                    "source": "llm_analysis",
+                    "suggested_name": speaker.suggested_name,
+                }
+            )
+        else:
+            # Add LLM suggestion for new profile creation
+            suggestions.append(
+                {
+                    "profile_id": None,  # Indicates new profile should be created
+                    "profile_name": speaker.suggested_name,
+                    "confidence": speaker.confidence,
+                    "confidence_level": confidence_level,
+                    "auto_accept": False,  # Never auto-create new profiles
+                    "reason": f"AI content analysis suggests creating new profile for '{speaker.suggested_name}'",
+                    "source": "llm_analysis",
+                    "suggested_name": speaker.suggested_name,
+                    "create_new": True,
+                }
+            )
+
+    return suggestions
+
+
 @router.get("/speakers/{speaker_id}/suggestions", response_model=list[dict[str, Any]])
 def get_speaker_profile_suggestions(
     speaker_id: int,
@@ -261,7 +364,7 @@ def get_speaker_profile_suggestions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get profile suggestions for a speaker based on embeddings."""
+    """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
         # Verify speaker exists and belongs to user
         speaker = (
@@ -279,37 +382,20 @@ def get_speaker_profile_suggestions(
 
         # Get media file for audio processing
         media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
-
         if not media_file:
             return []
 
-        # For now, return a placeholder response
-        # In a full implementation, this would extract speaker embedding
-        # and find matching profiles
+        # Get suggestions from different sources
         suggestions = []
+        suggestions.extend(_get_embedding_suggestions(db, speaker_id, current_user, threshold))
+        suggestions.extend(_get_llm_suggestions(db, speaker, current_user))
 
-        # Get existing profiles for comparison
-        profiles = (
-            db.query(SpeakerProfile)
-            .filter(SpeakerProfile.user_id == current_user.id)
-            .limit(5)
-            .all()
-        )
+        # Sort suggestions by confidence (highest first) and source priority
+        def sort_key(suggestion):
+            source_priority = 0 if suggestion["source"] == "voice_embedding" else 1
+            return (source_priority, -suggestion["confidence"])
 
-        for profile in profiles:
-            # This would normally involve embedding comparison
-            # For now, return basic profile info
-            suggestions.append(
-                {
-                    "profile_id": profile.id,
-                    "profile_name": profile.name,
-                    "confidence": 0.5,  # Placeholder confidence
-                    "confidence_level": "medium",
-                    "auto_accept": False,
-                    "reason": "Based on voice characteristics",
-                }
-            )
-
+        suggestions.sort(key=sort_key)
         return suggestions
 
     except HTTPException:

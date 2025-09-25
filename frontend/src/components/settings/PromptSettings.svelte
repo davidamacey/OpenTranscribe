@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate } from '../../lib/api/prompts';
   import ConfirmationModal from '../ConfirmationModal.svelte';
+  import { copyToClipboard } from '$lib/utils/clipboard';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -356,34 +357,22 @@
   
   function copyPromptText(text: string) {
     if (!text) return;
-    
-    navigator.clipboard.writeText(text).then(() => {
-      copyButtonText = 'Copied!';
-      setTimeout(() => {
-        copyButtonText = 'Copy';
-      }, 2000);
-    }).catch(err => {
-      console.error('Failed to copy:', err);
-      // Fallback for browsers that don't support clipboard API
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
+
+    copyToClipboard(
+      text,
+      () => {
         copyButtonText = 'Copied!';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
-      } catch (fallbackError) {
-        console.error('Fallback copy failed:', fallbackError);
+      },
+      (error) => {
         copyButtonText = 'Copy failed';
         setTimeout(() => {
           copyButtonText = 'Copy';
         }, 2000);
       }
-    });
+    );
   }
   
   // Prevent body scrolling when modals are open

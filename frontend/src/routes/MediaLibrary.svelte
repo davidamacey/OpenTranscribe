@@ -33,6 +33,20 @@
     file_hash?: string;
     thumbnail_url?: string;
     last_error_message?: string;
+
+    // Formatted fields from backend
+    formatted_duration?: string;
+    formatted_upload_date?: string;
+    formatted_file_age?: string;
+    formatted_file_size?: string;
+    display_status?: string;
+    status_badge_class?: string;
+
+    // Error handling fields from backend
+    error_category?: string;
+    error_suggestions?: string[];
+    user_message?: string;
+    is_retryable?: boolean;
     
     // Technical metadata
     media_format?: string;
@@ -87,8 +101,6 @@
   
   
   import axiosInstance from '../lib/axios';
-  import { format } from 'date-fns';
-  import { formatDuration } from '$lib/utils/formatting';
   
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
@@ -100,6 +112,7 @@
   let files: MediaFile[] = [];
   let loading: boolean = true;
   let error: string | null = null;
+
   
   // Animation and smooth update state
   let fileMap = new Map<number, MediaFile>();
@@ -353,12 +366,12 @@
     if (refreshTimeouts.has(key)) {
       clearTimeout(refreshTimeouts.get(key));
     }
-    
+
     const timeoutId = setTimeout(() => {
       fetchFiles(false, true); // Skip animation for throttled refreshes
       refreshTimeouts.delete(key);
     }, delay);
-    
+
     refreshTimeouts.set(key, timeoutId);
   }
   
@@ -451,8 +464,9 @@
     selectedFileTypes = [];
     selectedStatuses = [];
     transcriptSearch = '';
-    
-    fetchFiles();
+
+    // Skip animation when resetting filters to avoid highlighting previously filtered items
+    fetchFiles(false, true);
   }
   
   // Delete selected files with enhanced error handling
@@ -544,49 +558,19 @@
 
 
 
-  // Enhanced error notification for corrupted/invalid files
+  // Enhanced error notification using backend categorization
   function showEnhancedErrorNotification(file: MediaFile) {
-    if (!file.last_error_message) {
-      toastStore.error(`Processing failed for "${file.title || file.filename}". Please try again.`);
-      return;
-    }
-
-    const errorMessage = file.last_error_message.toLowerCase();
-    
-    if (errorMessage.includes('no audio content') || errorMessage.includes('corrupted') || errorMessage.includes('unsupported format')) {
+    // Use backend-provided error categorization
+    if (file.error_category && file.error_suggestions) {
+      const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
       toastStore.error(
-        `File Quality Issue: "${file.title || file.filename}"\n\n` +
-        `${file.last_error_message}\n\n` +
-        `Suggestions:\n` +
-        `• Check if the file plays correctly on your device\n` +
-        `• Try converting to MP3, WAV, or MP4 format\n` +
-        `• Ensure the file isn't password protected or DRM-locked\n` +
-        `• Consider re-recording if the original source is problematic`,
-        { duration: 10000 }
-      );
-    } else if (errorMessage.includes('no speech') || errorMessage.includes('only music') || errorMessage.includes('background noise')) {
-      toastStore.error(
-        `No Speech Detected: "${file.title || file.filename}"\n\n` +
-        `${file.last_error_message}\n\n` +
-        `This typically happens when:\n` +
-        `• The file contains only music or instrumental audio\n` +
-        `• Speech is too quiet or unclear\n` +
-        `• The file has excessive background noise\n` +
-        `• The audio quality is too poor for speech recognition\n\n` +
-        `Try uploading a file with clear, audible speech.`,
-        { duration: 8000 }
+        `${file.user_message || `Processing failed for "${file.title || file.filename}"`}\n\n` +
+        `Suggestions:\n${suggestions}`,
+        { duration: file.error_category === 'file_quality' ? 10000 : 8000 }
       );
     } else {
-      // Generic error with helpful guidance
-      toastStore.error(
-        `Processing Failed: "${file.title || file.filename}"\n\n` +
-        `${file.last_error_message}\n\n` +
-        `You can:\n` +
-        `• Use the "Retry" button to try processing again\n` +
-        `• Check the file format and quality\n` +
-        `• Contact support if the problem persists`,
-        { duration: 7000 }
-      );
+      // Minimal fallback for unexpected cases
+      toastStore.error(`Processing failed for "${file.title || file.filename}". Please try again.`);
     }
   }
   
@@ -599,7 +583,7 @@
     unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
       if ($ws.notifications.length > 0) {
         const latestNotification = $ws.notifications[0];
-        
+
         // Only process if this is a new notification we haven't handled
         if (latestNotification.id !== lastProcessedNotificationId) {
           lastProcessedNotificationId = latestNotification.id;
@@ -612,28 +596,37 @@
           else if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             const fileId = String(latestNotification.data.file_id);
             const status = latestNotification.data.status;
-            
+
             // Update any files that match this notification
-            let updatedFile = null;
             files = files.map(file => {
               if (String(file.id) === fileId) {
-                updatedFile = {
+                return {
                   ...file,
                   status: status
                 };
-                return updatedFile;
               }
               return file;
             });
-            
+
+            // Update the gallery store with the new files array
+            galleryStore.setFiles(files);
+            updateFileMap();
+
             // If the file status changed to error, refresh to get the latest error message
             if (status === 'error') {
               throttledRefresh('error-' + fileId, 300);
             }
-            
-            // If processing completed, do a smooth refresh
+
+            // For completed status, don't refresh immediately since we expect a file_updated notification
+            // to arrive shortly with complete updated data. This prevents race conditions.
             if (status === 'completed') {
-              throttledRefresh('completed-' + fileId, 200);
+              // Wait a bit longer for the file_updated notification, then refresh if needed
+              setTimeout(() => {
+                const currentFile = fileMap.get(parseInt(fileId));
+                if (currentFile && currentFile.status !== 'completed') {
+                  throttledRefresh('completed-fallback-' + fileId, 100);
+                }
+              }, 800);
             }
             
           } 
@@ -673,8 +666,12 @@
               return file;
             });
 
-            // Only fetch if file doesn't exist in current list (new file)
-            if (!fileExists) {
+            // Update the gallery store and file map after in-place update
+            if (fileExists) {
+              galleryStore.setFiles(files);
+              updateFileMap();
+            } else {
+              // Only fetch if file doesn't exist in current list (new file)
               if (latestNotification.data.file) {
                 addNewFileSmooth(latestNotification.data.file);
               } else {
@@ -932,22 +929,17 @@
                   <h2 class="file-name">{file.title || file.filename}</h2>
 
                   <div class="file-meta">
-                    <span class="file-date">{format(new Date(file.upload_time), 'MMM d, yyyy')}</span>
-                    {#if file.duration}
-                      <span class="file-duration">{formatDuration(file.duration)}</span>
+                    <span class="file-date">{file.formatted_upload_date}</span>
+                    {#if file.formatted_duration}
+                      <span class="file-duration">{file.formatted_duration}</span>
                     {/if}
                   </div>
 
                   <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                     <span class="status-dot"></span>
-                    {#if file.status === 'pending'}
-                      Pending
-                    {:else if file.status === 'processing'}
-                      Processing
-                    {:else if file.status === 'completed'}
-                      Completed
-                    {:else if file.status === 'error'}
-                      {#if file.last_error_message}
+                    {#if file.display_status}
+                      <!-- Use backend-provided formatted status only -->
+                      {#if file.status === 'error' && file.last_error_message}
                         <!-- svelte-ignore a11y-click-events-have-key-events -->
                         <!-- svelte-ignore a11y-no-static-element-interactions -->
                         <span
@@ -955,18 +947,13 @@
                           on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
                           title="Click for error details"
                         >
-                          Error - Click for Details
+                          {file.display_status} - Click for Details
                         </span>
                       {:else}
-                        Error
+                        {file.display_status}
                       {/if}
-                    {:else if file.status === 'cancelling'}
-                      Cancelling
-                    {:else if file.status === 'cancelled'}
-                      Cancelled
-                    {:else if file.status === 'orphaned'}
-                      Needs Recovery
                     {:else}
+                      <!-- Fallback to raw status if backend doesn't provide formatted status -->
                       {file.status}
                     {/if}
                   </div>
@@ -1968,11 +1955,16 @@
     cursor: pointer;
     padding: 0.5rem;
     color: var(--text-secondary);
-    transition: color 0.2s ease;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  
+
   .modal-close:hover {
-    color: var(--text-primary);
+    color: var(--text-color);
+    background: var(--button-hover);
   }
   
   .modal-body {

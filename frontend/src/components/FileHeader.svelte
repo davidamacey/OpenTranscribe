@@ -1,5 +1,6 @@
 <script lang="ts">
   import axiosInstance from '$lib/axios';
+  import ConfirmationModal from './ConfirmationModal.svelte';
 
   export let file: any = null;
   export let currentProcessingStep: string = '';
@@ -8,6 +9,10 @@
   let isEditingTitle = false;
   let editedTitle = '';
   let isSaving = false;
+
+  // Modal state
+  let showLengthErrorModal = false;
+  let showSaveErrorModal = false;
 
   // Helper function to determine if text should be truncated
   function shouldTruncate(text: string): boolean {
@@ -46,7 +51,7 @@
     }
 
     if (trimmedTitle.length > 255) {
-      alert('Display name must be 255 characters or less');
+      showLengthErrorModal = true;
       return;
     }
 
@@ -67,7 +72,7 @@
       }
     } catch (error) {
       console.error('Error updating display name:', error);
-      alert('Failed to update display name. Please try again.');
+      showSaveErrorModal = true;
     } finally {
       isSaving = false;
     }
@@ -221,6 +226,29 @@
     </div>
   {/if}
 </div>
+
+<!-- Modal dialogs -->
+<ConfirmationModal
+  bind:isOpen={showLengthErrorModal}
+  title="Display Name Too Long"
+  message="Display name must be 255 characters or less. Please shorten your input and try again."
+  confirmText="OK"
+  cancelText=""
+  confirmButtonClass="confirm-button"
+  on:confirm={() => showLengthErrorModal = false}
+  on:close={() => showLengthErrorModal = false}
+/>
+
+<ConfirmationModal
+  bind:isOpen={showSaveErrorModal}
+  title="Save Failed"
+  message="Failed to update display name. Please try again."
+  confirmText="OK"
+  cancelText=""
+  confirmButtonClass="confirm-button"
+  on:confirm={() => showSaveErrorModal = false}
+  on:close={() => showSaveErrorModal = false}
+/>
 
 <style>
   .file-header-main {

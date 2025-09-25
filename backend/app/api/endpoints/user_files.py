@@ -24,6 +24,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
 from app.models.user import User
+from app.services.formatting_service import FormattingService
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_utils import get_task_summary_for_media_file
 
@@ -85,6 +86,16 @@ def get_user_file_status(
                         "upload_time": file.upload_time,
                         "age_hours": file_age.total_seconds() / 3600,
                         "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
+                        # Add formatted fields for frontend display
+                        "formatted_duration": FormattingService.format_duration(file.duration),
+                        "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                        "formatted_file_size": FormattingService.format_bytes_detailed(
+                            file.file_size
+                        ),
+                        "display_status": FormattingService.format_status(file.status),
+                        "status_badge_class": FormattingService.get_status_badge_class(
+                            file.status.value
+                        ),
                     }
                 )
 
@@ -98,6 +109,16 @@ def get_user_file_status(
                         "upload_time": file.upload_time,
                         "duration": file.duration,
                         "age_hours": file_age.total_seconds() / 3600,
+                        # Add formatted fields for frontend display
+                        "formatted_duration": FormattingService.format_duration(file.duration),
+                        "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                        "formatted_file_size": FormattingService.format_bytes_detailed(
+                            file.file_size
+                        ),
+                        "display_status": FormattingService.format_status(file.status),
+                        "status_badge_class": FormattingService.get_status_badge_class(
+                            file.status.value
+                        ),
                     }
                 )
 
@@ -161,6 +182,11 @@ def get_file_detailed_status(
                     "updated_at": task.updated_at,
                     "completed_at": task.completed_at,
                     "error_message": task.error_message,
+                    # Add formatted processing time
+                    "formatted_processing_time": FormattingService.format_processing_time(
+                        task.created_at, task.completed_at
+                    ),
+                    "status_display": task.status.title(),
                 }
             )
 
@@ -185,6 +211,16 @@ def get_file_detailed_status(
                 "file_size": media_file.file_size,
                 "duration": media_file.duration,
                 "language": media_file.language,
+                # Add formatted fields for frontend display
+                "formatted_file_size": FormattingService.format_bytes_detailed(
+                    media_file.file_size
+                ),
+                "formatted_duration": FormattingService.format_duration(media_file.duration),
+                "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
+                "display_status": FormattingService.format_status(media_file.status),
+                "status_badge_class": FormattingService.get_status_badge_class(
+                    media_file.status.value
+                ),
             },
             "task_summary": task_summary,
             "task_details": task_details,

@@ -1,7 +1,15 @@
 import { format } from 'date-fns';
 
 /**
- * Formats a duration in seconds into a HH:MM:SS or MM:SS string.
+ * Frontend-only formatting utilities.
+ *
+ * Note: Basic formatting (duration, file size, dates) is now handled by the backend.
+ * These utilities are kept only for UI-specific formatting needs.
+ */
+
+/**
+ * Formats a duration in seconds for video player UI (HH:MM:SS or MM:SS format).
+ * This is kept for video player controls and live timestamp display.
  * @param {number} totalSeconds - The duration in seconds.
  * @returns {string} The formatted duration string.
  */
@@ -26,7 +34,7 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 /**
- * Formats a timestamp (Date object, string, or number) into YYYY-MM-DD HH:MM:SS.mmm format.
+ * Formats a timestamp for debugging or logging purposes.
  * @param {string | number | Date} timestamp - The timestamp to format.
  * @returns {string} The formatted timestamp string with milliseconds.
  */

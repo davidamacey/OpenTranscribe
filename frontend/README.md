@@ -51,6 +51,10 @@ A modern Svelte-based frontend for the OpenTranscribe AI-powered transcription a
 - **Intelligent Upload Management** - Queue control, retry logic, and duplicate detection
 - **Media Player** - Custom video/audio player with transcript synchronization
 - **Full-Screen Transcript View** - Dedicated modal for reading and searching long transcripts
+- **Enhanced Analytics Display** - Server-computed speaker analytics with comprehensive metrics visualization
+- **Smart Error Handling** - Intelligent error categorization with user-friendly suggestions
+- **Optimized Data Formatting** - Server-side formatted data for consistent display of dates, durations, and file sizes
+- **Advanced Speaker Management** - Consolidated speaker suggestions with profile matching and confidence scoring
 - **Search Interface** - Full-text and semantic search capabilities
 - **User Management** - Authentication, registration, and profile management with settings
 - **Recording Settings** - User-specific audio recording preferences and quality controls
@@ -333,6 +337,9 @@ npm run format
 - **Type Safety Improvements** - Reduced TypeScript errors with proper parameter typing
 - **Code Quality Tooling** - Automated formatting and error detection
 - **Performance Optimizations** - Improved component reactivity and reduced re-renders
+- **Server-Side Integration** - Enhanced API integration with formatted data and intelligent error handling
+- **Advanced Component Architecture** - Consolidated UI patterns with reusable confirmation modals and status management
+- **Optimized Data Flow** - Reduced frontend processing through server-side computation and formatting
 
 ### Development Guidelines
 1. **Component Naming** - PascalCase for component files
@@ -388,8 +395,8 @@ docker run -p 5173:80 opentranscribe-frontend:prod
 ### Environment Variables
 ```bash
 # API configuration
-VITE_API_BASE_URL=http://localhost:8080/api
-VITE_WS_URL=ws://localhost:8080/ws
+VITE_API_BASE_URL=http://localhost:5174/api
+VITE_WS_URL=ws://localhost:5174/ws
 
 # Feature flags
 VITE_ENABLE_DEBUG=true
@@ -406,9 +413,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': 'http://localhost:5174',
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: 'ws://localhost:5174',
         ws: true
       }
     }

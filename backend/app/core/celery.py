@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.utility",
         "app.tasks.recovery",
         "app.tasks.youtube_processing",
+        "app.tasks.speaker_tasks",
     ],
 )
 
@@ -37,6 +38,8 @@ celery_app.conf.update(
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
         "app.tasks.youtube_processing.*": {"queue": "gpu"},  # GPU queue for video processing
+        "app.tasks.speaker_tasks.*": {"queue": "nlp"},  # Speaker tasks use NLP queue
+        "identify_speakers_llm": {"queue": "nlp"},  # Explicit routing for speaker identification
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

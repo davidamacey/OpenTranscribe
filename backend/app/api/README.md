@@ -381,7 +381,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
 
 ### Client Usage
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/ws/123');
+const ws = new WebSocket('ws://localhost:5174/ws/123');
 ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     // Handle real-time updates

@@ -14,6 +14,7 @@ import redis.asyncio as redis
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.constants import VIDEO_CHUNK_SIZE
 from app.services.minio_service import MinIOService
 from app.services.subtitle_service import SubtitleService
 
@@ -125,9 +126,6 @@ class VideoProcessingService:
 
     def _get_cache_file_stream(self, object_name: str, range_header: str = None):
         """Get a file stream from the cache bucket."""
-        import logging
-
-        logger = logging.getLogger(__name__)
 
         # Default values
         start_byte = 0
@@ -189,7 +187,7 @@ class VideoProcessingService:
             response = self.minio_service.client.get_object(**kwargs)
 
             # Choose optimal chunk size
-            chunk_size = 65536  # 64KB chunks for processed videos
+            chunk_size = VIDEO_CHUNK_SIZE
 
             # Function to yield chunks with proper resource cleanup
             def generate_chunks():
@@ -231,7 +229,7 @@ class VideoProcessingService:
         self,
         db: Session,
         file_id: int,
-        original_video_path: str,
+        original_video_path,
         user_id: int = None,
         include_speakers: bool = True,
         output_format: str = "mp4",
@@ -313,19 +311,33 @@ class VideoProcessingService:
                 output_format = "mp4"
                 output_path = temp_dir_path / f"output.{output_format}"
 
+            # Get full path to ffmpeg for security
+            import shutil
+
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                raise Exception("ffmpeg not found in system PATH")
+
+            # Validate paths to prevent injection attacks
+            original_path_obj = Path(original_video_path)
+            if not original_path_obj.exists():
+                raise Exception(f"Input video file not found: {original_video_path}")
+            if not subtitle_path.exists():
+                raise Exception(f"Subtitle file not found: {subtitle_path}")
+
             # Build ffmpeg command with proper subtitle embedding
             ffmpeg_cmd = [
-                "ffmpeg",
+                ffmpeg_path,  # Use full path instead of "ffmpeg"
                 "-i",
-                original_video_path,  # Input video
+                str(original_video_path),  # Input video (validated path)
                 "-i",
-                str(subtitle_path),  # Input subtitles
+                str(subtitle_path),  # Input subtitles (validated path)
                 "-map",
                 "0:v",  # Map video from first input
                 "-map",
                 "0:a",  # Map audio from first input
                 "-map",
-                "1:s",  # Map subtitles from second input
+                "1:0",  # Map subtitles from second input (first stream)
                 "-c:v",
                 video_codec,  # Video codec
                 "-c:a",
@@ -353,6 +365,7 @@ class VideoProcessingService:
                     capture_output=True,
                     text=True,
                     timeout=300,  # 5 minute timeout
+                    check=False,  # Don't raise exception on non-zero return code
                 )
 
                 if result.returncode != 0:
@@ -458,7 +471,7 @@ class VideoProcessingService:
                 return self.embed_subtitles_in_video(
                     db=db,
                     file_id=file_id,
-                    original_video_path=str(original_path),
+                    original_video_path=original_path,
                     user_id=user_id,
                     include_speakers=include_speakers,
                     output_format=output_format,
@@ -485,18 +498,34 @@ class VideoProcessingService:
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")
-                except Exception:
-                    # Cache file might not exist, which is fine
-                    pass
+                except Exception as cache_error:
+                    # Cache file might not exist, which is fine, but we should log for debugging
+                    logger.debug(
+                        f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
+                    )
         except Exception as e:
             logger.error(f"Failed to clear cache for file {file_id}: {e}")
 
     def check_ffmpeg_availability(self) -> bool:
         """Check if ffmpeg is available on the system."""
+        import shutil
+
         try:
+            # Use shutil.which to find the full path to ffmpeg
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                logger.warning("ffmpeg not found in system PATH")
+                return False
+
+            # Use full path for security
             result = subprocess.run(
-                ["ffmpeg", "-version"], capture_output=True, text=True, timeout=10
+                [ffmpeg_path, "-version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,  # Don't raise exception on non-zero return code
             )
             return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            logger.warning(f"Failed to check ffmpeg availability: {e}")
             return False
