@@ -8,6 +8,8 @@ from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 
 from app.core.config import settings
+from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION
+from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -21,8 +23,12 @@ try:
         verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
         connection_class=RequestsHttpConnection,
     )
+    logger.info("OpenSearch client initialized successfully")
+except (ConnectionError, ValueError) as e:
+    logger.error(f"Configuration error initializing OpenSearch client: {e}")
+    opensearch_client = None
 except Exception as e:
-    logger.error(f"Error initializing OpenSearch client: {e}")
+    logger.error(f"Unexpected error initializing OpenSearch client: {e}")
     opensearch_client = None
 
 
@@ -53,7 +59,7 @@ def ensure_indices_exist():
                         "title": {"type": "text"},
                         "embedding": {
                             "type": "knn_vector",
-                            "dimension": 384,  # Using sentence-transformers/all-MiniLM-L6-v2 by default
+                            "dimension": SENTENCE_TRANSFORMER_DIMENSION,
                         },
                     }
                 },
@@ -91,12 +97,15 @@ def ensure_indices_exist():
                         "updated_at": {"type": "date"},
                         "embedding": {
                             "type": "knn_vector",
-                            "dimension": 512,  # Pyannote embedding dimension (updated)
+                            "dimension": PYANNOTE_EMBEDDING_DIMENSION,
                             "method": {
                                 "name": "hnsw",
                                 "space_type": "cosinesimil",
-                                "engine": "lucene",  # Use lucene engine which supports filters
-                                "parameters": {"ef_construction": 128, "m": 24},
+                                "engine": "lucene",  # Use lucene engine for better filtering
+                                "parameters": {
+                                    "ef_construction": 128,
+                                    "m": 24,
+                                },
                             },
                         },
                     }
@@ -109,8 +118,12 @@ def ensure_indices_exist():
 
             logger.info(f"Created speaker index: {settings.OPENSEARCH_SPEAKER_INDEX}")
 
+    except ConnectionError as e:
+        logger.error(f"Connection error creating indices: {e}")
+    except ValueError as e:
+        logger.error(f"Configuration error creating indices: {e}")
     except Exception as e:
-        logger.error(f"Error creating indices: {e}")
+        logger.error(f"Unexpected error creating indices: {e}")
 
 
 def index_transcript(
@@ -141,11 +154,12 @@ def index_transcript(
     try:
         ensure_indices_exist()
 
-        # In a real implementation, if embedding is None, we'd compute it here using
-        # a sentence transformer like sentence-transformers/all-MiniLM-L6-v2
+        # Skip embedding if not provided - let OpenSearch handle text search without vector similarity
         if embedding is None:
-            # Placeholder - in production we'd use a real model
-            embedding = [0.0] * 384  # Simulated embedding
+            logger.info(
+                f"No embedding provided for transcript {file_id}, indexing with text search only"
+            )
+            # Don't include embedding field when none is provided
 
         # Prepare document
         doc = {
@@ -155,9 +169,12 @@ def index_transcript(
             "speakers": speakers,
             "title": title,
             "tags": tags or [],
-            "upload_time": datetime.datetime.now().isoformat(),  # ISO-8601 format that OpenSearch can parse
-            "embedding": embedding,
+            "upload_time": datetime.datetime.now().isoformat(),  # ISO-8601 format
         }
+
+        # Only include embedding if provided
+        if embedding is not None:
+            doc["embedding"] = embedding
 
         # Index the document
         response = opensearch_client.index(
@@ -187,11 +204,7 @@ def update_transcript_title(file_id: int, new_title: str):
 
     try:
         # Update the document with the new title
-        update_body = {
-            "doc": {
-                "title": new_title
-            }
-        }
+        update_body = {"doc": {"title": new_title}}
 
         response = opensearch_client.update(
             index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
@@ -205,7 +218,9 @@ def update_transcript_title(file_id: int, new_title: str):
     except Exception as e:
         # If the document doesn't exist yet, that's okay - it will be indexed later
         if "not_found" in str(e).lower():
-            logger.info(f"Document not found for file {file_id}, will be indexed when transcription completes")
+            logger.info(
+                f"Document not found for file {file_id}, will be indexed when transcription completes"
+            )
         else:
             logger.error(f"Error updating transcript title for file {file_id}: {e}")
 
@@ -438,11 +453,11 @@ def search_transcripts(
                     "sentence-transformers package not installed, using fallback embedding"
                 )
                 # Fallback to zero vector
-                query_embedding = [0.0] * 384
+                query_embedding = [0.0] * SENTENCE_TRANSFORMER_DIMENSION
             except Exception as e:
                 logger.warning(f"Error generating query embedding: {e}")
                 # Fallback to zero vector
-                query_embedding = [0.0] * 384
+                query_embedding = [0.0] * SENTENCE_TRANSFORMER_DIMENSION
 
             # Add kNN query
             knn_query = {"knn": {"embedding": {"vector": query_embedding, "k": limit}}}
@@ -599,11 +614,19 @@ def batch_find_matching_speakers(
             # Add search header
             msearch_body.append({"index": settings.OPENSEARCH_SPEAKER_INDEX})
 
-            # Add search query
+            # Add search query with self-exclusion
             msearch_body.append(
                 {
                     "size": max_candidates,
-                    "query": {"bool": {"filter": [{"term": {"user_id": user_id}}]}},
+                    "query": {
+                        "bool": {
+                            "filter": [{"term": {"user_id": user_id}}],
+                            "must_not": [
+                                {"term": {"speaker_id": emb_data["id"]}},  # Exclude self
+                                {"exists": {"field": "document_type"}},  # Exclude profile documents
+                            ],
+                        }
+                    },
                     "knn": {
                         "embedding": {
                             "vector": emb_data["embedding"],
@@ -1007,6 +1030,152 @@ def get_speaker_embedding(speaker_id: int) -> Optional[list[float]]:
         return None
 
 
+def get_profile_embedding(profile_id: int) -> Optional[list[float]]:
+    """
+    Get the embedding vector for a speaker profile from OpenSearch
+
+    Args:
+        profile_id: ID of the speaker profile
+
+    Returns:
+        Embedding vector or None if not found
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return None
+
+    try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+
+        response = opensearch_client.get(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_id}"
+        )
+
+        if response and "_source" in response:
+            return response["_source"].get("embedding")
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting profile embedding: {e}")
+        return None
+
+
+def store_profile_embedding(
+    profile_id: int, profile_name: str, embedding: list[float], speaker_count: int, user_id: int
+) -> bool:
+    """
+    Store profile embedding with distinct document type for proper filtering.
+
+    Args:
+        profile_id: ID of the speaker profile
+        profile_name: Name of the speaker profile
+        embedding: Embedding vector
+        speaker_count: Number of speakers contributing to this embedding
+        user_id: ID of the user who owns the profile
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        ensure_indices_exist()
+
+        doc = {
+            "document_type": "profile",  # CRITICAL: Distinguish from speakers
+            "profile_id": profile_id,
+            "profile_name": profile_name,
+            "user_id": user_id,
+            "embedding": embedding,
+            "speaker_count": speaker_count,
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+
+        # Use prefixed ID to avoid conflicts with speaker documents
+        opensearch_client.index(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, body=doc, id=f"profile_{profile_id}"
+        )
+
+        logger.info(
+            f"Stored profile {profile_id} ({profile_name}) embedding in OpenSearch with {speaker_count} speakers"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"Error storing profile embedding: {e}")
+        return False
+
+
+def update_profile_embedding(profile_id: int, embedding: list[float], embedding_count: int) -> bool:
+    """
+    Update or create a profile embedding in OpenSearch
+
+    Args:
+        profile_id: ID of the speaker profile
+        embedding: Embedding vector
+        embedding_count: Number of speakers contributing to this embedding
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        ensure_indices_exist()
+
+        doc = {
+            "document_type": "profile",  # CRITICAL: Distinguish from speakers
+            "profile_id": profile_id,
+            "embedding": embedding,
+            "embedding_count": embedding_count,
+            "updated_at": datetime.datetime.now().isoformat(),
+        }
+
+        opensearch_client.index(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_id}", body=doc
+        )
+
+        logger.info(f"Updated profile {profile_id} embedding in OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating profile embedding: {e}")
+        return False
+
+
+def remove_profile_embedding(profile_id: int) -> bool:
+    """
+    Remove a profile embedding from OpenSearch
+
+    Args:
+        profile_id: ID of the speaker profile
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        opensearch_client.delete(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_id}"
+        )
+
+        logger.info(f"Removed profile {profile_id} embedding from OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Error removing profile embedding (may not exist): {e}")
+        return False
+
+
 def update_speaker_display_name(speaker_id: int, display_name: Optional[str]):
     """
     Update the display name of a speaker in OpenSearch
@@ -1039,3 +1208,185 @@ def update_speaker_display_name(speaker_id: int, display_name: Optional[str]):
 
     except Exception as e:
         logger.error(f"Error updating speaker display name: {e}")
+
+
+def update_speaker_profile(speaker_id: int, profile_id: Optional[int], verified: bool = False):
+    """
+    Update the profile assignment of a speaker in OpenSearch
+
+    Args:
+        speaker_id: ID of the speaker
+        profile_id: Profile ID to assign (or None to clear)
+        verified: Whether the speaker is verified
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return
+
+    try:
+        # Update the speaker document with new profile assignment
+        update_body = {
+            "doc": {
+                "profile_id": profile_id,
+                "verified": verified,
+                "updated_at": datetime.datetime.now().isoformat(),
+            }
+        }
+
+        response = opensearch_client.update(
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            id=str(speaker_id),
+            body=update_body,
+        )
+
+        logger.info(
+            f"Updated profile assignment for speaker {speaker_id} to profile {profile_id}, verified={verified}"
+        )
+        return response
+
+    except Exception as e:
+        logger.error(f"Error updating speaker profile assignment: {e}")
+
+
+def find_matching_profiles(
+    embedding: list[float], user_id: int, threshold: float = 0.7, size: int = 5
+) -> list[dict[str, Any]]:
+    """
+    Find matching speaker profiles using embedding similarity in OpenSearch.
+
+    Args:
+        embedding: Query embedding vector
+        user_id: User ID to filter results
+        threshold: Minimum similarity threshold
+        size: Maximum number of results
+
+    Returns:
+        List of matching profiles with similarity scores
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return []
+
+    try:
+        # Ensure indices exist before searching
+        ensure_indices_exist()
+
+        # KNN search query for profile embeddings
+        query = {
+            "size": size,
+            "query": {
+                "knn": {
+                    "embedding": {
+                        "vector": embedding,
+                        "k": size,
+                        "filter": {"term": {"user_id": user_id}},
+                    }
+                }
+            },
+            "_source": ["profile_id", "profile_name", "embedding_count", "updated_at"],
+        }
+
+        response = opensearch_client.search(
+            index=f"{settings.OPENSEARCH_SPEAKER_INDEX}_profiles", body=query
+        )
+
+        matches = []
+        for hit in response["hits"]["hits"]:
+            score = hit["_score"]
+            if score >= threshold:
+                source = hit["_source"]
+                matches.append(
+                    {
+                        "profile_id": source["profile_id"],
+                        "profile_name": source["profile_name"],
+                        "similarity": score,
+                        "embedding_count": source["embedding_count"],
+                        "last_update": source.get("updated_at"),
+                    }
+                )
+
+        logger.info(f"Found {len(matches)} profile matches above threshold {threshold}")
+        return matches
+
+    except Exception as e:
+        logger.error(f"Error finding matching profiles: {e}")
+        return []
+
+
+def cleanup_orphaned_speaker_embeddings(user_id: int) -> int:
+    """
+    Remove speaker embeddings from OpenSearch for MediaFiles that no longer exist in PostgreSQL.
+
+    Args:
+        user_id: ID of the user to clean up orphaned documents for
+
+    Returns:
+        Number of orphaned documents removed
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return 0
+
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            # Get all existing MediaFile IDs for this user
+            existing_media_file_ids = set(
+                row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
+            )
+            logger.info(
+                f"Found {len(existing_media_file_ids)} existing MediaFiles for user {user_id}: {existing_media_file_ids}"
+            )
+
+        # Query OpenSearch for all speaker documents for this user
+        query = {
+            "size": 1000,  # Adjust if needed
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {"user_id": user_id}},
+                        {
+                            "bool": {"must_not": {"exists": {"field": "document_type"}}}
+                        },  # Only speaker docs, not profiles
+                    ]
+                }
+            },
+            "_source": ["speaker_id", "media_file_id"],
+        }
+
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
+
+        orphaned_speaker_ids = []
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            media_file_id = source.get("media_file_id")
+            speaker_id = source.get("speaker_id")
+
+            if media_file_id and media_file_id not in existing_media_file_ids:
+                orphaned_speaker_ids.append(speaker_id)
+                logger.info(
+                    f"Found orphaned speaker {speaker_id} referencing non-existent MediaFile {media_file_id}"
+                )
+
+        # Delete orphaned documents
+        deleted_count = 0
+        for speaker_id in orphaned_speaker_ids:
+            try:
+                opensearch_client.delete(
+                    index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_id)
+                )
+                logger.info(f"Deleted orphaned speaker document for speaker {speaker_id}")
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Error deleting orphaned speaker {speaker_id}: {e}")
+
+        logger.info(
+            f"Cleanup completed: removed {deleted_count} orphaned speaker documents for user {user_id}"
+        )
+        return deleted_count
+
+    except Exception as e:
+        logger.error(f"Error during orphaned speaker cleanup: {e}")
+        return 0

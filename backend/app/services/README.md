@@ -33,7 +33,14 @@ services/
 ├── llm_service.py                     # Multi-provider LLM integration with intelligent context processing
 ├── opensearch_summary_service.py      # AI summary search and indexing operations
 ├── minio_service.py                   # Object storage operations
-└── opensearch_service.py              # Search and indexing operations
+├── opensearch_service.py              # Search and indexing operations
+├── analytics_service.py               # Server-side analytics computation service
+├── error_categorization_service.py    # Error classification and user guidance service
+├── formatting_service.py              # Data formatting and display service
+├── profile_embedding_service.py       # Voice embedding and speaker similarity service
+├── smart_speaker_suggestion_service.py # Intelligent speaker suggestion consolidation service
+├── speaker_status_service.py          # Speaker verification status management service
+└── task_filtering_service.py          # Task and data filtering optimization service
 ```
 
 ## 🔧 Service Design Patterns
@@ -326,6 +333,193 @@ The cleanup service works closely with the new cleanup tasks and enhanced task u
 - Calls `recover_stuck_file()` for automated recovery
 - Integrates with `cancel_active_task()` for safe task cancellation
 - Provides statistics for monitoring and alerting systems
+
+## 📊 Analytics Service (`analytics_service.py`)
+
+### Purpose
+Provides comprehensive server-side analytics computation for media files including speaker analytics, conversation flow analysis, and meeting efficiency metrics.
+
+### Key Operations
+```python
+class AnalyticsService:
+    @staticmethod
+    def compute_analytics(db: Session, media_file_id: int) -> Optional[Dict[str, Any]]:
+        """Compute comprehensive analytics for a media file."""
+        # Speaker talk time analysis, interruption detection, turn-taking patterns
+
+    @staticmethod
+    def save_analytics(db: Session, media_file_id: int, analytics_data: Dict[str, Any]) -> bool:
+        """Save computed analytics to the database."""
+        # Store analytics with user association
+
+    @staticmethod
+    def refresh_analytics(db: Session, media_file_id: int) -> bool:
+        """Refresh analytics by recomputing them."""
+        # Recompute and update existing analytics
+```
+
+### Analytics Features
+- **Speaker Talk Time Analysis**: Percentage breakdowns and total speaking time
+- **Interruption Detection**: Frequency tracking and pattern analysis
+- **Turn-Taking Patterns**: Conversation flow and speaker interaction analysis
+- **Question Frequency**: Track question asking by speaker
+- **Speaking Pace**: Words per minute calculations
+- **Silence Ratio**: Meeting efficiency analysis
+- **Word Count Statistics**: Comprehensive word usage across speakers
+
+## 🎨 Formatting Service (`formatting_service.py`)
+
+### Purpose
+Centralizes all data formatting logic for consistent display across the application, handling dates, durations, file sizes, and speaker information.
+
+### Key Operations
+```python
+class FormattingService:
+    @staticmethod
+    def format_duration(seconds: float) -> str:
+        """Format seconds to MM:SS format."""
+
+    @staticmethod
+    def format_bytes_detailed(size_bytes: int) -> str:
+        """Format file size with appropriate units (B, KB, MB, GB)."""
+
+    @staticmethod
+    def format_speaker_name(speaker: Speaker) -> str:
+        """Format speaker name with verification status indicators."""
+
+    @staticmethod
+    def get_status_badge_class(status: str) -> str:
+        """Generate CSS class for status badges."""
+```
+
+### Formatting Features
+- **Duration Formatting**: Seconds to MM:SS and detailed time formats
+- **File Size Formatting**: Intelligent unit selection with precision
+- **Date and Time**: Timezone-aware formatting with relative time
+- **Speaker Name Resolution**: Fallback handling for unknown speakers
+- **Status Badge Classes**: UI consistency for status indicators
+- **File Age Calculation**: Human-readable relative time display
+
+## 🤖 Smart Speaker Suggestion Service (`smart_speaker_suggestion_service.py`)
+
+### Purpose
+Implements intelligent speaker identification with consolidated suggestions, priority-based filtering, and automated profile matching.
+
+### Key Operations
+```python
+class SmartSpeakerSuggestionService:
+    @staticmethod
+    def get_consolidated_suggestions(db: Session, speaker_id: int, user_id: int) -> List[ConsolidatedSuggestion]:
+        """Get consolidated speaker suggestions with intelligent filtering."""
+        # Profile-based suggestions prioritized over individual matches
+
+    @staticmethod
+    def filter_and_prioritize_suggestions(suggestions: List[Dict[str, Any]]) -> List[ConsolidatedSuggestion]:
+        """Filter out unlabeled speakers and consolidate by name."""
+        # Remove SPEAKER_XX format names and consolidate duplicates
+```
+
+### Smart Features
+- **Profile Prioritization**: Verified profiles prioritized over individual matches
+- **Intelligent Consolidation**: Duplicate speaker names merged into single suggestions
+- **Unlabeled Filtering**: Automatic removal of SPEAKER_XX format names
+- **Confidence Scoring**: Advanced confidence calculation with multiple factors
+- **Auto-Accept Logic**: High-confidence suggestions marked for automatic acceptance
+
+## 🔗 Profile Embedding Service (`profile_embedding_service.py`)
+
+### Purpose
+Manages voice embeddings for speaker profiles, enabling cross-video speaker recognition through vector similarity matching.
+
+### Key Operations
+```python
+class ProfileEmbeddingService:
+    @staticmethod
+    def add_speaker_to_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> bool:
+        """Add speaker's voice embedding to profile's consolidated embedding."""
+
+    @staticmethod
+    def calculate_profile_similarity(db: Session, speaker_embedding: List[float], user_id: int) -> List[Dict[str, Any]]:
+        """Calculate similarity between speaker and all user profiles."""
+```
+
+### Embedding Features
+- **Voice Fingerprinting**: Advanced voice similarity using vector embeddings
+- **Cross-Video Matching**: Identify same speakers across different recordings
+- **Consolidated Embeddings**: Profile-level voice signatures from multiple recordings
+- **Similarity Scoring**: Cosine similarity with confidence thresholds
+- **Automatic Profile Updates**: Real-time embedding consolidation
+
+## 🏷️ Speaker Status Service (`speaker_status_service.py`)
+
+### Purpose
+Manages comprehensive speaker verification status with computed fields for optimized UI display.
+
+### Key Operations
+```python
+class SpeakerStatusService:
+    @staticmethod
+    def add_computed_status(speaker: Speaker) -> None:
+        """Add computed status fields to speaker object."""
+        # Verification status, suggestion availability, confidence levels
+
+    @staticmethod
+    def get_verification_status(speaker: Speaker) -> str:
+        """Get human-readable verification status."""
+```
+
+### Status Features
+- **Verification Tracking**: Comprehensive verification status management
+- **Computed Fields**: UI-optimized fields added to speaker objects
+- **Status Indicators**: Human-readable status text for display
+- **Suggestion Availability**: Track whether suggestions are available
+
+## 🔧 Error Categorization Service (`error_categorization_service.py`)
+
+### Purpose
+Provides intelligent error classification with user-friendly suggestions and retry guidance for improved error handling.
+
+### Key Operations
+```python
+class ErrorCategorizationService:
+    @staticmethod
+    def get_error_info(error_message: str) -> Dict[str, Any]:
+        """Categorize error and provide user-friendly information."""
+        # Error category, suggestions, retry guidance
+
+    @staticmethod
+    def categorize_error(error_message: str) -> str:
+        """Categorize error into predefined categories."""
+```
+
+### Error Features
+- **Intelligent Classification**: Pattern-based error categorization
+- **User-Friendly Suggestions**: Actionable guidance for error resolution
+- **Retry Guidance**: Determine if errors are retryable
+- **Category-Specific Advice**: Tailored suggestions based on error type
+
+## 📋 Task Filtering Service (`task_filtering_service.py`)
+
+### Purpose
+Optimizes data retrieval and filtering for improved performance and user experience.
+
+### Key Operations
+```python
+class TaskFilteringService:
+    @staticmethod
+    def filter_tasks_by_criteria(db: Session, user_id: int, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Filter tasks based on various criteria."""
+
+    @staticmethod
+    def optimize_query_performance(query: Any) -> Any:
+        """Optimize database queries for better performance."""
+```
+
+### Filtering Features
+- **Efficient Data Retrieval**: Optimized database queries
+- **Multi-Criteria Filtering**: Complex filtering logic
+- **Performance Optimization**: Query optimization for large datasets
+- **User-Specific Filtering**: Context-aware filtering based on user permissions
 
 ## 🔍 OpenSearch Service (`opensearch_service.py`)
 

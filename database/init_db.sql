@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS speaker_profile (
     name VARCHAR(255) NOT NULL, -- User-assigned name (e.g., "John Doe")
     description TEXT NULL, -- Optional description or notes
     uuid VARCHAR(255) NOT NULL UNIQUE, -- Unique identifier
+    -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
+    embedding_count INTEGER DEFAULT 0, -- Number of embeddings averaged into this profile
+    last_embedding_update TIMESTAMP WITH TIME ZONE NULL, -- When embedding was last updated
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, name) -- Ensure unique profile names per user
@@ -114,8 +117,13 @@ CREATE TABLE IF NOT EXISTS speaker (
     uuid VARCHAR(255) NOT NULL, -- Unique identifier for the speaker instance
     verified BOOLEAN NOT NULL DEFAULT FALSE, -- Flag to indicate if the speaker has been verified by a user
     confidence FLOAT NULL, -- Confidence score if auto-matched
-    embedding_vector JSONB NULL, -- Speaker embedding as JSON array (deprecated - moved to OpenSearch)
+    -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Computed status fields (calculated by SpeakerStatusService)
+    computed_status VARCHAR(50) NULL, -- "verified", "suggested", "unverified"
+    status_text VARCHAR(500) NULL, -- Human-readable status text
+    status_color VARCHAR(50) NULL, -- CSS color for status display
+    resolved_display_name VARCHAR(255) NULL, -- Best available display name
     UNIQUE(user_id, media_file_id, name) -- Ensure unique speaker names per file per user
 );
 
@@ -178,9 +186,9 @@ CREATE TABLE IF NOT EXISTS task (
 CREATE TABLE IF NOT EXISTS analytics (
     id SERIAL PRIMARY KEY,
     media_file_id INTEGER UNIQUE REFERENCES media_file(id),
-    speaker_stats JSONB NULL,
-    sentiment JSONB NULL,
-    keywords JSONB NULL
+    overall_analytics JSONB NULL, -- Structured analytics from AnalyticsService
+    computed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    version VARCHAR(50) NULL -- Version tracking for analytics schema
 );
 
 -- Collections table
@@ -527,3 +535,17 @@ INSERT INTO summary_prompt (name, description, prompt_text, is_system_default, c
 ('Interview & Podcast Style', 'Designed for interviews, podcasts, and conversational content', 'INTERVIEW_PROMPT_HERE', TRUE, 'interview', TRUE),
 ('Documentary & Educational', 'Tailored for documentaries, lectures, and educational content', 'DOCUMENTARY_PROMPT_HERE', TRUE, 'documentary', TRUE);
 */
+
+-- Insert default admin user (admin@example.com / password)
+INSERT INTO "user" (email, hashed_password, full_name, is_active, is_superuser, role, created_at, updated_at)
+VALUES (
+    'admin@example.com',
+    '$2b$12$XWTq/TQOZgpHNdtjmV28x.ign3DTZIRgIrv.nm2206H6tw9GAspie',
+    'Admin User',
+    TRUE,
+    TRUE,
+    'admin',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+) ON CONFLICT (email) DO NOTHING;
+

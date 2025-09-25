@@ -37,11 +37,19 @@ from .whisperx_service import WhisperXService
 logger = logging.getLogger(__name__)
 
 
-# Import for automatic summarization and speaker identification
+# Import for automatic summarization, speaker identification, and analytics
 def trigger_automatic_summarization(file_id: int):
-    """Trigger automatic summarization and speaker identification after transcription completes"""
+    """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
     try:
-        # First trigger speaker identification
+        # First trigger analytics computation
+        from app.tasks.analytics import analyze_transcript_task
+
+        analytics_task = analyze_transcript_task.delay(file_id=file_id)
+        logger.info(
+            f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
+        )
+
+        # Then trigger speaker identification
         from app.tasks.speaker_tasks import identify_speakers_llm_task
 
         speaker_task = identify_speakers_llm_task.delay(file_id=file_id)
@@ -49,7 +57,7 @@ def trigger_automatic_summarization(file_id: int):
             f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
         )
 
-        # Then trigger summarization (this will use the speaker suggestions when available)
+        # Finally trigger summarization (this will use the speaker suggestions when available)
         from app.tasks.summarization import summarize_transcript_task
 
         summary_task = summarize_transcript_task.delay(file_id=file_id)
@@ -283,12 +291,18 @@ def transcribe_audio_task(self, file_id: int):
                         matching_service = SpeakerMatchingService(db, embedding_service)
 
                         # Process speaker embeddings and matching
+                        logger.info(
+                            f"TRANSCRIPTION DEBUG: Starting speaker matching for {len(speaker_mapping)} speakers"
+                        )
                         speaker_results = matching_service.process_speaker_segments(
                             audio_file_path,
                             file_id,
                             user_id,
                             processed_segments,
                             speaker_mapping,
+                        )
+                        logger.info(
+                            f"TRANSCRIPTION DEBUG: Speaker matching completed, got {len(speaker_results) if speaker_results else 0} results"
                         )
 
                         update_task_status(db, task_id, "in_progress", progress=0.82)
@@ -312,7 +326,11 @@ def transcribe_audio_task(self, file_id: int):
 
                     with session_scope() as db:
                         media_file = get_refreshed_object(db, MediaFile, file_id)
-                        file_title = (media_file.title or media_file.filename) if media_file else f"File {file_id}"
+                        file_title = (
+                            (media_file.title or media_file.filename)
+                            if media_file
+                            else f"File {file_id}"
+                        )
 
                     index_transcript(file_id, user_id, full_transcript, speaker_names, file_title)
                 except Exception as e:

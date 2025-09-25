@@ -420,7 +420,7 @@ from app.tasks.summarization import summarize_transcript_task
 ## 📊 Task Monitoring
 
 ### Flower Dashboard
-- **URL**: http://localhost:5555/flower
+- **URL**: http://localhost:5175/flower
 - **Features**: Task monitoring, worker status, performance metrics
 - **Real-time**: Live task progress and completion rates
 

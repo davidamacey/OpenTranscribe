@@ -6,13 +6,6 @@
   export let file: any = null;
   export let showMetadata: boolean = false;
 
-  function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
 
   function toggleMetadata() {
     showMetadata = !showMetadata;
@@ -64,7 +57,7 @@
           <span class="metadata-label">Duration:</span>
           <span class="metadata-value">
             {#if file && 'duration' in file && file.duration}
-              {formatDuration(file.duration)}
+              {file.formatted_duration || 'N/A'}
             {:else}
               Unknown
             {/if}
@@ -75,7 +68,7 @@
           <span class="metadata-label">File size:</span>
           <span class="metadata-value">
             {#if file && 'file_size' in file && file.file_size}
-              {formatFileSize(file.file_size)}
+              {file.formatted_file_size || 'N/A'}
             {:else}
               Unknown
             {/if}

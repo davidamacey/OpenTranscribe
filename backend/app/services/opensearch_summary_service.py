@@ -246,24 +246,6 @@ class OpenSearchSummaryService:
                 hit = response["hits"]["hits"][0]
                 summary_data = hit["_source"]
 
-                # Ensure metadata has all required fields for backward compatibility
-                if "metadata" in summary_data:
-                    metadata = summary_data["metadata"]
-                    # Add missing transcript_length if not present
-                    if "transcript_length" not in metadata:
-                        # Calculate from brief_summary if available
-                        transcript_length = len(summary_data.get("brief_summary", ""))
-                        metadata["transcript_length"] = transcript_length
-                        logger.warning(
-                            f"Added missing transcript_length ({transcript_length}) to summary metadata for file {file_id}"
-                        )
-
-                    # Ensure other required fields exist
-                    if "usage_tokens" not in metadata:
-                        metadata["usage_tokens"] = None
-                    if "processing_time_ms" not in metadata:
-                        metadata["processing_time_ms"] = None
-
                 return {"document_id": hit["_id"], **summary_data}
 
             return None

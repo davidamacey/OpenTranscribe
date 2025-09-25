@@ -143,34 +143,33 @@
   }
   
   /**
-   * Get the speaker name to use for color mapping (original name, not display name)
-   * This ensures consistent colors even when display names change
-   * @param {string} displayName - The display name shown in analytics
-   * @returns {string} - The original speaker name for color mapping
+   * Create reactive mapping of speaker keys to display names
+   * This will automatically update when speakerList changes
    */
-  function getSpeakerNameForColor(displayName) {
-    // If this looks like an original speaker label (SPEAKER_XX), use it directly
-    if (displayName.match(/^SPEAKER_\d+$/)) {
-      return displayName;
-    }
-    
-    // Find the original speaker name by looking up the display name in speakerList
-    const speaker = speakerList.find(s => s.display_name === displayName);
-    if (speaker) {
-      return speaker.name; // Use original name for color consistency
-    }
-    
-    // Fall back to display name if no mapping found
-    return displayName;
+  $: speakerDisplayNameMap = speakerList.reduce((map, speaker) => {
+    map[speaker.name] = speaker.display_name || speaker.name;
+    return map;
+  }, /** @type {Record<string, string>} */ ({}));
+
+
+  /**
+   * Get display name for a speaker (maps SPEAKER_XX to user-assigned names)
+   * @param {string} speakerKey - The speaker key from analytics (e.g., "SPEAKER_01")
+   * @returns {string} - Display name or original key if not found
+   */
+  function getSpeakerDisplayName(speakerKey) {
+    return speakerDisplayNameMap[speakerKey] || speakerKey;
   }
 
   /**
    * Get speaker color using the shared color system (matching transcript style)
-   * @param {string} name - The name of the speaker
+   * @param {string} speakerKey - The speaker key from analytics (e.g., "SPEAKER_01")
    * @returns {string} - A CSS color value
    */
-  function getSpeakerBgColor(name) {
-    return getSpeakerColor(getSpeakerNameForColor(name)).bg;
+  function getSpeakerBgColor(speakerKey) {
+    // Analytics data always uses original speaker keys (SPEAKER_XX)
+    // Always use the original key for color consistency
+    return getSpeakerColor(speakerKey).bg;
   }
   
   /**
@@ -263,7 +262,7 @@
               width: {safeCalculatePercentage(time, normalizedAnalytics.talk_time.total)}%;
               background-color: {getSpeakerBgColor(speakerName)};
             "
-            title="{speakerName}: {formatTime(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
+            title="{getSpeakerDisplayName(speakerName)}: {formatTime(time)} ({safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%)"
           ></div>
         {/each}
       </div>
@@ -275,7 +274,7 @@
           <div class="speaker-chip">
             <div class="chip-header">
               <div class="speaker-dot-large" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
-              <span class="speaker-name-chip">{speakerName}</span>
+              <span class="speaker-name-chip">{getSpeakerDisplayName(speakerName)}</span>
             </div>
             <div class="chip-stats">
               <div class="stat-item">
@@ -316,7 +315,7 @@
               <div class="metric-item">
                 <div class="metric-speaker">
                   <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
-                  <span class="speaker-name-small">{speakerName}</span>
+                  <span class="speaker-name-small">{getSpeakerDisplayName(speakerName)}</span>
                 </div>
                 <span class="metric-value">{count}</span>
               </div>
@@ -342,7 +341,7 @@
               <div class="metric-item">
                 <div class="metric-speaker">
                   <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
-                  <span class="speaker-name-small">{speakerName}</span>
+                  <span class="speaker-name-small">{getSpeakerDisplayName(speakerName)}</span>
                 </div>
                 <span class="metric-value">{count}</span>
               </div>

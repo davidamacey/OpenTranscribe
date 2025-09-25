@@ -105,10 +105,7 @@ def advanced_search(
         use_semantic=semantic,
     )
 
-    # In a real implementation, we would:
-    # 1. Apply date filters
-    # 2. Apply duration filters
-    # 3. Filter for multiple speakers
+    # Note: Advanced filtering (date filters, duration filters, multiple speakers) is available in /search/advanced endpoint
 
     # Convert to the format expected by tests
     # The tests expect a list of results where each result has an 'id' field instead of 'file_id'

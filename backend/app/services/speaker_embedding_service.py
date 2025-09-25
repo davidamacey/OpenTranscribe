@@ -179,6 +179,8 @@ class SpeakerEmbeddingService:
         """
         Compute cosine similarity between two embeddings.
 
+        Delegates to the centralized SimilarityService for optimal performance.
+
         Args:
             embedding1: First embedding
             embedding2: Second embedding
@@ -186,15 +188,9 @@ class SpeakerEmbeddingService:
         Returns:
             Cosine similarity score (0-1)
         """
-        # Normalize embeddings
-        norm1 = embedding1 / np.linalg.norm(embedding1)
-        norm2 = embedding2 / np.linalg.norm(embedding2)
+        from app.services.similarity_service import SimilarityService
 
-        # Compute cosine similarity
-        similarity = np.dot(norm1, norm2)
-
-        # Ensure similarity is in [0, 1] range
-        return float((similarity + 1) / 2)
+        return SimilarityService.cosine_similarity(embedding1, embedding2)
 
     def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
         """

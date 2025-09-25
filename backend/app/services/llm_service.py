@@ -107,7 +107,21 @@ class LLMService:
         )
 
     def _get_headers(self) -> dict[str, str]:
-        """Get headers for API request"""
+        """
+        Get headers for API request based on provider.
+
+        Constructs the appropriate HTTP headers for API requests, including
+        authentication headers specific to each LLM provider.
+
+        Returns:
+            Dictionary containing HTTP headers for the request
+
+        Note:
+            - OpenAI: Uses Bearer token authorization
+            - Claude/Anthropic: Uses x-api-key header with anthropic-version
+            - OpenRouter: Uses Bearer token with referrer headers
+            - vLLM/Ollama: May or may not require authentication
+        """
         headers = {"Content-Type": "application/json"}
 
         if self.config.provider == LLMProvider.OPENAI and self.config.api_key:
@@ -131,7 +145,23 @@ class LLMService:
         return headers
 
     def _prepare_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
-        """Prepare request payload for the API"""
+        """
+        Prepare request payload for the API based on provider requirements.
+
+        Converts standard OpenAI-format messages to provider-specific formats
+        and adds appropriate parameters for each LLM provider.
+
+        Args:
+            messages: List of message dictionaries in OpenAI format
+            **kwargs: Additional parameters to override defaults
+
+        Returns:
+            Dictionary containing the API request payload
+
+        Note:
+            - Claude/Anthropic: Separates system messages from user/assistant messages
+            - Other providers: Use standard OpenAI format with provider-specific params
+        """
 
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             # Convert OpenAI format messages to Claude format
@@ -283,8 +313,49 @@ class LLMService:
             raise
 
     def _estimate_tokens(self, text: str) -> int:
-        """Rough token estimation using conservative heuristics"""
-        return len(text) // 3
+        """
+        Estimate token count using more accurate heuristics.
+
+        This method provides a reasonable approximation for OpenAI-style tokenization
+        without requiring the tiktoken library. The estimation is conservative to
+        prevent context window overflow.
+
+        Args:
+            text: Input text to tokenize
+
+        Returns:
+            Estimated token count
+
+        Note:
+            - Uses word-based and character-based heuristics
+            - Accounts for common punctuation and formatting
+            - Returns slightly higher estimates to be safe
+        """
+        if not text:
+            return 0
+
+        # Basic word count
+        words = text.split()
+        word_count = len(words)
+
+        # Character-based estimation for better accuracy
+        char_count = len(text)
+
+        # Combine both methods:
+        # - English averages ~4.7 characters per token
+        # - But also consider word boundaries and punctuation
+        from app.core.constants import CHARS_PER_TOKEN_ESTIMATE
+        from app.core.constants import SUBWORD_TOKENIZATION_FACTOR
+        from app.core.constants import TOKEN_ESTIMATION_BUFFER
+
+        char_based_estimate = char_count / CHARS_PER_TOKEN_ESTIMATE
+        word_based_estimate = word_count * SUBWORD_TOKENIZATION_FACTOR
+
+        # Use the higher estimate to be conservative
+        estimated_tokens = max(char_based_estimate, word_based_estimate)
+
+        # Add buffer for safety
+        return int(estimated_tokens * TOKEN_ESTIMATION_BUFFER)
 
     def _chunk_transcript_intelligently(
         self, transcript: str, chunk_overlap: int = 200
@@ -636,9 +707,215 @@ class LLMService:
             return False, f"Connection failed: {str(e)}"
 
     def close(self):
-        """Close the session"""
+        """
+        Close the session and clean up resources.
+
+        Properly closes the HTTP session and releases any held connections.
+        Should be called when the LLMService instance is no longer needed.
+        """
         if hasattr(self, "session"):
-            self.session.close()
+            try:
+                self.session.close()
+                logger.debug(f"Closed session for {self.config.provider}")
+            except Exception as e:
+                logger.warning(f"Error closing session: {e}")
+
+    def identify_speakers(self, transcript: str, speaker_segments: list, known_speakers: list) -> dict:
+        """
+        Use LLM to suggest speaker identifications based on contextual analysis of speech patterns,
+        conversation content, and known speaker profiles.
+
+        Args:
+            transcript: Full transcript text with speaker labels
+            speaker_segments: List of speaker segments with metadata including timestamps and text
+            known_speakers: List of known speaker profiles with names and descriptions
+
+        Returns:
+            Dictionary containing speaker predictions with confidence scores and reasoning
+        """
+        try:
+            # Build comprehensive system prompt for speaker identification
+            system_prompt = """You are an expert linguist and conversation analyst specializing in speaker identification. Your task is to analyze transcripts and identify speakers based on multiple contextual clues.
+
+ANALYSIS METHODOLOGY:
+1. Speech Patterns & Style:
+   - Vocabulary complexity and professional terminology
+   - Sentence structure and communication style
+   - Use of technical jargon, industry-specific language
+   - Formal vs. informal speech patterns
+
+2. Content Analysis:
+   - Topics of expertise and knowledge domains
+   - Professional roles and responsibilities mentioned
+   - Personal anecdotes or experiences shared
+   - Areas where speakers demonstrate authority or deep knowledge
+
+3. Conversational Dynamics:
+   - Who asks questions vs. provides answers
+   - Leadership patterns and decision-making roles
+   - Deference patterns between speakers
+   - Introduction patterns and name mentions
+
+4. Context Clues:
+   - Direct name mentions in conversation
+   - Role references ("as the CEO", "from engineering", etc.)
+   - Historical context from previous conversations
+   - Cross-references to known speaker profiles
+
+CONFIDENCE SCORING:
+- 0.9-1.0: Multiple strong indicators align (name mentioned + role + speech pattern match)
+- 0.7-0.89: Strong contextual match with known profile (expertise area + communication style)
+- 0.5-0.69: Moderate confidence based on partial indicators
+- Below 0.5: Insufficient evidence for reliable identification
+
+Only provide predictions with confidence >= 0.5. Explain your reasoning clearly for each identification."""
+
+            # Prepare known speakers context with rich descriptions
+            known_speakers_context = ""
+            if known_speakers and len(known_speakers) > 0:
+                known_speakers_context = "\n\nKNOWN SPEAKER PROFILES:\n"
+                for i, speaker in enumerate(known_speakers[:15]):  # Limit to prevent token overflow
+                    description = speaker.get('description', 'No description available')
+                    known_speakers_context += f"{i+1}. {speaker['name']}: {description}\n"
+            else:
+                known_speakers_context = "\n\nNo known speaker profiles provided for comparison.\n"
+
+            # Extract unique speaker labels from segments
+            speaker_labels = list(set(seg.get('speaker_label', 'Unknown') for seg in speaker_segments if seg.get('speaker_label')))
+
+            # Calculate available tokens for transcript content
+            # Reserve tokens for system prompt, known speakers, response, and formatting
+            reserved_tokens = len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2000 + 500  # Rough token estimation
+            available_tokens = max(1000, self.user_context_window - reserved_tokens)
+
+            # Truncate transcript if needed, trying to preserve important context
+            transcript_content = transcript
+            if len(transcript) > available_tokens * 3:  # Rough char to token ratio
+                # Try to keep beginning and end of transcript for context
+                target_length = available_tokens * 3
+                half_length = target_length // 2
+                transcript_content = transcript[:half_length] + "\n\n[... middle content truncated ...]\n\n" + transcript[-half_length:]
+
+            # Build comprehensive user prompt
+            user_prompt = f"""TRANSCRIPT TO ANALYZE:
+{transcript_content}
+
+CURRENT SPEAKER LABELS: {', '.join(speaker_labels)}
+{known_speakers_context}
+
+TASK:
+Analyze this conversation transcript and identify each speaker label based on the methodology described. Look for patterns in:
+- Speech complexity and professional vocabulary usage
+- Areas of expertise demonstrated through conversation content
+- Leadership and authority patterns in the discussion
+- Any direct or indirect name mentions or role references
+- Communication styles and interpersonal dynamics
+
+For each speaker you can identify with reasonable confidence (≥0.5), provide a detailed analysis.
+
+RESPONSE FORMAT (JSON):
+{{
+    "speaker_predictions": [
+        {{
+            "speaker_label": "SPEAKER_1",
+            "predicted_name": "John Smith",
+            "confidence": 0.85,
+            "reasoning": "Detailed explanation of evidence including speech patterns, expertise areas, and specific quotes or behaviors that led to this identification",
+            "evidence_types": ["speech_pattern", "expertise", "role_reference", "name_mention"]
+        }}
+    ],
+    "overall_confidence": "high",
+    "analysis_notes": "Brief summary of the identification process and any challenges encountered"
+}}
+
+IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confidently identify any speakers, return an empty predictions array."""
+
+            # Generate response with user's configured token limit
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            # Use conservative response token limit based on user's context window
+            response_tokens = min(self.config.response_tokens, self.user_context_window // 4)
+
+            response = self.chat_completion(
+                messages=messages,
+                max_tokens=response_tokens,
+                temperature=0.2  # Lower temperature for more consistent and reliable identification
+            )
+
+            if not response or not response.content:
+                logger.warning("LLM returned empty response for speaker identification")
+                return {"speaker_predictions": [], "error": "No response from LLM"}
+
+            # Parse and validate JSON response
+            try:
+                # Clean up response content - remove markdown code blocks if present
+                content = response.content.strip()
+                if content.startswith("```json") and content.endswith("```"):
+                    content = content[7:-3].strip()
+                elif content.startswith("```") and content.endswith("```"):
+                    content = content[3:-3].strip()
+
+                result = json.loads(content)
+
+                # Validate response structure
+                if not isinstance(result, dict):
+                    logger.error("LLM response is not a valid JSON object")
+                    return {"speaker_predictions": [], "error": "Invalid response format - not a JSON object"}
+
+                if "speaker_predictions" not in result:
+                    logger.error("LLM response missing required 'speaker_predictions' field")
+                    return {"speaker_predictions": [], "error": "Invalid response format - missing speaker_predictions"}
+
+                # Validate prediction structure
+                predictions = result["speaker_predictions"]
+                if not isinstance(predictions, list):
+                    logger.error("speaker_predictions is not a list")
+                    return {"speaker_predictions": [], "error": "Invalid response format - speaker_predictions must be a list"}
+
+                # Filter predictions by confidence threshold and validate structure
+                valid_predictions = []
+                for pred in predictions:
+                    if not isinstance(pred, dict):
+                        continue
+
+                    required_fields = ["speaker_label", "predicted_name", "confidence"]
+                    if not all(field in pred for field in required_fields):
+                        logger.warning(f"Skipping prediction with missing fields: {pred}")
+                        continue
+
+                    confidence = pred.get("confidence", 0.0)
+                    if not isinstance(confidence, (int, float)) or confidence < 0.5:
+                        continue
+
+                    valid_predictions.append(pred)
+
+                logger.info(f"Speaker identification completed: {len(valid_predictions)} valid predictions from {len(predictions)} total")
+
+                return {
+                    "speaker_predictions": valid_predictions,
+                    "overall_confidence": result.get("overall_confidence", "unknown"),
+                    "analysis_notes": result.get("analysis_notes", "No additional notes provided")
+                }
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM identification response as JSON: {e}")
+                logger.error(f"Raw response content: {response.content[:500]}...")
+                return {"speaker_predictions": [], "error": f"Invalid JSON response: {str(e)}"}
+
+        except Exception as e:
+            logger.error(f"Speaker identification failed with error: {e}", exc_info=True)
+            return {"speaker_predictions": [], "error": f"Identification process failed: {str(e)}"}
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with automatic cleanup."""
+        self.close()
 
     def health_check(self) -> bool:
         """
@@ -785,8 +1062,13 @@ class LLMService:
             )
             return LLMService(config)
 
+        except (ValueError, KeyError) as e:
+            logger.error(f"Configuration error for user {user_id}: {e}")
+            return LLMService.create_from_system_settings()
         except Exception as e:
-            logger.error(f"Error creating LLMService from user settings for user {user_id}: {e}")
+            logger.error(
+                f"Unexpected error creating LLMService from user settings for user {user_id}: {e}"
+            )
             return LLMService.create_from_system_settings()
         finally:
             db.close()
@@ -810,11 +1092,15 @@ class LLMService:
             api_key = settings.VLLM_API_KEY or None
             base_url = settings.VLLM_BASE_URL
             # Validate required settings for vLLM
-            if not model or model.strip() == "gpt-oss":  # Default placeholder value
+            if not model or model.strip() == "gpt-oss":  # Invalid default model name
                 logger.info("vLLM provider configured but no valid model name set")
                 return None
-            if not base_url or base_url == "http://localhost:8012/v1":  # Default that likely won't work
-                logger.info("vLLM provider configured but using default localhost endpoint (likely not available)")
+            if (
+                not base_url or base_url == "http://localhost:8012/v1"
+            ):  # Default that likely won't work
+                logger.info(
+                    "vLLM provider configured but using default localhost endpoint (likely not available)"
+                )
                 return None
         elif provider == LLMProvider.OPENAI:
             model = settings.OPENAI_MODEL_NAME

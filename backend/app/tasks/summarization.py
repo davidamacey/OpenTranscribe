@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
 
 import redis
 
@@ -90,8 +89,6 @@ def send_summary_notification(
 def summarize_transcript_task(
     self,
     file_id: int,
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
     force_regenerate: bool = False,
 ):
     """
@@ -286,22 +283,14 @@ def summarize_transcript_task(
                 # Update task status
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
-                logger.info(f"Transcription completed for file {media_file.filename} (no LLM summary generated)")
+                logger.info(
+                    f"Transcription completed for file {media_file.filename} (no LLM summary generated)"
+                )
                 return {
                     "status": "success",
                     "file_id": file_id,
-                    "message": "Transcription completed successfully. AI summary not available - no LLM provider configured."
+                    "message": "Transcription completed successfully. AI summary not available - no LLM provider configured.",
                 }
-
-            # Log provider/model overrides (deprecated but supported for backward compatibility)
-            if provider:
-                logger.warning(
-                    f"Provider override specified: {provider} (deprecated - use user settings)"
-                )
-            if model:
-                logger.warning(
-                    f"Model override specified: {model} (deprecated - use user settings)"
-                )
 
             logger.info(f"Using LLM: {llm_service.config.provider}/{llm_service.config.model}")
             logger.info(f"User context window: {llm_service.user_context_window} tokens")
@@ -332,7 +321,7 @@ def summarize_transcript_task(
 
             # Log additional context
             logger.error(f"Transcript length: {len(full_transcript)} chars")
-            logger.error(f"Provider: {provider}, Model: {model}")
+            logger.error(f"Provider: {llm_provider or 'unknown'}, Model: {llm_model or 'unknown'}")
             logger.error(f"User ID: {media_file.user_id}")
 
             # Set summary status to failed for graceful handling
@@ -364,7 +353,7 @@ def summarize_transcript_task(
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.7)
 
-        # Store summary in PostgreSQL (for backward compatibility)
+        # Store summary in PostgreSQL
         media_file.summary = summary_data.get("brief_summary", "Summary generation failed")
 
         # Store structured summary in OpenSearch

@@ -2,8 +2,7 @@
  * API service for user settings management
  * 
  * This module provides TypeScript interfaces and API methods for managing
- * user settings that persist across sessions and devices. Includes automatic
- * migration from localStorage for backwards compatibility.
+ * user settings that persist across sessions and devices.
  */
 
 import axiosInstance from '../axios';
@@ -163,7 +162,7 @@ export class RecordingSettingsHelper {
   }
 
   /**
-   * Clean up old localStorage settings after successful migration
+   * Clean up old localStorage settings
    */
   static cleanupLocalStorage(): void {
     try {

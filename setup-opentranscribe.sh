@@ -198,27 +198,27 @@ check_network_connectivity() {
 
 validate_downloaded_files() {
     echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
-    
-    # Validate init_db_complete.sql
-    if [ ! -f "init_db_complete.sql" ]; then
-        echo -e "${RED}❌ init_db_complete.sql file not found${NC}"
+
+    # Validate init_db.sql
+    if [ ! -f "init_db.sql" ]; then
+        echo -e "${RED}❌ init_db.sql file not found${NC}"
         return 1
     fi
-    
+
     # Check file size (should be substantial)
-    local db_size=$(wc -c < init_db_complete.sql)
+    local db_size=$(wc -c < init_db.sql)
     if [ "$db_size" -lt 10000 ]; then
-        echo -e "${RED}❌ init_db_complete.sql file too small ($db_size bytes)${NC}"
+        echo -e "${RED}❌ init_db.sql file too small ($db_size bytes)${NC}"
         return 1
     fi
-    
+
     # Check for essential database content including admin user
-    if ! grep -q "CREATE TABLE.*user" init_db_complete.sql || ! grep -q "CREATE TABLE.*media_file" init_db_complete.sql || ! grep -q "admin@example.com" init_db_complete.sql; then
-        echo -e "${RED}❌ init_db_complete.sql missing essential database tables or admin user${NC}"
+    if ! grep -q "CREATE TABLE.*user" init_db.sql || ! grep -q "CREATE TABLE.*media_file" init_db.sql || ! grep -q "admin@example.com" init_db.sql; then
+        echo -e "${RED}❌ init_db.sql missing essential database tables or admin user${NC}"
         return 1
     fi
-    
-    echo "✓ init_db_complete.sql validated ($db_size bytes)"
+
+    echo "✓ init_db.sql validated ($db_size bytes)"
     
     # Validate docker-compose.yml
     if [ ! -f "docker-compose.yml" ]; then
@@ -241,26 +241,6 @@ validate_downloaded_files() {
     echo "✓ docker-compose.yml validated"
     echo "✓ All downloaded files validated successfully"
     return 0
-}
-
-check_network_connectivity() {
-    echo "🌐 Checking network connectivity..."
-    
-    # Test connectivity to GitHub
-    if ! curl -fsSL --connect-timeout 5 --max-time 10 "https://api.github.com" > /dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Warning: Unable to connect to GitHub${NC}"
-        echo "Please check your internet connection before proceeding."
-        echo "The setup script requires internet access to download configuration files."
-        echo ""
-        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Setup cancelled. Please check your network connection and try again."
-            exit 1
-        fi
-    else
-        echo "✓ Network connectivity verified"
-    fi
 }
 
 check_dependencies() {
@@ -331,17 +311,17 @@ create_database_files() {
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db_complete.sql"
-    
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
+
     while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db_complete.sql; then
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db.sql; then
             # Validate downloaded file
-            if [ -s init_db_complete.sql ] && grep -q "CREATE TABLE" init_db_complete.sql && grep -q "admin@example.com" init_db_complete.sql; then
-                echo "✓ Downloaded and validated init_db_complete.sql"
+            if [ -s init_db.sql ] && grep -q "CREATE TABLE" init_db.sql && grep -q "admin@example.com" init_db.sql; then
+                echo "✓ Downloaded and validated init_db.sql"
                 return 0
             else
                 echo "⚠️  Downloaded file appears invalid, retrying..."
-                rm -f init_db_complete.sql
+                rm -f init_db.sql
             fi
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
@@ -380,7 +360,10 @@ create_configuration_files() {
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
         download_nvidia_override
     fi
-    
+
+    # Download opentranscribe.sh management script
+    download_management_script
+
     # Create .env.example
     create_production_env_example
 }
@@ -458,6 +441,43 @@ download_nvidia_override() {
     
     echo -e "${YELLOW}⚠️  Failed to download NVIDIA override file after $max_retries attempts${NC}"
     echo "GPU acceleration may not work optimally, but CPU processing will still function."
+    echo "You can manually download from: $download_url"
+}
+
+download_management_script() {
+    echo "✓ Downloading OpenTranscribe management script..."
+
+    # Download the opentranscribe.sh script from the repository
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o opentranscribe.sh; then
+            # Validate downloaded file
+            if [ -s opentranscribe.sh ] && grep -q "OpenTranscribe Management Script" opentranscribe.sh; then
+                chmod +x opentranscribe.sh
+                echo "✓ Downloaded and validated opentranscribe.sh"
+                return 0
+            else
+                echo "⚠️  Downloaded opentranscribe.sh appears invalid, retrying..."
+                rm -f opentranscribe.sh
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+
+    echo -e "${YELLOW}⚠️  Failed to download opentranscribe.sh after $max_retries attempts${NC}"
     echo "You can manually download from: $download_url"
 }
 
@@ -777,234 +797,6 @@ create_env_file() {
 }
 
 
-#######################
-# STARTUP SCRIPT CREATION
-#######################
-
-create_management_script() {
-    echo -e "${BLUE}📝 Creating management script...${NC}"
-    
-    cat > opentranscribe.sh << 'EOF'
-#!/bin/bash
-set -e
-
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-function show_help {
-    echo -e "${BLUE}OpenTranscribe Management Script${NC}"
-    echo ""
-    echo "Usage: ./opentranscribe.sh [command]"
-    echo ""
-    echo "Commands:"
-    echo "  start       Start all services"
-    echo "  stop        Stop all services"
-    echo "  restart     Restart all services"
-    echo "  status      Show container status"
-    echo "  logs [svc]  View logs (all or specific service)"
-    echo "  update      Pull latest Docker images"
-    echo "  clean       Remove all volumes and data (⚠️ CAUTION)"
-    echo "  shell [svc] Open shell in container (default: backend)"
-    echo "  config      Show current configuration"
-    echo "  health      Check service health"
-    echo "  help        Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  ./opentranscribe.sh start"
-    echo "  ./opentranscribe.sh logs backend"
-    echo "  ./opentranscribe.sh shell backend"
-    echo ""
-}
-
-check_environment() {
-    if [ ! -f .env ]; then
-        echo -e "${RED}❌ .env file not found${NC}"
-        echo "Please run the setup script first."
-        exit 1
-    fi
-    
-    if [ ! -f docker-compose.yml ]; then
-        echo -e "${RED}❌ docker-compose.yml not found${NC}"
-        echo "Please run the setup script first."
-        exit 1
-    fi
-}
-
-get_compose_files() {
-    local compose_files="-f docker-compose.yml"
-    
-    # Add NVIDIA override if it exists and GPU is detected
-    if [ -f docker-compose.nvidia.yml ] && [ -f .env ]; then
-        source .env 2>/dev/null || true
-        if [[ "${USE_NVIDIA_RUNTIME:-false}" == "true" ]]; then
-            compose_files="$compose_files -f docker-compose.nvidia.yml"
-        fi
-    fi
-    
-    # Add development override if it exists
-    if [ -f docker-compose.override.yml ]; then
-        compose_files="$compose_files -f docker-compose.override.yml"
-    fi
-    
-    echo "$compose_files"
-}
-
-show_access_info() {
-    # Source .env to get port values
-    source .env 2>/dev/null || true
-    
-    echo -e "${GREEN}🌐 Access Information:${NC}"
-    echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
-    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
-    echo "  • API Endpoint:      http://localhost:${BACKEND_PORT:-5174}/api"
-    echo "  • Flower Dashboard:  http://localhost:${FLOWER_PORT:-5175}/flower"
-    echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
-    echo ""
-    echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
-}
-
-case "${1:-help}" in
-    start)
-        check_environment
-        echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files up -d
-        echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
-        show_access_info
-        ;;
-    stop)
-        check_environment
-        echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files down
-        echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
-        ;;
-    restart)
-        check_environment
-        echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files down
-        docker compose $compose_files up -d
-        echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
-        show_access_info
-        ;;
-    status)
-        check_environment
-        echo -e "${BLUE}📊 Container Status:${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files ps
-        ;;
-    logs)
-        check_environment
-        service=${2:-}
-        compose_files=$(get_compose_files)
-        
-        if [ -z "$service" ]; then
-            echo -e "${BLUE}📋 Showing all logs (Ctrl+C to exit):${NC}"
-            docker compose $compose_files logs -f
-        else
-            echo -e "${BLUE}📋 Showing logs for $service (Ctrl+C to exit):${NC}"
-            docker compose $compose_files logs -f "$service"
-        fi
-        ;;
-    update)
-        check_environment
-        echo -e "${YELLOW}📥 Updating to latest images...${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files down
-        docker compose $compose_files pull
-        docker compose $compose_files up -d
-        echo -e "${GREEN}✅ OpenTranscribe updated!${NC}"
-        show_access_info
-        ;;
-    clean)
-        check_environment
-        echo -e "${RED}⚠️  WARNING: This will remove ALL data including transcriptions!${NC}"
-        read -p "Are you sure you want to continue? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            compose_files=$(get_compose_files)
-            docker compose $compose_files down -v
-            docker system prune -f
-            echo -e "${GREEN}✅ All data removed${NC}"
-        else
-            echo -e "${GREEN}✅ Operation cancelled${NC}"
-        fi
-        ;;
-    shell)
-        check_environment
-        service=${2:-backend}
-        echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
-        ;;
-    config)
-        check_environment
-        echo -e "${BLUE}⚙️  Current Configuration:${NC}"
-        echo "Environment file (.env):"
-        grep -E "^[A-Z]" .env | head -20
-        echo ""
-        echo "Docker Compose configuration:"
-        if docker compose config > /dev/null 2>&1; then
-            echo "  ✅ Valid"
-        else
-            echo "  ❌ Invalid"
-        fi
-        ;;
-    health)
-        check_environment
-        echo -e "${BLUE}🩺 Health Check:${NC}"
-        
-        # Check container status
-        echo "Container Status:"
-        compose_files=$(get_compose_files)
-        docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
-        
-        echo ""
-        echo "Service Health:"
-        
-        # Source .env to get port values
-        source .env 2>/dev/null || true
-        
-        # Backend health
-        if curl -s http://localhost:${BACKEND_PORT:-5174}/health > /dev/null 2>&1; then
-            echo "  ✅ Backend: Healthy"
-        else
-            echo "  ❌ Backend: Unhealthy"
-        fi
-        
-        # Frontend health  
-        if curl -s http://localhost:${FRONTEND_PORT:-5173} > /dev/null 2>&1; then
-            echo "  ✅ Frontend: Healthy"
-        else
-            echo "  ❌ Frontend: Unhealthy"
-        fi
-        
-        # Database health
-        if docker compose $compose_files exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
-            echo "  ✅ Database: Healthy"
-        else
-            echo "  ❌ Database: Unhealthy"
-        fi
-        ;;
-    help|--help|-h)
-        show_help
-        ;;
-    *)
-        echo -e "${RED}❌ Unknown command: $1${NC}"
-        show_help
-        exit 1
-        ;;
-esac
-EOF
-
-    chmod +x opentranscribe.sh
-    echo "✓ Created management script: opentranscribe.sh"
-}
 
 #######################
 # FINAL VALIDATION
@@ -1102,10 +894,10 @@ display_summary() {
     echo "  • Change password after first login!"
     echo ""
     echo -e "${GREEN}📚 Management Commands:${NC}"
-    echo "  • ./opentranscribe.sh help    # Show all commands"
-    echo "  • ./opentranscribe.sh status  # Check service status"
-    echo "  • ./opentranscribe.sh logs    # View logs"
-    echo "  • ./opentranscribe.sh health  # Check service health"
+    echo "  • ./opentranscribe.sh help   # Show all commands"
+    echo "  • ./opentranscribe.sh status # Check service status"
+    echo "  • ./opentranscribe.sh logs   # View logs"
+    echo "  • ./opentranscribe.sh health # Check service health"
 }
 
 #######################
@@ -1121,7 +913,6 @@ main() {
     setup_project_directory
     create_configuration_files
     configure_environment
-    create_management_script
     validate_setup
     display_summary
 }

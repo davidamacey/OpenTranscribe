@@ -19,6 +19,7 @@ from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.schemas.media import Task
 from app.services.task_detection_service import task_detection_service
+from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
 
 logger = logging.getLogger(__name__)
@@ -50,89 +51,144 @@ TASK_STATUS_COMPLETED = "completed"
 TASK_STATUS_FAILED = "failed"
 
 
+def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
+    """Get media files based on user permissions."""
+    if current_user.role == "admin":
+        return db.query(MediaFile).all()
+    else:
+        return db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
+
+
+def _map_file_status_to_task_status(file_status: FileStatus) -> str:
+    """Map media file status to task status."""
+    status_mapping = {
+        FileStatus.PENDING: "pending",
+        FileStatus.PROCESSING: "in_progress",
+        FileStatus.COMPLETED: "completed",
+        FileStatus.ERROR: "failed",
+    }
+    return status_mapping.get(file_status, "pending")
+
+
+def _extract_file_format(content_type: str, filename: str) -> str:
+    """Extract file format from content type or filename."""
+    if content_type and "/" in content_type:
+        return content_type.split("/")[1]
+    elif filename and "." in filename:
+        return filename.split(".")[-1]
+    return None
+
+
+def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> dict:
+    """Convert a media file to a task dictionary."""
+    task_status = _map_file_status_to_task_status(file.status)
+
+    # Handle completed_at time
+    completed_at = getattr(file, "completed_at", None)
+
+    # Extract file format
+    file_format = _extract_file_format(file.content_type, file.filename)
+
+    # Calculate progress
+    if file.status == FileStatus.COMPLETED:
+        progress = 1.0
+    elif file.status == FileStatus.PROCESSING:
+        progress = 0.5
+    else:
+        progress = 0.0
+
+    # Determine error message
+    error_message = "Transcription failed" if file.status == FileStatus.ERROR else None
+
+    return {
+        "id": f"task_{file.id}",
+        "user_id": current_user.id,
+        "task_type": "transcription",
+        "status": task_status,
+        "media_file_id": file.id,
+        "progress": progress,
+        "created_at": file.upload_time,
+        "updated_at": file.upload_time,
+        "completed_at": completed_at,
+        "error_message": error_message,
+        "media_file": {
+            "id": file.id,
+            "filename": file.filename,
+            "file_size": file.file_size,
+            "content_type": file.content_type,
+            "duration": file.duration,
+            "language": file.language,
+            "format": file_format,
+            "media_format": getattr(file, "media_format", None),
+            "codec": getattr(file, "codec", None),
+            "upload_time": file.upload_time,
+        },
+    }
+
+
 @router.get("/", response_model=list[Task])
 def list_tasks(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    status: str = None,  # Filter by task status
+    task_type: str = None,  # Filter by task type
+    age_filter: str = None,  # Filter by age: "today", "week", "month", "older"
+    date_from: str = None,  # Filter from date (YYYY-MM-DD)
+    date_to: str = None,  # Filter to date (YYYY-MM-DD)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
-    List all tasks for the current user
+    List all tasks for the current user with server-side filtering and computed fields
     """
     try:
-        # Query tasks from the database
-        # In a real implementation, we would have a Task model
-        # Here we're simulating tasks based on MediaFile statuses
+        # Get media files based on user permissions
+        media_files = _get_user_media_files(db, current_user)
 
-        # Admin users can see all files/tasks, regular users only see their own
-        if current_user.role == "admin":
-            media_files = db.query(MediaFile).all()
-        else:
-            media_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
+        # Convert media files to task dictionaries
+        tasks = [_create_task_dict_from_media_file(file, current_user) for file in media_files]
 
-        # Convert them to tasks
-        tasks = []
-        for file in media_files:
-            # Map file status to task status
-            task_status = "pending"
-            if file.status == FileStatus.PENDING:
-                task_status = "pending"
-            elif file.status == FileStatus.PROCESSING:
-                task_status = "in_progress"
-            elif file.status == FileStatus.COMPLETED:
-                task_status = "completed"
-            elif file.status == FileStatus.ERROR:
-                task_status = "failed"
+        # Apply server-side filtering
+        filtered_tasks = TaskFilteringService.filter_tasks_by_criteria(
+            tasks=tasks,
+            status=status,
+            task_type=task_type,
+            age_filter=age_filter,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
-            # Use the actual completed_at time stored in the database
-            completed_at = getattr(file, "completed_at", None)
-            if file.status == FileStatus.COMPLETED and not completed_at:
-                # Fall back to upload_time for older records without completed_at
-                completed_at = file.upload_time
+        # Convert to Task schema objects
+        return [Task(**task_dict) for task_dict in filtered_tasks]
 
-            # Extract file format from content_type or use extension
-            file_format = None
-            if file.content_type and "/" in file.content_type:
-                # Extract format from content_type (e.g., audio/mp3 -> mp3)
-                file_format = file.content_type.split("/")[1]
-            if not file_format and file.filename and "." in file.filename:
-                # Fall back to filename extension
-                file_format = file.filename.split(".")[-1]
-
-            # Create a task for each file based on its status
-            task = Task(
-                id=f"task_{file.id}",
-                user_id=current_user.id,
-                task_type="transcription",
-                status=task_status,
-                media_file_id=file.id,
-                progress=1.0
-                if file.status == FileStatus.COMPLETED
-                else 0.5
-                if file.status == FileStatus.PROCESSING
-                else 0.0,
-                created_at=file.upload_time,
-                updated_at=file.upload_time,
-                completed_at=completed_at,
-                error_message=None if file.status != FileStatus.ERROR else "Transcription failed",
-                media_file={
-                    "id": file.id,
-                    "filename": file.filename,
-                    "file_size": file.file_size,
-                    "content_type": file.content_type,
-                    "duration": file.duration,
-                    "language": file.language,
-                    "format": file_format,
-                    "media_format": getattr(file, "media_format", None),
-                    "codec": getattr(file, "codec", None),
-                    "upload_time": file.upload_time,
-                },
-            )
-            tasks.append(task)
-
-        return tasks
     except Exception as e:
         logger.error(f"Error in list_tasks: {e}")
-        # Return an empty list if there's an error
         return []
+
+
+def _parse_task_id(task_id: str) -> int:
+    """Parse task ID to extract media file ID."""
+    if not task_id.startswith("task_"):
+        raise ValueError("Invalid task ID format")
+    try:
+        return int(task_id.split("_")[1])
+    except (ValueError, IndexError) as e:
+        raise ValueError("Invalid task ID format") from e
+
+
+def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> MediaFile:
+    """Get media file by ID with proper permission checking."""
+    if current_user.role == "admin":
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    else:
+        media_file = (
+            db.query(MediaFile)
+            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+            .first()
+        )
+
+    if not media_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    return media_file
 
 
 @router.get("/{task_id}", response_model=Task)
@@ -145,88 +201,24 @@ def get_task(
     Get a specific task by its ID
     """
     try:
-        # Extract the media file ID from the task ID
+        # Parse task ID and get file ID
         try:
-            # Parse task_id format "task_{file_id}"
-            if not task_id.startswith("task_"):
-                raise ValueError("Invalid task ID format")
-            file_id = int(task_id.split("_")[1])
-        except (ValueError, IndexError) as e:
+            file_id = _parse_task_id(task_id)
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
             ) from e
 
-        # Admin users can access any file/task, regular users only their own
-        if current_user.role == "admin":
-            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        else:
-            media_file = (
-                db.query(MediaFile)
-                .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-                .first()
-            )
+        # Get media file with permission checking
+        media_file = _get_media_file_by_id(db, file_id, current_user)
 
-        if not media_file:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        # Create task dictionary and convert to Task object
+        task_dict = _create_task_dict_from_media_file(media_file, current_user)
+        task_dict["id"] = task_id  # Ensure we use the original task_id
 
-        # Map file status to task status
-        task_status = TASK_STATUS_PENDING
-        if media_file.status == FileStatus.PENDING:
-            task_status = TASK_STATUS_PENDING
-        elif media_file.status == FileStatus.PROCESSING:
-            task_status = TASK_STATUS_IN_PROGRESS
-        elif media_file.status == FileStatus.COMPLETED:
-            task_status = TASK_STATUS_COMPLETED
-        elif media_file.status == FileStatus.ERROR:
-            task_status = TASK_STATUS_FAILED
+        return Task(**task_dict)
 
-        # Use the actual completed_at time stored in the database
-        completed_at = getattr(media_file, "completed_at", None)
-        if media_file.status == FileStatus.COMPLETED and not completed_at:
-            # Fall back to upload_time for older records without completed_at
-            completed_at = media_file.upload_time
-
-        # Extract file format from content_type or use extension
-        file_format = None
-        if media_file.content_type and "/" in media_file.content_type:
-            # Extract format from content_type (e.g., audio/mp3 -> mp3)
-            file_format = media_file.content_type.split("/")[1]
-        if not file_format and media_file.filename and "." in media_file.filename:
-            # Fall back to filename extension
-            file_format = media_file.filename.split(".")[-1]
-
-        # Convert to task
-        task = Task(
-            id=task_id,
-            user_id=current_user.id,
-            media_file_id=media_file.id,
-            task_type="transcription",
-            status=task_status,
-            progress=1.0
-            if media_file.status == FileStatus.COMPLETED
-            else 0.5
-            if media_file.status == FileStatus.PROCESSING
-            else 0.0,
-            created_at=media_file.upload_time,
-            updated_at=media_file.upload_time,
-            completed_at=completed_at,
-            error_message=None if media_file.status != FileStatus.ERROR else "Transcription failed",
-            media_file={
-                "id": media_file.id,
-                "filename": media_file.filename,
-                "file_size": media_file.file_size,
-                "content_type": media_file.content_type,
-                "duration": media_file.duration,
-                "language": media_file.language,
-                "format": file_format,
-                "media_format": getattr(media_file, "media_format", None),
-                "codec": getattr(media_file, "codec", None),
-            },
-        )
-
-        return task
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
         logger.error(f"Error in get_task: {e}")
@@ -364,7 +356,8 @@ async def recover_all_stuck_tasks(
 
                             result = transcribe_audio_task.delay(file_id)
                             logger.info(
-                                f"Retrying transcription for file {file_id}, new task ID: {result.id}"
+                                f"Retrying transcription for file {file_id}, "
+                                f"new task ID: {result.id}"
                             )
                         except Exception as e:
                             logger.error(f"Error retrying transcription: {e}")
@@ -417,7 +410,8 @@ async def recover_task(
 
                     result = transcribe_audio_task.delay(task.media_file_id)
                     logger.info(
-                        f"Retrying transcription for file {task.media_file_id}, new task ID: {result.id}"
+                        f"Retrying transcription for file {task.media_file_id}, "
+                        f"new task ID: {result.id}"
                     )
                 except Exception as e:
                     logger.error(f"Error retrying transcription: {e}")

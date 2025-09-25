@@ -66,6 +66,7 @@
       role="dialog"
       aria-labelledby="about-modal-title"
       aria-modal="true"
+      tabindex="-1"
       transition:scale={{ duration: 350, start: 0.9 }}
       on:click|stopPropagation
       on:keydown|stopPropagation

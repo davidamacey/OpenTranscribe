@@ -22,9 +22,7 @@ class User(Base):
     is_superuser = Column(Boolean, default=False, nullable=False)
     role = Column(String, default="user", nullable=False)  # "user" or "admin"
     created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(
-        DateTime, default=func.now(), onupdate=func.now(), nullable=False
-    )
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     media_files = relationship("MediaFile", back_populates="user")

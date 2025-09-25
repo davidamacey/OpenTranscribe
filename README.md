@@ -23,7 +23,12 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Automatic Speaker Diarization**: Identify different speakers using PyAnnote.audio
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
-- **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scores and verification workflow
+- **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
+- **LLM-Enhanced Speaker Recognition**: Content-based speaker identification using conversational context analysis
+- **Profile Embedding Service**: Advanced voice similarity matching using vector embeddings for cross-video speaker linking
+- **Smart Speaker Status Tracking**: Comprehensive speaker verification status with computed fields for UI optimization
+- **Auto-Profile Creation**: Automatic speaker profile creation and assignment when speakers are labeled
+- **Retroactive Speaker Matching**: Cross-video speaker matching with automatic label propagation for high-confidence matches
 - **Custom Speaker Labels**: Edit and manage speaker names and information with intelligent suggestions
 - **Speaker Analytics**: View speaking time distribution, cross-media appearances, and interaction patterns
 
@@ -48,9 +53,11 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Collections System**: Group related media files into organized collections for better project management
 
 ### 📊 **Analytics & Insights**
-- **Content Analysis**: Word count, speaking time, and conversation flow
-- **Speaker Statistics**: Individual speaker metrics and participation
-- **Sentiment Analysis**: Understand tone and emotional content
+- **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
+- **Speaker Performance Metrics**: Speaking pace (WPM), question frequency, and conversation flow analysis
+- **Meeting Efficiency Analytics**: Silence ratio analysis and participation balance tracking
+- **Real-Time Analytics Computation**: Server-side analytics computation with automatic refresh capabilities
+- **Cross-Video Speaker Analytics**: Track speaker patterns and participation across multiple recordings
 - **AI-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with meeting insights
 - **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
 - **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
@@ -97,6 +104,10 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
 - **Floating Upload Manager**: Draggable upload interface with real-time progress
 - **Smart Modal System**: Consistent modal design with improved accessibility
+- **Enhanced Data Formatting**: Server-side formatting service for consistent display of dates, durations, and file sizes
+- **Error Categorization**: Intelligent error classification with user-friendly suggestions and retry guidance
+- **Smart Status Management**: Comprehensive file and task status tracking with formatted display text
+- **Auto-Refresh Systems**: Background data updates without manual page refreshing
 - **Theme Support**: Seamless dark/light mode switching
 - **Keyboard Shortcuts**: Efficient navigation and control via hotkeys
 
@@ -205,8 +216,8 @@ Access the web interface at http://localhost:5173
 
 4. **Access the Application**
    - 🌐 **Web Interface**: http://localhost:5173
-   - 📚 **API Documentation**: http://localhost:8080/docs
-   - 🌺 **Task Monitor**: http://localhost:5555/flower
+   - 📚 **API Documentation**: http://localhost:5174/docs
+   - 🌺 **Task Monitor**: http://localhost:5175/flower
    - 🔍 **Search Engine**: http://localhost:9200
    - 📁 **File Storage**: http://localhost:9091
 
@@ -623,9 +634,9 @@ For production use, ensure you:
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
        }
-       
+
        location /api {
-           proxy_pass http://localhost:8080;
+           proxy_pass http://localhost:5174;
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
        }
@@ -810,8 +821,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Useful Links
 
 - 📚 **Documentation**: [Complete documentation index](BACKEND_DOCUMENTATION.md)
-- 🛠️ **API Reference**: http://localhost:8080/docs (when running)
-- 🌺 **Task Monitor**: http://localhost:5555/flower (when running)
+- 🛠️ **API Reference**: http://localhost:5174/docs (when running)
+- 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
 - 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)
 - 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/OpenTranscribe/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/OpenTranscribe/discussions)

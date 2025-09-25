@@ -15,6 +15,77 @@ except ImportError:
     logging.warning("exiftool not found. Video metadata extraction will be limited.")
 
 
+def _parse_media_date(date_str: str) -> Optional[datetime.datetime]:
+    """
+    Parse various date formats commonly found in media file metadata.
+
+    Args:
+        date_str: Date string from metadata
+
+    Returns:
+        Parsed datetime object or None if parsing fails
+    """
+    if not date_str or not isinstance(date_str, str):
+        return None
+
+    # Reject obviously invalid dates (common in downloaded/processed videos)
+    invalid_patterns = [
+        "0000:00:00 00:00:00",
+        "0000-00-00 00:00:00",
+        "1970:01:01 00:00:00",
+        "1970-01-01T00:00:00",
+        "0000:00:00",
+        "0000-00-00",
+        "1970:01:01",
+        "1970-01-01",
+    ]
+
+    if date_str.strip() in invalid_patterns:
+        return None
+
+    # Common patterns in media metadata
+    date_patterns = [
+        # ISO format: 2023:12:25 14:30:45
+        "%Y:%m:%d %H:%M:%S",
+        # ISO format with timezone: 2023:12:25 14:30:45+00:00
+        "%Y:%m:%d %H:%M:%S%z",
+        # Standard ISO: 2023-12-25T14:30:45
+        "%Y-%m-%dT%H:%M:%S",
+        # ISO with timezone: 2023-12-25T14:30:45Z
+        "%Y-%m-%dT%H:%M:%SZ",
+        # ISO with timezone: 2023-12-25T14:30:45+00:00
+        "%Y-%m-%dT%H:%M:%S%z",
+        # Date only: 2023:12:25
+        "%Y:%m:%d",
+        # Date only: 2023-12-25
+        "%Y-%m-%d",
+        # Year only (for MP3, etc.): 2023
+        "%Y",
+    ]
+
+    for pattern in date_patterns:
+        try:
+            parsed_date = datetime.datetime.strptime(date_str.strip(), pattern)
+            # Add timezone if missing
+            if parsed_date.tzinfo is None:
+                parsed_date = parsed_date.replace(tzinfo=datetime.timezone.utc)
+            return parsed_date
+        except ValueError:
+            continue
+
+    # Fallback: try the original logic for QuickTime format
+    try:
+        if ":" in date_str and len(date_str) >= 10:
+            create_date_str = date_str
+            if len(create_date_str) <= 19:  # No timezone
+                create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
+            return datetime.datetime.fromisoformat(create_date_str)
+    except (ValueError, TypeError):
+        pass
+
+    raise ValueError(f"Unable to parse date format: {date_str}")
+
+
 def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     """
     Extract important metadata fields from the full metadata.
@@ -58,9 +129,28 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         "AudioSampleRate": ["QuickTime:AudioSampleRate", "AudioSampleRate"],
         "AudioBitsPerSample": ["QuickTime:AudioBitsPerSample", "AudioBitsPerSample"],
         # Creation info
-        "CreateDate": ["QuickTime:CreateDate", "CreateDate", "DateTimeOriginal"],
-        "ModifyDate": ["QuickTime:ModifyDate", "ModifyDate"],
-        "DateTimeOriginal": ["EXIF:DateTimeOriginal", "DateTimeOriginal"],
+        "CreateDate": [
+            "QuickTime:CreateDate",
+            "CreateDate",
+            "DateTimeOriginal",
+            "File:FileCreateDate",
+            "File:FileModifyDate",
+            "XMP:CreateDate",
+            "XMP:DateCreated",
+            "XMP:DateTimeOriginal",
+            "MP4:CreateDate",
+            "MP4:CreationDate",
+            "Matroska:DateUTC",
+            "WebM:DateUTC",
+            "AVI:DateTimeOriginal",
+            "WMV:DateEncoded",
+            "WAV:DateCreated",
+            "MP3:Year",
+            "FLAC:Date",
+            "OGG:Date",
+        ],
+        "ModifyDate": ["QuickTime:ModifyDate", "ModifyDate", "File:FileModifyDate"],
+        "DateTimeOriginal": ["EXIF:DateTimeOriginal", "DateTimeOriginal", "XMP:DateTimeOriginal"],
         # Device info
         "DeviceManufacturer": [
             "QuickTime:Make",
@@ -206,28 +296,50 @@ def update_media_file_metadata(
         except (ValueError, TypeError):
             logger.warning(f"Could not parse duration: {important_metadata.get('Duration')}")
 
-    # Creation and modification dates
-    if important_metadata.get("CreateDate"):
+    # Creation and modification dates with fallback options
+    creation_date_fields = ["CreateDate", "DateTimeOriginal", "ModifyDate"]
+    for field_name in creation_date_fields:
+        if important_metadata.get(field_name) and media_file.creation_date is None:
+            try:
+                parsed_date = _parse_media_date(important_metadata.get(field_name))
+                if parsed_date:
+                    media_file.creation_date = parsed_date
+                    logger.info(
+                        f"Successfully parsed creation date from {field_name}: {parsed_date}"
+                    )
+                    break
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    f"Could not parse {field_name}: {important_metadata.get(field_name)} - {e}"
+                )
+                continue
+
+    # Fallback chain for missing creation dates
+    if media_file.creation_date is None:
+        # First fallback: file system modification time
         try:
-            create_date_str = important_metadata.get("CreateDate")
-            if ":" in create_date_str and len(create_date_str) >= 10:
-                if len(create_date_str) <= 19:  # No timezone
-                    create_date_str = create_date_str.replace(":", "-", 2) + "+00:00"
-                media_file.creation_date = datetime.datetime.fromisoformat(create_date_str)
-        except (ValueError, TypeError):
-            logger.warning(f"Could not parse creation date: {important_metadata.get('CreateDate')}")
+            if os.path.exists(file_path):
+                file_mtime = os.path.getmtime(file_path)
+                media_file.creation_date = datetime.datetime.fromtimestamp(
+                    file_mtime, tz=datetime.timezone.utc
+                )
+                logger.info(
+                    f"Using file system modification time as creation_date: {media_file.creation_date}"
+                )
+        except Exception as e:
+            logger.warning(f"Could not get file system modification time: {e}")
+
+    # Final fallback: use upload_time for all files
+    if media_file.creation_date is None and media_file.upload_time:
+        media_file.creation_date = media_file.upload_time
+        logger.info(f"Using upload_time as creation_date fallback: {media_file.creation_date}")
 
     if important_metadata.get("ModifyDate"):
         try:
-            modify_date_str = important_metadata.get("ModifyDate")
-            if ":" in modify_date_str and len(modify_date_str) >= 10:
-                modify_date_str = modify_date_str.replace(":", "-", 2)
-                if len(modify_date_str) <= 19:  # No timezone
-                    modify_date_str += "+00:00"
-                media_file.last_modified_date = datetime.datetime.fromisoformat(modify_date_str)
-        except (ValueError, TypeError):
+            media_file.last_modified_date = _parse_media_date(important_metadata.get("ModifyDate"))
+        except (ValueError, TypeError) as e:
             logger.warning(
-                f"Could not parse modification date: {important_metadata.get('ModifyDate')}"
+                f"Could not parse modification date: {important_metadata.get('ModifyDate')} - {e}"
             )
 
     # Device information

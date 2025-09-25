@@ -35,7 +35,6 @@
         }
       });
       
-      console.log(`Testing endpoint: ${requestUrl}`);
       const result = await instance.get(requestUrl);
       response = {
         status: result.status,
@@ -43,7 +42,7 @@
         headers: result.headers
       };
     } catch (error: unknown) {
-      console.error('API Test Error:', error);
+      // API test failed, capture error details for display
       if (error instanceof Error) {
         const axiosError = error as any; // Temporary type assertion for axios error structure
         error = {

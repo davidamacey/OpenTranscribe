@@ -71,3 +71,17 @@ TASK_STATUS_PROCESSING = "processing"
 TASK_STATUS_COMPLETED = "completed"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_ERROR = "error"
+
+# Embedding dimensions
+SENTENCE_TRANSFORMER_DIMENSION = 384  # sentence-transformers/all-MiniLM-L6-v2
+PYANNOTE_EMBEDDING_DIMENSION = 512  # PyAnnote embedding dimension
+
+# Token estimation constants for LLM services
+CHARS_PER_TOKEN_ESTIMATE = 4.0  # Average characters per token
+SUBWORD_TOKENIZATION_FACTOR = 1.3  # Factor for subword tokenization
+TOKEN_ESTIMATION_BUFFER = 1.1  # 10% buffer for safety
+
+# Stream processing constants
+DEFAULT_CHUNK_SIZE = 16384  # 16KB default chunk size
+VIDEO_CHUNK_SIZE = 65536  # 64KB for video streaming
+AUDIO_CHUNK_SIZE = 8192  # 8KB for audio streaming

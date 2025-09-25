@@ -46,12 +46,17 @@
     fetchFileStatus();
     setupWebSocketUpdates();
     startAutoRefresh();
-    
+
     // Load tasks if section should be shown
     if (showTasksSection && tasks.length === 0) {
       fetchTasks();
     }
   });
+
+  // Refetch tasks when filters change
+  $: if (showTasksSection && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
+    fetchTasks(true); // Silent reload when filters change
+  }
   
   async function fetchFileStatus(silent = false) {
     if (!silent) {
@@ -79,11 +84,33 @@
       tasksLoading = true;
     }
     tasksError = null;
-    
+
     try {
-      const response = await axiosInstance.get('/tasks/');
+      // Build query parameters for backend filtering
+      const params = new URLSearchParams();
+      if (taskFilter !== 'all') {
+        params.append('status', taskFilter);
+      }
+      if (taskTypeFilter !== 'all') {
+        params.append('task_type', taskTypeFilter);
+      }
+      if (taskAgeFilter !== 'all') {
+        params.append('age_filter', taskAgeFilter);
+      }
+      if (taskDateFrom) {
+        params.append('date_from', taskDateFrom);
+      }
+      if (taskDateTo) {
+        params.append('date_to', taskDateTo);
+      }
+
+      const queryString = params.toString();
+      const url = queryString ? `/tasks/?${queryString}` : '/tasks/';
+
+      const response = await axiosInstance.get(url);
+      // Tasks are already filtered and include computed fields from backend
       tasks = response.data;
-      filterTasks();
+      filteredTasks = tasks; // No frontend filtering needed
     } catch (err) {
       console.error('Error fetching tasks:', err);
       if (!silent) {
@@ -94,60 +121,6 @@
         tasksLoading = false;
       }
     }
-  }
-  
-  function filterTasks() {
-    filteredTasks = tasks.filter(task => {
-      // Filter by status
-      if (taskFilter !== 'all' && task.status !== taskFilter) {
-        return false;
-      }
-      
-      // Filter by task type
-      if (taskTypeFilter !== 'all' && task.task_type !== taskTypeFilter) {
-        return false;
-      }
-      
-      // Filter by age
-      if (taskAgeFilter !== 'all') {
-        const taskDate = new Date(task.created_at);
-        const now = new Date();
-        const diffInHours = (now.getTime() - taskDate.getTime()) / (1000 * 60 * 60);
-        
-        switch (taskAgeFilter) {
-          case 'today':
-            if (diffInHours > 24) return false;
-            break;
-          case 'week':
-            if (diffInHours > 24 * 7) return false;
-            break;
-          case 'month':
-            if (diffInHours > 24 * 30) return false;
-            break;
-          case 'older':
-            if (diffInHours <= 24 * 30) return false;
-            break;
-        }
-      }
-      
-      // Filter by custom date range
-      if (taskDateFrom || taskDateTo) {
-        const taskDate = new Date(task.created_at);
-        
-        if (taskDateFrom) {
-          const fromDate = new Date(taskDateFrom);
-          if (taskDate < fromDate) return false;
-        }
-        
-        if (taskDateTo) {
-          const toDate = new Date(taskDateTo);
-          toDate.setHours(23, 59, 59, 999); // Include the entire end date
-          if (taskDate > toDate) return false;
-        }
-      }
-      
-      return true;
-    });
   }
   
   function toggleTasksSection() {
@@ -260,15 +233,7 @@
     }
   }
   
-  function formatFileAge(hours) {
-    if (hours < 1) {
-      return `${Math.round(hours * 60)} minutes ago`;
-    } else if (hours < 24) {
-      return `${Math.round(hours)} hours ago`;
-    } else {
-      return `${Math.round(hours / 24)} days ago`;
-    }
-  }
+  // Note: formatFileAge is now handled by the backend - use formatted_file_age field
   
   function formatDate(dateString) {
     if (!dateString) return 'N/A';
@@ -283,48 +248,13 @@
     }).format(date);
   }
   
-  function formatDuration(seconds) {
-    if (!seconds && seconds !== 0) return "Unknown";
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    
-    let result = "";
-    if (hours > 0) {
-      result += `${hours.toString().padStart(2, "0")}:`;
-    }
-    result += `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-    return result;
-  }
+  // Note: formatDuration is now handled by the backend - use formatted_duration field
   
-  function formatFileSize(bytes) {
-    const sizeInBytes = typeof bytes === 'string' ? Number(bytes) : bytes;
-    
-    if (!sizeInBytes || isNaN(sizeInBytes)) return 'Unknown';
-    
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (sizeInBytes === 0) return '0 Bytes';
-    
-    const i = Math.floor(Math.log(sizeInBytes) / Math.log(1024));
-    return parseFloat((sizeInBytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
-  }
+  // Note: formatFileSize is now handled by the backend - use formatted_file_size field
   
-  function getStatusBadgeClass(status) {
-    switch (status) {
-      case 'completed': return 'status-completed';
-      case 'processing': return 'status-processing';
-      case 'pending': return 'status-pending';
-      case 'error': return 'status-error';
-      default: return 'status-unknown';
-    }
-  }
+  // Note: getStatusBadgeClass is now handled by the backend - use status_badge_class field
   
-  // Reactive statements for filtering
-  $: {
-    if (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo) {
-      filterTasks();
-    }
-  }
+  // Filtering is now handled by the backend
   
   // Setup WebSocket updates for real-time file status changes
   function setupWebSocketUpdates() {
@@ -461,10 +391,10 @@
                 <div class="file-info">
                   <div class="filename">{file.filename}</div>
                   <div class="file-meta">
-                    <span class="status-badge {getStatusBadgeClass(file.status)}">
-                      {file.status}
+                    <span class="status-badge {file.status_badge_class || 'status-unknown'}">
+                      {file.display_status || file.status}
                     </span>
-                    <span class="file-age">{formatFileAge(file.age_hours)}</span>
+                    <span class="file-age">{file.formatted_file_age || 'Unknown'}</span>
                   </div>
                 </div>
                 
@@ -517,10 +447,10 @@
                 <div class="filename">{file.filename}</div>
                 <div class="file-status-row">
                   <div class="status-info">
-                    <span class="status-badge {getStatusBadgeClass(file.status)}">
-                      {file.status}
+                    <span class="status-badge {file.status_badge_class || 'status-unknown'}">
+                      {file.display_status || file.status}
                     </span>
-                    <span class="file-age">{formatFileAge(file.age_hours)}</span>
+                    <span class="file-age">{file.formatted_file_age || 'Unknown'}</span>
                   </div>
                   <button 
                     class="info-button small"
@@ -640,7 +570,7 @@
                     Summarization
                   {/if}
                 </div>
-                <div class="task-status {getStatusBadgeClass(task.status)}">
+                <div class="task-status {task.status_badge_class || 'status-unknown'}">
                   {#if task.status === 'pending'}
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <line x1="12" y1="2" x2="12" y2="6"></line>
@@ -735,17 +665,17 @@
               </div>
               <div class="metadata-item">
                 <span class="metadata-label">Status:</span>
-                <span class="status-badge {getStatusBadgeClass(detailedStatus.file.status)}">
-                  {detailedStatus.file.status}
+                <span class="status-badge {detailedStatus.file.status_badge_class || 'status-unknown'}">
+                  {detailedStatus.file.display_status || detailedStatus.file.status}
                 </span>
               </div>
               <div class="metadata-item">
                 <span class="metadata-label">File Size:</span>
-                <span class="metadata-value">{detailedStatus.file.file_size ? formatFileSize(detailedStatus.file.file_size) : 'Unknown'}</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_file_size || 'Unknown'}</span>
               </div>
               <div class="metadata-item">
                 <span class="metadata-label">Duration:</span>
-                <span class="metadata-value">{detailedStatus.file.duration ? formatDuration(detailedStatus.file.duration) : 'Unknown'}</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_duration || 'Unknown'}</span>
               </div>
               <div class="metadata-item">
                 <span class="metadata-label">Language:</span>
@@ -763,7 +693,7 @@
               {/if}
               <div class="metadata-item">
                 <span class="metadata-label">File Age:</span>
-                <span class="metadata-value">{formatFileAge(detailedStatus.file_age_hours)}</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_file_age || 'Unknown'}</span>
               </div>
             </div>
             
@@ -799,7 +729,7 @@
                   <div class="task-metadata-card">
                     <div class="task-card-header">
                       <span class="task-type-label">{task.task_type}</span>
-                      <span class="status-badge {getStatusBadgeClass(task.status)}">{task.status}</span>
+                      <span class="status-badge {task.status_badge_class || 'status-unknown'}">{task.status}</span>
                     </div>
                     <div class="task-metadata-items">
                       <div class="metadata-item">
@@ -819,7 +749,7 @@
                         </div>
                         <div class="metadata-item">
                           <span class="metadata-label">Processing Time:</span>
-                          <span class="metadata-value">{formatDuration(Math.floor((new Date(task.completed_at).getTime() - new Date(task.created_at).getTime()) / 1000))}</span>
+                          <span class="metadata-value">{task.formatted_processing_time || 'Unknown'}</span>
                         </div>
                       {/if}
                       {#if task.progress !== undefined && task.status === 'in_progress'}
@@ -1134,6 +1064,11 @@
   .status-error {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
+  }
+
+  .status-unknown {
+    background: rgba(156, 163, 175, 0.1);
+    color: #6b7280;
   }
   
   :global(.dark) .status-completed {

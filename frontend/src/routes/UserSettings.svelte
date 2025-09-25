@@ -36,7 +36,6 @@
   let autoStopEnabled = true;
   let recordingSettingsChanged = false;
   let recordingSettingsLoading = false; // Loading state for API operations
-  let migrationCompleted = false; // Track localStorage migration
   
   // Tab management
   let activeTab = 'profile';
@@ -162,37 +161,12 @@
     showConfirmPassword = !showConfirmPassword;
   }
 
-  // Load recording settings from database (with localStorage migration)
+  // Load recording settings from database
   async function loadRecordingSettings() {
     recordingSettingsLoading = true;
     error = '';
     
     try {
-      // Check if we need to migrate from localStorage
-      const localStorageSettings = RecordingSettingsHelper.migrateFromLocalStorage();
-      
-      if (localStorageSettings && !migrationCompleted) {
-        
-        try {
-          // Save migrated settings to database
-          const savedSettings = await UserSettingsApi.updateRecordingSettings(localStorageSettings);
-          
-          // Update local state
-          maxRecordingDuration = savedSettings.max_recording_duration;
-          recordingQuality = savedSettings.recording_quality;
-          autoStopEnabled = savedSettings.auto_stop_enabled;
-          
-          // Clean up localStorage after successful migration
-          RecordingSettingsHelper.cleanupLocalStorage();
-          migrationCompleted = true;
-          
-          return;
-        } catch (migrationError) {
-          console.error('Failed to migrate settings to database, will load from server:', migrationError);
-          // Continue to load from server below
-        }
-      }
-      
       // Load from database
       const settings = await UserSettingsApi.getRecordingSettings();
       maxRecordingDuration = settings.max_recording_duration;

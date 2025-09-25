@@ -57,7 +57,8 @@ class SpeakerMatchingService:
         self, embedding: np.ndarray, user_id: int
     ) -> Optional[dict[str, Any]]:
         """
-        Match a speaker embedding to known speakers with display names.
+        Match a speaker embedding to known speakers, prioritizing profile embeddings
+        for better cross-file recognition accuracy.
 
         Args:
             embedding: Speaker embedding vector
@@ -66,7 +67,13 @@ class SpeakerMatchingService:
         Returns:
             Dictionary with speaker info and confidence, or None
         """
-        # Search for matching speaker in OpenSearch
+        # First, try to match against profile embeddings for better accuracy
+        profile_match = self.match_speaker_to_profiles(embedding, user_id)
+
+        if profile_match and profile_match["confidence"] >= ConfidenceLevel.MEDIUM:
+            return profile_match
+
+        # Fallback to individual speaker matching in OpenSearch
         match = find_matching_speaker(
             embedding.tolist(),
             user_id,
@@ -99,7 +106,67 @@ class SpeakerMatchingService:
             "confidence": confidence,
             "confidence_level": self.get_confidence_level(confidence),
             "auto_accept": confidence >= ConfidenceLevel.HIGH,
+            "source": "individual_embedding",
         }
+
+    def match_speaker_to_profiles(
+        self, embedding: np.ndarray, user_id: int
+    ) -> Optional[dict[str, Any]]:
+        """
+        Match a speaker embedding against consolidated profile embeddings.
+        This provides better accuracy than individual speaker matching.
+
+        Args:
+            embedding: Speaker embedding vector
+            user_id: User ID
+
+        Returns:
+            Dictionary with profile match info and confidence, or None
+        """
+        try:
+            from app.services.profile_embedding_service import ProfileEmbeddingService
+
+            # Get profile matches using the ProfileEmbeddingService
+            profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
+                self.db, embedding.tolist(), user_id, threshold=ConfidenceLevel.LOW
+            )
+
+            if not profile_matches:
+                return None
+
+            # Return the best match
+            best_match = profile_matches[0]
+            confidence = best_match["similarity"]
+
+            # Get a representative speaker from this profile for the response
+            profile_speaker = (
+                self.db.query(Speaker)
+                .filter(
+                    Speaker.profile_id == best_match["profile_id"],
+                    Speaker.user_id == user_id,
+                    Speaker.verified,
+                    Speaker.display_name.isnot(None),
+                )
+                .first()
+            )
+
+            if not profile_speaker:
+                return None
+
+            return {
+                "speaker_id": profile_speaker.id,
+                "suggested_name": best_match["profile_name"],
+                "confidence": confidence,
+                "confidence_level": self.get_confidence_level(confidence),
+                "auto_accept": confidence >= ConfidenceLevel.HIGH,
+                "profile_id": best_match["profile_id"],
+                "source": "profile_embedding",
+                "embedding_count": best_match["embedding_count"],
+            }
+
+        except Exception as e:
+            logger.error(f"Error matching speaker to profiles: {e}")
+            return None
 
     def find_unlabeled_speaker_matches(
         self, embedding: np.ndarray, user_id: int, exclude_speaker_id: int
@@ -135,9 +202,10 @@ class SpeakerMatchingService:
                                         {"term": {"user_id": user_id}},
                                         {
                                             "bool": {
-                                                "must_not": {
-                                                    "term": {"speaker_id": exclude_speaker_id}
-                                                }
+                                                "must_not": [
+                                                    {"term": {"speaker_id": exclude_speaker_id}},
+                                                    {"exists": {"field": "document_type"}}  # Exclude profile documents
+                                                ]
                                             }
                                         },
                                     ]
@@ -159,8 +227,12 @@ class SpeakerMatchingService:
                 confidence = hit["_score"]
                 if (
                     confidence >= ConfidenceLevel.HIGH
-                ):  # 0.75 threshold for high-confidence matches only
-                    match_speaker_id = hit["_source"]["speaker_id"]
+                ):  # ConfidenceLevel.HIGH threshold for high-confidence matches only
+                    # Safely access speaker_id - skip if not present (e.g., profile documents)
+                    source = hit.get("_source", {})
+                    match_speaker_id = source.get("speaker_id")
+                    if not match_speaker_id:
+                        continue
 
                     # Get the matched speaker details
                     matched_speaker = (
@@ -330,116 +402,202 @@ class SpeakerMatchingService:
         results = []
 
         for speaker_id, embeddings in speaker_embeddings.items():
-            if not embeddings:
-                logger.warning(f"No valid embeddings for speaker {speaker_id}")
-                continue
-
-            # Aggregate embeddings for this speaker
-            try:
-                aggregated_embedding = self.embedding_service.aggregate_embeddings(embeddings)
-            except Exception as e:
-                logger.error(f"Error aggregating embeddings for speaker {speaker_id}: {e}")
-                continue
-
-            speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
-            if not speaker:
-                continue
-
-            # Try to match to known speakers with display names
-            match = self.match_speaker_to_known_speakers(aggregated_embedding, user_id)
-
-            if match:
-                # Found a matching speaker - store the suggestion only if high confidence
-                speaker.confidence = match["confidence"]
-                if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
-                    speaker.suggested_name = match["suggested_name"]
-
-                # If high confidence, auto-apply the suggestion
-                if match["auto_accept"]:
-                    speaker.display_name = match["suggested_name"]
-                    speaker.verified = True
-
-                self.db.flush()
-
-                # Store/update embedding with suggested name for future matching
-                if aggregated_embedding is not None and aggregated_embedding.size > 0:
-                    add_speaker_embedding(
-                        speaker_id=speaker_id,
-                        user_id=user_id,
-                        name=speaker.name,
-                        embedding=aggregated_embedding.tolist(),
-                        display_name=speaker.display_name
-                        if speaker.display_name
-                        else match["suggested_name"],
-                        media_file_id=media_file_id,
-                    )
-
-                    # Find and store matches with other speakers
-                    self.find_and_store_speaker_matches(
-                        speaker_id, aggregated_embedding, user_id, threshold=0.5
-                    )
-
-                results.append(
-                    {
-                        "speaker_id": speaker_id,
-                        "speaker_label": speaker.name,
-                        "suggested_name": match["suggested_name"],
-                        "confidence": match["confidence"],
-                        "status": "matched",
-                    }
-                )
-            else:
-                # No match found, store embedding for future matching
-                if aggregated_embedding is not None and aggregated_embedding.size > 0:
-                    embedding_list = aggregated_embedding.tolist()
-                    logger.info(
-                        f"Storing embedding for speaker {speaker_id}: length={len(embedding_list)}, first_few={embedding_list[:3]}"
-                    )
-                    add_speaker_embedding(
-                        speaker_id=speaker_id,
-                        user_id=user_id,
-                        name=speaker.name,
-                        embedding=embedding_list,
-                        display_name=speaker.display_name if speaker.display_name else None,
-                        media_file_id=media_file_id,
-                    )
-
-                    # Find and store matches with other speakers
-                    found_matches = self.find_and_store_speaker_matches(
-                        speaker_id, aggregated_embedding, user_id, threshold=0.5
-                    )
-
-                    if found_matches:
-                        logger.info(f"Found {len(found_matches)} matches for speaker {speaker_id}")
-                        # If there are high-confidence matches from verified speakers, suggest them
-                        for match in found_matches:
-                            if match["confidence"] >= 0.75 and match["display_name"]:
-                                speaker.suggested_name = match["display_name"]
-                                speaker.confidence = match["confidence"]
-                                self.db.flush()
-                                break
-
-                    results.append(
-                        {
-                            "speaker_id": speaker_id,
-                            "speaker_label": speaker.name,
-                            "profile_match": None,
-                            "status": "new",
-                        }
-                    )
-                else:
-                    logger.warning(f"Invalid embedding for speaker {speaker_id}, skipping storage")
-                    results.append(
-                        {
-                            "speaker_id": speaker_id,
-                            "speaker_label": speaker.name,
-                            "profile_match": None,
-                            "status": "failed",
-                        }
-                    )
+            result = self._process_single_speaker(speaker_id, embeddings, user_id, media_file_id)
+            if result:
+                results.append(result)
 
         self.db.commit()
         return results
+
+    def _process_single_speaker(
+        self, speaker_id: int, embeddings: list[np.ndarray], user_id: int, media_file_id: int
+    ) -> Optional[dict[str, Any]]:
+        """
+        Process a single speaker's embeddings and find matches.
+
+        Args:
+            speaker_id: Speaker ID
+            embeddings: List of embeddings for this speaker
+            user_id: User ID
+            media_file_id: Media file ID
+
+        Returns:
+            Speaker processing result or None if failed
+        """
+
+        if not embeddings:
+            logger.warning(f"No valid embeddings for speaker {speaker_id}")
+            return None
+
+        # Aggregate embeddings for this speaker
+        try:
+            aggregated_embedding = self.embedding_service.aggregate_embeddings(embeddings)
+        except Exception as e:
+            logger.error(f"Error aggregating embeddings for speaker {speaker_id}: {e}")
+            return None
+
+        speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
+        if not speaker:
+            return None
+
+        # Try to match to known speakers with display names
+        match = self.match_speaker_to_known_speakers(aggregated_embedding, user_id)
+
+        if match:
+            return self._handle_speaker_match(
+                speaker, match, aggregated_embedding, user_id, media_file_id
+            )
+        else:
+            return self._handle_no_speaker_match(
+                speaker, aggregated_embedding, user_id, media_file_id
+            )
+
+    def _handle_speaker_match(
+        self,
+        speaker: Speaker,
+        match: dict[str, Any],
+        aggregated_embedding: np.ndarray,
+        user_id: int,
+        media_file_id: int,
+    ) -> dict[str, Any]:
+        """
+        Handle case where speaker match is found.
+
+        Args:
+            speaker: Speaker object
+            match: Match result dictionary
+            aggregated_embedding: Aggregated embedding
+            user_id: User ID
+            media_file_id: Media file ID
+
+        Returns:
+            Speaker processing result
+        """
+        # Found a matching speaker - store the suggestion only if high confidence
+        speaker.confidence = match["confidence"]
+        if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
+            speaker.suggested_name = match["suggested_name"]
+
+        # If high confidence, auto-apply the suggestion
+        if match["auto_accept"]:
+            logger.info(
+                f"Auto-accepting match for speaker {speaker.id} -> {match['suggested_name']}"
+            )
+            speaker.display_name = match["suggested_name"]
+            speaker.verified = True
+            # Assign to profile if this match came from a profile
+            if match.get("profile_id"):
+                speaker.profile_id = match["profile_id"]
+
+        self.db.flush()
+
+        # Sync profile assignment to OpenSearch immediately
+        if match["auto_accept"] and match.get("profile_id"):
+            from app.services.opensearch_service import update_speaker_profile
+
+            update_speaker_profile(
+                speaker_id=speaker.id, profile_id=speaker.profile_id, verified=speaker.verified
+            )
+
+            # Update the profile embedding to include this newly assigned speaker
+            from app.services.profile_embedding_service import ProfileEmbeddingService
+
+            ProfileEmbeddingService.update_profile_embedding(self.db, speaker.profile_id)
+
+            # Propagate profile assignment to other similar speakers
+            self._propagate_profile_assignment(speaker.id, speaker.profile_id, user_id)
+
+        # Store/update embedding with suggested name for future matching
+        if aggregated_embedding is not None and aggregated_embedding.size > 0:
+            add_speaker_embedding(
+                speaker_id=speaker.id,
+                user_id=user_id,
+                name=speaker.name,
+                embedding=aggregated_embedding.tolist(),
+                profile_id=speaker.profile_id,  # Include profile_id for cross-video matching
+                display_name=speaker.display_name
+                if speaker.display_name
+                else match["suggested_name"],
+                media_file_id=media_file_id,
+            )
+
+            # Find and store matches with other speakers
+            self.find_and_store_speaker_matches(
+                speaker.id, aggregated_embedding, user_id, threshold=0.5
+            )
+
+        return {
+            "speaker_id": speaker.id,
+            "speaker_label": speaker.name,
+            "suggested_name": match["suggested_name"],
+            "confidence": match["confidence"],
+            "status": "matched",
+        }
+
+    def _handle_no_speaker_match(
+        self,
+        speaker: Speaker,
+        aggregated_embedding: np.ndarray,
+        user_id: int,
+        media_file_id: int,
+    ) -> dict[str, Any]:
+        """
+        Handle case where no speaker match is found.
+
+        Args:
+            speaker: Speaker object
+            aggregated_embedding: Aggregated embedding
+            user_id: User ID
+            media_file_id: Media file ID
+
+        Returns:
+            Speaker processing result
+        """
+        # No match found, store embedding for future matching
+        if aggregated_embedding is not None and aggregated_embedding.size > 0:
+            embedding_list = aggregated_embedding.tolist()
+            logger.info(
+                f"Storing embedding for speaker {speaker.id}: length={len(embedding_list)}, first_few={embedding_list[:3]}"
+            )
+            add_speaker_embedding(
+                speaker_id=speaker.id,
+                user_id=user_id,
+                name=speaker.name,
+                embedding=embedding_list,
+                profile_id=speaker.profile_id,  # Include profile_id for cross-video matching
+                display_name=speaker.display_name if speaker.display_name else None,
+                media_file_id=media_file_id,
+            )
+
+            # Find and store matches with other speakers
+            found_matches = self.find_and_store_speaker_matches(
+                speaker.id, aggregated_embedding, user_id, threshold=0.5
+            )
+
+            if found_matches:
+                logger.info(f"Found {len(found_matches)} matches for speaker {speaker.id}")
+                # If there are high-confidence matches from verified speakers, suggest them
+                for match in found_matches:
+                    if match["confidence"] >= ConfidenceLevel.HIGH and match["display_name"]:
+                        speaker.suggested_name = match["display_name"]
+                        speaker.confidence = match["confidence"]
+                        self.db.flush()
+                        break
+
+            return {
+                "speaker_id": speaker.id,
+                "speaker_label": speaker.name,
+                "profile_match": None,
+                "status": "new",
+            }
+        else:
+            logger.warning(f"Invalid embedding for speaker {speaker.id}, skipping storage")
+            return {
+                "speaker_id": speaker.id,
+                "speaker_label": speaker.name,
+                "profile_match": None,
+                "status": "failed",
+            }
 
     def find_speaker_occurrences(self, profile_id: int, user_id: int) -> list[dict[str, Any]]:
         """
@@ -478,6 +636,89 @@ class SpeakerMatchingService:
         occurrences.sort(key=lambda x: x["upload_time"], reverse=True)
 
         return occurrences
+
+    def _propagate_profile_assignment(self, matched_speaker_id: int, profile_id: int, user_id: int):
+        """
+        When a speaker is assigned to a profile, find and update other similar speakers
+        with the same profile assignment.
+
+        Args:
+            matched_speaker_id: ID of the speaker that was just assigned to a profile
+            profile_id: ID of the profile assigned
+            user_id: User ID for scoping
+        """
+        try:
+            # Get the matched speaker's embedding
+            from app.services.opensearch_service import get_speaker_embedding
+
+            embedding = get_speaker_embedding(matched_speaker_id)
+            if not embedding:
+                logger.warning(
+                    f"No embedding found for speaker {matched_speaker_id}, skipping propagation"
+                )
+                return
+
+            # Find similar speakers using OpenSearch with high confidence threshold
+            from app.services.similarity_service import SimilarityService
+
+            similar_matches = SimilarityService.opensearch_similarity_search(
+                embedding=embedding,
+                user_id=user_id,
+                index_name="speakers",
+                threshold=0.85,  # High confidence for automatic assignment
+                max_results=20,
+                exclude_ids=[matched_speaker_id],  # Don't include the original speaker
+            )
+
+            updated_speakers = []
+            for match in similar_matches:
+                speaker_id = match.get("speaker_id")
+                if not speaker_id:
+                    continue
+
+                # Get speaker from database
+                speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
+                if not speaker:
+                    continue
+
+                # Only update speakers that don't already have a profile and have a display name
+                if (
+                    not speaker.profile_id
+                    and speaker.display_name
+                    and not speaker.display_name.startswith("SPEAKER_")
+                ):
+                    # Update speaker with profile assignment
+                    speaker.profile_id = profile_id
+                    speaker.verified = True
+                    speaker.confidence = match["similarity"]
+                    updated_speakers.append(speaker)
+
+                    logger.info(
+                        f"Propagated profile {profile_id} to similar speaker {speaker_id} "
+                        f"(confidence: {match['similarity']:.3f})"
+                    )
+
+            # Commit all changes
+            if updated_speakers:
+                self.db.commit()
+
+                # Bulk update OpenSearch
+                from app.services.opensearch_service import update_speaker_profile
+
+                for speaker in updated_speakers:
+                    update_speaker_profile(
+                        speaker_id=speaker.id,
+                        profile_id=speaker.profile_id,
+                        verified=speaker.verified,
+                    )
+
+                logger.info(
+                    f"Propagated profile {profile_id} to {len(updated_speakers)} similar speakers"
+                )
+
+        except Exception as e:
+            logger.error(f"Error propagating profile assignment: {e}")
+            self.db.rollback()
 
     def update_speaker_embeddings(self, profile_id: int, audio_paths: list[str]) -> bool:
         """
@@ -608,7 +849,10 @@ class SpeakerMatchingService:
                                         {"term": {"user_id": user_id}},
                                         {
                                             "bool": {
-                                                "must_not": {"term": {"speaker_id": new_speaker_id}}
+                                                "must_not": [
+                                                    {"term": {"speaker_id": new_speaker_id}},
+                                                    {"exists": {"field": "document_type"}}  # Exclude profile documents
+                                                ]
                                             }
                                         },
                                     ]
@@ -625,7 +869,11 @@ class SpeakerMatchingService:
             for hit in response["hits"]["hits"]:
                 score = hit["_score"]
                 if score >= threshold:
-                    match_speaker_id = hit["_source"]["speaker_id"]
+                    # Safely access speaker_id - skip if not present (e.g., profile documents)
+                    source = hit.get("_source", {})
+                    match_speaker_id = source.get("speaker_id")
+                    if not match_speaker_id:
+                        continue
 
                     # Ensure consistent ordering (smaller ID first)
                     speaker1_id = min(new_speaker_id, match_speaker_id)

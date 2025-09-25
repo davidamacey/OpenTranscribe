@@ -39,10 +39,6 @@ router = APIRouter()
 async def trigger_summarization(
     file_id: int = Path(..., description="ID of the media file to summarize"),
     request: SummaryTaskRequest = SummaryTaskRequest(),
-    provider: Optional[str] = Query(
-        None, description="LLM provider override (vllm, openai, ollama, etc.)"
-    ),
-    model: Optional[str] = Query(None, description="Model override"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -99,8 +95,6 @@ async def trigger_summarization(
         # Start summarization task
         task = summarize_transcript_task.delay(
             file_id=file_id,
-            provider=provider,
-            model=model,
             force_regenerate=request.force_regenerate,
         )
 
@@ -117,6 +111,12 @@ async def trigger_summarization(
             "queued",
             f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
         )
+
+        # Get LLM provider info for response
+        from app.core.config import settings
+
+        provider = settings.LLM_PROVIDER or "default"
+        model = settings.LLM_MODEL or "default"
 
         return {
             "message": "Summarization task started",

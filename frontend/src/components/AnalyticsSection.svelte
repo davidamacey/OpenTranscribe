@@ -1,27 +1,70 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import SpeakerStats from './SpeakerStats.svelte';
-  
-  export let file: any = null;
+
+  interface FileAnalytics {
+    overall_analytics?: {
+      word_count?: number;
+      duration_seconds?: number;
+      talk_time?: {
+        by_speaker: Record<string, number>;
+        total: number;
+      };
+      turn_taking?: {
+        by_speaker: Record<string, number>;
+        total_turns: number;
+      };
+      interruptions?: {
+        by_speaker: Record<string, number>;
+        total: number;
+      };
+      questions?: {
+        by_speaker: Record<string, number>;
+        total: number;
+      };
+    };
+    status?: string;
+  }
+
+  interface Speaker {
+    id: number;
+    name: string;
+    display_name?: string;
+  }
+
+  export let file: FileAnalytics | null = null;
   export let isAnalyticsExpanded: boolean = false;
-  export let speakerList: any[] = [];
-  
+  export let speakerList: Speaker[] = [];
+  export let transcriptStore: { speakers: Speaker[] } = { speakers: [] };
+
   // Simple refresh counter to force re-rendering
   let refreshCounter = 0;
-  
-  // Create a unique key based on speaker list and analytics data to force re-rendering when speakers change
-  $: speakerKey = speakerList.map(s => `${s.id}-${s.display_name || s.name}`).join('-');
-  $: analyticsKey = file?.analytics ? 
+
+  // Use speakerList prop (gets updated immediately) or fallback to transcript store
+  $: activeSpeakers = speakerList?.length > 0 ? speakerList : (transcriptStore?.speakers || []);
+
+
+  // Create a unique key based on active speaker list and analytics data to force re-rendering when speakers change
+  $: speakerKey = activeSpeakers.map(s => `${s.id}-${s.display_name || s.name}`).join('-');
+
+  // Use only backend-provided analytics structure
+  $: analyticsData = file?.analytics?.overall_analytics;
+  $: analyticsKey = analyticsData ?
     JSON.stringify({
-      talk_time: file.analytics.overall?.talk_time,
-      turn_taking: file.analytics.overall?.turn_taking,
-      interruptions: file.analytics.overall?.interruptions,
-      questions: file.analytics.overall?.questions
+      talk_time: analyticsData.talk_time,
+      turn_taking: analyticsData.turn_taking,
+      interruptions: analyticsData.interruptions,
+      questions: analyticsData.questions
     }) : '';
   $: combinedKey = `${speakerKey}-${analyticsKey}-${refreshCounter}`;
   
-  // Watch for changes and force refresh only when analytics data actually changes
-  $: if (file?.analytics && analyticsKey) {
+  // Watch for changes and force refresh when analytics data OR speaker names change
+  $: if (file?.analytics?.overall_analytics && analyticsKey) {
+    refreshCounter++;
+  }
+
+  // Force refresh when speaker names change (for immediate frontend updates)
+  $: if (speakerKey) {
     refreshCounter++;
   }
 
@@ -36,9 +79,9 @@
     title="Show or hide detailed analytics including speaker statistics, transcript word count, and speaking time breakdown" on:click={toggleAnalytics} on:keydown={e => e.key === 'Enter' && toggleAnalytics()} aria-expanded={isAnalyticsExpanded}>
     <h4 class="section-heading">Analytics Overview</h4>
     <div class="analytics-preview">
-      {#if file && file.analytics && file.analytics.overall}
+      {#if analyticsData}
         <span class="analytics-chip">
-          {file.analytics.overall.word_count ? `${file.analytics.overall.word_count} words` : 'Analytics available'}
+          {analyticsData.word_count ? `${analyticsData.word_count} words` : 'Analytics available'}
         </span>
       {:else if file && file.status === 'processing'}
         <span class="analytics-chip processing">Processing...</span>
@@ -55,22 +98,22 @@
   
   {#if isAnalyticsExpanded}
     <div class="analytics-content" transition:slide={{ duration: 200 }}>
-      {#if file && file.analytics && file.analytics.overall}
+      {#if analyticsData}
         {#key combinedKey}
-          <SpeakerStats 
+          <SpeakerStats
             analytics={{
-              talk_time: file.analytics.overall.talk_time || { by_speaker: {}, total: 0 },
-              interruptions: file.analytics.overall.interruptions || { by_speaker: {}, total: 0 },
-              turn_taking: file.analytics.overall.turn_taking || { by_speaker: {}, total_turns: 0 },
-              questions: file.analytics.overall.questions || { by_speaker: {}, total: 0 },
-              ...file.analytics.overall
+              talk_time: analyticsData.talk_time || { by_speaker: {}, total: 0 },
+              interruptions: analyticsData.interruptions || { by_speaker: {}, total: 0 },
+              turn_taking: analyticsData.turn_taking || { by_speaker: {}, total_turns: 0 },
+              questions: analyticsData.questions || { by_speaker: {}, total: 0 },
+              ...analyticsData
             }}
-            {speakerList}
+            speakerList={activeSpeakers}
           />
         {/key}
       {:else if file && file.status === 'processing'}
         <p>Analytics are being processed...</p>
-      {:else if file && file.status === 'completed' && !file.analytics}
+      {:else if file && file.status === 'completed' && !file.analytics?.overall_analytics}
         <p>Analytics data is not available for this file.</p>
       {/if}
     </div>

@@ -2,19 +2,46 @@
   import { createEventDispatcher } from 'svelte';
   import { fade, slide } from 'svelte/transition';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { getSpeakerColor } from '$lib/utils/speakerColors';
 
-  export let speaker: any;
-  export let suggestions: any[] = [];
-  export let crossMediaOccurrences: any[] = [];
+  export let speaker: {
+    id: number;
+    name: string;
+    display_name?: string;
+    verified: boolean;
+    confidence?: number;
+  };
+  export let suggestions: {
+    profile_id?: number;
+    profile_name: string;
+    confidence: number;
+    confidence_level: string;
+    auto_accept: boolean;
+    reason: string;
+    source: string;
+    create_new?: boolean;
+  }[] = [];
+  export let crossMediaOccurrences: {
+    media_file_id: number;
+    filename: string;
+    title: string;
+    upload_time: string;
+    speaker_label: string;
+    confidence?: number;
+    verified: boolean;
+    same_speaker: boolean;
+  }[] = [];
 
   const dispatch = createEventDispatcher();
-  
+
   let showNewProfileModal = false;
   let showConfirmModal = false;
   let newProfileName = '';
   let selectedAction = '';
   let selectedProfileId: number | null = null;
   let confirmMessage = '';
+
+  // Props are validated through TypeScript interfaces
   
   function getConfidenceColor(confidence: number): string {
     if (confidence >= 0.75) return 'var(--success-color)';
@@ -31,10 +58,18 @@
     }
   }
   
-  function handleAcceptSuggestion(suggestion: any) {
-    selectedAction = 'accept';
-    selectedProfileId = suggestion.profile_id;
-    confirmMessage = `Assign this speaker to "${suggestion.profile_name}"?`;
+  function handleAcceptSuggestion(suggestion: typeof suggestions[0]) {
+    if (suggestion.create_new) {
+      // Handle LLM suggestion to create new profile
+      selectedAction = 'create_profile';
+      newProfileName = suggestion.profile_name;
+      confirmMessage = `Create new profile "${suggestion.profile_name}" and assign this speaker?`;
+    } else {
+      // Handle existing profile assignment
+      selectedAction = 'accept';
+      selectedProfileId = suggestion.profile_id || null;
+      confirmMessage = `Assign this speaker to "${suggestion.profile_name}"?`;
+    }
     showConfirmModal = true;
   }
   
@@ -53,12 +88,17 @@
   }
   
   function confirmAction() {
-    const actionData: any = {
+    const actionData: {
+      action: string;
+      speaker_id: number;
+      profile_id?: number;
+      profile_name?: string;
+    } = {
       action: selectedAction,
       speaker_id: speaker.id
     };
     
-    if (selectedAction === 'accept') {
+    if (selectedAction === 'accept' && selectedProfileId !== null) {
       actionData.profile_id = selectedProfileId;
     } else if (selectedAction === 'create_profile') {
       actionData.profile_name = newProfileName.trim();
@@ -84,7 +124,13 @@
   <div class="verification-header">
     <div class="header-content">
       <h3 class="verification-title">
-        Speaker Verification: {speaker.name}
+        Speaker Verification:
+        <span
+          class="speaker-chip"
+          style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; color: var(--text-color, {getSpeakerColor(speaker.name).textLight});"
+        >
+          {speaker.name}
+        </span>
       </h3>
       <p class="verification-subtitle">
         Please verify the speaker identification for this audio segment
@@ -92,7 +138,7 @@
     </div>
     
     {#if speaker.confidence}
-      <span class="{getConfidenceBadgeClass(speaker.confidence_level || 'low')}">
+      <span class="{getConfidenceBadgeClass('low')}">
         {Math.round(speaker.confidence * 100)}% confidence
       </span>
     {/if}
@@ -113,21 +159,64 @@
                 <span class="profile-name">
                   {suggestion.profile_name}
                 </span>
-                
+
                 <span class="{getConfidenceBadgeClass(suggestion.confidence_level)}">
                   {Math.round(suggestion.confidence * 100)}%
                 </span>
-                
+
+                <!-- Source indicator -->
+                {#if suggestion.source === 'voice_embedding'}
+                  <span class="source-badge voice-embedding">
+                    <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" x2="12" y1="19" y2="22"/>
+                      <line x1="8" x2="16" y1="22" y2="22"/>
+                    </svg>
+                    Voice Match
+                  </span>
+                {:else if suggestion.source === 'llm_analysis'}
+                  <span class="source-badge llm-analysis">
+                    <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636-.707.707M21 12h-1M4 12H3m3.343-5.657-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                    AI Analysis
+                  </span>
+                {:else if suggestion.source === 'profile_embedding'}
+                  <span class="source-badge profile-embedding">
+                    <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    Profile Match
+                  </span>
+                {/if}
+
                 {#if suggestion.auto_accept}
                   <span class="auto-accept-badge">
                     Auto-Accept
                   </span>
                 {/if}
               </div>
-              
-              <p class="suggestion-reason">
-                {suggestion.reason || 'Based on voice characteristics'}
-              </p>
+
+              <div class="suggestion-details">
+                <p class="suggestion-reason">
+                  {suggestion.reason || 'Based on voice characteristics'}
+                </p>
+
+                <!-- Additional metadata for different suggestion types -->
+                {#if suggestion.source === 'voice_embedding'}
+                  <p class="suggestion-metadata">
+                    Based on voice characteristics analysis
+                  </p>
+                {:else if suggestion.source === 'llm_analysis'}
+                  <p class="suggestion-metadata">
+                    AI identified speaker from context
+                  </p>
+                {/if}
+              </div>
             </div>
             
             <div class="suggestion-actions">
@@ -162,7 +251,13 @@
                 {occurrence.title}
               </span>
               <span class="occurrence-label">
-                as {occurrence.speaker_label}
+                as
+                <span
+                  class="speaker-chip speaker-chip-small"
+                  style="background-color: {getSpeakerColor(occurrence.speaker_label).bg}; border-color: {getSpeakerColor(occurrence.speaker_label).border}; color: var(--text-color, {getSpeakerColor(occurrence.speaker_label).textLight});"
+                >
+                  {occurrence.speaker_label}
+                </span>
               </span>
               {#if occurrence.same_speaker}
                 <span class="current-badge">
@@ -215,8 +310,6 @@
 
 <!-- New Profile Modal -->
 {#if showNewProfileModal}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="modal-backdrop"
     role="dialog"
@@ -226,8 +319,7 @@
     on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
     on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}
   >
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="modal-container" role="button" tabindex="0" on:click|stopPropagation>
+    <div class="modal-container" role="document" on:click|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">
@@ -318,6 +410,25 @@
     color: var(--text-color);
     margin: 0 0 0.5rem 0;
     line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .speaker-chip {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .speaker-chip-small {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 12px;
   }
 
   .verification-subtitle {
@@ -713,6 +824,49 @@
     background: var(--primary-hover);
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(var(--primary-color-rgb), 0.3);
+  }
+
+  /* Source Badge Styles */
+  .source-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .source-badge .source-icon {
+    width: 12px;
+    height: 12px;
+    stroke: currentColor;
+  }
+
+  .source-badge.voice-embedding {
+    background: color-mix(in srgb, var(--success-color) 15%, var(--surface-color));
+    color: var(--success-color);
+    border: 1px solid color-mix(in srgb, var(--success-color) 25%, transparent);
+  }
+
+  .source-badge.llm-analysis {
+    background: color-mix(in srgb, var(--primary-color) 15%, var(--surface-color));
+    color: var(--primary-color);
+    border: 1px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
+  }
+
+  .source-badge.profile-embedding {
+    background: color-mix(in srgb, var(--warning-color) 15%, var(--surface-color));
+    color: var(--warning-color);
+    border: 1px solid color-mix(in srgb, var(--warning-color) 25%, transparent);
+  }
+
+  /* Suggestion Metadata */
+  .suggestion-metadata {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    margin: 0.25rem 0 0 0;
+    font-style: italic;
   }
 
   /* Custom scrollbar */

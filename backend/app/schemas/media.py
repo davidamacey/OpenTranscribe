@@ -64,6 +64,7 @@ class SpeakerUpdate(BaseModel):
     suggested_name: Optional[str] = None
     verified: Optional[bool] = None
     embedding_vector: Optional[list[float]] = None
+    profile_action: Optional[str] = None  # 'update_profile' or 'create_new_profile'
 
 
 class Speaker(SpeakerBase):
@@ -73,6 +74,12 @@ class Speaker(SpeakerBase):
     profile_id: Optional[int] = None
     confidence: Optional[float] = None
     created_at: datetime
+
+    # Computed status fields from SpeakerStatusService
+    computed_status: Optional[str] = None  # "verified", "suggested", "unverified"
+    status_text: Optional[str] = None  # Human-readable status text
+    status_color: Optional[str] = None  # CSS color for status display
+    resolved_display_name: Optional[str] = None  # Best available display name
 
     model_config = {"from_attributes": True}
 
@@ -151,6 +158,14 @@ class TranscriptSegment(TranscriptSegmentBase):
     media_file_id: int
     speaker: Optional[Speaker] = None
 
+    # Formatted fields for frontend display
+    formatted_timestamp: Optional[str] = None  # e.g., "0:45.2"
+    display_timestamp: Optional[str] = None  # e.g., "0:45.2" for transcript UI
+    speaker_label: Optional[str] = (
+        None  # ALWAYS original speaker ID (e.g., "SPEAKER_01") for color consistency
+    )
+    resolved_speaker_name: Optional[str] = None  # Display name (user label or original ID)
+
     model_config = {"from_attributes": True}
 
 
@@ -222,6 +237,19 @@ class MediaFile(MediaFileBase):
     description: Optional[str] = None
     source_url: Optional[str] = None
 
+    # Formatted fields for frontend display
+    formatted_duration: Optional[str] = None  # e.g., "5:23"
+    formatted_upload_date: Optional[str] = None  # e.g., "Oct 15, 2024"
+    formatted_file_age: Optional[str] = None  # e.g., "2 hours ago"
+    formatted_file_size: Optional[str] = None  # e.g., "2.5 MB"
+    display_status: Optional[str] = None  # User-friendly status text
+    status_badge_class: Optional[str] = None  # CSS class for status styling
+
+    # Error handling fields
+    error_category: Optional[str] = None  # Error category for user-friendly handling
+    error_suggestions: Optional[list[str]] = None  # User-friendly error suggestions
+    is_retryable: Optional[bool] = None  # Whether the error is retryable
+
     model_config = {"from_attributes": True}
 
 
@@ -229,6 +257,11 @@ class MediaFileDetail(MediaFile):
     transcript_segments: list[TranscriptSegment] = []
     tags: list[str] = []
     collections: list["Collection"] = []
+    analytics: Optional["Analytics"] = None
+    speakers: list[Speaker] = []
+
+    # Additional formatted fields for detail view
+    speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
     model_config = {"from_attributes": True}
 
@@ -310,13 +343,48 @@ class Task(TaskBase):
     error_message: Optional[str] = None
     media_file: Optional[MediaFileInfo] = None
 
+    # Computed fields for frontend display
+    age_category: Optional[str] = None  # "today", "week", "month", "older"
+    formatted_duration: Optional[str] = None  # e.g., "5m", "1h 23m"
+    status_display: Optional[str] = None  # Human-readable status
+
     model_config = {"from_attributes": True}
 
 
+# Analytics-related schemas
+class SpeakerTimeStats(BaseModel):
+    by_speaker: dict[str, float] = {}
+    total: float = 0.0
+
+
+class InterruptionStats(BaseModel):
+    by_speaker: dict[str, int] = {}
+    total: int = 0
+
+
+class TurnTakingStats(BaseModel):
+    by_speaker: dict[str, int] = {}
+    total_turns: int = 0
+
+
+class QuestionStats(BaseModel):
+    by_speaker: dict[str, int] = {}
+    total: int = 0
+
+
+class OverallAnalytics(BaseModel):
+    word_count: int = 0
+    duration_seconds: float = 0.0
+    talk_time: SpeakerTimeStats = SpeakerTimeStats()
+    interruptions: InterruptionStats = InterruptionStats()
+    turn_taking: TurnTakingStats = TurnTakingStats()
+    questions: QuestionStats = QuestionStats()
+    speaking_pace: Optional[float] = None  # words per minute
+    silence_ratio: Optional[float] = None  # ratio of silence
+
+
 class AnalyticsBase(BaseModel):
-    speaker_stats: Optional[dict[str, Any]] = None
-    sentiment: Optional[dict[str, Any]] = None
-    keywords: Optional[list[str]] = None
+    overall_analytics: Optional[OverallAnalytics] = None
 
 
 class AnalyticsCreate(AnalyticsBase):
@@ -326,6 +394,8 @@ class AnalyticsCreate(AnalyticsBase):
 class Analytics(AnalyticsBase):
     id: int
     media_file_id: int
+    computed_at: Optional[datetime] = None
+    version: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

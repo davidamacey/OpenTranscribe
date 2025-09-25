@@ -44,6 +44,7 @@ print_access_info() {
   echo "   - API Documentation: http://localhost:5174/docs"
   echo "   - MinIO Console: http://localhost:5179"
   echo "   - Flower Dashboard: http://localhost:5175/flower"
+  echo "   - OpenSearch Dashboards: http://localhost:5182"
 }
 
 #######################
@@ -79,8 +80,8 @@ start_environment() {
   if [ "$environment" == "prod" ]; then
     # Start with production configuration (using frontend-prod service)
     # Start base infrastructure services first with a single command
-    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
-    docker compose up -d --build postgres redis minio opensearch
+    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch, opensearch-dashboards)..."
+    docker compose up -d --build postgres redis minio opensearch opensearch-dashboards
     
     # Then start the application services that depend on infrastructure
     echo "🚀 Starting application services (backend, celery-worker, frontend-prod, flower)..."
@@ -90,8 +91,8 @@ start_environment() {
   else
     # Start with development configuration (using frontend service for hot reload)
     # Start base infrastructure services first with a single command
-    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
-    docker compose up -d --build postgres redis minio opensearch
+    echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch, opensearch-dashboards)..."
+    docker compose up -d --build postgres redis minio opensearch opensearch-dashboards
     
     # Then start the application services that depend on infrastructure
     echo "🚀 Starting application services (backend, celery-worker, frontend, flower)..."

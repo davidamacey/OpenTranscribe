@@ -200,7 +200,10 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
         with session_scope() as db:
             media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if media_file:
-                # Create file data for gallery update
+                # Import formatting service to include display_status
+                from app.services.formatting_service import FormattingService
+
+                # Create file data for gallery update with all formatted fields
                 file_data = {
                     "id": media_file.id,
                     "filename": media_file.filename,
@@ -216,6 +219,19 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                     "upload_time": media_file.upload_time.isoformat()
                     if media_file.upload_time
                     else None,
+                    # Add formatted fields that the frontend expects
+                    "formatted_duration": FormattingService.format_duration(media_file.duration),
+                    "formatted_upload_date": FormattingService.format_upload_date(
+                        media_file.upload_time
+                    ),
+                    "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
+                    "formatted_file_size": FormattingService.format_bytes_detailed(
+                        media_file.file_size
+                    ),
+                    "display_status": FormattingService.format_status(media_file.status),
+                    "status_badge_class": FormattingService.get_status_badge_class(
+                        media_file.status.value
+                    ),
                 }
 
                 # Send file_updated notification via Redis (since we're in sync context)

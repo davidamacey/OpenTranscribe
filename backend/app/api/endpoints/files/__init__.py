@@ -27,12 +27,14 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
 from app.models.media import MediaFile
+from app.models.media import Speaker
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
+from app.services.formatting_service import FormattingService
 
 from . import cancel_upload
 from . import prepare_upload
@@ -152,11 +154,21 @@ def list_media_files(
     # Get the result
     result = filtered_query.all()
 
-    # Set URLs for each file
+    # Format each file with URLs and formatted fields
+    formatted_files = []
     for file in result:
         set_file_urls(file)
 
-    return result
+        # Convert to schema and add formatted fields
+        file_schema = MediaFileSchema.model_validate(file)
+        file_schema.formatted_duration = FormattingService.format_duration(file.duration)
+        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)
+        file_schema.display_status = FormattingService.format_status(file.status)
+        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)
+
+        formatted_files.append(file_schema)
+
+    return formatted_files
 
 
 @router.get("/{file_id}", response_model=MediaFileDetail)
@@ -541,6 +553,44 @@ def clear_video_cache(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing video cache: {str(e)}",
+        ) from e
+
+
+@router.post("/{file_id}/analytics/refresh", status_code=204)
+def refresh_analytics(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Refresh analytics for a media file by recomputing them"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Verify user owns the file or is admin
+        is_admin = current_user.role == "admin"
+        get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+
+        # Refresh analytics using the analytics service
+        from app.services.analytics_service import AnalyticsService
+
+        success = AnalyticsService.refresh_analytics(db, file_id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to refresh analytics",
+            )
+
+        logger.info(f"Refreshed analytics for file {file_id}")
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error refreshing analytics for file {file_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error refreshing analytics: {str(e)}",
         ) from e
 
 
