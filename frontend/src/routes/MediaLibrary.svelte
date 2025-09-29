@@ -293,7 +293,7 @@
       }
       
       // Update files with smooth transitions
-      if (!skipAnimation && files.length > 0) {
+      if (!skipAnimation && files.length > 0 && !isInitialLoad) {
         updateFilesSmooth(newFiles);
       } else {
         files = newFiles;
