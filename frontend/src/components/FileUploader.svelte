@@ -1871,9 +1871,7 @@
     border-radius: 8px;
     background-color: var(--surface-color);
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 1rem;
   }
   
@@ -1898,6 +1896,7 @@
   .file-actions {
     display: flex;
     gap: 0.5rem;
+    justify-content: flex-end;
   }
   
   .cancel-button {
