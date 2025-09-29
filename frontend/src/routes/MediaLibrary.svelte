@@ -612,19 +612,32 @@
             else if (notification.type === 'transcription_status' && notification.data?.file_id) {
               const fileId = String(notification.data.file_id);
               const status = notification.data.status;
+              const fileIdNum = parseInt(fileId);
 
-              // Update any files that match this notification
-              files = files.map(file => {
-                if (String(file.id) === fileId) {
-                  return {
+              // FIX: Update both status and display_status for concurrent upload status tracking
+              // This ensures gallery items show correct status during multiple file processing
+              // instead of staying stuck on "Pending" while notifications work correctly
+              const updatedFiles = files.map(file => {
+                if (file.id === fileIdNum) {
+                  const updatedFile = {
                     ...file,
-                    status: status
+                    status: status,
+                    // Update display_status to ensure UI shows correct status immediately
+                    display_status: status === 'processing' ? 'Processing' :
+                                   status === 'completed' ? 'Completed' :
+                                   status === 'pending' ? 'Pending' :
+                                   status === 'error' ? 'Error' : status
                   };
+                  // Update the file map immediately for consistent lookups
+                  fileMap.set(fileIdNum, updatedFile);
+                  filesUpdated = true;
+                  return updatedFile;
                 }
                 return file;
               });
 
-              filesUpdated = true;
+              // Force Svelte reactivity by creating new array reference
+              files = updatedFiles;
 
               // If the file status changed to error, refresh to get the latest error message
               if (status === 'error') {
@@ -636,7 +649,7 @@
               if (status === 'completed') {
                 // Wait a bit longer for the file_updated notification, then refresh if needed
                 setTimeout(() => {
-                  const currentFile = fileMap.get(parseInt(fileId));
+                  const currentFile = fileMap.get(fileIdNum);
                   if (currentFile && currentFile.status !== 'completed') {
                     throttledRefresh('completed-fallback-' + fileId, 100);
                   }
@@ -656,31 +669,36 @@
             // Handle file updates (metadata, processing completion, etc.)
             else if (notification.type === 'file_updated' && notification.data?.file_id) {
               const fileId = String(notification.data.file_id);
+              const fileIdNum = parseInt(fileId);
 
               // Try to update the file in place first
               let fileExists = false;
+              let updatedFile = null;
               files = files.map(file => {
-                if (String(file.id) === fileId) {
+                if (file.id === fileIdNum) {
                   fileExists = true;
                   // If we have full file data, use it; otherwise merge notification data
                   if (notification.data.file) {
-                    return {
+                    updatedFile = {
                       ...file,
                       ...notification.data.file
                     };
                   } else {
-                    return {
+                    const newStatus = notification.data.status || file.status;
+                    updatedFile = {
                       ...file,
-                      status: notification.data.status || file.status,
+                      status: newStatus,
                       thumbnail_url: notification.data.thumbnail_url || file.thumbnail_url,
                     };
                   }
+                  return updatedFile;
                 }
                 return file;
               });
 
-              // Mark files as updated if we made changes
-              if (fileExists) {
+              // Update the file map immediately for consistent lookups
+              if (fileExists && updatedFile) {
+                fileMap.set(fileIdNum, updatedFile);
                 filesUpdated = true;
               } else {
                 // Only fetch if file doesn't exist in current list (new file)

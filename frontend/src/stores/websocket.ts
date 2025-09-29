@@ -10,7 +10,11 @@ export type NotificationType =
   | 'analytics_status'
   | 'download_progress'
   | 'connection_established'
-  | 'echo';
+  | 'echo'
+  | 'file_upload'
+  | 'file_created'
+  | 'file_updated'
+  | 'file_deleted';
 
 // Notification interface
 export interface Notification {
@@ -429,6 +433,14 @@ function createWebSocketStore() {
         return 'Analytics Update';
       case 'download_progress':
         return 'Download Progress';
+      case 'file_upload':
+        return 'File Upload';
+      case 'file_created':
+        return 'File Created';
+      case 'file_updated':
+        return 'File Updated';
+      case 'file_deleted':
+        return 'File Deleted';
       default:
         return 'Notification';
     }
