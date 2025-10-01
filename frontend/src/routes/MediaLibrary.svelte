@@ -293,7 +293,7 @@
       }
       
       // Update files with smooth transitions
-      if (!skipAnimation && files.length > 0) {
+      if (!skipAnimation && files.length > 0 && !isInitialLoad) {
         updateFilesSmooth(newFiles);
       } else {
         files = newFiles;
@@ -575,109 +575,146 @@
   }
   
   // Subscribe to WebSocket file status updates to update file status in real-time
-  // Track last processed notification to avoid duplicate processing
-  let lastProcessedNotificationId = '';
+  // Track processed notifications to avoid duplicate processing
+  let processedNotificationIds = new Set<string>();
   let previousActiveUploadCount = 0;
-  
+
+  // Periodic cleanup to prevent processedNotificationIds from growing too large
+  setInterval(() => {
+    if (processedNotificationIds.size > 1000) {
+      processedNotificationIds.clear();
+    }
+  }, 300000); // Clean up every 5 minutes
+
   function setupWebSocketUpdates() {
     unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
       if ($ws.notifications.length > 0) {
-        const latestNotification = $ws.notifications[0];
+        // Process all unprocessed notifications, not just the latest one
+        const unprocessedNotifications = $ws.notifications.filter(notification =>
+          !processedNotificationIds.has(notification.id)
+        );
 
-        // Only process if this is a new notification we haven't handled
-        if (latestNotification.id !== lastProcessedNotificationId) {
-          lastProcessedNotificationId = latestNotification.id;
-          
-          // Handle different notification types
-          if (latestNotification.type === 'file_deleted' && latestNotification.data?.file_id) {
-            const fileId = parseInt(String(latestNotification.data.file_id));
-            removeFileSmooth(fileId);
-          }
-          else if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
-            const fileId = String(latestNotification.data.file_id);
-            const status = latestNotification.data.status;
+        if (unprocessedNotifications.length > 0) {
+          // Mark all as processed immediately to avoid race conditions
+          unprocessedNotifications.forEach(notification => {
+            processedNotificationIds.add(notification.id);
+          });
 
-            // Update any files that match this notification
-            files = files.map(file => {
-              if (String(file.id) === fileId) {
-                return {
-                  ...file,
-                  status: status
-                };
+          // Process each unprocessed notification
+          let filesUpdated = false;
+
+          unprocessedNotifications.forEach(notification => {
+            // Handle different notification types
+            if (notification.type === 'file_deleted' && notification.data?.file_id) {
+              const fileId = parseInt(String(notification.data.file_id));
+              removeFileSmooth(fileId);
+            }
+            else if (notification.type === 'transcription_status' && notification.data?.file_id) {
+              const fileId = String(notification.data.file_id);
+              const status = notification.data.status;
+              const fileIdNum = parseInt(fileId);
+
+              // FIX: Update both status and display_status for concurrent upload status tracking
+              // This ensures gallery items show correct status during multiple file processing
+              // instead of staying stuck on "Pending" while notifications work correctly
+              const updatedFiles = files.map(file => {
+                if (file.id === fileIdNum) {
+                  const updatedFile = {
+                    ...file,
+                    status: status,
+                    // Update display_status to ensure UI shows correct status immediately
+                    display_status: status === 'processing' ? 'Processing' :
+                                   status === 'completed' ? 'Completed' :
+                                   status === 'pending' ? 'Pending' :
+                                   status === 'error' ? 'Error' : status
+                  };
+                  // Update the file map immediately for consistent lookups
+                  fileMap.set(fileIdNum, updatedFile);
+                  filesUpdated = true;
+                  return updatedFile;
+                }
+                return file;
+              });
+
+              // Force Svelte reactivity by creating new array reference
+              files = updatedFiles;
+
+              // If the file status changed to error, refresh to get the latest error message
+              if (status === 'error') {
+                throttledRefresh('error-' + fileId, 300);
               }
-              return file;
-            });
 
-            // Update the gallery store with the new files array
+              // For completed status, don't refresh immediately since we expect a file_updated notification
+              // to arrive shortly with complete updated data. This prevents race conditions.
+              if (status === 'completed') {
+                // Wait a bit longer for the file_updated notification, then refresh if needed
+                setTimeout(() => {
+                  const currentFile = fileMap.get(fileIdNum);
+                  if (currentFile && currentFile.status !== 'completed') {
+                    throttledRefresh('completed-fallback-' + fileId, 100);
+                  }
+                }, 800);
+              }
+            }
+            // Handle new file uploads with smooth addition
+            else if (notification.type === 'file_upload' || notification.type === 'file_created') {
+              if (notification.data?.file) {
+                // Add the new file smoothly without full refresh
+                addNewFileSmooth(notification.data.file);
+              } else {
+                // Fallback to throttled refresh if no file data provided
+                throttledRefresh('new-file', 500);
+              }
+            }
+            // Handle file updates (metadata, processing completion, etc.)
+            else if (notification.type === 'file_updated' && notification.data?.file_id) {
+              const fileId = String(notification.data.file_id);
+              const fileIdNum = parseInt(fileId);
+
+              // Try to update the file in place first
+              let fileExists = false;
+              let updatedFile = null;
+              files = files.map(file => {
+                if (file.id === fileIdNum) {
+                  fileExists = true;
+                  // If we have full file data, use it; otherwise merge notification data
+                  if (notification.data.file) {
+                    updatedFile = {
+                      ...file,
+                      ...notification.data.file
+                    };
+                  } else {
+                    const newStatus = notification.data.status || file.status;
+                    updatedFile = {
+                      ...file,
+                      status: newStatus,
+                      thumbnail_url: notification.data.thumbnail_url || file.thumbnail_url,
+                    };
+                  }
+                  return updatedFile;
+                }
+                return file;
+              });
+
+              // Update the file map immediately for consistent lookups
+              if (fileExists && updatedFile) {
+                fileMap.set(fileIdNum, updatedFile);
+                filesUpdated = true;
+              } else {
+                // Only fetch if file doesn't exist in current list (new file)
+                if (notification.data.file) {
+                  addNewFileSmooth(notification.data.file);
+                } else {
+                  throttledRefresh('update-' + fileId, 300);
+                }
+              }
+            }
+          });
+
+          // Batch update gallery store and file map once after processing all notifications
+          if (filesUpdated) {
             galleryStore.setFiles(files);
             updateFileMap();
-
-            // If the file status changed to error, refresh to get the latest error message
-            if (status === 'error') {
-              throttledRefresh('error-' + fileId, 300);
-            }
-
-            // For completed status, don't refresh immediately since we expect a file_updated notification
-            // to arrive shortly with complete updated data. This prevents race conditions.
-            if (status === 'completed') {
-              // Wait a bit longer for the file_updated notification, then refresh if needed
-              setTimeout(() => {
-                const currentFile = fileMap.get(parseInt(fileId));
-                if (currentFile && currentFile.status !== 'completed') {
-                  throttledRefresh('completed-fallback-' + fileId, 100);
-                }
-              }, 800);
-            }
-            
-          } 
-          // Handle new file uploads with smooth addition
-          else if (latestNotification.type === 'file_upload' || latestNotification.type === 'file_created') {
-            if (latestNotification.data?.file) {
-              // Add the new file smoothly without full refresh
-              addNewFileSmooth(latestNotification.data.file);
-            } else {
-              // Fallback to throttled refresh if no file data provided
-              throttledRefresh('new-file', 500);
-            }
-          }
-          // Handle file updates (metadata, processing completion, etc.)
-          else if (latestNotification.type === 'file_updated' && latestNotification.data?.file_id) {
-            const fileId = String(latestNotification.data.file_id);
-
-            // Try to update the file in place first
-            let fileExists = false;
-            files = files.map(file => {
-              if (String(file.id) === fileId) {
-                fileExists = true;
-                // If we have full file data, use it; otherwise merge notification data
-                if (latestNotification.data.file) {
-                  return {
-                    ...file,
-                    ...latestNotification.data.file
-                  };
-                } else {
-                  return {
-                    ...file,
-                    status: latestNotification.data.status || file.status,
-                    thumbnail_url: latestNotification.data.thumbnail_url || file.thumbnail_url,
-                  };
-                }
-              }
-              return file;
-            });
-
-            // Update the gallery store and file map after in-place update
-            if (fileExists) {
-              galleryStore.setFiles(files);
-              updateFileMap();
-            } else {
-              // Only fetch if file doesn't exist in current list (new file)
-              if (latestNotification.data.file) {
-                addNewFileSmooth(latestNotification.data.file);
-              } else {
-                throttledRefresh('update-' + fileId, 300);
-              }
-            }
           }
         }
       }
@@ -702,6 +739,8 @@
     unsubscribeFileStatus = () => {
       if (originalUnsubscribe) originalUnsubscribe();
       if (unsubscribeUploads) unsubscribeUploads();
+      // Clear processed notification IDs to prevent memory leaks
+      processedNotificationIds.clear();
     };
   }
   

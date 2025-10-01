@@ -93,6 +93,15 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
             except Exception as e:
                 logger.warning(f"Failed to update profile embedding: {e}")
 
+            # Sync profile assignment to OpenSearch
+            try:
+                from app.services.opensearch_service import update_speaker_profile
+
+                update_speaker_profile(speaker.id, speaker.profile_id, speaker.verified)
+                logger.info(f"Synced speaker {speaker.id} profile assignment to OpenSearch")
+            except Exception as e:
+                logger.warning(f"Failed to sync speaker {speaker.id} profile to OpenSearch: {e}")
+
         else:
             # Create new profile for this speaker name
             new_profile = SpeakerProfile(
@@ -119,6 +128,15 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 )
             except Exception as e:
                 logger.warning(f"Failed to initialize profile embedding: {e}")
+
+            # Sync new profile assignment to OpenSearch
+            try:
+                from app.services.opensearch_service import update_speaker_profile
+
+                update_speaker_profile(speaker.id, speaker.profile_id, speaker.verified)
+                logger.info(f"Synced speaker {speaker.id} new profile assignment to OpenSearch")
+            except Exception as e:
+                logger.warning(f"Failed to sync speaker {speaker.id} new profile to OpenSearch: {e}")
 
         return True
 
@@ -210,7 +228,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
 
             # Store the suggestion if similarity is above threshold
             if similarity >= 0.5:
-                # Update confidence and suggestion
+                # Update confidence and suggestion in PostgreSQL
                 speaker.confidence = similarity
                 speaker.suggested_name = updated_speaker.display_name
 
@@ -237,6 +255,26 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                                 f"Failed to update profile embedding for auto-applied speaker: {e}"
                             )
 
+                    # CRITICAL FIX: Sync the updates to OpenSearch immediately
+                    # This ensures PostgreSQL and OpenSearch stay in sync for all speaker changes
+                    try:
+                        from app.services.opensearch_service import update_speaker_display_name, update_speaker_profile
+
+                        # Update display name in OpenSearch
+                        update_speaker_display_name(speaker.id, speaker.display_name)
+
+                        # Update profile assignment and verification status in OpenSearch
+                        update_speaker_profile(speaker.id, speaker.profile_id, speaker.verified)
+
+                        logger.info(
+                            f"Synced auto-applied speaker {speaker.id} to OpenSearch: "
+                            f"display_name='{speaker.display_name}', profile_id={speaker.profile_id}, verified={speaker.verified}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to sync auto-applied speaker {speaker.id} to OpenSearch: {e}"
+                        )
+
                     auto_applied_count += 1
                     logger.info(
                         f"Auto-applied {updated_speaker.display_name} to {speaker.name} ({similarity:.1%} confidence)"
@@ -251,11 +289,69 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                 # Store the match in the database
                 store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
 
+        # Commit database changes first
         db.commit()
+
+        # ADDITIONAL FIX: Batch sync all suggestion updates to OpenSearch
+        # This ensures suggestions (confidence + suggested_name) are also synced
+        try:
+            from app.services.opensearch_service import update_speaker_display_name, update_speaker_profile
+
+            # Get all speakers that received suggestions in this round
+            suggestion_speakers = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.user_id == updated_speaker.user_id,
+                    Speaker.suggested_name == updated_speaker.display_name,
+                    Speaker.confidence >= 0.5,
+                    Speaker.confidence < 0.75,  # Only medium confidence (high confidence already synced above)
+                    Speaker.verified == False   # Suggestions are for unverified speakers
+                )
+                .all()
+            )
+
+            for suggestion_speaker in suggestion_speakers:
+                try:
+                    # Sync confidence and suggested_name updates to OpenSearch for suggestions
+                    # Note: These speakers keep their original display_name=None but get updated confidence/suggestion
+                    update_speaker_display_name(suggestion_speaker.id, suggestion_speaker.display_name)
+                    update_speaker_profile(suggestion_speaker.id, suggestion_speaker.profile_id, suggestion_speaker.verified)
+                    logger.debug(f"Synced suggestion updates for speaker {suggestion_speaker.id} to OpenSearch")
+                except Exception as e:
+                    logger.warning(f"Failed to sync suggestion speaker {suggestion_speaker.id} to OpenSearch: {e}")
+
+            if suggestion_speakers:
+                logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
+
+        except Exception as e:
+            logger.error(f"Error during batch OpenSearch sync for suggestions: {e}")
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"
         )
+
+        # Send WebSocket notification about bulk speaker updates
+        if auto_applied_count > 0:
+            try:
+                import asyncio
+                from app.api.websockets import publish_notification
+
+                asyncio.create_task(
+                    publish_notification(
+                        user_id=updated_speaker.user_id,
+                        notification_type="speakers_bulk_updated",
+                        data={
+                            "trigger_speaker_id": updated_speaker.id,
+                            "display_name": updated_speaker.display_name,
+                            "auto_applied_count": auto_applied_count,
+                            "suggested_count": suggested_count,
+                            "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers"
+                        },
+                    )
+                )
+                logger.info(f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers")
+            except Exception as e:
+                logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
 
     except Exception as e:
         logger.error(f"Error in retroactive matching: {e}")
