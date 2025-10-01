@@ -22,6 +22,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
+from app.services.formatting_service import FormattingService
 from app.services.youtube_service import YouTubeService
 from app.tasks.youtube_processing import process_youtube_url_task
 
@@ -209,7 +210,8 @@ async def process_youtube_url(
                     "file": {
                         "id": media_file.id,
                         "filename": media_file.filename,
-                        "status": "processing",
+                        "status": media_file.status.value,
+                        "display_status": FormattingService.format_status(media_file.status),
                         "content_type": media_file.content_type,
                         "file_size": media_file.file_size,
                         "title": media_file.title,

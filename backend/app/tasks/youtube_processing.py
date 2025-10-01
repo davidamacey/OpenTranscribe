@@ -19,6 +19,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.formatting_service import FormattingService
 from app.services.youtube_service import YouTubeService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
@@ -180,6 +181,9 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
                             "status": updated_media_file.status.value
                             if updated_media_file.status
                             else "pending",
+                            "display_status": FormattingService.format_status(updated_media_file.status)
+                            if updated_media_file.status
+                            else "Pending",
                             "content_type": updated_media_file.content_type,
                             "file_size": updated_media_file.file_size,
                             "title": updated_media_file.title,
@@ -200,7 +204,14 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
                             "data": {
                                 "file_id": str(file_id),
                                 "file": file_data,
-                                "status": "pending",
+                                "status": updated_media_file.status.value
+                                if updated_media_file.status
+                                else "pending",
+                                "display_status": FormattingService.format_status(
+                                    updated_media_file.status
+                                )
+                                if updated_media_file.status
+                                else "Pending",
                                 "message": "YouTube processing completed",
                             },
                         }

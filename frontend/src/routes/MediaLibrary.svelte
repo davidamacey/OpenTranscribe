@@ -321,23 +321,27 @@
   function updateFilesSmooth(newFiles: MediaFile[]) {
     const newFileMap = new Map<number, MediaFile>();
     newFiles.forEach(file => newFileMap.set(file.id, file));
-    
+
     // Identify truly new files (not in current list)
     const existingIds = new Set(files.map(f => f.id));
     const newIds = newFiles.map(f => f.id).filter(id => !existingIds.has(id));
-    
-    // Mark new files for entrance animation
-    newIds.forEach(id => pendingNewFiles.add(id));
-    
+
+    // Only mark files as new if this is not an initial load
+    // (Don't highlight on page navigation, only on actual new uploads)
+    if (files.length > 0 && newIds.length > 0) {
+      // Mark new files for entrance animation
+      newIds.forEach(id => pendingNewFiles.add(id));
+
+      // Clear new file markers after animation
+      setTimeout(() => {
+        newIds.forEach(id => pendingNewFiles.delete(id));
+      }, 600);
+    }
+
     // Update the files array
     files = newFiles;
     galleryStore.setFiles(newFiles);
     updateFileMap();
-    
-    // Clear new file markers after animation
-    setTimeout(() => {
-      newIds.forEach(id => pendingNewFiles.delete(id));
-    }, 600);
   }
   
   // Add a single new file smoothly to the top
@@ -688,6 +692,7 @@
                     updatedFile = {
                       ...file,
                       status: newStatus,
+                      display_status: notification.data.display_status || file.display_status,
                       thumbnail_url: notification.data.thumbnail_url || file.thumbnail_url,
                     };
                   }
@@ -1577,19 +1582,11 @@
     transform: translateZ(0); /* Enable hardware acceleration */
   }
   
-  /* New file animation */
+  /* New file animation - subtle highlight that fades quickly */
   .file-card.new-file {
-    animation: newFileGlow 0.8s ease-out;
-    border-color: #3b82f6;
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    animation: newFileGlow 0.6s ease-out;
   }
-  
-  /* Dark mode new file animation */
-  :global(.dark) .file-card.new-file {
-    border-color: #60a5fa;
-    box-shadow: 0 0 20px rgba(96, 165, 250, 0.4);
-  }
-  
+
   /* Deleting file animation */
   .file-card.deleting {
     opacity: 0.5;
@@ -1597,21 +1594,33 @@
     transition: all 0.25s ease-out;
     pointer-events: none;
   }
-  
+
   @keyframes newFileGlow {
     0% {
-      transform: scale(0.95);
-      box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
+      transform: scale(1);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
       border-color: #60a5fa;
-    }
-    50% {
-      transform: scale(1.02);
-      box-shadow: 0 0 25px rgba(59, 130, 246, 0.4);
     }
     100% {
       transform: scale(1);
-      box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-      border-color: #3b82f6;
+      box-shadow: none;
+      border-color: var(--border-color);
+    }
+  }
+
+  /* Dark mode glow uses same animation but with adapted colors via CSS variables */
+  :global(.dark) .file-card.new-file {
+    animation: newFileGlowDark 0.6s ease-out;
+  }
+
+  @keyframes newFileGlowDark {
+    0% {
+      box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
+      border-color: #60a5fa;
+    }
+    100% {
+      box-shadow: none;
+      border-color: var(--border-color);
     }
   }
   
