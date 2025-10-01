@@ -1,8 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch';
-import https from 'https';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,24 +13,41 @@ if (!existsSync(fontsDir)) {
 }
 
 const fontWeights = {
-  300: { name: 'Light', url: 'https://fonts.gstatic.com/s/poppins/v20/pxiByp8kv8JHgFVrLDz8Z1xlEQ.woff2' },
-  400: { name: 'Regular', url: 'https://fonts.gstatic.com/s/poppins/v20/pxiEyp8kv8JHgFVrJJfecg.woff2' },
-  500: { name: 'Medium', url: 'https://fonts.gstatic.com/s/poppins/v20/pxiByp8kv8JHgFVrLGT9Z1xlEQ.woff2' },
-  600: { name: 'SemiBold', url: 'https://fonts.gstatic.com/s/poppins/v20/pxiByp8kv8JHgFVrLEj6Z1xlEQ.woff2' },
-  700: { name: 'Bold', url: 'https://fonts.gstatic.com/s/poppins/v20/pxiByp8kv8JHgFVrLCz7Z1xlEQ.woff2' }
+  300: { name: 'Light', url: 'https://fonts.gstatic.com/s/poppins/v21/pxiByp8kv8JHgFVrLDz8Z1xlFQ.woff2' },
+  400: { name: 'Regular', url: 'https://fonts.gstatic.com/s/poppins/v21/pxiEyp8kv8JHgFVrJJfecg.woff2' },
+  500: { name: 'Medium', url: 'https://fonts.gstatic.com/s/poppins/v21/pxiByp8kv8JHgFVrLGT9Z1xlFQ.woff2' },
+  600: { name: 'SemiBold', url: 'https://fonts.gstatic.com/s/poppins/v21/pxiByp8kv8JHgFVrLEj6Z1xlFQ.woff2' },
+  700: { name: 'Bold', url: 'https://fonts.gstatic.com/s/poppins/v21/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2' }
 };
 
-// Download a file from URL
+// Download a file from URL using native fetch (Node.js 18+)
 async function downloadFile(url) {
   try {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to download ${url}: ${response.status} ${response.statusText}`);
     }
-    const buffer = await response.buffer();
-    return buffer;
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   } catch (error) {
     console.error(`Error downloading ${url}:`, error.message);
+    throw error;
+  }
+}
+
+// Download Plyr SVG icons
+async function downloadPlyrIcons() {
+  try {
+    const publicDir = join(__dirname, '../public');
+    const plyrSvgPath = join(publicDir, 'plyr.svg');
+    const plyrSvgUrl = 'https://cdn.plyr.io/3.7.8/plyr.svg';
+
+    console.log('Downloading Plyr icons...');
+    const svgData = await downloadFile(plyrSvgUrl);
+    writeFileSync(plyrSvgPath, svgData);
+    console.log('Downloaded plyr.svg');
+  } catch (error) {
+    console.error('Error downloading Plyr icons:', error.message);
     throw error;
   }
 }
@@ -84,6 +99,7 @@ async function downloadFonts() {
 // Main function
 async function main() {
   await downloadFonts();
+  await downloadPlyrIcons();
 }
 
 main();

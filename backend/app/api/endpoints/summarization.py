@@ -116,7 +116,15 @@ async def trigger_summarization(
         from app.core.config import settings
 
         provider = settings.LLM_PROVIDER or "default"
-        model = settings.LLM_MODEL or "default"
+        # Get model name based on provider
+        model_map = {
+            "vllm": settings.VLLM_MODEL_NAME,
+            "openai": settings.OPENAI_MODEL_NAME,
+            "ollama": settings.OLLAMA_MODEL_NAME,
+            "anthropic": settings.ANTHROPIC_MODEL_NAME,
+            "openrouter": settings.OPENAI_MODEL_NAME,  # OpenRouter uses OpenAI-compatible API
+        }
+        model = model_map.get(provider.lower(), "default") if provider else "default"
 
         return {
             "message": "Summarization task started",
