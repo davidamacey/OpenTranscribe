@@ -11,7 +11,7 @@ on:
       - '!.github/workflows/docker-publish.yml'
 
 jobs:
-  build_backend:
+  build_backend_amd64:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize build disk space
@@ -35,27 +35,18 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata for backend
-        id: meta-backend
-        uses: docker/metadata-action@v4
-        with:
-          images: davidamacey/opentranscribe-backend
-          tags: |
-            type=raw,value=latest
-
-      - name: Build and push backend image
+      - name: Build and push backend AMD64
         uses: docker/build-push-action@v4
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=registry,ref=davidamacey/opentranscribe-backend:buildcache
-          cache-to: type=registry,ref=davidamacey/opentranscribe-backend:buildcache,mode=max
+          tags: davidamacey/opentranscribe-backend:latest-amd64
+          cache-from: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-amd64
+          cache-to: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-amd64,mode=max
 
-  build_frontend:
+  build_backend_arm64:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize build disk space
@@ -79,22 +70,105 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata for frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v4
+      - name: Build and push backend ARM64
+        uses: docker/build-push-action@v4
         with:
-          images: davidamacey/opentranscribe-frontend
-          tags: |
-            type=raw,value=latest
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          platforms: linux/arm64
+          push: true
+          tags: davidamacey/opentranscribe-backend:latest-arm64
+          cache-from: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-arm64
+          cache-to: type=registry,ref=davidamacey/opentranscribe-backend:buildcache-arm64,mode=max
 
-      - name: Build and push frontend image
+  build_frontend_amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Maximize build disk space
+        uses: easimon/maximize-build-space@master
+        with:
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend AMD64
         uses: docker/build-push-action@v4
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
-          cache-from: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache
-          cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache,mode=max
+          tags: davidamacey/opentranscribe-frontend:latest-amd64
+          cache-from: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-amd64
+          cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-amd64,mode=max
+
+  build_frontend_arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Maximize build disk space
+        uses: easimon/maximize-build-space@master
+        with:
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push frontend ARM64
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          platforms: linux/arm64
+          push: true
+          tags: davidamacey/opentranscribe-frontend:latest-arm64
+          cache-from: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-arm64
+          cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-arm64,mode=max
+
+  create_manifests:
+    needs: [build_backend_amd64, build_backend_arm64, build_frontend_amd64, build_frontend_arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push backend manifest
+        run: |
+          docker buildx imagetools create -t davidamacey/opentranscribe-backend:latest \
+            davidamacey/opentranscribe-backend:latest-amd64 \
+            davidamacey/opentranscribe-backend:latest-arm64
+
+      - name: Create and push frontend manifest
+        run: |
+          docker buildx imagetools create -t davidamacey/opentranscribe-frontend:latest \
+            davidamacey/opentranscribe-frontend:latest-amd64 \
+            davidamacey/opentranscribe-frontend:latest-arm64
