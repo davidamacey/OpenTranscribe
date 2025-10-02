@@ -773,24 +773,6 @@
     width: fit-content;
   }
 
-  .config-status.connected {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .config-status.disconnected {
-    background-color: var(--error-bg);
-    color: var(--error-color);
-    border: 1px solid var(--error-border);
-  }
-
-  .config-status.unknown {
-    background-color: var(--secondary-bg);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-  }
-
   .config-status.currently-active {
     background-color: var(--success-bg);
     color: var(--success-color);
@@ -963,15 +945,6 @@
   
   .create-first-config-btn:active {
     transform: translateY(0);
-  }
-
-  .spinner-mini {
-    width: 12px;
-    height: 12px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
   }
 
   @keyframes spin {

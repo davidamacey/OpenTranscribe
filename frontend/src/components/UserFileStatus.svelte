@@ -647,8 +647,24 @@
   {/if}
   
   {#if detailedStatus && selectedFile}
-    <div class="detailed-status-modal" on:click={closeModal}>
-      <div class="modal-content" on:click|stopPropagation>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="detailed-status-modal"
+      role="presentation"
+      on:click={closeModal}
+      on:keydown={(e) => e.key === 'Escape' && closeModal()}
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
         <div class="modal-header">
           <h3>File Details: {detailedStatus.file.filename}</h3>
           <button class="close-btn" on:click={closeModal}>×</button>
@@ -1510,30 +1526,15 @@
     margin: 1rem 0;
     border: 1px solid var(--warning-border);
   }
-  
+
   :global(.dark) .warning {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
     border-color: rgba(245, 158, 11, 0.3);
   }
-  
+
   .suggestions {
     margin: 1rem 0;
-  }
-  
-  .suggestions h4 {
-    color: var(--text-color);
-    margin-bottom: 0.5rem;
-  }
-  
-  .suggestions ul {
-    list-style: none;
-    padding: 0;
-  }
-  
-  .suggestions li {
-    padding: 0.5rem 0;
-    color: var(--text-color);
   }
   
   .retry-section {

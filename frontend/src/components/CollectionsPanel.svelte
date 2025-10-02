@@ -248,10 +248,13 @@
   {:else}
     <div class="collections-list">
       {#each collections as collection (collection.id)}
-        <div 
+        <div
           class="collection-card"
           class:selected={selectedCollectionId === collection.id}
+          role="button"
+          tabindex="0"
           on:click={() => handleCollectionClick(collection)}
+          on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleCollectionClick(collection)}
           transition:slide
         >
           <div class="collection-info">
@@ -308,8 +311,26 @@
   
   <!-- Create Collection Modal -->
   {#if showCreateModal}
-    <div class="modal-overlay" on:click={() => showCreateModal = false} transition:fade>
-      <div class="modal-content" on:click|stopPropagation transition:slide>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={() => showCreateModal = false}
+      on:keydown={(e) => e.key === 'Escape' && (() => showCreateModal = false)()}
+      transition:fade
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+        transition:slide
+      >
         <div class="modal-header">
           <h3>Create New Collection</h3>
           <button 
@@ -380,8 +401,26 @@
   
   <!-- Edit Collection Modal -->
   {#if showEditModal && collectionToEdit}
-    <div class="modal-overlay" on:click={() => showEditModal = false} transition:fade>
-      <div class="modal-content" on:click|stopPropagation transition:slide>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={() => showEditModal = false}
+      on:keydown={(e) => e.key === 'Escape' && (() => showEditModal = false)()}
+      transition:fade
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+        transition:slide
+      >
         <div class="modal-header">
           <h3>Edit Collection</h3>
           <button 
@@ -922,44 +961,33 @@
   :global(.dark) .modal-overlay {
     background: rgba(0, 0, 0, 0.7);
   }
-  
-  :global(.dark) .modal {
-    background: var(--surface-color);
-    color: var(--text-primary);
-  }
-  
+
   :global(.dark) .form-group input,
   :global(.dark) .form-group textarea {
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-primary);
     border-color: var(--border-color);
   }
-  
+
   :global(.dark) .form-group input:focus,
   :global(.dark) .form-group textarea:focus {
     background: rgba(255, 255, 255, 0.05);
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
-  
+
   :global(.dark) .form-group input:hover,
   :global(.dark) .form-group textarea:hover {
     background: rgba(255, 255, 255, 0.04);
     border-color: var(--primary-color);
   }
-  
+
   :global(.dark) .collection-card {
     background: var(--card-background);
     border-color: var(--border-color);
   }
-  
-  :global(.dark) .btn-secondary {
-    background: var(--surface-secondary);
-    color: var(--text-primary);
-    border-color: var(--border-color);
-  }
-  
-  
+
+
   :global(.dark) .badge.public {
     background: rgba(34, 197, 94, 0.2);
     color: #4ade80;

@@ -2257,15 +2257,7 @@
   .error-container button:hover {
     background: var(--primary-hover);
   }
-  
-  
-  .transcript-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 6px;
-    width: 100%;
-    min-height: 32px;
-  }
+
 
   .file-header {
     margin-bottom: 24px;
@@ -2445,25 +2437,6 @@
     cursor: not-allowed;
   }
 
-
-  .status-text {
-    white-space: nowrap;
-  }
-
-  .generate-summary-btn.checking {
-    background-color: var(--warning-color, #f59e0b);
-    opacity: 0.8;
-  }
-
-  .generate-summary-btn.unavailable {
-    background-color: var(--error-color, #ef4444);
-    color: white;
-  }
-
-  .generate-summary-btn.unavailable:hover {
-    background-color: var(--error-color-dark, #dc2626);
-  }
-
   .spinner-small {
     border: 2px solid rgba(255, 255, 255, 0.3);
     border-top: 2px solid white;
@@ -2472,12 +2445,6 @@
     height: 14px;
     animation: spin 1s linear infinite;
     flex-shrink: 0;
-  }
-
-  .warning-icon {
-    flex-shrink: 0;
-    margin-right: 0.3rem;
-    opacity: 0.9;
   }
 
   .summary-error-container {
@@ -2525,28 +2492,6 @@
 
   .waveform-section {
     width: 100%;
-  }
-
-
-  .ai-summary-section {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 20px;
-  }
-
-  .summary-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .summary-header h4 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
   }
 
 

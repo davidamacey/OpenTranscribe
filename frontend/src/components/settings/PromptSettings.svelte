@@ -453,8 +453,9 @@
               <div class="config-info">
                 <div class="config-name">
                   {prompt.name}
-                  <span 
-                    class="info-tooltip" 
+                  <span
+                    class="info-tooltip"
+                    role="tooltip"
                     data-tooltip="This system prompt cannot be deleted or edited. Create custom prompts to suit your specific needs."
                     on:mouseenter={removeTitle}
                   >
@@ -651,8 +652,22 @@
 
   <!-- Create/Edit Form Modal -->
   {#if showCreateForm}
-    <div class="modal-overlay">
-      <div class="modal-content" on:click|stopPropagation>
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={() => closeForm()}
+      on:keydown={(e) => e.key === 'Escape' && closeForm()}
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
         <div class="modal-header">
           <h3>
             {editingPrompt ? 'Edit Prompt' : 'Create New Prompt'}
@@ -789,8 +804,22 @@
 
   <!-- View Prompt Modal -->
   {#if showViewModal && viewingPrompt}
-    <div class="modal-overlay" on:click={closeViewModal}>
-      <div class="modal-content view-modal" on:click|stopPropagation>
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={closeViewModal}
+      on:keydown={(e) => e.key === 'Escape' && closeViewModal()}
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content view-modal"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
         <div class="modal-header">
           <h3>View Prompt: {viewingPrompt.name}</h3>
           <button class="close-button" on:click={closeViewModal}>×</button>
@@ -911,18 +940,6 @@
     color: var(--text-light);
   }
 
-  .active-prompt-section,
-  .prompt-section {
-    margin-bottom: 2rem;
-  }
-
-  .active-prompt-section h4,
-  .prompt-section h4 {
-    margin: 0 0 1rem 0;
-    color: var(--text-color);
-    font-size: 1.1rem;
-  }
-
   .section-header {
     display: flex;
     justify-content: space-between;
@@ -930,70 +947,11 @@
     margin-bottom: 1rem;
   }
 
-  .active-prompt-card,
-  .prompt-card {
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem;
-  }
-
-  .prompt-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .prompt-card.active {
-    border-color: var(--primary-color);
-    background-color: rgba(59, 130, 246, 0.05);
-  }
-
-  .prompts-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .prompt-info {
-    flex: 1;
-  }
-
-  .prompt-name {
-    font-weight: 500;
-    font-size: 1rem;
-    color: var(--text-color);
-    margin-bottom: 0.25rem;
-  }
-
-  .prompt-meta {
-    font-size: 0.8rem;
-    color: var(--text-light);
-    margin-bottom: 0.5rem;
-  }
-
-  .prompt-description {
-    font-size: 0.9rem;
-    color: var(--text-color);
-    line-height: 1.4;
-  }
-
-
   .prompt-actions {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
     align-items: center;
-  }
-
-  .active-badge {
-    padding: 0.25rem 0.75rem;
-    background-color: var(--success-color);
-    color: white;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 500;
   }
 
   .action-button {
@@ -1045,25 +1003,6 @@
   .action-button.secondary:active:not(:disabled) {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .action-button.danger {
-    background-color: transparent;
-    border-color: var(--error-color);
-    color: var(--error-color);
-  }
-
-  .action-button.danger:hover:not(:disabled) {
-    background-color: var(--error-color);
-    border-color: var(--error-color);
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-  }
-
-  .action-button.danger:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
 
   .action-button:disabled {
@@ -1325,13 +1264,6 @@
     line-height: 1.4;
   }
 
-  .config-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
   .empty-state {
     text-align: center;
     padding: 3rem 2rem;
@@ -1549,16 +1481,6 @@
     outline-offset: 2px !important;
   }
 
-  .no-active-prompt,
-  .no-prompts {
-    text-align: center;
-    padding: 2rem;
-    color: var(--text-light);
-    background-color: var(--surface-color);
-    border: 1px dashed var(--border-color);
-    border-radius: 8px;
-  }
-
   /* Modal styles */
   .modal-overlay {
     position: fixed;
@@ -1700,11 +1622,6 @@
     .section-header {
       flex-direction: column;
       align-items: stretch;
-      gap: 1rem;
-    }
-
-    .prompt-card {
-      flex-direction: column;
       gap: 1rem;
     }
 

@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { SummaryData, MajorTopic } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
-  
+
   export let summary: SummaryData;
-  export let fileName: string = '';
+  // fileName prop removed - not used internally
   export let searchQuery: string = '';
   export let currentMatchIndex: number = 0;
   

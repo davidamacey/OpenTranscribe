@@ -332,8 +332,24 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" on:click={() => closeModal()}>
-    <div class="modal-content" on:click|stopPropagation>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-overlay"
+    role="presentation"
+    on:click={() => closeModal()}
+    on:keydown={(e) => e.key === 'Escape' && closeModal()}
+  >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-content"
+      role="dialog"
+      aria-modal="true"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
       <div class="modal-header">
         <h3>
           {editingConfig ? 'Edit Configuration' : 'Create LLM Configuration'}
@@ -384,8 +400,9 @@
                 <span class="label-with-tooltip">
                   Base URL *
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
-                    <span 
-                      class="info-tooltip" 
+                    <span
+                      class="info-tooltip"
+                      role="tooltip"
                       data-tooltip="For local installations, use your server's IP address (e.g., http://192.168.1.10:11434). Ensure the port is open and accessible from your network."
                       on:mouseenter={positionTooltip}
                     >
@@ -396,8 +413,9 @@
                       </svg>
                     </span>
                   {:else if formData.provider === 'openrouter'}
-                    <span 
-                      class="info-tooltip" 
+                    <span
+                      class="info-tooltip"
+                      role="tooltip"
                       data-tooltip="OpenRouter is a cloud service. Use the default URL (https://openrouter.ai/api/v1) unless you have a custom endpoint."
                       on:mouseenter={positionTooltip}
                     >

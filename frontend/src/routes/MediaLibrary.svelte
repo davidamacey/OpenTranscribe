@@ -1024,14 +1024,15 @@
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="modal-backdrop"
-    role="dialog"
-    aria-modal="true"
-    tabindex="0"
+    role="presentation"
     transition:fade={{ duration: 400 }}
     on:click|self={toggleUploadModal}
     on:keydown={(e) => e.key === 'Escape' && toggleUploadModal()}
   >
     <!-- The actual modal dialog -->
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="modal-container"
       role="dialog"
@@ -1068,13 +1069,21 @@
 {#if showCollectionsModal}
   <div
     class="modal-backdrop"
+    role="presentation"
     transition:fade={{ duration: 400 }}
     on:click={() => showCollectionsModal = false}
+    on:keydown={(e) => e.key === 'Escape' && (() => showCollectionsModal = false)()}
   >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="modal-container"
+      role="dialog"
+      aria-modal="true"
       transition:scale={{ duration: 350, start: 0.9 }}
       on:click|stopPropagation
+      on:keydown|stopPropagation
     >
       <div class="modal-content">
         <div class="modal-header">
@@ -1374,12 +1383,7 @@
     width: 100%;
     height: 4px;
   }
-  
-  /* Active state icon styling */
-  .tab-button.active svg {
-    color: var(--primary-color, #3b82f6);
-  }
-  
+
   /* Focus states for accessibility */
   .tab-button:focus {
     outline: 2px solid var(--primary-color);
@@ -1491,11 +1495,6 @@
     font-weight: 500 !important;
   }
 
-  .compact svg {
-    width: 14px !important;
-    height: 14px !important;
-  }
-  
   /* Upload Button in Header */
   .normal-actions {
     display: flex;
@@ -2050,28 +2049,6 @@
   .mobile-filter-toggle {
     display: none;
     margin-left: auto;
-  }
-
-  .mobile-filter-toggle button {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.4rem 0.8rem;
-    cursor: pointer;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .mobile-filter-toggle button:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
 
   /* Responsive design */
