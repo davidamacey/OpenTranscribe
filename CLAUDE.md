@@ -48,6 +48,27 @@ Use `./opentr.sh` for all development operations:
 ./opentr.sh restore backups/backup_file.sql
 ```
 
+### Docker Build & Push (Production Images)
+
+Build and push production Docker images to Docker Hub:
+
+```bash
+# Build and push both services
+./scripts/docker-build-push.sh
+
+# Build specific service only
+./scripts/docker-build-push.sh backend
+./scripts/docker-build-push.sh frontend
+
+# Auto-detect changes and build only what changed
+./scripts/docker-build-push.sh auto
+
+# Build for single platform (faster testing)
+PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
+```
+
+See [scripts/README.md](scripts/README.md) for detailed documentation.
+
 ### Frontend Development
 ```bash
 # From frontend/ directory

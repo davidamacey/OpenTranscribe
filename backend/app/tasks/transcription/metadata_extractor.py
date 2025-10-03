@@ -20,12 +20,28 @@ def _parse_media_date(date_str: str) -> Optional[datetime.datetime]:
     Parse various date formats commonly found in media file metadata.
 
     Args:
-        date_str: Date string from metadata
+        date_str: Date string from metadata (can also be an integer for YYYYMMDD format)
 
     Returns:
         Parsed datetime object or None if parsing fails
     """
-    if not date_str or not isinstance(date_str, str):
+    if not date_str:
+        return None
+
+    # Handle integer YYYYMMDD format (common in YouTube/platform videos)
+    if isinstance(date_str, int):
+        try:
+            date_str = str(date_str)
+            if len(date_str) == 8:  # YYYYMMDD
+                year = int(date_str[0:4])
+                month = int(date_str[4:6])
+                day = int(date_str[6:8])
+                parsed_date = datetime.datetime(year, month, day, tzinfo=datetime.timezone.utc)
+                return parsed_date
+        except (ValueError, TypeError):
+            return None
+
+    if not isinstance(date_str, str):
         return None
 
     # Reject obviously invalid dates (common in downloaded/processed videos)
@@ -130,6 +146,7 @@ def get_important_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         "AudioBitsPerSample": ["QuickTime:AudioBitsPerSample", "AudioBitsPerSample"],
         # Creation info
         "CreateDate": [
+            "QuickTime:ContentCreateDate",  # YouTube and other platform videos
             "QuickTime:CreateDate",
             "CreateDate",
             "DateTimeOriginal",

@@ -48,6 +48,7 @@ jobs:
 
   build_backend_arm64:
     runs-on: ubuntu-latest
+    if: false  # Disabled - build locally due to size (13.8GB) causing GitHub runner failures
     steps:
       - name: Maximize build disk space
         uses: easimon/maximize-build-space@master
@@ -152,7 +153,7 @@ jobs:
           cache-to: type=registry,ref=davidamacey/opentranscribe-frontend:buildcache-arm64,mode=max
 
   create_manifests:
-    needs: [build_backend_amd64, build_backend_arm64, build_frontend_amd64, build_frontend_arm64]
+    needs: [build_backend_amd64, build_frontend_amd64, build_frontend_arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Login to DockerHub
@@ -161,11 +162,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Create and push backend manifest
+      - name: Create and push backend manifest (AMD64 only for now)
         run: |
           docker buildx imagetools create -t davidamacey/opentranscribe-backend:latest \
-            davidamacey/opentranscribe-backend:latest-amd64 \
-            davidamacey/opentranscribe-backend:latest-arm64
+            davidamacey/opentranscribe-backend:latest-amd64
 
       - name: Create and push frontend manifest
         run: |
