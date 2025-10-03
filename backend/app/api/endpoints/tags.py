@@ -146,16 +146,22 @@ def cleanup_unused_tags(
         ) from e
 
 
-@router.post("/files/{file_id}/tags", response_model=TagSchema)
+@router.post("/files/{file_uuid}/tags", response_model=TagSchema)
 async def add_tag_to_file(
     request: Request,
-    file_id: int,
+    file_uuid: str,
     tag_data: dict = Body(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+    # Get file by UUID and verify permission
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id  # Get internal ID for database operations
+
     # Log detailed information about the request for debugging
-    logger.info(f"Received add_tag_to_file request for file_id={file_id}, tag_data={tag_data}")
+    logger.info(f"Received add_tag_to_file request for file_uuid={file_uuid}, tag_data={tag_data}")
 
     # Handle the raw dictionary and extract the name
     if not tag_data or "name" not in tag_data:
@@ -204,9 +210,9 @@ async def add_tag_to_file(
     return tag
 
 
-@router.delete("/files/{file_id}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/files/{file_uuid}/tags/{tag_name}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_tag_from_file(
-    file_id: int,
+    file_uuid: str,
     tag_name: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -214,15 +220,11 @@ def remove_tag_from_file(
     """
     Remove a tag from a media file
     """
-    # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
+    # Get file by UUID with permission check
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Find the tag
     tag = db.query(Tag).filter(Tag.name == tag_name).first()

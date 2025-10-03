@@ -1,8 +1,11 @@
+import uuid as uuid_pkg
+
 from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -15,6 +18,7 @@ class User(Base):
     __tablename__ = "user"
 
     id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)

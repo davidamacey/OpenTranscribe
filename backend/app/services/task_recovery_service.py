@@ -170,9 +170,23 @@ class TaskRecoveryService:
             bool: True if retry was scheduled successfully
         """
         try:
+            from app.db.base import SessionLocal
+            from app.models.media import MediaFile
             from app.tasks.transcription import transcribe_audio_task
 
-            result = transcribe_audio_task.delay(media_file_id)
+            # Get file UUID from ID
+            db = SessionLocal()
+            try:
+                media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+                if not media_file:
+                    logger.error(f"File {media_file_id} not found for retry")
+                    return False
+
+                file_uuid = str(media_file.uuid)
+            finally:
+                db.close()
+
+            result = transcribe_audio_task.delay(file_uuid)
             logger.info(f"Scheduled retry for file {media_file_id}, task ID: {result.id}")
             return True
 

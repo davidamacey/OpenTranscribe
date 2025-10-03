@@ -6,7 +6,7 @@
   
   /** @type {string} */
   export let fileId = "";
-  /** @type {Array<{id: number, name: string}>} */
+  /** @type {Array<{id: string, name: string}>} */
   export let tags = [];
   
   // Ensure tags are always in the correct format
@@ -29,7 +29,7 @@
     }
   }
   
-  /** @type {Array<{id: number, name: string}>} */
+  /** @type {Array<{id: string, name: string}>} */
   let allTags = [];
   /** @type {string} */
   let newTagInput = '';

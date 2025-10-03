@@ -58,9 +58,9 @@
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
   let pendingCloseAction: (() => void) | null = null;
-  
+
   // Track when the modal was last opened to prevent repeated form population
-  let lastEditingConfigId: number | null = null;
+  let lastEditingConfigId: string | null = null;
 
   // Only populate form when modal opens or editingConfig changes
   $: if (show) {

@@ -82,9 +82,8 @@
 
   <!-- Major Topics -->
   {#if summary.major_topics && summary.major_topics.length > 0}
-    <TopicsList 
-      topics={highlightedContent?.majorTopics || summary.major_topics} 
-      {searchQuery} 
+    <TopicsList
+      topics={highlightedContent?.majorTopics || summary.major_topics}
     />
   {/if}
 

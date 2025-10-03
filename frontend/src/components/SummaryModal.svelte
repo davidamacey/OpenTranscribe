@@ -475,9 +475,8 @@
             on:previousMatch={cycleToPreviousMatch}
           />
           
-          <SummaryDisplay 
-            {summary} 
-            {fileName}
+          <SummaryDisplay
+            {summary}
             {searchQuery}
             {currentMatchIndex}
           />
@@ -489,7 +488,6 @@
           {llmAvailable}
           {canRetry}
           {summaryStatus}
-          {fileName}
           on:generateSummary={generateSummary}
           on:retrySummary={retryFailedSummary}
         />

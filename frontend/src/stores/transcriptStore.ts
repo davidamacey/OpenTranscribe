@@ -5,11 +5,11 @@ export interface TranscriptSegment {
   start_time: number;
   end_time: number;
   text: string;
-  speaker_id?: number;
+  speaker_id?: string;  // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;
   speaker?: {
-    id: number;
+    id: string;  // UUID
     name: string;
     display_name?: string;
   };
@@ -18,15 +18,15 @@ export interface TranscriptSegment {
 }
 
 export interface SpeakerInfo {
-  id: number;
+  id: string;  // UUID
   name: string; // Original speaker ID (e.g., "SPEAKER_01")
   display_name?: string; // User-assigned display name
-  uuid: string;
+  uuid: string;  // UUID (same as id)
   verified: boolean;
 }
 
 export interface TranscriptData {
-  fileId: number | null;
+  fileId: string | null;  // UUID
   segments: TranscriptSegment[];
   speakers: SpeakerInfo[];
 }
@@ -42,7 +42,7 @@ const createTranscriptStore = () => {
   return {
     subscribe,
     // Load initial data for a file
-    loadTranscriptData: (fileId: number, segments: TranscriptSegment[], speakers: SpeakerInfo[]) => {
+    loadTranscriptData: (fileId: string, segments: TranscriptSegment[], speakers: SpeakerInfo[]) => {
       set({
         fileId,
         segments: segments.map(segment => ({ ...segment })),
@@ -51,7 +51,7 @@ const createTranscriptStore = () => {
     },
 
     // Update a speaker's display name
-    updateSpeakerName: (speakerId: number, newDisplayName: string) => {
+    updateSpeakerName: (speakerId: string, newDisplayName: string) => {
       update(data => {
         // Update speaker in speakers array
         const updatedSpeakers = data.speakers.map(speaker =>

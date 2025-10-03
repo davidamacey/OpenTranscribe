@@ -93,13 +93,13 @@
       }
     };
     
-    window.addEventListener('setFileUploaderTab', handleSetTabEvent);
-    window.addEventListener('directFileUpload', handleDirectUpload);
+    window.addEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
+    window.addEventListener('directFileUpload', handleDirectUpload as EventListener);
     
     return () => {
       if (cleanup) cleanup();
-      window.removeEventListener('setFileUploaderTab', handleSetTabEvent);
-      window.removeEventListener('directFileUpload', handleDirectUpload);
+      window.removeEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
+      window.removeEventListener('directFileUpload', handleDirectUpload as EventListener);
     };
   });
   
@@ -186,10 +186,10 @@
 
   // Pause/resume recording using global recording manager
   function togglePauseRecording() {
-    let currentState;
+    let currentState: any;
     const unsubscribe = recordingStore.subscribe(state => currentState = state);
     unsubscribe();
-    
+
     if (currentState?.isPaused) {
       recordingManager.resumeRecording();
     } else {
@@ -258,10 +258,10 @@
   // Reset recording state with protection check
   function resetRecordingState() {
     // Only reset if no active recording in progress
-    let currentState;
+    let currentState: any;
     const unsubscribe = recordingStore.subscribe(state => currentState = state);
     unsubscribe();
-    
+
     if (!currentState?.hasActiveRecording) {
       recordingManager.clearRecording();
     }
@@ -902,11 +902,11 @@
         fallbackToKeyboardPaste();
       }
       
-    } catch (error) {
+    } catch (error: unknown) {
       // Clipboard read failed - handle gracefully with fallback
-      
+
       // Handle permission denial gracefully
-      if (error.name === 'NotAllowedError') {
+      if ((error as Error).name === 'NotAllowedError') {
         // Don't show error, just provide seamless fallback
         fallbackToKeyboardPaste();
       } else {

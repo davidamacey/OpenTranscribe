@@ -21,6 +21,9 @@ from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
 from app.schemas.media import CollectionWithCount
 from app.schemas.media import MediaFile as MediaFileSchema
+from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
+from app.utils.uuid_helpers import get_file_by_uuid
+from app.utils.uuid_helpers import validate_uuids
 
 router = APIRouter()
 
@@ -33,20 +36,35 @@ async def list_collections(
     current_user: User = Depends(get_current_user),
 ):
     """Get all collections for the current user with media count"""
-    collections_query = (
-        db.query(Collection, func.count(CollectionMember.id).label("media_count"))
+    # First get collection IDs and counts
+    counts_query = (
+        db.query(Collection.id, func.count(CollectionMember.id).label("media_count"))
         .filter(Collection.user_id == current_user.id)
         .outerjoin(CollectionMember)
         .group_by(Collection.id)
         .offset(skip)
         .limit(limit)
+    ).all()
+
+    # Extract collection IDs
+    collection_ids = [c[0] for c in counts_query]
+    counts_dict = {c[0]: c[1] or 0 for c in counts_query}
+
+    # Then fetch full collection objects with user relationship
+    collections_objs = (
+        db.query(Collection)
+        .options(joinedload(Collection.user))
+        .filter(Collection.id.in_(collection_ids))
+        .all()
     )
 
     collections = []
-    for collection, media_count in collections_query:
-        collection_dict = collection.__dict__.copy()
-        collection_dict["media_count"] = media_count or 0
-        collections.append(CollectionWithCount(**collection_dict))
+    for collection in collections_objs:
+        # Use model_validate with the collection object
+        collection_with_count = CollectionWithCount.model_validate(collection)
+        # Set the media_count from our counts dict
+        collection_with_count.media_count = counts_dict.get(collection.id, 0)
+        collections.append(collection_with_count)
 
     return collections
 
@@ -79,22 +97,22 @@ async def create_collection(
     return db_collection
 
 
-@router.get("/{collection_id}", response_model=CollectionResponse)
+@router.get("/{collection_uuid}", response_model=CollectionResponse)
 async def get_collection(
-    collection_id: int,
+    collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get a specific collection with its media files"""
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+
+    # Reload with joined data
     collection = (
         db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
+        .filter(Collection.id == collection.id)
         .options(joinedload(Collection.collection_members).joinedload(CollectionMember.media_file))
         .first()
     )
-
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
 
     # Extract media files from collection members
     media_files = [member.media_file for member in collection.collection_members]
@@ -106,22 +124,16 @@ async def get_collection(
     return CollectionResponse(**collection_dict)
 
 
-@router.put("/{collection_id}", response_model=CollectionSchema)
+@router.put("/{collection_uuid}", response_model=CollectionSchema)
 async def update_collection(
-    collection_id: int,
+    collection_uuid: str,
     collection_update: CollectionUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Update a collection"""
-    collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .first()
-    )
-
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection_id = collection.id
 
     # Check if new name conflicts with existing collection
     if collection_update.name and collection_update.name != collection.name:
@@ -152,21 +164,14 @@ async def update_collection(
     return collection
 
 
-@router.delete("/{collection_id}")
+@router.delete("/{collection_uuid}")
 async def delete_collection(
-    collection_id: int,
+    collection_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Delete a collection"""
-    collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .first()
-    )
-
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
 
     db.delete(collection)
     db.commit()
@@ -174,35 +179,41 @@ async def delete_collection(
     return {"message": "Collection deleted successfully"}
 
 
-@router.post("/{collection_id}/media", response_model=dict)
+@router.post("/{collection_uuid}/media", response_model=dict)
 async def add_media_to_collection(
-    collection_id: int,
+    collection_uuid: str,
     media_data: CollectionMemberAdd,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Add media files to a collection"""
     # Verify collection exists and belongs to user
-    collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .first()
-    )
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection_id = collection.id
 
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
+    # Convert UUIDs to IDs for media files
+    media_file_uuids = validate_uuids(media_data.media_file_ids)
+    media_file_ids = []
+    for file_uuid in media_file_uuids:
+        file = get_file_by_uuid(db, file_uuid)
+        if file.user_id != current_user.id:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Not authorized to access file {file_uuid}",
+            )
+        media_file_ids.append(file.id)
 
-    # Verify all media files exist and belong to user
+    # Verify all media files exist and belong to user (already done above, but keep query for consistency)
     media_files = (
         db.query(MediaFile)
         .filter(
-            MediaFile.id.in_(media_data.media_file_ids),
+            MediaFile.id.in_(media_file_ids),
             MediaFile.user_id == current_user.id,
         )
         .all()
     )
 
-    if len(media_files) != len(media_data.media_file_ids):
+    if len(media_files) != len(media_file_ids):
         raise HTTPException(
             status_code=404,
             detail="One or more media files not found or don't belong to you",
@@ -213,13 +224,13 @@ async def add_media_to_collection(
         db.query(CollectionMember.media_file_id)
         .filter(
             CollectionMember.collection_id == collection_id,
-            CollectionMember.media_file_id.in_(media_data.media_file_ids),
+            CollectionMember.media_file_id.in_(media_file_ids),
         )
         .all()
     )
 
     existing_ids = {member[0] for member in existing_members}
-    new_ids = set(media_data.media_file_ids) - existing_ids
+    new_ids = set(media_file_ids) - existing_ids
 
     # Add new members
     added_count = 0
@@ -237,30 +248,31 @@ async def add_media_to_collection(
     }
 
 
-@router.delete("/{collection_id}/media", response_model=dict)
+@router.delete("/{collection_uuid}/media", response_model=dict)
 async def remove_media_from_collection(
-    collection_id: int,
+    collection_uuid: str,
     media_data: CollectionMemberRemove,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Remove media files from a collection"""
     # Verify collection exists and belongs to user
-    collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .first()
-    )
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection_id = collection.id
 
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
+    # Convert UUIDs to IDs for media files
+    media_file_uuids = validate_uuids(media_data.media_file_ids)
+    media_file_ids = []
+    for file_uuid in media_file_uuids:
+        file = get_file_by_uuid(db, file_uuid)
+        media_file_ids.append(file.id)
 
     # Remove members
     removed_count = (
         db.query(CollectionMember)
         .filter(
             CollectionMember.collection_id == collection_id,
-            CollectionMember.media_file_id.in_(media_data.media_file_ids),
+            CollectionMember.media_file_id.in_(media_file_ids),
         )
         .delete(synchronize_session=False)
     )
@@ -273,9 +285,9 @@ async def remove_media_from_collection(
     }
 
 
-@router.get("/{collection_id}/media", response_model=list[MediaFileSchema])
+@router.get("/{collection_uuid}/media", response_model=list[MediaFileSchema])
 async def get_collection_media(
-    collection_id: int,
+    collection_uuid: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db),
@@ -283,14 +295,8 @@ async def get_collection_media(
 ):
     """Get media files in a collection"""
     # Verify collection exists and belongs to user
-    collection = (
-        db.query(Collection)
-        .filter(Collection.id == collection_id, Collection.user_id == current_user.id)
-        .first()
-    )
-
-    if not collection:
-        raise HTTPException(status_code=404, detail="Collection not found")
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection_id = collection.id
 
     # Get media files
     media_files = (

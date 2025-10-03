@@ -1,6 +1,7 @@
 """
 SQLAlchemy models for user LLM provider settings
 """
+import uuid as uuid_pkg
 
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -11,6 +12,7 @@ from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -29,6 +31,7 @@ class UserLLMSettings(Base):
     __tablename__ = "user_llm_settings"
 
     id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)  # User-friendly name for the configuration
 

@@ -63,28 +63,28 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         raise
 
 
-def start_reprocessing_task(file_id: int) -> None:
+def start_reprocessing_task(file_uuid: str) -> None:
     """
     Start the background reprocessing task.
 
     Args:
-        file_id: ID of the media file to reprocess
+        file_uuid: UUID of the media file to reprocess
     """
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Use the same transcription task - it will handle reprocessing
-        transcribe_audio_task.delay(file_id)
+        transcribe_audio_task.delay(file_uuid)
     else:
         logger.info("Skipping Celery task in test environment")
 
 
-async def process_file_reprocess(file_id: int, db: Session, current_user: User) -> MediaFile:
+async def process_file_reprocess(file_uuid: str, db: Session, current_user: User) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
 
     Args:
-        file_id: ID of the file to reprocess
+        file_uuid: UUID of the file to reprocess
         db: Database session
         current_user: Current user
 
@@ -96,21 +96,18 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
     """
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import reset_file_for_retry
+    from app.utils.uuid_helpers import get_file_by_uuid
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     try:
         # Get the file (allow admin to reprocess any file)
         is_admin = current_user.role == "admin"
-        query = db.query(MediaFile).filter(MediaFile.id == file_id)
-        if not is_admin:
-            query = query.filter(MediaFile.user_id == current_user.id)
+        if is_admin:
+            media_file = get_file_by_uuid(db, file_uuid)
+        else:
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
 
-        media_file = query.first()
-
-        if not media_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found or you don't have permission to access it",
-            )
+        file_id = media_file.id  # Get internal ID for task operations
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:
@@ -134,7 +131,7 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
                 detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
             )
 
-        logger.info(f"Starting reprocessing for file {file_id} by user {current_user.email}")
+        logger.info(f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}")
 
         # Use the enhanced retry logic
         success = reset_file_for_retry(db, file_id, reset_retry_count=False)
@@ -148,10 +145,10 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
         db.refresh(media_file)
 
         # Start background reprocessing task
-        start_reprocessing_task(media_file.id)
+        start_reprocessing_task(file_uuid)
 
         logger.info(
-            f"Reprocessing task started for file {file_id} (attempt {media_file.retry_count})"
+            f"Reprocessing task started for file {file_uuid} (id: {file_id}, attempt {media_file.retry_count})"
         )
 
         return media_file
@@ -160,7 +157,7 @@ async def process_file_reprocess(file_id: int, db: Session, current_user: User) 
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Error processing reprocess request for file {file_id}: {e}")
+        logger.error(f"Error processing reprocess request for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error processing reprocess request",

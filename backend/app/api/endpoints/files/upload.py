@@ -125,15 +125,15 @@ def upload_file_to_storage(
         logger.info("Skipping S3 upload in test environment")
 
 
-def start_transcription_task(file_id: int) -> None:
+def start_transcription_task(file_uuid: str) -> None:
     """
     Start the background transcription task.
 
     Args:
-        file_id: ID of the media file to transcribe
+        file_uuid: UUID of the media file to transcribe
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        transcribe_audio_task.delay(file_id)
+        transcribe_audio_task.delay(file_uuid)
     else:
         logger.info("Skipping Celery task in test environment")
 
@@ -142,7 +142,7 @@ async def process_file_upload(
     file: UploadFile,
     db: Session,
     current_user: User,
-    existing_file_id: Optional[int] = None,
+    existing_file_uuid: Optional[str] = None,
     client_file_hash: Optional[str] = None,
 ) -> MediaFile:
     """
@@ -153,7 +153,7 @@ async def process_file_upload(
         file: Uploaded file
         db: Database session
         current_user: Current user
-        existing_file_id: Optional ID of existing file record from prepare_upload
+        existing_file_uuid: Optional UUID of existing file record from prepare_upload
         client_file_hash: Optional file hash calculated by the client (preferred method)
 
     Returns:
@@ -177,11 +177,12 @@ async def process_file_upload(
             file_size = int(file.headers.get("content-length", 0))
 
         # Check if we should use an existing file record (from prepare_upload)
-        if existing_file_id:
+        if existing_file_uuid:
+            # Look up file by UUID
             db_file = (
                 db.query(MediaFile)
                 .filter(
-                    MediaFile.id == existing_file_id,
+                    MediaFile.uuid == existing_file_uuid,
                     MediaFile.user_id == current_user.id,
                 )
                 .first()
@@ -189,13 +190,13 @@ async def process_file_upload(
 
             if not db_file:
                 logger.warning(
-                    f"Existing file ID {existing_file_id} not found for user {current_user.id}"
+                    f"Existing file UUID {existing_file_uuid} not found for user {current_user.id}"
                 )
                 # Create a new file record if the existing one can't be found
                 db_file = create_media_file_record(db, file, current_user, file_size)
             else:
-                logger.info(f"Duplicate detected: using existing file ID={existing_file_id}")
-                # Update the status to PENDING
+                logger.info(f"Using existing file record with UUID={existing_file_uuid}")
+                # Update the status to PENDING (in case it was in a different state)
                 db_file.status = FileStatus.PENDING
                 db.commit()
         else:
@@ -284,7 +285,7 @@ async def process_file_upload(
             db.refresh(db_file)
 
             # Start background transcription
-            start_transcription_task(db_file.id)
+            start_transcription_task(str(db_file.uuid))
 
             logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
             return db_file

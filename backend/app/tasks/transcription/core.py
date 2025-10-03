@@ -38,13 +38,13 @@ logger = logging.getLogger(__name__)
 
 
 # Import for automatic summarization, speaker identification, and analytics
-def trigger_automatic_summarization(file_id: int):
+def trigger_automatic_summarization(file_id: int, file_uuid: str):
     """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
     try:
         # First trigger analytics computation
         from app.tasks.analytics import analyze_transcript_task
 
-        analytics_task = analyze_transcript_task.delay(file_id=file_id)
+        analytics_task = analyze_transcript_task.delay(file_uuid=file_uuid)
         logger.info(
             f"Automatic analytics computation task {analytics_task.id} started for file {file_id}"
         )
@@ -52,7 +52,7 @@ def trigger_automatic_summarization(file_id: int):
         # Then trigger speaker identification
         from app.tasks.speaker_tasks import identify_speakers_llm_task
 
-        speaker_task = identify_speakers_llm_task.delay(file_id=file_id)
+        speaker_task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
         logger.info(
             f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
         )
@@ -60,34 +60,38 @@ def trigger_automatic_summarization(file_id: int):
         # Finally trigger summarization (this will use the speaker suggestions when available)
         from app.tasks.summarization import summarize_transcript_task
 
-        summary_task = summarize_transcript_task.delay(file_id=file_id)
+        summary_task = summarize_transcript_task.delay(file_uuid=file_uuid)
         logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
 
 
 @celery_app.task(bind=True, name="transcribe_audio")
-def transcribe_audio_task(self, file_id: int):
+def transcribe_audio_task(self, file_uuid: str):
     """
     Process an audio/video file with WhisperX for transcription and Pyannote for diarization.
 
     Args:
-        file_id: Database ID of the MediaFile to transcribe
+        file_uuid: UUID of the MediaFile to transcribe
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     task_id = self.request.id
     user_id = None
+    file_id = None
 
     try:
         # Step 1: Get file information and update status
         with session_scope() as db:
-            media_file = get_refreshed_object(db, MediaFile, file_id)
+            media_file = get_file_by_uuid(db, file_uuid)
             if not media_file:
-                logger.error(f"Media file with ID {file_id} not found")
+                logger.error(f"Media file with UUID {file_uuid} not found")
                 return {
                     "status": "error",
-                    "message": f"Media file with ID {file_id} not found",
+                    "message": f"Media file with UUID {file_uuid} not found",
                 }
 
+            file_id = media_file.id  # Get internal ID for database operations
             user_id = media_file.user_id
             file_path = media_file.storage_path
             file_name = media_file.filename
@@ -331,8 +335,12 @@ def transcribe_audio_task(self, file_id: int):
                             if media_file
                             else f"File {file_id}"
                         )
+                        file_uuid = media_file.uuid if media_file else None
 
-                    index_transcript(file_id, user_id, full_transcript, speaker_names, file_title)
+                    if file_uuid:
+                        index_transcript(file_id, file_uuid, user_id, full_transcript, speaker_names, file_title)
+                    else:
+                        logger.warning(f"Could not index transcript: file_uuid not found for file_id {file_id}")
                 except Exception as e:
                     logger.warning(f"Error indexing transcript: {e}")
 
@@ -348,7 +356,7 @@ def transcribe_audio_task(self, file_id: int):
                 logger.info(
                     f"Transcription completed successfully for file {file_id}, triggering automatic summarization"
                 )
-                trigger_automatic_summarization(file_id)
+                trigger_automatic_summarization(file_id, file_uuid)
 
                 return {
                     "status": "success",

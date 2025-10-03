@@ -17,7 +17,7 @@ export interface UploadItem {
   status: UploadStatus;
   progress: number;
   error?: string;
-  fileId?: number;
+  fileId?: string;  // UUID
   retryCount: number;
   startTime?: number;
   estimatedTime?: string;
@@ -267,7 +267,7 @@ class UploadService {
     await axiosInstance.post('/files', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
-        'X-File-ID': fileId.toString(),
+        'X-File-ID': fileId,
         'X-File-Hash': fileHash || '',
       },
       timeout: UPLOAD_TIMEOUT_MS,

@@ -106,10 +106,10 @@ class SmartSpeakerSuggestionService:
                 f"Found suggested_name ({speaker.suggested_name}) but treating as voice match to avoid confusion"
             )
 
-        # Get speaker embedding for voice and profile matching
-        speaker_embedding = get_speaker_embedding(speaker_id)
+        # Get speaker embedding for voice and profile matching using UUID
+        speaker_embedding = get_speaker_embedding(str(speaker.uuid))
         if not speaker_embedding:
-            logger.warning(f"No embedding found for speaker {speaker_id}")
+            logger.warning(f"No embedding found for speaker {speaker.uuid}")
             return suggestions
 
         embedding_array = np.array(speaker_embedding)
@@ -210,7 +210,7 @@ class SmartSpeakerSuggestionService:
             try:
                 # First check if the index exists
                 if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
-                    logger.info(f"Speakers index does not exist yet, skipping profile suggestion search")
+                    logger.info("Speakers index does not exist yet, skipping profile suggestion search")
                     return suggestions
 
                 profile_check = opensearch_client.search(
@@ -224,7 +224,7 @@ class SmartSpeakerSuggestionService:
 
             # Build query to search only profile documents (those with document_type="profile")
             # Use OpenSearch 2.5.0 compatible KNN query structure
-            filters = [
+            must_filters = [
                 {"term": {"document_type": "profile"}},  # CRITICAL: Only profile documents
                 {"term": {"user_id": user_id}},  # User's profiles only
             ]
@@ -236,7 +236,7 @@ class SmartSpeakerSuggestionService:
                         "embedding": {
                             "vector": embedding.tolist(),
                             "k": 10,
-                            "filter": {"bool": {"filter": filters}},
+                            "filter": {"bool": {"must": must_filters}},
                         }
                     }
                 },
@@ -381,11 +381,46 @@ class SmartSpeakerSuggestionService:
             source_media_file_id = source_speaker.media_file_id
 
             # Search for similar speakers (not profiles)
-            # Use OpenSearch 2.5.0 compatible KNN query structure
-            filters = [
-                {"term": {"user_id": user_id}},
-                {
+            # First check if there are any candidate documents to avoid KNN errors
+            check_query = {
+                "size": 0,
+                "query": {
                     "bool": {
+                        "must": [{"term": {"user_id": user_id}}],
+                        "must_not": [
+                            {"exists": {"field": "document_type"}},  # Exclude profiles
+                            {"term": {"speaker_id": speaker_id}},  # Exclude self
+                            {"term": {"media_file_id": source_media_file_id}},  # Exclude same video
+                        ]
+                    }
+                }
+            }
+
+            check_response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=check_query)
+
+            if check_response["hits"]["total"]["value"] == 0:
+                logger.info(f"No candidate speakers found for voice matching speaker {speaker_id}")
+                return suggestions
+
+            # Use knn query for proper vector similarity search
+            # Note: We filter AFTER knn search since OpenSearch knn doesn't support complex filters
+            query = {
+                "size": 100,  # Get more results to account for filtering
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "knn": {
+                                    "embedding": {
+                                        "vector": embedding.tolist(),
+                                        "k": 50  # Get top 50 similar
+                                    }
+                                }
+                            }
+                        ],
+                        "filter": [
+                            {"term": {"user_id": user_id}}
+                        ],
                         "must_not": [
                             {"exists": {"field": "document_type"}},  # Exclude profiles
                             {"term": {"speaker_id": speaker_id}},  # Exclude self
@@ -393,19 +428,7 @@ class SmartSpeakerSuggestionService:
                         ]
                     }
                 },
-            ]
-
-            query = {
-                "size": 20,
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": embedding.tolist(),
-                            "k": 20,
-                            "filter": {"bool": {"filter": filters}},
-                        }
-                    }
-                },
+                "min_score": threshold  # Use threshold directly
             }
 
             response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
@@ -422,7 +445,8 @@ class SmartSpeakerSuggestionService:
 
                 # Only include labeled speakers (not SPEAKER_XX format)
                 if display_name and not display_name.startswith("SPEAKER_"):
-                    score = hit["_score"]
+                    # Remove the +1.0 offset from script_score
+                    score = hit["_score"] - 1.0
                     if score >= threshold:
                         if (
                             display_name not in voice_matches

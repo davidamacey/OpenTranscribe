@@ -6,7 +6,7 @@ import axiosInstance from '$lib/axios';
 
 export interface LLMStatus {
   available: boolean;
-  user_id: number;
+  user_id: string;  // UUID
   provider?: string | null;
   model?: string | null;
   message: string;
@@ -81,7 +81,7 @@ export class LLMService {
       // Return default unavailable status on error
       const errorStatus: LLMStatus = {
         available: false,
-        user_id: 0,
+        user_id: '0',
         provider: null,
         model: null,
         message: error.response?.data?.detail || 'Unable to check LLM status'

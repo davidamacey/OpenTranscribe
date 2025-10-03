@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.user import User
 from app.services.llm_service import is_llm_available
 from app.tasks.summary_retry import retry_summary_if_available
@@ -22,9 +21,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/{file_id}/summary-status")
+@router.get("/{file_uuid}/summary-status")
 async def get_summary_status(
-    file_id: int,
+    file_uuid: str,  # Changed from int to str for UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -37,18 +36,10 @@ async def get_summary_status(
         - can_retry: whether a failed summary can be retried
         - summary_exists: whether a summary already exists
     """
-    # Check if user has access to this file
-    is_admin = current_user.role == "admin"
-    query = db.query(MediaFile).filter(MediaFile.id == file_id)
-    if not is_admin:
-        query = query.filter(MediaFile.user_id == current_user.id)
-
-    media_file = query.first()
-    if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found or you don't have permission to access it",
-        )
+    # Get file by UUID
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     try:
         # Check LLM availability for current user
@@ -65,7 +56,7 @@ async def get_summary_status(
     )
 
     return {
-        "file_id": file_id,
+        "file_id": str(media_file.uuid),  # Use UUID for frontend
         "summary_status": media_file.summary_status or "pending",
         "summary_exists": bool(media_file.summary or media_file.summary_opensearch_id),
         "llm_available": llm_available,
@@ -75,27 +66,20 @@ async def get_summary_status(
     }
 
 
-@router.post("/{file_id}/retry-summary")
+@router.post("/{file_uuid}/retry-summary")
 async def retry_summary(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     Retry failed summary generation for a file
     """
-    # Check if user has access to this file
-    is_admin = current_user.role == "admin"
-    query = db.query(MediaFile).filter(MediaFile.id == file_id)
-    if not is_admin:
-        query = query.filter(MediaFile.user_id == current_user.id)
+    # Get file by UUID with permission check
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = query.first()
-    if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="File not found or you don't have permission to access it",
-        )
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Check if retry is needed and possible
     if media_file.summary_status not in ["failed", "pending"]:
@@ -139,5 +123,5 @@ async def retry_summary(
     return {
         "status": "success",
         "message": "Summary generation has been queued",
-        "file_id": file_id,
+        "file_id": str(media_file.uuid),  # Use UUID for frontend
     }

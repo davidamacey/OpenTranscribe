@@ -11,6 +11,7 @@ No backwards compatibility - designed for modern infrastructure.
 """
 
 import logging
+from collections.abc import Iterator
 from typing import Any
 from typing import Optional
 from typing import Union

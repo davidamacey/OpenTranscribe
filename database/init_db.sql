@@ -1,8 +1,11 @@
 -- Initialize database tables for OpenTranscribe
+-- Enable UUID extension for PostgreSQL
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users table
 CREATE TABLE IF NOT EXISTS "user" (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     hashed_password VARCHAR(255) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
@@ -16,6 +19,7 @@ CREATE TABLE IF NOT EXISTS "user" (
 -- Media files table
 CREATE TABLE IF NOT EXISTS media_file (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     filename VARCHAR(255) NOT NULL,
     storage_path VARCHAR(500) NOT NULL,
     file_size BIGINT NOT NULL,
@@ -77,6 +81,7 @@ CREATE TABLE IF NOT EXISTS media_file (
 -- Create the Tag table
 CREATE TABLE IF NOT EXISTS tag (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     name VARCHAR(50) NOT NULL UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -84,6 +89,7 @@ CREATE TABLE IF NOT EXISTS tag (
 -- Create the FileTag join table
 CREATE TABLE IF NOT EXISTS file_tag (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     media_file_id INTEGER NOT NULL REFERENCES media_file (id) ON DELETE CASCADE,
     tag_id INTEGER NOT NULL REFERENCES tag (id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -93,10 +99,10 @@ CREATE TABLE IF NOT EXISTS file_tag (
 -- Speaker profiles table (global speaker identities)
 CREATE TABLE IF NOT EXISTS speaker_profile (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL REFERENCES "user"(id),
     name VARCHAR(255) NOT NULL, -- User-assigned name (e.g., "John Doe")
     description TEXT NULL, -- Optional description or notes
-    uuid VARCHAR(255) NOT NULL UNIQUE, -- Unique identifier
     -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
     embedding_count INTEGER DEFAULT 0, -- Number of embeddings averaged into this profile
     last_embedding_update TIMESTAMP WITH TIME ZONE NULL, -- When embedding was last updated
@@ -108,13 +114,13 @@ CREATE TABLE IF NOT EXISTS speaker_profile (
 -- Speakers table (speaker instances within specific media files)
 CREATE TABLE IF NOT EXISTS speaker (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL REFERENCES "user"(id),
     media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE, -- Associate speaker with specific file
     profile_id INTEGER NULL REFERENCES speaker_profile(id) ON DELETE SET NULL, -- Link to global profile
     name VARCHAR(255) NOT NULL, -- Original name from diarization (e.g., "SPEAKER_01")
     display_name VARCHAR(255) NULL, -- User-assigned display name
     suggested_name VARCHAR(255) NULL, -- AI-suggested name based on embedding match
-    uuid VARCHAR(255) NOT NULL, -- Unique identifier for the speaker instance
     verified BOOLEAN NOT NULL DEFAULT FALSE, -- Flag to indicate if the speaker has been verified by a user
     confidence FLOAT NULL, -- Confidence score if auto-matched
     -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
@@ -130,6 +136,7 @@ CREATE TABLE IF NOT EXISTS speaker (
 -- Speaker collections table
 CREATE TABLE IF NOT EXISTS speaker_collection (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
     user_id INTEGER NOT NULL REFERENCES "user"(id),
@@ -142,6 +149,7 @@ CREATE TABLE IF NOT EXISTS speaker_collection (
 -- Speaker collection members join table
 CREATE TABLE IF NOT EXISTS speaker_collection_member (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     collection_id INTEGER NOT NULL REFERENCES speaker_collection(id) ON DELETE CASCADE,
     speaker_profile_id INTEGER NOT NULL REFERENCES speaker_profile(id) ON DELETE CASCADE,
     added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -151,6 +159,7 @@ CREATE TABLE IF NOT EXISTS speaker_collection_member (
 -- Transcript segments table
 CREATE TABLE IF NOT EXISTS transcript_segment (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     media_file_id INTEGER NOT NULL REFERENCES media_file(id),
     speaker_id INTEGER NULL REFERENCES speaker(id),
     start_time FLOAT NOT NULL,
@@ -161,6 +170,7 @@ CREATE TABLE IF NOT EXISTS transcript_segment (
 -- Comments table
 CREATE TABLE IF NOT EXISTS comment (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     media_file_id INTEGER NOT NULL REFERENCES media_file(id),
     user_id INTEGER NOT NULL REFERENCES "user"(id),
     text TEXT NOT NULL,
@@ -185,6 +195,7 @@ CREATE TABLE IF NOT EXISTS task (
 -- Analytics table
 CREATE TABLE IF NOT EXISTS analytics (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     media_file_id INTEGER UNIQUE REFERENCES media_file(id),
     overall_analytics JSONB NULL, -- Structured analytics from AnalyticsService
     computed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -194,6 +205,7 @@ CREATE TABLE IF NOT EXISTS analytics (
 -- Collections table
 CREATE TABLE IF NOT EXISTS collection (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     description TEXT NULL,
     user_id INTEGER NOT NULL REFERENCES "user"(id),
@@ -206,6 +218,7 @@ CREATE TABLE IF NOT EXISTS collection (
 -- Collection members join table
 CREATE TABLE IF NOT EXISTS collection_member (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
     media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
     added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -213,6 +226,7 @@ CREATE TABLE IF NOT EXISTS collection_member (
 );
 
 -- Create indexes for better performance
+-- Integer ID indexes for fast internal joins
 CREATE INDEX IF NOT EXISTS idx_media_file_user_id ON media_file(user_id);
 CREATE INDEX IF NOT EXISTS idx_media_file_status ON media_file(status);
 CREATE INDEX IF NOT EXISTS idx_media_file_upload_time ON media_file(upload_time);
@@ -222,13 +236,22 @@ CREATE INDEX IF NOT EXISTS idx_media_file_task_last_update ON media_file(task_la
 CREATE INDEX IF NOT EXISTS idx_media_file_force_delete_eligible ON media_file(force_delete_eligible);
 CREATE INDEX IF NOT EXISTS idx_media_file_retry_count ON media_file(retry_count);
 
+-- UUID indexes for fast external API lookups
+CREATE INDEX IF NOT EXISTS idx_user_uuid ON "user"(uuid);
+CREATE INDEX IF NOT EXISTS idx_media_file_uuid ON media_file(uuid);
+CREATE INDEX IF NOT EXISTS idx_tag_uuid ON tag(uuid);
+CREATE INDEX IF NOT EXISTS idx_speaker_uuid ON speaker(uuid);
+CREATE INDEX IF NOT EXISTS idx_speaker_profile_uuid ON speaker_profile(uuid);
+CREATE INDEX IF NOT EXISTS idx_comment_uuid ON comment(uuid);
+CREATE INDEX IF NOT EXISTS idx_collection_uuid ON collection(uuid);
+CREATE INDEX IF NOT EXISTS idx_speaker_collection_uuid ON speaker_collection(uuid);
+
 CREATE INDEX IF NOT EXISTS idx_speaker_user_id ON speaker(user_id);
 CREATE INDEX IF NOT EXISTS idx_speaker_media_file_id ON speaker(media_file_id);
 CREATE INDEX IF NOT EXISTS idx_speaker_profile_id ON speaker(profile_id);
 CREATE INDEX IF NOT EXISTS idx_speaker_verified ON speaker(verified);
 
 CREATE INDEX IF NOT EXISTS idx_speaker_profile_user_id ON speaker_profile(user_id);
-CREATE INDEX IF NOT EXISTS idx_speaker_profile_uuid ON speaker_profile(uuid);
 
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_media_file_id ON transcript_segment(media_file_id);
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_speaker_id ON transcript_segment(speaker_id);
@@ -248,6 +271,7 @@ CREATE INDEX IF NOT EXISTS idx_speaker_collection_member_profile_id ON speaker_c
 -- Speaker match table to store cross-references between similar speakers
 CREATE TABLE IF NOT EXISTS speaker_match (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     speaker1_id INTEGER NOT NULL REFERENCES speaker(id) ON DELETE CASCADE,
     speaker2_id INTEGER NOT NULL REFERENCES speaker(id) ON DELETE CASCADE,
     confidence FLOAT NOT NULL, -- Similarity score (0-1)
@@ -267,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_speaker_match_confidence ON speaker_match(confide
 -- Summary prompts table for custom AI summarization prompts
 CREATE TABLE IF NOT EXISTS summary_prompt (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL, -- User-friendly name for the prompt
     description TEXT, -- Optional description of what this prompt is for
     prompt_text TEXT NOT NULL, -- The actual prompt content
@@ -282,6 +307,7 @@ CREATE TABLE IF NOT EXISTS summary_prompt (
 -- User settings table for storing user preferences including active summary prompt
 CREATE TABLE IF NOT EXISTS user_setting (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
     setting_key VARCHAR(100) NOT NULL, -- 'active_summary_prompt_id', 'theme', etc.
     setting_value TEXT, -- JSON or simple value
@@ -295,6 +321,7 @@ CREATE TABLE IF NOT EXISTS user_setting (
 -- is tracked via the user_setting table with key 'active_llm_config_id'.
 CREATE TABLE IF NOT EXISTS user_llm_settings (
     id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
     user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL, -- User-friendly name for the configuration
     provider VARCHAR(50) NOT NULL, -- openai, vllm, ollama, claude, custom
@@ -324,73 +351,207 @@ CREATE INDEX IF NOT EXISTS idx_user_llm_settings_user_id ON user_llm_settings(us
 CREATE INDEX IF NOT EXISTS idx_user_llm_settings_provider ON user_llm_settings(provider);
 CREATE INDEX IF NOT EXISTS idx_user_llm_settings_active ON user_llm_settings(is_active);
 
+-- UUID indexes for summary_prompt and user_llm_settings (must come after table creation)
+CREATE INDEX IF NOT EXISTS idx_summary_prompt_uuid ON summary_prompt(uuid);
+CREATE INDEX IF NOT EXISTS idx_user_llm_settings_uuid ON user_llm_settings(uuid);
+
 -- Insert system prompts with comprehensive guidance and properly escaped JSON
+-- Enhanced with Anthropic prompt engineering best practices (Jan 2025)
 INSERT INTO summary_prompt (name, description, prompt_text, is_system_default, content_type, is_active) VALUES
-('Universal Content Analyzer', 'Expert content analyst prompt that adapts to different media types with comprehensive BLUF format and topic-based analysis', 
-'You are an expert content analyst with extensive experience across different media types: business meetings, interviews, podcasts, documentaries, educational content, and other recorded conversations. Analyze the following transcript and generate a comprehensive, structured summary following the exact JSON format specified below.
+('Universal Content Analyzer', 'Expert content analyst prompt that adapts to different media types with comprehensive BLUF format and topic-based analysis',
+'You are an expert content analyst with 10+ years of experience analyzing business meetings, interviews, podcasts, documentaries, and educational content. You specialize in creating actionable BLUF (Bottom Line Up Front) summaries that help busy professionals quickly understand key outcomes.
 
-TRANSCRIPT:
-{transcript}
-
-SPEAKER INFORMATION:
-{speaker_data}
+<task_instructions>
+Analyze the provided transcript and generate a comprehensive, structured summary. Your summary will be read by users who need to quickly understand the key outcomes, insights, and action items.
 
 CRITICAL REQUIREMENTS:
 1. **Context Detection**: First identify the content type (business meeting, interview, podcast, documentary, etc.) and adapt your analysis accordingly
-2. Create a BLUF (Bottom Line Up Front) summary appropriate to the content type - key outcomes for meetings, main insights for interviews/podcasts, key learnings for documentaries
-3. **Topic-Based Analysis**: Focus on major topics and themes rather than chronological timeline - what were the key subjects discussed and their important details
-4. **Flexible Structure**: Adapt language and focus based on content type - professional for business, engaging for podcasts, informative for documentaries
+2. Create a BLUF summary appropriate to the content type:
+   - Meetings: Key outcomes and decisions
+   - Interviews/Podcasts: Main insights and revelations
+   - Documentaries: Key learnings and facts
+3. **Topic-Based Analysis**: Focus on major topics and themes rather than chronological timeline
+4. **Flexible Structure**: Adapt language and focus based on content type
 5. Identify content-appropriate action items, decisions, or key takeaways
-6. Use clear language appropriate for the detected content type and audience
-7. Your response must be valid JSON matching the exact structure below
+6. Use clear, professional language appropriate for the detected content type
+7. Your response must be valid JSON matching the exact structure specified
 
-IMPORTANT: The transcript has already been processed with speaker embedding matching. 
-Use the speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or rename speakers.
-Focus on analyzing content and extracting insights from the conversation as transcribed.
+IMPORTANT: The transcript has already been processed with speaker embedding matching. Use the speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or rename speakers. Focus on analyzing content and extracting insights.
+</task_instructions>
 
-RESPONSE FORMAT:
+<transcript>
+{transcript}
+</transcript>
+
+<speaker_information>
+{speaker_data}
+</speaker_information>
+
+<output_format>
 Your response must be valid JSON with this exact structure:
 
 {{
-  "bluf": "2-3 sentences summarizing the key outcomes, decisions, and next steps from this meeting/conversation",
-  
-  "brief_summary": "A comprehensive paragraph (3-5 sentences) providing context about the content type, purpose, main topics covered, participants involved, and overall outcomes or key insights. This should give readers sufficient background to understand the detailed sections that follow.",
-  
-  
+  "bluf": "2-3 sentence Bottom Line Up Front summary. First sentence: what happened/was decided. Second: why it matters/impact. Optional third: next critical action.",
+
+  "brief_summary": "Comprehensive 2-3 paragraph summary providing full context for someone who wasn''t present. Include content type, key dynamics, and significant insights.",
+
   "major_topics": [
     {{
       "topic": "Clear, descriptive topic title",
-      "importance": "high|medium|low",
-      "participants": ["Speaker1", "Speaker2"],
+      "summary": "Detailed summary of this topic discussion",
       "key_points": [
-        "Main discussion point or information shared",
-        "Important detail or context provided",
-        "Outcome or resolution if any"
+        "First key point about this topic",
+        "Second key point with specific details",
+        "Third key point or insight"
+      ],
+      "timestamp_range": "[00:00] - [05:30]"
+    }}
+  ],
+
+  "action_items": [
+    {{
+      "item": "Specific actionable task starting with verb (e.g., ''Update roadmap'')",
+      "owner": "Full name of person responsible (or ''Not specified'')",
+      "due_date": "Specific date or relative timeframe (e.g., ''Friday'', ''next week'', ''Not specified'')",
+      "priority": "high|medium|low",
+      "context": "One sentence explaining why this action is needed",
+      "mentioned_timestamp": "[MM:SS] approximate timestamp when discussed"
+    }}
+  ],
+
+  "key_decisions": [
+    {{
+      "decision": "Clear statement of what was decided",
+      "context": "Background and reasoning for the decision",
+      "impact": "Expected impact or consequences",
+      "stakeholders": ["Person1", "Person2"],
+      "timestamp": "[MM:SS]"
+    }}
+  ],
+
+  "speakers_analysis": [
+    {{
+      "speaker": "Speaker name or label from transcript",
+      "role": "Inferred role based on contributions",
+      "talk_time_percentage": 25,
+      "key_contributions": [
+        "First major contribution or insight",
+        "Second significant point they made"
       ]
     }}
   ],
-  
-  "action_items": [
+
+  "follow_up_items": [
+    "First follow-up item or unresolved question",
+    "Second item requiring future attention"
+  ],
+
+  "overall_sentiment": "positive|neutral|negative|mixed",
+  "content_type_detected": "meeting|interview|podcast|documentary|educational|general"
+}}
+</output_format>
+
+<examples>
+<example>
+<example_name>Business Meeting - Budget Discussion</example_name>
+<example_transcript>
+John Smith [00:00]: Good morning everyone. Today we need to finalize the Q4 budget allocation.
+Sarah Chen [00:15]: I''ve reviewed the numbers. Engineering is over budget by $50K due to unexpected infrastructure costs.
+John Smith [00:30]: That''s concerning. Can we reallocate funds from the marketing budget?
+Mike Johnson [00:45]: Marketing budget is already tight. We''re running critical campaigns next quarter. I suggest we defer two planned feature releases instead.
+Sarah Chen [01:00]: That could work. The features aren''t blocking any customer commitments. I''ll update the roadmap by Friday.
+John Smith [01:15]: Agreed. Let''s move forward with that plan. Mike, can you document the impact on our Q1 marketing timeline?
+Mike Johnson [01:30]: Absolutely. I''ll have that analysis ready by Wednesday.
+</example_transcript>
+<example_output>
+{{
+  "bluf": "Q4 budget requires $50K reduction in engineering costs; team agreed to defer two non-critical feature releases rather than cut marketing campaigns. Sarah Chen will update roadmap by Friday to reflect changes.",
+  "brief_summary": "Business meeting addressing Q4 budget overrun in engineering department. The team identified a $50K shortfall due to unexpected infrastructure costs. After evaluating options including marketing budget reallocation, the group decided to defer two planned feature releases that don''t impact customer commitments. This approach preserves critical Q1 marketing campaigns while addressing the budget constraint.",
+  "major_topics": [
     {{
-      "text": "Specific, actionable task description or key takeaway (adapt based on content type - tasks for meetings, insights for podcasts, learnings for documentaries)",
-      "assigned_to": "Person Name (if clearly mentioned, otherwise null)",
-      "due_date": "YYYY-MM-DD (if mentioned, otherwise null)",
-      "priority": "high|medium|low",
-      "context": "Brief context about why this action/insight is important"
+      "topic": "Q4 Budget Review and Overrun",
+      "summary": "Engineering department exceeded Q4 budget by $50K due to unexpected infrastructure costs. Team evaluated reallocation options.",
+      "key_points": [
+        "Engineering over budget by $50K from infrastructure costs",
+        "Marketing budget already constrained for Q1 campaigns",
+        "Feature deferral identified as viable alternative solution"
+      ],
+      "timestamp_range": "[00:00] - [01:00]"
     }}
   ],
-  
-  "key_decisions": [
-    "Specific decision that was definitively made (for meetings) or key conclusion reached (for other content types)",
-    "Another concrete decision, resolution, or important determination"
+  "action_items": [
+    {{
+      "item": "Update Q4 roadmap to reflect deferred feature releases",
+      "owner": "Sarah Chen",
+      "due_date": "Friday",
+      "priority": "high",
+      "context": "Engineering budget overrun requires feature deferrals to meet Q4 budget constraints",
+      "mentioned_timestamp": "[01:00]"
+    }},
+    {{
+      "item": "Document impact of budget decision on Q1 marketing timeline",
+      "owner": "Mike Johnson",
+      "due_date": "Wednesday",
+      "priority": "medium",
+      "context": "Need to understand how preserved marketing budget affects Q1 campaign planning",
+      "mentioned_timestamp": "[01:30]"
+    }}
   ],
-  
+  "key_decisions": [
+    {{
+      "decision": "Defer two planned feature releases to address $50K engineering budget overrun",
+      "context": "Engineering exceeded Q4 budget by $50K due to infrastructure costs. Marketing budget reallocation was not viable.",
+      "impact": "Q4 product roadmap will be updated. Engineering budget will be balanced without affecting other departments.",
+      "stakeholders": ["Sarah Chen", "John Smith", "Mike Johnson"],
+      "timestamp": "[01:00]"
+    }}
+  ],
+  "speakers_analysis": [
+    {{
+      "speaker": "John Smith",
+      "role": "Meeting leader / Decision maker",
+      "talk_time_percentage": 35,
+      "key_contributions": ["Initiated budget discussion", "Proposed marketing reallocation option", "Made final decision on approach"]
+    }},
+    {{
+      "speaker": "Sarah Chen",
+      "role": "Engineering lead / Finance representative",
+      "talk_time_percentage": 35,
+      "key_contributions": ["Identified $50K budget shortfall", "Confirmed feature deferral feasibility", "Committed to roadmap update"]
+    }},
+    {{
+      "speaker": "Mike Johnson",
+      "role": "Marketing lead",
+      "talk_time_percentage": 30,
+      "key_contributions": ["Defended marketing budget", "Suggested feature deferral solution", "Committed to impact analysis"]
+    }}
+  ],
   "follow_up_items": [
-    "Items that need future discussion or consideration (meetings)",
-    "Topics mentioned for further exploration (interviews/podcasts)",
-    "Additional resources or references suggested (educational content)"
-  ]
+    "Review deferred features for potential Q1 inclusion",
+    "Monitor engineering spending through end of Q4"
+  ],
+  "overall_sentiment": "neutral",
+  "content_type_detected": "meeting"
 }}
+</example_output>
+</example>
+</examples>
+
+<analysis_guidelines>
+**BLUF Format Requirements:**
+- First sentence: What happened / what was decided
+- Second sentence: Why it matters / what''s the impact
+- Optional third sentence: Next critical action
+- Total length: 2-3 sentences maximum
+- Must be understandable without reading rest of summary
+
+**Good BLUF Examples:**
+✓ "Q4 budget requires $50K reduction; team agreed to defer two feature releases rather than cut marketing"
+✓ "Product launch delayed 2 weeks due to critical security vulnerability. Security team implementing fix with high priority."
+
+**Bad BLUF Examples:**
+✗ "This meeting discussed various topics including budget..." (too vague)
+✗ "The team had a productive discussion..." (no concrete outcome)
 
 ANALYSIS GUIDELINES:
 
@@ -440,13 +601,22 @@ ANALYSIS GUIDELINES:
 - **Educational**: Additional learning materials, practice opportunities
 - Include unresolved questions or commitments for additional information
 
-IMPORTANT: 
-- **Context Awareness**: Adapt your language and focus to the detected content type
-- Be accurate and objective - don''t infer information that isn''t clearly stated
-- Use language appropriate for the content type (professional for business, engaging for media)
-- When speaker names aren''t clear, use appropriate labels based on context (e.g., "Host", "Guest", "Interviewer", "Expert")
-- Focus on insights and intelligence that help readers understand what was covered and key takeaways
-- Ensure your JSON is properly formatted and valid', 
+**For Action Items:**
+- Start with verb (e.g., "Update roadmap" not "Roadmap needs updating")
+- Include specific owner name when mentioned
+- Capture timeframe even if relative ("by next meeting", "end of week")
+- Explain context briefly - why is this action needed?
+- Mark priority based on urgency and importance in discussion
+
+**For Key Decisions:**
+- State decision clearly and concisely
+- Provide context: what problem does this solve?
+- Explain expected impact or consequences
+- Note who was involved or affected
+- Only include actual decisions, not options discussed
+</analysis_guidelines>
+
+Now analyze the provided transcript and generate your structured summary in valid JSON format.',
 TRUE, 'general', TRUE),
 
 ('Speaker Identification Assistant', 'LLM-powered speaker identification suggestions to help users manually identify speakers', 

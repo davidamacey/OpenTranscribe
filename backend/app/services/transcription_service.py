@@ -52,7 +52,8 @@ class TranscriptionService:
                 )
 
             # Start transcription task
-            task = transcribe_audio_task.delay(file_id)
+            file_uuid = str(file_obj.uuid)
+            task = transcribe_audio_task.delay(file_uuid)
 
             return {
                 "task_id": task.id,
@@ -301,7 +302,7 @@ class TranscriptionService:
         """
         try:
             # Verify user access and that file has transcript
-            AuthorizationHelper.check_file_access(self.db, file_id, user)
+            file_obj = AuthorizationHelper.check_file_access(self.db, file_id, user)
 
             segment_count = (
                 self.db.query(TranscriptSegment)
@@ -313,7 +314,8 @@ class TranscriptionService:
                 raise ErrorHandler.validation_error("File has no transcript to analyze")
 
             # Start analysis task
-            task = analyze_transcript_task.delay(file_id)
+            file_uuid = str(file_obj.uuid)
+            task = analyze_transcript_task.delay(file_uuid)
 
             return {
                 "task_id": task.id,
@@ -339,7 +341,7 @@ class TranscriptionService:
         """
         try:
             # Verify user access and that file has transcript
-            AuthorizationHelper.check_file_access(self.db, file_id, user)
+            file_obj = AuthorizationHelper.check_file_access(self.db, file_id, user)
 
             segment_count = (
                 self.db.query(TranscriptSegment)
@@ -351,7 +353,8 @@ class TranscriptionService:
                 raise ErrorHandler.validation_error("File has no transcript to summarize")
 
             # Start summarization task
-            task = summarize_transcript_task.delay(file_id)
+            file_uuid = str(file_obj.uuid)
+            task = summarize_transcript_task.delay(file_uuid)
 
             return {
                 "task_id": task.id,

@@ -31,7 +31,7 @@
   // Generate consolidated transcript when display segments change
   $: if (displaySegments && displaySegments.length > 0) {
     consolidatedTranscript = displaySegments
-      .map(block => `${block.speakerName} [${formatSimpleTimestamp(block.startTime)}-${formatSimpleTimestamp(block.endTime)}]: ${block.text}`)
+      .map(block => `${block.speakerName} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
       .join('\n\n');
   } else {
     consolidatedTranscript = '';
@@ -338,7 +338,7 @@
                     class="segment-speaker"
                     style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
                   >{segment.speakerName}</div>
-                  <div class="segment-time">{formatSimpleTimestamp(segment.startTime)}-{formatSimpleTimestamp(segment.endTime)}</div>
+                  <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
                 </div>
                 <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
               </div>

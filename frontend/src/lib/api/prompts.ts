@@ -5,12 +5,12 @@
 import axiosInstance from '../axios';
 
 export interface SummaryPrompt {
-  id: number;
+  id: string;  // UUID
   name: string;
   description: string | null;
   prompt_text: string;
   is_system_default: boolean;
-  user_id: number | null;
+  user_id: string | null;  // UUID
   content_type: string | null;
   is_active: boolean;
   created_at: string;
@@ -43,12 +43,12 @@ export interface SummaryPromptList {
 }
 
 export interface ActivePromptResponse {
-  active_prompt_id: number | null;
+  active_prompt_id: string | null;  // UUID
   active_prompt: SummaryPrompt | null;
 }
 
 export interface ActivePromptSelection {
-  prompt_id: number;
+  prompt_id: string;  // UUID
 }
 
 export class PromptsApi {
@@ -108,7 +108,7 @@ export class PromptsApi {
   /**
    * Update an existing prompt
    */
-  static async updatePrompt(id: number, prompt: SummaryPromptUpdate): Promise<SummaryPrompt> {
+  static async updatePrompt(id: string, prompt: SummaryPromptUpdate): Promise<SummaryPrompt> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/${id}`, prompt);
     return response.data;
   }
@@ -116,14 +116,14 @@ export class PromptsApi {
   /**
    * Delete a prompt
    */
-  static async deletePrompt(id: number): Promise<void> {
+  static async deletePrompt(id: string): Promise<void> {
     await axiosInstance.delete(`${this.BASE_PATH}/${id}`);
   }
 
   /**
    * Get a single prompt by ID
    */
-  static async getPrompt(id: number): Promise<SummaryPrompt> {
+  static async getPrompt(id: string): Promise<SummaryPrompt> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/${id}`);
     return response.data;
   }

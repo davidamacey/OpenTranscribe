@@ -154,6 +154,7 @@ class LLMService:
         Args:
             messages: List of message dictionaries in OpenAI format
             **kwargs: Additional parameters to override defaults
+                - prefill_json: If True, adds JSON prefill to force structured output
 
         Returns:
             Dictionary containing the API request payload
@@ -161,6 +162,7 @@ class LLMService:
         Note:
             - Claude/Anthropic: Separates system messages from user/assistant messages
             - Other providers: Use standard OpenAI format with provider-specific params
+            - Response prefilling: For Claude, adds assistant message with "{" to force JSON
         """
 
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
@@ -173,6 +175,13 @@ class LLMService:
                     system_message = msg.get("content", "")
                 elif msg.get("role") in ["user", "assistant"]:
                     user_messages.append({"role": msg["role"], "content": msg["content"]})
+
+            # Add response prefilling for JSON output if requested
+            # This forces Claude to start response with "{" (bypasses preamble)
+            if kwargs.get("prefill_json", False):
+                # Ensure last message is from user (required for Claude API)
+                if user_messages and user_messages[-1]["role"] == "user":
+                    user_messages.append({"role": "assistant", "content": "{"})
 
             payload = {
                 "model": self.config.model,
@@ -475,7 +484,8 @@ class LLMService:
             {"role": "user", "content": formatted_prompt},
         ]
 
-        response = self.chat_completion(messages, temperature=0.1)
+        # Use response prefilling to force JSON output (bypasses preamble)
+        response = self.chat_completion(messages, temperature=0.1, prefill_json=True)
         return self._parse_summary_response(response, len(transcript))
 
     def _process_multiple_chunks(
@@ -530,7 +540,8 @@ class LLMService:
             {"role": "user", "content": formatted_prompt},
         ]
 
-        response = self.chat_completion(messages, max_tokens=2000, temperature=0.1)
+        # Use response prefilling for consistent JSON output
+        response = self.chat_completion(messages, max_tokens=2000, temperature=0.1, prefill_json=True)
 
         try:
             content = response.content.strip()
@@ -570,7 +581,8 @@ class LLMService:
         ]
 
         try:
-            response = self.chat_completion(messages, max_tokens=4000, temperature=0.1)
+            # Use response prefilling for final combined summary
+            response = self.chat_completion(messages, max_tokens=4000, temperature=0.1, prefill_json=True)
             return self._parse_summary_response(
                 response,
                 0,
@@ -599,6 +611,11 @@ class LLMService:
         """Parse LLM response into structured summary"""
         try:
             content = response.content.strip()
+
+            # Handle response prefilling: if content starts with partial JSON due to prefill,
+            # prepend the opening brace that was used in prefilling
+            if not content.startswith("{") and not content.startswith("```"):
+                content = "{" + content
 
             # Extract JSON from code blocks
             if content.startswith("```json") and content.endswith("```"):
@@ -831,9 +848,12 @@ RESPONSE FORMAT (JSON):
 IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confidently identify any speakers, return an empty predictions array."""
 
             # Generate response with user's configured token limit
+            # Use quote extraction technique (improves recall from ~27% to ~98%)
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
+                # Prefill response to force quote extraction first
+                {"role": "assistant", "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:\n"}
             ]
 
             # Use conservative response token limit based on user's context window
@@ -853,10 +873,41 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
             try:
                 # Clean up response content - remove markdown code blocks if present
                 content = response.content.strip()
-                if content.startswith("```json") and content.endswith("```"):
-                    content = content[7:-3].strip()
-                elif content.startswith("```") and content.endswith("```"):
-                    content = content[3:-3].strip()
+
+                # Strip markdown code fences first
+                if content.startswith("```json") and "```" in content[7:]:
+                    # Find closing fence and extract content between them
+                    fence_end = content.find("```", 7)
+                    content = content[7:fence_end].strip()
+                elif content.startswith("```") and "```" in content[3:]:
+                    # Find closing fence and extract content between them
+                    fence_end = content.find("```", 3)
+                    content = content[3:fence_end].strip()
+                    # Remove language identifier if present (e.g., "json\n")
+                    if content.startswith(("json", "JSON")):
+                        content = content[4:].lstrip()
+
+                # Extract JSON from response (may include quote section first due to prefilling)
+                # Look for JSON object starting with { after any prefilled quote section
+                json_start = content.find("{")
+                if json_start > 0:
+                    content = content[json_start:]
+
+                # Find the matching closing brace for the JSON object
+                # This handles cases where there's extra text after the JSON
+                if content.startswith("{"):
+                    brace_count = 0
+                    json_end = 0
+                    for i, char in enumerate(content):
+                        if char == "{":
+                            brace_count += 1
+                        elif char == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+                    if json_end > 0:
+                        content = content[:json_end]
 
                 result = json.loads(content)
 

@@ -2,7 +2,6 @@ import logging
 
 from app.core.celery import celery_app
 from app.db.base import SessionLocal
-from app.models.media import MediaFile
 from app.services.analytics_service import AnalyticsService
 
 # Setup logging
@@ -10,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name="analyze_transcript")
-def analyze_transcript_task(self, file_id: int):
+def analyze_transcript_task(self, file_uuid: str):
     """
     Analyze a transcript to extract comprehensive analytics:
     - Speaker talk time and statistics
@@ -20,16 +19,20 @@ def analyze_transcript_task(self, file_id: int):
     - Overall metrics
 
     Args:
-        file_id: Database ID of the MediaFile to analyze
+        file_uuid: UUID of the MediaFile to analyze
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     task_id = self.request.id
     db = SessionLocal()
 
     try:
         # Get media file from database
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        media_file = get_file_by_uuid(db, file_uuid)
         if not media_file:
-            raise ValueError(f"Media file with ID {file_id} not found")
+            raise ValueError(f"Media file with UUID {file_uuid} not found")
+
+        file_id = media_file.id  # Get internal ID for database operations
 
         # Create task record
         from app.utils.task_utils import create_task_record

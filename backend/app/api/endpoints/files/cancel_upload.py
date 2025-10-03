@@ -18,20 +18,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{file_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 async def cancel_upload(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Cancel an in-progress file upload and clean up any uploaded data.
     """
-    # Get the media file
+    # Get the media file by UUID
+
     db_file = (
         db.query(MediaFile)
         .filter(
-            MediaFile.id == file_id,
+            MediaFile.uuid == file_uuid,
             MediaFile.user_id == current_user.id,
             MediaFile.status == FileStatus.PENDING,
         )
@@ -43,6 +44,8 @@ async def cancel_upload(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No pending upload found with this ID",
         )
+
+    file_id = db_file.id
 
     try:
         # Delete the file from storage if it was partially uploaded

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_user
 from app.api.endpoints.files.crud import delete_media_file
-from app.api.endpoints.files.crud import get_media_file_by_id
+from app.api.endpoints.files.crud import get_media_file_by_uuid
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.user import User
@@ -55,7 +55,7 @@ class FileStatusDetail(BaseModel):
 class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
-    file_ids: list[int]
+    file_uuids: list[str]
     action: str  # "delete", "retry", "cancel", "recover"
     force: bool = False
     reset_retry_count: bool = False
@@ -64,22 +64,23 @@ class BulkActionRequest(BaseModel):
 class BulkActionResult(BaseModel):
     """Result of bulk file operations."""
 
-    file_id: int
+    file_uuid: str
     success: bool
     message: str
     error: Optional[str] = None
 
 
-@router.get("/{file_id}/status-detail", response_model=FileStatusDetail)
+@router.get("/{file_uuid}/status-detail", response_model=FileStatusDetail)
 async def get_file_status_detail(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get detailed status information for a file."""
     try:
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
@@ -155,16 +156,17 @@ async def get_file_status_detail(
         ) from e
 
 
-@router.post("/{file_id}/cancel")
+@router.post("/{file_uuid}/cancel")
 async def cancel_file_processing(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Cancel active processing for a file."""
     try:
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         if db_file.status != FileStatus.PROCESSING:
             raise HTTPException(
@@ -185,7 +187,7 @@ async def cancel_file_processing(
                 detail="Failed to cancel file processing",
             )
 
-        return {"message": "File processing cancelled successfully", "file_id": file_id}
+        return {"message": "File processing cancelled successfully", "file_id": str(db_file.uuid)}
 
     except HTTPException:
         raise
@@ -197,9 +199,9 @@ async def cancel_file_processing(
         ) from e
 
 
-@router.post("/{file_id}/retry")
+@router.post("/{file_uuid}/retry")
 async def retry_file_processing(
-    file_id: int,
+    file_uuid: str,
     reset_retry_count: bool = Query(False, description="Reset retry count to 0"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -207,7 +209,8 @@ async def retry_file_processing(
     """Retry processing for a failed file."""
     try:
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         # Check if file can be retried
         if db_file.status not in [
@@ -239,11 +242,11 @@ async def retry_file_processing(
         import os
 
         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-            task = transcribe_audio_task.delay(file_id)
+            task = transcribe_audio_task.delay(file_uuid)
             logger.info(f"Started retry task {task.id} for file {file_id}")
             return {
                 "message": "File retry initiated successfully",
-                "file_id": file_id,
+                "file_id": str(db_file.uuid),  # Use UUID for frontend
                 "task_id": task.id,
                 "retry_attempt": db_file.retry_count,
             }
@@ -251,7 +254,7 @@ async def retry_file_processing(
             logger.info("Skipping Celery task in test environment")
             return {
                 "message": "File retry prepared (test mode)",
-                "file_id": file_id,
+                "file_id": str(db_file.uuid),  # Use UUID for frontend
                 "retry_attempt": db_file.retry_count,
             }
 
@@ -265,16 +268,17 @@ async def retry_file_processing(
         ) from e
 
 
-@router.post("/{file_id}/recover")
+@router.post("/{file_uuid}/recover")
 async def recover_file(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Attempt to recover a stuck file."""
     try:
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task operations
 
         success = recover_stuck_file(db, file_id)
         if not success:
@@ -288,7 +292,7 @@ async def recover_file(
 
         return {
             "message": "File recovery completed",
-            "file_id": file_id,
+            "file_id": str(db_file.uuid),  # Use UUID for frontend
             "new_status": db_file.status,
             "recovery_attempts": db_file.recovery_attempts,
         }
@@ -303,9 +307,9 @@ async def recover_file(
         ) from e
 
 
-@router.delete("/{file_id}/force")
+@router.delete("/{file_uuid}/force")
 async def force_delete_file(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -317,13 +321,13 @@ async def force_delete_file(
         )
 
     try:
-        delete_media_file(db, file_id, current_user, force=True)
-        return {"message": "File force deleted successfully", "file_id": file_id}
+        delete_media_file(db, file_uuid, current_user, force=True)
+        return {"message": "File force deleted successfully", "file_uuid": file_uuid}
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error force deleting file {file_id}: {e}")
+        logger.error(f"Error force deleting file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error force deleting file",
@@ -346,10 +350,12 @@ async def get_stuck_files(
 
         for file_id in stuck_file_ids:
             try:
+                # Use internal ID lookup for stuck files (file_id is int from check_for_stuck_files)
+                from app.api.endpoints.files.crud import get_media_file_by_id
                 db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
                 stuck_files.append(
                     {
-                        "id": db_file.id,
+                        "id": str(db_file.uuid),  # Use UUID for frontend
                         "filename": db_file.filename,
                         "status": db_file.status,
                         "active_task_id": db_file.active_task_id,
@@ -391,16 +397,17 @@ async def bulk_file_action(
         results = []
         is_admin = current_user.role == "admin"
 
-        for file_id in request.file_ids:
+        for file_uuid in request.file_uuids:
             try:
                 # Verify user has access to this file
-                get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+                db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+                file_id = db_file.id  # Get internal ID for task operations
 
                 if request.action == "delete":
-                    delete_media_file(db, file_id, current_user, force=request.force)
+                    delete_media_file(db, file_uuid, current_user, force=request.force)
                     results.append(
                         BulkActionResult(
-                            file_id=file_id,
+                            file_uuid=file_uuid,
                             success=True,
                             message="File deleted successfully",
                         )
@@ -413,18 +420,18 @@ async def bulk_file_action(
                         import os
 
                         if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-                            task = transcribe_audio_task.delay(file_id)
+                            task = transcribe_audio_task.delay(file_uuid)
                             message = f"Retry started (task: {task.id})"
                         else:
                             message = "Retry prepared (test mode)"
 
                         results.append(
-                            BulkActionResult(file_id=file_id, success=True, message=message)
+                            BulkActionResult(file_uuid=file_uuid, success=True, message=message)
                         )
                     else:
                         results.append(
                             BulkActionResult(
-                                file_id=file_id,
+                                file_uuid=file_uuid,
                                 success=False,
                                 message="Failed to reset file for retry",
                                 error="RESET_FAILED",
@@ -435,7 +442,7 @@ async def bulk_file_action(
                     success = cancel_active_task(db, file_id)
                     results.append(
                         BulkActionResult(
-                            file_id=file_id,
+                            file_uuid=file_uuid,
                             success=success,
                             message="Task cancelled successfully"
                             if success
@@ -448,7 +455,7 @@ async def bulk_file_action(
                     success = recover_stuck_file(db, file_id)
                     results.append(
                         BulkActionResult(
-                            file_id=file_id,
+                            file_uuid=file_uuid,
                             success=success,
                             message="File recovered successfully"
                             if success
@@ -460,7 +467,7 @@ async def bulk_file_action(
                 else:
                     results.append(
                         BulkActionResult(
-                            file_id=file_id,
+                            file_uuid=file_uuid,
                             success=False,
                             message=f"Unknown action: {request.action}",
                             error="UNKNOWN_ACTION",
@@ -470,17 +477,17 @@ async def bulk_file_action(
             except HTTPException as e:
                 results.append(
                     BulkActionResult(
-                        file_id=file_id,
+                        file_uuid=file_uuid,
                         success=False,
                         message=str(e.detail),
                         error="HTTP_ERROR",
                     )
                 )
             except Exception as e:
-                logger.error(f"Error processing bulk action for file {file_id}: {e}")
+                logger.error(f"Error processing bulk action for file {file_uuid}: {e}")
                 results.append(
                     BulkActionResult(
-                        file_id=file_id,
+                        file_uuid=file_uuid,
                         success=False,
                         message=f"Unexpected error: {str(e)}",
                         error="UNEXPECTED_ERROR",

@@ -125,6 +125,15 @@
     dispatch('reprocess', event.detail);
   }
 
+  // Helper function to check if speaker has cross-video matches to display
+  function hasCrossVideoMatches(speaker: any): boolean {
+    if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
+      return false;
+    }
+    return (speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')) ||
+           speaker.cross_video_matches.some((match: any) => match.individual_matches && match.individual_matches.length > 0);
+  }
+
   // Search event handlers
   function handleSearchResults(event: CustomEvent) {
     const { matches, currentMatch, totalMatches: total, query } = event.detail;
@@ -661,10 +670,7 @@
                     {/if}
                     
                     <!-- Cross-video speaker detection - Below text input -->
-                    {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0 && (
-                      (speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')) ||
-                      speaker.cross_video_matches.some(match => match.individual_matches && match.individual_matches.length > 0)
-                    )}
+                    {#if hasCrossVideoMatches(speaker)}
                       <div class="cross-video-compact">
                         <div class="compact-header" role="button" tabindex="0" on:click={() => speaker.showMatches = !speaker.showMatches} on:keydown={(e) => e.key === 'Enter' && (speaker.showMatches = !speaker.showMatches)}>
                           <span class="compact-text">

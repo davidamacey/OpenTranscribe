@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from pydantic import EmailStr
 from pydantic import Field
 
+from app.schemas.base import UUIDBaseSchema
+
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -25,15 +27,13 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
 
 
-class UserInDB(UserBase):
-    id: int
+class UserInDB(UserBase, UUIDBaseSchema):
+    """User schema with UUID as public identifier"""
     role: str
     created_at: datetime
     updated_at: datetime
     is_active: bool
     is_superuser: bool
-
-    model_config = {"from_attributes": True}
 
 
 class User(UserInDB):

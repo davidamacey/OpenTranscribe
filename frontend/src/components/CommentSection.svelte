@@ -14,7 +14,7 @@
   /** @type {number} */
   export let currentTime = 0;
   
-  /** @type {Array<{id: number, text: string, timestamp: number, user: {id: number, email?: string, full_name?: string, username?: string}, created_at: string}>} */
+  /** @type {Array<{id: string, text: string, timestamp: number, user: {id: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
@@ -70,17 +70,15 @@
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      // Make sure we have a valid numeric file ID
-      const numericFileId = Number(fileId);
-      
-      // Validate fileId is a valid number
-      if (isNaN(numericFileId) || numericFileId <= 0) {
+
+      // Validate fileId
+      if (!fileId) {
         console.error('Invalid file ID:', fileId);
         error = 'Invalid file ID provided';
         loading = false;
         return;
       }
-      
+
       if (!token) {
         console.error('No auth token found in localStorage');
         error = 'You need to be logged in to view comments';
@@ -96,7 +94,7 @@
       
       let response;
       try {
-        const endpoint = `/comments/files/${numericFileId}/comments`;
+        const endpoint = `/comments/files/${fileId}/comments`;
         response = await axiosInstance.get(endpoint, { headers });
       } catch (/** @type {any} */ error) {
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
@@ -112,13 +110,13 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint without leading slash as fallback
-            response = await axiosInstance.get(`files/${numericFileId}/comments`, { headers });
+            response = await axiosInstance.get(`files/${fileId}/comments`, { headers });
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
-              response = await axiosInstance.get('/comments', { 
-                params: { media_file_id: numericFileId },
-                headers 
+              response = await axiosInstance.get('/comments', {
+                params: { media_file_id: fileId },
+                headers
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
@@ -203,8 +201,7 @@
       
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      const numericFileId = Number(fileId);
-      
+
       if (!token) {
         console.error('No auth token found in localStorage');
         error = 'You need to be logged in to add comments';
@@ -222,13 +219,13 @@
       try {
         // The correct endpoint without leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
-        const endpoint = `comments/files/${numericFileId}/comments`;
-        
+        const endpoint = `comments/files/${fileId}/comments`;
+
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
           text: newComment,
           timestamp: timestamp,
-          media_file_id: numericFileId // Required by the CommentCreate schema
+          media_file_id: fileId // Required by the CommentCreate schema
         };
         
         // Ensure token is included in the headers
@@ -257,9 +254,9 @@
             const legacyPayload = {
               text: newComment,
               timestamp: timestamp,
-              media_file_id: numericFileId // Required by the CommentCreate schema
+              media_file_id: fileId // Required by the CommentCreate schema
             };
-            response = await axiosInstance.post(`files/${numericFileId}/comments`, legacyPayload, { headers });
+            response = await axiosInstance.post(`files/${fileId}/comments`, legacyPayload, { headers });
             // Successfully added comment using main endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
@@ -268,7 +265,7 @@
               response = await axiosInstance.post('comments', {
                 text: newComment,
                 timestamp,
-                media_file_id: numericFileId // Required by the CommentCreate schema
+                media_file_id: fileId // Required by the CommentCreate schema
               }, { headers });
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
@@ -297,7 +294,7 @@
       };
       
       comments = [...comments, commentWithUser];
-      comments.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+      comments.sort((a, b) => a.timestamp - b.timestamp);
       newComment = '';
       timestampInput = null;
       dispatch('commentAdded', commentWithUser);
@@ -524,9 +521,9 @@
    */
   function isCommentAuthor(userId) {
     if (!$authStore.user) return false;
-    
-    // Convert both to numbers for comparison to avoid string vs number comparison issues
-    return Number($authStore.user.id) === Number(userId);
+
+    // UUIDs are strings, so compare directly
+    return $authStore.user.id === userId;
   }
 </script>
 

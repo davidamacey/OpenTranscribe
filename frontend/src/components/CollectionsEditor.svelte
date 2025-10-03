@@ -4,9 +4,9 @@
   import axiosInstance from '../lib/axios';
   import { toastStore } from '$stores/toast';
   
-  /** @type {number} */
-  export let fileId = 0;
-  /** @type {Array<{id: number, name: string, description?: string}>} */
+  /** @type {string} */
+  export let fileId = "";
+  /** @type {Array<{id: string, name: string, description?: string}>} */
   export let collections = [];
   
   // Ensure collections are always in the correct format
@@ -25,7 +25,7 @@
     }
   }
   
-  /** @type {Array<{id: number, name: string, description?: string, media_count: number}>} */
+  /** @type {Array<{id: string, name: string, description?: string, media_count: number}>} */
   let allCollections = [];
   /** @type {string} */
   let newCollectionInput = '';

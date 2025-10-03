@@ -34,10 +34,10 @@
   }
 </script>
 
-<div 
-  class="toast toast-{type}" 
+<div
+  class="toast toast-{type}"
   style="--toast-color: {colors[type]}"
-  transition:fly={{ y: -20, duration: 300 }}
+  transition:fly={{ y: 50, duration: 300 }}
   role="alert"
 >
   <span class="toast-icon">{@html icons[type]}</span>

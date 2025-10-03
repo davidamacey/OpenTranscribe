@@ -117,18 +117,20 @@ def system_health_check(self):
 
 
 @shared_task(bind=True, name="cleanup.emergency_recovery")
-def emergency_file_recovery(self, file_ids: list):
+def emergency_file_recovery(self, file_uuids: list):
     """
     Emergency recovery task for specific files (admin-triggered).
 
     Args:
-        file_ids: List of file IDs to attempt recovery on
+        file_uuids: List of file UUIDs to attempt recovery on
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     try:
-        logger.info(f"Starting emergency recovery for files: {file_ids}")
+        logger.info(f"Starting emergency recovery for files: {file_uuids}")
 
         results = {
-            "files_processed": len(file_ids),
+            "files_processed": len(file_uuids),
             "recovered": 0,
             "failed": 0,
             "errors": [],
@@ -137,8 +139,12 @@ def emergency_file_recovery(self, file_ids: list):
         with session_scope() as db:
             from app.utils.task_utils import recover_stuck_file
 
-            for file_id in file_ids:
+            for file_uuid in file_uuids:
                 try:
+                    # Convert UUID to internal ID
+                    media_file = get_file_by_uuid(db, file_uuid)
+                    file_id = media_file.id
+
                     success = recover_stuck_file(db, file_id)
                     if success:
                         results["recovered"] += 1
@@ -148,7 +154,7 @@ def emergency_file_recovery(self, file_ids: list):
                         logger.warning(f"Failed to recover file {file_id}")
                 except Exception as e:
                     results["failed"] += 1
-                    error_msg = f"Error recovering file {file_id}: {str(e)}"
+                    error_msg = f"Error recovering file {file_uuid}: {str(e)}"
                     results["errors"].append(error_msg)
                     logger.error(error_msg)
 

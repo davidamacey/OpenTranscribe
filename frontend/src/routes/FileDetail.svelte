@@ -62,7 +62,6 @@
   let showSummaryModal = false;
   let showTranscriptModal = false;
   let generatingSummary = false;
-  let summaryError = '';
   let summaryGenerating = false; // WebSocket-driven summary generation status
   let currentProcessingStep = ''; // Current processing step from WebSocket notifications
   let lastProcessedNotificationState = ''; // Track processed notification state globally
@@ -73,10 +72,10 @@
   $: if (!llmAvailable && (summaryGenerating || generatingSummary)) {
     summaryGenerating = false;
     generatingSummary = false;
-    summaryError = '';
   }
-  
-  
+
+
+
 
   // Confirmation modal state
   let showExportConfirmation = false;
@@ -266,7 +265,7 @@
     try {
       // Load speakers from the backend API
       const response = await axiosInstance.get(`/api/speakers/`, {
-        params: { file_id: file.id }
+        params: { file_uuid: file.id }  // Use file_uuid parameter (file.id contains UUID)
       });
 
       if (response.data && Array.isArray(response.data)) {
@@ -416,7 +415,7 @@
 
 
   // Validate speaker name
-  function validateSpeakerName(name: string, speakerId: number): { isValid: boolean; error?: string } {
+  function validateSpeakerName(name: string, speakerId: string | number): { isValid: boolean; error?: string } {
     if (!name || typeof name !== 'string') {
       return { isValid: false, error: 'Speaker name is required' };
     }
@@ -804,8 +803,7 @@
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         };
-        const numericFileId = Number(file.id);
-        const endpoint = `/comments/files/${numericFileId}/comments`;
+        const endpoint = `/comments/files/${file.id}/comments`;
         const response = await axiosInstance.get(endpoint, { headers });
         const fileComments = response.data || [];
         hasComments = fileComments.length > 0;
@@ -842,8 +840,7 @@
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           };
-          const numericFileId = Number(file.id);
-          const endpoint = `/comments/files/${numericFileId}/comments`;
+          const endpoint = `/comments/files/${file.id}/comments`;
           const response = await axiosInstance.get(endpoint, { headers });
           fileComments = response.data || [];
           
@@ -1462,7 +1459,6 @@
         if (llmAvailable) {
           summaryGenerating = true;
           generatingSummary = true;
-          summaryError = '';
         }
         
         file = file; // Trigger reactivity
@@ -1507,9 +1503,8 @@
       if (llmAvailable) {
         summaryGenerating = true;
         generatingSummary = true;
-        summaryError = '';
       }
-      
+
       file = file; // Trigger reactivity
       
       await axiosInstance.post(`/api/files/${file.id}/reprocess`);
@@ -1542,8 +1537,7 @@
     
     try {
       generatingSummary = true;
-      summaryError = '';
-      
+
       await axiosInstance.post(`/api/files/${file.id}/summarize`);
       
       // Don't refresh page - let WebSocket notifications handle status updates
@@ -1553,8 +1547,8 @@
     } catch (error: any) {
       console.error('Error generating summary:', error);
       const errorMessage = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
-      
-      summaryError = errorMessage;
+
+      toastStore.error(errorMessage, 5000);
     } finally {
       generatingSummary = false;
     }
@@ -1572,7 +1566,7 @@
     } catch (error: any) {
       console.error('Error loading summary:', error);
       if (error.response?.status !== 404) {
-        summaryError = 'Failed to load summary.';
+        toastStore.error('Failed to load summary.', 5000);
       }
     }
   }
@@ -1610,7 +1604,7 @@
       fileId = urlParams.get('id') || pathParts[pathParts.length - 1] || '';
     }
 
-    if (fileId && !isNaN(Number(fileId))) {
+    if (fileId) {
       // Load file details
       fetchFileDetails().catch(err => {
         console.error('Error loading file details:', err);
@@ -1699,7 +1693,6 @@
                   if (llmAvailable) {
                     summaryGenerating = true;
                     generatingSummary = true;
-                    summaryError = '';
                     // Keep reprocessing flag true until summary completes to maintain proper UI state
                   } else {
                     // No LLM available, ensure spinners are off and reset reprocessing flag
@@ -1739,15 +1732,16 @@
             
             // WebSocket notifications for file updates
             
-            // Handle summarization status updates  
+            // Handle summarization status updates
             if (latestNotification.type === 'summarization_status') {
               // Only process notifications for the current file
               const notificationFileId = String(latestNotification.data?.file_id || '');
               const currentFileId = String(fileId || '');
-              
+
               if (notificationFileId !== currentFileId) {
+                // Skip notifications for other files
               } else {
-              
+
               // Get status from notification (progressive notifications set it at root level)
               const status = latestNotification.status || latestNotification.data?.status;
               
@@ -1757,7 +1751,6 @@
                 if (llmAvailable) {
                   summaryGenerating = true;
                   generatingSummary = true;
-                  summaryError = '';
                 } else {
                   // LLM not available, ensure spinners are off
                   summaryGenerating = false;
@@ -1766,11 +1759,9 @@
 
               } else if (status === 'completed' || status === 'success' || status === 'complete' || status === 'finished') {
                 // Summary completed - stop spinners and update file
-                
                 summaryGenerating = false;
                 generatingSummary = false;
-                summaryError = '';
-                
+
                 // Reset reprocessing flag when summary completes (final step of reprocessing)
                 reprocessing = false;
                 
@@ -1778,20 +1769,17 @@
                   // Update summary-related fields from notification data
                   const summaryContent = latestNotification.data?.summary;
                   const summaryId = latestNotification.data?.summary_opensearch_id;
-                  
-                  
+
                   if (summaryContent) {
                     file.summary = summaryContent;
                   }
                   if (summaryId) {
                     file.summary_opensearch_id = summaryId;
                   }
-                  
-                  
-                  // Force reactivity update
+
+                  // Force reactivity update by creating new object reference
                   file = { ...file };
                   reactiveFile.set(file);
-                  
                 }
               } else if (status === 'failed' || status === 'error') {
                 // Summary failed - stop spinners and show error
@@ -1800,12 +1788,12 @@
                 
                 // Get error message from notification
                 const errorMessage = latestNotification.data?.message || latestNotification.message || 'Failed to generate summary';
-                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') || 
+                const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') ||
                                        errorMessage.toLowerCase().includes('configure an llm provider') ||
                                        errorMessage.toLowerCase().includes('llm provider');
-                
+
                 if (!isLLMConfigError) {
-                  summaryError = errorMessage;
+                  toastStore.error(errorMessage, 5000);
                 }
                 
               }
@@ -1987,25 +1975,6 @@
           on:loadedmetadata={handleLoadedMetadata}
         />
 
-        <!-- Error Messages -->
-        {#if summaryError}
-          <div class="summary-error-container">
-            <div class="error-message">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="error-icon">
-                <path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-              </svg>
-              <span>{summaryError}</span>
-            </div>
-            <button 
-              class="dismiss-error-btn" 
-              on:click={() => summaryError = ''}
-              title="Dismiss error"
-            >
-              ✕
-            </button>
-          </div>
-        {/if}
-        
         <!-- Waveform visualization -->
         {#if file && file.id && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
           <div class="waveform-section">
@@ -2168,8 +2137,7 @@
       
       // 2. Update button to show spinner state
       summaryGenerating = true;
-      summaryError = '';
-      
+
       // 3. Clear the summary from file object to trigger "generating" button state
       if (file) {
         file.summary = null;
@@ -2186,7 +2154,7 @@
         // WebSocket will handle the rest of the status updates
       } catch (error) {
         console.error('Failed to start reprocess:', error);
-        summaryError = 'Failed to start summary reprocessing';
+        toastStore.error('Failed to start summary reprocessing', 5000);
         summaryGenerating = false;
       }
     }}
@@ -2204,7 +2172,7 @@
 {/if}
 
 <style>
-  .file-detail-page {
+  div.file-detail-page {
     padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
@@ -2447,49 +2415,6 @@
     flex-shrink: 0;
   }
 
-  .summary-error-container {
-    background-color: var(--error-bg, #fef2f2);
-    border: 1px solid var(--error-border, #fecaca);
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 0.5rem 0;
-    position: relative;
-  }
-
-  .error-message {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--error-color, #dc2626);
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-  }
-
-  .error-icon {
-    flex-shrink: 0;
-  }
-
-
-  .dismiss-error-btn {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    background: none;
-    border: none;
-    font-size: 1.2rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
-    line-height: 1;
-  }
-
-  .dismiss-error-btn:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-    color: var(--text-primary);
-  }
-
-
   .waveform-section {
     width: 100%;
   }
@@ -2503,7 +2428,7 @@
   }
 
   @media (max-width: 768px) {
-    .file-detail-page {
+    div.file-detail-page {
       padding: 1rem;
     }
     

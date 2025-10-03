@@ -2,9 +2,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
+
+from app.schemas.base import UUIDBaseSchema
 
 
 class FileStatus(str, Enum):
@@ -48,13 +51,10 @@ class SpeakerBase(BaseModel):
     name: str
     display_name: Optional[str] = None
     suggested_name: Optional[str] = None
-    uuid: str  # Non-optional to match database NOT NULL constraint
     verified: bool = False
 
 
 class SpeakerCreate(SpeakerBase):
-    user_id: int
-    media_file_id: int
     embedding_vector: Optional[list[float]] = None
 
 
@@ -67,11 +67,11 @@ class SpeakerUpdate(BaseModel):
     profile_action: Optional[str] = None  # 'update_profile' or 'create_new_profile'
 
 
-class Speaker(SpeakerBase):
-    id: int
-    user_id: int
-    media_file_id: int
-    profile_id: Optional[int] = None
+class Speaker(SpeakerBase, UUIDBaseSchema):
+    """Speaker with UUID as public identifier"""
+    user_id: UUID
+    media_file_id: UUID
+    profile_id: Optional[UUID] = None
     confidence: Optional[float] = None
     created_at: datetime
 
@@ -80,8 +80,6 @@ class Speaker(SpeakerBase):
     status_text: Optional[str] = None  # Human-readable status text
     status_color: Optional[str] = None  # CSS color for status display
     resolved_display_name: Optional[str] = None  # Best available display name
-
-    model_config = {"from_attributes": True}
 
 
 # Speaker Profile schemas
@@ -99,14 +97,11 @@ class SpeakerProfileUpdate(BaseModel):
     description: Optional[str] = None
 
 
-class SpeakerProfile(SpeakerProfileBase):
-    id: int
-    user_id: int
-    uuid: str
+class SpeakerProfile(SpeakerProfileBase, UUIDBaseSchema):
+    """Speaker profile with UUID as public identifier"""
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 # Speaker Collection schemas
@@ -126,36 +121,34 @@ class SpeakerCollectionUpdate(BaseModel):
     is_public: Optional[bool] = None
 
 
-class SpeakerCollection(SpeakerCollectionBase):
-    id: int
-    user_id: int
+class SpeakerCollection(SpeakerCollectionBase, UUIDBaseSchema):
+    """Speaker collection with UUID as public identifier"""
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class TranscriptSegmentBase(BaseModel):
     start_time: float
     end_time: float
     text: str
-    speaker_id: Optional[int] = None
+    speaker_id: Optional[UUID] = None
 
 
 class TranscriptSegmentCreate(TranscriptSegmentBase):
-    media_file_id: int
+    pass  # media_file_id will be from URL path
 
 
 class TranscriptSegmentUpdate(BaseModel):
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     text: Optional[str] = None
-    speaker_id: Optional[int] = None
+    speaker_id: Optional[UUID] = None
 
 
-class TranscriptSegment(TranscriptSegmentBase):
-    id: int
-    media_file_id: int
+class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
+    """Transcript segment with UUID as public identifier"""
+    media_file_id: UUID
     speaker: Optional[Speaker] = None
 
     # Formatted fields for frontend display
@@ -166,12 +159,9 @@ class TranscriptSegment(TranscriptSegmentBase):
     )
     resolved_speaker_name: Optional[str] = None  # Display name (user label or original ID)
 
-    model_config = {"from_attributes": True}
-
 
 class MediaFileBase(BaseModel):
     filename: str
-    user_id: int
 
 
 class MediaFileCreate(MediaFileBase):
@@ -194,8 +184,9 @@ class MediaFileUpdate(BaseModel):
     thumbnail_path: Optional[str] = None
 
 
-class MediaFile(MediaFileBase):
-    id: int
+class MediaFile(MediaFileBase, UUIDBaseSchema):
+    """Media file with UUID as public identifier"""
+    user_id: UUID
     storage_path: str
     upload_time: datetime
     file_size: Optional[int] = None
@@ -250,8 +241,6 @@ class MediaFile(MediaFileBase):
     error_suggestions: Optional[list[str]] = None  # User-friendly error suggestions
     is_retryable: Optional[bool] = None  # Whether the error is retryable
 
-    model_config = {"from_attributes": True}
-
 
 class MediaFileDetail(MediaFile):
     transcript_segments: list[TranscriptSegment] = []
@@ -263,17 +252,13 @@ class MediaFileDetail(MediaFile):
     # Additional formatted fields for detail view
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
-    model_config = {"from_attributes": True}
-
 
 class TagBase(BaseModel):
     name: str
 
 
-class Tag(TagBase):
-    id: int
-
-    model_config = {"from_attributes": True}
+class Tag(TagBase, UUIDBaseSchema):
+    """Tag with UUID as public identifier"""
 
 
 class CommentBase(BaseModel):
@@ -282,8 +267,7 @@ class CommentBase(BaseModel):
 
 
 class CommentCreate(CommentBase):
-    media_file_id: int
-    user_id: Optional[int] = None
+    pass  # media_file_id will be from URL path
 
 
 class CommentUpdate(BaseModel):
@@ -291,19 +275,17 @@ class CommentUpdate(BaseModel):
     timestamp: Optional[float] = None
 
 
-class Comment(CommentBase):
-    id: int
-    media_file_id: int
-    user_id: int
+class Comment(CommentBase, UUIDBaseSchema):
+    """Comment with UUID as public identifier"""
+    media_file_id: UUID
+    user_id: UUID
     created_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class MediaFileInfo(BaseModel):
     """Schema for simplified media file information that gets included in tasks"""
 
-    id: int
+    id: UUID
     filename: str
     file_size: Optional[int] = None
     content_type: Optional[str] = None
@@ -318,12 +300,12 @@ class MediaFileInfo(BaseModel):
 class TaskBase(BaseModel):
     task_type: str
     status: str
-    media_file_id: Optional[int] = None
+    media_file_id: Optional[UUID] = None
 
 
 class TaskCreate(TaskBase):
-    id: str  # Celery task ID
-    user_id: int
+    id: str  # Celery task ID (string, not UUID)
+    user_id: UUID
 
 
 class TaskUpdate(BaseModel):
@@ -334,8 +316,9 @@ class TaskUpdate(BaseModel):
 
 
 class Task(TaskBase):
-    id: str
-    user_id: int
+    """Task schema - uses Celery task ID (string), not UUID"""
+    id: str  # Celery task ID
+    user_id: UUID
     progress: float
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -388,16 +371,14 @@ class AnalyticsBase(BaseModel):
 
 
 class AnalyticsCreate(AnalyticsBase):
-    media_file_id: int
+    pass  # media_file_id will be from context
 
 
-class Analytics(AnalyticsBase):
-    id: int
-    media_file_id: int
+class Analytics(AnalyticsBase, UUIDBaseSchema):
+    """Analytics with UUID as public identifier"""
+    media_file_id: UUID
     computed_at: Optional[datetime] = None
     version: Optional[str] = None
-
-    model_config = {"from_attributes": True}
 
 
 # Collection schemas
@@ -417,13 +398,11 @@ class CollectionUpdate(BaseModel):
     is_public: Optional[bool] = None
 
 
-class Collection(CollectionBase):
-    id: int
-    user_id: int
+class Collection(CollectionBase, UUIDBaseSchema):
+    """Collection with UUID as public identifier"""
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class CollectionWithCount(Collection):
@@ -435,11 +414,11 @@ class CollectionResponse(Collection):
 
 
 class CollectionMemberAdd(BaseModel):
-    media_file_ids: list[int]
+    media_file_ids: list[UUID]  # Changed from int to UUID
 
 
 class CollectionMemberRemove(BaseModel):
-    media_file_ids: list[int]
+    media_file_ids: list[UUID]  # Changed from int to UUID
 
 
 # Subtitle-related schemas

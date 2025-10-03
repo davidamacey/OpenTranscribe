@@ -16,12 +16,11 @@
   let showConfirmModal = false;
   let confirmModalTitle = '';
   let confirmModalMessage = '';
-  /** @type {(() => void) | null} */
-  let confirmCallback = null;
+  let confirmCallback: (() => void) | null = null;
   
   // Define types
   interface MediaFile {
-    id: number;
+    id: string;  // UUID
     filename: string;
     status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelling' | 'cancelled' | 'orphaned';
     upload_time: string;
@@ -84,7 +83,7 @@
       search: string;
       tags: string[];
       speaker: string[];
-      collectionId: number | null;
+      collectionId: string | null;  // UUID
       dates: DateRange;
       durationRange?: DurationRange;
       fileSizeRange?: { min: number | null; max: number | null };
@@ -113,15 +112,15 @@
   let loading: boolean = true;
   let error: string | null = null;
 
-  
+
   // Animation and smooth update state
-  let fileMap = new Map<number, MediaFile>();
-  let pendingNewFiles = new Set<number>();
-  let pendingDeletions = new Set<number>();
+  let fileMap = new Map<string, MediaFile>();
+  let pendingNewFiles = new Set<string>();
+  let pendingDeletions = new Set<string>();
   let refreshTimeouts = new Map<string, number>();
-  
+
   // View state
-  let selectedCollectionId: number | null = null;
+  let selectedCollectionId: string | null = null;
   let showCollectionsModal = false;
 
   // Use gallery store for state management
@@ -137,7 +136,7 @@
   
   // Define WebSocket update type
   interface FileStatusUpdate {
-    file_id: number;
+    file_id: string;  // UUID
     status: 'pending' | 'processing' | 'completed' | 'error';
     progress?: number;
   }
@@ -190,11 +189,11 @@
   /**
    * Handle force delete of processing files
    */
-  async function handleForceDelete(conflictFileIds: number[]) {
+  async function handleForceDelete(conflictFileIds: string[]) {
     try {
       // Try force deletion for conflicted files
       const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: conflictFileIds,
+        file_uuids: conflictFileIds,  // Use file_uuids (UUIDs)
         action: 'delete',
         force: true
       });
@@ -205,7 +204,7 @@
       if (forceSuccessful.length > 0) {
         toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
         // Remove force deleted files smoothly
-        const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_id);
+        const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_uuid);  // Use file_uuid from response
         removeFilesSmooth(forceSuccessfulIds);
       }
     } catch (forceErr) {
@@ -319,7 +318,7 @@
   
   // Smooth file list updates without full re-render
   function updateFilesSmooth(newFiles: MediaFile[]) {
-    const newFileMap = new Map<number, MediaFile>();
+    const newFileMap = new Map<string, MediaFile>();
     newFiles.forEach(file => newFileMap.set(file.id, file));
 
     // Identify truly new files (not in current list)
@@ -368,7 +367,7 @@
   // Throttled refresh function to prevent spam
   function throttledRefresh(key: string, delay: number = 500) {
     if (refreshTimeouts.has(key)) {
-      clearTimeout(refreshTimeouts.get(key));
+      clearTimeout(refreshTimeouts.get(key) as any);
     }
 
     const timeoutId = setTimeout(() => {
@@ -376,18 +375,18 @@
       refreshTimeouts.delete(key);
     }, delay);
 
-    refreshTimeouts.set(key, timeoutId);
+    refreshTimeouts.set(key, timeoutId as any);
   }
   
   // Remove files smoothly with animation
-  function removeFilesSmooth(fileIds: number[]) {
+  function removeFilesSmooth(fileIds: string[]) {
     // Mark files for deletion animation
     fileIds.forEach(id => {
       if (fileMap.has(id)) {
         pendingDeletions.add(id);
       }
     });
-    
+
     // Wait for exit animation to complete, then remove from array
     setTimeout(() => {
       files = files.filter(file => !fileIds.includes(file.id));
@@ -397,9 +396,9 @@
       });
     }, 250); // Match fade out animation duration
   }
-  
+
   // Remove single file smoothly
-  function removeFileSmooth(fileId: number) {
+  function removeFileSmooth(fileId: string) {
     removeFilesSmooth([fileId]);
   }
   
@@ -426,7 +425,7 @@
   
   
   // Toggle file selection
-  function toggleFileSelection(fileId: number, event: Event) {
+  function toggleFileSelection(fileId: string, event: Event) {
     if (event) {
       event.stopPropagation();
       event.preventDefault();
@@ -493,7 +492,7 @@
       
       // Use bulk action API for better error handling
       const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_ids: Array.from(selectedFiles),
+        file_uuids: Array.from(selectedFiles),  // Use file_uuids (UUIDs)
         action: 'delete',
         force: false
       });
@@ -504,9 +503,9 @@
       
       // Handle conflicts (files that can't be deleted)
       const conflicts = failed.filter((r: any) => r.error === 'HTTP_ERROR' && r.message.includes('FILE_NOT_SAFE_TO_DELETE'));
-      
+
       if (conflicts.length > 0) {
-        const conflictFileIds = conflicts.map((c: any) => c.file_id);
+        const conflictFileIds = conflicts.map((c: any) => c.file_uuid);  // Use file_uuid from response
         showConfirmation(
           'Force Delete Processing Files',
           `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
@@ -521,7 +520,7 @@
       if (successful.length > 0) {
         toastStore.success(`Successfully deleted ${successful.length} file(s).`);
         // Remove successfully deleted files smoothly
-        const successfulIds = successful.map((r: any) => r.file_id);
+        const successfulIds = successful.map((r: any) => r.file_uuid);  // Use file_uuid from response
         removeFilesSmooth(successfulIds);
       }
       
@@ -570,7 +569,7 @@
       toastStore.error(
         `${file.user_message || `Processing failed for "${file.title || file.filename}"`}\n\n` +
         `Suggestions:\n${suggestions}`,
-        { duration: file.error_category === 'file_quality' ? 10000 : 8000 }
+        file.error_category === 'file_quality' ? 10000 : 8000
       );
     } else {
       // Minimal fallback for unexpected cases
@@ -610,19 +609,18 @@
           unprocessedNotifications.forEach(notification => {
             // Handle different notification types
             if (notification.type === 'file_deleted' && notification.data?.file_id) {
-              const fileId = parseInt(String(notification.data.file_id));
+              const fileId = String(notification.data.file_id);
               removeFileSmooth(fileId);
             }
             else if (notification.type === 'transcription_status' && notification.data?.file_id) {
-              const fileId = String(notification.data.file_id);
+              const fileId = String(notification.data.file_id);  // UUID string
               const status = notification.data.status;
-              const fileIdNum = parseInt(fileId);
 
               // FIX: Update both status and display_status for concurrent upload status tracking
               // This ensures gallery items show correct status during multiple file processing
               // instead of staying stuck on "Pending" while notifications work correctly
               const updatedFiles = files.map(file => {
-                if (file.id === fileIdNum) {
+                if (file.id === fileId) {
                   const updatedFile = {
                     ...file,
                     status: status,
@@ -633,7 +631,7 @@
                                    status === 'error' ? 'Error' : status
                   };
                   // Update the file map immediately for consistent lookups
-                  fileMap.set(fileIdNum, updatedFile);
+                  fileMap.set(fileId, updatedFile);  // Use fileId (UUID) directly
                   filesUpdated = true;
                   return updatedFile;
                 }
@@ -653,7 +651,7 @@
               if (status === 'completed') {
                 // Wait a bit longer for the file_updated notification, then refresh if needed
                 setTimeout(() => {
-                  const currentFile = fileMap.get(fileIdNum);
+                  const currentFile = fileMap.get(fileId);  // Use fileId (UUID) directly
                   if (currentFile && currentFile.status !== 'completed') {
                     throttledRefresh('completed-fallback-' + fileId, 100);
                   }
@@ -672,14 +670,13 @@
             }
             // Handle file updates (metadata, processing completion, etc.)
             else if (notification.type === 'file_updated' && notification.data?.file_id) {
-              const fileId = String(notification.data.file_id);
-              const fileIdNum = parseInt(fileId);
+              const fileId = String(notification.data.file_id);  // UUID string
 
               // Try to update the file in place first
               let fileExists = false;
               let updatedFile = null;
               files = files.map(file => {
-                if (file.id === fileIdNum) {
+                if (file.id === fileId) {  // Compare UUIDs directly
                   fileExists = true;
                   // If we have full file data, use it; otherwise merge notification data
                   if (notification.data.file) {
@@ -703,7 +700,7 @@
 
               // Update the file map immediately for consistent lookups
               if (fileExists && updatedFile) {
-                fileMap.set(fileIdNum, updatedFile);
+                fileMap.set(fileId, updatedFile);  // Use fileId (UUID) directly
                 filesUpdated = true;
               } else {
                 // Only fetch if file doesn't exist in current list (new file)
@@ -782,15 +779,15 @@
       }
     };
     
-    window.addEventListener('openAddMediaModal', handleOpenModalEvent);
-    window.addEventListener('uploadRecordedFile', handleUploadRecordedFile);
-    
+    window.addEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
+    window.addEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
+
     fetchFiles(true); // Initial load
-    
+
     // Return cleanup function
     return () => {
-      window.removeEventListener('openAddMediaModal', handleOpenModalEvent);
-      window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile);
+      window.removeEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
+      window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
     };
   });
   

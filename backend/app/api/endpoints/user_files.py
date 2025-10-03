@@ -27,6 +27,7 @@ from app.models.user import User
 from app.services.formatting_service import FormattingService
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_utils import get_task_summary_for_media_file
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def get_user_file_status(
             ):
                 problem_files.append(
                     {
-                        "id": file.id,
+                        "id": str(file.uuid),  # Use UUID for frontend
                         "filename": file.filename,
                         "status": file.status.value,
                         "upload_time": file.upload_time,
@@ -103,7 +104,7 @@ def get_user_file_status(
             if file_age < timedelta(hours=24):
                 recent_files.append(
                     {
-                        "id": file.id,
+                        "id": str(file.uuid),  # Use UUID for frontend
                         "filename": file.filename,
                         "status": file.status.value,
                         "upload_time": file.upload_time,
@@ -144,9 +145,9 @@ def get_user_file_status(
         ) from e
 
 
-@router.get("/{file_id}/status", response_model=dict[str, Any])
+@router.get("/{file_uuid}/status", response_model=dict[str, Any])
 def get_file_detailed_status(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -155,14 +156,8 @@ def get_file_detailed_status(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = (
-            db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-            .first()
-        )
-
-        if not media_file:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+        file_id = media_file.id
 
         # Get task summary
         task_summary = get_task_summary_for_media_file(db, file_id)
@@ -203,7 +198,7 @@ def get_file_detailed_status(
 
         return {
             "file": {
-                "id": media_file.id,
+                "id": str(media_file.uuid),  # Use UUID for frontend
                 "filename": media_file.filename,
                 "status": media_file.status.value,
                 "upload_time": media_file.upload_time,
@@ -240,9 +235,9 @@ def get_file_detailed_status(
         ) from e
 
 
-@router.post("/{file_id}/retry", response_model=dict[str, Any])
+@router.post("/{file_uuid}/retry", response_model=dict[str, Any])
 async def retry_file_processing(
-    file_id: int,
+    file_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -253,14 +248,8 @@ async def retry_file_processing(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = (
-            db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-            .first()
-        )
-
-        if not media_file:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+        file_id = media_file.id
 
         # Check if retry is appropriate
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
@@ -316,7 +305,7 @@ async def retry_file_processing(
             return {
                 "success": True,
                 "message": "File processing restarted successfully",
-                "file_id": file_id,
+                "file_id": str(media_file.uuid),  # Use UUID for frontend
                 "new_status": "pending",
             }
         else:

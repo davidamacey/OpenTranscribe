@@ -4,19 +4,19 @@
   import axiosInstance from '$lib/axios';
   import SpeakerVerification from './SpeakerVerification.svelte';
 
-  export let fileId: number;
+  export let fileId: string;  // UUID
   export let isVisible = false;
 
   const dispatch = createEventDispatcher();
 
   interface Speaker {
-    id: number;
+    id: string;  // UUID
     name: string;
     display_name?: string;
     verified: boolean;
     confidence?: number;
     profile?: {
-      id: number;
+      id: string;  // UUID
       name: string;
       description?: string;
     };
@@ -28,7 +28,7 @@
   }
 
   interface SpeakerProfile {
-    id: number;
+    id: string;  // UUID
     name: string;
     description?: string;
     instance_count: number;
@@ -62,7 +62,7 @@
       
       // Load speakers for this file and user profiles
       const [speakersResponse, profilesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speakers/?file_id=${fileId}`),
+        axiosInstance.get(`/api/speakers/?file_uuid=${fileId}`),  // Use file_uuid parameter
         axiosInstance.get('/api/speaker-profiles/profiles')
       ]);
       
@@ -106,8 +106,8 @@
 
   async function handleVerification(event: CustomEvent<{
     action: string;
-    speaker_id: number;
-    profile_id?: number;
+    speaker_id: string;  // UUID
+    profile_id?: string;  // UUID
     profile_name?: string;
   }>) {
     try {
