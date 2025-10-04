@@ -1,4 +1,15 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+
+// Import toast store for error notifications
+// We'll use dynamic import to avoid circular dependencies
+let toastStore: any = null;
+try {
+  import('./toast').then(module => {
+    toastStore = module.toastStore;
+  });
+} catch (e) {
+  // Toast store not available - errors will only be in console
+}
 
 // Recording state interface
 export interface RecordingState {
@@ -112,7 +123,14 @@ export class RecordingManager {
 
     try {
       this.recordedChunks = [];
-      
+
+      // Refresh device list to ensure selected device is still available
+      await this.loadAudioDevices();
+
+      // Get updated state after device refresh
+      const unsubscribe2 = recordingStore.subscribe(state => currentState = state);
+      unsubscribe2();
+
       recordingStore.update(state => ({
         ...state,
         recordingError: '',
@@ -123,11 +141,16 @@ export class RecordingManager {
         isRecording: true
       }));
 
-      // Get user media
-      const constraints = {
-        audio: currentState!.selectedDeviceId ? 
-          { deviceId: { exact: currentState!.selectedDeviceId } } : 
-          true
+      // Get user media with proper constraint handling
+      // Validate that the selected device still exists
+      const selectedDeviceExists = currentState!.audioDevices.some(
+        device => device.deviceId === currentState!.selectedDeviceId
+      );
+
+      const constraints: MediaStreamConstraints = {
+        audio: selectedDeviceExists && currentState!.selectedDeviceId && currentState!.selectedDeviceId.trim() !== '' ?
+          { deviceId: currentState!.selectedDeviceId } :
+          true  // Fall back to default device if selected device is invalid or disconnected
       };
 
       this.audioStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -191,13 +214,32 @@ export class RecordingManager {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to start recording';
+
+      // Show user-friendly error message via toast
+      let userMessage = 'Failed to start recording';
+      if (errorMessage.includes('NotAllowedError') || errorMessage.includes('Permission denied')) {
+        userMessage = 'Microphone access denied. Please allow microphone permissions and try again.';
+      } else if (errorMessage.includes('NotFoundError')) {
+        userMessage = 'No microphone found. Please connect a microphone and try again.';
+      } else if (errorMessage.includes('constraint')) {
+        userMessage = 'Selected microphone is not available. Using default microphone.';
+      }
+
+      console.error('Recording error:', errorMessage);
+
+      // Show toast notification
+      if (toastStore) {
+        toastStore.error(userMessage);
+      }
+
       recordingStore.update(state => ({
         ...state,
-        recordingError: errorMessage,
+        recordingError: '',  // Clear error since we're showing it via toast
         hasActiveRecording: false,
-        recordingStartTime: null
+        recordingStartTime: null,
+        isRecording: false
       }));
-      // Recording error is already stored in recordingError state
+
       this.cleanupRecording();
     }
   }
