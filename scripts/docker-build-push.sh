@@ -240,6 +240,12 @@ main() {
     if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ]; then
         print_info "  docker pull ${REPO_FRONTEND}:latest"
     fi
+
+    # CRITICAL: Switch back to default builder to prevent interference with local dev builds
+    print_info ""
+    print_info "🔧 Switching back to default Docker builder..."
+    docker buildx use default
+    print_success "✅ Default builder restored. Local development builds will work normally."
 }
 
 # Run main function

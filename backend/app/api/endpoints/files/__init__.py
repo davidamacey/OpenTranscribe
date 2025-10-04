@@ -131,7 +131,11 @@ def list_media_files(
     if current_user.role == "admin":
         base_query = db.query(MediaFile).options(joinedload(MediaFile.user))
     else:
-        base_query = db.query(MediaFile).options(joinedload(MediaFile.user)).filter(MediaFile.user_id == current_user.id)
+        base_query = (
+            db.query(MediaFile)
+            .options(joinedload(MediaFile.user))
+            .filter(MediaFile.user_id == current_user.id)
+        )
 
     # Prepare filters dictionary
     filters = {
@@ -253,7 +257,9 @@ def download_media_file(
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.info(f"Processing video download with subtitles for file {file_uuid} (id: {file_id})")
+            logger.info(
+                f"Processing video download with subtitles for file {file_uuid} (id: {file_id})"
+            )
 
             from app.services.minio_service import MinIOService
             from app.services.video_processing_service import VideoProcessingService
@@ -265,10 +271,14 @@ def download_media_file(
             # Check if ffmpeg is available
             if not video_service.check_ffmpeg_availability():
                 # Fall back to original file if ffmpeg is not available
-                logger.warning(f"ffmpeg not available, serving original file for {file_uuid} (id: {file_id})")
+                logger.warning(
+                    f"ffmpeg not available, serving original file for {file_uuid} (id: {file_id})"
+                )
                 return get_content_streaming_response(db_file)
 
-            logger.info(f"ffmpeg available, processing video {file_uuid} (id: {file_id}) with subtitles")
+            logger.info(
+                f"ffmpeg available, processing video {file_uuid} (id: {file_id}) with subtitles"
+            )
 
             # Process video with embedded subtitles
             cache_key = video_service.process_video_with_subtitles(
@@ -348,12 +358,12 @@ def download_media_file_with_token(
     try:
         # Validate JWT token manually
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        user_uuid: str = payload.get("sub")
+        if user_uuid is None:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        # Get user from database
-        user = db.query(User).filter(User.id == user_id).first()
+        # Get user from database by UUID (token contains UUID, not integer ID)
+        user = db.query(User).filter(User.uuid == user_uuid).first()
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="Invalid user")
 
@@ -460,6 +470,7 @@ async def video_file(file_uuid: str, request: Request, db: Session = Depends(get
     No authentication required - this is a public endpoint for video files only
     """
     from app.utils.uuid_helpers import get_file_by_uuid
+
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
@@ -473,6 +484,7 @@ async def simple_video(file_uuid: str, request: Request, db: Session = Depends(g
     Enhanced video streaming endpoint that efficiently serves video content with YouTube-like streaming.
     """
     from app.utils.uuid_helpers import get_file_by_uuid
+
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
@@ -487,6 +499,7 @@ async def get_thumbnail(file_uuid: str, db: Session = Depends(get_db)):
     No authentication required - this is a public endpoint for thumbnail images only.
     """
     from app.utils.uuid_helpers import get_file_by_uuid
+
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
     return get_thumbnail_streaming_response(db_file)
@@ -500,10 +513,10 @@ def get_metadata_filters_endpoint(
     return get_metadata_filters(db, current_user.id)
 
 
-@router.put("/{file_uuid}/transcript/segments/{segment_id}", response_model=TranscriptSegment)
+@router.put("/{file_uuid}/transcript/segments/{segment_uuid}", response_model=TranscriptSegment)
 def update_transcript_segment(
     file_uuid: str,
-    segment_id: int,
+    segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -512,7 +525,9 @@ def update_transcript_segment(
     from .crud import update_single_transcript_segment
 
     # Update the transcript segment
-    result = update_single_transcript_segment(db, file_uuid, segment_id, segment_update, current_user)
+    result = update_single_transcript_segment(
+        db, file_uuid, segment_uuid, segment_update, current_user
+    )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
 

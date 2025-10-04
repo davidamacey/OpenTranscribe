@@ -44,10 +44,10 @@
   let error = '';
   let statusMessage = '';
   let isDuplicateFile = false; // Track if the current file is a duplicate
-  let duplicateFileId: number | null = null; // Track the ID of the duplicate file
+  let duplicateFileId: string | null = null; // Track the UUID of the duplicate file
   let cancelTokenSource: CancelTokenSource | null = null;
   let isCancelling = false;
-  let currentFileId: number | null = null; // Track the current file ID for cancellation
+  let currentFileId: string | null = null; // Track the current file UUID for cancellation
   let token = ''; // Store the auth token
 
   // URL processing state

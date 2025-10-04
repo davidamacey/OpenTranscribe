@@ -15,7 +15,6 @@
   export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
   export let savingSpeakers: boolean = false;
-  export let transcriptError: string = '';
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
@@ -296,9 +295,6 @@
           title="Cancel editing and discard all changes"
         >Cancel</button>
       </div>
-      {#if transcriptError}
-        <p class="error-message small">{transcriptError}</p>
-      {/if}
     {:else}
       <div bind:this={transcriptContainer} class="transcript-display-container">
         <div class="transcript-display">
@@ -328,9 +324,6 @@
                       {savingTranscript ? 'Saving...' : 'Save'}
                     </button>
                   </div>
-                  {#if transcriptError}
-                    <p class="error-message small">{transcriptError}</p>
-                  {/if}
                 </div>
               </div>
             {:else}
@@ -1463,17 +1456,6 @@
   
   .save-speakers-button .spinner {
     margin-right: 0.5rem;
-  }
-
-  .error-message {
-    color: var(--error-color);
-    font-size: 14px;
-    margin: 8px 0;
-  }
-
-  .error-message.small {
-    font-size: 12px;
-    margin: 4px 0;
   }
 
   @media (max-width: 768px) {

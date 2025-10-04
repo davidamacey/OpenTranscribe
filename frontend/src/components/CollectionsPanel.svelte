@@ -6,14 +6,13 @@
   import ConfirmationModal from './ConfirmationModal.svelte';
   
   // Props
-  export let selectedMediaIds: number[] = [];
-  export let onCollectionSelect: (collectionId: number) => void = () => {};
+  export let selectedMediaIds: string[] = [];  // UUIDs
+  export let onCollectionSelect: (collectionId: string) => void = () => {};  // UUID
   export let viewMode: 'manage' | 'add' = 'manage';
-  
+
   // State
   let collections: any[] = [];
   let loading = false;
-  let error = '';
   let showCreateModal = false;
   let showEditModal = false;
   let showDeleteConfirm = false;
@@ -26,20 +25,19 @@
   let creating = false;
   let updating = false;
   let deleting = false;
-  let selectedCollectionId: number | null = null;
+  let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
   
   // Fetch collections
   async function fetchCollections() {
     loading = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.get('/api/collections/');
       collections = response.data;
     } catch (err: any) {
       console.error('Error fetching collections:', err);
-      error = 'Failed to load collections';
+      toastStore.error('Failed to load collections');
     } finally {
       loading = false;
     }
@@ -48,22 +46,21 @@
   // Create new collection
   async function createCollection() {
     if (!newCollectionName.trim()) return;
-    
+
     creating = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.post('/api/collections/', {
         name: newCollectionName.trim(),
         description: newCollectionDescription.trim() || null
       });
-      
+
       collections = [...collections, { ...response.data, media_count: 0 }];
-      
+
       // Reset form for potential next collection
       newCollectionName = '';
       newCollectionDescription = '';
-      
+
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
         await addMediaToCollection(response.data.id);
@@ -79,7 +76,7 @@
       }
     } catch (err: any) {
       console.error('Error creating collection:', err);
-      error = err.response?.data?.detail || 'Failed to create collection';
+      toastStore.error(err.response?.data?.detail || 'Failed to create collection');
     } finally {
       creating = false;
     }
@@ -90,8 +87,7 @@
     if (!collectionToEdit || !editCollectionName.trim()) return;
     
     updating = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.put(`/api/collections/${collectionToEdit.id}`, {
         name: editCollectionName.trim(),
@@ -131,18 +127,17 @@
   // Delete collection
   async function deleteCollection() {
     if (!collectionToDelete) return;
-    
+
     deleting = true;
-    error = '';
-    
+
     try {
       await axiosInstance.delete(`/api/collections/${collectionToDelete.id}`);
       collections = collections.filter(col => col.id !== collectionToDelete.id);
-      
+
       if (selectedCollectionId === collectionToDelete.id) {
         selectedCollectionId = null;
       }
-      
+
       toastStore.success(`Collection "${collectionToDelete.name}" deleted successfully`);
       showDeleteConfirm = false;
       collectionToDelete = null;
@@ -170,8 +165,7 @@
     if (!selectedMediaIds.length) return;
     
     addingToCollection = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.post(`/api/collections/${collectionId}/media`, {
         media_file_ids: selectedMediaIds
@@ -192,7 +186,7 @@
       onCollectionSelect(collectionId);
     } catch (err: any) {
       console.error('Error adding media to collection:', err);
-      error = err.response?.data?.detail || 'Failed to add media to collection';
+      toastStore.error(err.response?.data?.detail || 'Failed to add media to collection');
     } finally {
       addingToCollection = false;
     }
@@ -219,7 +213,6 @@
     <button 
       class="btn-create"
       on:click={() => {
-        error = '';
         showCreateModal = true;
       }}
       disabled={creating}
@@ -228,13 +221,7 @@
       New Collection
     </button>
   </div>
-  
-  {#if error}
-    <div class="error-message" transition:slide>
-      {error}
-    </div>
-  {/if}
-  
+
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
@@ -569,17 +556,7 @@
     color: white;
     font-weight: bold;
   }
-  
-  .error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: var(--error-color);
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
-  
+
   .loading {
     display: flex;
     flex-direction: column;

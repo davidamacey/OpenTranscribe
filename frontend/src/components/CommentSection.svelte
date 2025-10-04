@@ -6,20 +6,19 @@
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  
+  import { toastStore } from '../stores/toast';
+
   // The Svelte component is exported by default automatically
-  
+
   /** @type {string} */
   export let fileId = "";
   /** @type {number} */
   export let currentTime = 0;
-  
+
   /** @type {Array<{id: string, text: string, timestamp: number, user: {id: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
-  /** @type {string|null} */
-  let error = null;
   /** @type {string} */
   let newComment = '';
   /** @type {number|null} */
@@ -66,7 +65,6 @@
   
   async function fetchComments() {
     loading = true;
-    error = null;
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
@@ -74,14 +72,14 @@
       // Validate fileId
       if (!fileId) {
         console.error('Invalid file ID:', fileId);
-        error = 'Invalid file ID provided';
+        toastStore.error('Invalid file ID provided');
         loading = false;
         return;
       }
 
       if (!token) {
         console.error('No auth token found in localStorage');
-        error = 'You need to be logged in to view comments';
+        toastStore.error('You need to be logged in to view comments');
         loading = false;
         return;
       }
@@ -101,7 +99,7 @@
         
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          error = 'You need to be logged in to view comments';
+          toastStore.error('You need to be logged in to view comments');
           loading = false;
           return;
         }
@@ -120,12 +118,12 @@
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
-              error = `Failed to load comments: ${lastError.message}`;
+              toastStore.error(`Failed to load comments: ${lastError.message}`);
               return;
             }
           }
         } else {
-          error = `Failed to load comments: ${error.message}`;
+          toastStore.error(`Failed to load comments: ${error.message}`);
           return;
         }
       }
@@ -169,11 +167,11 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to view comments.';
+        toastStore.error('You need to be logged in to view comments.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server.';
+        toastStore.error('Network error: Cannot connect to server.');
       } else {
-        error = `Failed to load comments: ${err.message}`;
+        toastStore.error(`Failed to load comments: ${err.message}`);
       }
     } finally {
       loading = false;
@@ -204,7 +202,7 @@
 
       if (!token) {
         console.error('No auth token found in localStorage');
-        error = 'You need to be logged in to add comments';
+        toastStore.error('You need to be logged in to add comments');
         return;
       }
 
@@ -242,10 +240,10 @@
         
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          error = 'You need to be logged in to add comments';
+          toastStore.error('You need to be logged in to add comments');
           return;
         }
-        
+
         // Try alternate endpoints as fallback if we get a 404
         if (error.response?.status === 404) {
           try {
@@ -270,12 +268,12 @@
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
-              error = `Failed to add comment: ${lastError.message}`;
+              toastStore.error(`Failed to add comment: ${lastError.message}`);
               return;
             }
           }
         } else {
-          error = `Failed to add comment: ${error.message}`;
+          toastStore.error(`Failed to add comment: ${error.message}`);
           return;
         }
       }
@@ -309,11 +307,11 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to add comments.';
+        toastStore.error('You need to be logged in to add comments.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server.';
+        toastStore.error('Network error: Cannot connect to server.');
       } else {
-        error = `Failed to add comment: ${err.message}`;
+        toastStore.error(`Failed to add comment: ${err.message}`);
       }
     }
   }
@@ -326,18 +324,18 @@
    */
   async function editComment(commentId, newText) {
     if (!newText || !newText.trim()) {
-      error = 'Comment text cannot be empty';
+      toastStore.error('Comment text cannot be empty');
       return;
     }
-    
+
     try {
       // Editing comment
       
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      
+
       if (!token) {
-        error = 'You need to be logged in to edit comments';
+        toastStore.error('You need to be logged in to edit comments');
         return;
       }
       
@@ -384,9 +382,9 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to edit comments.';
+        toastStore.error('You need to be logged in to edit comments.');
       } else {
-        error = `Failed to edit comment: ${err.message}`;
+        toastStore.error(`Failed to edit comment: ${err.message}`);
       }
     }
   }
@@ -444,9 +442,9 @@
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
       // Deleting comment
-      
+
       if (!token) {
-        error = 'You need to be logged in to delete comments';
+        toastStore.error('You need to be logged in to delete comments');
         return;
       }
       
@@ -480,9 +478,9 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to delete comments.';
+        toastStore.error('You need to be logged in to delete comments.');
       } else {
-        error = `Failed to delete comment: ${err.message}`;
+        toastStore.error(`Failed to delete comment: ${err.message}`);
       }
     }
   }
@@ -539,17 +537,7 @@
       {/if}
     </div>
   </div>
-  <!-- Error message if needed -->
-  {#if error}
-    <div class="error-message">
-      <p>{error}</p>
-      <button 
-        on:click={fetchComments}
-        title="Retry loading comments"
-      >Try Again</button>
-    </div>
-  {/if}
-  
+
   <!-- Fixed comment form at the top -->
   <div class="comment-form-container">
     <form class="comment-form" on:submit={addComment}>
@@ -1125,32 +1113,6 @@
     text-align: center;
     color: var(--text-light);
     font-size: 0.9rem;
-  }
-  
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .error-message p {
-    margin: 0;
-  }
-  
-  .error-message button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
   }
 
   /* Modal button styling to match app design */

@@ -52,7 +52,6 @@
   let editedTranscript = '';
   let savingTranscript = false;
   let savingSpeakers = false;
-  let transcriptError = '';
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
@@ -729,7 +728,6 @@
         
         editingSegmentId = null;
         editingSegmentText = '';
-        transcriptError = '';
 
         // Update subtitles in the video player
         if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
@@ -742,14 +740,16 @@
       }
     } catch (error: any) {
       console.error('Error saving segment:', error);
-      
-      // If API call fails, show specific error message
+
+      // Show error as toast notification for consistency
       if (error.response?.status === 405) {
-        transcriptError = 'Transcript editing is not supported by the server';
+        toastStore.error('Transcript editing is not supported by the server');
       } else if (error.response?.status === 404) {
-        transcriptError = 'Transcript segment not found';
+        toastStore.error('Transcript segment not found');
+      } else if (error.response?.status === 422) {
+        toastStore.error('Invalid segment data. Please check your input.');
       } else {
-        transcriptError = 'Failed to save segment changes';
+        toastStore.error('Failed to save segment changes');
       }
     } finally {
       savingTranscript = false;
@@ -778,11 +778,10 @@
         // so the transcript modal will automatically update
 
         isEditingTranscript = false;
-        transcriptError = '';
       }
     } catch (error) {
       console.error('Error saving transcript:', error);
-      transcriptError = 'Failed to save transcript';
+      toastStore.error('Failed to save transcript');
     } finally {
       savingTranscript = false;
     }
@@ -2025,7 +2024,6 @@
           {editedTranscript}
           {savingTranscript}
           {savingSpeakers}
-          {transcriptError}
           {editingSegmentId}
           bind:editingSegmentText
           {isEditingSpeakers}

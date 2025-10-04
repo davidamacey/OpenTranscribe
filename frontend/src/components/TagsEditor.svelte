@@ -2,13 +2,14 @@
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
+  import { toastStore } from '$stores/toast';
 // Use the shared axios instance so auth token is always sent
-  
+
   /** @type {string} */
   export let fileId = "";
   /** @type {Array<{id: string, name: string}>} */
   export let tags = [];
-  
+
   // Ensure tags are always in the correct format
   $: {
     if (Array.isArray(tags)) {
@@ -19,7 +20,7 @@
           return { id: `temp-${tag}`, name: tag };
         } else if (tag && typeof tag === 'object') {
           // Ensure tag object has required properties
-          return { 
+          return {
             id: tag.id !== undefined ? tag.id : `temp-${tag.name}`,
             name: tag.name || ''
           };
@@ -28,25 +29,22 @@
       });
     }
   }
-  
+
   /** @type {Array<{id: string, name: string}>} */
   let allTags = [];
   /** @type {string} */
   let newTagInput = '';
   /** @type {boolean} */
   let loading = false;
-  /** @type {string|null} */
-  let error = null;
   
   // Event dispatcher
   const dispatch = createEventDispatcher();
   
   // Fetch all available tags
   async function fetchAllTags() {
-    error = null; // Reset error state before making request
     try {
       const token = localStorage.getItem('token');
-      
+
       // Use consistent URL format
       const response = await axiosInstance.get('/tags/');
       
@@ -58,7 +56,7 @@
       );
       
       allTags = validTags;
-    } catch (err) { 
+    } catch (err) {
       console.error('[TagsEditor] Error fetching tags:', err);
       console.error('[TagsEditor] Error details:', {
         message: err.message,
@@ -66,13 +64,13 @@
         data: err.response?.data,
         config: err.config
       });
-      
+
       if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
+        toastStore.error('Unauthorized: Please log in.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server';
+        toastStore.error('Network error: Cannot connect to server');
       } else {
-        error = 'Failed to load tags';
+        toastStore.error('Failed to load tags');
       }
     }
   }
@@ -80,7 +78,6 @@
   // Add a tag to the file
   async function addTag(tagId) {
     loading = true;
-    error = null;
     try {
       const token = localStorage.getItem('token');
       // Adding tag to file
@@ -119,9 +116,9 @@
       }
     } catch (err) {
       if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
+        toastStore.error('Unauthorized: Please log in.');
       } else {
-        error = 'Failed to add tag';
+        toastStore.error('Failed to add tag');
       }
       console.error('[TagsEditor] Error adding tag:', err);
     } finally {
@@ -133,7 +130,6 @@
   async function createAndAddTag() {
     if (!newTagInput.trim()) return;
     loading = true;
-    error = null;
     try {
       const token = localStorage.getItem('token');
       // Creating tag and adding to file
@@ -182,7 +178,7 @@
         const errorObj = err;
         
         if (errorObj.response && errorObj.response.status === 401) {
-          error = 'Unauthorized: Please log in.';
+          toastStore.error('Unauthorized: Please log in.');
         } else if (
           errorObj.response && 
           typeof errorObj.response === 'object' && 
@@ -191,12 +187,12 @@
           typeof errorObj.response.data === 'object' && 
           'detail' in errorObj.response.data
         ) {
-          error = `Failed to create tag: ${errorObj.response.data.detail}`;
+          toastStore.error(`Failed to create tag: ${errorObj.response.data.detail}`);
         } else {
-          error = 'Failed to create tag';
+          toastStore.error('Failed to create tag');
         }
       } else {
-        error = 'Failed to create tag';
+        toastStore.error('Failed to create tag');
       }
       console.error('[TagsEditor] Error creating tag:', err);
     } finally {
@@ -207,7 +203,6 @@
   // Remove a tag from the file
   async function removeTag(tagId) {
     loading = true;
-    error = null;
     try {
       const token = localStorage.getItem('token');
       // Removing tag from file
@@ -248,11 +243,11 @@
       });
       
       if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
+        toastStore.error('Unauthorized: Please log in.');
       } else if (err.code === 'ERR_NETWORK') {
         error = 'Network error: Cannot connect to server';
       } else {
-        error = 'Failed to remove tag';
+        toastStore.error('Failed to remove tag');
       }
     } finally {
       loading = false;
@@ -285,12 +280,6 @@
 </script>
 
 <div class="tags-editor">
-  {#if error && !(error === 'Failed to load tags' && tags.length === 0)}
-    <div class="error-message">
-      {error}
-    </div>
-  {/if}
-  
   <div class="tags-list">
     {#if tags.length === 0}
       <span class="no-tags">No tags yet.</span>
@@ -452,13 +441,5 @@
   .suggested-tag:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-  
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
   }
 </style>

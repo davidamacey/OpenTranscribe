@@ -49,6 +49,7 @@ def get_media_file_by_uuid(
     # Use UUID helper with admin bypass for permission check
     if is_admin:
         from app.utils.uuid_helpers import get_file_by_uuid
+
         return get_file_by_uuid(db, file_uuid)
     else:
         return get_file_by_uuid_with_permission(db, file_uuid, user_id)
@@ -372,11 +373,14 @@ def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
                 for speaker_uuid in speaker_uuids:
                     try:
                         opensearch_client.delete(
-                            index=settings.OPENSEARCH_SPEAKER_INDEX, id=speaker_uuid  # Use UUID
+                            index=settings.OPENSEARCH_SPEAKER_INDEX,
+                            id=speaker_uuid,  # Use UUID
                         )
                         deleted_count += 1
                     except Exception as e:
-                        logger.warning(f"Error deleting speaker {speaker_uuid} from OpenSearch: {e}")
+                        logger.warning(
+                            f"Error deleting speaker {speaker_uuid} from OpenSearch: {e}"
+                        )
 
                 logger.info(
                     f"Deleted {deleted_count}/{len(speaker_uuids)} speaker embeddings from OpenSearch for file {file_id}"
@@ -391,7 +395,8 @@ def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
 
             if opensearch_client:
                 opensearch_client.delete(
-                    index=settings.OPENSEARCH_TRANSCRIPT_INDEX, id=str(file_uuid)  # Use UUID as document ID
+                    index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
+                    id=str(file_uuid),  # Use UUID as document ID
                 )
                 logger.info(f"Deleted transcript for file {file_uuid} from OpenSearch")
         except Exception as e:
@@ -483,7 +488,7 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
 def update_single_transcript_segment(
     db: Session,
     file_uuid: str,
-    segment_id: int,
+    segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     current_user: User,
 ) -> TranscriptSegment:
@@ -493,7 +498,7 @@ def update_single_transcript_segment(
     Args:
         db: Database session
         file_uuid: File UUID
-        segment_id: Segment ID
+        segment_uuid: Segment UUID
         segment_update: Segment update data
         current_user: Current user
 
@@ -505,11 +510,11 @@ def update_single_transcript_segment(
     db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
     file_id = db_file.id  # Get internal ID for segment query
 
-    # Find the specific segment
+    # Find the specific segment by UUID
     segment = (
         db.query(TranscriptSegment)
         .filter(
-            TranscriptSegment.id == segment_id,
+            TranscriptSegment.uuid == segment_uuid,
             TranscriptSegment.media_file_id == file_id,
         )
         .first()

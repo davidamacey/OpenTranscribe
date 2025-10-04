@@ -2,24 +2,24 @@
   import { useNavigate, Link } from "svelte-navigator";
   import { login, authStore, isAuthenticated } from "../stores/auth";
   import { onMount } from 'svelte';
-  
+  import { toastStore } from '../stores/toast';
+
   // Import logo asset for proper Vite processing
   import logoBanner from '../assets/logo-banner.png';
-  
+
   // Explicitly declare props to prevent warnings
   export const location = null;
   export const navigate = null;
   const navigateHook = useNavigate();
-  
+
   // Form data
   let email = "";
   let password = "";
-  let error = "";
   let loading = false;
   let formSubmitted = false;
   let showPassword = false;
   let successMessage = "";
-  
+
   // Validation
   let emailValid = true;
   let passwordValid = true;
@@ -52,41 +52,41 @@
   
   // Handle form submission
   async function handleSubmit() {
-    error = "";
     successMessage = "";
-    
+
     // Validate required fields first
     if (!email.trim()) {
-      error = "Email address is required.";
+      toastStore.error("Email address is required.");
       document.getElementById('email')?.focus();
       return;
     }
-    
+
     if (!validateEmail(email.trim())) {
-      error = "Please enter a valid email address.";
+      toastStore.error("Please enter a valid email address.");
       document.getElementById('email')?.focus();
       return;
     }
-    
+
     if (!password.trim()) {
-      error = "Password is required.";
+      toastStore.error("Password is required.");
       document.getElementById('password')?.focus();
       return;
     }
-    
+
     if (!validateForm()) {
       return;
     }
-    
+
     loading = true;
-    
+
     try {
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
-      
+
       if (result.success) {
         successMessage = "Login successful! Redirecting...";
-        
+        toastStore.success("Login successful! Redirecting...");
+
         // Add a small delay before redirecting for better UX
         setTimeout(() => {
           // Use window.location for a full page refresh to ensure auth state is properly loaded
@@ -94,8 +94,8 @@
         }, 1000);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
-        error = result.message || "Login failed. Please check your credentials and try again.";
-        
+        toastStore.error(result.message || "Login failed. Please check your credentials and try again.");
+
         // Focus appropriate field based on error type
         if (result.message && result.message.toLowerCase().includes('email')) {
           document.getElementById('email')?.focus();
@@ -107,7 +107,7 @@
       }
     } catch (err) {
       console.error("Login.svelte: Login error:", err);
-      error = "An unexpected error occurred. Please try again later.";
+      toastStore.error("An unexpected error occurred. Please try again later.");
     } finally {
       loading = false;
     }
@@ -130,17 +130,6 @@
     </div>
     
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
-      {#if error}
-        <div class="error-message" role="alert" aria-live="polite">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="15" y1="9" x2="9" y2="15"/>
-            <line x1="9" y1="9" x2="15" y2="15"/>
-          </svg>
-          <span>{error}</span>
-        </div>
-      {/if}
-      
       {#if successMessage}
         <div class="success-message" role="alert" aria-live="polite">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -412,24 +401,7 @@
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
-  
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-  }
-  
-  .error-message svg {
-    flex-shrink: 0;
-    opacity: 0.8;
-  }
-  
+
   .auth-logo {
     text-align: center;
     margin-bottom: 1.5rem;
