@@ -23,6 +23,8 @@ from app.services.opensearch_service import update_speaker_collections
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.utils.uuid_helpers import get_speaker_by_uuid
+from app.utils.uuid_helpers import get_speaker_profile_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ router = APIRouter()
 
 @router.get("/profiles", response_model=list[dict[str, Any]])
 def list_speaker_profiles(
-    collection_id: Optional[int] = Query(None, description="Filter by collection ID"),
+    collection_uuid: Optional[str] = Query(None, description="Filter by collection UUID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -39,8 +41,14 @@ def list_speaker_profiles(
     try:
         query = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id)
 
-        if collection_id:
-            # Filter by collection
+        if collection_uuid:
+            # Filter by collection - convert UUID to ID
+            from app.utils.uuid_helpers import get_by_uuid
+            collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
+            if collection.user_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Not authorized to access this collection")
+            collection_id = collection.id
+
             query = query.join(SpeakerCollectionMember).filter(
                 SpeakerCollectionMember.collection_id == collection_id
             )
@@ -57,10 +65,9 @@ def list_speaker_profiles(
 
             result.append(
                 {
-                    "id": profile.id,
+                    "id": str(profile.uuid),  # Use UUID for frontend
                     "name": profile.name,
                     "description": profile.description,
-                    "uuid": profile.uuid,
                     "created_at": profile.created_at.isoformat(),
                     "updated_at": profile.updated_at.isoformat(),
                     "instance_count": instance_count,
@@ -109,10 +116,9 @@ def create_speaker_profile(
         db.refresh(profile)
 
         return {
-            "id": profile.id,
+            "id": str(profile.uuid),  # Use UUID for frontend
             "name": profile.name,
             "description": profile.description,
-            "uuid": profile.uuid,
             "created_at": profile.created_at.isoformat(),
             "updated_at": profile.updated_at.isoformat(),
         }
@@ -125,9 +131,9 @@ def create_speaker_profile(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.put("/profiles/{profile_id}", response_model=dict[str, Any])
+@router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
 def update_speaker_profile(
-    profile_id: int,
+    profile_uuid: str,
     name: Optional[str] = None,
     description: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -135,17 +141,12 @@ def update_speaker_profile(
 ):
     """Update a speaker profile."""
     try:
-        profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.id == profile_id,
-                SpeakerProfile.user_id == current_user.id,
-            )
-            .first()
-        )
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
 
-        if not profile:
-            raise HTTPException(status_code=404, detail="Speaker profile not found")
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+
+        profile_id = profile.id
 
         if name:
             # Check for name conflicts
@@ -174,10 +175,9 @@ def update_speaker_profile(
         db.refresh(profile)
 
         return {
-            "id": profile.id,
+            "id": str(profile.uuid),  # Use UUID for frontend
             "name": profile.name,
             "description": profile.description,
-            "uuid": profile.uuid,
             "updated_at": profile.updated_at.isoformat(),
         }
 
@@ -189,10 +189,10 @@ def update_speaker_profile(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.post("/speakers/{speaker_id}/assign-profile", response_model=dict[str, Any])
+@router.post("/speakers/{speaker_uuid}/assign-profile", response_model=dict[str, Any])
 def assign_speaker_to_profile(
-    speaker_id: int,
-    profile_id: int,
+    speaker_uuid: str,
+    profile_uuid: str,
     confidence: Optional[float] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -200,27 +200,16 @@ def assign_speaker_to_profile(
     """Assign a speaker instance to a profile."""
     try:
         # Verify speaker exists and belongs to user
-        speaker = (
-            db.query(Speaker)
-            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-            .first()
-        )
-
-        if not speaker:
-            raise HTTPException(status_code=404, detail="Speaker not found")
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
+        speaker_id = speaker.id
 
         # Verify profile exists and belongs to user
-        profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.id == profile_id,
-                SpeakerProfile.user_id == current_user.id,
-            )
-            .first()
-        )
-
-        if not profile:
-            raise HTTPException(status_code=404, detail="Speaker profile not found")
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        profile_id = profile.id
 
         # Initialize services
         embedding_service = SpeakerEmbeddingService()
@@ -264,7 +253,14 @@ def _get_embedding_suggestions(
     from app.services.speaker_matching_service import SpeakerMatchingService
 
     suggestions = []
-    speaker_embedding = get_speaker_embedding(speaker_id)
+
+    # Get speaker object to extract UUID
+    from app.models.media import Speaker
+    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    if not speaker:
+        return suggestions
+
+    speaker_embedding = get_speaker_embedding(str(speaker.uuid))
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
             db, speaker_embedding, current_user.id, threshold=threshold
@@ -357,9 +353,9 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
     return suggestions
 
 
-@router.get("/speakers/{speaker_id}/suggestions", response_model=list[dict[str, Any]])
+@router.get("/speakers/{speaker_uuid}/suggestions", response_model=list[dict[str, Any]])
 def get_speaker_profile_suggestions(
-    speaker_id: int,
+    speaker_uuid: str,
     threshold: float = Query(ConfidenceLevel.MEDIUM, ge=0.0, le=1.0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -367,14 +363,10 @@ def get_speaker_profile_suggestions(
     """Get profile suggestions for a speaker based on both embeddings and LLM analysis."""
     try:
         # Verify speaker exists and belongs to user
-        speaker = (
-            db.query(Speaker)
-            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-            .first()
-        )
-
-        if not speaker:
-            raise HTTPException(status_code=404, detail="Speaker not found")
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this speaker")
+        speaker_id = speaker.id
 
         # Check if speaker already has a profile
         if speaker.profile_id:
@@ -405,26 +397,19 @@ def get_speaker_profile_suggestions(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.get("/profiles/{profile_id}/occurrences", response_model=list[dict[str, Any]])
+@router.get("/profiles/{profile_uuid}/occurrences", response_model=list[dict[str, Any]])
 def get_speaker_profile_occurrences(
-    profile_id: int,
+    profile_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all media files where a speaker profile appears."""
     try:
         # Verify profile exists and belongs to user
-        profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.id == profile_id,
-                SpeakerProfile.user_id == current_user.id,
-            )
-            .first()
-        )
-
-        if not profile:
-            raise HTTPException(status_code=404, detail="Speaker profile not found")
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        profile_id = profile.id
 
         # Initialize matching service
         embedding_service = SpeakerEmbeddingService()
@@ -442,25 +427,18 @@ def get_speaker_profile_occurrences(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/profiles/{profile_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_speaker_profile(
-    profile_id: int,
+    profile_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a speaker profile."""
     try:
-        profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.id == profile_id,
-                SpeakerProfile.user_id == current_user.id,
-            )
-            .first()
-        )
-
-        if not profile:
-            raise HTTPException(status_code=404, detail="Speaker profile not found")
+        profile = get_speaker_profile_by_uuid(db, profile_uuid)
+        if profile.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this profile")
+        profile_id = profile.id
 
         # Unassign all speakers from this profile
         speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
@@ -503,7 +481,7 @@ def list_speaker_collections(
 
             result.append(
                 {
-                    "id": collection.id,
+                    "id": str(collection.uuid),  # Use UUID for frontend
                     "name": collection.name,
                     "description": collection.description,
                     "is_public": collection.is_public,
@@ -555,7 +533,7 @@ def create_speaker_collection(
         db.refresh(collection)
 
         return {
-            "id": collection.id,
+            "id": str(collection.uuid),  # Use UUID for frontend
             "name": collection.name,
             "description": collection.description,
             "is_public": collection.is_public,

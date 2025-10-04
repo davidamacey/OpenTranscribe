@@ -4,12 +4,15 @@
   import { user as userStore } from '../stores/auth';
   import UserManagementTable from '../components/UserManagementTable.svelte';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
-  
-  // Explicitly declare router props to prevent warnings
-  export const location = null;
-  export const navigate = null;
-  export const condition = true;
-  
+
+  // Router props passed by svelte-navigator
+  export let location: any = null;
+  export let navigate: any = null;
+  export let condition: any = null;
+
+  // Reference props to suppress warnings (will be tree-shaken in production)
+  $: { location; navigate; condition; }
+
   // Component state
   /** @type {Array<any>} */
   let users = [];

@@ -7,8 +7,8 @@
   export let llmAvailable: boolean = false;
   export let canRetry: boolean = false;
   export let summaryStatus: string = 'pending';
-  export let fileName: string = '';
-  
+  // fileName prop removed - not used internally
+
   const dispatch = createEventDispatcher<{
     generateSummary: void;
     retrySummary: void;

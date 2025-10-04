@@ -168,6 +168,40 @@ class OpenSearchSummaryService:
             doc["created_at"] = datetime.datetime.now().isoformat()
             doc["updated_at"] = datetime.datetime.now().isoformat()
 
+            # Sanitize action items to ensure due_date is valid or None
+            import re
+            for action_item in doc.get("action_items", []):
+                due_date = action_item.get("due_date")
+                if due_date:
+                    # Check if it's a valid date format (YYYY-MM-DD)
+                    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(due_date)):
+                        # Invalid date format - set to None
+                        logger.warning(f"Invalid due_date format '{due_date}' for action item, setting to None")
+                        action_item["due_date"] = None
+
+            # Normalize key_decisions and follow_up_items to strings (OpenSearch expects text, not dicts)
+            if "key_decisions" in doc and isinstance(doc["key_decisions"], list):
+                normalized_decisions = []
+                for decision in doc["key_decisions"]:
+                    if isinstance(decision, dict):
+                        # Extract text from dict structure
+                        decision_text = decision.get("decision", "") or decision.get("text", "") or str(decision)
+                        normalized_decisions.append(decision_text)
+                    else:
+                        normalized_decisions.append(str(decision))
+                doc["key_decisions"] = normalized_decisions
+
+            if "follow_up_items" in doc and isinstance(doc["follow_up_items"], list):
+                normalized_followups = []
+                for item in doc["follow_up_items"]:
+                    if isinstance(item, dict):
+                        # Extract text from dict structure
+                        item_text = item.get("item", "") or item.get("text", "") or str(item)
+                        normalized_followups.append(item_text)
+                    else:
+                        normalized_followups.append(str(item))
+                doc["follow_up_items"] = normalized_followups
+
             # Index the document
             self.client.index(
                 index=self.index_name,
@@ -587,9 +621,22 @@ class OpenSearchSummaryService:
         for item in summary_data.get("action_items", []):
             searchable_parts.extend([item.get("text", ""), item.get("context", "")])
 
-        # Add decisions and follow-ups
-        searchable_parts.extend(summary_data.get("key_decisions", []))
-        searchable_parts.extend(summary_data.get("follow_up_items", []))
+        # Add decisions and follow-ups (handle both str and dict formats)
+        for decision in summary_data.get("key_decisions", []):
+            if isinstance(decision, dict):
+                # If it's a dict, extract text fields
+                searchable_parts.append(decision.get("decision", "") or decision.get("text", ""))
+            else:
+                # If it's a string, use it directly
+                searchable_parts.append(str(decision))
+
+        for follow_up in summary_data.get("follow_up_items", []):
+            if isinstance(follow_up, dict):
+                # If it's a dict, extract text fields
+                searchable_parts.append(follow_up.get("item", "") or follow_up.get("text", ""))
+            else:
+                # If it's a string, use it directly
+                searchable_parts.append(str(follow_up))
 
         # Create the document
         doc = {

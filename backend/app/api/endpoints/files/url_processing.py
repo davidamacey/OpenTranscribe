@@ -22,6 +22,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
+from app.services.formatting_service import FormattingService
 from app.services.youtube_service import YouTubeService
 from app.tasks.youtube_processing import process_youtube_url_task
 
@@ -182,7 +183,7 @@ async def process_youtube_url(
         # Dispatch background task immediately
         try:
             task_result = process_youtube_url_task.delay(
-                url=normalized_url, user_id=current_user.id, file_id=media_file.id
+                url=normalized_url, user_id=current_user.id, file_uuid=str(media_file.uuid)
             )
             logger.info(
                 f"Dispatched YouTube processing task {task_result.id} for MediaFile {media_file.id}"
@@ -205,11 +206,12 @@ async def process_youtube_url(
                 user_id=current_user.id,
                 notification_type="file_created",
                 data={
-                    "file_id": str(media_file.id),
+                    "file_id": str(media_file.uuid),  # Use UUID
                     "file": {
-                        "id": media_file.id,
+                        "id": str(media_file.uuid),  # Use UUID for frontend
                         "filename": media_file.filename,
-                        "status": "processing",
+                        "status": media_file.status.value,
+                        "display_status": FormattingService.format_status(media_file.status),
                         "content_type": media_file.content_type,
                         "file_size": media_file.file_size,
                         "title": media_file.title,

@@ -57,7 +57,7 @@ export interface SummaryData {
 }
 
 export interface SummaryResponse {
-  file_id: number;
+  file_id: string;  // UUID
   summary_data: SummaryData;
   source: 'opensearch' | 'postgresql';
   document_id?: string;
@@ -68,7 +68,7 @@ export interface SummaryResponse {
 export interface SummarySearchHit {
   document_id: string;
   score: number;
-  file_id: number;
+  file_id: string;  // UUID
   bluf: string;
   brief_summary: string;
   created_at: string;
@@ -90,7 +90,7 @@ export interface SummarySearchResponse {
 export interface SpeakerIdentificationResponse {
   message: string;
   task_id: string;
-  file_id: number;
+  file_id: string;  // UUID
   speaker_count: number;
 }
 

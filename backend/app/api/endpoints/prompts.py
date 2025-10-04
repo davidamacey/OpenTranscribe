@@ -18,6 +18,7 @@ from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.utils.uuid_helpers import get_prompt_by_uuid
 
 router = APIRouter()
 
@@ -178,16 +179,24 @@ def get_prompts_by_content_type(
         .first()
     )
 
-    active_prompt_id = None
+    active_prompt_uuid = None
     if active_prompt_setting and active_prompt_setting.setting_value:
         with contextlib.suppress(ValueError, TypeError):
+            # Get the prompt by internal ID and extract its UUID
             active_prompt_id = int(active_prompt_setting.setting_value)
+            active_prompt = (
+                db.query(models.SummaryPrompt)
+                .filter(models.SummaryPrompt.id == active_prompt_id)
+                .first()
+            )
+            if active_prompt:
+                active_prompt_uuid = active_prompt.uuid
 
     return schemas.ContentTypePromptsResponse(
         content_type=content_type,
         system_prompts=system_prompts,
         user_prompts=user_prompts,
-        active_prompt_id=active_prompt_id,
+        active_prompt_id=active_prompt_uuid,
     )
 
 
@@ -240,18 +249,16 @@ def create_prompt(
     return prompt
 
 
-@router.get("/{prompt_id}", response_model=schemas.SummaryPrompt)
+@router.get("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
 def get_prompt(
-    prompt_id: int,
+    prompt_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Get a specific prompt by ID
+    Get a specific prompt by UUID
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
-    if not prompt:
-        raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
 
     # Check access: system prompts are public, user prompts are private
     if not prompt.is_system_default and prompt.user_id != current_user.id:
@@ -260,20 +267,18 @@ def get_prompt(
     return prompt
 
 
-@router.put("/{prompt_id}", response_model=schemas.SummaryPrompt)
+@router.put("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
 def update_prompt(
     *,
     db: Session = Depends(get_db),
-    prompt_id: int,
+    prompt_uuid: str,
     prompt_in: schemas.SummaryPromptUpdate,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Update a custom summary prompt (user's own prompts only)
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
-    if not prompt:
-        raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
 
     # Only allow users to update their own custom prompts
     if prompt.is_system_default or prompt.user_id != current_user.id:
@@ -292,18 +297,17 @@ def update_prompt(
     return prompt
 
 
-@router.delete("/{prompt_id}")
+@router.delete("/{prompt_uuid}")
 def delete_prompt(
-    prompt_id: int,
+    prompt_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Delete a custom summary prompt (user's own prompts only)
     """
-    prompt = db.query(models.SummaryPrompt).filter(models.SummaryPrompt.id == prompt_id).first()
-    if not prompt:
-        raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
+    prompt_id = prompt.id
 
     # Only allow users to delete their own custom prompts
     if prompt.is_system_default or prompt.user_id != current_user.id:
@@ -355,7 +359,7 @@ def get_active_prompt(
     )
 
     active_prompt = None
-    active_prompt_id = None
+    active_prompt_uuid = None
 
     if active_setting and active_setting.setting_value:
         try:
@@ -365,6 +369,8 @@ def get_active_prompt(
                 .filter(models.SummaryPrompt.id == active_prompt_id)
                 .first()
             )
+            if active_prompt:
+                active_prompt_uuid = active_prompt.uuid
         except (ValueError, TypeError):
             pass
 
@@ -414,10 +420,11 @@ def get_active_prompt(
                 .first()
             )
 
-        active_prompt_id = active_prompt.id if active_prompt else None
+        # Get UUID if we found a fallback prompt
+        active_prompt_uuid = active_prompt.uuid if active_prompt else None
 
     return schemas.ActivePromptResponse(
-        active_prompt_id=active_prompt_id, active_prompt=active_prompt
+        active_prompt_id=active_prompt_uuid, active_prompt=active_prompt
     )
 
 
@@ -431,10 +438,13 @@ def set_active_prompt(
     """
     Set the user's active summary prompt
     """
-    # Verify prompt exists and user has access
+    # Convert UUID to string for query
+    prompt_uuid_str = str(prompt_selection.prompt_id)
+
+    # Verify prompt exists and user has access - query by UUID not ID
     prompt = (
         db.query(models.SummaryPrompt)
-        .filter(models.SummaryPrompt.id == prompt_selection.prompt_id)
+        .filter(models.SummaryPrompt.uuid == prompt_uuid_str)
         .first()
     )
     if not prompt:
@@ -447,7 +457,7 @@ def set_active_prompt(
     if not prompt.is_active:
         raise HTTPException(status_code=400, detail="Cannot use inactive prompt")
 
-    # Update or create user setting
+    # Update or create user setting - store internal ID for efficiency
     setting = (
         db.query(models.UserSetting)
         .filter(
@@ -460,16 +470,16 @@ def set_active_prompt(
     )
 
     if setting:
-        setting.setting_value = str(prompt_selection.prompt_id)
+        setting.setting_value = str(prompt.id)  # Store internal ID
     else:
         setting = models.UserSetting(
             user_id=current_user.id,
             setting_key="active_summary_prompt_id",
-            setting_value=str(prompt_selection.prompt_id),
+            setting_value=str(prompt.id),  # Store internal ID
         )
         db.add(setting)
 
     db.commit()
     db.refresh(prompt)
 
-    return schemas.ActivePromptResponse(active_prompt_id=prompt.id, active_prompt=prompt)
+    return schemas.ActivePromptResponse(active_prompt_id=prompt.uuid, active_prompt=prompt)

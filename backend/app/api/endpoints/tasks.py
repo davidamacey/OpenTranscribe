@@ -21,6 +21,7 @@ from app.schemas.media import Task
 from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 
@@ -102,17 +103,17 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
 
     return {
         "id": f"task_{file.id}",
-        "user_id": current_user.id,
+        "user_id": str(current_user.uuid),  # Convert to UUID string
         "task_type": "transcription",
         "status": task_status,
-        "media_file_id": file.id,
+        "media_file_id": str(file.uuid),  # Convert to UUID string
         "progress": progress,
         "created_at": file.upload_time,
         "updated_at": file.upload_time,
         "completed_at": completed_at,
         "error_message": error_message,
         "media_file": {
-            "id": file.id,
+            "id": str(file.uuid),  # Convert to UUID string
             "filename": file.filename,
             "file_size": file.file_size,
             "content_type": file.content_type,
@@ -295,7 +296,7 @@ async def task_system_health(
         for file in inconsistent_files:
             inconsistent_file_data.append(
                 {
-                    "id": file.id,
+                    "id": str(file.uuid),  # Use UUID for frontend
                     "filename": file.filename,
                     "status": file.status.value,
                     "user_id": file.user_id,
@@ -349,20 +350,23 @@ async def recover_all_stuck_tasks(
                 # If it's a transcription task, retry it
                 if task.task_type == "transcription" and task.media_file_id:
                     # Schedule a retry in the background for each recovered task
-                    async def retry_transcription(file_id):
+                    async def retry_transcription(file_uuid):
                         try:
                             # Import here to avoid circular imports
                             from app.tasks.transcription import transcribe_audio_task
 
-                            result = transcribe_audio_task.delay(file_id)
+                            result = transcribe_audio_task.delay(file_uuid)
                             logger.info(
-                                f"Retrying transcription for file {file_id}, "
+                                f"Retrying transcription for file {file_uuid}, "
                                 f"new task ID: {result.id}"
                             )
                         except Exception as e:
                             logger.error(f"Error retrying transcription: {e}")
 
-                    background_tasks.add_task(retry_transcription, task.media_file_id)
+                    # Get UUID from the relationship
+                    file_uuid = str(task.media_file.uuid) if task.media_file else None
+                    if file_uuid:
+                        background_tasks.add_task(retry_transcription, file_uuid)
 
         return {
             "success": True,
@@ -403,20 +407,22 @@ async def recover_task(
         if success and task.task_type == "transcription" and task.media_file_id:
             # Schedule a retry in the background
             # This avoids blocking the API call
-            async def retry_transcription():
-                try:
-                    # Import here to avoid circular imports
-                    from app.tasks.transcription import transcribe_audio_task
+            file_uuid = str(task.media_file.uuid) if task.media_file else None
+            if file_uuid:
+                async def retry_transcription():
+                    try:
+                        # Import here to avoid circular imports
+                        from app.tasks.transcription import transcribe_audio_task
 
-                    result = transcribe_audio_task.delay(task.media_file_id)
-                    logger.info(
-                        f"Retrying transcription for file {task.media_file_id}, "
-                        f"new task ID: {result.id}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error retrying transcription: {e}")
+                        result = transcribe_audio_task.delay(file_uuid)
+                        logger.info(
+                            f"Retrying transcription for file {file_uuid}, "
+                            f"new task ID: {result.id}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error retrying transcription: {e}")
 
-            background_tasks.add_task(retry_transcription)
+                background_tasks.add_task(retry_transcription)
 
         return {
             "success": success,
@@ -434,9 +440,9 @@ async def recover_task(
         ) from e
 
 
-@router.post("/system/fix-file/{file_id}", response_model=dict[str, Any])
+@router.post("/system/fix-file/{file_uuid}", response_model=dict[str, Any])
 async def fix_inconsistent_file(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),  # Only admins can fix files
 ):
@@ -444,19 +450,16 @@ async def fix_inconsistent_file(
     Attempt to fix a media file with inconsistent state
     """
     try:
-        # Find the media file
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-        if not media_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-            )
+        # Find the media file - admins can access any file
+        from app.utils.uuid_helpers import get_file_by_uuid
+        media_file = get_file_by_uuid(db, file_uuid)
 
         # Attempt to fix the file
         success = task_recovery_service.fix_inconsistent_media_file(db, media_file)
 
         return {
             "success": success,
-            "file_id": file_id,
+            "file_id": str(media_file.uuid),  # Use UUID for frontend
             "message": "File fixed successfully" if success else "Failed to fix file",
             "new_status": media_file.status.value,
         }
@@ -470,9 +473,9 @@ async def fix_inconsistent_file(
         ) from e
 
 
-@router.post("/retry/{file_id}", response_model=dict[str, Any])
+@router.post("/retry/{file_uuid}", response_model=dict[str, Any])
 async def retry_file_processing(
-    file_id: int,
+    file_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # Any user can retry their own files
@@ -483,18 +486,12 @@ async def retry_file_processing(
     try:
         # Find the media file
         if current_user.role == "admin":
-            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            from app.utils.uuid_helpers import get_file_by_uuid
+            media_file = get_file_by_uuid(db, file_uuid)
         else:
-            media_file = (
-                db.query(MediaFile)
-                .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-                .first()
-            )
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
 
-        if not media_file:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-            )
+        file_id = media_file.id
 
         # Check if the file is in a state where retry makes sense
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
@@ -531,7 +528,7 @@ async def retry_file_processing(
                 # Import here to avoid circular imports
                 from app.tasks.transcription import transcribe_audio_task
 
-                result = transcribe_audio_task.delay(file_id)
+                result = transcribe_audio_task.delay(file_uuid)
                 logger.info(f"Started new transcription for file {file_id}, task ID: {result.id}")
             except Exception as e:
                 logger.error(f"Error starting new transcription: {e}")
@@ -540,7 +537,7 @@ async def retry_file_processing(
 
         return {
             "success": True,
-            "file_id": file_id,
+            "file_id": str(media_file.uuid),  # Use UUID for frontend
             "message": "File processing restarted",
         }
     except HTTPException:

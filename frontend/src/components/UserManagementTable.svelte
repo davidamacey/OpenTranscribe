@@ -22,7 +22,10 @@
   export let loading = false;
 
   /** @type {string|null} */
-  export const error = null; // For external reference only
+  export let error = null;
+
+  // Reference error to suppress warning (will be tree-shaken in production)
+  $: { error; }
 
   /** @type {Function} */
   export let onRefresh = () => {};

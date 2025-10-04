@@ -24,16 +24,16 @@ from app.services.minio_service import download_file
 from app.tasks.transcription.waveform_generator import WaveformGenerator
 from app.tasks.waveform_generation import trigger_waveform_generation
 
-from .crud import get_media_file_by_id
+from .crud import get_media_file_by_uuid
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get("/{file_id}/waveform")
+@router.get("/{file_uuid}/waveform")
 async def get_audio_waveform(
-    file_id: int,
+    file_uuid: str,
     samples: int = Query(1000, description="Number of samples to return", ge=100, le=10000),
     refresh_cache: bool = Query(False, description="Force refresh of cached waveform data"),
     db: Session = Depends(get_db),
@@ -44,7 +44,7 @@ async def get_audio_waveform(
     Uses caching to improve performance for repeated requests.
 
     Args:
-        file_id: ID of the media file
+        file_uuid: UUID of the media file
         samples: Number of waveform samples to return (100-10000)
         refresh_cache: Force refresh of cached waveform data
 
@@ -53,7 +53,9 @@ async def get_audio_waveform(
     """
     try:
         # Get the media file and verify user access
-        db_file = get_media_file_by_id(db, file_id, current_user.id)
+        is_admin = current_user.role == "admin"
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for operations
 
         # Check if file has audio content
         if not db_file.content_type:
@@ -94,7 +96,7 @@ async def get_audio_waveform(
                 else:
                     # Return cached data with file_id
                     result = cached_data.copy()
-                    result["file_id"] = file_id
+                    result["file_id"] = str(db_file.uuid)  # Use UUID for frontend
                     result["cached"] = True
                     return result
 
@@ -127,7 +129,7 @@ async def get_audio_waveform(
                 db.commit()
 
                 # Add file ID to response
-                waveform_data["file_id"] = file_id
+                waveform_data["file_id"] = str(db_file.uuid)  # Use UUID for frontend
                 waveform_data["cached"] = False
 
                 logger.info(
@@ -154,9 +156,9 @@ async def get_audio_waveform(
         ) from e
 
 
-@router.get("/{file_id}/waveform/peaks")
+@router.get("/{file_uuid}/waveform/peaks")
 async def get_audio_waveform_peaks(
-    file_id: int,
+    file_uuid: str,
     width: int = Query(1000, description="Target width in pixels", ge=100, le=10000),
     height: int = Query(100, description="Target height in pixels", ge=50, le=500),
     db: Session = Depends(get_db),
@@ -167,7 +169,7 @@ async def get_audio_waveform_peaks(
     This endpoint provides more detailed control over the waveform visualization.
 
     Args:
-        file_id: ID of the media file
+        file_uuid: UUID of the media file
         width: Target display width in pixels
         height: Target display height in pixels
 
@@ -176,7 +178,9 @@ async def get_audio_waveform_peaks(
     """
     try:
         # Get the media file and verify user access
-        db_file = get_media_file_by_id(db, file_id, current_user.id)
+        is_admin = current_user.role == "admin"
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for operations
 
         # Check file type and status (same as main waveform endpoint)
         if not db_file.content_type:
@@ -240,7 +244,7 @@ async def get_audio_waveform_peaks(
                     "height": height,
                     "samples": len(peaks),
                     "sample_rate": waveform_data["sample_rate"],
-                    "file_id": file_id,
+                    "file_id": str(db_file.uuid),  # Use UUID for frontend
                 }
 
             finally:
@@ -260,9 +264,9 @@ async def get_audio_waveform_peaks(
         ) from e
 
 
-@router.post("/{file_id}/waveform/generate")
+@router.post("/{file_uuid}/waveform/generate")
 async def generate_waveform_for_file(
-    file_id: int,
+    file_uuid: str,
     force_regenerate: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -273,7 +277,9 @@ async def generate_waveform_for_file(
     """
     try:
         # Verify user access to the file
-        db_file = get_media_file_by_id(db, file_id, current_user.id)
+        is_admin = current_user.role == "admin"
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for task trigger
 
         # Check if file is audio/video
         is_audio_video = db_file.content_type.startswith(
@@ -294,7 +300,7 @@ async def generate_waveform_for_file(
             "success": True,
             "message": f"Waveform {action} started for file {file_id}",
             "task_id": task_id,
-            "file_id": file_id,
+            "file_id": str(db_file.uuid),  # Use UUID for frontend
             "force_regenerate": force_regenerate,
         }
 

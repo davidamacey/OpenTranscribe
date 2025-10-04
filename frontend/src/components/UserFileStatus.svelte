@@ -1,27 +1,27 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
-  
+
   // Component state
   let loading = false;
-  let error = null;
-  let fileStatus = null;
-  let selectedFile = null;
-  let detailedStatus = null;
+  let error: any = null;
+  let fileStatus: any = null;
+  let selectedFile: any = null;
+  let detailedStatus: any = null;
   let retryingFiles = new Set();
-  
+
   // Auto-refresh settings (enabled by default)
-  let refreshInterval = null;
-  
+  let refreshInterval: any = null;
+
   // Tasks section state
-  let tasks = [];
+  let tasks: any[] = [];
   let tasksLoading = false;
-  let tasksError = null;
+  let tasksError: any = null;
   let showTasksSection = false;
-  
+
   // Restore tasks section state from session storage
   if (typeof window !== 'undefined') {
     const savedTasksSection = sessionStorage.getItem('showTasksSection');
@@ -29,17 +29,17 @@
       showTasksSection = true;
     }
   }
-  
+
   // Task filtering
   let taskFilter = 'all'; // 'all', 'pending', 'in_progress', 'completed', 'failed'
   let taskTypeFilter = 'all'; // 'all', 'transcription', 'summarization'
   let taskAgeFilter = 'all'; // 'all', 'today', 'week', 'month', 'older'
   let taskDateFrom = '';
   let taskDateTo = '';
-  let filteredTasks = [];
-  
+  let filteredTasks: any[] = [];
+
   // WebSocket subscription
-  let unsubscribeWebSocket = null;
+  let unsubscribeWebSocket: any = null;
   let lastProcessedNotificationId = '';
   
   onMount(() => {
@@ -67,7 +67,7 @@
     try {
       const response = await axiosInstance.get('/my-files/status');
       fileStatus = response.data;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching file status:', err);
       if (!silent) {
         error = err.response?.data?.detail || 'Failed to load file status';
@@ -111,7 +111,7 @@
       // Tasks are already filtered and include computed fields from backend
       tasks = response.data;
       filteredTasks = tasks; // No frontend filtering needed
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching tasks:', err);
       if (!silent) {
         tasksError = err.response?.data?.detail || 'Failed to load tasks';
@@ -147,14 +147,14 @@
     window.open(url, '_blank');
   }
   
-  async function fetchDetailedStatus(fileId) {
+  async function fetchDetailedStatus(fileId: any) {
     try {
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
       selectedFile = fileId;
       // Disable body scrolling when modal opens
       document.body.style.overflow = 'hidden';
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching detailed status:', err);
       error = err.response?.data?.detail || 'Failed to load file details';
     }
@@ -167,7 +167,7 @@
     document.body.style.overflow = '';
   }
   
-  async function retryFile(fileId) {
+  async function retryFile(fileId: any) {
     if (retryingFiles.has(fileId)) return;
     
     retryingFiles.add(fileId);
@@ -184,8 +184,8 @@
       
       // Show success message
       showMessage('File retry initiated successfully', 'success');
-      
-    } catch (err) {
+
+    } catch (err: any) {
       console.error('Error retrying file:', err);
       const errorMsg = err.response?.data?.detail || 'Failed to retry file';
       showMessage(errorMsg, 'error');
@@ -206,8 +206,8 @@
       setTimeout(() => {
         fetchFileStatus(true); // Silent refresh
       }, 2000);
-      
-    } catch (err) {
+
+    } catch (err: any) {
       console.error('Error requesting recovery:', err);
       const errorMsg = err.response?.data?.detail || 'Failed to request recovery';
       showMessage(errorMsg, 'error');
@@ -225,7 +225,7 @@
     }, 30000); // Refresh every 30 seconds
   }
   
-  function showMessage(message, type) {
+  function showMessage(message: any, type: any) {
     if (type === 'success') {
       toastStore.success(message);
     } else {
@@ -235,7 +235,7 @@
   
   // Note: formatFileAge is now handled by the backend - use formatted_file_age field
   
-  function formatDate(dateString) {
+  function formatDate(dateString: any) {
     if (!dateString) return 'N/A';
     
     const date = new Date(dateString);
@@ -647,8 +647,24 @@
   {/if}
   
   {#if detailedStatus && selectedFile}
-    <div class="detailed-status-modal" on:click={closeModal}>
-      <div class="modal-content" on:click|stopPropagation>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="detailed-status-modal"
+      role="presentation"
+      on:click={closeModal}
+      on:keydown={(e) => e.key === 'Escape' && closeModal()}
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
         <div class="modal-header">
           <h3>File Details: {detailedStatus.file.filename}</h3>
           <button class="close-btn" on:click={closeModal}>×</button>
@@ -1510,30 +1526,15 @@
     margin: 1rem 0;
     border: 1px solid var(--warning-border);
   }
-  
+
   :global(.dark) .warning {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
     border-color: rgba(245, 158, 11, 0.3);
   }
-  
+
   .suggestions {
     margin: 1rem 0;
-  }
-  
-  .suggestions h4 {
-    color: var(--text-color);
-    margin-bottom: 0.5rem;
-  }
-  
-  .suggestions ul {
-    list-style: none;
-    padding: 0;
-  }
-  
-  .suggestions li {
-    padding: 0.5rem 0;
-    color: var(--text-color);
   }
   
   .retry-section {

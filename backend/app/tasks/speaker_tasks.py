@@ -6,7 +6,6 @@ import logging
 
 from app.core.celery import celery_app
 from app.db.base import SessionLocal
-from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name="identify_speakers_llm")
-def identify_speakers_llm_task(self, file_id: int):
+def identify_speakers_llm_task(self, file_uuid: str):
     """
     Use LLM to provide speaker identification suggestions
 
@@ -24,16 +23,20 @@ def identify_speakers_llm_task(self, file_id: int):
     The predictions are NOT automatically applied to the transcript.
 
     Args:
-        file_id: Database ID of the MediaFile
+        file_uuid: UUID of the MediaFile
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     task_id = self.request.id
     db = SessionLocal()
 
     try:
         # Get media file and check if it exists
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        media_file = get_file_by_uuid(db, file_uuid)
         if not media_file:
-            raise ValueError(f"Media file with ID {file_id} not found")
+            raise ValueError(f"Media file with UUID {file_uuid} not found")
+
+        file_id = media_file.id  # Get internal ID for database operations
 
         # Create task record
         from app.utils.task_utils import create_task_record

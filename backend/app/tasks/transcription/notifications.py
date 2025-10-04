@@ -19,6 +19,7 @@ def get_file_metadata(file_id: int) -> dict:
             media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if media_file:
                 return {
+                    "file_uuid": str(media_file.uuid),  # Include UUID
                     "filename": media_file.filename,
                     "content_type": media_file.content_type,
                     "file_size": media_file.file_size,
@@ -28,6 +29,7 @@ def get_file_metadata(file_id: int) -> dict:
 
     # Return minimal data if query fails
     return {
+        "file_uuid": None,  # Unknown UUID
         "filename": f"File {file_id}",
         "content_type": "unknown",
         "file_size": 0,
@@ -58,7 +60,7 @@ async def send_status_notification(
             user_id,
             "transcription_status",
             {
-                "file_id": str(file_id),
+                "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
                 "status": status.value,
                 "message": message,
                 "progress": progress,
@@ -101,7 +103,7 @@ def send_notification_via_redis(
             "user_id": user_id,
             "type": "transcription_status",
             "data": {
-                "file_id": str(file_id),
+                "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
                 "status": status.value,
                 "message": message,
                 "progress": progress,
@@ -205,7 +207,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
 
                 # Create file data for gallery update with all formatted fields
                 file_data = {
-                    "id": media_file.id,
+                    "id": str(media_file.uuid),  # Use UUID for frontend
                     "filename": media_file.filename,
                     "status": media_file.status.value if media_file.status else "completed",
                     "content_type": media_file.content_type,
@@ -213,7 +215,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                     "title": media_file.title,
                     "author": media_file.author,
                     "duration": media_file.duration,
-                    "thumbnail_url": f"/api/files/{media_file.id}/thumbnail"
+                    "thumbnail_url": f"/api/files/{media_file.uuid}/thumbnail"  # Use UUID in URL
                     if media_file.thumbnail_path
                     else None,
                     "upload_time": media_file.upload_time.isoformat()
@@ -246,7 +248,7 @@ def send_completion_notification(user_id: int, file_id: int) -> None:
                     "user_id": user_id,
                     "type": "file_updated",
                     "data": {
-                        "file_id": str(file_id),
+                        "file_id": str(media_file.uuid),  # Use UUID
                         "file": file_data,
                         "status": "completed",
                         "message": "File processing completed",

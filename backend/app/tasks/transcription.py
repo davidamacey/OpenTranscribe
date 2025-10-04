@@ -10,10 +10,8 @@ import tempfile
 from pathlib import Path
 
 from app.core.celery import celery_app
-from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import Analytics
-from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.minio_service import download_file
 from app.services.minio_service import upload_file
@@ -24,24 +22,27 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="extract_audio")
-def extract_audio_task(file_id: int, output_format: str = "wav"):
+def extract_audio_task(file_uuid: str, output_format: str = "wav"):
     """
     Extract audio from a video file
 
     Args:
-        file_id: Database ID of the MediaFile
+        file_uuid: UUID of the MediaFile
         output_format: Output audio format (default: wav)
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     try:
         with session_scope() as db:
-            media_file = get_refreshed_object(db, MediaFile, file_id)
+            media_file = get_file_by_uuid(db, file_uuid)
             if not media_file:
-                logger.error(f"Media file with ID {file_id} not found")
+                logger.error(f"Media file with UUID {file_uuid} not found")
                 return {
                     "status": "error",
-                    "message": f"Media file with ID {file_id} not found",
+                    "message": f"Media file with UUID {file_uuid} not found",
                 }
 
+            file_id = media_file.id  # Get internal ID for subsequent operations
             user_id = media_file.user_id
             storage_path = media_file.storage_path
             filename = media_file.filename
@@ -104,23 +105,26 @@ def extract_audio_task(file_id: int, output_format: str = "wav"):
 
 
 @celery_app.task(name="analyze_transcript")
-def analyze_transcript_task(file_id: int):
+def analyze_transcript_task(file_uuid: str):
     """
     Analyze a transcript for additional metadata and insights
 
     Args:
-        file_id: Database ID of the MediaFile to analyze
+        file_uuid: UUID of the MediaFile to analyze
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     try:
         with session_scope() as db:
-            media_file = get_refreshed_object(db, MediaFile, file_id)
+            media_file = get_file_by_uuid(db, file_uuid)
             if not media_file:
-                logger.error(f"Media file with ID {file_id} not found")
+                logger.error(f"Media file with UUID {file_uuid} not found")
                 return {
                     "status": "error",
-                    "message": f"Media file with ID {file_id} not found",
+                    "message": f"Media file with UUID {file_uuid} not found",
                 }
 
+            file_id = media_file.id  # Get internal ID for database queries
             segments = (
                 db.query(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)

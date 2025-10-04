@@ -19,19 +19,27 @@
 <style>
   .toast-container {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 9999;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    align-items: center;
+    pointer-events: none;
   }
-  
+
+  .toast-container :global(.toast) {
+    pointer-events: auto;
+  }
+
   @media (max-width: 640px) {
     .toast-container {
       left: 20px;
       right: 20px;
-      align-items: center;
+      transform: none;
+      width: auto;
     }
   }
 </style>

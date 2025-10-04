@@ -8,7 +8,6 @@ import redis
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.db.base import SessionLocal
-from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
@@ -52,7 +51,7 @@ def send_summary_notification(
 
         # Prepare notification data
         notification_data = {
-            "file_id": str(file_id),
+            "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
             "status": status,
             "message": message,
             "progress": progress,
@@ -88,7 +87,7 @@ def send_summary_notification(
 @celery_app.task(bind=True, name="summarize_transcript")
 def summarize_transcript_task(
     self,
-    file_id: int,
+    file_uuid: str,
     force_regenerate: bool = False,
 ):
     """
@@ -98,19 +97,23 @@ def summarize_transcript_task(
     accurate speaker information is available for summarization.
 
     Args:
-        file_id: Database ID of the MediaFile to summarize
+        file_uuid: UUID of the MediaFile to summarize
         provider: Optional LLM provider override (openai, vllm, ollama, etc.)
         model: Optional model override
         force_regenerate: If True, clear existing summaries before regenerating
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     task_id = self.request.id
     db = SessionLocal()
 
     try:
         # Get media file from database
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        media_file = get_file_by_uuid(db, file_uuid)
         if not media_file:
-            raise ValueError(f"Media file with ID {file_id} not found")
+            raise ValueError(f"Media file with UUID {file_uuid} not found")
+
+        file_id = media_file.id  # Get internal ID for database operations
 
         # Create task record
         from app.utils.task_utils import create_task_record
@@ -292,7 +295,9 @@ def summarize_transcript_task(
                     "message": "Transcription completed successfully. AI summary not available - no LLM provider configured.",
                 }
 
-            logger.info(f"Using LLM: {llm_service.config.provider}/{llm_service.config.model}")
+            llm_provider = llm_service.config.provider
+            llm_model = llm_service.config.model
+            logger.info(f"Using LLM: {llm_provider}/{llm_model}")
             logger.info(f"User context window: {llm_service.user_context_window} tokens")
 
             try:

@@ -22,6 +22,7 @@ from app.services.llm_service import LLMService
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
+from app.utils.uuid_helpers import get_llm_config_by_uuid
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -139,10 +140,16 @@ def get_user_configurations(
         .first()
     )
 
-    active_config_id = None
+    active_config_uuid = None
     if active_setting and active_setting.setting_value:
         with contextlib.suppress(ValueError):
             active_config_id = int(active_setting.setting_value)
+            # Convert integer ID to UUID by finding the config
+            active_config = db.query(models.UserLLMSettings).filter(
+                models.UserLLMSettings.id == active_config_id
+            ).first()
+            if active_config:
+                active_config_uuid = active_config.uuid
 
     # Convert to public schemas
     public_configs = []
@@ -152,7 +159,7 @@ def get_user_configurations(
 
     return schemas.UserLLMConfigurationsList(
         configurations=public_configs,
-        active_configuration_id=active_config_id,
+        active_configuration_id=active_config_uuid,
         total=len(public_configs),
     )
 
@@ -214,28 +221,21 @@ def get_llm_settings_status(
     )
 
 
-@router.get("/config/{config_id}", response_model=schemas.UserLLMSettingsPublic)
+@router.get("/config/{config_uuid}", response_model=schemas.UserLLMSettingsPublic)
 def get_user_configuration(
-    config_id: int,
+    config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get a specific user's LLM configuration
     """
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.id == config_id,
-        )
-        .first()
-    )
+    user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if not user_config:
+    if user_config.user_id != current_user.id:
         raise HTTPException(
-            status_code=404,
-            detail="Configuration not found.",
+            status_code=403,
+            detail="Not authorized to access this configuration",
         )
 
     # Convert to public schema (excludes API key)
@@ -301,9 +301,9 @@ def create_user_llm_configuration(
     return user_config
 
 
-@router.put("/config/{config_id}", response_model=schemas.UserLLMSettingsPublic)
+@router.put("/config/{config_uuid}", response_model=schemas.UserLLMSettingsPublic)
 def update_user_llm_configuration(
-    config_id: int,
+    config_uuid: str,
     *,
     db: Session = Depends(get_db),
     settings_in: schemas.UserLLMSettingsUpdate,
@@ -312,20 +312,15 @@ def update_user_llm_configuration(
     """
     Update a specific LLM configuration
     """
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.id == config_id,
-        )
-        .first()
-    )
+    user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if not user_config:
+    if user_config.user_id != current_user.id:
         raise HTTPException(
-            status_code=404,
-            detail="Configuration not found.",
+            status_code=403,
+            detail="Not authorized to access this configuration",
         )
+
+    config_id = user_config.id
 
     # Check for name conflicts if name is being updated
     if settings_in.name and settings_in.name != user_config.name:
@@ -411,26 +406,24 @@ def set_active_configuration(
     return user_config
 
 
-@router.delete("/config/{config_id}")
+@router.delete("/config/{config_uuid}")
 def delete_user_llm_configuration(
-    config_id: int,
+    config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Delete a specific LLM configuration
     """
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.id == config_id,
-        )
-        .first()
-    )
+    user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if not user_config:
-        raise HTTPException(status_code=404, detail="Configuration not found")
+    if user_config.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this configuration",
+        )
+
+    config_id = user_config.id
 
     # Check if this is the active configuration
     active_setting = (
@@ -642,28 +635,21 @@ async def test_active_configuration(
     return result
 
 
-@router.post("/test-config/{config_id}", response_model=schemas.ConnectionTestResponse)
+@router.post("/test-config/{config_uuid}", response_model=schemas.ConnectionTestResponse)
 async def test_specific_configuration(
-    config_id: int,
+    config_uuid: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Test connection for a specific LLM configuration
     """
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.id == config_id,
-        )
-        .first()
-    )
+    user_config = get_llm_config_by_uuid(db, config_uuid)
 
-    if not user_config:
+    if user_config.user_id != current_user.id:
         raise HTTPException(
-            status_code=404,
-            detail="Configuration not found.",
+            status_code=403,
+            detail="Not authorized to access this configuration",
         )
 
     # Decrypt API key

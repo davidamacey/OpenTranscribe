@@ -369,18 +369,27 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if isOpen}
-  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-  <div 
-    class="modal-backdrop" 
-    tabindex="0"
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="modal-backdrop"
+    role="presentation"
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}
   >
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <div class="modal-container" on:click={handleModalClick}>
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-container"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="summary-modal-title"
+      on:click={handleModalClick}
+      on:keydown={handleKeydown}
+    >
       <div class="modal-header">
-        <h2 class="modal-title">AI Summary - {fileName}</h2>
+        <h2 class="modal-title" id="summary-modal-title">AI Summary - {fileName}</h2>
         <div class="header-actions">
           {#if summary}
             <button 
@@ -466,9 +475,8 @@
             on:previousMatch={cycleToPreviousMatch}
           />
           
-          <SummaryDisplay 
-            {summary} 
-            {fileName}
+          <SummaryDisplay
+            {summary}
             {searchQuery}
             {currentMatchIndex}
           />
@@ -480,7 +488,6 @@
           {llmAvailable}
           {canRetry}
           {summaryStatus}
-          {fileName}
           on:generateSummary={generateSummary}
           on:retrySummary={retryFailedSummary}
         />
@@ -676,28 +683,6 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  .search-summary-divider {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
-    background-color: var(--bg-secondary);
-  }
-
-  .divider-line {
-    flex: 1;
-    border: none;
-    border-top: 1px solid var(--border-color);
-    margin: 0;
-  }
-
-  .divider-text {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-    white-space: nowrap;
   }
 
   @media (max-width: 768px) {

@@ -19,6 +19,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.formatting_service import FormattingService
 from app.services.youtube_service import YouTubeService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
@@ -54,7 +55,7 @@ def send_youtube_notification_via_redis(
             "user_id": user_id,
             "type": "youtube_processing_status",
             "data": {
-                "file_id": str(file_id),
+                "file_id": file_metadata.get("file_uuid"),  # Use UUID from metadata
                 "status": status.value,
                 "message": message,
                 "progress": progress,
@@ -85,7 +86,7 @@ class YouTubeProcessingResult(TypedDict):
 
 
 @celery_app.task(name="process_youtube_url_task", bind=True)
-def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouTubeProcessingResult:
+def process_youtube_url_task(self, url: str, user_id: int, file_uuid: str) -> YouTubeProcessingResult:
     """Background task to process YouTube URL by downloading and creating media file.
 
     This task handles asynchronous YouTube video processing to prevent UI blocking.
@@ -95,7 +96,7 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
         self: Celery task instance (automatically passed when bind=True).
         url: YouTube URL to process.
         user_id: ID of the user who initiated the request.
-        file_id: ID of the MediaFile record to update.
+        file_uuid: UUID of the MediaFile record to update.
 
     Returns:
         Dict: Processing result containing status, message, and file_id.
@@ -104,8 +105,15 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     try:
-        logger.info(f"Starting YouTube processing task for URL: {url}, file_id: {file_id}")
+        logger.info(f"Starting YouTube processing task for URL: {url}, file_uuid: {file_uuid}")
+
+        # Get internal file ID for database operations
+        with session_scope() as db:
+            media_file = get_file_by_uuid(db, file_uuid)
+            file_id = media_file.id
 
         # Send initial processing notification
         send_youtube_notification_via_redis(
@@ -175,17 +183,20 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
                     if updated_media_file:
                         # Create file data for gallery update
                         file_data = {
-                            "id": updated_media_file.id,
+                            "id": str(updated_media_file.uuid),  # Use UUID for frontend
                             "filename": updated_media_file.filename,
                             "status": updated_media_file.status.value
                             if updated_media_file.status
                             else "pending",
+                            "display_status": FormattingService.format_status(updated_media_file.status)
+                            if updated_media_file.status
+                            else "Pending",
                             "content_type": updated_media_file.content_type,
                             "file_size": updated_media_file.file_size,
                             "title": updated_media_file.title,
                             "author": updated_media_file.author,
                             "duration": updated_media_file.duration,
-                            "thumbnail_url": f"/api/files/{updated_media_file.id}/thumbnail"
+                            "thumbnail_url": f"/api/files/{updated_media_file.uuid}/thumbnail"  # Use UUID in URL
                             if updated_media_file.thumbnail_path
                             else None,
                             "upload_time": updated_media_file.upload_time.isoformat()
@@ -198,9 +209,16 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
                             "user_id": user_id,
                             "type": "file_updated",
                             "data": {
-                                "file_id": str(file_id),
+                                "file_id": str(updated_media_file.uuid),  # Use UUID
                                 "file": file_data,
-                                "status": "pending",
+                                "status": updated_media_file.status.value
+                                if updated_media_file.status
+                                else "pending",
+                                "display_status": FormattingService.format_status(
+                                    updated_media_file.status
+                                )
+                                if updated_media_file.status
+                                else "Pending",
                                 "message": "YouTube processing completed",
                             },
                         }
@@ -217,7 +235,7 @@ def process_youtube_url_task(self, url: str, user_id: int, file_id: int) -> YouT
 
                 # Start transcription task
                 try:
-                    transcribe_audio_task.delay(file_id)
+                    transcribe_audio_task.delay(file_uuid)
                     logger.info(f"Started transcription task for MediaFile {file_id}")
                 except Exception as e:
                     logger.error(f"Failed to start transcription task for {file_id}: {e}")

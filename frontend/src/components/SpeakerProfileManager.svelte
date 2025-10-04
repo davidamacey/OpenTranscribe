@@ -3,20 +3,21 @@
   import { fade } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
   import SpeakerVerification from './SpeakerVerification.svelte';
+  import { toastStore } from '$stores/toast';
 
-  export let fileId: number;
+  export let fileId: string;  // UUID
   export let isVisible = false;
 
   const dispatch = createEventDispatcher();
 
   interface Speaker {
-    id: number;
+    id: string;  // UUID
     name: string;
     display_name?: string;
     verified: boolean;
     confidence?: number;
     profile?: {
-      id: number;
+      id: string;  // UUID
       name: string;
       description?: string;
     };
@@ -28,7 +29,7 @@
   }
 
   interface SpeakerProfile {
-    id: number;
+    id: string;  // UUID
     name: string;
     description?: string;
     instance_count: number;
@@ -43,7 +44,6 @@
   let suggestions: any[] = [];
   let crossMediaOccurrences: any[] = [];
   let isLoading = false;
-  let errorMessage = '';
 
   onMount(() => {
     if (isVisible) {
@@ -58,20 +58,19 @@
   async function loadData() {
     try {
       isLoading = true;
-      errorMessage = '';
-      
+
       // Load speakers for this file and user profiles
       const [speakersResponse, profilesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speakers/?file_id=${fileId}`),
+        axiosInstance.get(`/api/speakers/?file_uuid=${fileId}`),  // Use file_uuid parameter
         axiosInstance.get('/api/speaker-profiles/profiles')
       ]);
-      
+
       speakers = speakersResponse.data;
       speakerProfiles = profilesResponse.data;
-      
+
     } catch (error) {
       console.error('Error loading speaker data:', error);
-      errorMessage = 'Failed to load speaker data';
+      toastStore.error('Failed to load speaker data');
     } finally {
       isLoading = false;
     }
@@ -80,7 +79,6 @@
   async function handleSpeakerClick(speaker: Speaker) {
     try {
       selectedSpeaker = speaker;
-      errorMessage = '';
 
       // Get suggestions and cross-media occurrences
       const [suggestionsResponse, occurrencesResponse] = await Promise.all([
@@ -100,14 +98,14 @@
 
     } catch (error) {
       console.error('Error loading speaker suggestions:', error);
-      errorMessage = 'Failed to load speaker suggestions';
+      toastStore.error('Failed to load speaker suggestions');
     }
   }
 
   async function handleVerification(event: CustomEvent<{
     action: string;
-    speaker_id: number;
-    profile_id?: number;
+    speaker_id: string;  // UUID
+    profile_id?: string;  // UUID
     profile_name?: string;
   }>) {
     try {

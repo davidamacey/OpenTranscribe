@@ -13,7 +13,6 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.db.base import SessionLocal
-from app.db.session_utils import get_refreshed_object
 from app.models.media import MediaFile
 from app.services.llm_service import is_llm_available
 from app.tasks.summarization import summarize_transcript_task
@@ -21,21 +20,25 @@ from app.tasks.summarization import summarize_transcript_task
 logger = logging.getLogger(__name__)
 
 
-def reset_summary_for_retry(db: Session, file_id: int) -> bool:
+def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
     """
     Reset a file's summary for retry processing, similar to reset_file_for_retry for transcription.
 
     Args:
         db: Database session
-        file_id: ID of the file to reset summary for
+        file_uuid: UUID of the file to reset summary for
 
     Returns:
         True if reset was successful, False otherwise
     """
-    media_file = get_refreshed_object(db, MediaFile, file_id)
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    media_file = get_file_by_uuid(db, file_uuid)
     if not media_file:
-        logger.error(f"File {file_id} not found")
+        logger.error(f"File {file_uuid} not found")
         return False
+
+    file_id = media_file.id  # Get internal ID for logging
 
     # Only retry if transcription is completed
     if media_file.status != "completed":
@@ -74,17 +77,19 @@ async def check_llm_availability() -> bool:
         return False
 
 
-def retry_summary_if_available(db: Session, file_id: int) -> bool:
+def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     """
     Retry summary generation for a specific file if LLM is available
 
     Args:
         db: Database session
-        file_id: ID of the file to retry
+        file_uuid: UUID of the file to retry
 
     Returns:
         True if retry was queued successfully, False otherwise
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
+
     # Check if LLM is available
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -95,17 +100,21 @@ def retry_summary_if_available(db: Session, file_id: int) -> bool:
         with contextlib.suppress(builtins.BaseException):
             loop.close()
 
+    # Get internal ID for logging
+    media_file = get_file_by_uuid(db, file_uuid)
+    file_id = media_file.id
+
     if not llm_available:
         logger.debug(f"LLM not available for retry of file {file_id}")
         return False
 
     # Reset summary status and clear existing data
-    if not reset_summary_for_retry(db, file_id):
+    if not reset_summary_for_retry(db, file_uuid):
         return False
 
     try:
         # Queue summarization task
-        summarize_transcript_task.delay(file_id)
+        summarize_transcript_task.delay(file_uuid)
         logger.info(f"Queued summary retry for file {file_id}")
         return True
 

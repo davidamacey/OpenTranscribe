@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import timedelta
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -33,7 +34,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """
-    Get the current user from the JWT token
+    Get the current user from the JWT token.
+
+    Token payload uses UUID (sub field contains user UUID string).
+    Internal database queries use integer ID for performance.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -43,16 +47,24 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
     try:
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_uuid_str: str = payload.get("sub")  # UUID string from token
         user_role: str = payload.get("role")  # Extract role from token
-        if user_id is None:
+        if user_uuid_str is None:
             raise credentials_exception
-        token_data = TokenPayload(sub=user_id)
+
+        # Validate UUID format
+        try:
+            user_uuid = UUID(user_uuid_str)
+        except ValueError:
+            raise credentials_exception
+
+        token_data = TokenPayload(sub=user_uuid_str)
     except JWTError as e:
         raise credentials_exception from e
 
     try:
-        user = db.query(User).filter(User.id == token_data.sub).first()
+        # Look up user by UUID (indexed for performance)
+        user = db.query(User).filter(User.uuid == user_uuid).first()
         if user is None:
             raise credentials_exception
         if not user.is_active:
@@ -71,13 +83,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except Exception as e:
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
-        # In testing environment, we can create a mock user with the ID from the token
+        # In testing environment, we can create a mock user with the UUID from the token
         testing_environment = os.environ.get("TESTING", "False").lower() == "true"
         if testing_environment:
-            logger.info(f"Creating mock user for testing with id {token_data.sub}")
-            # For tests, create a basic user object with the ID from the token
+            logger.info(f"Creating mock user for testing with uuid {token_data.sub}")
+            # For tests, create a basic user object with the UUID from the token
             user = User(
-                id=int(token_data.sub),
+                uuid=UUID(token_data.sub),
                 email="test@example.com",
                 is_active=True,
                 is_superuser=False,
@@ -126,7 +138,7 @@ def get_current_active_superuser(
     return current_user
 
 
-def _authenticate_testing_user(db: Session, username: str, password: str) -> int:
+def _authenticate_testing_user(db: Session, username: str, password: str) -> str:
     """Authenticate user in testing environment.
 
     Args:
@@ -135,7 +147,7 @@ def _authenticate_testing_user(db: Session, username: str, password: str) -> int
         password: Password to verify
 
     Returns:
-        User ID
+        User UUID string
 
     Raises:
         HTTPException: If authentication fails
@@ -158,10 +170,10 @@ def _authenticate_testing_user(db: Session, username: str, password: str) -> int
             detail="Inactive user account",
         )
 
-    return user.id
+    return str(user.uuid)  # Return UUID string for token
 
 
-def _authenticate_production_user(db: Session, username: str, password: str) -> tuple[int, dict]:
+def _authenticate_production_user(db: Session, username: str, password: str) -> tuple[str, dict]:
     """Authenticate user in production environment.
 
     Args:
@@ -170,7 +182,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
         password: Password to verify
 
     Returns:
-        Tuple of (user_id, user_data_dict)
+        Tuple of (user_uuid_string, user_data_dict)
 
     Raises:
         HTTPException: If authentication fails
@@ -180,7 +192,20 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
 
     if user_data:
         logger.info(f"Direct authentication successful for user: {username}")
-        user_id = user_data["id"]
+        # Get UUID from user_data or fallback to database lookup
+        if "uuid" in user_data:
+            user_uuid_str = user_data["uuid"]
+        else:
+            # Direct auth returned integer ID, look up UUID
+            user = db.query(User).filter(User.id == user_data["id"]).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                )
+            user_uuid_str = str(user.uuid)
+            user_data["uuid"] = user_uuid_str
+
         is_active = user_data.get("is_active", True)
 
         if not is_active:
@@ -190,7 +215,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
                 detail="Inactive user account",
             )
 
-        return user_id, user_data
+        return user_uuid_str, user_data
     else:
         # Fall back to ORM-based auth
         logger.info(f"Direct auth failed, trying ORM auth for: {username}")
@@ -211,15 +236,15 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
                 detail="Inactive user account",
             )
 
-        return user.id, {}
+        return str(user.uuid), {}
 
 
-def _get_user_role(db: Session, user_id: int, user_data: dict = None) -> str:
+def _get_user_role(db: Session, user_uuid_str: str, user_data: dict = None) -> str:
     """Get user role for token generation.
 
     Args:
         db: Database session
-        user_id: User ID
+        user_uuid_str: User UUID string
         user_data: Optional user data from direct auth
 
     Returns:
@@ -229,7 +254,8 @@ def _get_user_role(db: Session, user_id: int, user_data: dict = None) -> str:
         return user_data["role"]
 
     # Get role from database if not available in direct auth
-    user_db = db.query(User).filter(User.id == user_id).first()
+    user_uuid = UUID(user_uuid_str)
+    user_db = db.query(User).filter(User.uuid == user_uuid).first()
     return user_db.role if user_db else None
 
 
@@ -256,19 +282,20 @@ def login_for_access_token(
         testing_environment = os.environ.get("TESTING", "False").lower() == "true"
 
         if testing_environment:
-            user_id = _authenticate_testing_user(db, form_data.username, form_data.password)
+            user_uuid_str = _authenticate_testing_user(db, form_data.username, form_data.password)
             user_data = {}
         else:
-            user_id, user_data = _authenticate_production_user(
+            user_uuid_str, user_data = _authenticate_production_user(
                 db, form_data.username, form_data.password
             )
 
         # Get user's role for inclusion in the token
-        user_role = _get_user_role(db, user_id, user_data)
+        user_role = _get_user_role(db, user_uuid_str, user_data)
 
         # Generate the JWT token with role information
+        # Token payload contains UUID string in 'sub' field (production-grade security)
         access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-        token_data = {"sub": str(user_id)}
+        token_data = {"sub": user_uuid_str}  # UUID string in token
         if user_role:
             token_data["role"] = user_role
 

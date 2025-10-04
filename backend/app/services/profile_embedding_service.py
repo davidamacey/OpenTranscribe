@@ -72,12 +72,12 @@ class ProfileEmbeddingService:
             # Collect embeddings from all speakers
             embeddings = []
             for speaker in speakers:
-                embedding = get_speaker_embedding(speaker.id)
+                embedding = get_speaker_embedding(str(speaker.uuid))
                 if embedding:
                     embeddings.append(embedding)
                 else:
                     logger.warning(
-                        f"No embedding found for speaker {speaker.id} in profile {profile_id}"
+                        f"No embedding found for speaker {speaker.uuid} in profile {profile_id}"
                     )
 
             if not embeddings:
@@ -100,6 +100,7 @@ class ProfileEmbeddingService:
 
                 store_profile_embedding(
                     profile_id=profile_id,
+                    profile_uuid=str(profile.uuid),
                     profile_name=profile.name,
                     embedding=averaged_embedding.tolist(),
                     speaker_count=len(embeddings),
@@ -135,10 +136,16 @@ class ProfileEmbeddingService:
             True if successful, False otherwise
         """
         try:
-            # Get the speaker embedding
-            speaker_embedding = get_speaker_embedding(speaker_id)
+            # Get the speaker object to extract UUID
+            speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+            if not speaker:
+                logger.error(f"Speaker {speaker_id} not found")
+                return False
+
+            # Get the speaker embedding using UUID
+            speaker_embedding = get_speaker_embedding(str(speaker.uuid))
             if not speaker_embedding:
-                logger.warning(f"No embedding found for speaker {speaker_id}")
+                logger.warning(f"No embedding found for speaker {speaker.uuid}")
                 # Fall back to full recalculation
                 return ProfileEmbeddingService.update_profile_embedding(db, profile_id)
 
@@ -159,6 +166,7 @@ class ProfileEmbeddingService:
 
                 store_profile_embedding(
                     profile_id=profile_id,
+                    profile_uuid=str(profile.uuid),
                     profile_name=profile.name,
                     embedding=speaker_embedding,
                     speaker_count=profile.embedding_count,
@@ -247,14 +255,14 @@ class ProfileEmbeddingService:
                 speakers_by_profile[speaker.profile_id].append(speaker)
 
             # Collect all speaker IDs for batch embedding fetch
-            all_speaker_ids = [speaker.id for speaker in all_speakers]
+            [speaker.id for speaker in all_speakers]
 
-            # Batch fetch embeddings from OpenSearch
+            # Batch fetch embeddings from OpenSearch using UUIDs
             speaker_embeddings = {}
-            for speaker_id in all_speaker_ids:
-                embedding = get_speaker_embedding(speaker_id)
+            for speaker in all_speakers:
+                embedding = get_speaker_embedding(str(speaker.uuid))
                 if embedding:
-                    speaker_embeddings[speaker_id] = embedding
+                    speaker_embeddings[speaker.id] = embedding  # Store by ID for lookup
 
             # Process each profile
             for profile_id in profile_ids:
@@ -309,6 +317,7 @@ class ProfileEmbeddingService:
 
                         store_profile_embedding(
                             profile_id=profile_id,
+                            profile_uuid=str(profile.uuid),
                             profile_name=profile.name,
                             embedding=averaged_embedding.tolist(),
                             speaker_count=len(embeddings),
@@ -356,10 +365,18 @@ class ProfileEmbeddingService:
             The profile's embedding vector, or None if not available
         """
         try:
-            # Get embedding from OpenSearch (primary storage for vectors)
+            # Get profile object to extract UUID
+            from app.models.media import SpeakerProfile
+
+            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+            if not profile:
+                logger.error(f"Profile {profile_id} not found")
+                return None
+
+            # Get embedding from OpenSearch (primary storage for vectors) using UUID
             from app.services.opensearch_service import get_profile_embedding
 
-            return get_profile_embedding(profile_id)
+            return get_profile_embedding(str(profile.uuid))
 
         except Exception as e:
             logger.error(f"Error retrieving profile embedding for profile {profile_id}: {e}")
@@ -414,7 +431,7 @@ class ProfileEmbeddingService:
             try:
                 # First check if the index exists
                 if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
-                    logger.info(f"Speakers index does not exist yet, skipping profile similarity search")
+                    logger.info("Speakers index does not exist yet, skipping profile similarity search")
                     return []
 
                 profile_check = opensearch_client.search(

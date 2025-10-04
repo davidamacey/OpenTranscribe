@@ -18,7 +18,6 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryAnalyticsResponse
@@ -30,14 +29,15 @@ from app.services.llm_service import is_llm_available
 from app.services.opensearch_summary_service import OpenSearchSummaryService
 from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/{file_id}/summarize", response_model=dict[str, Any])
+@router.post("/{file_uuid}/summarize", response_model=dict[str, Any])
 async def trigger_summarization(
-    file_id: int = Path(..., description="ID of the media file to summarize"),
+    file_uuid: str = Path(..., description="UUID of the media file to summarize"),
     request: SummaryTaskRequest = SummaryTaskRequest(),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -67,14 +67,8 @@ async def trigger_summarization(
     - **Follow-up Items**: Future discussion points
     """
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found or access denied")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
@@ -94,7 +88,7 @@ async def trigger_summarization(
     try:
         # Start summarization task
         task = summarize_transcript_task.delay(
-            file_id=file_id,
+            file_uuid=file_uuid,
             force_regenerate=request.force_regenerate,
         )
 
@@ -116,12 +110,20 @@ async def trigger_summarization(
         from app.core.config import settings
 
         provider = settings.LLM_PROVIDER or "default"
-        model = settings.LLM_MODEL or "default"
+        # Get model name based on provider
+        model_map = {
+            "vllm": settings.VLLM_MODEL_NAME,
+            "openai": settings.OPENAI_MODEL_NAME,
+            "ollama": settings.OLLAMA_MODEL_NAME,
+            "anthropic": settings.ANTHROPIC_MODEL_NAME,
+            "openrouter": settings.OPENAI_MODEL_NAME,  # OpenRouter uses OpenAI-compatible API
+        }
+        model = model_map.get(provider.lower(), "default") if provider else "default"
 
         return {
             "message": "Summarization task started",
             "task_id": task.id,
-            "file_id": file_id,
+            "file_id": str(media_file.uuid),  # Use UUID for frontend
             "provider": provider,
             "model": model,
         }
@@ -133,9 +135,9 @@ async def trigger_summarization(
         ) from e
 
 
-@router.get("/{file_id}/summary", response_model=SummaryResponse)
+@router.get("/{file_uuid}/summary", response_model=SummaryResponse)
 async def get_file_summary(
-    file_id: int = Path(..., description="ID of the media file"),
+    file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -155,14 +157,8 @@ async def get_file_summary(
     - Search-optimized content for highlighting
     """
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found or access denied")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     try:
         # Try to get structured summary from OpenSearch
@@ -170,7 +166,29 @@ async def get_file_summary(
         summary = await summary_service.get_summary_by_file_id(file_id, current_user.id)
 
         if summary:
-            return SummaryResponse(file_id=file_id, summary_data=summary, source="opensearch")
+            # Normalize LLM response field names to match Pydantic schema
+            # This handles cases where LLM returns different field names
+
+            # Normalize major_topics
+            for topic in summary.get("major_topics", []):
+                if "importance" not in topic:
+                    topic["importance"] = "medium"  # Default value
+                if "participants" not in topic:
+                    topic["participants"] = []  # Default empty list
+
+            # Normalize action_items (LLM may use 'item' instead of 'text')
+            for action in summary.get("action_items", []):
+                if "text" not in action and "item" in action:
+                    action["text"] = action.pop("item")
+                # Ensure all required fields exist
+                if "text" not in action:
+                    action["text"] = "No description"
+                if "priority" not in action:
+                    action["priority"] = "medium"
+                if "context" not in action:
+                    action["context"] = ""
+
+            return SummaryResponse(file_id=media_file.uuid, summary_data=summary, source="opensearch")  # Use UUID
 
         # No summary available
         raise HTTPException(
@@ -296,9 +314,9 @@ async def get_summary_analytics(
         raise HTTPException(status_code=500, detail=f"Analytics generation failed: {str(e)}") from e
 
 
-@router.post("/{file_id}/identify-speakers", response_model=SpeakerIdentificationResponse)
+@router.post("/{file_uuid}/identify-speakers", response_model=SpeakerIdentificationResponse)
 async def identify_speakers(
-    file_id: int = Path(..., description="ID of the media file"),
+    file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -329,14 +347,8 @@ async def identify_speakers(
     - Provide context clues for manual identification
     """
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found or access denied")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Check if file has speakers to identify
     if not media_file.speakers:
@@ -352,7 +364,7 @@ async def identify_speakers(
 
     try:
         # Start speaker identification task
-        task = identify_speakers_llm_task.delay(file_id=file_id)
+        task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
 
         logger.info(f"Started speaker identification task {task.id} for file {file_id}")
 
@@ -370,9 +382,9 @@ async def identify_speakers(
         ) from e
 
 
-@router.delete("/{file_id}/summary")
+@router.delete("/{file_uuid}/summary")
 async def delete_summary(
-    file_id: int = Path(..., description="ID of the media file"),
+    file_uuid: str = Path(..., description="UUID of the media file"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -391,14 +403,8 @@ async def delete_summary(
     - Search index entries
     """
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found or access denied")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     try:
         summary_service = OpenSearchSummaryService()
@@ -421,7 +427,7 @@ async def delete_summary(
         if deleted:
             db.commit()
             logger.info(f"Deleted summary for file {file_id}")
-            return {"message": "Summary deleted successfully", "file_id": file_id}
+            return {"message": "Summary deleted successfully", "file_id": str(media_file.uuid)}
         else:
             raise HTTPException(status_code=404, detail="No summary found to delete")
 

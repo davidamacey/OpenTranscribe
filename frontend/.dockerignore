@@ -62,9 +62,8 @@ Thumbs.db
 Dockerfile*
 .dockerignore
 
-# Documentation and scripts
+# Documentation
 *.md
-scripts/
 
 # TypeScript incremental compilation info
 *.tsbuildinfo

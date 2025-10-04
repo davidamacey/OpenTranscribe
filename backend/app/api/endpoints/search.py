@@ -47,12 +47,12 @@ def search(
     )
 
     # Convert to the format expected by tests
-    # The tests expect a list of results where each result has an 'id' field instead of 'file_id'
+    # The tests expect a list of results where each result has an 'id' field with UUID
     formatted_results = []
     for result in results:
         formatted_results.append(
             {
-                "id": result["file_id"],
+                "id": result.get("file_uuid") or result["file_id"],  # Prefer UUID, fallback to integer ID
                 "title": result["title"],
                 "speakers": result["speakers"],
                 "snippet": result["snippet"],
@@ -108,12 +108,12 @@ def advanced_search(
     # Note: Advanced filtering (date filters, duration filters, multiple speakers) is available in /search/advanced endpoint
 
     # Convert to the format expected by tests
-    # The tests expect a list of results where each result has an 'id' field instead of 'file_id'
+    # The tests expect a list of results where each result has an 'id' field with UUID
     formatted_results = []
     for result in results:
         formatted_results.append(
             {
-                "id": result["file_id"],
+                "id": result.get("file_uuid") or result["file_id"],  # Prefer UUID, fallback to integer ID
                 "title": result["title"],
                 "speakers": result["speakers"],
                 "snippet": result["snippet"],

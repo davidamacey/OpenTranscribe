@@ -44,9 +44,10 @@
 
 {#if isOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div 
-    class="modal-backdrop" 
+  <div
+    class="modal-backdrop"
     transition:fade={{ duration: 200 }}
     on:click={handleBackdropClick}
     on:keydown={handleKeydown}

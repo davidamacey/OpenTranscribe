@@ -23,15 +23,43 @@ from app.services.formatting_service import FormattingService
 from app.services.minio_service import delete_file
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
+
+
+def get_media_file_by_uuid(
+    db: Session, file_uuid: str, user_id: int, is_admin: bool = False
+) -> MediaFile:
+    """
+    Get a media file by UUID and user ID.
+
+    Args:
+        db: Database session
+        file_uuid: File UUID
+        user_id: User ID
+        is_admin: Whether the current user is an admin (can access any file)
+
+    Returns:
+        MediaFile object
+
+    Raises:
+        HTTPException: If file not found or no permission
+    """
+    # Use UUID helper with admin bypass for permission check
+    if is_admin:
+        from app.utils.uuid_helpers import get_file_by_uuid
+
+        return get_file_by_uuid(db, file_uuid)
+    else:
+        return get_file_by_uuid_with_permission(db, file_uuid, user_id)
 
 
 def get_media_file_by_id(
     db: Session, file_id: int, user_id: int, is_admin: bool = False
 ) -> MediaFile:
     """
-    Get a media file by ID and user ID.
+    Get a media file by ID and user ID (legacy - internal use only).
 
     Args:
         db: Database session
@@ -145,43 +173,44 @@ def set_file_urls(db_file: MediaFile) -> None:
     if db_file.storage_path:
         # Skip S3 operations in test environment
         if os.environ.get("SKIP_S3", "False").lower() == "true":
-            db_file.download_url = f"/api/files/{db_file.id}/download"
-            db_file.preview_url = f"/api/files/{db_file.id}/video"
+            db_file.download_url = f"/api/files/{db_file.uuid}/download"
+            db_file.preview_url = f"/api/files/{db_file.uuid}/video"
             if db_file.thumbnail_path:
-                db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
             return
 
-        # Set URLs for frontend to use
-        db_file.download_url = f"/api/files/{db_file.id}/download"  # Download endpoint
+        # Set URLs for frontend to use (using UUID)
+        db_file.download_url = f"/api/files/{db_file.uuid}/download"  # Download endpoint
 
         # Video files use our video endpoint for optimized streaming
         if db_file.content_type.startswith("video/"):
-            db_file.preview_url = f"/api/files/{db_file.id}/video"
+            db_file.preview_url = f"/api/files/{db_file.uuid}/video"
         else:
             # Audio files can use the download endpoint
-            db_file.preview_url = f"/api/files/{db_file.id}/download"
+            db_file.preview_url = f"/api/files/{db_file.uuid}/download"
 
         # Set thumbnail URL if thumbnail exists
         if db_file.thumbnail_path:
-            db_file.thumbnail_url = f"/api/files/{db_file.id}/thumbnail"
+            db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 
 
-def get_media_file_detail(db: Session, file_id: int, current_user: User) -> MediaFileDetail:
+def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
 
     Args:
         db: Database session
-        file_id: File ID
+        file_uuid: File UUID
         current_user: Current user
 
     Returns:
         MediaFileDetail object with all computed and formatted data
     """
     try:
-        # Get the file by id and user id (admin can access any file)
+        # Get the file by uuid and user id (admin can access any file)
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for subsequent queries
 
         # Get related data
         tags = get_file_tags(db, file_id)
@@ -206,13 +235,21 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
             if success:
                 analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
-        # Get transcript segments (sorted by start_time for consistent ordering)
+        # Get transcript segments with speakers (sorted by start_time for consistent ordering)
+        from sqlalchemy.orm import joinedload
+
         transcript_segments = (
             db.query(TranscriptSegment)
+            .options(joinedload(TranscriptSegment.speaker))
             .filter(TranscriptSegment.media_file_id == file_id)
             .order_by(TranscriptSegment.start_time)
             .all()
         )
+
+        # Add computed status to speakers in segments
+        for segment in transcript_segments:
+            if segment.speaker:
+                SpeakerStatusService.add_computed_status(segment.speaker)
 
         # Set URLs
         set_file_urls(db_file)
@@ -279,14 +316,14 @@ def get_media_file_detail(db: Session, file_id: int, current_user: User) -> Medi
 
 
 def update_media_file(
-    db: Session, file_id: int, media_file_update: MediaFileUpdate, current_user: User
+    db: Session, file_uuid: str, media_file_update: MediaFileUpdate, current_user: User
 ) -> MediaFile:
     """
     Update a media file's metadata.
 
     Args:
         db: Database session
-        file_id: File ID
+        file_uuid: File UUID
         media_file_update: Update data
         current_user: Current user
 
@@ -294,7 +331,8 @@ def update_media_file(
         Updated MediaFile object
     """
     is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for OpenSearch update
 
     # Track if title was updated for OpenSearch reindexing
     update_data = media_file_update.model_dump(exclude_unset=True)
@@ -311,48 +349,56 @@ def update_media_file(
     if title_updated:
         try:
             new_title = db_file.title or db_file.filename
-            update_transcript_title(file_id, new_title)
+            update_transcript_title(db_file.uuid, new_title)  # Use UUID not integer ID
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
 
     return db_file
 
 
-def _cleanup_opensearch_data(db: Session, file_id: int) -> None:
+def _cleanup_opensearch_data(db: Session, file_id: int, file_uuid: str) -> None:
     """Clean up OpenSearch data for a file being deleted."""
     try:
         # Get all speakers for this file before deletion
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-        speaker_ids = [speaker.id for speaker in speakers]
+        speaker_uuids = [str(speaker.uuid) for speaker in speakers]  # Use UUIDs for OpenSearch
 
-        if speaker_ids:
+        if speaker_uuids:
             # Delete speaker embeddings from OpenSearch
             from app.services.opensearch_service import opensearch_client
             from app.services.opensearch_service import settings
 
             if opensearch_client:
                 deleted_count = 0
-                for speaker_id in speaker_ids:
+                for speaker_uuid in speaker_uuids:
                     try:
                         opensearch_client.delete(
-                            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_id)
+                            index=settings.OPENSEARCH_SPEAKER_INDEX,
+                            id=speaker_uuid,  # Use UUID
                         )
                         deleted_count += 1
                     except Exception as e:
-                        logger.warning(f"Error deleting speaker {speaker_id} from OpenSearch: {e}")
+                        logger.warning(
+                            f"Error deleting speaker {speaker_uuid} from OpenSearch: {e}"
+                        )
 
                 logger.info(
-                    f"Deleted {deleted_count}/{len(speaker_ids)} speaker embeddings from OpenSearch for file {file_id}"
+                    f"Deleted {deleted_count}/{len(speaker_uuids)} speaker embeddings from OpenSearch for file {file_id}"
                 )
             else:
                 logger.warning("OpenSearch client not available for cleanup")
 
-        # Delete transcript from OpenSearch
+        # Delete transcript from OpenSearch (using file UUID as document ID)
         try:
-            from app.services.opensearch_service import delete_transcript
+            from app.services.opensearch_service import opensearch_client
+            from app.services.opensearch_service import settings
 
-            delete_transcript(file_id)
-            logger.info(f"Deleted transcript for file {file_id} from OpenSearch")
+            if opensearch_client:
+                opensearch_client.delete(
+                    index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
+                    id=str(file_uuid),  # Use UUID as document ID
+                )
+                logger.info(f"Deleted transcript for file {file_uuid} from OpenSearch")
         except Exception as e:
             logger.warning(f"Error deleting transcript from OpenSearch: {e}")
 
@@ -361,13 +407,13 @@ def _cleanup_opensearch_data(db: Session, file_id: int) -> None:
         # Don't fail deletion if OpenSearch cleanup fails
 
 
-def delete_media_file(db: Session, file_id: int, current_user: User, force: bool = False) -> None:
+def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bool = False) -> None:
     """
     Delete a media file and all associated data with safety checks.
 
     Args:
         db: Database session
-        file_id: File ID
+        file_uuid: File UUID
         current_user: Current user
         force: Force deletion even if processing is active (admin only)
     """
@@ -375,7 +421,8 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
     from app.utils.task_utils import is_file_safe_to_delete
 
     is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for task operations
 
     # Check if file is safe to delete
     is_safe, reason = is_file_safe_to_delete(db, file_id)
@@ -386,7 +433,7 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
             detail={
                 "error": "FILE_NOT_SAFE_TO_DELETE",
                 "message": f"Cannot delete file: {reason}",
-                "file_id": file_id,
+                "file_id": str(db_file.uuid),  # Use UUID for frontend
                 "active_task_id": db_file.active_task_id,
                 "status": db_file.status,
                 "options": {
@@ -417,7 +464,7 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
         # Don't fail the entire operation if storage deletion fails
 
     # Delete associated data from OpenSearch before deleting from database
-    _cleanup_opensearch_data(db, file_id)
+    _cleanup_opensearch_data(db, file_id, str(db_file.uuid))
 
     try:
         # Delete from database (cascade will handle related records)
@@ -440,8 +487,8 @@ def delete_media_file(db: Session, file_id: int, current_user: User, force: bool
 
 def update_single_transcript_segment(
     db: Session,
-    file_id: int,
-    segment_id: int,
+    file_uuid: str,
+    segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     current_user: User,
 ) -> TranscriptSegment:
@@ -450,8 +497,8 @@ def update_single_transcript_segment(
 
     Args:
         db: Database session
-        file_id: File ID
-        segment_id: Segment ID
+        file_uuid: File UUID
+        segment_uuid: Segment UUID
         segment_update: Segment update data
         current_user: Current user
 
@@ -460,13 +507,14 @@ def update_single_transcript_segment(
     """
     # Verify user owns the file or is admin
     is_admin = current_user.role == "admin"
-    get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for segment query
 
-    # Find the specific segment
+    # Find the specific segment by UUID
     segment = (
         db.query(TranscriptSegment)
         .filter(
-            TranscriptSegment.id == segment_id,
+            TranscriptSegment.uuid == segment_uuid,
             TranscriptSegment.media_file_id == file_id,
         )
         .first()
@@ -487,32 +535,32 @@ def update_single_transcript_segment(
     return segment
 
 
-def get_stream_url_info(db: Session, file_id: int, current_user: User) -> dict:
+def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict:
     """
     Get streaming URL information for a media file.
 
     Args:
         db: Database session
-        file_id: File ID
+        file_uuid: File UUID
         current_user: Current user
 
     Returns:
         Dictionary with URL and content type information
     """
     is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
 
     # Skip S3 operations in test environment
     if os.environ.get("SKIP_S3", "False").lower() == "true":
         logger.info("Returning mock URL in test environment")
         return {
-            "url": f"/api/files/{file_id}/content",
+            "url": f"/api/files/{db_file.uuid}/content",
             "content_type": db_file.content_type,
         }
 
     # Return the URL to our video endpoint
     return {
-        "url": f"/api/files/{file_id}/video",  # Video endpoint
+        "url": f"/api/files/{db_file.uuid}/video",  # Video endpoint
         "content_type": db_file.content_type,
         "requires_auth": False,  # No auth required for video endpoint
     }

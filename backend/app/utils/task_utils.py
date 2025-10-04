@@ -369,7 +369,8 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
             if os.environ.get("SKIP_CELERY", "False").lower() != "true":
                 from app.tasks.transcription import transcribe_audio_task
 
-                task = transcribe_audio_task.delay(file_id)
+                file_uuid = str(media_file.uuid)
+                task = transcribe_audio_task.delay(file_uuid)
                 logger.info(f"Started recovery task {task.id} for pending file {file_id}")
 
             # File status will be updated by the task
@@ -393,7 +394,8 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
                 if os.environ.get("SKIP_CELERY", "False").lower() != "true":
                     from app.tasks.transcription import transcribe_audio_task
 
-                    task = transcribe_audio_task.delay(file_id)
+                    file_uuid = str(media_file.uuid)
+                    task = transcribe_audio_task.delay(file_uuid)
                     logger.info(f"Started retry task {task.id} for failed file {file_id}")
                 return True
             return False
@@ -414,7 +416,8 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
             if os.environ.get("SKIP_CELERY", "False").lower() != "true":
                 from app.tasks.transcription import transcribe_audio_task
 
-                task = transcribe_audio_task.delay(file_id)
+                file_uuid = str(media_file.uuid)
+                task = transcribe_audio_task.delay(file_uuid)
                 logger.info(f"Started recovery task {task.id} for orphaned file {file_id}")
             return True
 

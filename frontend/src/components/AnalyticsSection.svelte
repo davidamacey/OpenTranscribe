@@ -27,7 +27,7 @@
   }
 
   interface Speaker {
-    id: number;
+    id: string;  // UUID
     name: string;
     display_name?: string;
   }

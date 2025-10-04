@@ -51,8 +51,8 @@
   /** @type {DateRange} */
   export let dateRange: { from: Date | null, to: Date | null } = { from: null, to: null };
   
-  /** @type {number|null} */
-  export let selectedCollectionId: number | null = null;
+  /** @type {string|null} */
+  export let selectedCollectionId: string | null = null;
 
   // Duration range for filtering
   /** @type {{ min: number|null, max: number|null }} */

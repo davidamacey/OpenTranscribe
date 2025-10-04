@@ -85,7 +85,7 @@ function createLLMStatusStore() {
       try {
         update(state => ({ ...state, checking: true }));
         const status = await llmService.getStatus(true);
-        
+
         update(state => ({
           ...state,
           status,
@@ -93,17 +93,17 @@ function createLLMStatusStore() {
           lastChecked: new Date(),
           checking: false
         }));
-        
+
         return status;
       } catch (error) {
-        console.error('Error refreshing LLM status:', error);
-        update(state => ({ 
-          ...state, 
+        console.error('[LLM Store] Error refreshing LLM status:', error);
+        update(state => ({
+          ...state,
           checking: false,
           available: false,
           status: {
             available: false,
-            user_id: 0,
+            user_id: '0',
             provider: null,
             model: null,
             message: 'Unable to check LLM status'

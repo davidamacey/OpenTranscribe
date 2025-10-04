@@ -4,6 +4,7 @@
   import { Link } from "svelte-navigator";
   import { user, authStore } from "../stores/auth";
   import { websocketStore } from "$stores/websocket";
+  import { toastStore } from "$stores/toast";
   
   // Explicitly declare router props to prevent warnings
   export const location = null;
@@ -11,7 +12,7 @@
   export const condition = true;
   
   interface MediaFile {
-    id: number;
+    id: string;  // UUID
     filename: string;
     file_size?: number;
     content_type?: string;
@@ -24,8 +25,8 @@
   }
 
   interface Task {
-    id: string;
-    media_file_id: number | null;
+    id: string;  // UUID
+    media_file_id: string | null;  // UUID
     task_type: string;
     status: string;
     progress: number;
@@ -41,9 +42,6 @@
   
   /** @type {boolean} */
   let loading = true;
-  
-  /** @type {string | null} */
-  let error: string | null = null;
   
   /** @type {number | null} */
   let refreshInterval: number | null = null;
@@ -119,15 +117,15 @@
   async function fetchTasks() {
     try {
       loading = true;
-      error = null;
-      
+
       // Import axios instance directly in the function to avoid issues
       const axiosInstance = (await import('../lib/axios')).default;
       const response = await axiosInstance.get('/tasks/');
       tasks = response.data;
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
-      error = err instanceof Error ? err.message : 'Failed to load tasks';
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load tasks';
+      toastStore.error(errorMsg, 5000);
     } finally {
       loading = false;
     }
@@ -322,15 +320,6 @@
     <div class="loading-container">
       <div class="loading-spinner"></div>
       <p>Loading tasks...</p>
-    </div>
-  {:else if error}
-    <div class="error-container">
-      <p class="error-message">{error}</p>
-      <button 
-        class="retry-button" 
-        on:click={fetchTasks}
-        title="Retry loading the tasks list"
-      >Try Again</button>
     </div>
   {:else if tasks.length === 0}
     <div class="empty-container">
@@ -553,7 +542,6 @@
   }
 
   .loading-container,
-  .error-container,
   .empty-container {
     display: flex;
     flex-direction: column;
@@ -579,30 +567,6 @@
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-  }
-
-  .error-message {
-    color: var(--error-color);
-    margin-bottom: 1rem;
-  }
-
-  .retry-button {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem 1.2rem;
-    font-family: inherit;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-  
-  .retry-button:hover {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
 
   .empty-container {

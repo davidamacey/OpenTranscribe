@@ -11,17 +11,17 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.subtitle_service import SubtitleService
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 router = APIRouter()
 
 
-@router.get("/{file_id}/subtitles", response_class=Response)
+@router.get("/{file_uuid}/subtitles", response_class=Response)
 async def get_subtitles(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
@@ -33,14 +33,8 @@ async def get_subtitles(
     Returns subtitles in the requested format (SRT by default).
     """
     # Get media file and check permissions
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id  # Get internal ID for subtitle generation
 
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")
@@ -86,9 +80,9 @@ async def get_subtitles(
         ) from e
 
 
-@router.get("/{file_id}/subtitles/validate", response_model=SubtitleValidationResult)
+@router.get("/{file_uuid}/subtitles/validate", response_model=SubtitleValidationResult)
 async def validate_subtitles(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -98,14 +92,8 @@ async def validate_subtitles(
     Returns validation results including any timing issues or problems found.
     """
     # Get media file and check permissions
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=404, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id  # Get internal ID for validation
 
     if media_file.status != "completed":
         raise HTTPException(status_code=400, detail="Transcription not completed yet")

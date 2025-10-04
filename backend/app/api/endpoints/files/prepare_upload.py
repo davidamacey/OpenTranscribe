@@ -36,7 +36,7 @@ class FileMetadata:
         self.file_hash = None
 
 
-@router.post("/prepare", response_model=dict[str, int])
+@router.post("/prepare", response_model=dict[str, str | int])
 async def prepare_upload(
     request: PrepareUploadRequest,
     db: Session = Depends(get_db),
@@ -71,8 +71,8 @@ async def prepare_upload(
         db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
 
-        # Return the file ID
-        return {"file_id": db_file.id, "is_duplicate": 0}
+        # Return the file UUID for frontend
+        return {"file_id": str(db_file.uuid), "is_duplicate": 0}
 
     except Exception as e:
         logger.error(f"Error preparing upload: {str(e)}")

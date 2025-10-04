@@ -12,49 +12,39 @@ from app.models.user import User
 from app.schemas.media import Comment as CommentSchema
 from app.schemas.media import CommentCreate
 from app.schemas.media import CommentUpdate
+from app.utils.uuid_helpers import get_comment_by_uuid
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 router = APIRouter()
 
 
-@router.get("/files/{file_id}/comments", response_model=list[CommentSchema])
+@router.get("/files/{file_uuid}/comments", response_model=list[CommentSchema])
 def get_comments_for_file_nested(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all comments for a specific media file (nested route)"""
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Get comments for this file
     comments = db.query(Comment).filter(Comment.media_file_id == file_id).all()
     return comments
 
 
-@router.post("/files/{file_id}/comments", response_model=CommentSchema)
+@router.post("/files/{file_uuid}/comments", response_model=CommentSchema)
 def create_comment_for_file_nested(
-    file_id: int,
+    file_uuid: str,
     comment: CommentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Create a comment for a specific media file (nested route)"""
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    file_id = media_file.id
 
     # Create comment with file_id from URL
     db_comment = Comment(
@@ -67,28 +57,31 @@ def create_comment_for_file_nested(
     db.commit()
     db.refresh(db_comment)
 
-    return db_comment
+    # Reload with relationships for UUID mapping
+    from sqlalchemy.orm import joinedload
+    db_comment = (
+        db.query(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.media_file))
+        .filter(Comment.id == db_comment.id)
+        .first()
+    )
+
+    return CommentSchema.model_validate(db_comment)
 
 
 @router.get("/", response_model=list[CommentSchema])
 def get_comments_for_file(
-    media_file_id: int,
+    media_file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     List all comments for a media file using query parameter
-    This is an alternative to the /files/{file_id}/comments endpoint
+    This is an alternative to the /files/{file_uuid}/comments endpoint
     """
     # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == media_file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+    media_file = get_file_by_uuid_with_permission(db, media_file_uuid, current_user.id)
+    media_file_id = media_file.id
 
     # Get comments for this file
     comments = (
@@ -109,19 +102,11 @@ def create_comment_query_param(
 ):
     """
     Add a comment to a media file using query parameter
-    This is an alternative to the /files/{file_id}/comments endpoint
+    This is an alternative to the /files/{file_uuid}/comments endpoint
     """
-    file_id = comment.media_file_id
-
-    # Verify file exists and belongs to user
-    media_file = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+    # Assume media_file_id in CommentCreate is now a UUID
+    media_file = get_file_by_uuid_with_permission(db, comment.media_file_id, current_user.id)
+    file_id = media_file.id
 
     # Create new comment
     db_comment = Comment(
@@ -135,38 +120,44 @@ def create_comment_query_param(
     db.commit()
     db.refresh(db_comment)
 
-    return db_comment
+    # Reload with relationships for UUID mapping
+    from sqlalchemy.orm import joinedload
+    db_comment = (
+        db.query(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.media_file))
+        .filter(Comment.id == db_comment.id)
+        .first()
+    )
+
+    return CommentSchema.model_validate(db_comment)
 
 
-@router.get("/{comment_id}", response_model=CommentSchema)
+@router.get("/{comment_uuid}", response_model=CommentSchema)
 def get_comment(
-    comment_id: int,
+    comment_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
-    Get a single comment by ID
+    Get a single comment by UUID
     """
-    # Get comment and verify ownership
-    comment = (
-        db.query(Comment)
-        .join(MediaFile)
-        .filter(Comment.id == comment_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
+    # Get comment and verify ownership through media file
+    comment = get_comment_by_uuid(db, comment_uuid)
 
-    if not comment:
+    # Verify the comment's media file belongs to the user
+    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
+    if not media_file or media_file.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comment not found or you do not have permission to view it",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to view this comment",
         )
 
     return comment
 
 
-@router.put("/{comment_id}", response_model=CommentSchema)
+@router.put("/{comment_uuid}", response_model=CommentSchema)
 def update_comment(
-    comment_id: int,
+    comment_uuid: str,
     comment_update: CommentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -174,17 +165,15 @@ def update_comment(
     """
     Update a comment
     """
-    # Get comment and verify ownership
-    comment = (
-        db.query(Comment)
-        .filter(Comment.id == comment_id, Comment.user_id == current_user.id)
-        .first()
-    )
+    from sqlalchemy.orm import joinedload
 
-    if not comment:
+    # Get comment with eager-loaded relationships and verify ownership
+    comment = get_comment_by_uuid(db, comment_uuid)
+
+    if comment.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comment not found or you do not have permission to edit it",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this comment",
         )
 
     # Update fields
@@ -192,30 +181,23 @@ def update_comment(
         setattr(comment, field, value)
 
     db.commit()
-    db.refresh(comment)
 
-    # Create a comment schema with user information properly formatted as a dictionary
-    # This fixes the ResponseValidationError about user not being a valid dictionary
-    result = CommentSchema(
-        id=comment.id,
-        media_file_id=comment.media_file_id,
-        user_id=comment.user_id,
-        text=comment.text,
-        timestamp=comment.timestamp,
-        created_at=comment.created_at,
-        user={
-            "id": current_user.id,
-            "email": current_user.email,
-            "full_name": current_user.full_name,
-        },
+    # Reload with relationships for UUID mapping
+    db.refresh(comment)
+    comment = (
+        db.query(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.media_file))
+        .filter(Comment.id == comment.id)
+        .first()
     )
 
-    return result
+    # Use model_validate to handle UUID conversion automatically
+    return CommentSchema.model_validate(comment)
 
 
-@router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{comment_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_comment(
-    comment_id: int,
+    comment_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -223,16 +205,12 @@ def delete_comment(
     Delete a comment
     """
     # Get comment and verify ownership
-    comment = (
-        db.query(Comment)
-        .filter(Comment.id == comment_id, Comment.user_id == current_user.id)
-        .first()
-    )
+    comment = get_comment_by_uuid(db, comment_uuid)
 
-    if not comment:
+    if comment.user_id != current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Comment not found or you do not have permission to delete it",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this comment",
         )
 
     # Delete the comment

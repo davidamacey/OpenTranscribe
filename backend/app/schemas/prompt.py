@@ -4,10 +4,13 @@ Pydantic schemas for AI summarization prompt management
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
+
+from app.schemas.base import UUIDBaseSchema
 
 
 class SummaryPromptBase(BaseModel):
@@ -71,18 +74,15 @@ class SummaryPromptUpdate(BaseModel):
         return v
 
 
-class SummaryPrompt(SummaryPromptBase):
-    """Schema for summary prompt responses"""
+class SummaryPrompt(SummaryPromptBase, UUIDBaseSchema):
+    """Schema for summary prompt responses with UUID as public identifier"""
 
-    id: int
-    user_id: Optional[int] = Field(
+    user_id: Optional[UUID] = Field(
         None, description="User ID for custom prompts, null for system prompts"
     )
     is_system_default: bool = Field(False, description="Whether this is a system-provided prompt")
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class SummaryPromptList(BaseModel):
@@ -114,15 +114,12 @@ class UserSettingUpdate(BaseModel):
     setting_value: Optional[str] = None
 
 
-class UserSetting(UserSettingBase):
-    """Schema for user setting responses"""
+class UserSetting(UserSettingBase, UUIDBaseSchema):
+    """Schema for user setting responses with UUID as public identifier"""
 
-    id: int
-    user_id: int
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 class UserSettingsList(BaseModel):
@@ -135,13 +132,13 @@ class UserSettingsList(BaseModel):
 class ActivePromptSelection(BaseModel):
     """Schema for selecting an active summary prompt"""
 
-    prompt_id: int = Field(..., description="ID of the summary prompt to use")
+    prompt_id: UUID = Field(..., description="UUID of the summary prompt to use")
 
 
 class ActivePromptResponse(BaseModel):
     """Schema for active prompt response"""
 
-    active_prompt_id: Optional[int] = Field(None, description="Currently active prompt ID")
+    active_prompt_id: Optional[UUID] = Field(None, description="Currently active prompt UUID")
     active_prompt: Optional[SummaryPrompt] = Field(
         None, description="Currently active prompt details"
     )
@@ -154,4 +151,4 @@ class ContentTypePromptsResponse(BaseModel):
     content_type: str
     system_prompts: list[SummaryPrompt]
     user_prompts: list[SummaryPrompt]
-    active_prompt_id: Optional[int] = None
+    active_prompt_id: Optional[UUID] = None

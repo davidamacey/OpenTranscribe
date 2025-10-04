@@ -137,12 +137,12 @@ async def get_user_from_websocket(
 
         # Verify token and get user
         payload = verify_token(token)
-        user_id = payload.get("sub")
-        if not user_id:
+        user_identifier = payload.get("sub")  # This is now a UUID string
+        if not user_identifier:
             return None
 
-        # Get user from database
-        user = db.query(User).filter(User.id == user_id).first()
+        # Get user from database using UUID
+        user = db.query(User).filter(User.uuid == user_identifier).first()
         return user
     except Exception as e:
         logger.error(f"WebSocket authentication error: {str(e)}")

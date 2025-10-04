@@ -3,13 +3,13 @@
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   
-  export let selectedCollectionId: number | null = null;
-  
+  export let selectedCollectionId: string | null = null;
+
   let collections: any[] = [];
   let loading = false;
-  
+
   const dispatch = createEventDispatcher();
-  
+
   export async function fetchCollections() {
     loading = true;
     try {
@@ -21,11 +21,11 @@
       loading = false;
     }
   }
-  
+
   function handleCollectionChange(event: Event) {
     const target = event.target as HTMLSelectElement;
     const value = target.value;
-    selectedCollectionId = value === '' ? null : parseInt(value);
+    selectedCollectionId = value === '' ? null : value;
   }
   
   onMount(() => {

@@ -23,30 +23,28 @@ from app.schemas.media import Speaker as SpeakerSchema
 from app.schemas.media import SpeakerUpdate
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.delete("/{speaker_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{speaker_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_speaker(
-    speaker_id: int,
+    speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     Delete a speaker
     """
-    # Find the speaker
-    speaker = (
-        db.query(Speaker)
-        .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-        .first()
-    )
+    # Find the speaker by UUID
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
 
-    if not speaker:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+    # Verify ownership
+    if speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     # Delete the speaker
     db.delete(speaker)
@@ -58,13 +56,18 @@ def delete_speaker(
 @router.post("/", response_model=SpeakerSchema)
 def create_speaker(
     speaker: SpeakerUpdate,
-    media_file_id: int,
+    media_file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     Create a new speaker for a specific media file
     """
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+    # Get media file by UUID and verify permission
+    media_file = get_file_by_uuid_with_permission(db, media_file_uuid, current_user.id)
+
     # Generate a UUID for the new speaker
     speaker_uuid = str(uuid.uuid4())
 
@@ -73,7 +76,7 @@ def create_speaker(
         display_name=speaker.display_name,
         uuid=speaker_uuid,
         user_id=current_user.id,
-        media_file_id=media_file_id,
+        media_file_id=media_file.id,  # Use internal integer ID
         verified=speaker.verified if speaker.verified is not None else False,
     )
 
@@ -141,7 +144,7 @@ def _get_unique_speakers_for_filter(speakers):
 @router.get("/")
 def list_speakers(
     verified_only: bool = False,
-    file_id: Optional[int] = None,
+    file_uuid: Optional[str] = None,
     for_filter: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -160,7 +163,7 @@ def list_speakers(
 
     Args:
         verified_only (bool): If true, return only verified speakers.
-        file_id (Optional[int]): If provided, return only speakers associated with this file.
+        file_uuid (Optional[str]): If provided, return only speakers associated with this file.
         for_filter (bool): If true, return only speakers with distinct display names for filtering.
 
     Returns:
@@ -169,9 +172,16 @@ def list_speakers(
     try:
         from sqlalchemy.orm import joinedload
 
+        # Convert file_uuid to file_id if provided
+        file_id = None
+        if file_uuid:
+            from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+            file_id = media_file.id
+
         query = (
             db.query(Speaker)
-            .options(joinedload(Speaker.profile))
+            .options(joinedload(Speaker.profile), joinedload(Speaker.media_file))
             .filter(Speaker.user_id == current_user.id)
         )
         query = _filter_speakers_query(query, verified_only, for_filter, file_id)
@@ -338,17 +348,17 @@ def list_speakers(
             )
 
             speaker_dict = {
-                "id": speaker.id,
+                "id": str(speaker.uuid),  # Use UUID as id for frontend compatibility
                 "name": speaker.name,
                 "display_name": speaker.display_name or "",  # Handle nulls in backend
                 "suggested_name": suggested_name,
-                "uuid": speaker.uuid,
+                "uuid": str(speaker.uuid),  # Also keep uuid field for clarity
                 "verified": speaker.verified,
-                "user_id": speaker.user_id,
+                "user_id": str(current_user.uuid),  # Use user UUID
                 "confidence": speaker.confidence,
                 "suggestion_source": suggestion_source,
                 "created_at": speaker.created_at.isoformat(),
-                "media_file_id": speaker.media_file_id,
+                "media_file_id": str(speaker.media_file.uuid) if speaker.media_file else speaker.media_file_id,
                 "profile": None,
                 "voice_suggestions": voice_suggestions,  # Already guaranteed to be list
                 "cross_video_matches": cross_video_matches,  # Already guaranteed to be list
@@ -373,6 +383,7 @@ def list_speakers(
                     "id": speaker.profile.id,
                     "name": speaker.profile.name,
                     "description": speaker.profile.description,
+                    "uuid": str(speaker.profile.uuid) if speaker.profile.uuid else None,  # Convert UUID to string
                 }
 
             result.append(speaker_dict)
@@ -399,23 +410,20 @@ def list_speakers(
         )
 
 
-@router.get("/{speaker_id}", response_model=SpeakerSchema)
+@router.get("/{speaker_uuid}", response_model=SpeakerSchema)
 def get_speaker(
-    speaker_id: int,
+    speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     Get details of a specific speaker with computed status
     """
-    speaker = (
-        db.query(Speaker)
-        .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-        .first()
-    )
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
 
-    if not speaker:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+    # Verify ownership
+    if speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
@@ -489,10 +497,10 @@ def _handle_profile_embedding_updates(
         # Don't fail the operation if embedding update fails
 
 
-def _update_opensearch_speaker_name(speaker_id: int, display_name: str) -> None:
+def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> None:
     """Update speaker display name in OpenSearch."""
     try:
-        update_speaker_display_name(speaker_id, display_name)
+        update_speaker_display_name(speaker_uuid, display_name)
     except Exception as e:
         logger.error(f"Failed to update speaker display name in OpenSearch: {e}")
 
@@ -514,7 +522,7 @@ def _handle_speaker_labeling_workflow(speaker: Speaker, display_name: str, db: S
     trigger_retroactive_matching(speaker, db)
 
 
-def _clear_video_cache_for_speaker(media_file_id: int) -> None:
+def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
     """Clear video cache since speaker labels have changed (affects subtitles)."""
     try:
         from app.services.minio_service import MinIOService
@@ -522,15 +530,14 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
 
         minio_service = MinIOService()
         video_processing_service = VideoProcessingService(minio_service)
-        # Fix: Pass the correct arguments to clear_cache_for_media_file
-        video_processing_service.clear_cache_for_media_file(str(media_file_id), media_file_id)
+        video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
         logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
 
 
-@router.put("/{speaker_id}", response_model=SpeakerSchema)
+@router.put("/{speaker_uuid}", response_model=SpeakerSchema)
 def update_speaker(
-    speaker_id: int,
+    speaker_uuid: str,
     speaker_update: SpeakerUpdate,
     response: Response,
     db: Session = Depends(get_db),
@@ -541,13 +548,11 @@ def update_speaker(
     This also handles profile embedding updates when speakers are corrected or reassigned.
     """
     # Find and validate speaker
-    speaker = (
-        db.query(Speaker)
-        .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-        .first()
-    )
-    if not speaker:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
+    if speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    speaker_id = speaker.id  # Get internal ID for later operations
 
     # Store state for later processing
     old_profile_id = speaker.profile_id
@@ -638,14 +643,28 @@ def update_speaker(
 
     # Update OpenSearch for any relevant changes
     if speaker_update.display_name is not None:
-        _update_opensearch_speaker_name(speaker_id, speaker.display_name)
+        _update_opensearch_speaker_name(str(speaker.uuid), speaker.display_name)
 
     # Update OpenSearch if profile assignment changed
     if old_profile_id != new_profile_id or speaker_update.display_name is not None:
         from app.services.opensearch_service import update_speaker_profile
 
+        # Get profile UUID if profile is assigned
+        profile_uuid = None
+        if speaker.profile_id:
+            # Fetch profile to get UUID if not already loaded
+            if not speaker.profile:
+                profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                if profile:
+                    profile_uuid = str(profile.uuid)
+            else:
+                profile_uuid = str(speaker.profile.uuid)
+
         update_speaker_profile(
-            speaker_id=speaker.id, profile_id=speaker.profile_id, verified=speaker.verified
+            speaker_uuid=str(speaker.uuid),
+            profile_id=speaker.profile_id,
+            profile_uuid=profile_uuid,
+            verified=speaker.verified
         )
 
     # Handle speaker labeling workflow
@@ -653,30 +672,61 @@ def update_speaker(
         _handle_speaker_labeling_workflow(speaker, speaker_update.display_name, db)
 
     # Clear video cache
-    _clear_video_cache_for_speaker(speaker.media_file_id)
+    _clear_video_cache_for_speaker(db, speaker.media_file_id)
 
     # Send WebSocket notification for real-time UI updates
+    # Note: WebSocket notifications are best-effort, failures won't affect the operation
     try:
         import asyncio
+
         from app.api.websockets import publish_notification
 
-        # Notify about speaker update
-        asyncio.create_task(
-            publish_notification(
-                user_id=current_user.id,
-                notification_type="speaker_updated",
-                data={
-                    "speaker_id": speaker.id,
-                    "media_file_id": speaker.media_file_id,
-                    "display_name": speaker.display_name,
-                    "verified": speaker.verified,
-                    "profile_id": speaker.profile_id,
-                },
+        # Get media file UUID
+        media_file_uuid = None
+        if speaker.media_file:
+            media_file_uuid = str(speaker.media_file.uuid)
+        elif speaker.media_file_id:
+            from app.models.media import MediaFile
+            media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
+            if media_file:
+                media_file_uuid = str(media_file.uuid)
+
+        # Get profile UUID if assigned
+        profile_uuid = None
+        if speaker.profile:
+            profile_uuid = str(speaker.profile.uuid)
+        elif speaker.profile_id:
+            from app.models.media import SpeakerProfile
+            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+            if profile:
+                profile_uuid = str(profile.uuid)
+
+        # Schedule notification in background (won't block response)
+        # Use asyncio.ensure_future to handle event loop compatibility
+        notification_data = {
+            "speaker_id": str(speaker.uuid),
+            "media_file_id": media_file_uuid,
+            "display_name": speaker.display_name,
+            "verified": speaker.verified,
+            "profile_id": profile_uuid,
+        }
+
+        try:
+            # Try to get running event loop
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                publish_notification(
+                    user_id=current_user.id,
+                    notification_type="speaker_updated",
+                    data=notification_data,
+                )
             )
-        )
-        logger.info(f"Sent WebSocket notification for speaker {speaker.id} update")
+        except RuntimeError:
+            # No event loop running - this is expected in sync context
+            # WebSocket notification will be skipped (not critical)
+            logger.debug(f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)")
     except Exception as e:
-        logger.warning(f"Failed to send WebSocket notification for speaker update: {e}")
+        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
@@ -689,34 +739,23 @@ def update_speaker(
     return speaker
 
 
-@router.post("/{speaker_id}/merge/{target_speaker_id}", response_model=SpeakerSchema)
+@router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
 def merge_speakers(
-    speaker_id: int,
-    target_speaker_id: int,
+    speaker_uuid: str,
+    target_speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """
     Merge two speakers into one (target absorbs source)
     """
-    # Get both speakers
-    source_speaker = (
-        db.query(Speaker)
-        .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-        .first()
-    )
+    # Get both speakers by UUID
+    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
+    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
 
-    target_speaker = (
-        db.query(Speaker)
-        .filter(Speaker.id == target_speaker_id, Speaker.user_id == current_user.id)
-        .first()
-    )
-
-    if not source_speaker or not target_speaker:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="One or both speakers not found",
-        )
+    # Verify ownership
+    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     # Store profile IDs for embedding updates
     source_profile_id = source_speaker.profile_id
@@ -734,8 +773,8 @@ def merge_speakers(
         from app.services.opensearch_service import get_speaker_embedding
 
         # Get embeddings for both speakers
-        source_embedding = get_speaker_embedding(source_speaker.id)
-        target_embedding = get_speaker_embedding(target_speaker.id)
+        source_embedding = get_speaker_embedding(str(source_speaker.uuid))
+        target_embedding = get_speaker_embedding(str(target_speaker.uuid))
 
         if source_embedding and target_embedding:
             # Average the embeddings using numpy's built-in averaging
@@ -783,7 +822,7 @@ def merge_speakers(
         video_processing_service = VideoProcessingService(minio_service)
 
         for media_file_id in affected_media_files:
-            video_processing_service.clear_cache_for_media_file(media_file_id)
+            video_processing_service.clear_cache_for_media_file(db, media_file_id)
     except Exception as e:
         logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
 
@@ -968,11 +1007,11 @@ def _create_new_speaker_profile(
     }
 
 
-@router.post("/{speaker_id}/verify", response_model=dict[str, Any])
+@router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
 def verify_speaker_identification(
-    speaker_id: int,
+    speaker_uuid: str,
     action: str,  # 'accept', 'reject', 'create_profile'
-    profile_id: Optional[int] = None,
+    profile_uuid: Optional[str] = None,
     profile_name: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -987,13 +1026,20 @@ def verify_speaker_identification(
     """
     try:
         # Get and validate speaker
-        speaker = (
-            db.query(Speaker)
-            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-            .first()
-        )
-        if not speaker:
-            raise HTTPException(status_code=404, detail="Speaker not found")
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+        speaker_id = speaker.id  # Get internal ID for helper functions
+
+        # Convert profile_uuid to profile_id if provided
+        profile_id = None
+        if profile_uuid:
+            from app.utils.uuid_helpers import get_profile_by_uuid
+            profile = get_profile_by_uuid(db, profile_uuid)
+            if profile.user_id != current_user.id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+            profile_id = profile.id
 
         # Route to appropriate handler based on action
         if action == "accept":
@@ -1026,9 +1072,9 @@ def verify_speaker_identification(
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.get("/{speaker_id}/cross-media", response_model=list[dict[str, Any]])
+@router.get("/{speaker_uuid}/cross-media", response_model=list[dict[str, Any]])
 def get_speaker_cross_media_occurrences(
-    speaker_id: int,
+    speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1036,15 +1082,12 @@ def get_speaker_cross_media_occurrences(
     Get all media files where this speaker (or their profile) appears.
     """
     try:
-        # Get speaker
-        speaker = (
-            db.query(Speaker)
-            .filter(Speaker.id == speaker_id, Speaker.user_id == current_user.id)
-            .first()
-        )
+        # Get speaker by UUID
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        if not speaker:
-            raise HTTPException(status_code=404, detail="Speaker not found")
+        speaker_id = speaker.id  # Get internal ID for queries
 
         result = []
 

@@ -20,14 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name="generate_waveform_data")
-def generate_waveform_data_task(self, file_id: int = None, skip_existing: bool = True):
+def generate_waveform_data_task(self, file_uuid: str = None, skip_existing: bool = True):
     """
     Generate waveform data for media files.
 
     Args:
-        file_id: Specific file ID to process, or None to process all eligible files
+        file_uuid: Specific file UUID to process, or None to process all eligible files
         skip_existing: Skip files that already have waveform data
     """
+    from app.utils.uuid_helpers import get_file_by_uuid
 
     try:
         with session_scope() as db:
@@ -40,8 +41,10 @@ def generate_waveform_data_task(self, file_id: int = None, skip_existing: bool =
                 )
             )
 
-            if file_id:
-                query = query.filter(MediaFile.id == file_id)
+            if file_uuid:
+                # Get the file by UUID to filter by internal ID
+                file = get_file_by_uuid(db, file_uuid)
+                query = query.filter(MediaFile.id == file.id)
 
             if skip_existing:
                 query = query.filter(MediaFile.waveform_data.is_(None))
@@ -147,14 +150,14 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
         return False
 
 
-def trigger_waveform_generation(file_id: int = None, skip_existing: bool = True):
+def trigger_waveform_generation(file_uuid: str = None, skip_existing: bool = True):
     """
     Trigger waveform generation task.
 
     Args:
-        file_id: Specific file ID to process, or None for all files
+        file_uuid: Specific file UUID to process, or None for all files
         skip_existing: Skip files that already have waveform data
     """
-    task = generate_waveform_data_task.delay(file_id=file_id, skip_existing=skip_existing)
+    task = generate_waveform_data_task.delay(file_uuid=file_uuid, skip_existing=skip_existing)
     logger.info(f"Triggered waveform generation task: {task.id}")
     return task.id

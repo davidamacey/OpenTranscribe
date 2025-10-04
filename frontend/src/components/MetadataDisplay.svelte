@@ -106,7 +106,7 @@
         
         <div class="metadata-item">
           <span class="metadata-label">Created date:</span>
-          <span class="metadata-value">{file && 'created_date' in file && file.created_date ? new Date(file.created_date).toLocaleDateString() : 'Unknown'}</span>
+          <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : 'Unknown'}</span>
         </div>
         
         <!-- Tech Specs -->

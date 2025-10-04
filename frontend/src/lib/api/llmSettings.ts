@@ -9,8 +9,8 @@ export type LLMProvider = 'openai' | 'vllm' | 'ollama' | 'claude' | 'anthropic' 
 export type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
 export interface UserLLMSettings {
-  id: number;
-  user_id: number;
+  id: string;  // UUID
+  user_id: string;  // UUID
   name: string;
   provider: LLMProvider;
   model_name: string;
@@ -79,12 +79,12 @@ export interface SupportedProvidersResponse {
 
 export interface UserLLMConfigurationsList {
   configurations: UserLLMSettings[];
-  active_configuration_id?: number;
+  active_configuration_id?: string;  // UUID
   total: number;
 }
 
 export interface SetActiveConfigRequest {
-  configuration_id: number;
+  configuration_id: string;  // UUID
 }
 
 export interface LLMSettingsStatus {
@@ -133,7 +133,7 @@ export class LLMSettingsApi {
   /**
    * Update an existing LLM configuration
    */
-  static async updateSettings(configId: number, settings: UserLLMSettingsUpdate): Promise<UserLLMSettings> {
+  static async updateSettings(configId: string, settings: UserLLMSettingsUpdate): Promise<UserLLMSettings> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/config/${configId}`, settings);
     return response.data;
   }
@@ -141,7 +141,7 @@ export class LLMSettingsApi {
   /**
    * Delete a specific LLM configuration
    */
-  static async deleteConfiguration(configId: number): Promise<{ detail: string }> {
+  static async deleteConfiguration(configId: string): Promise<{ detail: string }> {
     const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${configId}`);
     return response.data;
   }
@@ -157,7 +157,7 @@ export class LLMSettingsApi {
   /**
    * Set active LLM configuration
    */
-  static async setActiveConfiguration(configId: number): Promise<UserLLMSettings> {
+  static async setActiveConfiguration(configId: string): Promise<UserLLMSettings> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
       configuration_id: configId
     });
@@ -183,7 +183,7 @@ export class LLMSettingsApi {
   /**
    * Test connection using a specific configuration
    */
-  static async testConfiguration(configId: number): Promise<ConnectionTestResponse> {
+  static async testConfiguration(configId: string): Promise<ConnectionTestResponse> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/test-config/${configId}`);
     return response.data;
   }

@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { MajorTopic } from '$lib/types/summary';
-  
+
   export let topics: MajorTopic[];
-  export let searchQuery: string = '';
-  
+  // searchQuery prop removed - not used internally
+
   function getImportanceIndicator(importance: string): string {
     switch (importance) {
       case 'high': return '●';

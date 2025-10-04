@@ -44,10 +44,10 @@
   let error = '';
   let statusMessage = '';
   let isDuplicateFile = false; // Track if the current file is a duplicate
-  let duplicateFileId: number | null = null; // Track the ID of the duplicate file
+  let duplicateFileId: string | null = null; // Track the UUID of the duplicate file
   let cancelTokenSource: CancelTokenSource | null = null;
   let isCancelling = false;
-  let currentFileId: number | null = null; // Track the current file ID for cancellation
+  let currentFileId: string | null = null; // Track the current file UUID for cancellation
   let token = ''; // Store the auth token
 
   // URL processing state
@@ -93,13 +93,13 @@
       }
     };
     
-    window.addEventListener('setFileUploaderTab', handleSetTabEvent);
-    window.addEventListener('directFileUpload', handleDirectUpload);
+    window.addEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
+    window.addEventListener('directFileUpload', handleDirectUpload as EventListener);
     
     return () => {
       if (cleanup) cleanup();
-      window.removeEventListener('setFileUploaderTab', handleSetTabEvent);
-      window.removeEventListener('directFileUpload', handleDirectUpload);
+      window.removeEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
+      window.removeEventListener('directFileUpload', handleDirectUpload as EventListener);
     };
   });
   
@@ -186,10 +186,10 @@
 
   // Pause/resume recording using global recording manager
   function togglePauseRecording() {
-    let currentState;
+    let currentState: any;
     const unsubscribe = recordingStore.subscribe(state => currentState = state);
     unsubscribe();
-    
+
     if (currentState?.isPaused) {
       recordingManager.resumeRecording();
     } else {
@@ -258,10 +258,10 @@
   // Reset recording state with protection check
   function resetRecordingState() {
     // Only reset if no active recording in progress
-    let currentState;
+    let currentState: any;
     const unsubscribe = recordingStore.subscribe(state => currentState = state);
     unsubscribe();
-    
+
     if (!currentState?.hasActiveRecording) {
       recordingManager.clearRecording();
     }
@@ -902,11 +902,11 @@
         fallbackToKeyboardPaste();
       }
       
-    } catch (error) {
+    } catch (error: unknown) {
       // Clipboard read failed - handle gracefully with fallback
-      
+
       // Handle permission denial gracefully
-      if (error.name === 'NotAllowedError') {
+      if ((error as Error).name === 'NotAllowedError') {
         // Don't show error, just provide seamless fallback
         fallbackToKeyboardPaste();
       } else {
@@ -1653,19 +1653,6 @@
               </div>
             {/if}
           </div>
-
-          {#if recordingError}
-            <div class="message error-message">
-              <div class="message-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="8" x2="12" y2="12"></line>
-                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-              </div>
-              <div class="message-content">{recordingError}</div>
-            </div>
-          {/if}
 
           {#if uploading}
             <div class="progress-container">
@@ -2455,26 +2442,6 @@
     cursor: not-allowed;
   }
 
-  .info-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--surface-color);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .info-button:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-    background-color: rgba(59, 130, 246, 0.05);
-  }
-
   .recording-controls-main {
     display: flex;
     flex-direction: column;
@@ -2692,11 +2659,6 @@
     font-size: 0.85rem;
   }
 
-  .recording-actions-compact {
-    display: flex;
-    gap: 0.75rem;
-  }
-
   .recording-actions-vertical {
     display: flex;
     flex-direction: column;
@@ -2779,98 +2741,7 @@
     box-shadow: none;
   }
 
-  .recording-info-popup {
-    position: relative;
-    margin-top: 1rem;
-    padding: 1rem;
-    background-color: var(--surface-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  .recording-info-content h4 {
-    margin: 0 0 0.75rem 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .recording-settings-display {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-
-  .setting-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.9rem;
-  }
-
-  .setting-label {
-    color: var(--text-secondary);
-  }
-
-  .setting-value {
-    color: var(--text-primary);
-    font-weight: 500;
-  }
-
-  .recording-features-compact ul {
-    margin: 0;
-    padding-left: 1rem;
-    color: var(--text-secondary);
-  }
-
-  .recording-features-compact li {
-    margin-bottom: 0.25rem;
-    font-size: 0.85rem;
-  }
-
-  .settings-link {
-    margin: 0.75rem 0 0 0;
-    text-align: center;
-  }
-
-  .settings-link a {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .settings-link a:hover {
-    text-decoration: underline;
-  }
-
-  .settings-link-inline {
-    color: var(--primary-color);
-    text-decoration: none;
-    font-weight: 500;
-  }
-
-  .settings-link-inline:hover {
-    text-decoration: underline;
-  }
-
   /* Recording info section styling - compact version - rules moved above */
-
-  .recording-settings-compact {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-light);
-    border-radius: 8px;
-    padding: 0.75rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-    text-align: center;
-    width: fit-content;
-    max-width: 100%;
-  }
 
   .recording-settings-section {
     display: flex;
@@ -2929,11 +2800,6 @@
     border-color: var(--border-color);
   }
 
-  :global(.dark) .recording-info {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-  }
-
   :global(.dark) .control-button-compact {
     background-color: transparent;
     border-color: var(--border-color);
@@ -2953,24 +2819,6 @@
     background-color: var(--primary-color);
     border-color: var(--primary-color);
     color: white;
-  }
-
-  :global(.dark) .info-button {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-    color: var(--text-secondary);
-  }
-
-  :global(.dark) .info-button:hover {
-    color: var(--primary-color);
-    border-color: var(--primary-color);
-    background-color: rgba(59, 130, 246, 0.1);
-  }
-
-  :global(.dark) .recording-info-popup {
-    background-color: var(--surface-color);
-    border-color: var(--border-color);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   :global(.dark) .recording-info-compact {

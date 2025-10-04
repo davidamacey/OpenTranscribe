@@ -40,6 +40,7 @@ from . import cancel_upload
 from . import prepare_upload
 from .crud import delete_media_file
 from .crud import get_media_file_by_id
+from .crud import get_media_file_by_uuid
 from .crud import get_media_file_detail
 from .crud import get_stream_url_info
 from .crud import set_file_urls
@@ -80,11 +81,11 @@ async def upload_media_file(
     request: Request = None,
 ):
     """Upload a media file for transcription"""
-    # Check if we have a file_id from prepare step
-    existing_file_id = None
+    # Check if we have a file_uuid from prepare step
+    existing_file_uuid = None
     if request and request.headers.get("X-File-ID"):
-        with contextlib.suppress(ValueError, TypeError):
-            existing_file_id = int(request.headers.get("X-File-ID"))
+        # X-File-ID now contains UUID string (not integer)
+        existing_file_uuid = request.headers.get("X-File-ID")
 
     # Get file hash from header if provided
     file_hash = None
@@ -92,12 +93,12 @@ async def upload_media_file(
         file_hash = request.headers.get("X-File-Hash")
 
     # Process the file upload
-    db_file = await process_file_upload(file, db, current_user, existing_file_id, file_hash)
+    db_file = await process_file_upload(file, db, current_user, existing_file_uuid, file_hash)
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
-    # Add file ID to header so frontend can access it early
-    response.headers["X-File-ID"] = str(db_file.id)
+    # Add file UUID to header so frontend can access it early
+    response.headers["X-File-ID"] = str(db_file.uuid)
 
     return response
 
@@ -123,11 +124,18 @@ def list_media_files(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all media files for the current user with optional filters"""
+    from sqlalchemy.orm import joinedload
+
     # Admin users can see all files, regular users only see their own files
+    # Eagerly load the user relationship to get UUID for validation
     if current_user.role == "admin":
-        base_query = db.query(MediaFile)
+        base_query = db.query(MediaFile).options(joinedload(MediaFile.user))
     else:
-        base_query = db.query(MediaFile).filter(MediaFile.user_id == current_user.id)
+        base_query = (
+            db.query(MediaFile)
+            .options(joinedload(MediaFile.user))
+            .filter(MediaFile.user_id == current_user.id)
+        )
 
     # Prepare filters dictionary
     filters = {
@@ -171,62 +179,63 @@ def list_media_files(
     return formatted_files
 
 
-@router.get("/{file_id}", response_model=MediaFileDetail)
+@router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Get a specific media file with transcript details"""
-    return get_media_file_detail(db, file_id, current_user)
+    return get_media_file_detail(db, file_uuid, current_user)
 
 
-@router.put("/{file_id}", response_model=MediaFileSchema)
+@router.put("/{file_uuid}", response_model=MediaFileSchema)
 def update_media_file_endpoint(
-    file_id: int,
+    file_uuid: str,
     media_file_update: MediaFileUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a media file's metadata"""
-    return update_media_file(db, file_id, media_file_update, current_user)
+    return update_media_file(db, file_uuid, media_file_update, current_user)
 
 
-@router.delete("/{file_id}", status_code=204)
+@router.delete("/{file_uuid}", status_code=204)
 def delete_media_file_endpoint(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a media file and all associated data"""
-    delete_media_file(db, file_id, current_user)
+    delete_media_file(db, file_uuid, current_user)
     return None
 
 
-@router.get("/{file_id}/stream-url")
+@router.get("/{file_uuid}/stream-url")
 def get_media_file_stream_url(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Get a streaming URL for the media file that works from any client"""
-    return get_stream_url_info(db, file_id, current_user)
+    return get_stream_url_info(db, file_uuid, current_user)
 
 
-@router.get("/{file_id}/content")
+@router.get("/{file_uuid}/content")
 def get_media_file_content(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Get the content of a media file"""
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
     return get_content_streaming_response(db_file)
 
 
-@router.get("/{file_id}/download")
+@router.get("/{file_uuid}/download")
 def download_media_file(
-    file_id: int,
+    file_uuid: str,
     token: str = None,
     original: bool = Query(False, description="Download original file without subtitles"),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
@@ -234,7 +243,9 @@ def download_media_file(
     current_user: User = Depends(get_current_active_user),
 ):
     """Download a media file (with embedded subtitles for videos by default)"""
-    db_file = get_media_file_by_id(db, file_id, current_user.id)
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id  # Get internal ID for video processing
 
     # Check if this is a video file with available subtitles
     is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -246,7 +257,9 @@ def download_media_file(
             import logging
 
             logger = logging.getLogger(__name__)
-            logger.info(f"Processing video download with subtitles for file {file_id}")
+            logger.info(
+                f"Processing video download with subtitles for file {file_uuid} (id: {file_id})"
+            )
 
             from app.services.minio_service import MinIOService
             from app.services.video_processing_service import VideoProcessingService
@@ -258,10 +271,14 @@ def download_media_file(
             # Check if ffmpeg is available
             if not video_service.check_ffmpeg_availability():
                 # Fall back to original file if ffmpeg is not available
-                logger.warning(f"ffmpeg not available, serving original file for {file_id}")
+                logger.warning(
+                    f"ffmpeg not available, serving original file for {file_uuid} (id: {file_id})"
+                )
                 return get_content_streaming_response(db_file)
 
-            logger.info(f"ffmpeg available, processing video {file_id} with subtitles")
+            logger.info(
+                f"ffmpeg available, processing video {file_uuid} (id: {file_id}) with subtitles"
+            )
 
             # Process video with embedded subtitles
             cache_key = video_service.process_video_with_subtitles(
@@ -317,9 +334,9 @@ def download_media_file(
     return get_content_streaming_response(db_file)
 
 
-@router.get("/{file_id}/download-with-token")
+@router.get("/{file_uuid}/download-with-token")
 def download_media_file_with_token(
-    file_id: int,
+    file_uuid: str,
     token: str,
     original: bool = Query(False, description="Download original file without subtitles"),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
@@ -341,18 +358,19 @@ def download_media_file_with_token(
     try:
         # Validate JWT token manually
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        user_uuid: str = payload.get("sub")
+        if user_uuid is None:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-        # Get user from database
-        user = db.query(User).filter(User.id == user_id).first()
+        # Get user from database by UUID (token contains UUID, not integer ID)
+        user = db.query(User).filter(User.uuid == user_uuid).first()
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="Invalid user")
 
         # Get file and check ownership
         is_admin = user.role == "admin"
-        db_file = get_media_file_by_id(db, file_id, user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for video processing
 
         # Check if this is a video file with available subtitles
         is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -362,7 +380,7 @@ def download_media_file_with_token(
         if is_video and has_transcript and not original:
             try:
                 logger.info(
-                    f"Processing video download with subtitles for file {file_id} (token endpoint)"
+                    f"Processing video download with subtitles for file {file_uuid} (id: {file_id}, token endpoint)"
                 )
 
                 from app.services.minio_service import MinIOService
@@ -445,38 +463,44 @@ def download_media_file_with_token(
         raise HTTPException(status_code=401, detail="Authentication failed") from e
 
 
-@router.get("/{file_id}/video")
-async def video_file(file_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/{file_uuid}/video")
+async def video_file(file_uuid: str, request: Request, db: Session = Depends(get_db)):
     """
     Direct video endpoint for video player
     No authentication required - this is a public endpoint for video files only
     """
-    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
     range_header = request.headers.get("range")
     return get_video_streaming_response(db_file, range_header)
 
 
-@router.get("/{file_id}/simple-video")
-async def simple_video(file_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/{file_uuid}/simple-video")
+async def simple_video(file_uuid: str, request: Request, db: Session = Depends(get_db)):
     """
     Enhanced video streaming endpoint that efficiently serves video content with YouTube-like streaming.
     """
-    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
     range_header = request.headers.get("range")
     return get_enhanced_video_streaming_response(db_file, range_header)
 
 
-@router.get("/{file_id}/thumbnail")
-async def get_thumbnail(file_id: int, db: Session = Depends(get_db)):
+@router.get("/{file_uuid}/thumbnail")
+async def get_thumbnail(file_uuid: str, db: Session = Depends(get_db)):
     """
     Get the thumbnail image for a media file.
     No authentication required - this is a public endpoint for thumbnail images only.
     """
-    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
     return get_thumbnail_streaming_response(db_file)
 
@@ -489,10 +513,10 @@ def get_metadata_filters_endpoint(
     return get_metadata_filters(db, current_user.id)
 
 
-@router.put("/{file_id}/transcript/segments/{segment_id}", response_model=TranscriptSegment)
+@router.put("/{file_uuid}/transcript/segments/{segment_uuid}", response_model=TranscriptSegment)
 def update_transcript_segment(
-    file_id: int,
-    segment_id: int,
+    file_uuid: str,
+    segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -501,26 +525,28 @@ def update_transcript_segment(
     from .crud import update_single_transcript_segment
 
     # Update the transcript segment
-    result = update_single_transcript_segment(db, file_id, segment_id, segment_update, current_user)
+    result = update_single_transcript_segment(
+        db, file_uuid, segment_uuid, segment_update, current_user
+    )
 
     # Transcript has been updated - subtitles will be regenerated on-demand
 
     return result
 
 
-@router.post("/{file_id}/reprocess", response_model=MediaFileSchema)
+@router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 async def reprocess_media_file(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Reprocess a media file for transcription"""
-    return await process_file_reprocess(file_id, db, current_user)
+    return await process_file_reprocess(file_uuid, db, current_user)
 
 
-@router.delete("/{file_id}/cache", status_code=204)
+@router.delete("/{file_uuid}/cache", status_code=204)
 def clear_video_cache(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -532,7 +558,8 @@ def clear_video_cache(
     try:
         # Verify user owns the file or is admin
         is_admin = current_user.role == "admin"
-        get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for cache operations
 
         # Clear the cache using video processing service
         from app.services.minio_service import MinIOService
@@ -556,9 +583,9 @@ def clear_video_cache(
         ) from e
 
 
-@router.post("/{file_id}/analytics/refresh", status_code=204)
+@router.post("/{file_uuid}/analytics/refresh", status_code=204)
 def refresh_analytics(
-    file_id: int,
+    file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -570,7 +597,8 @@ def refresh_analytics(
     try:
         # Verify user owns the file or is admin
         is_admin = current_user.role == "admin"
-        get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+        file_id = db_file.id  # Get internal ID for analytics refresh
 
         # Refresh analytics using the analytics service
         from app.services.analytics_service import AnalyticsService

@@ -1,21 +1,21 @@
 <script lang="ts">
   import { useNavigate } from "svelte-navigator";
   import { register, login } from "../stores/auth";
-  
+  import { toastStore } from '../stores/toast';
+
   // Import logo asset for proper Vite processing
   import logoBanner from '../assets/logo-banner.png';
-  
+
   // Explicitly declare props to prevent warnings
   export const location = null;
   export const navigate = null;
   const navigateHook = useNavigate();
-  
+
   // Form data
   let username = "";
   let email = "";
   let password = "";
   let confirmPassword = "";
-  let error = "";
   let loading = false;
   let showPassword = false;
   let showConfirmPassword = false;
@@ -23,59 +23,59 @@
   // Validate form
   function validateForm() {
     if (!username || !email || !password || !confirmPassword) {
-      error = "All fields are required";
+      toastStore.error("All fields are required");
       return false;
     }
-    
+
     if (password !== confirmPassword) {
-      error = "Passwords do not match";
+      toastStore.error("Passwords do not match");
       return false;
     }
-    
+
     if (password.length < 8) {
-      error = "Password must be at least 8 characters long";
+      toastStore.error("Password must be at least 8 characters long");
       return false;
     }
-    
+
     // Simple email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      error = "Please enter a valid email address";
+      toastStore.error("Please enter a valid email address");
       return false;
     }
-    
+
     return true;
   }
-  
+
   // Handle form submission
   async function handleSubmit() {
-    error = "";
     loading = true;
-    
+
     if (!validateForm()) {
       loading = false;
       return;
     }
-    
+
     try {
       // Make sure we're using the right parameters in the right order:
       // register(email, fullName, password) is expected by our auth store
       const result = await register(email, username, password);
-      
+
       if (result.success) {
         // Log the user in automatically after registration
         const loginResult = await login(email, password);
         if (loginResult.success) {
+          toastStore.success("Registration successful! Redirecting...");
           navigateHook("/");
         } else {
-          error = "Registration successful, but login failed. Please try logging in manually.";
+          toastStore.error("Registration successful, but login failed. Please try logging in manually.");
         }
       } else {
-        error = result.message || "Registration failed. Please try again.";
+        toastStore.error(result.message || "Registration failed. Please try again.");
       }
     } catch (err) {
       console.error("Registration error:", err);
-      error = "An unexpected error occurred. Please try again.";
+      toastStore.error("An unexpected error occurred. Please try again.");
     } finally {
       loading = false;
     }
@@ -102,12 +102,6 @@
     </div>
     
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
-      {#if error}
-        <div class="error-message">
-          {error}
-        </div>
-      {/if}
-      
       <div class="form-group">
         <label for="username">Username</label>
         <input
@@ -352,15 +346,7 @@
     font-size: 0.9rem;
     color: var(--text-light);
   }
-  
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-  
+
   .auth-logo {
     text-align: center;
     margin-bottom: 1.5rem;

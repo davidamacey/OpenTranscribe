@@ -5,12 +5,15 @@
   import LLMSettings from '../components/settings/LLMSettings.svelte';
   import PromptSettings from '../components/settings/PromptSettings.svelte';
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '../lib/api/userSettings';
-  
-  // Explicitly declare router props to prevent warnings
-  export let location = null;
-  export let navigate = null;
-  export let condition = true;
-  
+
+  // Router props passed by svelte-navigator
+  export let location: any = null;
+  export let navigate: any = null;
+  export let condition: any = null;
+
+  // Reference props to suppress warnings (will be tree-shaken in production)
+  $: { location; navigate; condition; }
+
   // Form data
   let fullName = '';
   let email = '';
@@ -858,30 +861,10 @@
   }
 
   @media (max-width: 768px) {
-    .tabs-nav {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
-
-    .tabs-nav::-webkit-scrollbar {
-      display: none;
-    }
-
     .tab-button {
       padding: 0.6rem 1rem;
       font-size: 0.8rem;
       flex-shrink: 0;
-    }
-
-    .tab-icon {
-      font-size: 0.9rem;
-    }
-
-    .tab-label {
-      font-size: 0.8rem;
     }
 
     .tab-content {

@@ -12,14 +12,12 @@
   let loading = false;
   let saving = false;
   let testing = false;
-  let error = '';
-  let success = '';
   
   let currentSettings: UserLLMSettings | null = null;
   let supportedProviders: ProviderDefaults[] = [];
   let hasSettings = false;
   let savedConfigurations: UserLLMSettings[] = [];
-  let activeConfigurationId: number | null = null;
+  let activeConfigurationId: string | null = null;
   let editingConfiguration: UserLLMSettings | null = null;
   
   // Modal state
@@ -29,10 +27,6 @@
   let showDeleteConfigModal = false;
   let configToDelete: UserLLMSettings | null = null;
   let showDeleteAllModal = false;
-  
-  // Auto-fade timers for messages
-  let successTimer: NodeJS.Timeout;
-  let errorTimer: NodeJS.Timeout;
   
   // Connection status for active configuration
   let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
@@ -47,14 +41,11 @@
 
   // Cleanup on destroy
   onDestroy(() => {
-    // Clear timers
-    clearTimeout(successTimer);
-    clearTimeout(errorTimer);
+    // Cleanup if needed
   });
 
   async function loadData() {
     loading = true;
-    error = '';
     
     try {
       // Load supported providers
@@ -66,7 +57,7 @@
         const configurationsResponse = await LLMSettingsApi.getUserConfigurations();
         savedConfigurations = configurationsResponse.configurations;
         activeConfigurationId = configurationsResponse.active_configuration_id || null;
-        
+
         if (activeConfigurationId && savedConfigurations.length > 0) {
           currentSettings = savedConfigurations.find(c => c.id === activeConfigurationId) || null;
           hasSettings = true;
@@ -93,7 +84,8 @@
       console.error('Error loading LLM providers:', err);
       // Only show error if it's not related to missing user configurations
       if (!err.message?.includes('LLM') && !err.response?.data?.detail?.includes('configuration')) {
-        error = err.response?.data?.detail || 'Failed to load LLM providers';
+        const errorMsg = err.response?.data?.detail || 'Failed to load LLM providers';
+        toastStore.error(errorMsg, 5000);
       }
     } finally {
       loading = false;
@@ -108,51 +100,33 @@
     }
 
     checkingStatus = true;
-    
+
     try {
       const result = await LLMSettingsApi.testCurrentSettings();
-      
+
       if (result.success) {
         connectionStatus = 'connected';
         statusMessage = result.message;
         statusLastChecked = new Date();
-        
-        // Update the centralized store with success state
-        llmStatusStore.setStatus({
-          available: true,
-          provider: currentSettings?.provider || 'unknown',
-          model: currentSettings?.model_name || 'unknown',
-          lastChecked: statusLastChecked,
-          message: result.message
-        });
+
+        // Refresh the global LLM status store from backend
+        await llmStatusStore.refreshStatus();
       } else {
         connectionStatus = 'disconnected';
         statusMessage = result.message;
         statusLastChecked = new Date();
-        
-        // Update the centralized store with error state
-        llmStatusStore.setStatus({
-          available: false,
-          provider: currentSettings?.provider || 'unknown',
-          model: currentSettings?.model_name || 'unknown',
-          lastChecked: statusLastChecked,
-          message: result.message
-        });
+
+        // Refresh the global LLM status store from backend
+        await llmStatusStore.refreshStatus();
       }
     } catch (err: any) {
       connectionStatus = 'disconnected';
       const errorMsg = err.response?.data?.detail || 'Connection test failed';
       statusMessage = errorMsg;
       statusLastChecked = new Date();
-      
-      // Update the centralized store with error state
-      llmStatusStore.setStatus({
-        available: false,
-        provider: currentSettings?.provider || 'unknown',
-        model: currentSettings?.model_name || 'unknown',
-        lastChecked: statusLastChecked,
-        message: errorMsg
-      });
+
+      // Refresh the global LLM status store from backend
+      await llmStatusStore.refreshStatus();
     } finally {
       checkingStatus = false;
     }
@@ -180,7 +154,6 @@
     }
 
     saving = true;
-    error = '';
 
     try {
       await LLMSettingsApi.setActiveConfiguration(configId);
@@ -192,20 +165,16 @@
       
       // Check status of newly activated configuration
       await checkCurrentStatus();
-      
-      success = 'Configuration activated successfully';
-      clearTimeout(successTimer);
-      successTimer = setTimeout(() => success = '', 5000);
+
+      toastStore.success('Configuration activated successfully', 5000);
       
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
-      error = err.response?.data?.detail || 'Failed to activate configuration';
-      clearTimeout(errorTimer);
-      errorTimer = setTimeout(() => error = '', 8000);
-      toastStore.error(error, 5000);
+      const errorMsg = err.response?.data?.detail || 'Failed to activate configuration';
+      toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
     }
@@ -237,9 +206,8 @@
   
   async function deleteConfiguration() {
     if (!configToDelete) return;
-    
+
     saving = true;
-    error = '';
 
     try {
       await LLMSettingsApi.deleteConfiguration(configToDelete.id);
@@ -257,10 +225,8 @@
         llmStatusStore.reset();
       }
       
-      success = `Configuration "${configToDelete.name}" deleted successfully`;
-      clearTimeout(successTimer);
-      successTimer = setTimeout(() => success = '', 5000);
-      
+      toastStore.success(`Configuration "${configToDelete.name}" deleted successfully`, 5000);
+
       configToDelete = null;
       showDeleteConfigModal = false;
       
@@ -269,10 +235,8 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      error = err.response?.data?.detail || 'Failed to delete configuration';
-      clearTimeout(errorTimer);
-      errorTimer = setTimeout(() => error = '', 8000);
-      toastStore.error(error, 5000);
+      const errorMsg = err.response?.data?.detail || 'Failed to delete configuration';
+      toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
     }
@@ -289,7 +253,6 @@
     }
 
     saving = true;
-    error = '';
 
     try {
       await LLMSettingsApi.deleteSettings();
@@ -305,11 +268,9 @@
       
       // Reset global LLM status store
       llmStatusStore.reset();
-      
-      success = 'All LLM configurations deleted successfully';
-      clearTimeout(successTimer);
-      successTimer = setTimeout(() => success = '', 8000);
-      
+
+      toastStore.success('All LLM configurations deleted successfully', 5000);
+
       showDeleteAllModal = false;
       
       // Trigger parent component update
@@ -317,9 +278,8 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      error = err.response?.data?.detail || 'Failed to delete LLM settings';
-      clearTimeout(errorTimer);
-      errorTimer = setTimeout(() => error = '', 8000);
+      const errorMsg = err.response?.data?.detail || 'Failed to delete LLM settings';
+      toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
     }
@@ -400,17 +360,6 @@
     <p>Configure your preferred Large Language Model provider for AI summarization and speaker identification.</p>
   </div>
 
-  {#if success}
-    <div class="message success">
-      {success}
-    </div>
-  {/if}
-
-  {#if error}
-    <div class="message error">
-      {error}
-    </div>
-  {/if}
 
   {#if loading}
     <div class="loading">Loading LLM settings...</div>
@@ -627,26 +576,6 @@
     line-height: 1.5;
   }
 
-  .message {
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    line-height: 1.4;
-  }
-
-  .message.success {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .message.error {
-    background-color: var(--error-bg);
-    color: var(--error-color);
-    border: 1px solid var(--error-border);
-  }
-
   .loading {
     text-align: center;
     padding: 3rem;
@@ -771,24 +700,6 @@
     font-size: 0.8rem;
     font-weight: 500;
     width: fit-content;
-  }
-
-  .config-status.connected {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .config-status.disconnected {
-    background-color: var(--error-bg);
-    color: var(--error-color);
-    border: 1px solid var(--error-border);
-  }
-
-  .config-status.unknown {
-    background-color: var(--secondary-bg);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
   }
 
   .config-status.currently-active {
@@ -963,15 +874,6 @@
   
   .create-first-config-btn:active {
     transform: translateY(0);
-  }
-
-  .spinner-mini {
-    width: 12px;
-    height: 12px;
-    border: 2px solid transparent;
-    border-top: 2px solid currentColor;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
   }
 
   @keyframes spin {

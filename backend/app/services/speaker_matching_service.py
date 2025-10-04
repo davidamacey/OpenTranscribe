@@ -340,6 +340,7 @@ class SpeakerMatchingService:
         if initial_embedding is not None:
             add_speaker_embedding(
                 speaker_id=profile.id,
+                speaker_uuid=profile.uuid,
                 user_id=user_id,
                 name=name,
                 embedding=initial_embedding.tolist(),
@@ -495,8 +496,18 @@ class SpeakerMatchingService:
         if match["auto_accept"] and match.get("profile_id"):
             from app.services.opensearch_service import update_speaker_profile
 
+            # Get profile UUID
+            profile_uuid = None
+            if speaker.profile_id:
+                profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                if profile:
+                    profile_uuid = str(profile.uuid)
+
             update_speaker_profile(
-                speaker_id=speaker.id, profile_id=speaker.profile_id, verified=speaker.verified
+                speaker_uuid=str(speaker.uuid),
+                profile_id=speaker.profile_id,
+                profile_uuid=profile_uuid,
+                verified=speaker.verified
             )
 
             # Update the profile embedding to include this newly assigned speaker
@@ -511,10 +522,12 @@ class SpeakerMatchingService:
         if aggregated_embedding is not None and aggregated_embedding.size > 0:
             add_speaker_embedding(
                 speaker_id=speaker.id,
+                speaker_uuid=speaker.uuid,
                 user_id=user_id,
                 name=speaker.name,
                 embedding=aggregated_embedding.tolist(),
                 profile_id=speaker.profile_id,  # Include profile_id for cross-video matching
+                profile_uuid=speaker.profile.uuid if speaker.profile else None,
                 display_name=speaker.display_name
                 if speaker.display_name
                 else match["suggested_name"],
@@ -561,10 +574,12 @@ class SpeakerMatchingService:
             )
             add_speaker_embedding(
                 speaker_id=speaker.id,
+                speaker_uuid=speaker.uuid,
                 user_id=user_id,
                 name=speaker.name,
                 embedding=embedding_list,
                 profile_id=speaker.profile_id,  # Include profile_id for cross-video matching
+                profile_uuid=speaker.profile.uuid if speaker.profile else None,
                 display_name=speaker.display_name if speaker.display_name else None,
                 media_file_id=media_file_id,
             )
@@ -648,15 +663,28 @@ class SpeakerMatchingService:
             user_id: User ID for scoping
         """
         try:
-            # Get the matched speaker's embedding
-            from app.services.opensearch_service import get_speaker_embedding
+            # Get the matched speaker object to extract UUID
+            from app.db.base import get_db
+            from app.models.media import Speaker
 
-            embedding = get_speaker_embedding(matched_speaker_id)
-            if not embedding:
-                logger.warning(
-                    f"No embedding found for speaker {matched_speaker_id}, skipping propagation"
-                )
-                return
+            db = next(get_db())
+            try:
+                matched_speaker = db.query(Speaker).filter(Speaker.id == matched_speaker_id).first()
+                if not matched_speaker:
+                    logger.warning(f"Speaker {matched_speaker_id} not found, skipping propagation")
+                    return
+
+                # Get the matched speaker's embedding using UUID
+                from app.services.opensearch_service import get_speaker_embedding
+
+                embedding = get_speaker_embedding(str(matched_speaker.uuid))
+                if not embedding:
+                    logger.warning(
+                        f"No embedding found for speaker {matched_speaker.uuid}, skipping propagation"
+                    )
+                    return
+            finally:
+                db.close()
 
             # Find similar speakers using OpenSearch with high confidence threshold
             from app.services.similarity_service import SimilarityService
@@ -705,10 +733,18 @@ class SpeakerMatchingService:
                 # Bulk update OpenSearch
                 from app.services.opensearch_service import update_speaker_profile
 
+                # Get profile UUID
+                profile_uuid = None
+                if profile_id:
+                    profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+                    if profile:
+                        profile_uuid = str(profile.uuid)
+
                 for speaker in updated_speakers:
                     update_speaker_profile(
-                        speaker_id=speaker.id,
+                        speaker_uuid=str(speaker.uuid),
                         profile_id=speaker.profile_id,
+                        profile_uuid=profile_uuid,
                         verified=speaker.verified,
                     )
 
@@ -748,6 +784,7 @@ class SpeakerMatchingService:
             # Update in OpenSearch
             add_speaker_embedding(
                 speaker_id=profile_id,
+                speaker_uuid=profile.uuid,
                 user_id=profile.user_id,
                 name=profile.name,
                 embedding=embedding.tolist(),
@@ -836,6 +873,19 @@ class SpeakerMatchingService:
             from app.services.opensearch_service import opensearch_client
             from app.services.opensearch_service import settings
 
+            # Build filters array following OpenSearch 2.5 pattern
+            filters = [{"term": {"user_id": user_id}}]
+
+            # Add must_not wrapped in nested bool (OpenSearch 2.5 requirement)
+            filters.append({
+                "bool": {
+                    "must_not": [
+                        {"term": {"speaker_id": new_speaker_id}},
+                        {"exists": {"field": "document_type"}}  # Exclude profile documents
+                    ]
+                }
+            })
+
             query = {
                 "size": 20,  # Get more potential matches
                 "query": {
@@ -843,21 +893,7 @@ class SpeakerMatchingService:
                         "embedding": {
                             "vector": embedding.tolist(),
                             "k": 20,
-                            "filter": {
-                                "bool": {
-                                    "filter": [
-                                        {"term": {"user_id": user_id}},
-                                        {
-                                            "bool": {
-                                                "must_not": [
-                                                    {"term": {"speaker_id": new_speaker_id}},
-                                                    {"exists": {"field": "document_type"}}  # Exclude profile documents
-                                                ]
-                                            }
-                                        },
-                                    ]
-                                }
-                            },
+                            "filter": {"bool": {"filter": filters}},
                         }
                     }
                 },

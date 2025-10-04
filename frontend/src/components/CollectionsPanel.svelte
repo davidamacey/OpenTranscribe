@@ -6,14 +6,13 @@
   import ConfirmationModal from './ConfirmationModal.svelte';
   
   // Props
-  export let selectedMediaIds: number[] = [];
-  export let onCollectionSelect: (collectionId: number) => void = () => {};
+  export let selectedMediaIds: string[] = [];  // UUIDs
+  export let onCollectionSelect: (collectionId: string) => void = () => {};  // UUID
   export let viewMode: 'manage' | 'add' = 'manage';
-  
+
   // State
   let collections: any[] = [];
   let loading = false;
-  let error = '';
   let showCreateModal = false;
   let showEditModal = false;
   let showDeleteConfirm = false;
@@ -26,20 +25,19 @@
   let creating = false;
   let updating = false;
   let deleting = false;
-  let selectedCollectionId: number | null = null;
+  let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
   
   // Fetch collections
   async function fetchCollections() {
     loading = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.get('/api/collections/');
       collections = response.data;
     } catch (err: any) {
       console.error('Error fetching collections:', err);
-      error = 'Failed to load collections';
+      toastStore.error('Failed to load collections');
     } finally {
       loading = false;
     }
@@ -48,22 +46,21 @@
   // Create new collection
   async function createCollection() {
     if (!newCollectionName.trim()) return;
-    
+
     creating = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.post('/api/collections/', {
         name: newCollectionName.trim(),
         description: newCollectionDescription.trim() || null
       });
-      
+
       collections = [...collections, { ...response.data, media_count: 0 }];
-      
+
       // Reset form for potential next collection
       newCollectionName = '';
       newCollectionDescription = '';
-      
+
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
         await addMediaToCollection(response.data.id);
@@ -79,7 +76,7 @@
       }
     } catch (err: any) {
       console.error('Error creating collection:', err);
-      error = err.response?.data?.detail || 'Failed to create collection';
+      toastStore.error(err.response?.data?.detail || 'Failed to create collection');
     } finally {
       creating = false;
     }
@@ -90,8 +87,7 @@
     if (!collectionToEdit || !editCollectionName.trim()) return;
     
     updating = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.put(`/api/collections/${collectionToEdit.id}`, {
         name: editCollectionName.trim(),
@@ -131,18 +127,17 @@
   // Delete collection
   async function deleteCollection() {
     if (!collectionToDelete) return;
-    
+
     deleting = true;
-    error = '';
-    
+
     try {
       await axiosInstance.delete(`/api/collections/${collectionToDelete.id}`);
       collections = collections.filter(col => col.id !== collectionToDelete.id);
-      
+
       if (selectedCollectionId === collectionToDelete.id) {
         selectedCollectionId = null;
       }
-      
+
       toastStore.success(`Collection "${collectionToDelete.name}" deleted successfully`);
       showDeleteConfirm = false;
       collectionToDelete = null;
@@ -170,8 +165,7 @@
     if (!selectedMediaIds.length) return;
     
     addingToCollection = true;
-    error = '';
-    
+
     try {
       const response = await axiosInstance.post(`/api/collections/${collectionId}/media`, {
         media_file_ids: selectedMediaIds
@@ -192,7 +186,7 @@
       onCollectionSelect(collectionId);
     } catch (err: any) {
       console.error('Error adding media to collection:', err);
-      error = err.response?.data?.detail || 'Failed to add media to collection';
+      toastStore.error(err.response?.data?.detail || 'Failed to add media to collection');
     } finally {
       addingToCollection = false;
     }
@@ -219,7 +213,6 @@
     <button 
       class="btn-create"
       on:click={() => {
-        error = '';
         showCreateModal = true;
       }}
       disabled={creating}
@@ -228,13 +221,7 @@
       New Collection
     </button>
   </div>
-  
-  {#if error}
-    <div class="error-message" transition:slide>
-      {error}
-    </div>
-  {/if}
-  
+
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
@@ -248,10 +235,13 @@
   {:else}
     <div class="collections-list">
       {#each collections as collection (collection.id)}
-        <div 
+        <div
           class="collection-card"
           class:selected={selectedCollectionId === collection.id}
+          role="button"
+          tabindex="0"
           on:click={() => handleCollectionClick(collection)}
+          on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleCollectionClick(collection)}
           transition:slide
         >
           <div class="collection-info">
@@ -308,8 +298,26 @@
   
   <!-- Create Collection Modal -->
   {#if showCreateModal}
-    <div class="modal-overlay" on:click={() => showCreateModal = false} transition:fade>
-      <div class="modal-content" on:click|stopPropagation transition:slide>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={() => showCreateModal = false}
+      on:keydown={(e) => e.key === 'Escape' && (() => showCreateModal = false)()}
+      transition:fade
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+        transition:slide
+      >
         <div class="modal-header">
           <h3>Create New Collection</h3>
           <button 
@@ -380,8 +388,26 @@
   
   <!-- Edit Collection Modal -->
   {#if showEditModal && collectionToEdit}
-    <div class="modal-overlay" on:click={() => showEditModal = false} transition:fade>
-      <div class="modal-content" on:click|stopPropagation transition:slide>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div
+      class="modal-overlay"
+      role="presentation"
+      on:click={() => showEditModal = false}
+      on:keydown={(e) => e.key === 'Escape' && (() => showEditModal = false)()}
+      transition:fade
+    >
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+        transition:slide
+      >
         <div class="modal-header">
           <h3>Edit Collection</h3>
           <button 
@@ -530,17 +556,7 @@
     color: white;
     font-weight: bold;
   }
-  
-  .error-message {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: var(--error-color);
-    padding: 12px;
-    border-radius: 6px;
-    margin-bottom: 16px;
-    font-size: 14px;
-  }
-  
+
   .loading {
     display: flex;
     flex-direction: column;
@@ -922,44 +938,33 @@
   :global(.dark) .modal-overlay {
     background: rgba(0, 0, 0, 0.7);
   }
-  
-  :global(.dark) .modal {
-    background: var(--surface-color);
-    color: var(--text-primary);
-  }
-  
+
   :global(.dark) .form-group input,
   :global(.dark) .form-group textarea {
     background: rgba(255, 255, 255, 0.03);
     color: var(--text-primary);
     border-color: var(--border-color);
   }
-  
+
   :global(.dark) .form-group input:focus,
   :global(.dark) .form-group textarea:focus {
     background: rgba(255, 255, 255, 0.05);
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
-  
+
   :global(.dark) .form-group input:hover,
   :global(.dark) .form-group textarea:hover {
     background: rgba(255, 255, 255, 0.04);
     border-color: var(--primary-color);
   }
-  
+
   :global(.dark) .collection-card {
     background: var(--card-background);
     border-color: var(--border-color);
   }
-  
-  :global(.dark) .btn-secondary {
-    background: var(--surface-secondary);
-    color: var(--text-primary);
-    border-color: var(--border-color);
-  }
-  
-  
+
+
   :global(.dark) .badge.public {
     background: rgba(34, 197, 94, 0.2);
     color: #4ade80;

@@ -6,20 +6,19 @@
   import { authStore } from '../stores/auth';
   import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  
+  import { toastStore } from '../stores/toast';
+
   // The Svelte component is exported by default automatically
-  
+
   /** @type {string} */
   export let fileId = "";
   /** @type {number} */
   export let currentTime = 0;
-  
-  /** @type {Array<{id: number, text: string, timestamp: number, user: {id: number, email?: string, full_name?: string, username?: string}, created_at: string}>} */
+
+  /** @type {Array<{id: string, text: string, timestamp: number, user: {id: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
-  /** @type {string|null} */
-  let error = null;
   /** @type {string} */
   let newComment = '';
   /** @type {number|null} */
@@ -66,24 +65,21 @@
   
   async function fetchComments() {
     loading = true;
-    error = null;
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      // Make sure we have a valid numeric file ID
-      const numericFileId = Number(fileId);
-      
-      // Validate fileId is a valid number
-      if (isNaN(numericFileId) || numericFileId <= 0) {
+
+      // Validate fileId
+      if (!fileId) {
         console.error('Invalid file ID:', fileId);
-        error = 'Invalid file ID provided';
+        toastStore.error('Invalid file ID provided');
         loading = false;
         return;
       }
-      
+
       if (!token) {
         console.error('No auth token found in localStorage');
-        error = 'You need to be logged in to view comments';
+        toastStore.error('You need to be logged in to view comments');
         loading = false;
         return;
       }
@@ -96,14 +92,14 @@
       
       let response;
       try {
-        const endpoint = `/comments/files/${numericFileId}/comments`;
+        const endpoint = `/comments/files/${fileId}/comments`;
         response = await axiosInstance.get(endpoint, { headers });
       } catch (/** @type {any} */ error) {
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
         
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          error = 'You need to be logged in to view comments';
+          toastStore.error('You need to be logged in to view comments');
           loading = false;
           return;
         }
@@ -112,22 +108,22 @@
         if (error.response?.status === 404) {
           try {
             // Try the legacy endpoint without leading slash as fallback
-            response = await axiosInstance.get(`files/${numericFileId}/comments`, { headers });
+            response = await axiosInstance.get(`files/${fileId}/comments`, { headers });
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
-              response = await axiosInstance.get('/comments', { 
-                params: { media_file_id: numericFileId },
-                headers 
+              response = await axiosInstance.get('/comments', {
+                params: { media_file_id: fileId },
+                headers
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
-              error = `Failed to load comments: ${lastError.message}`;
+              toastStore.error(`Failed to load comments: ${lastError.message}`);
               return;
             }
           }
         } else {
-          error = `Failed to load comments: ${error.message}`;
+          toastStore.error(`Failed to load comments: ${error.message}`);
           return;
         }
       }
@@ -171,11 +167,11 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to view comments.';
+        toastStore.error('You need to be logged in to view comments.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server.';
+        toastStore.error('Network error: Cannot connect to server.');
       } else {
-        error = `Failed to load comments: ${err.message}`;
+        toastStore.error(`Failed to load comments: ${err.message}`);
       }
     } finally {
       loading = false;
@@ -203,11 +199,10 @@
       
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      const numericFileId = Number(fileId);
-      
+
       if (!token) {
         console.error('No auth token found in localStorage');
-        error = 'You need to be logged in to add comments';
+        toastStore.error('You need to be logged in to add comments');
         return;
       }
 
@@ -222,13 +217,13 @@
       try {
         // The correct endpoint without leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
-        const endpoint = `comments/files/${numericFileId}/comments`;
-        
+        const endpoint = `comments/files/${fileId}/comments`;
+
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
           text: newComment,
           timestamp: timestamp,
-          media_file_id: numericFileId // Required by the CommentCreate schema
+          media_file_id: fileId // Required by the CommentCreate schema
         };
         
         // Ensure token is included in the headers
@@ -245,10 +240,10 @@
         
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          error = 'You need to be logged in to add comments';
+          toastStore.error('You need to be logged in to add comments');
           return;
         }
-        
+
         // Try alternate endpoints as fallback if we get a 404
         if (error.response?.status === 404) {
           try {
@@ -257,9 +252,9 @@
             const legacyPayload = {
               text: newComment,
               timestamp: timestamp,
-              media_file_id: numericFileId // Required by the CommentCreate schema
+              media_file_id: fileId // Required by the CommentCreate schema
             };
-            response = await axiosInstance.post(`files/${numericFileId}/comments`, legacyPayload, { headers });
+            response = await axiosInstance.post(`files/${fileId}/comments`, legacyPayload, { headers });
             // Successfully added comment using main endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
@@ -268,17 +263,17 @@
               response = await axiosInstance.post('comments', {
                 text: newComment,
                 timestamp,
-                media_file_id: numericFileId // Required by the CommentCreate schema
+                media_file_id: fileId // Required by the CommentCreate schema
               }, { headers });
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
-              error = `Failed to add comment: ${lastError.message}`;
+              toastStore.error(`Failed to add comment: ${lastError.message}`);
               return;
             }
           }
         } else {
-          error = `Failed to add comment: ${error.message}`;
+          toastStore.error(`Failed to add comment: ${error.message}`);
           return;
         }
       }
@@ -297,7 +292,7 @@
       };
       
       comments = [...comments, commentWithUser];
-      comments.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+      comments.sort((a, b) => a.timestamp - b.timestamp);
       newComment = '';
       timestampInput = null;
       dispatch('commentAdded', commentWithUser);
@@ -312,11 +307,11 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to add comments.';
+        toastStore.error('You need to be logged in to add comments.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server.';
+        toastStore.error('Network error: Cannot connect to server.');
       } else {
-        error = `Failed to add comment: ${err.message}`;
+        toastStore.error(`Failed to add comment: ${err.message}`);
       }
     }
   }
@@ -329,18 +324,18 @@
    */
   async function editComment(commentId, newText) {
     if (!newText || !newText.trim()) {
-      error = 'Comment text cannot be empty';
+      toastStore.error('Comment text cannot be empty');
       return;
     }
-    
+
     try {
       // Editing comment
       
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      
+
       if (!token) {
-        error = 'You need to be logged in to edit comments';
+        toastStore.error('You need to be logged in to edit comments');
         return;
       }
       
@@ -387,9 +382,9 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to edit comments.';
+        toastStore.error('You need to be logged in to edit comments.');
       } else {
-        error = `Failed to edit comment: ${err.message}`;
+        toastStore.error(`Failed to edit comment: ${err.message}`);
       }
     }
   }
@@ -447,9 +442,9 @@
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
       // Deleting comment
-      
+
       if (!token) {
-        error = 'You need to be logged in to delete comments';
+        toastStore.error('You need to be logged in to delete comments');
         return;
       }
       
@@ -483,9 +478,9 @@
       
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        error = 'You need to be logged in to delete comments.';
+        toastStore.error('You need to be logged in to delete comments.');
       } else {
-        error = `Failed to delete comment: ${err.message}`;
+        toastStore.error(`Failed to delete comment: ${err.message}`);
       }
     }
   }
@@ -524,9 +519,9 @@
    */
   function isCommentAuthor(userId) {
     if (!$authStore.user) return false;
-    
-    // Convert both to numbers for comparison to avoid string vs number comparison issues
-    return Number($authStore.user.id) === Number(userId);
+
+    // UUIDs are strings, so compare directly
+    return $authStore.user.id === userId;
   }
 </script>
 
@@ -542,17 +537,7 @@
       {/if}
     </div>
   </div>
-  <!-- Error message if needed -->
-  {#if error}
-    <div class="error-message">
-      <p>{error}</p>
-      <button 
-        on:click={fetchComments}
-        title="Retry loading comments"
-      >Try Again</button>
-    </div>
-  {/if}
-  
+
   <!-- Fixed comment form at the top -->
   <div class="comment-form-container">
     <form class="comment-form" on:submit={addComment}>
@@ -1128,32 +1113,6 @@
     text-align: center;
     color: var(--text-light);
     font-size: 0.9rem;
-  }
-  
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  
-  .error-message p {
-    margin: 0;
-  }
-  
-  .error-message button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
   }
 
   /* Modal button styling to match app design */

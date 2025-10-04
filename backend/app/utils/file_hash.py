@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 async def check_duplicate_by_hash(
     db_session, file_hash: str, user_id: Optional[int] = None
-) -> Optional[int]:
+) -> Optional[str]:
     """
     Check if a file with the same hash exists in the database.
     Only considers files that are not in ERROR, CANCELLED, or ORPHANED status.
@@ -28,7 +28,7 @@ async def check_duplicate_by_hash(
         user_id: Optional user ID to restrict the search to a specific user
 
     Returns:
-        The ID of the duplicate file if found, None otherwise
+        The UUID of the duplicate file if found, None otherwise
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
@@ -51,7 +51,7 @@ async def check_duplicate_by_hash(
     duplicate = query.first()
 
     if duplicate:
-        return duplicate.id
+        return str(duplicate.uuid)  # Return UUID string for frontend
 
     return None
 

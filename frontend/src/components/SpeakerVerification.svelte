@@ -5,14 +5,14 @@
   import { getSpeakerColor } from '$lib/utils/speakerColors';
 
   export let speaker: {
-    id: number;
+    id: string;  // UUID
     name: string;
     display_name?: string;
     verified: boolean;
     confidence?: number;
   };
   export let suggestions: {
-    profile_id?: number;
+    profile_id?: string;  // UUID
     profile_name: string;
     confidence: number;
     confidence_level: string;
@@ -22,7 +22,7 @@
     create_new?: boolean;
   }[] = [];
   export let crossMediaOccurrences: {
-    media_file_id: number;
+    media_file_id: string;  // UUID
     filename: string;
     title: string;
     upload_time: string;
@@ -90,8 +90,8 @@
   function confirmAction() {
     const actionData: {
       action: string;
-      speaker_id: number;
-      profile_id?: number;
+      speaker_id: string;  // UUID
+      profile_id?: string;  // UUID
       profile_name?: string;
     } = {
       action: selectedAction,

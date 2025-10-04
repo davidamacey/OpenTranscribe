@@ -15,13 +15,15 @@
   export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
   export let savingSpeakers: boolean = false;
-  export let transcriptError: string = '';
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
   export let speakerList: any[] = [];
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
+
+  // Reference reprocessing to suppress warning (will be tree-shaken in production)
+  $: { reprocessing; }
 
   const dispatch = createEventDispatcher();
   
@@ -120,6 +122,15 @@
 
   function handleReprocess(event: any) {
     dispatch('reprocess', event.detail);
+  }
+
+  // Helper function to check if speaker has cross-video matches to display
+  function hasCrossVideoMatches(speaker: any): boolean {
+    if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
+      return false;
+    }
+    return (speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')) ||
+           speaker.cross_video_matches.some((match: any) => match.individual_matches && match.individual_matches.length > 0);
   }
 
   // Search event handlers
@@ -284,9 +295,6 @@
           title="Cancel editing and discard all changes"
         >Cancel</button>
       </div>
-      {#if transcriptError}
-        <p class="error-message small">{transcriptError}</p>
-      {/if}
     {:else}
       <div bind:this={transcriptContainer} class="transcript-display-container">
         <div class="transcript-display">
@@ -316,9 +324,6 @@
                       {savingTranscript ? 'Saving...' : 'Save'}
                     </button>
                   </div>
-                  {#if transcriptError}
-                    <p class="error-message small">{transcriptError}</p>
-                  {/if}
                 </div>
               </div>
             {:else}
@@ -658,10 +663,7 @@
                     {/if}
                     
                     <!-- Cross-video speaker detection - Below text input -->
-                    {#if speaker.cross_video_matches && speaker.cross_video_matches.length > 0 && (
-                      (speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')) ||
-                      speaker.cross_video_matches.some(match => match.individual_matches && match.individual_matches.length > 0)
-                    )}
+                    {#if hasCrossVideoMatches(speaker)}
                       <div class="cross-video-compact">
                         <div class="compact-header" role="button" tabindex="0" on:click={() => speaker.showMatches = !speaker.showMatches} on:keydown={(e) => e.key === 'Enter' && (speaker.showMatches = !speaker.showMatches)}>
                           <span class="compact-text">
@@ -1365,127 +1367,6 @@
 
 
   /* Embedding Suggestion Interface */
-  .embedding-suggestion-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    background: var(--surface-color, #f1f5f9);
-    border: 1px solid var(--border-color, #e2e8f0);
-    border-radius: 8px;
-    border-left: 4px solid var(--accent-color, #8b5cf6);
-  }
-
-  :global(.dark) .embedding-suggestion-info {
-    background: var(--surface-color, #1e293b);
-    border-color: var(--border-color, #475569);
-  }
-
-  .embedding-badge {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--accent-color, #8b5cf6);
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-  }
-
-  .embedding-badge svg {
-    color: var(--accent-color, #8b5cf6);
-  }
-
-  .embedding-suggestions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .embedding-suggestion-button {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    color: white;
-  }
-
-  .embedding-suggestion-button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Color coding based on confidence */
-  .embedding-suggestion-button.high-confidence {
-    background: #059669;
-  }
-
-  .embedding-suggestion-button.high-confidence:hover {
-    background: #047857;
-  }
-
-  .embedding-suggestion-button.medium-confidence {
-    background: #0891b2;
-  }
-
-  .embedding-suggestion-button.medium-confidence:hover {
-    background: #0e7490;
-  }
-
-  .embedding-suggestion-button.low-confidence {
-    background: #7c3aed;
-  }
-
-  .embedding-suggestion-button.low-confidence:hover {
-    background: #6d28d9;
-  }
-
-  /* Profile-specific styling */
-  .embedding-suggestion-button.profile-suggestion {
-    border-left: 4px solid #f59e0b;
-    background: linear-gradient(135deg, #0891b2, #0e7490);
-  }
-
-  .embedding-suggestion-button.profile-suggestion:hover {
-    background: linear-gradient(135deg, #0e7490, #0f766e);
-  }
-
-  .suggestion-content {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    flex: 1;
-    gap: 0.25rem;
-  }
-
-  .suggestion-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-  }
-
-  .suggestion-name {
-    font-weight: 600;
-    font-size: 0.875rem;
-  }
-
-  .profile-badge {
-    background: #f59e0b;
-    color: white;
-    font-size: 0.625rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 0.25rem;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-  }
 
   .speaker-profile-badge {
     background: #f59e0b;
@@ -1513,26 +1394,6 @@
     font-weight: 600;
   }
 
-  .suggestion-details {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .suggestion-reason {
-    font-size: 0.75rem;
-    opacity: 0.9;
-    font-style: italic;
-  }
-
-  .embedding-confidence {
-    font-size: 0.75rem;
-    background: rgba(255, 255, 255, 0.2);
-    padding: 0.125rem 0.375rem;
-    border-radius: 12px;
-    font-weight: 600;
-  }
-
   .profile-mini-badge {
     background: #f59e0b;
     color: white;
@@ -1548,24 +1409,6 @@
     height: 1rem;
   }
 
-  .embedding-help {
-    font-size: 0.7rem;
-    color: var(--text-secondary-color, #6b7280);
-    text-align: center;
-    font-style: italic;
-  }
-
-  .no-matches-message {
-    font-size: 0.75rem;
-    color: var(--warning-color, #f59e0b);
-    text-align: center;
-    font-style: italic;
-    padding: 8px;
-    background: var(--warning-bg, rgba(245, 158, 11, 0.1));
-    border-radius: 4px;
-    border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.3));
-  }
-  
   
 
 
@@ -1613,17 +1456,6 @@
   
   .save-speakers-button .spinner {
     margin-right: 0.5rem;
-  }
-
-  .error-message {
-    color: var(--error-color);
-    font-size: 14px;
-    margin: 8px 0;
-  }
-
-  .error-message.small {
-    font-size: 12px;
-    margin: 4px 0;
   }
 
   @media (max-width: 768px) {
@@ -1794,13 +1626,7 @@
     background-color: var(--background-main);
     border-color: var(--border-color);
   }
-  
-  .compact-match.current-file {
-    background-color: rgba(34, 197, 94, 0.1);
-    border-color: var(--success-color);
-    font-weight: 500;
-  }
-  
+
   .match-text {
     flex: 1;
     color: var(--text-color);
