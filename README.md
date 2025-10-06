@@ -821,8 +821,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Useful Links
 
 - 📚 **Documentation**:
+  - [Database Schema & Architecture](docs/database-schema.md) - ERD diagrams and system architecture
   - [Backend Documentation](docs/BACKEND_DOCUMENTATION.md)
   - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_README.md) - Best practices for LLM prompts
+  - [Scripts Documentation](scripts/README.md) - Docker build and deployment guide
 - 🛠️ **API Reference**: http://localhost:5174/docs (when running)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
 - 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)
