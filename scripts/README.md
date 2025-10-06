@@ -1,5 +1,281 @@
 # OpenTranscribe Build Scripts
 
+This directory contains scripts for building Docker images, creating offline packages, and managing deployments.
+
+## Scripts Overview
+
+- **[docker-build-push.sh](#docker-build--push-script)** - Build and push Docker images to DockerHub
+- **[build-offline-package.sh](#offline-package-builder)** - Create air-gapped deployment packages
+- **[install-offline-package.sh](#installation-script)** - Install OpenTranscribe on offline systems
+- **[opentr-offline.sh](#offline-management-wrapper)** - Manage offline installations
+- **[download-models.py](#model-downloader)** - Download AI models for offline packaging
+
+---
+
+## Offline Package Builder
+
+Create complete offline installation packages for air-gapped deployments.
+
+### Prerequisites
+
+**Internet-connected build system:**
+- Docker 20.10+
+- Docker Compose v2+
+- 100GB free disk space
+- HuggingFace account and token
+- `tar`, `xz`, `git` installed
+
+### Usage
+
+```bash
+# Set your HuggingFace token
+export HUGGINGFACE_TOKEN=your_token_here
+
+# Run the builder
+./scripts/build-offline-package.sh [version]
+
+# Example with custom version
+./scripts/build-offline-package.sh v2.0.1
+
+# Without version (uses git commit SHA)
+./scripts/build-offline-package.sh
+```
+
+### What It Does
+
+1. **Validates** system requirements and Docker setup
+2. **Pulls** all required Docker images from DockerHub:
+   - `davidamacey/opentranscribe-backend:latest` (~13.8GB)
+   - `davidamacey/opentranscribe-frontend:latest` (~51MB)
+   - `postgres:14-alpine` (~220MB)
+   - `redis:7-alpine` (~30MB)
+   - `minio/minio:latest` (~175MB)
+   - `opensearchproject/opensearch:2.5.0` (~800MB)
+3. **Downloads** AI models (~38GB):
+   - WhisperX models (~1.5GB)
+   - PyAnnote diarization models (~500MB)
+   - Wav2Vec2 alignment models (~360MB)
+4. **Packages** configuration files and scripts
+5. **Creates** checksums for integrity verification
+6. **Compresses** everything with multi-threaded xz compression
+
+### Output
+
+```
+offline-package-build/
+├── opentranscribe-offline-v{version}.tar.xz      (~15-20GB compressed)
+└── opentranscribe-offline-v{version}.tar.xz.sha256
+```
+
+### Build Time
+
+- Image pulling: 10-20 minutes
+- Model downloading: 30-60 minutes
+- Compression: 30-60 minutes
+- **Total: 1-2 hours**
+
+### Package Contents
+
+```
+opentranscribe-offline-v{version}/
+├── install.sh                          # Installation script
+├── opentr-offline.sh                   # Management wrapper
+├── docker-images/                      # Docker image tar files
+│   ├── backend.tar
+│   ├── frontend.tar
+│   ├── postgres.tar
+│   ├── redis.tar
+│   ├── minio.tar
+│   ├── opensearch.tar
+│   └── metadata.json
+├── models/                             # Pre-downloaded AI models
+│   ├── huggingface/
+│   ├── torch/
+│   └── model_manifest.json
+├── config/
+│   ├── docker-compose.offline.yml
+│   ├── .env.template
+│   └── nginx.conf
+├── database/
+│   └── init_db.sql
+├── scripts/
+│   ├── common.sh
+│   └── download-models.py
+├── checksums.sha256
+├── package-info.json
+└── README-OFFLINE.md
+```
+
+### Verification
+
+```bash
+cd offline-package-build
+sha256sum -c opentranscribe-offline-v*.tar.xz.sha256
+```
+
+### Transfer to Air-Gapped System
+
+Transfer the `.tar.xz` file and `.sha256` checksum file to your offline system using:
+- USB drive
+- Network file transfer (if available)
+- Physical media
+
+---
+
+## Installation Script
+
+Installs OpenTranscribe on air-gapped systems with no internet access.
+
+### Prerequisites (Target System)
+
+- Ubuntu 20.04+ or compatible Linux
+- Docker 20.10+
+- Docker Compose v2+
+- NVIDIA GPU (recommended) with drivers and Container Toolkit
+- 80GB free disk space
+- Root/sudo access
+
+### Usage
+
+```bash
+# Extract package
+tar -xf opentranscribe-offline-v*.tar.xz
+cd opentranscribe-offline-v*/
+
+# Run installer
+sudo ./install.sh
+```
+
+### Installation Process
+
+1. **System validation** - Checks Docker, GPU, disk space
+2. **Package verification** - Validates checksums
+3. **Image loading** - Loads Docker images (15-30 min)
+4. **File installation** - Copies files to `/opt/opentranscribe/`
+5. **Model installation** - Copies AI models (10-20 min)
+6. **Configuration** - Creates `.env` with auto-detected settings
+7. **Permissions** - Sets proper file permissions
+
+### Installation Time
+
+- System validation: 1-2 minutes
+- Docker images: 15-30 minutes
+- Model installation: 10-20 minutes
+- **Total: 30-60 minutes**
+
+### Post-Installation
+
+1. Edit configuration:
+   ```bash
+   sudo nano /opt/opentranscribe/.env
+   ```
+
+2. Set HuggingFace token (REQUIRED):
+   ```bash
+   HUGGINGFACE_TOKEN=your_token_here
+   ```
+
+3. Start services:
+   ```bash
+   cd /opt/opentranscribe
+   sudo ./opentr.sh start
+   ```
+
+---
+
+## Offline Management Wrapper
+
+Management script for offline OpenTranscribe installations.
+
+### Location
+
+Installed at: `/opt/opentranscribe/opentr.sh`
+
+### Commands
+
+```bash
+# Basic operations
+sudo ./opentr.sh start              # Start all services
+sudo ./opentr.sh stop               # Stop all services
+sudo ./opentr.sh restart            # Restart all services
+sudo ./opentr.sh status             # Show status
+sudo ./opentr.sh logs [service]     # View logs
+
+# Service management
+sudo ./opentr.sh restart-backend    # Restart backend only
+sudo ./opentr.sh restart-frontend   # Restart frontend only
+sudo ./opentr.sh shell [service]    # Open shell in container
+
+# Maintenance
+sudo ./opentr.sh health             # Check service health
+sudo ./opentr.sh backup             # Create database backup
+sudo ./opentr.sh clean              # Clean Docker resources
+```
+
+### Examples
+
+```bash
+cd /opt/opentranscribe
+
+# Start and check status
+sudo ./opentr.sh start
+sudo ./opentr.sh status
+
+# View specific logs
+sudo ./opentr.sh logs backend
+sudo ./opentr.sh logs celery-worker
+
+# Backup before updates
+sudo ./opentr.sh backup
+
+# Restart after config changes
+sudo ./opentr.sh restart-backend
+```
+
+---
+
+## Model Downloader
+
+Python script for downloading AI models during package building.
+
+### Purpose
+
+Downloads all required AI models for offline packaging:
+- WhisperX transcription models
+- PyAnnote speaker diarization models
+- Wav2Vec2 alignment models
+
+### Usage
+
+**Typically run automatically by build-offline-package.sh**, but can be run manually:
+
+```bash
+# Set environment variables
+export HUGGINGFACE_TOKEN=your_token_here
+export WHISPER_MODEL=large-v2
+export DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
+
+# Run in Docker container
+docker run --rm \
+    --gpus all \
+    -e HUGGINGFACE_TOKEN \
+    -e WHISPER_MODEL \
+    -e DIARIZATION_MODEL \
+    -v ./models/huggingface:/root/.cache/huggingface \
+    -v ./models/torch:/root/.cache/torch \
+    -v ./scripts/download-models.py:/app/download-models.py \
+    davidamacey/opentranscribe-backend:latest \
+    python /app/download-models.py
+```
+
+### Output
+
+- Downloads models to cache directories
+- Creates `model_manifest.json` with metadata
+- Reports total cache size and status
+
+---
+
 ## Docker Build & Push Script
 
 Quick solution for building and pushing Docker images to Docker Hub locally while GitHub Actions handles automated deployments.

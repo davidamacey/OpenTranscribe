@@ -1,0 +1,557 @@
+# OpenTranscribe Offline Installation Guide
+
+Complete guide for deploying OpenTranscribe on air-gapped systems with no internet access.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [System Requirements](#system-requirements)
+- [Building the Offline Package](#building-the-offline-package)
+- [Installing on Air-Gapped System](#installing-on-air-gapped-system)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
+- [Maintenance](#maintenance)
+- [Uninstallation](#uninstallation)
+
+## Overview
+
+The OpenTranscribe offline package provides a complete, self-contained deployment solution for air-gapped environments. The package includes:
+
+- All Docker container images
+- Pre-downloaded AI models (~38GB)
+- Configuration files and templates
+- Installation and management scripts
+- Complete documentation
+
+**Package Size:** 15-20GB compressed (tar.xz), ~60GB uncompressed
+
+## System Requirements
+
+### Build System (Internet-Connected)
+Required to create the offline package:
+
+- Ubuntu 20.04+ or similar Linux distribution
+- Docker 20.10+
+- Docker Compose v2+
+- 100GB free disk space
+- Fast internet connection
+- HuggingFace account and token
+
+### Target System (Air-Gapped)
+System where OpenTranscribe will be installed:
+
+- Ubuntu 20.04+ (recommended) or compatible Linux distribution
+- Docker 20.10 or later
+- Docker Compose v2+
+- NVIDIA GPU with CUDA support (recommended)
+  - Minimum: 8GB VRAM
+  - Recommended: 16GB+ VRAM
+- NVIDIA GPU drivers (470.x or later)
+- NVIDIA Container Toolkit
+- 80GB free disk space
+- 16GB RAM minimum (32GB recommended)
+- CPU: 4+ cores recommended
+
+**Note:** OpenTranscribe can run without a GPU in CPU mode, but transcription will be significantly slower.
+
+## Building the Offline Package
+
+### Prerequisites
+
+1. **Set HuggingFace Token:**
+   ```bash
+   export HUGGINGFACE_TOKEN=your_token_here
+   ```
+   Get your token at: https://huggingface.co/settings/tokens
+
+2. **Clone Repository:**
+   ```bash
+   git clone https://github.com/davidamacey/opentranscribe.git
+   cd opentranscribe
+   ```
+
+### Build Process
+
+1. **Run the Build Script:**
+   ```bash
+   ./scripts/build-offline-package.sh
+   ```
+
+   The script will:
+   - Validate system requirements
+   - Pull all required Docker images from DockerHub
+   - Download AI models using your HuggingFace token
+   - Package configuration files and scripts
+   - Create integrity checksums
+   - Compress everything with multi-threaded xz
+
+2. **Build Duration:**
+   - Image pulling: 10-20 minutes
+   - Model downloading: 30-60 minutes
+   - Compression: 30-60 minutes
+   - **Total: 1-2 hours**
+
+3. **Output:**
+   ```
+   offline-package-build/
+   ├── opentranscribe-offline-v{version}.tar.xz      (~15-20GB)
+   └── opentranscribe-offline-v{version}.tar.xz.sha256
+   ```
+
+4. **Verify Package:**
+   ```bash
+   cd offline-package-build
+   sha256sum -c opentranscribe-offline-v*.tar.xz.sha256
+   ```
+
+### Transfer to Air-Gapped System
+
+Transfer both files to your air-gapped system using your preferred method:
+- USB drive
+- Network file transfer (if available)
+- Physical media
+
+## Installing on Air-Gapped System
+
+### Pre-Installation Setup
+
+1. **Install Docker** (if not already installed):
+   ```bash
+   # Follow Docker's official installation guide for your distribution
+   # https://docs.docker.com/engine/install/ubuntu/
+   ```
+
+2. **Install NVIDIA Drivers and Container Toolkit** (for GPU support):
+   ```bash
+   # Install NVIDIA drivers (if not already installed)
+   ubuntu-drivers devices
+   sudo ubuntu-drivers autoinstall
+
+   # Install NVIDIA Container Toolkit
+   # https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+   ```
+
+3. **Verify GPU Setup:**
+   ```bash
+   nvidia-smi
+   docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+   ```
+
+### Installation Steps
+
+1. **Extract Package:**
+   ```bash
+   tar -xf opentranscribe-offline-v*.tar.xz
+   cd opentranscribe-offline-v*/
+   ```
+
+2. **Run Installer:**
+   ```bash
+   sudo ./install.sh
+   ```
+
+   The installer will:
+   - Validate system requirements
+   - Verify package integrity
+   - Load Docker images (15-30 minutes)
+   - Install files to `/opt/opentranscribe/`
+   - Copy AI models (10-20 minutes)
+   - Create configuration file
+   - Set proper permissions
+
+3. **Installation Duration:**
+   - System validation: 1-2 minutes
+   - Docker image loading: 15-30 minutes
+   - Model installation: 10-20 minutes
+   - **Total: 30-60 minutes**
+
+4. **Post-Installation:**
+   The installer will display next steps when complete.
+
+## Configuration
+
+### Required Configuration
+
+1. **Edit Environment File:**
+   ```bash
+   sudo nano /opt/opentranscribe/.env
+   ```
+
+2. **Set HuggingFace Token (REQUIRED):**
+   ```bash
+   HUGGINGFACE_TOKEN=your_token_here
+   ```
+
+   **Important:** Speaker diarization requires a HuggingFace token. Get one at https://huggingface.co/settings/tokens
+
+### Optional Configuration
+
+The `.env` file contains auto-detected settings. You may customize:
+
+**Security Settings:**
+- `POSTGRES_PASSWORD` - Database password (auto-generated)
+- `MINIO_ROOT_PASSWORD` - Object storage password (auto-generated)
+- `JWT_SECRET_KEY` - JWT signing key (auto-generated)
+
+**AI Model Settings:**
+- `WHISPER_MODEL` - Transcription model size (default: large-v2)
+  - Options: tiny, base, small, medium, large-v1, large-v2
+- `BATCH_SIZE` - Processing batch size (default: 16)
+- `MIN_SPEAKERS` / `MAX_SPEAKERS` - Speaker detection range
+
+**Hardware Settings (auto-detected):**
+- `USE_GPU` - Enable GPU acceleration
+- `TORCH_DEVICE` - Device type (cuda/cpu)
+- `COMPUTE_TYPE` - Precision (float16/int8)
+- `GPU_DEVICE_ID` - GPU to use (default: 0)
+
+**LLM Integration (optional):**
+For AI summarization and speaker identification features:
+- `LLM_PROVIDER` - Provider (openai, anthropic, openrouter)
+- Provider-specific API keys and settings
+
+**Note:** LLM features require internet access. Leave `LLM_PROVIDER` empty for offline transcription-only mode.
+
+### Port Configuration
+
+Default ports (configurable in `.env`):
+- Frontend: `80`
+- Backend API: `8080`
+- Flower (task monitor): `5555`
+- Database: `5432`
+- Redis: `6379`
+- MinIO: `9000`
+- MinIO Console: `9001`
+- OpenSearch: `9200`
+
+## Usage
+
+### Starting OpenTranscribe
+
+```bash
+cd /opt/opentranscribe
+sudo ./opentr.sh start
+```
+
+**Access the application:** http://localhost:80
+
+### Management Commands
+
+All commands run from `/opt/opentranscribe/`:
+
+**Basic Operations:**
+```bash
+sudo ./opentr.sh start              # Start all services
+sudo ./opentr.sh stop               # Stop all services
+sudo ./opentr.sh restart            # Restart all services
+sudo ./opentr.sh status             # Show service status
+sudo ./opentr.sh logs               # View all logs (Ctrl+C to exit)
+sudo ./opentr.sh logs backend       # View specific service logs
+```
+
+**Service Management:**
+```bash
+sudo ./opentr.sh restart-backend    # Restart backend services only
+sudo ./opentr.sh restart-frontend   # Restart frontend only
+sudo ./opentr.sh shell backend      # Open shell in backend container
+```
+
+**Maintenance:**
+```bash
+sudo ./opentr.sh health             # Check health of all services
+sudo ./opentr.sh backup             # Create database backup
+sudo ./opentr.sh clean              # Clean up Docker resources
+```
+
+### First-Time Setup
+
+1. Start OpenTranscribe:
+   ```bash
+   cd /opt/opentranscribe
+   sudo ./opentr.sh start
+   ```
+
+2. Wait for services to start (~30 seconds):
+   ```bash
+   sudo ./opentr.sh health
+   ```
+
+3. Access web interface: http://localhost:80
+
+4. Create your first user account through the web interface
+
+5. Upload an audio or video file to test transcription
+
+### Monitoring
+
+**Service Status:**
+```bash
+sudo ./opentr.sh status
+```
+
+**Task Monitoring:**
+Access Flower dashboard at: http://localhost:5555/flower
+
+**Logs:**
+```bash
+# All services
+sudo ./opentr.sh logs
+
+# Specific service
+sudo ./opentr.sh logs celery-worker
+
+# Follow logs in real-time
+sudo ./opentr.sh logs -f backend
+```
+
+## Troubleshooting
+
+### Services Won't Start
+
+**Check Docker status:**
+```bash
+sudo systemctl status docker
+sudo systemctl start docker
+```
+
+**Check service logs:**
+```bash
+cd /opt/opentranscribe
+sudo ./opentr.sh logs
+```
+
+**Check service health:**
+```bash
+sudo ./opentr.sh health
+```
+
+### GPU Not Detected
+
+**Verify NVIDIA drivers:**
+```bash
+nvidia-smi
+```
+
+**Verify Container Toolkit:**
+```bash
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+**Check configuration:**
+```bash
+grep USE_GPU /opt/opentranscribe/.env
+```
+
+**Manual GPU enable:**
+Edit `/opt/opentranscribe/.env`:
+```bash
+USE_GPU=true
+TORCH_DEVICE=cuda
+COMPUTE_TYPE=float16
+```
+
+Then restart:
+```bash
+sudo ./opentr.sh restart
+```
+
+### Transcription Fails
+
+**Check HuggingFace token:**
+```bash
+grep HUGGINGFACE_TOKEN /opt/opentranscribe/.env
+```
+
+**Check worker logs:**
+```bash
+sudo ./opentr.sh logs celery-worker
+```
+
+**Check Flower dashboard:**
+http://localhost:5555/flower
+
+### Out of Memory
+
+**For systems with limited VRAM:**
+
+Edit `/opt/opentranscribe/.env`:
+```bash
+WHISPER_MODEL=medium    # or small, base
+BATCH_SIZE=8            # reduce from 16
+```
+
+Restart services:
+```bash
+sudo ./opentr.sh restart-backend
+```
+
+### Database Issues
+
+**Check database status:**
+```bash
+sudo ./opentr.sh logs postgres
+```
+
+**Access database shell:**
+```bash
+sudo ./opentr.sh shell postgres
+psql -U postgres -d opentranscribe
+```
+
+### Port Conflicts
+
+If default ports are in use, edit `/opt/opentranscribe/.env`:
+```bash
+FRONTEND_PORT=8080     # Change from 80
+BACKEND_PORT=8081      # Change from 8080
+# etc.
+```
+
+Restart:
+```bash
+sudo ./opentr.sh restart
+```
+
+### Performance Issues
+
+**CPU Mode:** Transcription in CPU mode is 10-50x slower than GPU mode.
+
+**GPU Optimization:**
+- Use `COMPUTE_TYPE=float16` for NVIDIA GPUs
+- Increase `BATCH_SIZE` if you have >16GB VRAM
+- Use `large-v2` model for best accuracy (requires 8GB+ VRAM)
+
+**System Resources:**
+- Monitor with: `docker stats`
+- Increase RAM allocation if needed
+- Close other GPU-intensive applications
+
+## Maintenance
+
+### Database Backups
+
+**Create backup:**
+```bash
+sudo ./opentr.sh backup
+```
+
+Backups stored in: `/opt/opentranscribe/backups/`
+
+**Restore backup:**
+```bash
+cd /opt/opentranscribe
+sudo ./opentr.sh stop
+docker compose -f docker-compose.yml run --rm postgres psql -U postgres -d opentranscribe < backups/backup_file.sql
+sudo ./opentr.sh start
+```
+
+### Updates
+
+For offline systems, updates require a new offline package:
+
+1. Build new package on internet-connected system
+2. Transfer to air-gapped system
+3. Stop OpenTranscribe: `sudo ./opentr.sh stop`
+4. Backup data: `sudo ./opentr.sh backup`
+5. Extract new package and run installer
+6. Restore data if needed
+
+### Logs Management
+
+**View disk usage:**
+```bash
+docker system df
+```
+
+**Clean old logs:**
+```bash
+sudo ./opentr.sh clean
+```
+
+**Rotate logs:**
+Docker automatically rotates logs, but you can manually clean:
+```bash
+docker system prune -a
+```
+
+### Model Updates
+
+To update AI models, you need internet access or a new model package:
+
+1. Stop services: `sudo ./opentr.sh stop`
+2. Replace model files in `/opt/opentranscribe/models/`
+3. Start services: `sudo ./opentr.sh start`
+
+## Uninstallation
+
+### Complete Removal
+
+**Stop and remove services:**
+```bash
+cd /opt/opentranscribe
+sudo ./opentr.sh stop
+sudo docker compose -f docker-compose.yml down -v
+```
+
+**Remove installation:**
+```bash
+sudo rm -rf /opt/opentranscribe
+```
+
+**Remove Docker images (optional):**
+```bash
+docker rmi davidamacey/opentranscribe-backend:latest
+docker rmi davidamacey/opentranscribe-frontend:latest
+docker rmi postgres:14-alpine redis:7-alpine minio/minio:latest
+docker rmi opensearchproject/opensearch:2.5.0
+```
+
+**Clean Docker system:**
+```bash
+docker system prune -a
+docker volume prune
+```
+
+## Additional Resources
+
+### File Locations
+
+- Installation: `/opt/opentranscribe/`
+- Configuration: `/opt/opentranscribe/.env`
+- Database data: Docker volume `opentranscribe_postgres_data`
+- Object storage: Docker volume `opentranscribe_minio_data`
+- AI models: `/opt/opentranscribe/models/`
+- Temp files: `/opt/opentranscribe/temp/`
+- Backups: `/opt/opentranscribe/backups/`
+
+### Service Architecture
+
+```
+Frontend (NGINX + Svelte)
+    ↓
+Backend (FastAPI)
+    ↓
+├── PostgreSQL (Database)
+├── MinIO (Object Storage)
+├── Redis (Message Queue)
+├── OpenSearch (Search Engine)
+└── Celery Worker (AI Processing)
+        ↓
+    AI Models (WhisperX, PyAnnote)
+```
+
+### Support
+
+For issues and questions:
+- GitHub Issues: https://github.com/davidamacey/opentranscribe/issues
+- Documentation: https://github.com/davidamacey/opentranscribe
+
+### License
+
+OpenTranscribe is open source software. See LICENSE file for details.
+
+---
+
+**Last Updated:** October 2024
+**Version:** 2.0 Offline
