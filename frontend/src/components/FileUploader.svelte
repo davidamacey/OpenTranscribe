@@ -358,9 +358,15 @@
   }
 
   function handleAudioExtractionCancel() {
-    // User cancelled extraction
+    // User clicked X button - clear file selection completely and reset to fresh dropzone
     videoFileForExtraction = null;
+    file = null;
+    error = ''; // Clear any error messages
     showAudioExtractionModal = false;
+    // Clear the file input element so selection is visually cleared
+    if (fileInput) {
+      fileInput.value = '';
+    }
   }
 
   // Bulk audio extraction modal handlers

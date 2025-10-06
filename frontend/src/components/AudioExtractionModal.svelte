@@ -56,19 +56,20 @@
   }
 
   function handleCancel() {
+    // Close modal and clear file selection
     dispatch('cancel');
     isOpen = false;
   }
 
   function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      handleCancel();
-    }
+    // Prevent dismissal by clicking outside - user must use X button or choose an option
+    event.stopPropagation();
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    // Prevent dismissal with Escape key - user must use X button or choose an option
     if (event.key === 'Escape') {
-      handleCancel();
+      event.preventDefault();
     }
   }
 </script>
@@ -98,7 +99,7 @@
             class="modal-close-button"
             on:click={handleCancel}
             aria-label="Close dialog"
-            title="Close dialog"
+            title="Close and clear selection"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>

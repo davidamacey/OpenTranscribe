@@ -32,19 +32,20 @@
   }
 
   function handleCancel() {
+    // Close modal and clear file selection
     dispatch('cancel');
     isOpen = false;
   }
 
   function handleBackdropClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      handleCancel();
-    }
+    // Prevent dismissal by clicking outside - user must use X button or choose an option
+    event.stopPropagation();
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    // Prevent dismissal with Escape key - user must use X button or choose an option
     if (event.key === 'Escape') {
-      handleCancel();
+      event.preventDefault();
     }
   }
 </script>
