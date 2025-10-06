@@ -1,9 +1,10 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import TagsEditor from './TagsEditor.svelte';
-  
+
   export let file: any = null;
   export let isTagsExpanded: boolean = false;
+  export let aiTagSuggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
 
   function toggleTags() {
     isTagsExpanded = !isTagsExpanded;
@@ -46,7 +47,12 @@
   {#if isTagsExpanded}
     <div class="tags-content" transition:slide={{ duration: 200 }}>
       {#if file && file.id}
-        <TagsEditor fileId={String(file.id)} tags={file.tags || []} on:tagsUpdated={handleTagsUpdated} />
+        <TagsEditor
+          fileId={String(file.id)}
+          tags={file.tags || []}
+          aiSuggestions={aiTagSuggestions}
+          on:tagsUpdated={handleTagsUpdated}
+        />
       {:else}
         <p>Loading tags...</p>
       {/if}

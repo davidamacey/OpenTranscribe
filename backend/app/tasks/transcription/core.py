@@ -57,11 +57,17 @@ def trigger_automatic_summarization(file_id: int, file_uuid: str):
             f"Automatic speaker identification task {speaker_task.id} started for file {file_id}"
         )
 
-        # Finally trigger summarization (this will use the speaker suggestions when available)
+        # Trigger summarization (this will use the speaker suggestions when available)
         from app.tasks.summarization import summarize_transcript_task
 
         summary_task = summarize_transcript_task.delay(file_uuid=file_uuid)
         logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
+
+        # Trigger topic extraction (after transcription completes, independent of summarization)
+        from app.tasks.topic_extraction import extract_topics_task
+
+        topic_task = extract_topics_task.delay(file_uuid=file_uuid, force_regenerate=False)
+        logger.info(f"Automatic topic extraction task {topic_task.id} started for file {file_id}")
     except Exception as e:
         logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
 

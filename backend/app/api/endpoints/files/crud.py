@@ -145,7 +145,7 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
             # Convert to dictionaries
             collections = [
                 {
-                    "id": col.id,
+                    "id": str(col.uuid),  # Use UUID instead of integer ID
                     "name": col.name,
                     "description": col.description,
                     "is_public": col.is_public,

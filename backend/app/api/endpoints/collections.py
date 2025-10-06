@@ -21,6 +21,7 @@ from app.schemas.media import CollectionResponse
 from app.schemas.media import CollectionUpdate
 from app.schemas.media import CollectionWithCount
 from app.schemas.media import MediaFile as MediaFileSchema
+from app.services.formatting_service import FormattingService
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
 from app.utils.uuid_helpers import get_file_by_uuid
 from app.utils.uuid_helpers import validate_uuids
@@ -309,8 +310,18 @@ async def get_collection_media(
         .all()
     )
 
-    # Set file URLs for each media file (including thumbnail URLs)
-    for media_file in media_files:
-        set_file_urls(media_file)
+    # Format each file with URLs and formatted fields
+    formatted_files = []
+    for file in media_files:
+        set_file_urls(file)
 
-    return media_files
+        # Convert to schema and add formatted fields
+        file_schema = MediaFileSchema.model_validate(file)
+        file_schema.formatted_duration = FormattingService.format_duration(file.duration)
+        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)
+        file_schema.display_status = FormattingService.format_status(file.status)
+        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)
+
+        formatted_files.append(file_schema)
+
+    return formatted_files

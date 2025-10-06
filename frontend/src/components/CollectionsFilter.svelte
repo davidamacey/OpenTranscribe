@@ -14,7 +14,10 @@
     loading = true;
     try {
       const response = await axiosInstance.get('/api/collections/');
-      collections = response.data;
+      // Sort collections by media_count descending (most used first)
+      collections = (response.data || []).sort((a: any, b: any) => {
+        return (b.media_count || 0) - (a.media_count || 0);
+      });
     } catch (err) {
       console.error('Error fetching collections:', err);
     } finally {

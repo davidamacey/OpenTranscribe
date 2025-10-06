@@ -18,6 +18,7 @@ from app.models.media import Tag
 from app.models.user import User
 from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TagBase
+from app.schemas.media import TagWithCount
 
 logger = logging.getLogger(__name__)
 
@@ -48,33 +49,33 @@ def create_tag(
     return new_tag
 
 
-@router.get("/", response_model=list[TagSchema])
+@router.get("/", response_model=list[TagWithCount])
 def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """
-    List all available tags for the current user, including both used and unused tags
+    List all available tags for the current user with usage counts, sorted by most used
     """
     try:
-        # First, get tags that are used in files owned by this user
-        used_tags = (
-            db.query(Tag)
-            .join(FileTag)
-            .join(MediaFile)
-            .filter(MediaFile.user_id == current_user.id)
-            .distinct()
+        # Get tags with usage counts for files owned by this user
+        tag_counts = (
+            db.query(Tag, func.count(FileTag.id).label('usage_count'))
+            .outerjoin(FileTag)
+            .outerjoin(MediaFile)
+            .filter((MediaFile.user_id == current_user.id) | (MediaFile.id.is_(None)))
+            .group_by(Tag.id)
+            .order_by(func.count(FileTag.id).desc(), Tag.name)
             .all()
         )
 
-        # Get all unused tags (not associated with any files)
-        used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
-        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()
+        # Convert to TagWithCount objects
+        tags_with_counts = []
+        for tag, count in tag_counts:
+            tags_with_counts.append(TagWithCount(
+                id=tag.uuid,
+                name=tag.name,
+                usage_count=count
+            ))
 
-        # Combine both lists, ensuring no duplicates
-        all_tags = {tag.id: tag for tag in used_tags}
-        for tag in unused_tags:
-            if tag.id not in all_tags:
-                all_tags[tag.id] = tag
-
-        return list(all_tags.values())
+        return tags_with_counts
     except Exception as e:
         logger.error(f"Error in list_tags: {e}")
         # If there's an error, return an empty list
