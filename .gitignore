@@ -231,6 +231,10 @@ backend/whisperx-test.py
 
 # Fonts (downloaded during build)
 frontend/public/fonts/
+frontend/static/fonts/
+
+# FFmpeg WebAssembly files (downloaded during build)
+frontend/static/ffmpeg/
 
 # Private project management files
 GITHUB_OPTIMIZATION_TASKS.md

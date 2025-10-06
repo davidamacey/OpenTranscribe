@@ -1,10 +1,8 @@
 <script lang="ts">
-  import { useLocation } from "svelte-navigator";
-
-  const location = useLocation();
+  import { page } from '$app/stores';
 
   // Track if we're on the gallery page for styling
-  $: isGalleryPage = $location.pathname === '/' || $location.pathname === '';
+  $: isGalleryPage = $page.url.pathname === '/' || $page.url.pathname === '';
 </script>
 
 <main class="content {isGalleryPage ? 'gallery-page' : ''}">

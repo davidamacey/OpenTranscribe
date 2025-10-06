@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:22-alpine as build
 
 WORKDIR /app
 
@@ -13,17 +13,17 @@ RUN apk add --no-cache \
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies with legacy peer deps to handle Svelte 4 + svelte-navigator compatibility
-RUN npm ci --legacy-peer-deps
+# Install dependencies
+RUN npm ci
 
-# Create public directory for fonts
-RUN mkdir -p public/fonts
+# Create static directory for fonts
+RUN mkdir -p static/fonts
 
 # Copy application code
 COPY . .
 
 # Ensure the fonts directory has the correct permissions
-RUN chmod -R 755 public/fonts
+RUN chmod -R 755 static/fonts
 
 # Build the application
 RUN npm run build

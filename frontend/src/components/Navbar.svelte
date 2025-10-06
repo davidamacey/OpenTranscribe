@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Link, useNavigate, useLocation } from "svelte-navigator";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { user, logout, fetchUserInfo } from "../stores/auth";
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import NotificationsPanel from "./NotificationsPanel.svelte";
@@ -24,14 +25,14 @@
   const dispatch = createEventDispatcher();
 
   // Gallery state detection based on location
-  $: isGalleryPage = $location.pathname === '/' || $location.pathname === '';
-  
+  $: isGalleryPage = $page.url.pathname === '/' || $page.url.pathname === '';
+
   // Recording control popup state
   let showRecordingControls = false;
 
   // About modal state
   let showAboutModal = false;
-  
+
   // Reactive recording state from store - use store directly
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
   $: isRecording = $recordingStore.isRecording;
@@ -39,41 +40,35 @@
   $: recordingStartTime = $recordingStore.recordingStartTime;
   $: isPaused = $recordingStore.isPaused;
   $: recordedBlob = $recordingStore.recordedBlob;
-  
+
   // Import logo asset for proper Vite processing
   import logoBanner from '../assets/logo-banner.png';
-  
-  // Location for active state detection
-  const location = useLocation();
-  
+
   // Reactive statements for active page detection
-  $: currentPath = $location.pathname;
+  $: currentPath = $page.url.pathname;
   $: isGalleryActive = currentPath === '/' || currentPath === '';
   $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
-  
-  // Navigation
-  const navigate = useNavigate();
-  
+
   // User dropdown state
   /** @type {boolean} */
   let showDropdown = false;
-  
+
   /** @type {HTMLDivElement | null} */
   let dropdownRef: HTMLDivElement | null = null;
-  
+
   // Notification panel state
   let showNotifs = false;
   const unsubscribe = showNotificationsPanel.subscribe(value => {
     showNotifs = value;
   });
-  
+
   /**
    * Handle user logout
    */
   function handleLogout() {
     logout();
-    navigate("/login");
+    goto("/login");
   }
   
   /**
@@ -546,10 +541,10 @@
               <strong>{$user ? $user.email : 'User'}</strong>
             </div>
             <div class="dropdown-divider"></div>
-            <Link 
-              to="/settings" 
-              class="dropdown-item" 
-              on:click={() => showDropdown = false}
+            <a
+              href="/settings"
+              class="dropdown-item"
+              on:click|preventDefault={() => { showDropdown = false; goto("/settings"); }}
               title="Manage your account settings and preferences"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -557,13 +552,13 @@
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
               <span>Settings</span>
-            </Link>
-            
+            </a>
+
             {#if $user && $user.role === "admin"}
-              <Link 
-                to="/admin" 
-                class="dropdown-item" 
-                on:click={() => showDropdown = false}
+              <a
+                href="/admin"
+                class="dropdown-item"
+                on:click|preventDefault={() => { showDropdown = false; goto("/admin"); }}
                 title="Access admin dashboard for user management and system settings"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -573,7 +568,7 @@
                   <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                 </svg>
                 <span>Admin</span>
-              </Link>
+              </a>
             {/if}
             
             <button 

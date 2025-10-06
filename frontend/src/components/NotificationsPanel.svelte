@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { derived } from 'svelte/store';
-  import { Link } from 'svelte-navigator';
+  import { goto } from '$app/navigation';
   import { token } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
@@ -330,19 +330,21 @@
                   
                   <!-- Action link if available -->
                   {#if getFileLink(notification) !== null}
-                    <Link 
-                      to={getFileLink(notification) || ''} 
-                      class="notification-action" 
-                      on:click={() => {
+                    <a
+                      href={getFileLink(notification) || ''}
+                      class="notification-action"
+                      on:click|preventDefault={() => {
+                        const link = getFileLink(notification);
                         showPanel = false;
                         // Mark this specific notification as read when navigating to file
                         if (!notification.read) {
                           websocketStore.markAsRead(notification.id);
                         }
+                        if (link) goto(link);
                       }}
                     >
 {getFileLinkText(notification)}
-                    </Link>
+                    </a>
                   {/if}
                 </div>
                 
