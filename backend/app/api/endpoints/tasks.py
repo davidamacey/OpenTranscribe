@@ -409,6 +409,7 @@ async def recover_task(
             # This avoids blocking the API call
             file_uuid = str(task.media_file.uuid) if task.media_file else None
             if file_uuid:
+
                 async def retry_transcription():
                     try:
                         # Import here to avoid circular imports
@@ -416,8 +417,7 @@ async def recover_task(
 
                         result = transcribe_audio_task.delay(file_uuid)
                         logger.info(
-                            f"Retrying transcription for file {file_uuid}, "
-                            f"new task ID: {result.id}"
+                            f"Retrying transcription for file {file_uuid}, new task ID: {result.id}"
                         )
                     except Exception as e:
                         logger.error(f"Error retrying transcription: {e}")
@@ -452,6 +452,7 @@ async def fix_inconsistent_file(
     try:
         # Find the media file - admins can access any file
         from app.utils.uuid_helpers import get_file_by_uuid
+
         media_file = get_file_by_uuid(db, file_uuid)
 
         # Attempt to fix the file
@@ -487,6 +488,7 @@ async def retry_file_processing(
         # Find the media file
         if current_user.role == "admin":
             from app.utils.uuid_helpers import get_file_by_uuid
+
             media_file = get_file_by_uuid(db, file_uuid)
         else:
             media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)

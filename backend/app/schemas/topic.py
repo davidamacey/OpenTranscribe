@@ -3,6 +3,7 @@ Pydantic schemas for AI tag and collection suggestions
 
 Simplified schemas for LLM-powered tag and collection suggestions (Issue #79).
 """
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID

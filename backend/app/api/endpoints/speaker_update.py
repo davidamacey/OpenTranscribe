@@ -106,7 +106,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                     speaker_uuid=str(speaker.uuid),
                     profile_id=speaker.profile_id,
                     profile_uuid=profile_uuid,
-                    verified=speaker.verified
+                    verified=speaker.verified,
                 )
                 logger.info(f"Synced speaker {speaker.uuid} profile assignment to OpenSearch")
             except Exception as e:
@@ -147,11 +147,13 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                     speaker_uuid=str(speaker.uuid),
                     profile_id=speaker.profile_id,
                     profile_uuid=str(new_profile.uuid),
-                    verified=speaker.verified
+                    verified=speaker.verified,
                 )
                 logger.info(f"Synced speaker {speaker.uuid} new profile assignment to OpenSearch")
             except Exception as e:
-                logger.warning(f"Failed to sync speaker {speaker.uuid} new profile to OpenSearch: {e}")
+                logger.warning(
+                    f"Failed to sync speaker {speaker.uuid} new profile to OpenSearch: {e}"
+                )
 
         return True
 
@@ -282,7 +284,11 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                         # Get profile UUID if assigned
                         profile_uuid = None
                         if speaker.profile_id:
-                            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                            profile = (
+                                db.query(SpeakerProfile)
+                                .filter(SpeakerProfile.id == speaker.profile_id)
+                                .first()
+                            )
                             if profile:
                                 profile_uuid = str(profile.uuid)
 
@@ -291,7 +297,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                             speaker_uuid=str(speaker.uuid),
                             profile_id=speaker.profile_id,
                             profile_uuid=profile_uuid,
-                            verified=speaker.verified
+                            verified=speaker.verified,
                         )
 
                         logger.info(
@@ -333,8 +339,9 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                     Speaker.user_id == updated_speaker.user_id,
                     Speaker.suggested_name == updated_speaker.display_name,
                     Speaker.confidence >= 0.5,
-                    Speaker.confidence < 0.75,  # Only medium confidence (high confidence already synced above)
-                    not Speaker.verified   # Suggestions are for unverified speakers
+                    Speaker.confidence
+                    < 0.75,  # Only medium confidence (high confidence already synced above)
+                    not Speaker.verified,  # Suggestions are for unverified speakers
                 )
                 .all()
             )
@@ -343,12 +350,18 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                 try:
                     # Sync confidence and suggested_name updates to OpenSearch for suggestions
                     # Note: These speakers keep their original display_name=None but get updated confidence/suggestion
-                    update_speaker_display_name(str(suggestion_speaker.uuid), suggestion_speaker.display_name)
+                    update_speaker_display_name(
+                        str(suggestion_speaker.uuid), suggestion_speaker.display_name
+                    )
 
                     # Get profile UUID if assigned
                     profile_uuid = None
                     if suggestion_speaker.profile_id:
-                        profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == suggestion_speaker.profile_id).first()
+                        profile = (
+                            db.query(SpeakerProfile)
+                            .filter(SpeakerProfile.id == suggestion_speaker.profile_id)
+                            .first()
+                        )
                         if profile:
                             profile_uuid = str(profile.uuid)
 
@@ -356,11 +369,15 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                         speaker_uuid=str(suggestion_speaker.uuid),
                         profile_id=suggestion_speaker.profile_id,
                         profile_uuid=profile_uuid,
-                        verified=suggestion_speaker.verified
+                        verified=suggestion_speaker.verified,
                     )
-                    logger.debug(f"Synced suggestion updates for speaker {suggestion_speaker.uuid} to OpenSearch")
+                    logger.debug(
+                        f"Synced suggestion updates for speaker {suggestion_speaker.uuid} to OpenSearch"
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to sync suggestion speaker {suggestion_speaker.uuid} to OpenSearch: {e}")
+                    logger.warning(
+                        f"Failed to sync suggestion speaker {suggestion_speaker.uuid} to OpenSearch: {e}"
+                    )
 
             if suggestion_speakers:
                 logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
@@ -388,13 +405,17 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
                             "display_name": updated_speaker.display_name,
                             "auto_applied_count": auto_applied_count,
                             "suggested_count": suggested_count,
-                            "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers"
+                            "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
                         },
                     )
                 )
-                logger.info(f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers")
+                logger.info(
+                    f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
+                )
             except Exception as e:
-                logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
+                logger.warning(
+                    f"Failed to send WebSocket notification for bulk speaker update: {e}"
+                )
 
     except Exception as e:
         logger.error(f"Error in retroactive matching: {e}")

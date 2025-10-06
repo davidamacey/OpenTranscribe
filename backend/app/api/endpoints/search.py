@@ -52,7 +52,8 @@ def search(
     for result in results:
         formatted_results.append(
             {
-                "id": result.get("file_uuid") or result["file_id"],  # Prefer UUID, fallback to integer ID
+                "id": result.get("file_uuid")
+                or result["file_id"],  # Prefer UUID, fallback to integer ID
                 "title": result["title"],
                 "speakers": result["speakers"],
                 "snippet": result["snippet"],
@@ -113,7 +114,8 @@ def advanced_search(
     for result in results:
         formatted_results.append(
             {
-                "id": result.get("file_uuid") or result["file_id"],  # Prefer UUID, fallback to integer ID
+                "id": result.get("file_uuid")
+                or result["file_id"],  # Prefer UUID, fallback to integer ID
                 "title": result["title"],
                 "speakers": result["speakers"],
                 "snippet": result["snippet"],

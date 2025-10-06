@@ -59,6 +59,7 @@ def create_comment_for_file_nested(
 
     # Reload with relationships for UUID mapping
     from sqlalchemy.orm import joinedload
+
     db_comment = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
@@ -122,6 +123,7 @@ def create_comment_query_param(
 
     # Reload with relationships for UUID mapping
     from sqlalchemy.orm import joinedload
+
     db_comment = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))

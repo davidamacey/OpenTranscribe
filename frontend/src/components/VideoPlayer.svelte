@@ -54,7 +54,7 @@
       trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
 
       if (!trackElement) {
-        console.error('No track element found!');
+        // Track element might not be ready yet, silently return
         return;
       }
 

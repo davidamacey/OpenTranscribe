@@ -431,14 +431,18 @@ class ProfileEmbeddingService:
             try:
                 # First check if the index exists
                 if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
-                    logger.info("Speakers index does not exist yet, skipping profile similarity search")
+                    logger.info(
+                        "Speakers index does not exist yet, skipping profile similarity search"
+                    )
                     return []
 
                 profile_check = opensearch_client.search(
                     index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_check_query
                 )
                 if profile_check["hits"]["total"]["value"] == 0:
-                    logger.info(f"No profile documents found for user {user_id}, skipping KNN search")
+                    logger.info(
+                        f"No profile documents found for user {user_id}, skipping KNN search"
+                    )
                     return []
             except Exception as e:
                 logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
@@ -489,7 +493,9 @@ class ProfileEmbeddingService:
                 )
 
             except Exception as e:
-                logger.error(f"Error in OpenSearch profile similarity search <calculate_profile_similarity - above threshold>: {e}")
+                logger.error(
+                    f"Error in OpenSearch profile similarity search <calculate_profile_similarity - above threshold>: {e}"
+                )
                 return []
 
             # Use OpenSearch data directly - no need for additional database queries
@@ -518,6 +524,8 @@ class ProfileEmbeddingService:
             return matches
 
         except Exception as e:
-            logger.error(f"Error in OpenSearch profile similarity search <calculate_profile_similarity - overall>: {e}")
+            logger.error(
+                f"Error in OpenSearch profile similarity search <calculate_profile_similarity - overall>: {e}"
+            )
             # Return empty list - no fallbacks for maximum performance
             return []

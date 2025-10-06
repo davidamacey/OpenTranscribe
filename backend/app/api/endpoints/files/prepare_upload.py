@@ -28,12 +28,14 @@ class FileMetadata:
         filename: Name of the file to be uploaded
         content_type: MIME type of the file
         file_hash: Hash of the file for duplicate detection
+        extracted_from_video: Optional metadata from original video if audio was extracted client-side
     """
 
-    def __init__(self, filename, content_type):
+    def __init__(self, filename, content_type, extracted_from_video=None):
         self.filename = filename
         self.content_type = content_type
         self.file_hash = None
+        self.extracted_from_video = extracted_from_video
 
 
 @router.post("/prepare", response_model=dict[str, str | int])
@@ -64,11 +66,22 @@ async def prepare_upload(
                 return {"file_id": duplicate_id, "is_duplicate": 1}
 
         # Create file metadata object with information needed for the record
-        file_metadata = FileMetadata(request.filename, request.content_type)
+        file_metadata = FileMetadata(
+            request.filename,
+            request.content_type,
+            extracted_from_video=request.extracted_from_video,
+        )
         file_metadata.file_hash = request.file_hash
 
         # Create the database record
         db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)
+
+        # If this is extracted audio, store the video metadata in metadata_important
+        if request.extracted_from_video:
+            db_file.metadata_important = request.extracted_from_video
+            db.commit()
+            logger.info(f"Stored extracted video metadata for {request.filename}")
+
         logger.info(f"Prepared upload for file {request.filename} (ID: {db_file.id})")
 
         # Return the file UUID for frontend

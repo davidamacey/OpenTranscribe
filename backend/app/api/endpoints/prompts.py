@@ -443,9 +443,7 @@ def set_active_prompt(
 
     # Verify prompt exists and user has access - query by UUID not ID
     prompt = (
-        db.query(models.SummaryPrompt)
-        .filter(models.SummaryPrompt.uuid == prompt_uuid_str)
-        .first()
+        db.query(models.SummaryPrompt).filter(models.SummaryPrompt.uuid == prompt_uuid_str).first()
     )
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")

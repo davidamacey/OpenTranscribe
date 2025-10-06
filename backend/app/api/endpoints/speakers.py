@@ -176,6 +176,7 @@ def list_speakers(
         file_id = None
         if file_uuid:
             from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
             media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
             file_id = media_file.id
 
@@ -316,9 +317,7 @@ def list_speakers(
                 voice_confidence = max(s["confidence"] for s in voice_suggestions)
 
             is_high_confidence = bool(
-                voice_confidence >= 0.75
-                and suggested_name
-                and not speaker.display_name
+                voice_confidence >= 0.75 and suggested_name and not speaker.display_name
             )
 
             is_medium_confidence = bool(
@@ -358,7 +357,9 @@ def list_speakers(
                 "confidence": speaker.confidence,
                 "suggestion_source": suggestion_source,
                 "created_at": speaker.created_at.isoformat(),
-                "media_file_id": str(speaker.media_file.uuid) if speaker.media_file else speaker.media_file_id,
+                "media_file_id": str(speaker.media_file.uuid)
+                if speaker.media_file
+                else speaker.media_file_id,
                 "profile": None,
                 "voice_suggestions": voice_suggestions,  # Already guaranteed to be list
                 "cross_video_matches": cross_video_matches,  # Already guaranteed to be list
@@ -383,7 +384,9 @@ def list_speakers(
                     "id": speaker.profile.id,
                     "name": speaker.profile.name,
                     "description": speaker.profile.description,
-                    "uuid": str(speaker.profile.uuid) if speaker.profile.uuid else None,  # Convert UUID to string
+                    "uuid": str(speaker.profile.uuid)
+                    if speaker.profile.uuid
+                    else None,  # Convert UUID to string
                 }
 
             result.append(speaker_dict)
@@ -395,7 +398,7 @@ def list_speakers(
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
-            }
+            },
         )
     except Exception as e:
         logger.error(f"Error in list_speakers: {e}")
@@ -406,7 +409,7 @@ def list_speakers(
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
                 "Expires": "0",
-            }
+            },
         )
 
 
@@ -654,7 +657,9 @@ def update_speaker(
         if speaker.profile_id:
             # Fetch profile to get UUID if not already loaded
             if not speaker.profile:
-                profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                profile = (
+                    db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                )
                 if profile:
                     profile_uuid = str(profile.uuid)
             else:
@@ -664,7 +669,7 @@ def update_speaker(
             speaker_uuid=str(speaker.uuid),
             profile_id=speaker.profile_id,
             profile_uuid=profile_uuid,
-            verified=speaker.verified
+            verified=speaker.verified,
         )
 
     # Handle speaker labeling workflow
@@ -687,6 +692,7 @@ def update_speaker(
             media_file_uuid = str(speaker.media_file.uuid)
         elif speaker.media_file_id:
             from app.models.media import MediaFile
+
             media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
             if media_file:
                 media_file_uuid = str(media_file.uuid)
@@ -697,7 +703,10 @@ def update_speaker(
             profile_uuid = str(speaker.profile.uuid)
         elif speaker.profile_id:
             from app.models.media import SpeakerProfile
-            profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+
+            profile = (
+                db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+            )
             if profile:
                 profile_uuid = str(profile.uuid)
 
@@ -724,7 +733,9 @@ def update_speaker(
         except RuntimeError:
             # No event loop running - this is expected in sync context
             # WebSocket notification will be skipped (not critical)
-            logger.debug(f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)")
+            logger.debug(
+                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
+            )
     except Exception as e:
         logger.debug(f"WebSocket notification skipped for speaker update: {e}")
 
@@ -1036,6 +1047,7 @@ def verify_speaker_identification(
         profile_id = None
         if profile_uuid:
             from app.utils.uuid_helpers import get_profile_by_uuid
+
             profile = get_profile_by_uuid(db, profile_uuid)
             if profile.user_id != current_user.id:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")

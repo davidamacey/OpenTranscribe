@@ -204,7 +204,9 @@ class SpeakerMatchingService:
                                             "bool": {
                                                 "must_not": [
                                                     {"term": {"speaker_id": exclude_speaker_id}},
-                                                    {"exists": {"field": "document_type"}}  # Exclude profile documents
+                                                    {
+                                                        "exists": {"field": "document_type"}
+                                                    },  # Exclude profile documents
                                                 ]
                                             }
                                         },
@@ -499,7 +501,11 @@ class SpeakerMatchingService:
             # Get profile UUID
             profile_uuid = None
             if speaker.profile_id:
-                profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+                profile = (
+                    self.db.query(SpeakerProfile)
+                    .filter(SpeakerProfile.id == speaker.profile_id)
+                    .first()
+                )
                 if profile:
                     profile_uuid = str(profile.uuid)
 
@@ -507,7 +513,7 @@ class SpeakerMatchingService:
                 speaker_uuid=str(speaker.uuid),
                 profile_id=speaker.profile_id,
                 profile_uuid=profile_uuid,
-                verified=speaker.verified
+                verified=speaker.verified,
             )
 
             # Update the profile embedding to include this newly assigned speaker
@@ -736,7 +742,11 @@ class SpeakerMatchingService:
                 # Get profile UUID
                 profile_uuid = None
                 if profile_id:
-                    profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+                    profile = (
+                        self.db.query(SpeakerProfile)
+                        .filter(SpeakerProfile.id == profile_id)
+                        .first()
+                    )
                     if profile:
                         profile_uuid = str(profile.uuid)
 
@@ -877,14 +887,16 @@ class SpeakerMatchingService:
             filters = [{"term": {"user_id": user_id}}]
 
             # Add must_not wrapped in nested bool (OpenSearch 2.5 requirement)
-            filters.append({
-                "bool": {
-                    "must_not": [
-                        {"term": {"speaker_id": new_speaker_id}},
-                        {"exists": {"field": "document_type"}}  # Exclude profile documents
-                    ]
+            filters.append(
+                {
+                    "bool": {
+                        "must_not": [
+                            {"term": {"speaker_id": new_speaker_id}},
+                            {"exists": {"field": "document_type"}},  # Exclude profile documents
+                        ]
+                    }
                 }
-            })
+            )
 
             query = {
                 "size": 20,  # Get more potential matches

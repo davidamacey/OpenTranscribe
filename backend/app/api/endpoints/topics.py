@@ -7,6 +7,7 @@ Simplified endpoints for:
 - Applying approved suggestions
 - Batch extraction
 """
+
 import logging
 
 from fastapi import APIRouter
@@ -56,11 +57,7 @@ async def get_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion from PostgreSQL
-    suggestion = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == file_id)
-        .first()
-    )
+    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
 
     if not suggestion:
         raise HTTPException(
@@ -119,9 +116,7 @@ async def extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(
-        user_id=current_user.id, db=db
-    )
+    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
 
     if not extraction_service:
         raise HTTPException(
@@ -131,9 +126,7 @@ async def extract_topics(
 
     # Check if suggestion already exists
     existing = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == media_file.id)
-        .first()
+        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
     )
 
     if existing and not request_data.force_regenerate:
@@ -148,9 +141,7 @@ async def extract_topics(
         force_regenerate=request_data.force_regenerate,
     )
 
-    logger.info(
-        f"Triggered AI suggestion extraction for file {file_uuid}, task_id: {task.id}"
-    )
+    logger.info(f"Triggered AI suggestion extraction for file {file_uuid}, task_id: {task.id}")
 
     return {
         "message": "AI suggestion extraction started",
@@ -186,11 +177,7 @@ async def apply_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion
-    suggestion = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == file_id)
-        .first()
-    )
+    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
 
     if not suggestion:
         raise HTTPException(
@@ -241,11 +228,7 @@ async def dismiss_topic_suggestions(
     file_id = media_file.id
 
     # Get suggestion
-    suggestion = (
-        db.query(TopicSuggestion)
-        .filter(TopicSuggestion.media_file_id == file_id)
-        .first()
-    )
+    suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
 
     if not suggestion:
         raise HTTPException(
@@ -288,9 +271,7 @@ async def batch_extract_topics(
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
             else:
-                logger.warning(
-                    f"Skipping file {file_uuid} - no transcript available"
-                )
+                logger.warning(f"Skipping file {file_uuid} - no transcript available")
         except HTTPException as e:
             logger.warning(f"Skipping file {file_uuid} - {e.detail}")
 
@@ -301,9 +282,7 @@ async def batch_extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(
-        user_id=current_user.id, db=db
-    )
+    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
 
     if not extraction_service:
         raise HTTPException(

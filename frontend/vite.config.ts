@@ -77,7 +77,11 @@ export default defineConfig(({ mode }) => {
   },
   base: '/',
   optimizeDeps: {
-    include: ['svelte-navigator']
+    include: ['svelte-navigator'],
+    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']
+  },
+  worker: {
+    format: 'es' // Required for FFmpeg.wasm worker threads
   }
   };
 });

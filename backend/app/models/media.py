@@ -34,7 +34,9 @@ class MediaFile(Base):
     __tablename__ = "media_file"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     filename = Column(String, index=True)
     storage_path = Column(String, nullable=False)  # Path in MinIO/S3
@@ -132,7 +134,9 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segment"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     media_file_id = Column(Integer, ForeignKey("media_file.id"), nullable=False)
     speaker_id = Column(Integer, ForeignKey("speaker.id"), nullable=True)
     start_time = Column(Float, nullable=False)  # Start time in seconds
@@ -150,7 +154,9 @@ class SpeakerProfile(Base):
     __tablename__ = "speaker_profile"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     name = Column(String, nullable=False)  # User-assigned name (e.g., "John Doe")
     description = Column(Text, nullable=True)  # Optional description or notes
@@ -182,7 +188,9 @@ class Speaker(Base):
     __tablename__ = "speaker"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
     profile_id = Column(
@@ -212,7 +220,9 @@ class Comment(Base):
     __tablename__ = "comment"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     media_file_id = Column(Integer, ForeignKey("media_file.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
     text = Column(Text, nullable=False)
@@ -228,7 +238,9 @@ class Tag(Base):
     __tablename__ = "tag"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     name = Column(String, unique=True, nullable=False)
 
 
@@ -236,7 +248,9 @@ class FileTag(Base):
     __tablename__ = "file_tag"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     media_file_id = Column(Integer, ForeignKey("media_file.id"))
     tag_id = Column(Integer, ForeignKey("tag.id"))
 
@@ -268,7 +282,9 @@ class Analytics(Base):
     __tablename__ = "analytics"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     media_file_id = Column(Integer, ForeignKey("media_file.id"), unique=True)
 
     # Overall analytics structure matching frontend expectations
@@ -286,7 +302,9 @@ class Collection(Base):
     __tablename__ = "collection"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
@@ -308,7 +326,9 @@ class CollectionMember(Base):
     __tablename__ = "collection_member"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     collection_id = Column(Integer, ForeignKey("collection.id", ondelete="CASCADE"), nullable=False)
     media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False)
     added_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -329,7 +349,9 @@ class SpeakerCollection(Base):
     __tablename__ = "speaker_collection"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("user.id"), nullable=False)
@@ -355,7 +377,9 @@ class SpeakerCollectionMember(Base):
     __tablename__ = "speaker_collection_member"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     collection_id = Column(
         Integer, ForeignKey("speaker_collection.id", ondelete="CASCADE"), nullable=False
     )
@@ -382,7 +406,9 @@ class SpeakerMatch(Base):
     __tablename__ = "speaker_match"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     speaker1_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
     speaker2_id = Column(Integer, ForeignKey("speaker.id", ondelete="CASCADE"), nullable=False)
     confidence = Column(Float, nullable=False)

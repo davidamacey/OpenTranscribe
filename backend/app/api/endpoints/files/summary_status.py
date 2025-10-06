@@ -38,6 +38,7 @@ async def get_summary_status(
     """
     # Get file by UUID
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
     media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
     file_id = media_file.id
 

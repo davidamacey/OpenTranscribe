@@ -4,6 +4,7 @@
   import { authStore, fetchUserInfo } from '../stores/auth';
   import LLMSettings from '../components/settings/LLMSettings.svelte';
   import PromptSettings from '../components/settings/PromptSettings.svelte';
+  import AudioExtractionSettings from '../components/settings/AudioExtractionSettings.svelte';
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '../lib/api/userSettings';
 
   // Router props passed by svelte-navigator
@@ -46,6 +47,7 @@
     { id: 'profile', label: 'Profile' },
     { id: 'password', label: 'Password' },
     { id: 'recording', label: 'Recording' },
+    { id: 'audio-extraction', label: 'Audio Extraction' },
     { id: 'ai-prompts', label: 'AI Prompts' },
     { id: 'llm-provider', label: 'LLM Provider' }
   ];
@@ -277,7 +279,18 @@
       </svg>
       Recording
     </button>
-    <button 
+    <button
+      class="tab-button {activeTab === 'audio-extraction' ? 'active' : ''}"
+      on:click={() => switchTab('audio-extraction')}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"></path>
+        <circle cx="6" cy="18" r="3"></circle>
+        <circle cx="18" cy="16" r="3"></circle>
+      </svg>
+      Audio Extraction
+    </button>
+    <button
       class="tab-button {activeTab === 'ai-prompts' ? 'active' : ''}"
       on:click={() => switchTab('ai-prompts')}
     >
@@ -586,17 +599,26 @@
         </div>
 
         <div class="form-group">
-          <div class="checkbox-wrapper">
-            <input 
-              type="checkbox" 
-              id="autoStopEnabled" 
-              bind:checked={autoStopEnabled}
-              on:change={onRecordingSettingChange}
-              title="Automatically stop recording at the maximum duration"
-            />
-            <label for="autoStopEnabled">Automatically stop at maximum duration</label>
+          <div class="toggle-group">
+            <div class="toggle-header">
+              <label for="autoStopEnabled" class="toggle-label">
+                <span class="label-text">Automatically stop at maximum duration</span>
+                <span class="label-description">
+                  When enabled, recordings will be automatically stopped when the maximum duration is reached. When disabled, you can record beyond the limit but will need to manually stop.
+                </span>
+              </label>
+              <label class="toggle-switch">
+                <input
+                  type="checkbox"
+                  id="autoStopEnabled"
+                  bind:checked={autoStopEnabled}
+                  on:change={onRecordingSettingChange}
+                  title="Automatically stop recording at the maximum duration"
+                />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
           </div>
-          <small class="form-text">When enabled, recordings will be automatically stopped when the maximum duration is reached. When disabled, you can record beyond the limit but will need to manually stop.</small>
         </div>
 
         <div class="form-actions">
@@ -616,13 +638,19 @@
         </div>
       </div>
     {/if}
-    
+
+    {#if activeTab === 'audio-extraction'}
+      <div class="settings-section">
+        <AudioExtractionSettings />
+      </div>
+    {/if}
+
     {#if activeTab === 'ai-prompts'}
       <div class="settings-section">
         <PromptSettings onSettingsChange={onAISettingsChange} />
       </div>
     {/if}
-    
+
     {#if activeTab === 'llm-provider'}
       <div class="settings-section">
         <LLMSettings onSettingsChange={onAISettingsChange} />
@@ -777,7 +805,95 @@
     color: var(--text-light);
     margin: 0.25rem 0 0;
   }
-  
+
+  /* Toggle Switch Styles */
+  .toggle-group {
+    padding: 1rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+
+  .toggle-group:hover {
+    border-color: var(--primary-color);
+  }
+
+  .toggle-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .toggle-label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    cursor: pointer;
+  }
+
+  .label-text {
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.9rem;
+  }
+
+  .label-description {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    line-height: 1.4;
+    font-weight: 400;
+  }
+
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+
+  .toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  input:checked + .toggle-slider {
+    background-color: var(--primary-color);
+  }
+
+  input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+  }
+
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -860,6 +976,11 @@
     font-weight: 500;
   }
 
+  /* Dark mode adjustments */
+  :global([data-theme='dark']) .toggle-slider:before {
+    background-color: #e5e7eb;
+  }
+
   @media (max-width: 768px) {
     .tab-button {
       padding: 0.6rem 1rem;
@@ -869,6 +990,10 @@
 
     .tab-content {
       min-height: 300px;
+    }
+
+    .toggle-header {
+      flex-direction: column;
     }
   }
 

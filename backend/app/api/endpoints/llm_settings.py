@@ -145,9 +145,11 @@ def get_user_configurations(
         with contextlib.suppress(ValueError):
             active_config_id = int(active_setting.setting_value)
             # Convert integer ID to UUID by finding the config
-            active_config = db.query(models.UserLLMSettings).filter(
-                models.UserLLMSettings.id == active_config_id
-            ).first()
+            active_config = (
+                db.query(models.UserLLMSettings)
+                .filter(models.UserLLMSettings.id == active_config_id)
+                .first()
+            )
             if active_config:
                 active_config_uuid = active_config.uuid
 

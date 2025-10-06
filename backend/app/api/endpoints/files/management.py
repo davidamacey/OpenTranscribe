@@ -352,6 +352,7 @@ async def get_stuck_files(
             try:
                 # Use internal ID lookup for stuck files (file_id is int from check_for_stuck_files)
                 from app.api.endpoints.files.crud import get_media_file_by_id
+
                 db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
                 stuck_files.append(
                     {

@@ -188,7 +188,9 @@ async def get_file_summary(
                 if "context" not in action:
                     action["context"] = ""
 
-            return SummaryResponse(file_id=media_file.uuid, summary_data=summary, source="opensearch")  # Use UUID
+            return SummaryResponse(
+                file_id=media_file.uuid, summary_data=summary, source="opensearch"
+            )  # Use UUID
 
         # No summary available
         raise HTTPException(

@@ -96,6 +96,8 @@
         return 'file-text';
       case 'youtube_processing_status':
         return 'video';
+      case 'audio_extraction_status':
+        return 'music';
       case 'analytics_status':
         return 'bar-chart';
       default:
@@ -188,6 +190,8 @@
         case 'processing':
         case 'in_progress':
           return 'info';
+        case 'not_configured':
+          return 'warning';
         default:
           return 'default';
       }
@@ -587,7 +591,11 @@
   .notification-item.status-info .notification-indicator {
     background: var(--primary-color);
   }
-  
+
+  .notification-item.status-warning .notification-indicator {
+    background: var(--warning-color, #f59e0b);
+  }
+
   .notification-item.unread .notification-indicator {
     background: var(--primary-color);
   }
@@ -638,7 +646,13 @@
     border-color: rgba(59, 130, 246, 0.2);
     color: var(--primary-color);
   }
-  
+
+  .notification-item.status-warning .notification-icon {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.2);
+    color: var(--warning-color, #f59e0b);
+  }
+
   /* Content */
   .notification-content {
     flex: 1;

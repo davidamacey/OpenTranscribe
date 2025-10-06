@@ -86,7 +86,9 @@ class YouTubeProcessingResult(TypedDict):
 
 
 @celery_app.task(name="process_youtube_url_task", bind=True)
-def process_youtube_url_task(self, url: str, user_id: int, file_uuid: str) -> YouTubeProcessingResult:
+def process_youtube_url_task(
+    self, url: str, user_id: int, file_uuid: str
+) -> YouTubeProcessingResult:
     """Background task to process YouTube URL by downloading and creating media file.
 
     This task handles asynchronous YouTube video processing to prevent UI blocking.
@@ -188,7 +190,9 @@ def process_youtube_url_task(self, url: str, user_id: int, file_uuid: str) -> Yo
                             "status": updated_media_file.status.value
                             if updated_media_file.status
                             else "pending",
-                            "display_status": FormattingService.format_status(updated_media_file.status)
+                            "display_status": FormattingService.format_status(
+                                updated_media_file.status
+                            )
                             if updated_media_file.status
                             else "Pending",
                             "content_type": updated_media_file.content_type,

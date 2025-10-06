@@ -5,6 +5,7 @@ Automatically generates AI-powered tag and collection suggestions from
 transcripts after transcription completes. Only runs if LLM provider
 is configured for the user.
 """
+
 import json
 import logging
 
@@ -105,9 +106,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         file_id = media_file.id
         user_id = media_file.user_id
 
-        logger.info(
-            f"Starting topic extraction for file {file_id} (user {user_id})"
-        )
+        logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
 
         # Send processing notification
         send_topic_extraction_notification(
@@ -118,15 +117,17 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         )
 
         # Create topic extraction service
-        extraction_service = TopicExtractionService.create_from_settings(
-            user_id=user_id, db=db
-        )
+        extraction_service = TopicExtractionService.create_from_settings(user_id=user_id, db=db)
 
         if not extraction_service:
-            logger.info(
-                f"LLM not configured for user {user_id}, skipping topic extraction"
+            logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
+            # Send notification that LLM is not configured
+            send_topic_extraction_notification(
+                user_id=user_id,
+                file_id=file_id,
+                status="not_configured",
+                message="Topic extraction not available - no LLM provider configured in settings",
             )
-            # No error notification - this is expected when LLM is not configured
             return {
                 "status": "skipped",
                 "reason": "LLM not configured",
@@ -238,21 +239,25 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
             elif result["status"] == "skipped":
                 results["skipped"] += 1
 
-            results["details"].append({
-                "file_uuid": file_uuid,
-                "status": result["status"],
-                "suggestion_id": result.get("suggestion_id"),
-                "error": result.get("error"),
-            })
+            results["details"].append(
+                {
+                    "file_uuid": file_uuid,
+                    "status": result["status"],
+                    "suggestion_id": result.get("suggestion_id"),
+                    "error": result.get("error"),
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error in batch processing file {file_uuid}: {e}")
             results["failed"] += 1
-            results["details"].append({
-                "file_uuid": file_uuid,
-                "status": "failed",
-                "error": str(e),
-            })
+            results["details"].append(
+                {
+                    "file_uuid": file_uuid,
+                    "status": "failed",
+                    "error": str(e),
+                }
+            )
 
     logger.info(
         f"Batch topic extraction completed: {results['completed']} succeeded, "

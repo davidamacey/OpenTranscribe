@@ -97,6 +97,10 @@ function createUploadStore() {
       return uploadService.addUpload('recording', blob, name);
     },
 
+    addExtractedAudio(audioBlob: Blob, filename: string, extractionMetadata: any, compressionRatio: number) {
+      return uploadService.addExtractedAudio(audioBlob, filename, extractionMetadata, compressionRatio);
+    },
+
     retry(uploadId: string) {
       uploadService.retryUpload(uploadId);
     },

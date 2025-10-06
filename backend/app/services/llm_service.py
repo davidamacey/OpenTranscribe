@@ -541,7 +541,9 @@ class LLMService:
         ]
 
         # Use response prefilling for consistent JSON output
-        response = self.chat_completion(messages, max_tokens=2000, temperature=0.1, prefill_json=True)
+        response = self.chat_completion(
+            messages, max_tokens=2000, temperature=0.1, prefill_json=True
+        )
 
         try:
             content = response.content.strip()
@@ -582,7 +584,9 @@ class LLMService:
 
         try:
             # Use response prefilling for final combined summary
-            response = self.chat_completion(messages, max_tokens=4000, temperature=0.1, prefill_json=True)
+            response = self.chat_completion(
+                messages, max_tokens=4000, temperature=0.1, prefill_json=True
+            )
             return self._parse_summary_response(
                 response,
                 0,
@@ -737,7 +741,9 @@ class LLMService:
             except Exception as e:
                 logger.warning(f"Error closing session: {e}")
 
-    def identify_speakers(self, transcript: str, speaker_segments: list, known_speakers: list) -> dict:
+    def identify_speakers(
+        self, transcript: str, speaker_segments: list, known_speakers: list
+    ) -> dict:
         """
         Use LLM to suggest speaker identifications based on contextual analysis of speech patterns,
         conversation content, and known speaker profiles.
@@ -792,17 +798,25 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
             if known_speakers and len(known_speakers) > 0:
                 known_speakers_context = "\n\nKNOWN SPEAKER PROFILES:\n"
                 for i, speaker in enumerate(known_speakers[:15]):  # Limit to prevent token overflow
-                    description = speaker.get('description', 'No description available')
-                    known_speakers_context += f"{i+1}. {speaker['name']}: {description}\n"
+                    description = speaker.get("description", "No description available")
+                    known_speakers_context += f"{i + 1}. {speaker['name']}: {description}\n"
             else:
                 known_speakers_context = "\n\nNo known speaker profiles provided for comparison.\n"
 
             # Extract unique speaker labels from segments
-            speaker_labels = list(set(seg.get('speaker_label', 'Unknown') for seg in speaker_segments if seg.get('speaker_label')))
+            speaker_labels = list(
+                set(
+                    seg.get("speaker_label", "Unknown")
+                    for seg in speaker_segments
+                    if seg.get("speaker_label")
+                )
+            )
 
             # Calculate available tokens for transcript content
             # Reserve tokens for system prompt, known speakers, response, and formatting
-            reserved_tokens = len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2000 + 500  # Rough token estimation
+            reserved_tokens = (
+                len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2000 + 500
+            )  # Rough token estimation
             available_tokens = max(1000, self.user_context_window - reserved_tokens)
 
             # Truncate transcript if needed, trying to preserve important context
@@ -811,13 +825,17 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
                 # Try to keep beginning and end of transcript for context
                 target_length = available_tokens * 3
                 half_length = target_length // 2
-                transcript_content = transcript[:half_length] + "\n\n[... middle content truncated ...]\n\n" + transcript[-half_length:]
+                transcript_content = (
+                    transcript[:half_length]
+                    + "\n\n[... middle content truncated ...]\n\n"
+                    + transcript[-half_length:]
+                )
 
             # Build comprehensive user prompt
             user_prompt = f"""TRANSCRIPT TO ANALYZE:
 {transcript_content}
 
-CURRENT SPEAKER LABELS: {', '.join(speaker_labels)}
+CURRENT SPEAKER LABELS: {", ".join(speaker_labels)}
 {known_speakers_context}
 
 TASK:
@@ -853,7 +871,10 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
                 # Prefill response to force quote extraction first
-                {"role": "assistant", "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:\n"}
+                {
+                    "role": "assistant",
+                    "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:\n",
+                },
             ]
 
             # Use conservative response token limit based on user's context window
@@ -862,7 +883,7 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
             response = self.chat_completion(
                 messages=messages,
                 max_tokens=response_tokens,
-                temperature=0.2  # Lower temperature for more consistent and reliable identification
+                temperature=0.2,  # Lower temperature for more consistent and reliable identification
             )
 
             if not response or not response.content:
@@ -914,17 +935,26 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
                 # Validate response structure
                 if not isinstance(result, dict):
                     logger.error("LLM response is not a valid JSON object")
-                    return {"speaker_predictions": [], "error": "Invalid response format - not a JSON object"}
+                    return {
+                        "speaker_predictions": [],
+                        "error": "Invalid response format - not a JSON object",
+                    }
 
                 if "speaker_predictions" not in result:
                     logger.error("LLM response missing required 'speaker_predictions' field")
-                    return {"speaker_predictions": [], "error": "Invalid response format - missing speaker_predictions"}
+                    return {
+                        "speaker_predictions": [],
+                        "error": "Invalid response format - missing speaker_predictions",
+                    }
 
                 # Validate prediction structure
                 predictions = result["speaker_predictions"]
                 if not isinstance(predictions, list):
                     logger.error("speaker_predictions is not a list")
-                    return {"speaker_predictions": [], "error": "Invalid response format - speaker_predictions must be a list"}
+                    return {
+                        "speaker_predictions": [],
+                        "error": "Invalid response format - speaker_predictions must be a list",
+                    }
 
                 # Filter predictions by confidence threshold and validate structure
                 valid_predictions = []
@@ -943,12 +973,14 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
 
                     valid_predictions.append(pred)
 
-                logger.info(f"Speaker identification completed: {len(valid_predictions)} valid predictions from {len(predictions)} total")
+                logger.info(
+                    f"Speaker identification completed: {len(valid_predictions)} valid predictions from {len(predictions)} total"
+                )
 
                 return {
                     "speaker_predictions": valid_predictions,
                     "overall_confidence": result.get("overall_confidence", "unknown"),
-                    "analysis_notes": result.get("analysis_notes", "No additional notes provided")
+                    "analysis_notes": result.get("analysis_notes", "No additional notes provided"),
                 }
 
             except json.JSONDecodeError as e:
