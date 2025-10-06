@@ -6,6 +6,7 @@ import { downloadStore } from './downloads';
 export type NotificationType =
   | 'transcription_status'
   | 'summarization_status'
+  | 'topic_extraction_status'
   | 'youtube_processing_status'
   | 'analytics_status'
   | 'download_progress'
@@ -198,7 +199,7 @@ function createWebSocketStore() {
             }
 
             // Handle progressive notifications
-            const isProgressiveType = data.type === 'transcription_status' || data.type === 'summarization_status' || data.type === 'youtube_processing_status';
+            const isProgressiveType = data.type === 'transcription_status' || data.type === 'summarization_status' || data.type === 'topic_extraction_status' || data.type === 'youtube_processing_status';
 
             // Handle silent notifications (gallery-only updates)
             const isSilentType = data.type === 'file_created' || data.type === 'file_updated';
@@ -427,6 +428,8 @@ function createWebSocketStore() {
         return 'Transcription Update';
       case 'summarization_status':
         return 'Summarization Update';
+      case 'topic_extraction_status':
+        return 'Topic Extraction';
       case 'youtube_processing_status':
         return 'YouTube Processing';
       case 'analytics_status':

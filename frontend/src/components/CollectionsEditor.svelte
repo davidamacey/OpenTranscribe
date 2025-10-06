@@ -3,12 +3,21 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '$stores/toast';
-  
+  import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
+  import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+
   /** @type {string} */
   export let fileId = "";
   /** @type {Array<{id: string, name: string, description?: string}>} */
   export let collections = [];
-  
+  /** @type {Array<{name: string, confidence: number, rationale?: string, description?: string}>} */
+  export let aiSuggestions = [];
+
+  // Filter AI suggestions to only show ones not already applied
+  $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
+    !collections.some(col => col.name.toLowerCase() === suggestion.name.toLowerCase())
+  );
+
   // Ensure collections are always in the correct format
   $: {
     if (Array.isArray(collections)) {
@@ -31,15 +40,12 @@
   let newCollectionInput = '';
   /** @type {boolean} */
   let loading = false;
-  /** @type {string|null} */
-  let error = null;
   
   // Event dispatcher
   const dispatch = createEventDispatcher();
   
   // Fetch all available collections
   async function fetchAllCollections() {
-    error = null;
     try {
       const response = await axiosInstance.get('/api/collections/');
       
@@ -51,28 +57,27 @@
       );
       
       allCollections = validCollections;
-    } catch (err) { 
+    } catch (err) {
       console.error('[CollectionsEditor] Error fetching collections:', err);
       console.error('[CollectionsEditor] Error details:', {
         message: err.message,
         status: err.response?.status,
         data: err.response?.data
       });
-      
+
+      // Show toast for critical errors
       if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
+        toastStore.error('Unauthorized: Please log in.');
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server';
-      } else {
-        error = 'Failed to load collections';
+        toastStore.error('Network error: Cannot connect to server');
       }
+      // Silent fail for collection loading - not critical
     }
   }
   
   // Add file to an existing collection
   async function addToCollection(collectionId) {
     loading = true;
-    error = null;
     try {
       const collectionToAdd = allCollections.find(c => c.id === collectionId);
       if (!collectionToAdd) {
@@ -93,74 +98,83 @@
       }
     } catch (err) {
       console.error('[CollectionsEditor] Error adding to collection:', err);
-      if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
-      } else {
-        error = 'Failed to add to collection';
+
+      // Extract error message
+      let errorMessage = 'Failed to add to collection';
+      if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err?.message) {
+        errorMessage = err.message;
       }
-      toastStore.error('Failed to add to collection');
+
+      toastStore.error(errorMessage);
     } finally {
       loading = false;
     }
   }
   
-  // Create a new collection and optionally add current file to it
+  // Create a new collection or add to existing one
   async function createAndAddCollection() {
     if (!newCollectionInput.trim()) return;
     loading = true;
-    error = null;
+
+    const collectionName = newCollectionInput.trim();
+
     try {
-      // Step 1: Create the collection
-      const createPayload = { 
-        name: newCollectionInput.trim()
-      };
-      
+      // Check if collection already exists
+      const existingCollection = allCollections.find(
+        c => c.name.toLowerCase() === collectionName.toLowerCase()
+      );
+
+      if (existingCollection) {
+        // Collection exists - just add file to it
+        await addToCollection(existingCollection.id);
+        newCollectionInput = '';
+        return;
+      }
+
+      // Collection doesn't exist - create it
+      const createPayload = { name: collectionName };
       const createResponse = await axiosInstance.post('/api/collections/', createPayload);
       const newCollection = createResponse.data;
-      
+
       if (!newCollection || typeof newCollection.id === 'undefined') {
         console.error('[CollectionsEditor] Invalid collection received from server:', newCollection);
         throw new Error('Server returned an invalid collection');
       }
-      
+
       // Add to allCollections if it's not already present
       if (!allCollections.some(c => c.id === newCollection.id)) {
         allCollections = [...allCollections, { ...newCollection, media_count: 0 }];
       }
-      
-      // Step 2: Add current file to the new collection
+
+      // Add current file to the new collection
       const addPayload = { media_file_ids: [fileId] };
-      const addResponse = await axiosInstance.post(`/api/collections/${newCollection.id}/media`, addPayload);
-      
+      await axiosInstance.post(`/api/collections/${newCollection.id}/media`, addPayload);
+
       // Add to collections if it's not already present
       if (!collections.some(c => c.id === newCollection.id)) {
         collections = [...collections, newCollection];
-        newCollectionInput = '';
         dispatch('collectionsUpdated', { collections });
         toastStore.success(`Created collection "${newCollection.name}" and added file`);
       } else {
-        newCollectionInput = '';
         toastStore.success(`Created collection "${newCollection.name}"`);
       }
+
+      newCollectionInput = '';
     } catch (err) {
-      console.error('[CollectionsEditor] Error creating collection:', err);
-      if (err && typeof err === 'object') {
-        if (err.response && err.response.status === 401) {
-          error = 'Unauthorized: Please log in.';
-        } else if (
-          err.response && 
-          err.response.data && 
-          typeof err.response.data === 'object' && 
-          'detail' in err.response.data
-        ) {
-          error = `Failed to create collection: ${err.response.data.detail}`;
-        } else {
-          error = 'Failed to create collection';
-        }
-      } else {
-        error = 'Failed to create collection';
+      console.error('[CollectionsEditor] Error with collection:', err);
+
+      // Extract error message
+      let errorMessage = 'Failed to add to collection';
+      if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err?.message) {
+        errorMessage = err.message;
       }
-      toastStore.error(error || 'Failed to create collection');
+
+      // Show toast instead of inline error
+      toastStore.error(errorMessage);
     } finally {
       loading = false;
     }
@@ -169,7 +183,6 @@
   // Remove file from a collection
   async function removeFromCollection(collectionId) {
     loading = true;
-    error = null;
     try {
       const collectionToRemove = collections.find(c => c.id === collectionId);
       if (!collectionToRemove) {
@@ -194,14 +207,16 @@
       }
     } catch (err) {
       console.error('[CollectionsEditor] Error removing from collection:', err);
-      if (err.response && err.response.status === 401) {
-        error = 'Unauthorized: Please log in.';
-      } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server';
-      } else {
-        error = 'Failed to remove from collection';
+
+      // Extract error message
+      let errorMessage = 'Failed to remove from collection';
+      if (err?.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err?.message) {
+        errorMessage = err.message;
       }
-      toastStore.error('Failed to remove from collection');
+
+      toastStore.error(errorMessage);
     } finally {
       loading = false;
     }
@@ -216,28 +231,70 @@
   }
   
   let suggestedCollections = [];
-  
-  // Get suggested collections (those that the file isn't already in)
-  // Show only the 5 most recently created collections as suggestions
+  let dropdownCollections = [];
+
+  // Get top 5 most used collections as chips
   $: suggestedCollections = allCollections
-    .filter(collection => !collections.some(c => 
-      (c.id === collection.id) || (c.name === collection.name)
-    ))
-    .sort((a, b) => b.id - a.id) // Sort by ID descending (newer collections first)
-    .slice(0, 5); // Limit to only 5 most recent collections
+    .filter(collection => {
+      // Exclude collections the file is already in
+      const isAssigned = collections.some(c =>
+        (c.id === collection.id) || (c.name === collection.name)
+      );
+      if (isAssigned) return false;
+
+      // Exclude collections that are in AI suggestions (prioritize AI suggestions)
+      const isInAISuggestions = filteredAISuggestions.some(aiSug =>
+        aiSug.name.toLowerCase() === collection.name.toLowerCase()
+      );
+      if (isInAISuggestions) return false;
+
+      return true;
+    })
+    .sort((a, b) => (b.media_count || 0) - (a.media_count || 0)) // Sort by media count
+    .slice(0, 5); // Top 5 most used
+
+  // Get all available collections for dropdown (excluding already assigned and AI suggestions)
+  $: dropdownCollections = allCollections
+    .filter(collection => {
+      const isAssigned = collections.some(c => (c.id === collection.id) || (c.name === collection.name));
+      if (isAssigned) return false;
+
+      const isInAISuggestions = filteredAISuggestions.some(aiSug =>
+        aiSug.name.toLowerCase() === collection.name.toLowerCase()
+      );
+      if (isInAISuggestions) return false;
+
+      return true;
+    })
+    .map(collection => ({
+      id: collection.id,
+      name: collection.name,
+      count: collection.media_count || 0
+    }));
   
+  // Handle multiselect collection selection
+  async function handleCollectionSelect(event) {
+    const { id } = event.detail;
+    await addToCollection(id);
+  }
+
+  // Handle AI suggestion acceptance
+  async function handleAcceptAISuggestion(event) {
+    const { suggestion } = event.detail;
+    newCollectionInput = suggestion.name;
+    await createAndAddCollection();
+    newCollectionInput = '';
+    // Don't remove from aiSuggestions - let reactive filtering handle it
+    // This allows suggestions to reappear if the collection is later removed
+    dispatch('aiSuggestionAccepted', { suggestion });
+  }
+
   onMount(() => {
     fetchAllCollections();
   });
 </script>
 
 <div class="collections-editor">
-  {#if error && !(error === 'Failed to load collections' && collections.length === 0)}
-    <div class="error-message">
-      {error}
-    </div>
-  {/if}
-  
   <div class="collections-list">
     {#if collections.length === 0}
       <span class="no-collections">No collections yet.</span>
@@ -272,11 +329,19 @@
     </div>
   </div>
   
+  <!-- AI Suggestions Dropdown -->
+  <AISuggestionsDropdown
+    suggestions={filteredAISuggestions}
+    type="collection"
+    {loading}
+    on:accept={handleAcceptAISuggestion}
+  />
+
   {#if suggestedCollections.length > 0}
     <div class="suggested-collections">
       <span class="suggested-label">Suggested:</span>
       {#each suggestedCollections.filter(c => c && c.id !== undefined) as collection (collection.id)}
-        <button 
+        <button
           class="suggested-collection"
           on:click={() => addToCollection(collection.id)}
           disabled={loading}
@@ -285,6 +350,19 @@
           {collection.name}
         </button>
       {/each}
+    </div>
+  {/if}
+
+  {#if dropdownCollections.length > 0}
+    <div class="dropdown-section">
+      <span class="dropdown-label">Select from all collections:</span>
+      <SearchableMultiSelect
+        options={dropdownCollections}
+        selectedIds={[]}
+        placeholder="Add to collections from library..."
+        showCounts={true}
+        on:select={handleCollectionSelect}
+      />
     </div>
   {/if}
 </div>
@@ -401,15 +479,6 @@
     cursor: not-allowed;
   }
   
-  .error-message {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    padding: 0.6rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
-  
   .no-collections {
     color: var(--text-secondary);
     font-size: 0.85rem;
@@ -425,5 +494,16 @@
   
   :global(.dark) .suggested-collection:hover {
     background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  .dropdown-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .dropdown-label {
+    color: var(--text-light);
+    font-size: 0.8rem;
   }
 </style>

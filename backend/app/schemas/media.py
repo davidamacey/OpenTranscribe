@@ -261,6 +261,12 @@ class Tag(TagBase, UUIDBaseSchema):
     """Tag with UUID as public identifier"""
 
 
+class TagWithCount(Tag):
+    """Tag with usage count for filtering UI"""
+
+    usage_count: int = 0
+
+
 class CommentBase(BaseModel):
     text: str
     timestamp: Optional[float] = None

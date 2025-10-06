@@ -20,6 +20,7 @@ from .media import Task
 from .media import TranscriptSegment
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
+from .topic import TopicSuggestion
 from .user import User
 from .user_llm_settings import UserLLMSettings
 
@@ -42,4 +43,5 @@ __all__ = [
     "SummaryPrompt",
     "UserSetting",
     "UserLLMSettings",
+    "TopicSuggestion",
 ]

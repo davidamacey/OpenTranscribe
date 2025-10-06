@@ -3,6 +3,7 @@
   import { slide } from 'svelte/transition';
   import axiosInstance from '../lib/axios';
   import CollectionsFilter from './CollectionsFilter.svelte';
+  import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   
   // Type definitions for props and state
   /**
@@ -90,7 +91,21 @@
   // State
   /** @type {Tag[]} */
   let allTags: any[] = [];
-  
+  let showAllTags = false;  // Toggle for showing all tags vs top 9
+  let dropdownTags: any[] = [];  // All tags for multiselect dropdown
+
+  // Reactive: Prepare dropdown tags with proper format
+  $: dropdownTags = allTags.map(tag => ({
+    id: tag.id,
+    name: tag.name,
+    count: tag.usage_count || 0
+  }));
+
+  // Reactive: Convert selected tag names to IDs for multiselect
+  $: selectedTagIds = allTags
+    .filter(tag => selectedTags.includes(tag.name))
+    .map(tag => tag.id);
+
   // Component refs
   let collectionsFilterRef: any;
   
@@ -179,11 +194,35 @@
    */
   function toggleTag(tag: string) {
     const index = selectedTags.indexOf(tag);
-    
+
     if (index === -1) {
       selectedTags = [...selectedTags, tag];
     } else {
       selectedTags = selectedTags.filter(t => t !== tag);
+    }
+  }
+
+  /**
+   * Handle tag selection from multiselect dropdown
+   * @param {CustomEvent} event - Event with tag id
+   */
+  function handleTagSelect(event: CustomEvent) {
+    const tagId = event.detail.id;
+    const tag = allTags.find(t => t.id === tagId);
+    if (tag && !selectedTags.includes(tag.name)) {
+      selectedTags = [...selectedTags, tag.name];
+    }
+  }
+
+  /**
+   * Handle tag deselection from multiselect dropdown
+   * @param {CustomEvent} event - Event with tag id
+   */
+  function handleTagDeselect(event: CustomEvent) {
+    const tagId = event.detail.id;
+    const tag = allTags.find(t => t.id === tagId);
+    if (tag) {
+      selectedTags = selectedTags.filter(t => t !== tag.name);
     }
   }
   
@@ -450,16 +489,32 @@
       <p class="empty-text">No tags created yet</p>
     {:else}
       <div class="tags-list">
-        {#each allTags as tag}
+        {#each allTags.slice(0, 6) as tag}
           <button
             class="tag-button {selectedTags.includes(tag.name) ? 'selected' : ''}"
             on:click={() => toggleTag(tag.name)}
-            title="Filter files tagged with '{tag.name}'. Click to toggle selection."
+            title="Filter files tagged with '{tag.name}'. {tag.usage_count ? `Used in ${tag.usage_count} file${tag.usage_count > 1 ? 's' : ''}` : ''}"
           >
             {tag.name}
+            {#if tag.usage_count}
+              <span class="tag-count">{tag.usage_count}</span>
+            {/if}
           </button>
         {/each}
       </div>
+      {#if allTags.length > 0}
+        <div class="dropdown-section">
+          <SearchableMultiSelect
+            options={dropdownTags}
+            selectedIds={selectedTagIds}
+            placeholder="Select tags to filter..."
+            maxHeight="300px"
+            showCounts={true}
+            on:select={handleTagSelect}
+            on:deselect={handleTagDeselect}
+          />
+        </div>
+      {/if}
     {/if}
   </div>
   
@@ -709,13 +764,33 @@
     padding: 0.25rem 0.5rem;
     cursor: pointer;
     transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
-  
+
   .tag-button.selected,
   .speaker-button.selected {
     background-color: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
+  }
+
+  .tag-count {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    margin-left: 0.2rem;
+  }
+
+  .tag-button.selected .tag-count {
+    background-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .dropdown-section {
+    margin-top: 0.75rem;
   }
 
   /* File Type and Status button styles */

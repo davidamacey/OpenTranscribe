@@ -2,17 +2,18 @@
   import { slide } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
   import CollectionsEditor from './CollectionsEditor.svelte';
-  
+
   export let collections: any[] = [];
   export let isExpanded: boolean = false;
   export let fileId: number;
-  
+  export let aiCollectionSuggestions: Array<{name: string, confidence: number, rationale?: string, description?: string}> = [];
+
   const dispatch = createEventDispatcher();
-  
+
   function toggleExpanded() {
     isExpanded = !isExpanded;
   }
-  
+
   function handleCollectionsUpdated(event: any) {
     // Re-emit the event to parent component
     collections = event.detail.collections;
@@ -51,10 +52,11 @@
   {#if isExpanded}
     <div class="collections-content" transition:slide={{ duration: 200 }}>
       {#if fileId}
-        <CollectionsEditor 
-          {fileId} 
-          {collections} 
-          on:collectionsUpdated={handleCollectionsUpdated} 
+        <CollectionsEditor
+          {fileId}
+          {collections}
+          aiSuggestions={aiCollectionSuggestions}
+          on:collectionsUpdated={handleCollectionsUpdated}
         />
       {:else}
         <p>Loading collections...</p>

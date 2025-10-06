@@ -288,6 +288,38 @@ CREATE INDEX IF NOT EXISTS idx_speaker_match_confidence ON speaker_match(confide
 
 -- Note: Default tags are now handled by the backend in app/initial_data.py
 
+-- ========================================
+-- AI Suggestions Tables
+-- ========================================
+-- These tables support LLM-powered tag and collection suggestions (Issue #79)
+
+-- AI suggestions table for tags and collections
+-- Simplified schema focused on tags/collections suggestions only
+CREATE TABLE IF NOT EXISTS topic_suggestion (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    media_file_id INTEGER NOT NULL REFERENCES media_file(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+
+    -- AI-generated suggestions stored as JSONB
+    -- Format: [{name: str, confidence: float, rationale: str}, ...]
+    suggested_tags JSONB NULL DEFAULT '[]'::jsonb,
+    suggested_collections JSONB NULL DEFAULT '[]'::jsonb,
+
+    -- User interaction tracking
+    status VARCHAR(50) DEFAULT 'pending',  -- 'pending', 'reviewed', 'accepted', 'rejected'
+    user_decisions JSONB NULL,  -- {accepted_collections: [], accepted_tags: []}
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(media_file_id)  -- One suggestion per file
+);
+
+-- Indexes for suggestion queries
+CREATE INDEX IF NOT EXISTS idx_topic_suggestion_user_status ON topic_suggestion(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_topic_suggestion_media_file ON topic_suggestion(media_file_id);
+
 -- Summary prompts table for custom AI summarization prompts
 CREATE TABLE IF NOT EXISTS summary_prompt (
     id SERIAL PRIMARY KEY,

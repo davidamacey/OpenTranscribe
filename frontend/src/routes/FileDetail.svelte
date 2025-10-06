@@ -21,6 +21,7 @@
   import TranscriptModal from '$components/TranscriptModal.svelte';
   import { isLLMAvailable } from '../stores/llmStatus';
   import { transcriptStore, processedTranscriptSegments } from '../stores/transcriptStore';
+  import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
   
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -64,6 +65,11 @@
   let summaryGenerating = false; // WebSocket-driven summary generation status
   let currentProcessingStep = ''; // Current processing step from WebSocket notifications
   let lastProcessedNotificationState = ''; // Track processed notification state globally
+
+  // AI Suggestions state
+  let aiTagSuggestions: TagSuggestion[] = [];
+  let aiCollectionSuggestions: CollectionSuggestion[] = [];
+
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
 
@@ -180,6 +186,25 @@
       console.error('Error fetching file details:', error);
       errorMessage = 'Failed to load file details. Please try again.';
       isLoading = false;
+    }
+  }
+
+
+  /**
+   * Load AI suggestions for tags and collections
+   */
+  async function loadAISuggestions(): Promise<void> {
+    if (!fileId || !llmAvailable) return;
+
+    try {
+      const suggestions = await getAISuggestions(fileId);
+      if (suggestions && suggestions.status === 'pending') {
+        aiTagSuggestions = suggestions.tags || [];
+        aiCollectionSuggestions = suggestions.collections || [];
+      }
+    } catch (error) {
+      console.error('Error loading AI suggestions:', error);
+      // Silent fail - suggestions are optional
     }
   }
 
@@ -1608,6 +1633,11 @@
       fetchFileDetails().catch(err => {
         console.error('Error loading file details:', err);
       });
+
+      // Load AI suggestions if available
+      loadAISuggestions().catch(err => {
+        console.error('Error loading AI suggestions:', err);
+      });
     } else {
       errorMessage = 'Invalid file ID';
       isLoading = false;
@@ -1798,6 +1828,7 @@
               }
               } // Close the else block for file ID matching
             }
+
           } else {
           }
         } else {
@@ -1987,18 +2018,21 @@
           </div>
         {/if}
         
-        <TagsSection 
-          {file} 
-          bind:isTagsExpanded 
+        <TagsSection
+          {file}
+          bind:isTagsExpanded
+          {aiTagSuggestions}
           on:tagsUpdated={handleTagsUpdated}
         />
-        
-        <CollectionsSection 
-          bind:collections 
+
+        <CollectionsSection
+          bind:collections
           fileId={file?.id}
           bind:isExpanded={isCollectionsExpanded}
+          {aiCollectionSuggestions}
           on:collectionsUpdated={handleCollectionsUpdated}
         />
+
 
         <AnalyticsSection
           {file}

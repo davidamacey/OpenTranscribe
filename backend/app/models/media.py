@@ -122,6 +122,10 @@ class MediaFile(Base):
     collection_memberships = relationship(
         "CollectionMember", back_populates="media_file", cascade="all, delete-orphan"
     )
+    # Topic extraction and suggestions
+    topic_suggestions = relationship(
+        "TopicSuggestion", back_populates="media_file", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class TranscriptSegment(Base):

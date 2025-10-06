@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
+    OPENSEARCH_TOPIC_SUGGESTIONS_INDEX: str = "topic_suggestions"
+    OPENSEARCH_TOPIC_VECTORS_INDEX: str = "topic_vectors"
 
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL

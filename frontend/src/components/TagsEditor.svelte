@@ -3,12 +3,21 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '$stores/toast';
-// Use the shared axios instance so auth token is always sent
+  import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
+  import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+  // Use the shared axios instance so auth token is always sent
 
   /** @type {string} */
   export let fileId = "";
   /** @type {Array<{id: string, name: string}>} */
   export let tags = [];
+  /** @type {Array<{name: string, confidence: number, rationale?: string}>} */
+  export let aiSuggestions = [];
+
+  // Filter AI suggestions to only show ones not already applied
+  $: filteredAISuggestions = aiSuggestions.filter(suggestion =>
+    !tags.some(tag => tag.name.toLowerCase() === suggestion.name.toLowerCase())
+  );
 
   // Ensure tags are always in the correct format
   $: {
@@ -263,17 +272,60 @@
   }
   
   let suggestedTags = [];
-  
-  // Get suggested tags (those that aren't already assigned to the file)
-  // Show only the 5 most recently created tags as suggestions to prevent UI clutter
+  let dropdownTags = []; // All available tags for dropdown
+
+  // Get top 5 suggested tags as chips (most used)
   $: suggestedTags = allTags
-    .filter(tag => !tags.some(t => 
-      // Compare by ID if available, otherwise by name
-      (t.id === tag.id) || (t.name === tag.name)
-    ))
-    .sort((a, b) => b.id - a.id) // Sort by ID descending (assuming higher IDs are newer)
-    .slice(0, 5); // Limit to only 5 most recent tags
+    .filter(tag => {
+      const isAssigned = tags.some(t => (t.id === tag.id) || (t.name === tag.name));
+      if (isAssigned) return false;
+
+      const isInAISuggestions = filteredAISuggestions.some(aiSug =>
+        aiSug.name.toLowerCase() === tag.name.toLowerCase()
+      );
+      if (isInAISuggestions) return false;
+
+      return true;
+    })
+    .sort((a, b) => (b.usage_count || 0) - (a.usage_count || 0)) // Sort by usage count
+    .slice(0, 5); // Top 5 most used
+
+  // Get all available tags for dropdown (excluding already assigned and AI suggestions)
+  $: dropdownTags = allTags
+    .filter(tag => {
+      const isAssigned = tags.some(t => (t.id === tag.id) || (t.name === tag.name));
+      if (isAssigned) return false;
+
+      const isInAISuggestions = filteredAISuggestions.some(aiSug =>
+        aiSug.name.toLowerCase() === tag.name.toLowerCase()
+      );
+      if (isInAISuggestions) return false;
+
+      return true;
+    })
+    .map(tag => ({
+      id: tag.id,
+      name: tag.name,
+      count: tag.usage_count || 0
+    }));
+
+  // Handle multiselect tag selection
+  async function handleTagSelect(event) {
+    const { id } = event.detail;
+    await addTag(id);
+  }
   
+  // Handle AI suggestion acceptance
+  async function handleAcceptAISuggestion(event) {
+    const { suggestion } = event.detail;
+    newTagInput = suggestion.name;
+    await createAndAddTag();
+    newTagInput = '';
+    // Don't remove from aiSuggestions - let reactive filtering handle it
+    // This allows suggestions to reappear if the tag is later removed
+    dispatch('aiSuggestionAccepted', { suggestion });
+  }
+
   onMount(() => {
     fetchAllTags();
   });
@@ -314,11 +366,19 @@
     </div>
   </div>
   
+  <!-- AI Suggestions Dropdown -->
+  <AISuggestionsDropdown
+    suggestions={filteredAISuggestions}
+    type="tag"
+    {loading}
+    on:accept={handleAcceptAISuggestion}
+  />
+
   {#if suggestedTags.length > 0}
     <div class="suggested-tags">
       <span class="suggested-label">Suggested:</span>
       {#each suggestedTags.filter(t => t && t.id !== undefined) as tag (tag.id)}
-        <button 
+        <button
           class="suggested-tag"
           on:click={() => addTag(tag.id)}
           disabled={loading}
@@ -327,6 +387,19 @@
           {tag.name}
         </button>
       {/each}
+    </div>
+  {/if}
+
+  {#if dropdownTags.length > 0}
+    <div class="dropdown-section">
+      <span class="dropdown-label">Select from all tags:</span>
+      <SearchableMultiSelect
+        options={dropdownTags}
+        selectedIds={[]}
+        placeholder="Add tags from library..."
+        showCounts={true}
+        on:select={handleTagSelect}
+      />
     </div>
   {/if}
 </div>
@@ -441,5 +514,16 @@
   .suggested-tag:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .dropdown-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .dropdown-label {
+    color: var(--text-light);
+    font-size: 0.8rem;
   }
 </style>
