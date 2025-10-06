@@ -57,7 +57,7 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
     try:
         # Get tags with usage counts for files owned by this user
         tag_counts = (
-            db.query(Tag, func.count(FileTag.id).label('usage_count'))
+            db.query(Tag, func.count(FileTag.id).label("usage_count"))
             .outerjoin(FileTag)
             .outerjoin(MediaFile)
             .filter((MediaFile.user_id == current_user.id) | (MediaFile.id.is_(None)))
@@ -69,11 +69,7 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
         # Convert to TagWithCount objects
         tags_with_counts = []
         for tag, count in tag_counts:
-            tags_with_counts.append(TagWithCount(
-                id=tag.uuid,
-                name=tag.name,
-                usage_count=count
-            ))
+            tags_with_counts.append(TagWithCount(id=tag.uuid, name=tag.name, usage_count=count))
 
         return tags_with_counts
     except Exception as e:

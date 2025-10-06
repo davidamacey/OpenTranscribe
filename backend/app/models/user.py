@@ -18,7 +18,9 @@ class User(Base):
     __tablename__ = "user"
 
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     full_name = Column(String, nullable=True)

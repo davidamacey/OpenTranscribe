@@ -276,7 +276,9 @@ def add_speaker_embedding(
             logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
             return
 
-        logger.info(f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {len(embedding)}")
+        logger.info(
+            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {len(embedding)}"
+        )
 
         # Prepare document
         doc = {
@@ -302,11 +304,15 @@ def add_speaker_embedding(
             id=str(speaker_uuid),  # Use speaker_uuid as document ID
         )
 
-        logger.info(f"Indexed speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {response}")
+        logger.info(
+            f"Indexed speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {response}"
+        )
         return response
 
     except Exception as e:
-        logger.error(f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}")
+        logger.error(
+            f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
+        )
 
 
 def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
@@ -342,7 +348,9 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
                     "speaker_id": data["speaker_id"],
                     "speaker_uuid": str(data["speaker_uuid"]),
                     "profile_id": data.get("profile_id"),
-                    "profile_uuid": str(data.get("profile_uuid")) if data.get("profile_uuid") else None,
+                    "profile_uuid": str(data.get("profile_uuid"))
+                    if data.get("profile_uuid")
+                    else None,
                     "user_id": data["user_id"],
                     "name": data["name"],
                     "collection_ids": data.get("collection_ids", []),
@@ -583,7 +591,9 @@ def find_matching_speaker(
                 source = hit["_source"]
                 # Skip profile documents that don't have speaker_id
                 if "speaker_id" not in source:
-                    logger.debug(f"Skipping profile document in speaker matching: {source.get('profile_id')}")
+                    logger.debug(
+                        f"Skipping profile document in speaker matching: {source.get('profile_id')}"
+                    )
                     return None
 
                 return {
@@ -760,7 +770,9 @@ def find_speaker_across_media(speaker_uuid: str, user_id: int) -> list[dict[str,
         return []
 
 
-def update_speaker_collections(speaker_uuid: str, profile_id: int, profile_uuid: str, collection_ids: list[int]):
+def update_speaker_collections(
+    speaker_uuid: str, profile_id: int, profile_uuid: str, collection_ids: list[int]
+):
     """
     Update speaker embedding collections when a speaker is labeled/assigned to profile
 
@@ -799,7 +811,10 @@ def update_speaker_collections(speaker_uuid: str, profile_id: int, profile_uuid:
 
 
 def move_speaker_to_profile_collection(
-    unlabeled_speaker_uuid: str, target_profile_id: int, target_profile_uuid: str, target_collection_ids: list[int]
+    unlabeled_speaker_uuid: str,
+    target_profile_id: int,
+    target_profile_uuid: str,
+    target_collection_ids: list[int],
 ):
     """
     Move an unlabeled speaker embedding to a profile's collection
@@ -868,7 +883,9 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
                 {
                     "doc": {
                         "profile_id": update.get("profile_id"),
-                        "profile_uuid": str(update.get("profile_uuid")) if update.get("profile_uuid") else None,
+                        "profile_uuid": str(update.get("profile_uuid"))
+                        if update.get("profile_uuid")
+                        else None,
                         "collection_ids": update.get("collection_ids", []),
                         "updated_at": datetime.datetime.now().isoformat(),
                     }
@@ -972,7 +989,9 @@ def merge_speaker_embeddings(
 
     try:
         # Delete the source speaker document using UUID
-        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_uuid))
+        opensearch_client.delete(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(source_speaker_uuid)
+        )
 
         # Update the target speaker's collections using UUID
         update_body = {
@@ -1100,7 +1119,12 @@ def get_profile_embedding(profile_uuid: str) -> Optional[list[float]]:
 
 
 def store_profile_embedding(
-    profile_id: int, profile_uuid: str, profile_name: str, embedding: list[float], speaker_count: int, user_id: int
+    profile_id: int,
+    profile_uuid: str,
+    profile_name: str,
+    embedding: list[float],
+    speaker_count: int,
+    user_id: int,
 ) -> bool:
     """
     Store profile embedding with distinct document type for proper filtering.
@@ -1149,7 +1173,9 @@ def store_profile_embedding(
         return False
 
 
-def update_profile_embedding(profile_id: int, profile_uuid: str, embedding: list[float], embedding_count: int) -> bool:
+def update_profile_embedding(
+    profile_id: int, profile_uuid: str, embedding: list[float], embedding_count: int
+) -> bool:
     """
     Update or create a profile embedding in OpenSearch
 
@@ -1253,7 +1279,12 @@ def update_speaker_display_name(speaker_uuid: str, display_name: Optional[str]):
         logger.error(f"Error updating speaker display name: {e}")
 
 
-def update_speaker_profile(speaker_uuid: str, profile_id: Optional[int], profile_uuid: Optional[str], verified: bool = False):
+def update_speaker_profile(
+    speaker_uuid: str,
+    profile_id: Optional[int],
+    profile_uuid: Optional[str],
+    verified: bool = False,
+):
     """
     Update the profile assignment of a speaker in OpenSearch
 

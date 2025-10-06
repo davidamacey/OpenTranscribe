@@ -344,9 +344,13 @@ def transcribe_audio_task(self, file_uuid: str):
                         file_uuid = media_file.uuid if media_file else None
 
                     if file_uuid:
-                        index_transcript(file_id, file_uuid, user_id, full_transcript, speaker_names, file_title)
+                        index_transcript(
+                            file_id, file_uuid, user_id, full_transcript, speaker_names, file_title
+                        )
                     else:
-                        logger.warning(f"Could not index transcript: file_uuid not found for file_id {file_id}")
+                        logger.warning(
+                            f"Could not index transcript: file_uuid not found for file_id {file_id}"
+                        )
                 except Exception as e:
                     logger.warning(f"Error indexing transcript: {e}")
 

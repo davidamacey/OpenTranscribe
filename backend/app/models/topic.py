@@ -3,6 +3,7 @@ SQLAlchemy models for AI-powered tag and collection suggestions
 
 Simplified model for LLM-powered tag and collection suggestions from transcripts (Issue #79).
 """
+
 import uuid as uuid_pkg
 
 from sqlalchemy import Column
@@ -40,10 +41,14 @@ class TopicSuggestion(Base):
 
     # Primary keys and identifiers
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True)
+    uuid = Column(
+        UUID(as_uuid=True), unique=True, nullable=False, default=uuid_pkg.uuid4, index=True
+    )
 
     # Foreign keys
-    media_file_id = Column(Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False, index=True)
+    media_file_id = Column(
+        Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     user_id = Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # AI-generated suggestions (JSONB arrays)

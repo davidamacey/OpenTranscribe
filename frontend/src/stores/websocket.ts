@@ -10,6 +10,7 @@ export type NotificationType =
   | 'youtube_processing_status'
   | 'analytics_status'
   | 'download_progress'
+  | 'audio_extraction_status'
   | 'connection_established'
   | 'echo'
   | 'file_upload'
@@ -229,7 +230,7 @@ function createWebSocketStore() {
                     currentStep,
                     progress,
                     status: status as 'processing' | 'completed' | 'error',
-                    dismissible: status === 'completed' || status === 'failed' || status === 'error' || (data.type === 'youtube_processing_status' && status === 'pending'),
+                    dismissible: status === 'completed' || status === 'failed' || status === 'error' || status === 'not_configured' || (data.type === 'youtube_processing_status' && status === 'pending'),
                     read: false, // Mark as unread for updates
                     data: { ...s.notifications[existingIndex].data, ...data.data } // Merge old and new data
                   };
@@ -436,6 +437,8 @@ function createWebSocketStore() {
         return 'Analytics Update';
       case 'download_progress':
         return 'Download Progress';
+      case 'audio_extraction_status':
+        return 'Audio Extraction';
       case 'file_upload':
         return 'File Upload';
       case 'file_created':
@@ -447,6 +450,56 @@ function createWebSocketStore() {
       default:
         return 'Notification';
     }
+  };
+
+  // Add a notification manually (for client-side events like audio extraction)
+  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+    update((state: WebSocketState) => {
+      const newNotification: Notification = {
+        ...notification,
+        id: generateId(),
+        timestamp: new Date(),
+        read: false
+      };
+
+      // If this is a progressive notification, check if we should update existing one
+      if (notification.progressId) {
+        const existingIndex = state.notifications.findIndex(n => n.progressId === notification.progressId);
+        if (existingIndex !== -1) {
+          // Update existing notification
+          state.notifications[existingIndex] = {
+            ...state.notifications[existingIndex],
+            ...newNotification,
+            id: state.notifications[existingIndex].id, // Keep original ID
+            timestamp: state.notifications[existingIndex].timestamp, // Keep original timestamp
+          };
+        } else {
+          // Add new notification at the beginning
+          state.notifications = [newNotification, ...state.notifications];
+        }
+      } else {
+        // Add new notification at the beginning
+        state.notifications = [newNotification, ...state.notifications];
+      }
+
+      saveNotificationsToStorage(state.notifications);
+      return state;
+    });
+  };
+
+  // Update an existing notification (for progressive updates)
+  const updateNotification = (progressId: string, updates: Partial<Notification>) => {
+    update((state: WebSocketState) => {
+      const existingIndex = state.notifications.findIndex(n => n.progressId === progressId);
+      if (existingIndex !== -1) {
+        state.notifications[existingIndex] = {
+          ...state.notifications[existingIndex],
+          ...updates
+        };
+        saveNotificationsToStorage(state.notifications);
+      }
+      return state;
+    });
   };
   
   // Remove notification (with auto-regeneration for processing notifications)
@@ -490,7 +543,9 @@ function createWebSocketStore() {
     markAsRead,
     markAllAsRead,
     clearAll,
-    removeNotification
+    removeNotification,
+    addNotification,
+    updateNotification
   };
 }
 

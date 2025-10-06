@@ -170,13 +170,16 @@ class OpenSearchSummaryService:
 
             # Sanitize action items to ensure due_date is valid or None
             import re
+
             for action_item in doc.get("action_items", []):
                 due_date = action_item.get("due_date")
                 if due_date:
                     # Check if it's a valid date format (YYYY-MM-DD)
-                    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(due_date)):
+                    if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(due_date)):
                         # Invalid date format - set to None
-                        logger.warning(f"Invalid due_date format '{due_date}' for action item, setting to None")
+                        logger.warning(
+                            f"Invalid due_date format '{due_date}' for action item, setting to None"
+                        )
                         action_item["due_date"] = None
 
             # Normalize key_decisions and follow_up_items to strings (OpenSearch expects text, not dicts)
@@ -185,7 +188,11 @@ class OpenSearchSummaryService:
                 for decision in doc["key_decisions"]:
                     if isinstance(decision, dict):
                         # Extract text from dict structure
-                        decision_text = decision.get("decision", "") or decision.get("text", "") or str(decision)
+                        decision_text = (
+                            decision.get("decision", "")
+                            or decision.get("text", "")
+                            or str(decision)
+                        )
                         normalized_decisions.append(decision_text)
                     else:
                         normalized_decisions.append(str(decision))

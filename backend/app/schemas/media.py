@@ -37,6 +37,7 @@ class PrepareUploadRequest(BaseModel):
         file_size: Size of the file in bytes
         content_type: MIME type of the file
         file_hash: SHA-256 hash of the file for duplicate detection
+        extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)
     """
 
     filename: str = Field(..., description="Name of the file to be uploaded")
@@ -44,6 +45,9 @@ class PrepareUploadRequest(BaseModel):
     content_type: str = Field(..., description="MIME type of the file")
     file_hash: Optional[str] = Field(
         None, description="SHA-256 hash of the file for duplicate detection"
+    )
+    extracted_from_video: Optional[dict[str, Any]] = Field(
+        None, description="Metadata from original video file if audio was extracted client-side"
     )
 
 
@@ -69,6 +73,7 @@ class SpeakerUpdate(BaseModel):
 
 class Speaker(SpeakerBase, UUIDBaseSchema):
     """Speaker with UUID as public identifier"""
+
     user_id: UUID
     media_file_id: UUID
     profile_id: Optional[UUID] = None
@@ -99,6 +104,7 @@ class SpeakerProfileUpdate(BaseModel):
 
 class SpeakerProfile(SpeakerProfileBase, UUIDBaseSchema):
     """Speaker profile with UUID as public identifier"""
+
     user_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -123,6 +129,7 @@ class SpeakerCollectionUpdate(BaseModel):
 
 class SpeakerCollection(SpeakerCollectionBase, UUIDBaseSchema):
     """Speaker collection with UUID as public identifier"""
+
     user_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -148,6 +155,7 @@ class TranscriptSegmentUpdate(BaseModel):
 
 class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
     """Transcript segment with UUID as public identifier"""
+
     media_file_id: UUID
     speaker: Optional[Speaker] = None
 
@@ -186,6 +194,7 @@ class MediaFileUpdate(BaseModel):
 
 class MediaFile(MediaFileBase, UUIDBaseSchema):
     """Media file with UUID as public identifier"""
+
     user_id: UUID
     storage_path: str
     upload_time: datetime
@@ -283,6 +292,7 @@ class CommentUpdate(BaseModel):
 
 class Comment(CommentBase, UUIDBaseSchema):
     """Comment with UUID as public identifier"""
+
     media_file_id: UUID
     user_id: UUID
     created_at: datetime
@@ -323,6 +333,7 @@ class TaskUpdate(BaseModel):
 
 class Task(TaskBase):
     """Task schema - uses Celery task ID (string), not UUID"""
+
     id: str  # Celery task ID
     user_id: UUID
     progress: float
@@ -382,6 +393,7 @@ class AnalyticsCreate(AnalyticsBase):
 
 class Analytics(AnalyticsBase, UUIDBaseSchema):
     """Analytics with UUID as public identifier"""
+
     media_file_id: UUID
     computed_at: Optional[datetime] = None
     version: Optional[str] = None
@@ -406,6 +418,7 @@ class CollectionUpdate(BaseModel):
 
 class Collection(CollectionBase, UUIDBaseSchema):
     """Collection with UUID as public identifier"""
+
     user_id: UUID
     created_at: datetime
     updated_at: datetime

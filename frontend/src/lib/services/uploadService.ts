@@ -5,7 +5,7 @@ import { toastStore } from '$stores/toast';
 import axios, { type AxiosProgressEvent } from 'axios';
 
 // Upload item types
-export type UploadType = 'file' | 'url' | 'recording';
+export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
 export type UploadStatus = 'queued' | 'preparing' | 'uploading' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface UploadItem {
@@ -23,6 +23,9 @@ export interface UploadItem {
   estimatedTime?: string;
   isDuplicate?: boolean;
   cancelToken?: any;
+  // Extraction metadata (for extracted-audio type)
+  extractionMetadata?: any; // ExtractedAudioMetadata from audio extraction
+  compressionRatio?: number; // Percentage for display (0-100)
 }
 
 // Upload configuration constants
@@ -107,13 +110,46 @@ class UploadService {
 
   addMultipleFiles(files: File[]): string[] {
     const uploadIds: string[] = [];
-    
+
     files.forEach(file => {
       const id = this.addUpload('file', file);
       uploadIds.push(id);
     });
 
     return uploadIds;
+  }
+
+  addExtractedAudio(
+    audioBlob: Blob,
+    filename: string,
+    extractionMetadata: any,
+    compressionRatio: number
+  ): string {
+    const id = this.generateId();
+
+    const upload: UploadItem = {
+      id,
+      type: 'extracted-audio',
+      source: audioBlob,
+      name: filename,
+      size: audioBlob.size,
+      status: 'queued',
+      progress: 0,
+      retryCount: 0,
+      extractionMetadata,
+      compressionRatio,
+    };
+
+    this.uploads.set(id, upload);
+    this.processingQueue.push(id);
+    this.persistUploads();
+
+    this.emit('added', id, upload);
+
+    // Start processing if we have capacity
+    this.processQueue();
+
+    return id;
   }
 
   // Process upload queue
@@ -168,6 +204,9 @@ class UploadService {
         case 'recording':
           result = await this.uploadFile(uploadId, upload.source as File);
           break;
+        case 'extracted-audio':
+          result = await this.uploadExtractedAudio(uploadId, upload.source as Blob, upload.extractionMetadata);
+          break;
         case 'url':
           result = await this.processUrl(uploadId, upload.source as string);
           break;
@@ -185,13 +224,13 @@ class UploadService {
       });
 
       this.emit('completed', uploadId, result);
-      
-      // Show success toast
-      toastStore.success(
-        upload.isDuplicate 
-          ? `File already exists: ${upload.name}`
-          : `Upload completed: ${upload.name}`
-      );
+
+      // Show appropriate toast based on duplicate status
+      if (result.isDuplicate) {
+        toastStore.warning(`File already exists: ${upload.name}`);
+      } else {
+        toastStore.success(`Upload completed: ${upload.name}`);
+      }
 
     } catch (error: any) {
       // Log error through proper error handling below
@@ -289,6 +328,76 @@ class UploadService {
           if (elapsed > 0) {
             const rate = progressEvent.loaded / elapsed; // bytes per ms
             const remaining = (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
+            const estimatedTime = this.formatTimeRemaining(remaining);
+            this.updateUpload(uploadId, { estimatedTime });
+          }
+        }
+      }
+    });
+
+    return { id: fileId, isDuplicate: false };
+  }
+
+  private async uploadExtractedAudio(uploadId: string, audioBlob: Blob, extractionMetadata: any): Promise<any> {
+    const upload = this.uploads.get(uploadId)!;
+
+    // Create cancel token
+    const cancelToken = axios.CancelToken.source();
+    this.updateUpload(uploadId, { cancelToken });
+
+    // Use original video file hash from extraction metadata for duplicate detection
+    const originalFileHash = extractionMetadata?.originalFileHash || null;
+
+    // Step 1: Prepare the upload with extraction metadata
+    const prepareResponse = await axiosInstance.post('/files/prepare', {
+      filename: upload.name,
+      file_size: audioBlob.size,
+      content_type: audioBlob.type || 'audio/opus',
+      file_hash: originalFileHash,
+      extracted_from_video: extractionMetadata?.videoMetadata || null
+    });
+
+    const { file_id: fileId, is_duplicate } = prepareResponse.data;
+
+    if (is_duplicate) {
+      return { id: fileId, isDuplicate: true };
+    }
+
+    // Step 2: Upload the extracted audio file
+    this.updateUpload(uploadId, {
+      status: 'uploading',
+      fileId,
+      progress: 0,
+      estimatedTime: 'Uploading extracted audio...'
+    });
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, upload.name);
+
+    await axiosInstance.post('/files', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'X-File-ID': fileId,
+        'X-File-Hash': originalFileHash || '',
+        'X-Extracted-Audio': 'true', // Flag for backend to know this is extracted audio
+      },
+      timeout: UPLOAD_TIMEOUT_MS,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      cancelToken: cancelToken.token,
+      onUploadProgress: (progressEvent: AxiosProgressEvent) => {
+        if (progressEvent.total) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          const progress = Math.min(percentCompleted, 99);
+
+          this.updateUpload(uploadId, { progress });
+          this.emit('progress', uploadId, { progress });
+
+          // Calculate estimated time remaining
+          const elapsed = Date.now() - (upload.startTime || Date.now());
+          if (elapsed > 0) {
+            const rate = progressEvent.loaded / elapsed;
+            const remaining = (progressEvent.total - progressEvent.loaded) / rate;
             const estimatedTime = this.formatTimeRemaining(remaining);
             this.updateUpload(uploadId, { estimatedTime });
           }

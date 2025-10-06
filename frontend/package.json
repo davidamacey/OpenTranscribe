@@ -33,6 +33,8 @@
     "vite-plugin-pwa": "^1.0.0"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1",
     "axios": "^1.5.0",
     "date-fns": "^2.30.0",
     "imohash": "^1.0.3",

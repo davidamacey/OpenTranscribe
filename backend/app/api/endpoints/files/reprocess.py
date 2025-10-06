@@ -131,7 +131,9 @@ async def process_file_reprocess(file_uuid: str, db: Session, current_user: User
                 detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
             )
 
-        logger.info(f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}")
+        logger.info(
+            f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"
+        )
 
         # Use the enhanced retry logic
         success = reset_file_for_retry(db, file_id, reset_retry_count=False)

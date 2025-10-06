@@ -29,6 +29,7 @@ class UserUpdate(BaseModel):
 
 class UserInDB(UserBase, UUIDBaseSchema):
     """User schema with UUID as public identifier"""
+
     role: str
     created_at: datetime
     updated_at: datetime

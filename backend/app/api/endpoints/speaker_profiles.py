@@ -44,9 +44,12 @@ def list_speaker_profiles(
         if collection_uuid:
             # Filter by collection - convert UUID to ID
             from app.utils.uuid_helpers import get_by_uuid
+
             collection = get_by_uuid(db, SpeakerCollection, collection_uuid)
             if collection.user_id != current_user.id:
-                raise HTTPException(status_code=403, detail="Not authorized to access this collection")
+                raise HTTPException(
+                    status_code=403, detail="Not authorized to access this collection"
+                )
             collection_id = collection.id
 
             query = query.join(SpeakerCollectionMember).filter(
@@ -256,6 +259,7 @@ def _get_embedding_suggestions(
 
     # Get speaker object to extract UUID
     from app.models.media import Speaker
+
     speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
     if not speaker:
         return suggestions

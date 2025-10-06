@@ -4,14 +4,21 @@
   import type { AxiosProgressEvent, CancelTokenSource } from 'axios';
   import axios from 'axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  
+  import AudioExtractionModal from './AudioExtractionModal.svelte';
+  import BulkAudioExtractionModal from './BulkAudioExtractionModal.svelte';
+
   // Import global recording store
   import { recordingStore, recordingManager, hasActiveRecording, isRecording, recordingDuration, audioLevel, recordingStartTime } from '../stores/recording';
-  
+
   // Import upload store for background uploads
   import { uploadsStore } from '../stores/uploads';
   import { toastStore } from '../stores/toast';
-  
+
+  // Import audio extraction types, service, and settings API
+  import type { ExtractedAudio } from '../lib/types/audioExtraction';
+  import { getAudioExtractionSettings, type AudioExtractionSettings } from '../lib/api/audioExtractionSettings';
+  import { audioExtractionService } from '../lib/services/audioExtractionService';
+
   // Derived stores for additional recording state
   $: recordedBlob = $recordingStore.recordedBlob;
   $: recordingError = $recordingStore.recordingError;
@@ -60,7 +67,17 @@
   let showRecordingInfo = false;
   let showRecordingWarningModal = false;
   let pendingNavigationAction: (() => void) | null = null;
-  
+
+  // Audio extraction modal state
+  let showAudioExtractionModal = false;
+  let videoFileForExtraction: File | null = null;
+  let audioExtractionSettings: AudioExtractionSettings | null = null;
+
+  // Bulk audio extraction modal state
+  let showBulkAudioExtractionModal = false;
+  let bulkVideosToExtract: File[] = [];
+  let bulkRegularFiles: File[] = [];
+
   // Upload speed calculation variables
   let lastLoaded = 0;
   let lastTime = Date.now();
@@ -68,10 +85,24 @@
   let uploadStartTime = 0;
   
   // Get token from localStorage on component mount
-  onMount(() => {
+  onMount(async () => {
     token = localStorage.getItem('token') || '';
     const cleanup = initDragAndDrop();
     loadRecordingSettings();
+
+    // Load audio extraction settings
+    try {
+      audioExtractionSettings = await getAudioExtractionSettings();
+    } catch (err) {
+      console.error('Failed to load audio extraction settings:', err);
+      // Use default settings if loading fails
+      audioExtractionSettings = {
+        auto_extract_enabled: true,
+        extraction_threshold_mb: 100,
+        remember_choice: false,
+        show_modal: true,
+      };
+    }
     
     // Listen for events to set active tab
     const handleSetTabEvent = (event: CustomEvent) => {
@@ -284,6 +315,137 @@
     showRecordingWarningModal = false;
   }
 
+  // Audio extraction modal handlers
+  function handleAudioExtractionStarted() {
+    // Extraction has started - close upload modal immediately and clear state
+    file = null;
+    videoFileForExtraction = null;
+    showAudioExtractionModal = false;
+    if (fileInput) {
+      fileInput.value = '';
+    }
+
+    // Dispatch upload complete to close the upload modal
+    // Don't pass uploadId since extraction is still running
+    dispatch('uploadComplete', { isFile: true });
+  }
+
+  function handleAudioExtractionConfirm(event: CustomEvent<{ extractedAudio: ExtractedAudio }>) {
+    const { extractedAudio } = event.detail;
+
+    // Add extracted audio to upload queue
+    const uploadId = uploadsStore.addExtractedAudio(
+      extractedAudio.blob,
+      extractedAudio.filename,
+      extractedAudio.metadata,
+      extractedAudio.metadata.compressionRatio
+    );
+
+    // Show success message
+    toastStore.success(`Audio extracted successfully! Saved ${extractedAudio.metadata.compressionRatio}% bandwidth`);
+  }
+
+  function handleAudioExtractionUploadFull() {
+    // User chose to upload full video instead
+    if (videoFileForExtraction) {
+      file = videoFileForExtraction;
+      videoFileForExtraction = null;
+      showAudioExtractionModal = false;
+
+      // Trigger normal upload flow
+      uploadFile();
+    }
+  }
+
+  function handleAudioExtractionCancel() {
+    // User clicked X button - clear file selection completely and reset to fresh dropzone
+    videoFileForExtraction = null;
+    file = null;
+    error = ''; // Clear any error messages
+    showAudioExtractionModal = false;
+    // Clear the file input element so selection is visually cleared
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  }
+
+  // Bulk audio extraction modal handlers
+  function handleBulkExtractionConfirm() {
+    showBulkAudioExtractionModal = false;
+
+    // Add regular files to upload queue
+    if (bulkRegularFiles.length > 0) {
+      uploadsStore.addFiles(bulkRegularFiles);
+    }
+
+    // Start extracting audio from large videos
+    if (bulkVideosToExtract.length > 0) {
+      startBulkExtraction(bulkVideosToExtract);
+    }
+
+    // Close upload modal and show success
+    dispatch('uploadComplete', { multiple: true, count: bulkVideosToExtract.length + bulkRegularFiles.length });
+
+    const regularCount = bulkRegularFiles.length;
+    const extractCount = bulkVideosToExtract.length;
+
+    if (regularCount > 0 && extractCount > 0) {
+      toastStore.success(`Added ${regularCount} file(s) to queue, extracting audio from ${extractCount} video(s)`);
+    } else if (extractCount > 0) {
+      toastStore.success(`Extracting audio from ${extractCount} video(s)`);
+    }
+
+    // Clear state
+    bulkVideosToExtract = [];
+    bulkRegularFiles = [];
+  }
+
+  function handleBulkUploadAllFull() {
+    showBulkAudioExtractionModal = false;
+
+    // Upload all files as-is (no extraction)
+    const allFiles = [...bulkVideosToExtract, ...bulkRegularFiles];
+    if (allFiles.length > 0) {
+      uploadsStore.addFiles(allFiles);
+    }
+
+    // Close upload modal and show success
+    dispatch('uploadComplete', { multiple: true, count: allFiles.length });
+    toastStore.success(`Added ${allFiles.length} file(s) to upload queue`);
+
+    // Clear state
+    bulkVideosToExtract = [];
+    bulkRegularFiles = [];
+  }
+
+  function handleBulkExtractionCancel() {
+    showBulkAudioExtractionModal = false;
+    bulkVideosToExtract = [];
+    bulkRegularFiles = [];
+  }
+
+  // Helper function to start bulk extraction
+  function startBulkExtraction(videoFiles: File[]) {
+    toastStore.info(`Extracting audio from ${videoFiles.length} large video file(s)...`);
+
+    videoFiles.forEach(async (videoFile) => {
+      try {
+        const extractedAudio = await audioExtractionService.extractAudio(videoFile);
+
+        // Add extracted audio to upload queue
+        uploadsStore.addExtractedAudio(
+          extractedAudio.blob,
+          extractedAudio.filename,
+          extractedAudio.metadata,
+          extractedAudio.metadata.compressionRatio
+        );
+      } catch (error) {
+        console.error(`Failed to extract audio from ${videoFile.name}:`, error);
+        toastStore.error(`Failed to extract audio from ${videoFile.name}`);
+      }
+    });
+  }
+
   // Initialize drag and drop
   function initDragAndDrop() {
     const dropZone = document.getElementById('drop-zone');
@@ -415,12 +577,38 @@
       file = selectedFile;
       return;
     }
-    
+
+    // Check if this is a large video file that could benefit from audio extraction
+    const isVideo = selectedFile.type.startsWith('video/');
+    const thresholdMb = audioExtractionSettings?.extraction_threshold_mb || 100;
+    const thresholdBytes = thresholdMb * 1024 * 1024;
+    const isLargeFile = selectedFile.size > thresholdBytes;
+
+    // Check if audio extraction is enabled and should be shown
+    const shouldShowExtraction =
+      audioExtractionSettings?.auto_extract_enabled !== false &&
+      isVideo &&
+      isLargeFile;
+
+    if (shouldShowExtraction) {
+      // Show audio extraction modal for large video files (if show_modal is true)
+      if (audioExtractionSettings?.show_modal !== false) {
+        videoFileForExtraction = selectedFile;
+        showAudioExtractionModal = true;
+        return;
+      }
+      // If show_modal is false, auto-extract would happen here
+      // For now, we still show the modal for safety
+      videoFileForExtraction = selectedFile;
+      showAudioExtractionModal = true;
+      return;
+    }
+
     file = selectedFile;
   }
 
   // Handle multiple files using background upload service
-  function handleMultipleFiles(files: File[]) {
+  async function handleMultipleFiles(files: File[]) {
     // Validate each file
     const validFiles: File[] = [];
     const invalidFiles: string[] = [];
@@ -434,10 +622,10 @@
 
       // Check file type
       const isValidType = file.type && (
-        file.type.startsWith('audio/') || 
+        file.type.startsWith('audio/') ||
         file.type.startsWith('video/')
       );
-      
+
       if (!isValidType) {
         // Try to determine type from extension
         const extension = file.name.split('.').pop()?.toLowerCase() || '';
@@ -445,7 +633,7 @@
           'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus',
           'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'f4v'
         ];
-        
+
         if (!validExtensions.includes(extension)) {
           invalidFiles.push(`${file.name} (unsupported format)`);
           return;
@@ -461,12 +649,68 @@
     }
 
     if (validFiles.length > 0) {
-      // Add valid files to upload queue
-      uploadsStore.addFiles(validFiles);
-      
+      // Check for large video files that need audio extraction
+      const filesToUpload: File[] = [];
+      const videosToExtract: File[] = [];
+
+      const extractionThresholdBytes = (audioExtractionSettings?.extraction_threshold_mb || 100) * 1024 * 1024;
+      const autoExtractEnabled = audioExtractionSettings?.auto_extract_enabled !== false;
+
+      validFiles.forEach(file => {
+        // Determine if file is a video (check both type and extension)
+        let isVideo = file.type && file.type.startsWith('video/');
+
+        if (!isVideo) {
+          // Check extension as fallback
+          const extension = file.name.split('.').pop()?.toLowerCase() || '';
+          const videoExtensions = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv', '3gp', 'f4v', 'm4v', 'mpeg', 'mpg', 'ogv'];
+          isVideo = videoExtensions.includes(extension);
+        }
+
+        const isLargeFile = file.size >= extractionThresholdBytes;
+
+        if (autoExtractEnabled && isVideo && isLargeFile) {
+          // Large video file - extract audio
+          videosToExtract.push(file);
+        } else {
+          // Regular file or small video - upload as-is
+          filesToUpload.push(file);
+        }
+      });
+
+      // If there are large videos to extract, show bulk confirmation modal
+      if (videosToExtract.length > 0 && audioExtractionSettings?.show_modal !== false) {
+        // Store files for modal
+        bulkVideosToExtract = videosToExtract;
+        bulkRegularFiles = filesToUpload;
+        showBulkAudioExtractionModal = true;
+        // Don't close upload modal or dispatch uploadComplete yet - wait for user choice
+        return;
+      }
+
+      // Add regular files to upload queue immediately
+      if (filesToUpload.length > 0) {
+        uploadsStore.addFiles(filesToUpload);
+      }
+
+      // Auto-extract if show_modal is disabled
+      if (videosToExtract.length > 0) {
+        startBulkExtraction(videosToExtract);
+      }
+
       // Close modal and show success message
       dispatch('uploadComplete', { multiple: true, count: validFiles.length });
-      toastStore.success(`Added ${validFiles.length} files to upload queue`);
+
+      const regularCount = filesToUpload.length;
+      const extractCount = videosToExtract.length;
+
+      if (regularCount > 0 && extractCount > 0) {
+        toastStore.success(`Added ${regularCount} file(s) to queue, extracting audio from ${extractCount} video(s)`);
+      } else if (regularCount > 0) {
+        toastStore.success(`Added ${regularCount} file(s) to upload queue`);
+      } else if (extractCount > 0) {
+        toastStore.success(`Extracting audio from ${extractCount} video(s)`);
+      }
     }
   }
   
@@ -1713,6 +1957,26 @@
   cancelButtonClass="modal-primary-button"
   on:confirm={handleRecordingWarningConfirm}
   on:cancel={handleRecordingWarningCancel}
+/>
+
+<!-- Audio Extraction Modal -->
+<AudioExtractionModal
+  bind:isOpen={showAudioExtractionModal}
+  file={videoFileForExtraction}
+  on:extractionStarted={handleAudioExtractionStarted}
+  on:confirm={handleAudioExtractionConfirm}
+  on:uploadFull={handleAudioExtractionUploadFull}
+  on:cancel={handleAudioExtractionCancel}
+/>
+
+<!-- Bulk Audio Extraction Modal -->
+<BulkAudioExtractionModal
+  bind:isOpen={showBulkAudioExtractionModal}
+  videoFiles={bulkVideosToExtract}
+  regularFiles={bulkRegularFiles}
+  on:confirmExtraction={handleBulkExtractionConfirm}
+  on:uploadAllFull={handleBulkUploadAllFull}
+  on:cancel={handleBulkExtractionCancel}
 />
 
 <style>

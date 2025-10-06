@@ -12,6 +12,7 @@ Key Features:
     - Stores suggestions in PostgreSQL JSONB for easy access
     - Tracks user decisions for future analytics
 """
+
 import json
 import logging
 import re
@@ -201,7 +202,9 @@ IMPORTANT GUIDELINES:
             return None
 
         # Extract suggestions using LLM
-        logger.info(f"Extracting suggestions for file {media_file_id} using {llm_service.config.provider}")
+        logger.info(
+            f"Extracting suggestions for file {media_file_id} using {llm_service.config.provider}"
+        )
 
         llm_response = self._call_llm_for_extraction(
             llm_service=llm_service,
@@ -240,7 +243,9 @@ IMPORTANT GUIDELINES:
             True if successful
         """
         # Get suggestion
-        suggestion = self.db.query(TopicSuggestion).filter(TopicSuggestion.id == suggestion_id).first()
+        suggestion = (
+            self.db.query(TopicSuggestion).filter(TopicSuggestion.id == suggestion_id).first()
+        )
         if not suggestion:
             logger.error(f"Topic suggestion {suggestion_id} not found")
             return False
@@ -253,7 +258,9 @@ IMPORTANT GUIDELINES:
             existing_decisions.setdefault("accepted_tags", []).extend(accepted_tags)
 
             # Remove duplicates
-            existing_decisions["accepted_collections"] = list(set(existing_decisions["accepted_collections"]))
+            existing_decisions["accepted_collections"] = list(
+                set(existing_decisions["accepted_collections"])
+            )
             existing_decisions["accepted_tags"] = list(set(existing_decisions["accepted_tags"]))
 
             suggestion.user_decisions = existing_decisions

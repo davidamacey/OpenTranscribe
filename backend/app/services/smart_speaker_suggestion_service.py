@@ -210,14 +210,18 @@ class SmartSpeakerSuggestionService:
             try:
                 # First check if the index exists
                 if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
-                    logger.info("Speakers index does not exist yet, skipping profile suggestion search")
+                    logger.info(
+                        "Speakers index does not exist yet, skipping profile suggestion search"
+                    )
                     return suggestions
 
                 profile_check = opensearch_client.search(
                     index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_check_query
                 )
                 if profile_check["hits"]["total"]["value"] == 0:
-                    logger.info(f"No profile documents found for user {user_id}, skipping profile KNN search")
+                    logger.info(
+                        f"No profile documents found for user {user_id}, skipping profile KNN search"
+                    )
                     return suggestions
             except Exception as e:
                 logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
@@ -263,7 +267,9 @@ class SmartSpeakerSuggestionService:
                         )
 
             except Exception as e:
-                logger.error(f"Error in OpenSearch profile similarity search <_get_profile_suggestions_optimized - hits>: {e}")
+                logger.error(
+                    f"Error in OpenSearch profile similarity search <_get_profile_suggestions_optimized - hits>: {e}"
+                )
                 return suggestions
 
             # Convert OpenSearch results to suggestions - use data directly from OpenSearch
@@ -391,12 +397,14 @@ class SmartSpeakerSuggestionService:
                             {"exists": {"field": "document_type"}},  # Exclude profiles
                             {"term": {"speaker_id": speaker_id}},  # Exclude self
                             {"term": {"media_file_id": source_media_file_id}},  # Exclude same video
-                        ]
+                        ],
                     }
-                }
+                },
             }
 
-            check_response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=check_query)
+            check_response = opensearch_client.search(
+                index=settings.OPENSEARCH_SPEAKER_INDEX, body=check_query
+            )
 
             if check_response["hits"]["total"]["value"] == 0:
                 logger.info(f"No candidate speakers found for voice matching speaker {speaker_id}")
@@ -413,22 +421,20 @@ class SmartSpeakerSuggestionService:
                                 "knn": {
                                     "embedding": {
                                         "vector": embedding.tolist(),
-                                        "k": 50  # Get top 50 similar
+                                        "k": 50,  # Get top 50 similar
                                     }
                                 }
                             }
                         ],
-                        "filter": [
-                            {"term": {"user_id": user_id}}
-                        ],
+                        "filter": [{"term": {"user_id": user_id}}],
                         "must_not": [
                             {"exists": {"field": "document_type"}},  # Exclude profiles
                             {"term": {"speaker_id": speaker_id}},  # Exclude self
                             {"term": {"media_file_id": source_media_file_id}},  # Exclude same video
-                        ]
+                        ],
                     }
                 },
-                "min_score": threshold  # Use threshold directly
+                "min_score": threshold,  # Use threshold directly
             }
 
             response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
