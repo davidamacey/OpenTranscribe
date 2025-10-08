@@ -702,8 +702,6 @@ def update_speaker(
         if speaker.profile:
             profile_uuid = str(speaker.profile.uuid)
         elif speaker.profile_id:
-            from app.models.media import SpeakerProfile
-
             profile = (
                 db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
             )
