@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_process_init, task_postrun
 
 from app.core.config import settings
 
@@ -53,3 +54,18 @@ celery_app.conf.update(
         }
     },
 )
+
+
+# Signal handlers for proper database connection management
+@worker_process_init.connect
+def init_worker_process(**kwargs):
+    """Initialize worker process - dispose of any existing connections."""
+    from app.db.base import engine
+    engine.dispose()
+
+
+@task_postrun.connect
+def close_session_after_task(**kwargs):
+    """Close database connections after each task to prevent stale connections."""
+    from app.db.base import engine
+    engine.dispose()
