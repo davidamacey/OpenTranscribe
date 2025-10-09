@@ -609,6 +609,23 @@ def update_speaker(
                 for linked_speaker in linked_speakers:
                     _update_opensearch_speaker_name(linked_speaker.id, new_name)
 
+                # CRITICAL: Update the profile embedding in OpenSearch to reflect the new name
+                # This ensures voice_suggestions will show the updated profile name
+                try:
+                    from app.services.profile_embedding_service import ProfileEmbeddingService
+
+                    success = ProfileEmbeddingService.update_profile_embedding(db, old_profile_id)
+                    if success:
+                        logger.info(
+                            f"Updated profile {old_profile_id} embedding in OpenSearch with new name '{new_name}'"
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to update profile {old_profile_id} embedding in OpenSearch"
+                        )
+                except Exception as e:
+                    logger.error(f"Error updating profile embedding in OpenSearch: {e}")
+
         elif profile_action == "create_new_profile":
             # Create new profile and assign speaker to it
             new_profile = SpeakerProfile(

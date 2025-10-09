@@ -1159,8 +1159,13 @@ def store_profile_embedding(
         }
 
         # Use UUID-based prefixed ID to avoid conflicts with speaker documents
+        # Use refresh='wait_for' to ensure the update is immediately searchable
+        # This prevents race conditions where voice_suggestions show stale profile names
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, body=doc, id=f"profile_{profile_uuid}"
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            body=doc,
+            id=f"profile_{profile_uuid}",
+            refresh='wait_for'
         )
 
         logger.info(
@@ -1270,6 +1275,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: Optional[str]):
             index=settings.OPENSEARCH_SPEAKER_INDEX,
             id=str(speaker_uuid),
             body=update_body,
+            refresh='wait_for'
         )
 
         logger.info(f"Updated display name for speaker {speaker_uuid} to '{display_name}'")

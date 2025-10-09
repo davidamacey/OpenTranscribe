@@ -54,10 +54,13 @@
   let editedTranscript = '';
   let savingTranscript = false;
   let savingSpeakers = false;
+  let loadingVoiceSuggestions = false; // Loading state for voice suggestions during OpenSearch refresh
   let editingSegmentId: string | number | null = null;
   let editingSegmentText = '';
   let isEditingSpeakers = false;
   let speakerList: any[] = [];
+  let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
+  let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
   let summaryData: any = null;
   let showSummaryModal = false;
@@ -73,6 +76,13 @@
 
   // LLM availability for summary functionality
   $: llmAvailable = $isLLMAvailable;
+
+  // Detect changes in speaker names - depends on speaker display_name values
+  $: speakerNamesChanged = speakerList.length > 0 && speakerList.some(speaker => {
+    const originalName = originalSpeakerNames.get(speaker.id) || '';
+    const currentName = (speaker.display_name || '').trim();
+    return originalName !== currentName;
+  });
 
   // Reset spinners when LLM becomes unavailable
   $: if (!llmAvailable && (summaryGenerating || generatingSummary)) {
@@ -301,8 +311,12 @@
             showSuggestions: false  // Only UI state, not business logic
           }));
 
+        // Store original speaker names for change detection (trimmed for consistent comparison)
+        originalSpeakerNames = new Map(
+          speakerList.map(speaker => [speaker.id, (speaker.display_name || '').trim()])
+        );
 
-          // Speakers are now pre-sorted by the backend
+        // Speakers are now pre-sorted by the backend
 
         // Load cross-media data for labeled speakers
         await loadCrossMediaDataForLabeledSpeakers();
@@ -464,6 +478,13 @@
     }
 
     return { isValid: true };
+  }
+
+  // Handle speaker name input changes (for reactivity)
+  function handleSpeakerNameChanged(event: CustomEvent) {
+    // Trigger reactivity by reassigning the speakerList array
+    // This ensures the reactive statement detects the change
+    speakerList = [...speakerList];
   }
 
   // Handle speaker name updates
@@ -1305,7 +1326,41 @@
 
   // Perform the actual bulk save operation
   async function performBulkSave(speakersToUpdate, decisions = new Map()) {
-    // Update speakers in the backend with decisions
+    // STEP 1: Optimistic UI updates - immediately update voice suggestions with new names
+    const nameChanges = new Map(); // Track profile name changes for voice suggestions
+
+    speakersToUpdate.forEach((speaker: any) => {
+      const decision = decisions.get(speaker.id);
+      const newName = speaker.display_name.trim();
+
+      // If updating a profile globally, track the name change
+      if (decision && decision.decision === 'update_profile' && speaker.profile) {
+        nameChanges.set(speaker.profile.id, { oldName: speaker.profile.name, newName });
+      }
+    });
+
+    // Optimistically update voice suggestions for all speakers
+    if (nameChanges.size > 0) {
+      speakerList = speakerList.map(s => {
+        if (s.voice_suggestions && s.voice_suggestions.length > 0) {
+          s.voice_suggestions = s.voice_suggestions.map((suggestion: any) => {
+            // Find if this suggestion's name matches any profile being updated
+            for (const [profileId, change] of nameChanges) {
+              if (suggestion.name === change.oldName && suggestion.suggestion_type === 'profile') {
+                return { ...suggestion, name: change.newName };
+              }
+            }
+            return suggestion;
+          });
+        }
+        return s;
+      });
+    }
+
+    // STEP 2: Set loading state for voice suggestions (they'll refresh after OpenSearch updates)
+    loadingVoiceSuggestions = true;
+
+    // STEP 3: Update speakers in the backend with decisions
     const updatePromises = speakersToUpdate.map(async (speaker: any) => {
       const decision = decisions.get(speaker.id);
       const payload: any = {
@@ -1323,7 +1378,17 @@
 
     await Promise.all(updatePromises);
 
-    // Update the transcript store for reactive updates
+    // STEP 4: PostgreSQL updates complete - stop save button spinner immediately!
+    savingSpeakers = false;
+    isEditingSpeakers = false;
+    toastStore.success('Speaker names saved successfully!');
+
+    // Reset original names to current values (no changes after save)
+    originalSpeakerNames = new Map(
+      speakerList.map(speaker => [speaker.id, (speaker.display_name || '').trim()])
+    );
+
+    // STEP 5: Update the transcript store for reactive updates (instant)
     speakerList.forEach((speaker: any) => {
       if (speaker.id && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
         transcriptStore.updateSpeakerName(speaker.id, speaker.display_name.trim());
@@ -1362,27 +1427,28 @@
       reactiveFile.set(file);
     }
 
-    // Reload speakers to ensure consistent data
-    await loadSpeakers();
-
-    // Update subtitles and clear cache
+    // Update subtitles and clear cache (async, don't block)
     if (videoPlayerComponent && videoPlayerComponent.updateSubtitles) {
-      try {
-        await videoPlayerComponent.updateSubtitles();
-      } catch (error) {
+      videoPlayerComponent.updateSubtitles().catch(error => {
         console.warn('Failed to update subtitles after saving speaker names:', error);
-      }
+      });
     }
 
-    try {
-      await axiosInstance.delete(`/api/files/${file.id}/cache`);
-    } catch (error) {
+    axiosInstance.delete(`/api/files/${file.id}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
-    }
+    });
 
-    toastStore.success('Speaker names saved successfully!');
-    isEditingSpeakers = false;
-    savingSpeakers = false;
+    // STEP 6: Voice suggestions will be refreshed via WebSocket notification
+    // The speaker_updated WebSocket event will trigger loadSpeakers() and clear the loading state
+    // This happens automatically when the backend finishes OpenSearch updates
+    // If WebSocket fails, fallback to timeout-based reload
+    setTimeout(async () => {
+      if (loadingVoiceSuggestions) {
+        // WebSocket didn't arrive in time, reload manually
+        await loadSpeakers();
+        loadingVoiceSuggestions = false;
+      }
+    }, 3000); // 3 second failsafe timeout
 
     // Refresh speakers from the backend to sync local state
     speakerList.forEach((speaker: any) => {
@@ -1830,6 +1896,16 @@
               } // Close the else block for file ID matching
             }
 
+            // Handle speaker update notifications (for real-time voice suggestion refresh)
+            if (latestNotification.type === 'speaker_updated') {
+              // Reload speakers to get fresh voice suggestions from OpenSearch
+              if (loadingVoiceSuggestions) {
+                loadSpeakers().then(() => {
+                  loadingVoiceSuggestions = false;
+                });
+              }
+            }
+
           } else {
           }
         } else {
@@ -2052,13 +2128,15 @@
       <!-- Right column: Transcript -->
       {#if file && file.transcript_segments}
         <section class="transcript-column">
-          <TranscriptDisplay 
+          <TranscriptDisplay
           {file}
           {currentTime}
           {isEditingTranscript}
           {editedTranscript}
           {savingTranscript}
           {savingSpeakers}
+          {loadingVoiceSuggestions}
+          {speakerNamesChanged}
           {editingSegmentId}
           bind:editingSegmentText
           {isEditingSpeakers}
@@ -2072,6 +2150,7 @@
           on:exportTranscript={handleExportTranscript}
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}
+          on:speakerNameChanged={handleSpeakerNameChanged}
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
         />

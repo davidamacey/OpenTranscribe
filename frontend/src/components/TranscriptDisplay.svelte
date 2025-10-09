@@ -15,6 +15,8 @@
   export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
   export let savingSpeakers: boolean = false;
+  export let loadingVoiceSuggestions: boolean = false; // Loading state for voice suggestions
+  export let speakerNamesChanged: boolean = false; // Track if speaker names have unsaved changes
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let isEditingSpeakers: boolean = false;
@@ -426,8 +428,8 @@
           </div>
         </div>
         
-        <button 
-          class="edit-speakers-button" 
+        <button
+          class="edit-speakers-button"
           on:click={toggleSpeakerEditor}
           title="Edit speaker names to replace generic labels (SPEAKER_01, etc.) with actual names"
         >
@@ -496,8 +498,13 @@
       {#if isEditingSpeakers}
         <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
           <div class="speaker-editor-header">
-            <h4>Edit Speaker Names</h4>
-            
+            <h4>
+              Edit Speaker Names
+              {#if speakerNamesChanged}
+                <span class="unsaved-indicator" title="You have unsaved speaker name changes">•</span>
+              {/if}
+            </h4>
+
             <!-- Confidence Legend - Compact Info Icon -->
             <div class="legend-info-container">
               <span class="legend-title">Color Legend</span>
@@ -547,9 +554,15 @@
                       class:suggested-high={speaker.is_high_confidence}
                       class:suggested-medium={speaker.is_medium_confidence}
                       data-speaker-id={speaker.id}
+                      on:input={() => {
+                        // Dispatch event to notify parent of speaker name change
+                        dispatch('speakerNameChanged', { speakerId: speaker.id, newName: speaker.display_name });
+                      }}
                       on:focus={() => {
                         if (speaker.is_high_confidence && speaker.suggested_name) {
                           speaker.display_name = speaker.suggested_name;
+                          // Dispatch event after auto-fill
+                          dispatch('speakerNameChanged', { speakerId: speaker.id, newName: speaker.display_name });
                         }
                       }}
                     />
@@ -626,7 +639,19 @@
                                 </div>
                               {/if}
                               
-                              {#if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
+                              {#if loadingVoiceSuggestions}
+                                <div class="chip-row">
+                                  <span class="chip-label">Voice:</span>
+                                  <div class="chips-wrap loading-suggestions">
+                                    <div class="suggestion-spinner">
+                                      <svg class="spinner" viewBox="0 0 50 50">
+                                        <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
+                                      </svg>
+                                      <span class="loading-text">Updating suggestions...</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              {:else if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
                                 <div class="chip-row">
                                   <span class="chip-label">Voice:</span>
                                   <div class="chips-wrap">
@@ -793,11 +818,11 @@
                   </div>
                 </div>
               {/each}
-              <button 
-                class="save-speakers-button" 
+              <button
+                class="save-speakers-button"
                 on:click={saveSpeakerNames}
-                disabled={savingSpeakers}
-                title="Save all speaker name changes and update the transcript"
+                disabled={savingSpeakers || !speakerNamesChanged}
+                title={speakerNamesChanged ? "Save all speaker name changes and update the transcript" : "No changes to save"}
               >
                 {#if savingSpeakers}
                   <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1150,6 +1175,23 @@
   .action-button:hover {
     background: var(--surface-hover);
     border-color: var(--border-hover);
+  }
+
+  /* Unsaved changes indicator (yellow dot) - matches AI Prompts modal */
+  .unsaved-indicator {
+    color: #f59e0b; /* Amber/yellow warning color */
+    font-size: 1.2em;
+    margin-left: 0.5rem;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 
   .export-dropdown:hover .export-dropdown-content {
@@ -1894,5 +1936,56 @@
     color: var(--text-secondary-color);
     font-style: italic;
     padding: 0.25rem 0.5rem;
+  }
+
+  /* Voice suggestions loading state */
+  .loading-suggestions {
+    padding: 0.5rem 0;
+  }
+
+  .suggestion-spinner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+  }
+
+  .spinner {
+    animation: rotate 2s linear infinite;
+    width: 20px;
+    height: 20px;
+  }
+
+  .spinner .path {
+    stroke: var(--primary-color);
+    stroke-linecap: round;
+    animation: dash 1.5s ease-in-out infinite;
+  }
+
+  @keyframes rotate {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes dash {
+    0% {
+      stroke-dasharray: 1, 150;
+      stroke-dashoffset: 0;
+    }
+    50% {
+      stroke-dasharray: 90, 150;
+      stroke-dashoffset: -35;
+    }
+    100% {
+      stroke-dasharray: 90, 150;
+      stroke-dashoffset: -124;
+    }
+  }
+
+  .loading-text {
+    font-size: 0.75rem;
+    font-style: italic;
+    color: var(--text-secondary);
   }
 </style>
