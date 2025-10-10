@@ -714,7 +714,7 @@ class SpeakerMatchingService:
                 embedding=embedding,
                 user_id=user_id,
                 index_name="speakers",
-                threshold=0.85,  # High confidence for automatic assignment
+                threshold=0.75,  # High confidence for automatic assignment (matches SPEAKER_CONFIDENCE_HIGH)
                 max_results=20,
                 exclude_ids=[matched_speaker_id],  # Don't include the original speaker
             )

@@ -343,6 +343,7 @@
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <!-- svelte-ignore a11y_interactive_supports_focus -->
     <div
       class="modal-content"
       role="dialog"
@@ -427,32 +428,6 @@
                     </span>
                   {/if}
                 </span>
-                {#if formData.provider === 'ollama'}
-                  <button 
-                    type="button" 
-                    class="discover-models-btn"
-                    on:click={loadOllamaModels}
-                    disabled={loadingOllamaModels || saving || !formData.base_url}
-                    title="Discover available models from Ollama instance"
-                  >
-                    {#if loadingOllamaModels}
-                      <div class="spinner-mini"></div>
-                    {:else}
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <circle cx="12" cy="1" r="1"/>
-                        <circle cx="12" cy="23" r="1"/>
-                        <circle cx="4.22" cy="4.22" r="1"/>
-                        <circle cx="19.78" cy="19.78" r="1"/>
-                        <circle cx="1" cy="12" r="1"/>
-                        <circle cx="23" cy="12" r="1"/>
-                        <circle cx="4.22" cy="19.78" r="1"/>
-                        <circle cx="19.78" cy="4.22" r="1"/>
-                      </svg>
-                    {/if}
-                    Discover Models
-                  </button>
-                {/if}
               </label>
               <input
                 type="url"
@@ -468,7 +443,35 @@
 
           <!-- Model Selection -->
           <div class="form-group">
-            <label for="model-name">Model Name *</label>
+            <label for="model-name">
+              Model Name *
+              {#if formData.provider === 'ollama'}
+                <button
+                  type="button"
+                  class="discover-models-btn"
+                  on:click={loadOllamaModels}
+                  disabled={loadingOllamaModels || saving || !formData.base_url}
+                  title="Discover available models from Ollama instance"
+                >
+                  {#if loadingOllamaModels}
+                    <div class="spinner-mini"></div>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                  {/if}
+                  Discover Models
+                </button>
+              {/if}
+            </label>
             <input
               type="text"
               id="model-name"

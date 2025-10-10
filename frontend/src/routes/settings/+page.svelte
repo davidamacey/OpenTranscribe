@@ -950,23 +950,6 @@
     margin-bottom: 1rem;
   }
   
-  .checkbox-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .checkbox-wrapper input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    cursor: pointer;
-  }
-
-  .checkbox-wrapper label {
-    margin: 0;
-    cursor: pointer;
-    font-weight: 500;
-  }
 
   /* Dark mode adjustments */
   :global([data-theme='dark']) .toggle-slider:before {

@@ -245,20 +245,6 @@
     word-wrap: break-word;
   }
 
-  /* Ensure text is visible - force contrast and visibility */
-  [data-theme='light'] .option-name {
-    color: #1e293b !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    display: block !important;
-  }
-
-  [data-theme='dark'] .option-name {
-    color: #f8fafc !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    display: block !important;
-  }
 
   /* Extra safety - ensure no parent is hiding content */
   .option-item * {

@@ -386,24 +386,17 @@ def set_active_configuration(
     """
     Set the active LLM configuration for the user
     """
-    # Verify the configuration exists and belongs to the user
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(
-            models.UserLLMSettings.user_id == current_user.id,
-            models.UserLLMSettings.id == request.configuration_id,
-        )
-        .first()
-    )
+    # Verify the configuration exists and belongs to the user using UUID
+    user_config = get_llm_config_by_uuid(db, request.configuration_id)
 
-    if not user_config:
+    if user_config.user_id != current_user.id:
         raise HTTPException(
-            status_code=404,
-            detail="Configuration not found.",
+            status_code=403,
+            detail="Not authorized to access this configuration",
         )
 
-    # Set as active
-    _set_active_configuration(db, current_user.id, request.configuration_id)
+    # Set as active using the integer ID (internal)
+    _set_active_configuration(db, current_user.id, user_config.id)
 
     return user_config
 

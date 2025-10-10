@@ -301,7 +301,7 @@ IMPORTANT GUIDELINES:
         self, llm_service: LLMService, transcript: str, file_id: int, duration: float
     ) -> Optional[LLMSuggestionResponse]:
         """
-        Call LLM to extract suggestions from transcript
+        Call LLM to extract suggestions from transcript with provider-specific optimizations
 
         Args:
             llm_service: LLM service instance
@@ -312,6 +312,8 @@ IMPORTANT GUIDELINES:
         Returns:
             Parsed LLM response or None
         """
+        from app.services.llm_service import LLMProvider
+
         # Build prompt
         prompt = self.EXTRACTION_PROMPT_TEMPLATE.format(
             file_id=file_id,
@@ -319,48 +321,69 @@ IMPORTANT GUIDELINES:
             transcript=transcript[:50000],  # Limit to first 50k chars to avoid token limits
         )
 
-        # Prepare messages
+        # Prepare messages with provider-specific optimizations
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
-            # Response prefilling to force JSON (best practice)
-            {"role": "assistant", "content": "<thinking>\n"},
         ]
 
+        # Provider-specific optimizations
+        kwargs = {"temperature": 0.1}
+
+        if llm_service.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            # Claude: Use response prefilling to force structured output
+            messages.append({"role": "assistant", "content": "<thinking>\n"})
+        elif llm_service.config.provider == LLMProvider.OLLAMA:
+            # Ollama: Don't use format parameter - some models (like gpt-oss) don't support it well
+            # Instead rely on prompt engineering and normal JSON extraction
+            # The prompt already instructs the model to return JSON in <answer> tags
+            pass
+
         try:
-            # Call LLM with low temperature for consistency
-            response = llm_service.chat_completion(messages, temperature=0.1)
+            # Call LLM with provider-specific parameters
+            response = llm_service.chat_completion(messages, **kwargs)
 
             # Parse response
-            return self._parse_llm_response(response.content)
+            return self._parse_llm_response(response.content, llm_service.config.provider)
 
         except Exception as e:
             logger.error(f"Error calling LLM for suggestion extraction: {e}")
             return None
 
-    def _parse_llm_response(self, response_text: str) -> Optional[LLMSuggestionResponse]:
+    def _parse_llm_response(
+        self, response_text: str, provider: "LLMProvider"
+    ) -> Optional[LLMSuggestionResponse]:
         """
-        Parse LLM response and extract JSON
+        Parse LLM response and extract JSON with provider-specific handling
 
         Args:
             response_text: Raw LLM response
+            provider: LLM provider type
 
         Returns:
             Parsed response or None
         """
+        from app.services.llm_service import LLMProvider
+
         try:
-            # Extract JSON from between <answer> tags or find JSON object
-            json_match = re.search(r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL)
+            json_str = None
+
+            # For all providers, try to extract JSON from <answer> tags first
+            json_match = re.search(
+                r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL
+            )
             if json_match:
                 json_str = json_match.group(1)
             else:
-                # Try to find JSON object directly
+                # Try to find JSON object directly (greedy match to get full object)
                 json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(0)
-                else:
-                    logger.error("Could not find JSON in LLM response")
-                    return None
+
+            if not json_str:
+                logger.error("Could not find JSON in LLM response")
+                logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
+                return None
 
             # Parse JSON
             data = json.loads(json_str)
@@ -370,10 +393,12 @@ IMPORTANT GUIDELINES:
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from LLM response: {e}")
-            logger.debug(f"Response text: {response_text[:500]}")
+            logger.error(f"Attempted to parse: {json_str[:500] if json_str else 'None'}")
+            logger.error(f"Full response text (first 1000 chars): {response_text[:1000]}")
             return None
         except Exception as e:
             logger.error(f"Error parsing LLM response: {e}")
+            logger.error(f"Response text (first 1000 chars): {response_text[:1000]}")
             return None
 
     def _store_suggestion(
