@@ -1,5 +1,5 @@
+import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig, loadEnv } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { fileURLToPath } from 'url';
 import path, { dirname } from 'path';
 import serviceWorker from './plugins/vite-plugin-service-worker';
@@ -12,20 +12,12 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current directory.
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '');
-  
+
   return {
   plugins: [
-    svelte(),
+    sveltekit(),
     serviceWorker()
   ],
-  resolve: {
-    alias: {
-      '$lib': path.resolve(__dirname, './src/lib'),
-      '$components': path.resolve(__dirname, './src/components'),
-      '$stores': path.resolve(__dirname, './src/stores'),
-      '$app': path.resolve(__dirname, './src/app'),
-    }
-  },
   server: {
     port: 5173,
     proxy: {
@@ -77,7 +69,6 @@ export default defineConfig(({ mode }) => {
   },
   base: '/',
   optimizeDeps: {
-    include: ['svelte-navigator'],
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']
   },
   worker: {

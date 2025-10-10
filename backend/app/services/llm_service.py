@@ -87,12 +87,20 @@ class LLMService:
             else:
                 return f"{clean_url}/v1/chat/completions"
 
+        def build_ollama_endpoint(base_url: str) -> str:
+            """Build Ollama chat endpoint using native API"""
+            clean_url = base_url.strip().rstrip("/")
+            # Remove /v1 suffix if present since we're using native API
+            if clean_url.endswith("/v1"):
+                clean_url = clean_url[:-3]
+            return f"{clean_url}/api/chat"
+
         self.endpoints = {
             LLMProvider.OPENAI: "https://api.openai.com/v1/chat/completions",
             LLMProvider.VLLM: build_endpoint(config.base_url) if config.base_url else None,
-            LLMProvider.OLLAMA: build_endpoint(config.base_url)
+            LLMProvider.OLLAMA: build_ollama_endpoint(config.base_url)
             if config.base_url
-            else "http://localhost:11434/v1/chat/completions",
+            else "http://localhost:11434/api/chat",
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
             LLMProvider.OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
@@ -161,6 +169,7 @@ class LLMService:
 
         Note:
             - Claude/Anthropic: Separates system messages from user/assistant messages
+            - Ollama: Uses native /api/chat format with messages array
             - Other providers: Use standard OpenAI format with provider-specific params
             - Response prefilling: For Claude, adds assistant message with "{" to force JSON
         """
@@ -193,6 +202,22 @@ class LLMService:
             if system_message:
                 payload["system"] = system_message
 
+            return payload
+
+        elif self.config.provider == LLMProvider.OLLAMA:
+            # Ollama native /api/chat format
+            payload = {
+                "model": self.config.model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": kwargs.get("temperature", self.config.temperature),
+                    "num_predict": kwargs.get("max_tokens", self.config.response_tokens),
+                }
+            }
+            # Add format parameter for structured output if provided
+            if "format" in kwargs:
+                payload["format"] = kwargs["format"]
             return payload
 
         # Standard OpenAI-compatible format
@@ -280,6 +305,24 @@ class LLMService:
                     )
 
                 finish_reason = data.get("stop_reason")
+            elif self.config.provider == LLMProvider.OLLAMA:
+                # Ollama native response format
+                if "message" not in data:
+                    logger.error(f"Ollama response missing 'message' field. Response keys: {list(data.keys())}")
+                    logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
+                    raise Exception("No message in Ollama response")
+
+                content = data["message"].get("content", "")
+                finish_reason = data.get("done_reason", "stop")
+
+                # Debug logging for Ollama responses
+                if not content:
+                    logger.error(f"Ollama message field exists but content is empty. Message: {data.get('message')}")
+                    logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
+
+                # Ollama provides token counts in separate fields
+                if "prompt_eval_count" in data and "eval_count" in data:
+                    usage_tokens = data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
             else:
                 if "choices" not in data or not data["choices"]:
                     raise Exception("No choices in LLM response")

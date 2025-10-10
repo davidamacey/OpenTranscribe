@@ -138,7 +138,21 @@ class SpeakerMatchingService:
             best_match = profile_matches[0]
             confidence = best_match["similarity"]
 
-            # Get a representative speaker from this profile for the response
+            # Get the profile from database to verify it exists
+            profile = (
+                self.db.query(SpeakerProfile)
+                .filter(
+                    SpeakerProfile.id == best_match["profile_id"],
+                    SpeakerProfile.user_id == user_id,
+                )
+                .first()
+            )
+
+            if not profile:
+                return None
+
+            # Try to get a representative speaker from this profile if one exists
+            # This is optional - the profile itself is sufficient for matching
             profile_speaker = (
                 self.db.query(Speaker)
                 .filter(
@@ -150,11 +164,12 @@ class SpeakerMatchingService:
                 .first()
             )
 
-            if not profile_speaker:
-                return None
+            # Use profile_speaker.id if available, otherwise None
+            # The system will handle None speaker_id correctly
+            speaker_id = profile_speaker.id if profile_speaker else None
 
             return {
-                "speaker_id": profile_speaker.id,
+                "speaker_id": speaker_id,
                 "suggested_name": best_match["profile_name"],
                 "confidence": confidence,
                 "confidence_level": self.get_confidence_level(confidence),
@@ -699,7 +714,7 @@ class SpeakerMatchingService:
                 embedding=embedding,
                 user_id=user_id,
                 index_name="speakers",
-                threshold=0.85,  # High confidence for automatic assignment
+                threshold=0.75,  # High confidence for automatic assignment (matches SPEAKER_CONFIDENCE_HIGH)
                 max_results=20,
                 exclude_ids=[matched_speaker_id],  # Don't include the original speaker
             )

@@ -427,13 +427,20 @@
 <div class="filter-sidebar">
   <div class="filter-header">
     <h2>Filters</h2>
-    <button 
-      class="reset-button" 
-      on:click={resetFilters}
-      title="Clear all filters and show all files"
-    >Reset</button>
+    <div class="header-buttons">
+      <button
+        class="apply-button-compact"
+        on:click={applyFilters}
+        title="Apply all selected filters to update the file list"
+      >Apply</button>
+      <button
+        class="reset-button"
+        on:click={resetFilters}
+        title="Clear all filters and show all files"
+      >Reset</button>
+    </div>
   </div>
-  
+
   <div class="filter-section">
     <h3>Search Files</h3>
     <input
@@ -445,40 +452,7 @@
     />
     <small class="input-help">Searches file names and titles only</small>
   </div>
-  
-  <div class="filter-section">
-    <h3>Collection</h3>
-    <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
-  </div>
-  
-  <div class="filter-section">
-    <h3>Date Range</h3>
-    <div class="date-inputs">
-      <div class="date-group">
-        <label for="fromDate">From</label>
-        <input
-          type="date"
-          id="fromDate"
-          bind:value={fromDate}
-          on:input={handleFromDateChange}
-          class="filter-input"
-          title="Filter files uploaded on or after this date"
-        />
-      </div>
-      <div class="date-group">
-        <label for="toDate">To</label>
-        <input
-          type="date"
-          id="toDate"
-          bind:value={toDate}
-          on:input={handleToDateChange}
-          class="filter-input"
-          title="Filter files uploaded on or before this date"
-        />
-      </div>
-    </div>
-  </div>
-  
+
   <div class="filter-section">
     <h3>Tags</h3>
     {#if loadingTags}
@@ -517,7 +491,12 @@
       {/if}
     {/if}
   </div>
-  
+
+  <div class="filter-section">
+    <h3>Collections</h3>
+    <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
+  </div>
+
   <div class="filter-section">
     <h3>Speakers</h3>
     {#if loadingSpeakers}
@@ -539,6 +518,34 @@
         {/each}
       </div>
     {/if}
+  </div>
+
+  <div class="filter-section">
+    <h3>Date Range</h3>
+    <div class="date-inputs">
+      <div class="date-group">
+        <label for="fromDate">From</label>
+        <input
+          type="date"
+          id="fromDate"
+          bind:value={fromDate}
+          on:input={handleFromDateChange}
+          class="filter-input"
+          title="Filter files uploaded on or after this date"
+        />
+      </div>
+      <div class="date-group">
+        <label for="toDate">To</label>
+        <input
+          type="date"
+          id="toDate"
+          bind:value={toDate}
+          on:input={handleToDateChange}
+          class="filter-input"
+          title="Filter files uploaded on or before this date"
+        />
+      </div>
+    </div>
   </div>
   
   <!-- Advanced Filters Toggle -->
@@ -573,18 +580,34 @@
         <small class="input-help">Searches within the actual transcript text content</small>
       </div>
 
+      <!-- File Type -->
+      <div class="filter-section">
+        <h3>File Type</h3>
+        <div class="file-type-list">
+          {#each availableFileTypes as fileType}
+            <button
+              class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
+              on:click={() => toggleFileType(fileType)}
+              title="Filter files by type: {fileType} files only. Click to toggle selection."
+            >
+              {fileType.charAt(0).toUpperCase() + fileType.slice(1)}
+            </button>
+          {/each}
+        </div>
+      </div>
+
       <!-- Duration Range -->
       <div class="filter-section">
         <h3>Duration</h3>
         <div class="range-inputs">
           <div class="range-group">
             <label for="minDuration">Min (seconds)</label>
-            <input 
-              type="number" 
-              id="minDuration" 
-              min="0" 
-              placeholder="Minimum" 
-              class="filter-input" 
+            <input
+              type="number"
+              id="minDuration"
+              min="0"
+              placeholder="Minimum"
+              class="filter-input"
               bind:value={minDurationInput}
               on:input={handleMinDurationChange}
               title="Filter files with duration greater than or equal to this value (in seconds)"
@@ -592,12 +615,12 @@
           </div>
           <div class="range-group">
             <label for="maxDuration">Max (seconds)</label>
-            <input 
-              type="number" 
-              id="maxDuration" 
-              min="0" 
-              placeholder="Maximum" 
-              class="filter-input" 
+            <input
+              type="number"
+              id="maxDuration"
+              min="0"
+              placeholder="Maximum"
+              class="filter-input"
               bind:value={maxDurationInput}
               on:input={handleMaxDurationChange}
               title="Filter files with duration less than or equal to this value (in seconds)"
@@ -612,12 +635,12 @@
         <div class="range-inputs">
           <div class="range-group">
             <label for="minFileSize">Min (MB)</label>
-            <input 
-              type="number" 
-              id="minFileSize" 
-              min="0" 
-              placeholder="Minimum" 
-              class="filter-input" 
+            <input
+              type="number"
+              id="minFileSize"
+              min="0"
+              placeholder="Minimum"
+              class="filter-input"
               bind:value={minFileSizeInput}
               on:input={(e) => handleFileSizeChange('min', e)}
               title="Filter files with size greater than or equal to this value (in megabytes)"
@@ -625,33 +648,17 @@
           </div>
           <div class="range-group">
             <label for="maxFileSize">Max (MB)</label>
-            <input 
-              type="number" 
-              id="maxFileSize" 
-              min="0" 
-              placeholder="Maximum" 
-              class="filter-input" 
+            <input
+              type="number"
+              id="maxFileSize"
+              min="0"
+              placeholder="Maximum"
+              class="filter-input"
               bind:value={maxFileSizeInput}
               on:input={(e) => handleFileSizeChange('max', e)}
               title="Filter files with size less than or equal to this value (in megabytes)"
             />
           </div>
-        </div>
-      </div>
-
-      <!-- File Type -->
-      <div class="filter-section">
-        <h3>File Type</h3>
-        <div class="file-type-list">
-          {#each availableFileTypes as fileType}
-            <button
-              class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
-              on:click={() => toggleFileType(fileType)}
-              title="Filter files by type: {fileType} files only. Click to toggle selection."
-            >
-              {fileType.charAt(0).toUpperCase() + fileType.slice(1)}
-            </button>
-          {/each}
         </div>
       </div>
 
@@ -672,14 +679,6 @@
       </div>
     </div>
   {/if}
-  
-  <div class="filter-actions">
-    <button 
-      class="apply-button" 
-      on:click={applyFilters}
-      title="Apply all selected filters to update the file list"
-    >Apply Filters</button>
-  </div>
 </div>
 
 <style>
@@ -697,19 +696,62 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 0.5rem;
   }
-  
+
   .filter-header h2 {
     font-size: 1.2rem;
     margin: 0;
   }
-  
-  .reset-button {
-    background: transparent;
+
+  .header-buttons {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .apply-button-compact {
+    background-color: #3b82f6;
+    color: white;
     border: none;
-    color: var(--primary-color);
-    font-size: 0.9rem;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 500;
     cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
+  }
+
+  .apply-button-compact:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.25);
+  }
+
+  .apply-button-compact:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .reset-button {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .reset-button:hover:not(:disabled) {
+    background-color: var(--hover-color);
+    border-color: var(--primary-color);
+  }
+
+  .reset-button:active:not(:disabled) {
+    transform: translateY(0);
   }
   
   .filter-section {
@@ -842,40 +884,6 @@
     font-size: 0.9rem;
     color: var(--text-light);
     margin: 0;
-  }
-  
-  .filter-actions {
-    margin-top: 1rem;
-  }
-  
-  .apply-button {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-  
-  .apply-button:hover:not(:disabled) {
-    background-color: #2563eb;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-    text-decoration: none;
-  }
-  
-  .apply-button:active:not(:disabled) {
-    transform: translateY(0);
   }
   /* Advanced filters divider and toggle styles */
   .advanced-filters-divider {

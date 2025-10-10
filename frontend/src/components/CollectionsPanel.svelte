@@ -310,6 +310,7 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
         class="modal-content"
         role="dialog"
@@ -351,7 +352,7 @@
               placeholder="Describe this collection..."
               rows="3"
               disabled={creating}
-            />
+            ></textarea>
           </div>
           
           <div class="form-actions">
@@ -400,6 +401,7 @@
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
         class="modal-content"
         role="dialog"
@@ -441,7 +443,7 @@
               placeholder="Describe this collection..."
               rows="3"
               disabled={updating}
-            />
+            ></textarea>
           </div>
           
           <div class="form-actions">

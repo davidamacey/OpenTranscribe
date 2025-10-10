@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const fontsDir = join(__dirname, '../public/fonts');
+const fontsDir = join(__dirname, '../static/fonts');
 
 // Create fonts directory if it doesn't exist
 if (!existsSync(fontsDir)) {

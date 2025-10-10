@@ -2,13 +2,25 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
-  
+  import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+
   export let selectedCollectionId: string | null = null;
 
   let collections: any[] = [];
   let loading = false;
+  let dropdownCollections: any[] = [];
 
   const dispatch = createEventDispatcher();
+
+  // Reactive: Prepare dropdown collections with proper format
+  $: dropdownCollections = collections.map(collection => ({
+    id: collection.id,
+    name: collection.name,
+    count: collection.media_count || 0
+  }));
+
+  // Reactive: Convert selected collection ID to array for multiselect (single selection mode)
+  $: selectedCollectionIds = selectedCollectionId ? [selectedCollectionId] : [];
 
   export async function fetchCollections() {
     loading = true;
@@ -25,30 +37,53 @@
     }
   }
 
-  function handleCollectionChange(event: Event) {
-    const target = event.target as HTMLSelectElement;
-    const value = target.value;
-    selectedCollectionId = value === '' ? null : value;
+  /**
+   * Handle collection selection from multiselect dropdown
+   * Single selection mode: only one collection can be selected at a time
+   * @param {CustomEvent} event - Event with collection id
+   */
+  function handleCollectionSelect(event: CustomEvent) {
+    const collectionId = event.detail.id;
+    // If clicking the same collection, deselect it
+    if (selectedCollectionId === collectionId) {
+      selectedCollectionId = null;
+    } else {
+      // Otherwise, select the new collection (replacing any previous selection)
+      selectedCollectionId = collectionId;
+    }
   }
-  
+
+  /**
+   * Handle collection deselection from multiselect dropdown
+   * @param {CustomEvent} event - Event with collection id
+   */
+  function handleCollectionDeselect(event: CustomEvent) {
+    selectedCollectionId = null;
+  }
+
   onMount(() => {
     fetchCollections();
   });
 </script>
 
 <div class="collections-filter">
-  <select 
-    id="collection-select"
-    bind:value={selectedCollectionId}
-    on:change={handleCollectionChange}
-    disabled={loading}
-    class="filter-select"
-  >
-    <option value="">All Files</option>
-    {#each collections as collection}
-      <option value={collection.id}>{collection.name} ({collection.media_count || 0})</option>
-    {/each}
-  </select>
+  {#if loading}
+    <p class="loading-text">Loading collections...</p>
+  {:else if collections.length === 0}
+    <p class="empty-text">No collections created yet</p>
+  {:else}
+    <div class="dropdown-section">
+      <SearchableMultiSelect
+        options={dropdownCollections}
+        selectedIds={selectedCollectionIds}
+        placeholder="Select collection to filter..."
+        maxHeight="300px"
+        showCounts={true}
+        on:select={handleCollectionSelect}
+        on:deselect={handleCollectionDeselect}
+      />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -57,54 +92,15 @@
     flex-direction: column;
     gap: 0.5rem;
   }
-  
-  .filter-select {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+
+  .loading-text,
+  .empty-text {
     font-size: 0.9rem;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    cursor: pointer;
-    transition: border-color 0.2s;
+    color: var(--text-light);
+    margin: 0;
   }
-  
-  .filter-select:hover:not(:disabled) {
-    border-color: var(--primary-color);
-  }
-  
-  .filter-select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  }
-  
-  .filter-select:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  
-  /* Dark mode support - match filter-input styling */
-  :global(.dark) .filter-select {
-    background-color: var(--background-color);
-    color: var(--text-primary);
-    border-color: var(--border-color);
-  }
-  
-  :global(.dark) .filter-select:hover:not(:disabled) {
-    border-color: var(--primary-color);
-  }
-  
-  :global(.dark) .filter-select:focus {
-    background-color: var(--background-color);
-    border-color: var(--primary-color);
-  }
-  
-  .filter-select option {
-    color: var(--text-primary);
-  }
-  
-  :global(.dark) .filter-select option {
-    color: var(--text-primary);
+
+  .dropdown-section {
+    margin-top: 0;
   }
 </style>

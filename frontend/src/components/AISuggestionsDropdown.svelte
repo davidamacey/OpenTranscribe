@@ -111,7 +111,6 @@
                 on:keydown={handleKeydown}
                 placeholder="Enter name..."
                 class="edit-input"
-                autofocus
               />
             </div>
             <div class="edit-actions">

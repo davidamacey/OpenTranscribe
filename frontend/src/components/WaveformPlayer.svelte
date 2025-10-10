@@ -329,7 +329,7 @@
     aria-valuemin="0"
     aria-valuemax={duration}
     aria-valuetext={`${Math.floor(currentTime / 60)}:${(currentTime % 60).toFixed(0).padStart(2, '0')}`}
-  />
+  ></canvas>
   
   <!-- Overlay states -->
   {#if isLoadingWaveform}

@@ -293,7 +293,7 @@ class SmartSpeakerSuggestionService:
                     auto_accept = True
                 elif confidence >= 0.75:
                     reason = f"Strong voice match (verified across {embedding_count} recordings)"
-                    auto_accept = False
+                    auto_accept = True
                 else:
                     reason = f"Moderate voice match (verified across {embedding_count} recordings)"
                     auto_accept = False
@@ -342,7 +342,7 @@ class SmartSpeakerSuggestionService:
                     auto_accept = True
                 elif confidence >= 0.75:
                     reason = f"Strong voice match (verified across {match['embedding_count']} recordings)"
-                    auto_accept = False
+                    auto_accept = True
                 else:
                     reason = f"Moderate voice match (verified across {match['embedding_count']} recordings)"
                     auto_accept = False
@@ -515,7 +515,7 @@ class SmartSpeakerSuggestionService:
                     auto_accept = True
                 elif confidence >= 0.75:
                     reason = f"Strong voice match from other video ({confidence:.0%} confidence)"
-                    auto_accept = False
+                    auto_accept = True
                 else:
                     reason = f"Moderate voice match from other video ({confidence:.0%} confidence)"
                     auto_accept = False

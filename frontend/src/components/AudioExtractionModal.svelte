@@ -13,6 +13,9 @@
   let estimatedAudioSize = 0;
   let compressionRatio = 0;
 
+  // Keep a local copy of the file to prevent it from being cleared by parent
+  let fileToExtract: File | null = null;
+
   const dispatch = createEventDispatcher<{
     extractionStarted: void;
     confirm: { extractedAudio: ExtractedAudio };
@@ -20,8 +23,9 @@
     uploadFull: void;
   }>();
 
-  // Calculate estimates when file changes
+  // Calculate estimates when file changes and save a local copy
   $: if (file) {
+    fileToExtract = file; // Save local copy
     // Estimate based on typical video duration (use file size as rough proxy)
     // Assume ~1MB per minute for typical video
     const estimatedDuration = (file.size / (1024 * 1024)) * 60; // seconds
@@ -30,7 +34,11 @@
   }
 
   async function handleExtractAudio() {
-    if (!file) return;
+    // Use local copy to ensure file reference isn't cleared by parent
+    if (!fileToExtract) {
+      console.error('No file available for extraction');
+      return;
+    }
 
     // Notify parent that extraction has started (so it can close upload modal)
     dispatch('extractionStarted');
@@ -38,15 +46,18 @@
     // Close modal immediately - extraction will run in background with notifications
     isOpen = false;
 
-    // Start extraction in background
+    // Start extraction in background using the local file copy
     try {
-      const extractedAudio = await audioExtractionService.extractAudio(file);
+      const extractedAudio = await audioExtractionService.extractAudio(fileToExtract);
 
       // Dispatch success with extracted audio
       dispatch('confirm', { extractedAudio });
     } catch (error) {
       console.error('Audio extraction failed:', error);
       // Error will be shown in notification panel
+    } finally {
+      // Clear local copy after extraction completes
+      fileToExtract = null;
     }
   }
 
