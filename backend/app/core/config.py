@@ -172,8 +172,8 @@ class Settings(BaseSettings):
                 return 1
         return int(self.BATCH_SIZE)
 
-    # Storage paths
-    DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/mnt/nvm/repos/transcribe-app/data"))
+    # Storage paths (container paths, mounted from host via docker-compose volumes)
+    DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
 

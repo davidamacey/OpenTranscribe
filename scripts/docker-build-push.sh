@@ -79,6 +79,36 @@ detect_changes() {
     fi
 }
 
+# Function to run security scan if enabled
+run_security_scan() {
+    local component=$1
+
+    if [ "${SKIP_SECURITY_SCAN}" = "true" ]; then
+        print_warning "Security scanning skipped (SKIP_SECURITY_SCAN=true)"
+        return 0
+    fi
+
+    if [ ! -f "./scripts/security-scan.sh" ]; then
+        print_warning "Security scan script not found, skipping..."
+        return 0
+    fi
+
+    print_info "Running security scan for ${component}..."
+    if OUTPUT_DIR="./security-reports" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" ./scripts/security-scan.sh "${component}"; then
+        print_success "Security scan passed for ${component}"
+        return 0
+    else
+        print_warning "Security scan found issues for ${component}"
+        if [ "${FAIL_ON_SECURITY_ISSUES}" = "true" ]; then
+            print_error "Failing build due to security issues (FAIL_ON_SECURITY_ISSUES=true)"
+            return 1
+        else
+            print_warning "Continuing despite security issues (set FAIL_ON_SECURITY_ISSUES=true to fail)"
+            return 0
+        fi
+    fi
+}
+
 # Function to build and push backend
 build_backend() {
     print_info "Building backend image..."
@@ -100,6 +130,9 @@ build_backend() {
 
     print_success "Backend image built and pushed successfully"
     print_info "Tags: ${REPO_BACKEND}:latest, ${REPO_BACKEND}:${COMMIT_SHA}"
+
+    # Run security scan after build
+    run_security_scan "backend"
 }
 
 # Function to build and push frontend
@@ -123,6 +156,9 @@ build_frontend() {
 
     print_success "Frontend image built and pushed successfully"
     print_info "Tags: ${REPO_FRONTEND}:latest, ${REPO_FRONTEND}:${COMMIT_SHA}"
+
+    # Run security scan after build
+    run_security_scan "frontend"
 }
 
 # Function to show usage
@@ -140,16 +176,35 @@ Options:
     help        Show this help message
 
 Environment Variables:
-    DOCKERHUB_USERNAME    Docker Hub username (default: davidamacey)
-    PLATFORMS             Target platforms (default: linux/amd64,linux/arm64)
+    DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
+    PLATFORMS                 Target platforms (default: linux/amd64,linux/arm64)
+    SKIP_SECURITY_SCAN        Skip security scanning (default: false)
+    FAIL_ON_SECURITY_ISSUES   Fail build if security issues found (default: false)
+    FAIL_ON_CRITICAL          Fail scan if CRITICAL vulnerabilities found (default: false)
 
 Examples:
-    $0              # Build and push both images
+    $0              # Build and push both images with security scanning
     $0 backend      # Build and push only backend
     $0 auto         # Auto-detect and build changed components
 
     # Build only for current platform (faster)
     PLATFORMS=linux/amd64 $0 backend
+
+    # Skip security scanning for faster builds
+    SKIP_SECURITY_SCAN=true $0 all
+
+    # Fail build if security issues found (recommended for CI)
+    FAIL_ON_SECURITY_ISSUES=true FAIL_ON_CRITICAL=true $0 all
+
+Security Scanning:
+    After building, images are automatically scanned with:
+    - Hadolint: Dockerfile linting
+    - Dockle: CIS best practices
+    - Trivy: Vulnerability scanning
+    - Grype: Additional vulnerability scanning
+    - Syft: SBOM generation
+
+    Reports are saved to ./security-reports/
 
 EOF
 }

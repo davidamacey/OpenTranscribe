@@ -1,6 +1,8 @@
 # OpenTranscribe .gitignore
 
 .github/DRAFT_ISSUES/
+offline-package-build/
+security-reports-*
 
 # Environment variables
 .env
@@ -238,3 +240,4 @@ frontend/static/ffmpeg/
 
 # Private project management files
 GITHUB_OPTIMIZATION_TASKS.md
+security-reports/
