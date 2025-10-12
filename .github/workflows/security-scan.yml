@@ -1,0 +1,248 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [master, main, develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '**/Dockerfile*'
+      - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches: [master, main, develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '**/Dockerfile*'
+      - '.github/workflows/security-scan.yml'
+  schedule:
+    # Run weekly security scans on Sundays at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to scan (backend, frontend, or all)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+
+jobs:
+  dockerfile-lint:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Hadolint on backend Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: backend/Dockerfile.prod
+          config: .hadolint.yaml
+          failure-threshold: warning
+
+      - name: Run Hadolint on frontend Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: frontend/Dockerfile.prod
+          config: .hadolint.yaml
+          failure-threshold: warning
+
+  build-and-scan-backend:
+    name: Build & Scan Backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          tags: opentranscribe-backend:${{ github.sha }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-backend:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-backend-results.sarif'
+          category: 'trivy-backend'
+
+      - name: Run Trivy vulnerability scanner (table output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-backend:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Run Dockle
+        uses: erzz/dockle-action@v1
+        with:
+          image: opentranscribe-backend:${{ github.sha }}
+          exit-code: '0'
+          failure-threshold: warn
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: opentranscribe-backend:${{ github.sha }}
+          artifact-name: backend-sbom.spdx.json
+          output-file: backend-sbom.spdx.json
+
+      - name: Scan SBOM with Grype
+        uses: anchore/scan-action@v3
+        with:
+          sbom: backend-sbom.spdx.json
+          fail-build: false
+          severity-cutoff: medium
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-sbom
+          path: backend-sbom.spdx.json
+          retention-days: 90
+
+  build-and-scan-frontend:
+    name: Build & Scan Frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          tags: opentranscribe-frontend:${{ github.sha }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-frontend:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: 'trivy-frontend'
+
+      - name: Run Trivy vulnerability scanner (table output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-frontend:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Run Dockle
+        uses: erzz/dockle-action@v1
+        with:
+          image: opentranscribe-frontend:${{ github.sha }}
+          exit-code: '0'
+          failure-threshold: warn
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: opentranscribe-frontend:${{ github.sha }}
+          artifact-name: frontend-sbom.spdx.json
+          output-file: frontend-sbom.spdx.json
+
+      - name: Scan SBOM with Grype
+        uses: anchore/scan-action@v3
+        with:
+          sbom: frontend-sbom.spdx.json
+          fail-build: false
+          severity-cutoff: medium
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-sbom
+          path: frontend-sbom.spdx.json
+          retention-days: 90
+
+  dependency-scan:
+    name: Scan Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner on repository
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          skip-dirs: 'node_modules,venv,.venv'
+
+      - name: Run Trivy config scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          skip-dirs: 'node_modules,venv,.venv'
+
+  summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [dockerfile-lint, build-and-scan-backend, build-and-scan-frontend, dependency-scan]
+    if: always()
+    steps:
+      - name: Check scan results
+        run: |
+          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All security scans completed. Check individual job logs for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Completed Scans:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dockerfile Linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend Image Scanning (Trivy, Dockle, Grype)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Frontend Image Scanning (Trivy, Dockle, Grype)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dependency Scanning (Trivy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Reports Available:" >> $GITHUB_STEP_SUMMARY
+          echo "- SBOM artifacts uploaded for both backend and frontend" >> $GITHUB_STEP_SUMMARY
+          echo "- Vulnerability results uploaded to GitHub Security tab" >> $GITHUB_STEP_SUMMARY

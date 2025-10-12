@@ -12,6 +12,18 @@ class WhisperXService:
     """Service for handling WhisperX transcription operations with cross-platform support."""
 
     def __init__(self, model_name: str = None, models_dir: str = None):
+        # Add safe globals for PyTorch 2.6+ compatibility with PyAnnote
+        # PyTorch 2.6+ changed torch.load() default to weights_only=True
+        # PyAnnote models require ListConfig to be whitelisted
+        try:
+            import torch.serialization
+            from omegaconf.listconfig import ListConfig
+
+            torch.serialization.add_safe_globals([ListConfig])
+            logger.debug("Added safe globals for PyTorch 2.6+ compatibility")
+        except Exception as e:
+            logger.warning(f"Could not add safe globals for torch.load: {e}")
+
         # Initialize hardware detection
         self.hardware_config = detect_hardware()
 
@@ -210,6 +222,10 @@ class WhisperXService:
 
         Returns:
             Diarization result
+
+        Raises:
+            RuntimeError: If cuDNN library compatibility issues occur
+            ImportError: If WhisperX is not installed
         """
         try:
             import whisperx
@@ -218,17 +234,39 @@ class WhisperXService:
 
         logger.info("Performing speaker diarization...")
 
-        diarize_params = {"max_speakers": max_speakers, "min_speakers": min_speakers}
+        try:
+            diarize_params = {"max_speakers": max_speakers, "min_speakers": min_speakers}
 
-        # Use PyAnnote-compatible device configuration
-        pyannote_config = self.hardware_config.get_pyannote_config()
+            # Use PyAnnote-compatible device configuration
+            pyannote_config = self.hardware_config.get_pyannote_config()
 
-        diarize_model = whisperx.diarize.DiarizationPipeline(
-            use_auth_token=hf_token, device=pyannote_config["device"]
-        )
+            diarize_model = whisperx.diarize.DiarizationPipeline(
+                use_auth_token=hf_token, device=pyannote_config["device"]
+            )
 
-        diarize_segments = diarize_model(audio, **diarize_params)
-        return diarize_segments
+            diarize_segments = diarize_model(audio, **diarize_params)
+            return diarize_segments
+
+        except Exception as e:
+            error_msg = str(e)
+
+            # Detect cuDNN library compatibility issues
+            if "libcudnn" in error_msg.lower():
+                raise RuntimeError(
+                    "CUDA cuDNN library compatibility error detected. This indicates a version "
+                    "mismatch between PyTorch and CTranslate2. The system requires all packages "
+                    "to use cuDNN 9 for CUDA 12.8 compatibility. "
+                    f"Technical details: {error_msg}"
+                ) from e
+
+            # Detect general CUDA errors
+            if "cuda" in error_msg.lower() or "gpu" in error_msg.lower():
+                raise RuntimeError(
+                    f"GPU processing error during speaker diarization: {error_msg}"
+                ) from e
+
+            # Re-raise other exceptions
+            raise
 
     def assign_speakers_to_words(
         self, diarize_segments, aligned_result: dict[str, Any]

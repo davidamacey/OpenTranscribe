@@ -13,6 +13,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
+if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
+    export HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+fi
+
 # Configuration
 VERSION="${1:-$(git rev-parse --short HEAD)}"
 PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
@@ -307,8 +312,8 @@ copy_configuration() {
 # INSTALLATION SCRIPTS
 #######################
 
-create_installation_scripts() {
-    print_header "Creating Installation Scripts"
+copy_installation_scripts() {
+    print_header "Copying Installation Scripts"
 
     # Copy installation script
     print_info "Copying install.sh..."
@@ -327,8 +332,8 @@ create_installation_scripts() {
 # DOCUMENTATION
 #######################
 
-create_documentation() {
-    print_header "Creating Documentation"
+copy_documentation() {
+    print_header "Copying Documentation"
 
     print_info "Copying README-OFFLINE.md..."
     cp README-OFFLINE.md "${PACKAGE_DIR}/"
@@ -417,21 +422,14 @@ main() {
     print_warning "This process will take 1-2 hours and requires internet access"
     echo
 
-    read -p "Continue? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Aborted by user"
-        exit 0
-    fi
-
     # Execute build steps
     preflight_checks
     setup_directories
     pull_and_save_images
     download_models
     copy_configuration
-    create_installation_scripts
-    create_documentation
+    copy_installation_scripts
+    copy_documentation
     finalize_package
     compress_package
 

@@ -13,8 +13,15 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password hashing with bcrypt_sha256 to handle long passwords properly
+# bcrypt_sha256 pre-hashes with SHA256 to work around bcrypt's 72-byte limitation
+# We keep "bcrypt" in the list to verify existing hashes, but new hashes use bcrypt_sha256
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],  # bcrypt_sha256 for new, bcrypt for legacy
+    deprecated=["bcrypt"],  # Mark plain bcrypt as deprecated (will auto-upgrade on verify)
+    bcrypt_sha256__default_rounds=12,
+    bcrypt__default_rounds=12,
+)
 
 # Database connection parameters
 DB_USER = os.getenv("POSTGRES_USER", "postgres")

@@ -376,18 +376,47 @@ def transcribe_audio_task(self, file_uuid: str):
 
             except Exception as e:
                 logger.error(f"Error in WhisperX processing: {str(e)}")
+
+                # Provide user-friendly error messages for common issues
+                error_message = str(e)
+                if "libcudnn" in error_message.lower():
+                    error_message = (
+                        "Audio processing failed due to a system library compatibility issue. "
+                        "The transcription service requires updated dependencies. "
+                        "Please contact support for assistance."
+                    )
+                elif "cuda" in error_message.lower() and "out of memory" in error_message.lower():
+                    error_message = (
+                        "GPU out of memory error. The audio file may be too large for available GPU resources. "
+                        "Please try with a shorter audio file or contact support."
+                    )
+                elif "cuda" in error_message.lower() or "gpu" in error_message.lower():
+                    error_message = (
+                        "GPU processing error occurred during transcription. "
+                        "The system may need reconfiguration. "
+                        "Please try again or contact support if the issue persists."
+                    )
+                elif "model" in error_message.lower() and (
+                    "download" in error_message.lower() or "load" in error_message.lower()
+                ):
+                    error_message = (
+                        "Failed to download or load AI models. "
+                        "Please check your internet connection and try again. "
+                        "If the problem persists, contact support."
+                    )
+
                 with session_scope() as db:
                     update_task_status(
                         db,
                         task_id,
                         "failed",
-                        error_message=f"Processing error: {str(e)}",
+                        error_message=error_message,
                         completed=True,
                     )
                     update_media_file_status(db, file_id, FileStatus.ERROR)
 
-                send_error_notification(user_id, file_id, str(e))
-                return {"status": "error", "message": str(e)}
+                send_error_notification(user_id, file_id, error_message)
+                return {"status": "error", "message": error_message}
 
     except Exception as e:
         logger.error(f"Error processing file {file_id}: {str(e)}")

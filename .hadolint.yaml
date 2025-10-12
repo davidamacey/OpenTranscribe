@@ -1,0 +1,33 @@
+# Hadolint configuration for OpenTranscribe Dockerfiles
+# https://github.com/hadolint/hadolint
+
+# Ignore specific rules
+ignored:
+  - DL3008  # Pin versions in apt-get install (Debian/Ubuntu)
+  - DL3009  # Delete the apt-get lists after installing (already handled)
+  - DL3015  # Additional packages by --no-install-recommends (sometimes we need them)
+  - DL3018  # Pin versions in apk add (Alpine - can break builds)
+  - DL3059  # Multiple consecutive RUN instructions (acceptable for layer caching)
+
+# Trust specific registries
+trustedRegistries:
+  - docker.io
+  - ghcr.io
+  - nvcr.io
+
+# Override default rules severity
+override:
+  error:
+    - DL3002  # Do not switch to root USER
+    - DL3020  # Use COPY instead of ADD for files and folders
+    - DL4006  # Set SHELL option -o pipefail before RUN with pipe
+  warning:
+    - DL3003  # Use WORKDIR to switch to a directory
+    - DL3007  # Using latest tag for image
+    - DL3042  # Avoid cache directory with pip
+  info:
+    - DL3013  # Pin versions in pip install
+    - DL3016  # Pin versions in npm install
+
+# Strict mode - warn on all other issues
+failure-threshold: warning
