@@ -1,4 +1,4 @@
-FROM python:3.12.11-slim-bullseye
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 
@@ -15,9 +15,17 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install Python dependencies
+# All packages now use cuDNN 9 for CUDA 12.8 compatibility
+# PyTorch 2.8.0+cu128 - includes CVE-2025-32434 security fix
+# CTranslate2 4.6.0+ - cuDNN 9 support
+# WhisperX 3.7.0 - latest version with ctranslate2 4.5+ compatibility
+# NumPy 2.x - fully compatible with all packages, no security issues
 RUN pip install --no-cache-dir -r requirements.txt
-# https://github.com/OpenNMT/CTranslate2/issues/1806, also requires downgrading torch to be compatible with ver8
-RUN pip install --no-cache-dir "torch==2.2.2" "torchaudio==2.2.2" "numpy<2.0"
+
+# Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package
+# This ensures PyAnnote and other tools can find cuDNN 9 libraries
+# Must be set at build time to persist in the container
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib
 
 # Create directories for models and temporary files
 RUN mkdir -p /app/models /app/temp

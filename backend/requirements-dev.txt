@@ -1,0 +1,27 @@
+# Development Dependencies for OpenTranscribe Backend
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+
+# Production dependencies
+-r requirements.txt
+
+# Code Quality & Formatting
+black>=25.1.0
+ruff>=0.12.0
+mypy>=1.17.0
+mypy-extensions>=1.1.0
+
+# Testing
+pytest>=8.4.0
+pytest-asyncio>=0.23.0  # For testing async code
+pytest-cov>=4.1.0  # Code coverage reports
+
+# Git Hooks & Pre-commit
+pre-commit>=4.3.0
+
+# Type Stubs for Better Type Checking
+types-redis>=4.6.0
+types-passlib>=1.7.0
+
+# Development Utilities
+ipython>=8.12.0  # Enhanced Python shell
+ipdb>=0.13.0  # IPython debugger

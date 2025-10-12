@@ -75,9 +75,9 @@ services:
   # Development services that mirror production setup
 
   backend:
-    build: 
+    build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.prod
     restart: always
     volumes:
       - ./backend:/app
@@ -147,9 +147,9 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
   celery-worker:
-    build: 
+    build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.prod
     restart: always
     command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
     runtime: nvidia
@@ -249,9 +249,9 @@ services:
         condition: service_healthy
 
   flower:
-    build: 
+    build:
       context: ./backend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.prod
     restart: always
     command: >
       python -m celery -A app.core.celery flower
