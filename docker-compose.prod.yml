@@ -161,7 +161,7 @@ services:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: always
     restart: always
-    command: celery -A app.core.celery worker --loglevel=info --concurrency=1
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
