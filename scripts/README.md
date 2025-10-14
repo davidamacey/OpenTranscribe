@@ -9,6 +9,7 @@ This directory contains scripts for building Docker images, creating offline pac
 - **[install-offline-package.sh](#installation-script)** - Install OpenTranscribe on offline systems
 - **[opentr-offline.sh](#offline-management-wrapper)** - Manage offline installations
 - **[download-models.py](#model-downloader)** - Download AI models for offline packaging
+- **[fix-model-permissions.sh](#model-cache-permission-fixer)** - Fix permissions for non-root container migration
 
 ---
 
@@ -273,6 +274,93 @@ docker run --rm \
 - Downloads models to cache directories
 - Creates `model_manifest.json` with metadata
 - Reports total cache size and status
+
+---
+
+## Model Cache Permission Fixer
+
+Script to fix model cache directory permissions when migrating to non-root container user.
+
+### Purpose
+
+OpenTranscribe backend containers now run as a non-root user (`appuser`, UID 1000) for security. Existing installations with model cache owned by root need permission updates.
+
+### When to Use
+
+Run this script if:
+- You're upgrading from a version that ran containers as root
+- Your model cache directory exists in `./models/` (or custom `MODEL_CACHE_DIR`)
+- You see permission errors when starting backend/celery containers
+
+### Prerequisites
+
+One of the following:
+- Docker installed and running
+- `sudo` access on the host system
+
+### Usage
+
+```bash
+# From project root
+./scripts/fix-model-permissions.sh
+
+# The script will:
+# 1. Read MODEL_CACHE_DIR from .env (or use default ./models)
+# 2. Check if directory exists
+# 3. Fix ownership to UID:GID 1000:1000
+# 4. Set correct permissions (755 for dirs, 644 for files)
+```
+
+### How It Works
+
+**Primary Method (Docker):**
+```bash
+docker run --rm \
+  -v ./models:/models \
+  busybox:latest \
+  chown -R 1000:1000 /models
+```
+
+**Fallback Method (sudo):**
+```bash
+sudo chown -R 1000:1000 ./models
+sudo find ./models -type d -exec chmod 755 {} \;
+sudo find ./models -type f -exec chmod 644 {} \;
+```
+
+### Output
+
+```
+OpenTranscribe Model Cache Permission Fixer
+==============================================
+
+Model cache directory: /mnt/nvm/repos/transcribe-app/models
+
+Fixing permissions using Docker container...
+✓ Permissions fixed successfully!
+
+Migration complete!
+Your model cache is now ready for the non-root container.
+```
+
+### Verification
+
+After running the script, verify permissions:
+
+```bash
+ls -la ./models/
+# Should show: drwxr-xr-x ... 1000 1000 ... huggingface
+#              drwxr-xr-x ... 1000 1000 ... torch
+```
+
+### Fresh Installations
+
+This script is **not needed** for fresh installations. The containers will automatically create the cache directories with correct ownership.
+
+### Related Documentation
+
+- [CLAUDE.md - Security Features](../CLAUDE.md#security-features) - Non-root container documentation
+- [Issue #91](https://github.com/davidamacey/transcribe-app/issues/91) - Non-root user implementation
 
 ---
 

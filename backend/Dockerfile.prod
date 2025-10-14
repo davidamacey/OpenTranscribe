@@ -1,17 +1,24 @@
-FROM python:3.12-slim-bookworm
+# =============================================================================
+# OpenTranscribe Backend - Production Dockerfile
+# Multi-stage build optimized for security with non-root user
+# Updated with cuDNN 9 compatibility for PyTorch 2.8.0+cu128
+# =============================================================================
 
-WORKDIR /app
+# -----------------------------------------------------------------------------
+# Stage 1: Build Stage - Install Python dependencies with compilation
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS builder
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+WORKDIR /build
+
+# Install build dependencies (only in this stage)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    curl \
-    ffmpeg \
-    libsndfile1 \
-    libimage-exiftool-perl \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
+# Copy only requirements first for better layer caching
 COPY requirements.txt .
 
 # Install Python dependencies
@@ -20,20 +27,69 @@ COPY requirements.txt .
 # CTranslate2 4.6.0+ - cuDNN 9 support
 # WhisperX 3.7.0 - latest version with ctranslate2 4.5+ compatibility
 # NumPy 2.x - fully compatible with all packages, no security issues
-RUN pip install --no-cache-dir -r requirements.txt
+# Use --user to install to /root/.local which we'll copy to final stage
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
+# -----------------------------------------------------------------------------
+# Stage 2: Runtime Stage - Minimal production image with non-root user
+# -----------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm
+
+# OCI annotations for container metadata and compliance
+LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
+      org.opencontainers.image.description="AI-powered transcription backend with WhisperX and PyAnnote" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+
+# Install only runtime dependencies (no build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user for security
+# Add to video group for GPU access
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -G video -u 1000 -m -s /bin/bash appuser && \
+    mkdir -p /app /app/models /app/temp && \
+    chown -R appuser:appuser /app
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python packages from builder stage
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Ensure scripts in .local are usable by adding to PATH
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package
 # This ensures PyAnnote and other tools can find cuDNN 9 libraries
-# Must be set at build time to persist in the container
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib
-
-# Create directories for models and temporary files
-RUN mkdir -p /app/models /app/temp
+# Set cache directories to user home
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.12/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib \
+    HF_HOME=/home/appuser/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
+    TORCH_HOME=/home/appuser/.cache/torch
 
 # Copy application code
-COPY . .
+COPY --chown=appuser:appuser . .
 
-# Expose port
+# Switch to non-root user
+USER appuser
+
+# Health check for container orchestration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose application port
 EXPOSE 8080
 
 # Command to run the application in production (no reload)

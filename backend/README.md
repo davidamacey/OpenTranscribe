@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
-  
+
   # Backend
 </div>
 
@@ -96,7 +96,7 @@ Required environment variables for AI processing:
 OpenTranscribe automatically caches AI models for persistence across container restarts:
 
 - **WhisperX Models**: Cached via HuggingFace Hub (~1.5GB)
-- **PyAnnote Models**: Cached via PyTorch/HuggingFace (~500MB)  
+- **PyAnnote Models**: Cached via PyTorch/HuggingFace (~500MB)
 - **Alignment Models**: Cached via PyTorch Hub (~360MB)
 - **Total Storage**: ~2.5GB for complete model cache
 
@@ -111,7 +111,7 @@ You also need to accept the user agreement for the following models:
 
 #### Troubleshooting AI Processing
 - **High GPU Memory Usage**: Try reducing `BATCH_SIZE` or changing `COMPUTE_TYPE` to `int8`
-- **Slow Processing**: Consider using a smaller model like `medium` or `small` 
+- **Slow Processing**: Consider using a smaller model like `medium` or `small`
 - **Speaker Identification Issues**: Adjust `MIN_SPEAKERS` and `MAX_SPEAKERS` if you know the approximate speaker count
 
 #### AI/ML References
@@ -152,8 +152,8 @@ backend/
 ├── scripts/                  # Utility scripts
 ├── tests/                    # Test suite
 ├── requirements.txt          # Python dependencies
-├── Dockerfile.dev           # Development container
-└── README.md               # This file
+├── Dockerfile.prod           # Production container (multi-stage, non-root)
+└── README.md                 # This file
 ```
 
 ## 🛠️ Development Guide
@@ -399,6 +399,39 @@ OPENSEARCH_URL=your-opensearch-url
 - **Storage**: MinIO connectivity
 - **Search**: OpenSearch status
 - **Workers**: Celery worker health
+
+### Container Security
+
+OpenTranscribe backend follows Docker security best practices:
+
+**Non-Root User Implementation:**
+- Containers run as `appuser` (UID 1000) instead of root
+- Follows principle of least privilege for enhanced security
+- Compliant with security scanning tools (Trivy, Snyk, etc.)
+
+**Multi-Stage Build:**
+- Build dependencies isolated from runtime image
+- Minimal attack surface with only required runtime packages
+- Reduced image size and faster deployments
+
+**GPU Access:**
+- User added to `video` group for GPU device access
+- Compatible with NVIDIA Container Runtime
+- Supports CUDA 12.8 and cuDNN 9 for AI models
+
+**Model Caching:**
+- Models cached in user home directory (`/home/appuser/.cache`)
+- Persistent storage between container restarts
+- No re-downloads required after initial setup
+
+**Migration for Existing Deployments:**
+```bash
+# Fix permissions for existing model cache
+./scripts/fix-model-permissions.sh
+
+# Restart containers with new image
+docker compose restart backend celery-worker
+```
 
 ## 🤝 Contributing
 
