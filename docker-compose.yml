@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:17.5-alpine
     restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data/
@@ -19,7 +19,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     volumes:
       - minio_data:/data
@@ -37,7 +37,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2.2-alpine3.22
     restart: always
     ports:
       - "5177:6379"
@@ -241,7 +241,7 @@ services:
       dockerfile: Dockerfile.prod
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "5173:8080"
     environment:
       - NODE_ENV=production
     depends_on:

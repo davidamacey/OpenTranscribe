@@ -6,7 +6,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:17.5-alpine
     restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data/
@@ -24,7 +24,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     volumes:
       - minio_data:/data
@@ -42,7 +42,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2.2-alpine3.22
     restart: always
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -133,9 +133,14 @@ services:
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
       # LLM Configuration - external providers only for offline deployment
       - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8012/v1}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss-20b}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
@@ -193,9 +198,14 @@ services:
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
       # LLM Configuration
       - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8012/v1}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss-20b}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
-  
+
   **AI-Powered Transcription and Media Analysis Platform**
 </div>
 
@@ -165,10 +165,14 @@ curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/s
 ```
 
 Then follow the on-screen instructions. The setup script will:
+- Detect your hardware (NVIDIA GPU, Apple Silicon, or CPU)
 - Download the production Docker Compose file
-- Configure environment variables including GPU support (default GPU device ID: 2)
-- Help you set up your Hugging Face token (required for speaker diarization)
+- Configure environment variables with optimal settings for your hardware
+- **Prompt for your HuggingFace token** (required for speaker diarization)
+- **Automatically download and cache AI models (~2.5GB)** if token is provided
 - Set up the management script (`opentranscribe.sh`)
+
+**Note:** The script will prompt you for your HuggingFace token during setup. If you provide it, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
 
 Once setup is complete, start OpenTranscribe with:
 
@@ -189,7 +193,7 @@ Access the web interface at http://localhost:5173
    ```bash
    git clone https://github.com/davidamacey/OpenTranscribe.git
    cd OpenTranscribe
-   
+
    # Make utility script executable
    chmod +x opentr.sh
    ```
@@ -198,7 +202,7 @@ Access the web interface at http://localhost:5173
    ```bash
    # Copy environment template
    cp .env.example .env
-   
+
    # Edit .env file with your settings (optional for development)
    # Key variables:
    # - HUGGINGFACE_TOKEN (required for speaker diarization)
@@ -209,7 +213,7 @@ Access the web interface at http://localhost:5173
    ```bash
    # Start in development mode (with hot reload)
    ./opentr.sh start dev
-   
+
    # Or start in production mode
    ./opentr.sh start prod
    ```
@@ -470,7 +474,7 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
    LLM_PROVIDER=openai
    OPENAI_API_KEY=your_openai_key
    OPENAI_MODEL_NAME=gpt-4o-mini
-   
+
    # Start without local LLM
    ./opentr.sh start dev
    ```
@@ -480,7 +484,7 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
    # Configure for vLLM in .env
    LLM_PROVIDER=vllm
    VLLM_MODEL_NAME=gpt-oss-20b
-   
+
    # Start with vLLM service (requires 16GB+ VRAM)
    docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
    ```
@@ -490,7 +494,7 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
    # Configure for Ollama in .env
    LLM_PROVIDER=ollama
    OLLAMA_MODEL_NAME=llama3.2:3b-instruct-q4_K_M
-   
+
    # Edit docker-compose.vllm.yml and uncomment ollama service
    # Then start with both compose files
    docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
@@ -501,7 +505,7 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
 # Cloud Providers (configure in .env)
 LLM_PROVIDER=openai                  # openai, anthropic, custom (openrouter)
 OPENAI_API_KEY=your_openai_key       # OpenAI GPT models
-ANTHROPIC_API_KEY=your_claude_key    # Anthropic Claude models  
+ANTHROPIC_API_KEY=your_claude_key    # Anthropic Claude models
 OPENROUTER_API_KEY=your_or_key       # OpenRouter (multi-provider)
 
 # Local Providers (requires additional Docker services)
@@ -511,7 +515,7 @@ LLM_PROVIDER=ollama                  # Local Ollama server
 
 **🎯 Deployment Scenarios:**
 - **💰 Cost-Effective**: OpenRouter with Claude Haiku (~$0.25/1M tokens)
-- **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)  
+- **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)
 - **⚡ Performance**: OpenAI GPT-4o-mini (fastest cloud option)
 - **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
 - **🚫 No LLM**: Leave `LLM_PROVIDER` empty for transcription-only mode
@@ -534,7 +538,7 @@ OpenTranscribe automatically downloads and caches AI models for optimal performa
 │   ├── hub/             # WhisperX transcription models (~1.5GB)
 │   └── transformers/    # PyAnnote transformer models
 └── torch/               # PyTorch cache
-    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)  
+    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
     └── pyannote/        # PyAnnote diarization models (~500MB)
 ```
 
@@ -606,7 +610,7 @@ For production use, ensure you:
    # Generate strong secrets
    openssl rand -hex 32  # For SECRET_KEY
    openssl rand -hex 32  # For JWT_SECRET_KEY
-   
+
    # Set strong database passwords
    # Configure proper firewall rules
    # Set up SSL/TLS certificates
@@ -616,7 +620,7 @@ For production use, ensure you:
    ```bash
    # Use production environment
    NODE_ENV=production
-   
+
    # Configure resource limits
    # Set up monitoring and logging
    # Configure backup strategies
@@ -628,7 +632,7 @@ For production use, ensure you:
    server {
        listen 80;
        server_name your-domain.com;
-       
+
        location / {
            proxy_pass http://localhost:5173;
            proxy_set_header Host $host;
@@ -657,7 +661,7 @@ pytest tests/                    # Run tests
 black app/                       # Format code
 flake8 app/                      # Lint code
 
-# Frontend development  
+# Frontend development
 cd frontend/
 npm install
 npm run dev                      # Development server

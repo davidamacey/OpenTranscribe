@@ -27,8 +27,8 @@ numpy>=1.25.2
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.8.0+cu128
-torchaudio==2.8.0+cu128
+torch==2.8.0
+torchaudio==2.8.0
 
 # WhisperX latest version with ctranslate2 4.5+ support
 whisperx==3.7.0

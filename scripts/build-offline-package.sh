@@ -24,16 +24,6 @@ PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
 BUILD_DIR="./offline-package-build"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"
 
-# Docker images to save
-IMAGES=(
-    "davidamacey/opentranscribe-backend:latest"
-    "davidamacey/opentranscribe-frontend:latest"
-    "postgres:14-alpine"
-    "redis:7-alpine"
-    "minio/minio:latest"
-    "opensearchproject/opensearch:2.5.0"
-)
-
 # Required files and directories
 CONFIG_FILES=(
     "docker-compose.offline.yml"
@@ -144,6 +134,60 @@ preflight_checks() {
 }
 
 #######################
+# IMAGE EXTRACTION
+#######################
+
+extract_infrastructure_images() {
+    local compose_file="docker-compose.yml"
+
+    if [ ! -f "$compose_file" ]; then
+        print_error "docker-compose.yml not found!"
+        exit 1
+    fi
+
+    # Extract infrastructure service images (postgres, redis, minio, opensearch)
+    # These are the same in both dev and production
+    grep -E "^\s*image:\s*" "$compose_file" | \
+        sed -E 's/^\s*image:\s*//; s/\s*$//' | \
+        grep -v "^#" | \
+        sort -u
+}
+
+extract_docker_images() {
+    print_header "Extracting Docker Images from Configuration"
+
+    print_info "Source: docker-compose.yml (single source of truth)"
+
+    # Get infrastructure images from main docker-compose.yml
+    INFRASTRUCTURE_IMAGES=($(extract_infrastructure_images))
+
+    # Add production application images (these use 'build:' in dev, pre-built images in prod)
+    APPLICATION_IMAGES=(
+        "davidamacey/opentranscribe-backend:latest"
+        "davidamacey/opentranscribe-frontend:latest"
+    )
+
+    # Combine all images
+    IMAGES=("${APPLICATION_IMAGES[@]}" "${INFRASTRUCTURE_IMAGES[@]}")
+
+    if [ ${#IMAGES[@]} -eq 0 ]; then
+        print_error "No images found!"
+        exit 1
+    fi
+
+    print_success "Found ${#IMAGES[@]} images to package:"
+    print_info "Application images (pre-built for production):"
+    for img in "${APPLICATION_IMAGES[@]}"; do
+        print_info "  - $img"
+    done
+    print_info "Infrastructure images (from docker-compose.yml):"
+    for img in "${INFRASTRUCTURE_IMAGES[@]}"; do
+        print_info "  - $img"
+    done
+    echo
+}
+
+#######################
 # SETUP
 #######################
 
@@ -247,6 +291,7 @@ download_models() {
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
 
+    # Run as root (not --user) so /root/.cache paths work correctly
     docker run --rm \
         --gpus all \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
@@ -257,22 +302,39 @@ download_models() {
         -v "${temp_model_cache}/huggingface:/root/.cache/huggingface" \
         -v "${temp_model_cache}/torch:/root/.cache/torch" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
+        -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 
-    # Copy models to package
+    # Copy models to package (use sudo because Docker created files as root)
     print_info "Copying models to package..."
-    cp -r "${temp_model_cache}/huggingface"/* "${PACKAGE_DIR}/models/huggingface/" || true
-    cp -r "${temp_model_cache}/torch"/* "${PACKAGE_DIR}/models/torch/" || true
-
-    # Check if model manifest was created
-    if [ -f "${temp_model_cache}/huggingface/../model_manifest.json" ]; then
-        cp "${temp_model_cache}/huggingface/../model_manifest.json" "${PACKAGE_DIR}/models/"
+    if [ -d "${temp_model_cache}/huggingface" ] && [ "$(sudo ls -A ${temp_model_cache}/huggingface 2>/dev/null)" ]; then
+        sudo cp -r "${temp_model_cache}/huggingface"/* "${PACKAGE_DIR}/models/huggingface/"
+        print_info "  Copied HuggingFace models"
+    else
+        print_warning "No HuggingFace models found to copy"
     fi
 
-    # Clean up temp directory
+    if [ -d "${temp_model_cache}/torch" ] && [ "$(sudo ls -A ${temp_model_cache}/torch 2>/dev/null)" ]; then
+        sudo cp -r "${temp_model_cache}/torch"/* "${PACKAGE_DIR}/models/torch/"
+        print_info "  Copied PyTorch/PyAnnote models"
+    else
+        print_warning "No PyTorch models found to copy"
+    fi
+
+    # Check if model manifest was created (it's inside the huggingface cache dir)
+    if [ -f "${temp_model_cache}/huggingface/model_manifest.json" ]; then
+        sudo cp "${temp_model_cache}/huggingface/model_manifest.json" "${PACKAGE_DIR}/models/"
+    else
+        print_warning "Model manifest not found"
+    fi
+
+    # Fix ownership of copied files
+    sudo chown -R "$(id -u):$(id -g)" "${PACKAGE_DIR}/models/"
+
+    # Clean up temp directory (need sudo because Docker created files as root)
     print_info "Cleaning up temporary files..."
-    rm -rf "${temp_model_cache}"
+    sudo rm -rf "${temp_model_cache}"
 
     local model_size=$(get_dir_size "${PACKAGE_DIR}/models")
     print_success "Models downloaded and packaged ($model_size)"
@@ -285,9 +347,24 @@ download_models() {
 copy_configuration() {
     print_header "Copying Configuration Files"
 
-    # Copy docker-compose
-    print_info "Copying docker-compose.offline.yml..."
-    cp docker-compose.offline.yml "${PACKAGE_DIR}/config/"
+    # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
+    print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
+
+    # Create temporary copy of offline compose
+    local temp_compose="${PACKAGE_DIR}/config/docker-compose.offline.yml"
+    cp docker-compose.offline.yml "$temp_compose"
+
+    # Extract and sync each infrastructure image version
+    for img in "${INFRASTRUCTURE_IMAGES[@]}"; do
+        # Get service name and image (e.g., postgres:17.5-alpine -> postgres and full image)
+        local service_name=$(echo "$img" | cut -d: -f1 | cut -d/ -f1)
+
+        # Update the image line in offline compose file for this service
+        # Find the service block and update its image line
+        sed -i "s|image: ${service_name}[:/][^ ]*|image: ${img}|g" "$temp_compose"
+    done
+
+    print_success "Infrastructure images synced from docker-compose.yml"
 
     # Copy and template .env file
     print_info "Creating .env template..."
@@ -424,6 +501,7 @@ main() {
 
     # Execute build steps
     preflight_checks
+    extract_docker_images
     setup_directories
     pull_and_save_images
     download_models
