@@ -321,9 +321,23 @@ def transcribe_audio_task(self, file_uuid: str):
                         f"Speaker identification completed: {len(speaker_results)} speakers processed"
                     )
 
+                    # CRITICAL: Clean up embedding service and matching service to free VRAM
+                    # PyAnnote embedding model uses ~500 MB and must be deleted before OpenSearch indexing
+                    embedding_service.cleanup()
+                    del embedding_service
+                    del matching_service
+
                 except Exception as e:
                     logger.warning(f"Error in speaker identification: {e}")
                     # Continue with transcription even if speaker matching fails
+
+                # Force GPU memory cleanup checkpoint before OpenSearch indexing
+                # This ensures all models are fully cleared from VRAM
+                from app.utils.hardware_detection import detect_hardware
+
+                hardware_config = detect_hardware()
+                hardware_config.optimize_memory_usage()
+                logger.info("GPU memory cleanup checkpoint completed")
 
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.85)
