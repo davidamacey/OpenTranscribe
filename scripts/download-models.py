@@ -82,6 +82,7 @@ def download_pyannote_models():
     try:
         import whisperx
         import torch
+        import numpy as np
 
         hf_token = os.environ.get("HUGGINGFACE_TOKEN")
         if not hf_token:
@@ -97,24 +98,29 @@ def download_pyannote_models():
         compute_type = "float16" if device == "cuda" else "float32"
         print_info(f"Using device: {device}")
 
-        # Get test video path
-        test_audio_path = "/app/test_videos/The Race to Develop Warp Drive and AI Passing the Turing Test.mp4"
+        # Create synthetic audio (30 seconds of silence with some noise for testing)
+        print_info("Creating synthetic test audio (30 seconds)...")
+        sample_rate = 16000
+        duration = 30  # 30 seconds
 
-        if not os.path.exists(test_audio_path):
-            raise FileNotFoundError(f"Test video not found: {test_audio_path}")
+        # Generate audio with some speech-like characteristics
+        # Use a simple sine wave pattern that mimics speech frequencies
+        t = np.linspace(0, duration, sample_rate * duration)
+        frequencies = [300, 500, 700]  # Speech-like frequencies
+        audio = np.zeros_like(t)
+        for freq in frequencies:
+            audio += 0.1 * np.sin(2 * np.pi * freq * t)
 
-        print_info(f"Test video: {test_audio_path}")
+        # Add some noise to make it more realistic
+        audio += 0.05 * np.random.randn(len(t))
+
+        # Normalize
+        audio = audio.astype(np.float32)
+        print_success("  Synthetic audio created")
 
         # Use WhisperX full pipeline (same as backend)
-        print_info("Step 1/4: Loading audio with WhisperX...")
-        audio = whisperx.load_audio(test_audio_path)
-
-        # Limit to first 60 seconds
-        sample_rate = 16000
-        max_samples = sample_rate * 60
-        if len(audio) > max_samples:
-            audio = audio[:max_samples]
-        print_success("  Audio loaded")
+        print_info("Step 1/4: Audio ready...")
+        print_success("  Audio prepared")
 
         # Step 2: Transcribe (same as backend)
         print_info("Step 2/4: Running WhisperX transcription...")

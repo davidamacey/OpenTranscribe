@@ -7,6 +7,31 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Helper functions for colored output
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}❌ $1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}ℹ️  $1${NC}"
+}
+
+print_header() {
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════${NC}"
+    echo ""
+}
+
 echo -e "${YELLOW}OpenTranscribe Cross-Platform Setup Script${NC}"
 echo "Automatic hardware detection and configuration for CUDA, MPS, and CPU"
 echo ""
@@ -185,7 +210,7 @@ check_network_connectivity() {
         echo -e "${YELLOW}⚠️  GitHub may not be accessible for downloading files${NC}"
         echo "This could affect the setup process. Please check your internet connection."
         echo ""
-        read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+        read -p "Do you want to continue anyway? (y/N) " -n 1 -r </dev/tty
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             echo "Setup cancelled by user."
@@ -206,7 +231,8 @@ validate_downloaded_files() {
     fi
 
     # Check file size (should be substantial)
-    local db_size=$(wc -c < init_db.sql)
+    local db_size
+    db_size=$(wc -c < init_db.sql)
     if [ "$db_size" -lt 10000 ]; then
         echo -e "${RED}❌ init_db.sql file too small ($db_size bytes)${NC}"
         return 1
@@ -310,7 +336,8 @@ create_database_files() {
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -379,7 +406,8 @@ create_production_compose() {
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -418,7 +446,8 @@ download_nvidia_override() {
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nvidia.yml"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -455,7 +484,8 @@ download_management_script() {
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -494,7 +524,8 @@ download_model_downloader_scripts() {
     local max_retries=3
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -554,7 +585,8 @@ create_production_env_example() {
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
-    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
 
     while [ $retry_count -lt $max_retries ]; do
@@ -605,7 +637,7 @@ prompt_huggingface_token() {
     echo ""
 
     # Ask if they want to enter token now
-    read -p "Do you have a HuggingFace token to enter now? (Y/n) " -n 1 -r
+    read -p "Do you have a HuggingFace token to enter now? (Y/n) " -n 1 -r </dev/tty
     echo
     echo
 
@@ -623,7 +655,7 @@ prompt_huggingface_token() {
     # Prompt for token
     echo "Please enter your HuggingFace token:"
     echo "(Token will be hidden for security)"
-    read -s HUGGINGFACE_TOKEN
+    read -s HUGGINGFACE_TOKEN </dev/tty
     echo
 
     # Validate token format (basic check - should start with hf_)
@@ -736,7 +768,7 @@ configure_llm_settings() {
     echo "• Skip configuration (you can set up later in .env file)"
     echo ""
 
-    read -p "Do you want to configure LLM settings now? (y/N) " -n 1 -r
+    read -p "Do you want to configure LLM settings now? (y/N) " -n 1 -r </dev/tty
     echo
 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -749,7 +781,7 @@ configure_llm_settings() {
         echo "5) OpenRouter"
         echo "6) Skip (configure manually later)"
 
-        read -p "Enter your choice (1-6): " -n 1 -r llm_choice
+        read -p "Enter your choice (1-6): " -n 1 -r llm_choice </dev/tty
         echo
         echo
 
@@ -757,47 +789,47 @@ configure_llm_settings() {
             1)
                 echo "✓ Configuring vLLM (Local server)"
                 LLM_PROVIDER="vllm"
-                read -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url
+                read -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url </dev/tty
                 VLLM_BASE_URL=${vllm_url:-"http://localhost:8000/v1"}
-                read -p "Enter your vLLM API key (optional): " vllm_key
+                read -p "Enter your vLLM API key (optional): " vllm_key </dev/tty
                 VLLM_API_KEY=${vllm_key:-""}
-                read -p "Enter your model name [gpt-oss]: " vllm_model
+                read -p "Enter your model name [gpt-oss]: " vllm_model </dev/tty
                 VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
                 echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
                 ;;
             2)
                 echo "✓ Configuring OpenAI"
                 LLM_PROVIDER="openai"
-                read -p "Enter your OpenAI API key: " openai_key
+                read -p "Enter your OpenAI API key: " openai_key </dev/tty
                 OPENAI_API_KEY=$openai_key
-                read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model
+                read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model </dev/tty
                 OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
                 echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
                 ;;
             3)
                 echo "✓ Configuring Ollama"
                 LLM_PROVIDER="ollama"
-                read -p "Enter your Ollama server URL [http://localhost:11434]: " ollama_url
+                read -p "Enter your Ollama server URL [http://localhost:11434]: " ollama_url </dev/tty
                 OLLAMA_BASE_URL=${ollama_url:-"http://localhost:11434"}
-                read -p "Enter Ollama model [llama2:7b-chat]: " ollama_model
+                read -p "Enter Ollama model [llama2:7b-chat]: " ollama_model </dev/tty
                 OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
                 echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
                 ;;
             4)
                 echo "✓ Configuring Anthropic Claude"
                 LLM_PROVIDER="anthropic"
-                read -p "Enter your Anthropic API key: " anthropic_key
+                read -p "Enter your Anthropic API key: " anthropic_key </dev/tty
                 ANTHROPIC_API_KEY=$anthropic_key
-                read -p "Enter Claude model [claude-3-haiku-20240307]: " anthropic_model
+                read -p "Enter Claude model [claude-3-haiku-20240307]: " anthropic_model </dev/tty
                 ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-3-haiku-20240307"}
                 echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
                 ;;
             5)
                 echo "✓ Configuring OpenRouter"
                 LLM_PROVIDER="openrouter"
-                read -p "Enter your OpenRouter API key: " openrouter_key
+                read -p "Enter your OpenRouter API key: " openrouter_key </dev/tty
                 OPENROUTER_API_KEY=$openrouter_key
-                read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model
+                read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model </dev/tty
                 OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
                 echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
                 ;;
@@ -922,14 +954,14 @@ download_ai_models() {
         echo ""
         echo "Without a token, speaker diarization will not work and models cannot be pre-downloaded."
         echo ""
-        read -p "Would you like to enter your HuggingFace token now? (y/N) " -n 1 -r
+        read -p "Would you like to enter your HuggingFace token now? (y/N) " -n 1 -r </dev/tty
         echo
         echo
 
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo "Please enter your HuggingFace token:"
             echo "(Token will be hidden for security)"
-            read -s HUGGINGFACE_TOKEN
+            read -s HUGGINGFACE_TOKEN </dev/tty
             echo
 
             # Validate and update .env file
@@ -965,7 +997,7 @@ download_ai_models() {
         echo "  1. Add your HuggingFace token to .env file"
         echo "  2. Run: cd $PROJECT_DIR && bash scripts/download-models.sh"
         echo ""
-        read -p "Press Enter to continue setup..." -r
+        read -p "Press Enter to continue setup..." -r </dev/tty
         echo
         return 0
     fi
@@ -974,7 +1006,7 @@ download_ai_models() {
     echo -e "${YELLOW}Ready to download AI models (~2.5GB)${NC}"
     echo "This will take 10-30 minutes depending on your internet speed."
     echo ""
-    read -p "Start model download now? (Y/n) " -n 1 -r
+    read -p "Start model download now? (Y/n) " -n 1 -r </dev/tty
     echo
     echo
 
