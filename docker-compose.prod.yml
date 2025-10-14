@@ -110,6 +110,7 @@ services:
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       # Models
+      - MODELS_DIRECTORY=${MODELS_DIRECTORY:-/app/models}
       - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
       - TEMP_DIR=${TEMP_DIR:-/app/temp}
       # Hardware (auto-detected)
@@ -181,6 +182,7 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
       - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=${MODELS_DIRECTORY:-/app/models}
       - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
       - TEMP_DIR=${TEMP_DIR:-/app/temp}
       - TORCH_DEVICE=${TORCH_DEVICE:-auto}
@@ -220,7 +222,7 @@ services:
     pull_policy: always
     restart: always
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "${FRONTEND_PORT:-5173}:8080"
     environment:
       - NODE_ENV=production
       - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-5174}/api
@@ -231,7 +233,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
       interval: 10s
       timeout: 5s
       retries: 5
