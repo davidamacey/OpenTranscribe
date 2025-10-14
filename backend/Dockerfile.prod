@@ -35,6 +35,15 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.
 # -----------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm
 
+# OCI annotations for container metadata and compliance
+LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
+      org.opencontainers.image.description="AI-powered transcription backend with WhisperX and PyAnnote" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+
 # Install only runtime dependencies (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \

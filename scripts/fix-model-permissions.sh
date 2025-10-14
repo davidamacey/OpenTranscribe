@@ -38,8 +38,9 @@ echo ""
 # Read MODEL_CACHE_DIR from .env file if it exists
 if [ -f "$PROJECT_ROOT/.env" ]; then
     # Source the .env file to get MODEL_CACHE_DIR
-    # shellcheck disable=SC2046
-    export $(grep -v '^#' "$PROJECT_ROOT/.env" | grep MODEL_CACHE_DIR | xargs)
+    # Filter out comments (both full-line and inline) and empty lines
+    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' "$PROJECT_ROOT/.env" | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    export MODEL_CACHE_DIR
 fi
 
 # Use default if not set

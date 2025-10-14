@@ -31,6 +31,15 @@ RUN npm run build
 # Production stage
 FROM nginx:1.29.2-alpine3.22
 
+# OCI annotations for container metadata and compliance
+LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
+      org.opencontainers.image.description="Svelte-based Progressive Web App for AI-powered transcription" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+
 # Copy the built files from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html
 
