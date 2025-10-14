@@ -5,7 +5,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:17.5-alpine
     restart: always
     volumes:
       - postgres_data:/var/lib/postgresql/data/
@@ -23,7 +23,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
     volumes:
       - minio_data:/data
@@ -41,7 +41,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.2.2-alpine3.22
     restart: always
     ports:
       - "${REDIS_PORT:-5177}:6379"
@@ -81,7 +81,8 @@ services:
     pull_policy: always
     restart: always
     volumes:
-      - backend_models:/app/models
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
       - backend_temp:/app/temp
     ports:
       - "${BACKEND_PORT:-5174}:8080"
@@ -123,6 +124,22 @@ services:
       - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
       - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8000/v1}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,7 +162,8 @@ services:
     restart: always
     command: celery -A app.core.celery worker --loglevel=info --concurrency=1
     volumes:
-      - backend_models:/app/models
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
       - backend_temp:/app/temp
     environment:
       # Same environment as backend
@@ -175,6 +193,22 @@ services:
       - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
       - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
       - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
+      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8000/v1}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
+      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
     depends_on:
       - postgres
       - redis
@@ -223,6 +257,8 @@ services:
       - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
       - flower_data:/app
 
 volumes:
@@ -230,7 +266,6 @@ volumes:
   minio_data:
   redis_data:
   opensearch_data:
-  backend_models:
   backend_temp:
   flower_data:
 

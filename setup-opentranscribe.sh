@@ -1087,6 +1087,24 @@ validate_setup() {
     echo "✓ Setup validation complete"
 }
 
+pull_docker_images() {
+    print_header "Pulling Latest Docker Images"
+
+    print_info "Pulling latest OpenTranscribe container images..."
+    print_info "This ensures you have the newest features and fixes"
+    echo ""
+
+    # Pull images explicitly to ensure latest versions
+    if docker compose pull; then
+        print_success "Docker images pulled successfully"
+        return 0
+    else
+        print_warning "Failed to pull some images - will use cached versions"
+        print_info "You can manually pull images later with: docker compose pull"
+        return 1
+    fi
+}
+
 display_summary() {
     echo ""
     echo -e "${GREEN}🎉 OpenTranscribe Setup Complete!${NC}"
@@ -1175,6 +1193,7 @@ main() {
     configure_environment
     download_ai_models
     validate_setup
+    pull_docker_images
     display_summary
 }
 
