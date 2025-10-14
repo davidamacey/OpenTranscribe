@@ -218,3 +218,25 @@ class SpeakerEmbeddingService:
     def get_embedding_dimension(self) -> int:
         """Get the dimension of the embeddings produced by the model."""
         return 512  # Pyannote embedding dimension (updated for newer models)
+
+    def cleanup(self):
+        """
+        Explicitly cleanup the embedding model and free GPU memory.
+
+        This should be called when the service is no longer needed to ensure
+        proper GPU memory management, especially when multiple models are used
+        in sequence during transcription processing.
+        """
+        if hasattr(self, "inference"):
+            logger.info("Cleaning up PyAnnote embedding model")
+            del self.inference
+
+        # Force aggressive memory cleanup
+        import gc
+
+        gc.collect()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info("GPU memory cleaned up after embedding service")

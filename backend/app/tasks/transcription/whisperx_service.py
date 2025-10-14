@@ -245,6 +245,12 @@ class WhisperXService:
             )
 
             diarize_segments = diarize_model(audio, **diarize_params)
+
+            # CRITICAL: Clean up diarization model immediately to free VRAM
+            # This model uses ~2-3 GB and must be deleted before speaker embedding extraction
+            del diarize_model
+            self.hardware_config.optimize_memory_usage()
+
             return diarize_segments
 
         except Exception as e:
