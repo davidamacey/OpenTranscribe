@@ -123,6 +123,7 @@ build_backend() {
         --file Dockerfile.prod \
         --tag "${REPO_BACKEND}:latest" \
         --tag "${REPO_BACKEND}:${COMMIT_SHA}" \
+        ${CACHE_FLAG} \
         --push \
         .
 
@@ -131,7 +132,12 @@ build_backend() {
     print_success "Backend image built and pushed successfully"
     print_info "Tags: ${REPO_BACKEND}:latest, ${REPO_BACKEND}:${COMMIT_SHA}"
 
-    # Run security scan after build
+    # Remove old local image and pull fresh amd64 image for scanning
+    print_info "Pulling fresh amd64 image from registry for security scan..."
+    docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
+    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
+
+    # Run security scan on freshly pulled image
     run_security_scan "backend"
 }
 
@@ -149,6 +155,7 @@ build_frontend() {
         --file Dockerfile.prod \
         --tag "${REPO_FRONTEND}:latest" \
         --tag "${REPO_FRONTEND}:${COMMIT_SHA}" \
+        ${CACHE_FLAG} \
         --push \
         .
 
@@ -157,7 +164,12 @@ build_frontend() {
     print_success "Frontend image built and pushed successfully"
     print_info "Tags: ${REPO_FRONTEND}:latest, ${REPO_FRONTEND}:${COMMIT_SHA}"
 
-    # Run security scan after build
+    # Remove old local image and pull fresh amd64 image for scanning
+    print_info "Pulling fresh amd64 image from registry for security scan..."
+    docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
+    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
+
+    # Run security scan on freshly pulled image
     run_security_scan "frontend"
 }
 
@@ -178,6 +190,7 @@ Options:
 Environment Variables:
     DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
     PLATFORMS                 Target platforms (default: linux/amd64,linux/arm64)
+    NO_CACHE                  Build without cache (default: false)
     SKIP_SECURITY_SCAN        Skip security scanning (default: false)
     FAIL_ON_SECURITY_ISSUES   Fail build if security issues found (default: false)
     FAIL_ON_CRITICAL          Fail scan if CRITICAL vulnerabilities found (default: false)
@@ -186,6 +199,9 @@ Examples:
     $0              # Build and push both images with security scanning
     $0 backend      # Build and push only backend
     $0 auto         # Auto-detect and build changed components
+
+    # Build without cache (fresh build)
+    NO_CACHE=true $0 frontend
 
     # Build only for current platform (faster)
     PLATFORMS=linux/amd64 $0 backend
@@ -216,6 +232,13 @@ main() {
     print_info "Commit: ${COMMIT_SHA}"
     print_info "Branch: ${BRANCH}"
     print_info ""
+
+    # Cache control - set NO_CACHE=true to force rebuild without cache
+    CACHE_FLAG=""
+    if [ "${NO_CACHE}" = "true" ]; then
+        CACHE_FLAG="--no-cache"
+        print_info "Building without cache (NO_CACHE=true)"
+    fi
 
     # Check prerequisites
     check_docker

@@ -26,11 +26,11 @@ USE_GPU_RUNTIME="false"
 
 detect_platform() {
     echo -e "${BLUE}🔍 Detecting platform and hardware...${NC}"
-    
+
     # Detect OS and Architecture
     DETECTED_PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
     ARCH=$(uname -m)
-    
+
     case "$DETECTED_PLATFORM" in
         "linux")
             echo "✓ Detected: Linux ($ARCH)"
@@ -47,14 +47,14 @@ detect_platform() {
             echo "⚠️  Unknown platform: $DETECTED_PLATFORM ($ARCH)"
             ;;
     esac
-    
+
     # Detect hardware acceleration
     detect_hardware_acceleration
 }
 
 detect_hardware_acceleration() {
     DETECTED_DEVICE="cpu"  # Default fallback
-    
+
     # Check for NVIDIA GPU (CUDA)
     if command -v nvidia-smi &> /dev/null; then
         if nvidia-smi &> /dev/null; then
@@ -64,15 +64,15 @@ detect_hardware_acceleration() {
             COMPUTE_TYPE="float16"
             BATCH_SIZE="16"
             USE_GPU_RUNTIME="true"
-            
+
             # Get default GPU (first available)
             DEFAULT_GPU=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | head -n1)
             GPU_DEVICE_ID=${DEFAULT_GPU:-0}
-            
+
             return
         fi
     fi
-    
+
     # Check for Apple Silicon (MPS)
     if [[ "$DETECTED_PLATFORM" == "macos" ]]; then
         # Check for Apple Silicon
@@ -81,7 +81,7 @@ detect_hardware_acceleration() {
             DETECTED_DEVICE="mps"
             COMPUTE_TYPE="float32"
             BATCH_SIZE="8"
-            
+
             # Check macOS version for MPS support (requires macOS 12.3+)
             macos_version=$(sw_vers -productVersion)
             if [[ $(echo "$macos_version" | cut -d. -f1) -ge 12 ]] && [[ $(echo "$macos_version" | cut -d. -f2) -ge 3 ]]; then
@@ -90,19 +90,19 @@ detect_hardware_acceleration() {
                 echo "⚠️  macOS $macos_version detected, MPS requires 12.3+, falling back to CPU"
                 DETECTED_DEVICE="cpu"
             fi
-            
+
             return
         else
             echo "✓ Intel Mac detected"
         fi
     fi
-    
+
     # CPU fallback
     echo "ℹ️  Using CPU processing (no GPU acceleration detected)"
     DETECTED_DEVICE="cpu"
     COMPUTE_TYPE="int8"
     BATCH_SIZE="4"
-    
+
     # Detect CPU cores for optimization
     if command -v nproc &> /dev/null; then
         CPU_CORES=$(nproc)
@@ -140,10 +140,10 @@ check_gpu_support() {
 
 configure_docker_runtime() {
     echo -e "${BLUE}🐳 Configuring Docker runtime...${NC}"
-    
+
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
         echo "🧪 Testing NVIDIA Container Toolkit..."
-        
+
         if check_gpu_support; then
             echo -e "${GREEN}✅ NVIDIA Container Toolkit fully functional${NC}"
             DOCKER_RUNTIME="nvidia"
@@ -179,7 +179,7 @@ fallback_to_cpu() {
 
 check_network_connectivity() {
     echo -e "${BLUE}🌐 Checking network connectivity...${NC}"
-    
+
     # Test GitHub connectivity
     if ! curl -s --connect-timeout 5 --max-time 10 https://raw.githubusercontent.com > /dev/null 2>&1; then
         echo -e "${YELLOW}⚠️  GitHub may not be accessible for downloading files${NC}"
@@ -219,25 +219,25 @@ validate_downloaded_files() {
     fi
 
     echo "✓ init_db.sql validated ($db_size bytes)"
-    
+
     # Validate docker-compose.yml
     if [ ! -f "docker-compose.yml" ]; then
         echo -e "${RED}❌ docker-compose.yml file not found${NC}"
         return 1
     fi
-    
+
     # Check docker-compose syntax
     if ! docker compose -f docker-compose.yml config > /dev/null 2>&1; then
         echo -e "${RED}❌ docker-compose.yml syntax validation failed${NC}"
         return 1
     fi
-    
+
     # Check for essential services
     if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
         echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
         return 1
     fi
-    
+
     echo "✓ docker-compose.yml validated"
     echo "✓ All downloaded files validated successfully"
     return 0
@@ -245,7 +245,7 @@ validate_downloaded_files() {
 
 check_dependencies() {
     echo -e "${BLUE}📋 Checking dependencies...${NC}"
-    
+
     # Check for curl
     if ! command -v curl &> /dev/null; then
         echo -e "${RED}❌ curl is not installed${NC}"
@@ -255,7 +255,7 @@ check_dependencies() {
     else
         echo "✓ curl detected"
     fi
-    
+
     # Check for Docker
     if ! command -v docker &> /dev/null; then
         echo -e "${RED}❌ Docker is not installed${NC}"
@@ -265,7 +265,7 @@ check_dependencies() {
         docker_version=$(docker --version | cut -d' ' -f3 | cut -d',' -f1)
         echo "✓ Docker $docker_version detected"
     fi
-    
+
     # Check for Docker Compose
     if ! docker compose version &> /dev/null; then
         echo -e "${RED}❌ Docker Compose is not installed or not in PATH${NC}"
@@ -275,7 +275,7 @@ check_dependencies() {
         compose_version=$(docker compose version --short)
         echo "✓ Docker Compose $compose_version detected"
     fi
-    
+
     # Check if Docker daemon is running
     if ! docker info &> /dev/null; then
         echo -e "${RED}❌ Docker daemon is not running${NC}"
@@ -284,7 +284,7 @@ check_dependencies() {
     else
         echo "✓ Docker daemon is running"
     fi
-    
+
     # Check network connectivity
     check_network_connectivity
 }
@@ -295,7 +295,7 @@ check_dependencies() {
 
 setup_project_directory() {
     echo -e "${BLUE}📁 Setting up project directory...${NC}"
-    
+
     # Create and enter project directory
     mkdir -p "$PROJECT_DIR"
     cd "$PROJECT_DIR"
@@ -304,7 +304,7 @@ setup_project_directory() {
 
 create_database_files() {
     echo "✓ Downloading database initialization files..."
-    
+
     # Download the official init_db.sql from the repository
     local max_retries=3
     local retry_count=0
@@ -326,14 +326,14 @@ create_database_files() {
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
         fi
-        
+
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
             echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
-    
+
     echo -e "${RED}❌ Failed to download database initialization file after $max_retries attempts${NC}"
     echo "Please check your internet connection and try again."
     echo "Alternative: You can manually download from:"
@@ -343,19 +343,19 @@ create_database_files() {
 
 create_configuration_files() {
     echo -e "${BLUE}📄 Creating configuration files...${NC}"
-    
+
     # Create database initialization files
     create_database_files
-    
+
     # Create comprehensive docker-compose.yml directly
     create_production_compose
-    
+
     # Validate all downloaded files
     if ! validate_downloaded_files; then
         echo -e "${RED}❌ File validation failed${NC}"
         exit 1
     fi
-    
+
     # Download NVIDIA override file if GPU detected
     if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
         download_nvidia_override
@@ -364,21 +364,24 @@ create_configuration_files() {
     # Download opentranscribe.sh management script
     download_management_script
 
+    # Download model downloader scripts
+    download_model_downloader_scripts
+
     # Create .env.example
     create_production_env_example
 }
 
 create_production_compose() {
     echo "✓ Downloading production docker-compose configuration..."
-    
+
     # Download the official production compose file from the repository
     local max_retries=3
     local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)  
+    # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
-    
+
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.yml; then
             # Validate downloaded file
@@ -392,14 +395,14 @@ create_production_compose() {
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
         fi
-        
+
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
             echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
-    
+
     echo -e "${RED}❌ Failed to download docker-compose configuration after $max_retries attempts${NC}"
     echo "Please check your internet connection and try again."
     echo "Alternative: You can manually download from:"
@@ -409,7 +412,7 @@ create_production_compose() {
 
 download_nvidia_override() {
     echo "✓ Downloading NVIDIA GPU override configuration..."
-    
+
     # Download the NVIDIA override file from the repository
     local max_retries=3
     local retry_count=0
@@ -417,7 +420,7 @@ download_nvidia_override() {
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nvidia.yml"
-    
+
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.nvidia.yml; then
             # Validate downloaded file
@@ -431,14 +434,14 @@ download_nvidia_override() {
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
         fi
-        
+
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
             echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
-    
+
     echo -e "${YELLOW}⚠️  Failed to download NVIDIA override file after $max_retries attempts${NC}"
     echo "GPU acceleration may not work optimally, but CPU processing will still function."
     echo "You can manually download from: $download_url"
@@ -481,9 +484,71 @@ download_management_script() {
     echo "You can manually download from: $download_url"
 }
 
+download_model_downloader_scripts() {
+    echo "✓ Downloading model downloader scripts..."
+
+    # Create scripts directory
+    mkdir -p scripts
+
+    # Download download-models.sh
+    local max_retries=3
+    local retry_count=0
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.sh; then
+            if [ -s scripts/download-models.sh ] && grep -q "OpenTranscribe Model Downloader" scripts/download-models.sh; then
+                chmod +x scripts/download-models.sh
+                echo "✓ Downloaded and validated download-models.sh"
+                break
+            else
+                echo "⚠️  Downloaded download-models.sh appears invalid, retrying..."
+                rm -f scripts/download-models.sh
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+
+    # Download download-models.py
+    retry_count=0
+    download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/download-models.py"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.py; then
+            if [ -s scripts/download-models.py ] && grep -q "Download all required AI models" scripts/download-models.py; then
+                echo "✓ Downloaded and validated download-models.py"
+                return 0
+            else
+                echo "⚠️  Downloaded download-models.py appears invalid, retrying..."
+                rm -f scripts/download-models.py
+            fi
+        else
+            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            echo "⏳ Retrying in 2 seconds..."
+            sleep 2
+        fi
+    done
+
+    echo -e "${YELLOW}⚠️  Failed to download model downloader scripts${NC}"
+    echo "Models will be downloaded on first application run instead."
+}
+
 create_production_env_example() {
     echo "✓ Downloading environment configuration template..."
-    
+
     # Download the official .env.example from the repository
     local max_retries=3
     local retry_count=0
@@ -491,7 +556,7 @@ create_production_env_example() {
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/.env.example"
-    
+
     while [ $retry_count -lt $max_retries ]; do
         if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then
             # Validate downloaded file
@@ -505,14 +570,14 @@ create_production_env_example() {
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
         fi
-        
+
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
             echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
-    
+
     echo -e "${RED}❌ Failed to download .env.example file after $max_retries attempts${NC}"
     echo "Please check your internet connection and try again."
     echo "Alternative: You can manually download from:"
@@ -520,14 +585,69 @@ create_production_env_example() {
     exit 1
 }
 
+prompt_huggingface_token() {
+    echo ""
+    echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
+    echo "================================================="
+    echo -e "${RED}⚠️  IMPORTANT: A HuggingFace token is REQUIRED for speaker diarization!${NC}"
+    echo ""
+    echo "Without this token:"
+    echo "  • Transcription will work normally"
+    echo "  • Speaker diarization (who said what) will NOT work"
+    echo "  • Models cannot be pre-downloaded (will download on first use)"
+    echo ""
+    echo "To get your FREE token:"
+    echo "  1. Visit: https://huggingface.co/settings/tokens"
+    echo "  2. Click 'New token'"
+    echo "  3. Give it a name (e.g., 'OpenTranscribe')"
+    echo "  4. Select 'Read' permissions"
+    echo "  5. Copy the token"
+    echo ""
+
+    # Ask if they want to enter token now
+    read -p "Do you have a HuggingFace token to enter now? (Y/n) " -n 1 -r
+    echo
+    echo
+
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        print_warning "Skipping HuggingFace token - you can add it later"
+        echo "To add later:"
+        echo "  1. Edit: $PROJECT_DIR/.env"
+        echo "  2. Set: HUGGINGFACE_TOKEN=your_token_here"
+        echo "  3. Restart: cd $PROJECT_DIR && ./opentranscribe.sh restart"
+        echo ""
+        HUGGINGFACE_TOKEN=""
+        return 0
+    fi
+
+    # Prompt for token
+    echo "Please enter your HuggingFace token:"
+    echo "(Token will be hidden for security)"
+    read -s HUGGINGFACE_TOKEN
+    echo
+
+    # Validate token format (basic check - should start with hf_)
+    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+        print_warning "No token entered - you can add it later in .env file"
+        HUGGINGFACE_TOKEN=""
+    elif [[ ! "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
+        print_warning "Token doesn't start with 'hf_' - this may not be valid"
+        echo "Using it anyway, but verify it's correct."
+        echo ""
+    else
+        print_success "HuggingFace token configured!"
+        echo ""
+    fi
+}
+
 configure_environment() {
     echo -e "${BLUE}⚙️  Configuring environment...${NC}"
-    
+
     if [ -f .env ]; then
         echo "ℹ️  Using existing .env file"
         return
     fi
-    
+
     # Generate secure JWT secret
     if command -v openssl &> /dev/null; then
         JWT_SECRET=$(openssl rand -hex 32)
@@ -537,42 +657,23 @@ configure_environment() {
         JWT_SECRET="change_this_in_production_$(date +%s)"
         echo "⚠️  Using basic JWT secret - consider generating a secure one"
     fi
-    
-    # Display HuggingFace token instructions
-    echo ""
-    echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
-    echo "================================================="
-    echo -e "${RED}⚠️  IMPORTANT: A HuggingFace token is REQUIRED for speaker diarization!${NC}"
-    echo ""
-    echo "Without this token, the application will only do transcription (no speaker identification)."
-    echo ""
-    echo "To get your FREE token:"
-    echo "1. Go to: https://huggingface.co/settings/tokens"
-    echo "2. Click 'New token'"
-    echo "3. Give it a name (e.g., 'OpenTranscribe')"
-    echo "4. Select 'Read' permissions"
-    echo "5. Copy the token"
-    echo "6. Edit the .env file after setup and add: HUGGINGFACE_TOKEN=your_token_here"
-    echo ""
-    echo -e "${YELLOW}💡 You can add your token later by editing the .env file${NC}"
-    echo ""
-    
-    # Set empty token for now - user will add it manually
-    HUGGINGFACE_TOKEN=""
-    
+
+    # Prompt for HuggingFace token
+    prompt_huggingface_token
+
     # Model selection based on hardware
     select_whisper_model
-    
+
     # LLM configuration for AI features
     configure_llm_settings
-    
+
     # Create .env file
     create_env_file
 }
 
 select_whisper_model() {
     echo -e "${YELLOW}🎤 Auto-selecting Whisper Model based on hardware...${NC}"
-    
+
     # Auto-select optimal model based on hardware with GPU memory detection
     case "$DETECTED_DEVICE" in
         "cuda")
@@ -609,7 +710,7 @@ select_whisper_model() {
             echo "✓ CPU processing - selecting base model (fastest for CPU)"
             ;;
     esac
-    
+
     echo "✓ Selected model: $WHISPER_MODEL"
     echo "💡 You can change this later by editing WHISPER_MODEL in the .env file"
     echo "   Available options: tiny, base, small, medium, large-v2"
@@ -634,10 +735,10 @@ configure_llm_settings() {
     echo "• Configure now (recommended for vLLM users)"
     echo "• Skip configuration (you can set up later in .env file)"
     echo ""
-    
+
     read -p "Do you want to configure LLM settings now? (y/N) " -n 1 -r
     echo
-    
+
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo ""
         echo "Select your LLM provider:"
@@ -647,11 +748,11 @@ configure_llm_settings() {
         echo "4) Anthropic Claude"
         echo "5) OpenRouter"
         echo "6) Skip (configure manually later)"
-        
+
         read -p "Enter your choice (1-6): " -n 1 -r llm_choice
         echo
         echo
-        
+
         case $llm_choice in
             1)
                 echo "✓ Configuring vLLM (Local server)"
@@ -710,7 +811,7 @@ configure_llm_settings() {
         echo "💡 Edit the LLM_* variables in .env file to enable AI features"
         LLM_PROVIDER="vllm"  # Default
     fi
-    
+
     echo ""
     echo -e "${YELLOW}💡 LLM Configuration Notes:${NC}"
     echo "• AI features require a working LLM endpoint"
@@ -720,22 +821,22 @@ configure_llm_settings() {
 
 create_env_file() {
     echo "✓ Creating .env file with optimized settings..."
-    
+
     # Copy example and update values
     cp .env.example .env
-    
+
     # Update configuration values
     sed -i.bak "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$JWT_SECRET|g" .env
     sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
     sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env
     sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
     sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
-    
+
     # Update LLM configuration
     if [[ -n "$LLM_PROVIDER" ]]; then
         sed -i.bak "s|LLM_PROVIDER=.*|LLM_PROVIDER=$LLM_PROVIDER|g" .env
     fi
-    
+
     # Provider-specific configurations
     if [[ "$LLM_PROVIDER" == "vllm" && -n "$VLLM_BASE_URL" ]]; then
         sed -i.bak "s|VLLM_BASE_URL=.*|VLLM_BASE_URL=$VLLM_BASE_URL|g" .env
@@ -766,7 +867,7 @@ create_env_file() {
             sed -i.bak "s|# OPENROUTER_MODEL_NAME=.*|OPENROUTER_MODEL_NAME=$OPENROUTER_MODEL_NAME|g" .env
         fi
     fi
-    
+
     # Hardware-specific configurations
     case "$DETECTED_DEVICE" in
         "cuda")
@@ -783,17 +884,144 @@ create_env_file() {
             sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cpu|g" .env
             ;;
     esac
-    
+
+    # Set model cache directory
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
+    sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=$MODEL_CACHE_DIR|g" .env
+
     # Add Docker runtime configuration
     echo "" >> .env
     echo "# Hardware Configuration (Auto-detected)" >> .env
     echo "DETECTED_DEVICE=${DETECTED_DEVICE}" >> .env
     echo "USE_NVIDIA_RUNTIME=${USE_GPU_RUNTIME}" >> .env
-    
+
     # Clean up backup file
     rm -f .env.bak
-    
+
     echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
+}
+
+#######################
+# MODEL DOWNLOADING
+#######################
+
+download_ai_models() {
+    print_header "AI Model Pre-Download"
+
+    echo "OpenTranscribe requires AI models (~2.5GB) for transcription and speaker diarization."
+    echo ""
+    echo "Configuration summary:"
+    echo "  • Hardware: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
+    echo "  • Whisper Model: $WHISPER_MODEL"
+    echo "  • HuggingFace Token: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "✓ Configured" || echo "✗ Not configured")"
+    echo ""
+
+    # If HuggingFace token not set, offer one more chance to enter it
+    if [ -z "$HUGGINGFACE_TOKEN" ]; then
+        print_warning "HuggingFace token not configured"
+        echo ""
+        echo "Without a token, speaker diarization will not work and models cannot be pre-downloaded."
+        echo ""
+        read -p "Would you like to enter your HuggingFace token now? (y/N) " -n 1 -r
+        echo
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "Please enter your HuggingFace token:"
+            echo "(Token will be hidden for security)"
+            read -s HUGGINGFACE_TOKEN
+            echo
+
+            # Validate and update .env file
+            if [[ -n "$HUGGINGFACE_TOKEN" ]]; then
+                # Update the token in .env file
+                sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
+                rm -f .env.bak
+
+                if [[ "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
+                    print_success "HuggingFace token configured and saved to .env!"
+                    echo ""
+                else
+                    print_warning "Token doesn't start with 'hf_' - this may not be valid"
+                    echo "Continuing anyway..."
+                    echo ""
+                fi
+            else
+                print_warning "No token entered - skipping model pre-download"
+                echo ""
+                HUGGINGFACE_TOKEN=""
+            fi
+        fi
+    fi
+
+    # If still no token, skip download
+    if [ -z "$HUGGINGFACE_TOKEN" ]; then
+        print_info "Skipping model pre-download"
+        echo ""
+        echo "Models will be downloaded automatically when you first run the application."
+        echo "This will cause a 10-30 minute delay on first use."
+        echo ""
+        echo "To pre-download models later:"
+        echo "  1. Add your HuggingFace token to .env file"
+        echo "  2. Run: cd $PROJECT_DIR && bash scripts/download-models.sh"
+        echo ""
+        read -p "Press Enter to continue setup..." -r
+        echo
+        return 0
+    fi
+
+    # Token is configured - proceed with download
+    echo -e "${YELLOW}Ready to download AI models (~2.5GB)${NC}"
+    echo "This will take 10-30 minutes depending on your internet speed."
+    echo ""
+    read -p "Start model download now? (Y/n) " -n 1 -r
+    echo
+    echo
+
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        print_info "Skipping model pre-download"
+        echo "Models will be downloaded automatically when you first run the application."
+        echo ""
+        echo "To download models later, run:"
+        echo "  cd $PROJECT_DIR && bash scripts/download-models.sh"
+        echo ""
+        return 0
+    fi
+
+    # Check if scripts exist
+    if [ ! -f "scripts/download-models.sh" ]; then
+        print_warning "Model download script not found - skipping pre-download"
+        echo "Models will be downloaded automatically when you first run the application."
+        echo ""
+        return 0
+    fi
+
+    print_info "Starting model download..."
+    echo ""
+
+    # Export necessary environment variables
+    export HUGGINGFACE_TOKEN
+    export WHISPER_MODEL
+    export COMPUTE_TYPE
+    export DETECTED_DEVICE
+
+    # Create models directory
+    mkdir -p models
+
+    # Run the download script
+    if bash scripts/download-models.sh models; then
+        echo ""
+        print_success "✨ Models downloaded and cached successfully!"
+        print_info "Docker containers will start with models ready to use"
+        echo ""
+        return 0
+    else
+        echo ""
+        print_warning "Model download failed or was incomplete"
+        echo "Models will be downloaded automatically when you first run the application."
+        echo ""
+        return 1
+    fi
 }
 
 
@@ -804,7 +1032,7 @@ create_env_file() {
 
 validate_setup() {
     echo -e "${BLUE}✅ Validating setup...${NC}"
-    
+
     # Check required files
     local required_files=(".env" "docker-compose.yml" "opentranscribe.sh")
     for file in "${required_files[@]}"; do
@@ -815,7 +1043,7 @@ validate_setup() {
             exit 1
         fi
     done
-    
+
     # Validate Docker Compose
     if docker compose config &> /dev/null; then
         echo "✓ Docker Compose configuration valid"
@@ -823,7 +1051,7 @@ validate_setup() {
         echo -e "${RED}❌ Docker Compose configuration invalid${NC}"
         exit 1
     fi
-    
+
     echo "✓ Setup validation complete"
 }
 
@@ -837,7 +1065,7 @@ display_summary() {
     echo "  • Compute Type: $COMPUTE_TYPE"
     echo "  • Batch Size: $BATCH_SIZE"
     echo "  • Docker Runtime: ${DOCKER_RUNTIME:-default}"
-    
+
     if [[ "$DETECTED_DEVICE" == "cuda" ]]; then
         echo "  • GPU Device ID: ${GPU_DEVICE_ID:-0}"
         if command -v nvidia-smi &> /dev/null; then
@@ -845,7 +1073,7 @@ display_summary() {
             echo "  • GPU: $GPU_NAME"
         fi
     fi
-    
+
     echo ""
     echo -e "${BLUE}📋 Application Configuration:${NC}"
     echo "  • Whisper Model: $WHISPER_MODEL"
@@ -853,19 +1081,19 @@ display_summary() {
     echo "  • LLM Provider: ${LLM_PROVIDER:-vllm} (for AI summarization)"
     echo "  • Project Directory: $PROJECT_DIR"
     echo ""
-    
+
     echo -e "${YELLOW}🚀 To start OpenTranscribe:${NC}"
     echo "  cd $PROJECT_DIR"
     echo "  ./opentranscribe.sh start"
     echo ""
-    
+
     echo -e "${RED}⚠️  Speaker Diarization Setup Required${NC}"
     echo "To enable speaker identification:"
     echo "1. Get a free token at: https://huggingface.co/settings/tokens"
     echo "2. Edit the .env file and add: HUGGINGFACE_TOKEN=your_token_here"
     echo "3. Restart the application: ./opentranscribe.sh restart"
     echo ""
-    
+
     if [[ -z "$VLLM_BASE_URL" && "$LLM_PROVIDER" == "vllm" ]]; then
         echo -e "${YELLOW}🤖 LLM Setup for AI Features${NC}"
         echo "To enable AI summarization and speaker identification:"
@@ -874,14 +1102,14 @@ display_summary() {
         echo "3. Restart the application: ./opentranscribe.sh restart"
         echo ""
     fi
-    
+
     if [[ "$DETECTED_DEVICE" == "cuda" && "$DOCKER_RUNTIME" != "nvidia" ]]; then
         echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but runtime not configured${NC}"
         echo "If you experience GPU issues, check NVIDIA Container Toolkit installation:"
         echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
         echo ""
     fi
-    
+
     echo -e "${GREEN}🌐 Access URLs (after starting):${NC}"
     echo "  • Web Interface: http://localhost:${FRONTEND_PORT:-5173}"
     echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
@@ -913,7 +1141,8 @@ main() {
     setup_project_directory
     create_configuration_files
     configure_environment
-ia     validate_setup
+    download_ai_models
+    validate_setup
     display_summary
 }
 

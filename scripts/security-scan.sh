@@ -162,20 +162,24 @@ run_dockle() {
     print_header "Running Dockle on ${image}"
 
     local output_file="${OUTPUT_DIR}/${component}-dockle.json"
+    local abs_output_dir=$(cd "${OUTPUT_DIR}" && pwd)
 
-    # Run Dockle via Docker
+    # Run Dockle via Docker with mounted output directory and increased timeout
     if docker run --rm \
         -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "${abs_output_dir}:/output" \
         goodwithtech/dockle:latest \
+        --timeout 600s \
         --format json \
-        --output "${output_file}" \
+        --output "/output/${component}-dockle.json" \
         "${image}"; then
         print_success "Dockle scan completed (see ${output_file})"
 
-        # Display summary
+        # Display summary with increased timeout
         docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             goodwithtech/dockle:latest \
+            --timeout 600s \
             "${image}"
 
         return 0

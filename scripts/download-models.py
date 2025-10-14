@@ -76,35 +76,107 @@ def download_whisperx_models():
         return {"whisperx": {"status": "failed", "error": str(e)}}
 
 def download_pyannote_models():
-    """Download PyAnnote models"""
+    """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
     print_header("Downloading PyAnnote Models")
 
     try:
-        from pyannote.audio import Pipeline
+        import whisperx
+        import torch
 
         hf_token = os.environ.get("HUGGINGFACE_TOKEN")
         if not hf_token:
             print_error("HUGGINGFACE_TOKEN not set!")
             return {"pyannote": {"status": "failed", "error": "No HuggingFace token"}}
 
-        model_name = os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
+        # Use default paths (same as backend) - let WhisperX/PyAnnote handle caching
+        print_info("Using WhisperX full pipeline (same as backend) to download all models")
+        print_info("Models will be cached to default locations (managed by WhisperX/PyAnnote)")
 
-        print_info(f"Model: {model_name}")
-        print_info("Loading PyAnnote pipeline (this will download if needed)...")
+        # Detect device
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "float32"
+        print_info(f"Using device: {device}")
 
-        pipeline = Pipeline.from_pretrained(
-            model_name,
-            use_auth_token=hf_token
+        # Get test video path
+        test_audio_path = "/app/test_videos/The Race to Develop Warp Drive and AI Passing the Turing Test.mp4"
+
+        if not os.path.exists(test_audio_path):
+            raise FileNotFoundError(f"Test video not found: {test_audio_path}")
+
+        print_info(f"Test video: {test_audio_path}")
+
+        # Use WhisperX full pipeline (same as backend)
+        print_info("Step 1/4: Loading audio with WhisperX...")
+        audio = whisperx.load_audio(test_audio_path)
+
+        # Limit to first 60 seconds
+        sample_rate = 16000
+        max_samples = sample_rate * 60
+        if len(audio) > max_samples:
+            audio = audio[:max_samples]
+        print_success("  Audio loaded")
+
+        # Step 2: Transcribe (same as backend)
+        print_info("Step 2/4: Running WhisperX transcription...")
+        model = whisperx.load_model(
+            os.environ.get("WHISPER_MODEL", "base"),
+            device=device,
+            compute_type=compute_type
+        )
+        result = model.transcribe(audio, batch_size=16 if device == "cuda" else 1)
+        print_success("  Transcription completed")
+        del model
+        torch.cuda.empty_cache() if device == "cuda" else None
+
+        # Step 3: Align (same as backend - downloads wav2vec2)
+        print_info("Step 3/4: Aligning transcription (downloads wav2vec2)...")
+        model_a, metadata = whisperx.load_align_model(
+            language_code="en",
+            device=device
+        )
+        result = whisperx.align(
+            result["segments"],
+            model_a,
+            metadata,
+            audio,
+            device=device
+        )
+        print_success("  Alignment completed")
+        del model_a
+        torch.cuda.empty_cache() if device == "cuda" else None
+
+        # Step 4: Diarize (same as backend - downloads PyAnnote models)
+        print_info("Step 4/4: Running speaker diarization (downloads PyAnnote models)...")
+        print_info("  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...")
+
+        diarize_model = whisperx.diarize.DiarizationPipeline(
+            use_auth_token=hf_token,
+            device=device
         )
 
-        print_success(f"PyAnnote model '{model_name}' downloaded successfully")
+        diarize_segments = diarize_model(
+            audio,
+            min_speakers=1,
+            max_speakers=10
+        )
+
+        print_success("  Diarization completed")
+        print_success("  All PyAnnote model weights (.bin files) downloaded")
+
+        # Verify models were downloaded to default torch cache
+        torch_cache = Path.home() / ".cache" / "torch"
+        if torch_cache.exists():
+            model_files = list(torch_cache.rglob("*.bin")) + list(torch_cache.rglob("pytorch_model.bin"))
+            print_info(f"  Verified {len(model_files)} model files in torch cache")
 
         # Clean up
-        del pipeline
+        del diarize_model
+        del audio
+        torch.cuda.empty_cache() if device == "cuda" else None
 
         return {
             "pyannote": {
-                "model": model_name,
+                "model": "pyannote/speaker-diarization-3.1",
                 "status": "downloaded"
             }
         }
@@ -147,9 +219,13 @@ def download_alignment_models():
 
 def get_cache_info():
     """Get information about cached models"""
+    # Use default paths (same as backend)
+    hf_home = str(Path.home() / ".cache" / "huggingface")
+    torch_home = str(Path.home() / ".cache" / "torch")
+
     cache_dirs = {
-        "huggingface": Path.home() / ".cache" / "huggingface",
-        "torch": Path.home() / ".cache" / "torch"
+        "huggingface": Path(hf_home),
+        "torch": Path(torch_home)
     }
 
     info = {}
@@ -190,8 +266,9 @@ def create_manifest(download_results):
         }
     }
 
-    # Write manifest
-    manifest_path = Path.home() / ".cache" / "model_manifest.json"
+    # Write manifest to HF_HOME directory (inside the cache dir, not parent)
+    cache_base = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+    manifest_path = Path(cache_base) / "model_manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(manifest_path, 'w') as f:
