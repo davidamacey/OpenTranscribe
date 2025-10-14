@@ -3,6 +3,7 @@
 .github/DRAFT_ISSUES/
 offline-package-build/
 security-reports-*
+OT_TEST/
 
 # Environment variables
 .env
