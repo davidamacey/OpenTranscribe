@@ -81,8 +81,8 @@ services:
     pull_policy: always
     restart: always
     volumes:
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - backend_temp:/app/temp
     ports:
       - "${BACKEND_PORT:-5174}:8080"
@@ -163,8 +163,8 @@ services:
     restart: always
     command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
     volumes:
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - backend_temp:/app/temp
     environment:
       # Same environment as backend
@@ -259,8 +259,8 @@ services:
       - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - flower_data:/app
 
 volumes:
