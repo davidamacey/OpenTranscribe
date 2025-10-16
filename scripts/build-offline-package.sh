@@ -291,7 +291,7 @@ download_models() {
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
 
-    # Run as root (not --user) so /root/.cache paths work correctly
+    # Run as appuser (non-root) matching container security configuration
     docker run --rm \
         --gpus all \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
@@ -299,24 +299,24 @@ download_models() {
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
-        -v "${temp_model_cache}/huggingface:/root/.cache/huggingface" \
-        -v "${temp_model_cache}/torch:/root/.cache/torch" \
+        -v "${temp_model_cache}/huggingface:/home/appuser/.cache/huggingface" \
+        -v "${temp_model_cache}/torch:/home/appuser/.cache/torch" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
         -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 
-    # Copy models to package (use sudo because Docker created files as root)
+    # Copy models to package (files created as appuser UID 1000)
     print_info "Copying models to package..."
-    if [ -d "${temp_model_cache}/huggingface" ] && [ "$(sudo ls -A ${temp_model_cache}/huggingface 2>/dev/null)" ]; then
-        sudo cp -r "${temp_model_cache}/huggingface"/* "${PACKAGE_DIR}/models/huggingface/"
+    if [ -d "${temp_model_cache}/huggingface" ] && [ "$(ls -A ${temp_model_cache}/huggingface 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/huggingface"/* "${PACKAGE_DIR}/models/huggingface/"
         print_info "  Copied HuggingFace models"
     else
         print_warning "No HuggingFace models found to copy"
     fi
 
-    if [ -d "${temp_model_cache}/torch" ] && [ "$(sudo ls -A ${temp_model_cache}/torch 2>/dev/null)" ]; then
-        sudo cp -r "${temp_model_cache}/torch"/* "${PACKAGE_DIR}/models/torch/"
+    if [ -d "${temp_model_cache}/torch" ] && [ "$(ls -A ${temp_model_cache}/torch 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/torch"/* "${PACKAGE_DIR}/models/torch/"
         print_info "  Copied PyTorch/PyAnnote models"
     else
         print_warning "No PyTorch models found to copy"
@@ -324,17 +324,14 @@ download_models() {
 
     # Check if model manifest was created (it's inside the huggingface cache dir)
     if [ -f "${temp_model_cache}/huggingface/model_manifest.json" ]; then
-        sudo cp "${temp_model_cache}/huggingface/model_manifest.json" "${PACKAGE_DIR}/models/"
+        cp "${temp_model_cache}/huggingface/model_manifest.json" "${PACKAGE_DIR}/models/"
     else
         print_warning "Model manifest not found"
     fi
 
-    # Fix ownership of copied files
-    sudo chown -R "$(id -u):$(id -g)" "${PACKAGE_DIR}/models/"
-
-    # Clean up temp directory (need sudo because Docker created files as root)
+    # Clean up temp directory
     print_info "Cleaning up temporary files..."
-    sudo rm -rf "${temp_model_cache}"
+    rm -rf "${temp_model_cache}"
 
     local model_size=$(get_dir_size "${PACKAGE_DIR}/models")
     print_success "Models downloaded and packaged ($model_size)"
