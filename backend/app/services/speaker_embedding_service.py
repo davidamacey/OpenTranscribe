@@ -47,6 +47,9 @@ class SpeakerEmbeddingService:
                     "No HUGGINGFACE_TOKEN found in settings. This may be required for gated models."
                 )
 
+            # Log VRAM before loading embedding model
+            self.hardware_config.log_vram_usage("before embedding model load")
+
             # Initialize the embedding model with authentication if available
             if hf_token:
                 logger.info("Initializing pyannote embedding model with authentication")
@@ -60,6 +63,7 @@ class SpeakerEmbeddingService:
                 logger.info("Initializing pyannote embedding model without authentication")
                 self.inference = Inference(self.model_name, window="whole", device=self.device)
 
+            self.hardware_config.log_vram_usage("after embedding model loaded")
             logger.info(f"Initialized pyannote embedding model on {self.device}")
         except Exception as e:
             logger.error(f"Error initializing pyannote embedding model: {e}")
@@ -227,6 +231,8 @@ class SpeakerEmbeddingService:
         proper GPU memory management, especially when multiple models are used
         in sequence during transcription processing.
         """
+        self.hardware_config.log_vram_usage("before embedding model cleanup")
+
         if hasattr(self, "inference"):
             logger.info("Cleaning up PyAnnote embedding model")
             del self.inference
@@ -239,4 +245,6 @@ class SpeakerEmbeddingService:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-            logger.info("GPU memory cleaned up after embedding service")
+
+        self.hardware_config.log_vram_usage("after embedding model cleanup")
+        logger.info("GPU memory cleaned up after embedding service")

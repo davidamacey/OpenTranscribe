@@ -164,8 +164,10 @@ class WhisperXService:
         )
 
         # Optimize memory usage based on device
-        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after transcription, before cleanup")
         del model
+        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after transcription model deleted")
 
         return transcription_result, audio
 
@@ -203,8 +205,10 @@ class WhisperXService:
         )
 
         # Optimize memory usage based on device
-        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after alignment, before cleanup")
         del align_model
+        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after alignment model deleted")
 
         return aligned_result
 
@@ -248,8 +252,12 @@ class WhisperXService:
 
             # CRITICAL: Clean up diarization model immediately to free VRAM
             # This model uses ~2-3 GB and must be deleted before speaker embedding extraction
+            self.hardware_config.log_vram_usage("after diarization, before cleanup")
+            logger.info("Cleaning up diarization model to free GPU memory")
             del diarize_model
             self.hardware_config.optimize_memory_usage()
+            self.hardware_config.log_vram_usage("after diarization model deleted")
+            logger.info("Diarization model cleanup completed")
 
             return diarize_segments
 
@@ -328,6 +336,21 @@ class WhisperXService:
         # Step 4: Assign speakers (65% -> 70%)
         if progress_callback:
             progress_callback(0.65, "Assigning speakers to transcript")
+
+        # Log VRAM before speaker assignment
+        self.hardware_config.log_vram_usage("before assign_word_speakers")
         final_result = self.assign_speakers_to_words(diarize_segments, aligned_result)
+        self.hardware_config.log_vram_usage("after assign_word_speakers")
+
+        # CRITICAL: Force cleanup of diarize_segments and audio to free all VRAM
+        # These objects may hold references to models internally
+        self.hardware_config.log_vram_usage("before final WhisperX cleanup")
+        logger.info("Final cleanup of WhisperX pipeline objects")
+        del diarize_segments
+        del aligned_result
+        del audio
+        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after final WhisperX cleanup")
+        logger.info("WhisperX pipeline cleanup completed")
 
         return final_result

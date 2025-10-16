@@ -291,6 +291,14 @@ def transcribe_audio_task(self, file_uuid: str):
                     update_task_status(db, task_id, "in_progress", progress=0.78)
 
                 # Step 9.5: Extract speaker embeddings and match profiles
+                # CRITICAL: Force GPU synchronization before loading embedding model
+                # Ensure all WhisperX operations are complete and memory is freed
+                from app.utils.hardware_detection import detect_hardware
+
+                hardware_config = detect_hardware()
+                hardware_config.optimize_memory_usage()
+                logger.info("GPU memory synchronized before speaker embedding extraction")
+
                 send_progress_notification(
                     user_id, file_id, 0.78, "Processing speaker identification"
                 )

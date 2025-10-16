@@ -185,8 +185,67 @@ class HardwareConfig:
 
         return config
 
-    def optimize_memory_usage(self):
-        """Optimize memory usage based on device."""
+    def get_vram_usage(self) -> dict[str, Any]:
+        """
+        Get current VRAM usage statistics.
+
+        Returns:
+            Dictionary with VRAM usage info (allocated, reserved, free, total in MB)
+        """
+        if not self.torch_available:
+            return {"error": "PyTorch not available"}
+
+        import torch
+
+        if self.device == "cuda" and torch.cuda.is_available():
+            try:
+                # Get memory stats from PyTorch
+                allocated = torch.cuda.memory_allocated(0) / (1024**2)  # Convert to MB
+                reserved = torch.cuda.memory_reserved(0) / (1024**2)
+                total = torch.cuda.get_device_properties(0).total_memory / (1024**2)
+                free = total - allocated
+
+                return {
+                    "allocated_mb": round(allocated, 2),
+                    "reserved_mb": round(reserved, 2),
+                    "free_mb": round(free, 2),
+                    "total_mb": round(total, 2),
+                    "usage_percent": round((allocated / total) * 100, 2),
+                }
+            except Exception as e:
+                logger.error(f"Error getting VRAM usage: {e}")
+                return {"error": str(e)}
+        else:
+            return {"device": self.device, "message": "Not using CUDA"}
+
+    def log_vram_usage(self, context: str = ""):
+        """
+        Log current VRAM usage with context.
+
+        Args:
+            context: Description of current operation for logging
+        """
+        vram = self.get_vram_usage()
+        if "error" in vram:
+            logger.debug(f"VRAM monitoring unavailable: {vram.get('error', 'unknown')}")
+            return
+
+        logger.info(
+            f"VRAM Usage [{context}]: "
+            f"{vram['allocated_mb']:.0f}MB allocated, "
+            f"{vram['reserved_mb']:.0f}MB reserved / "
+            f"{vram['total_mb']:.0f}MB total "
+            f"({vram['usage_percent']:.1f}% allocated, "
+            f"{vram['reserved_mb']/vram['total_mb']*100:.1f}% reserved)"
+        )
+
+    def optimize_memory_usage(self, aggressive: bool = True):
+        """
+        Optimize memory usage based on device.
+
+        Args:
+            aggressive: If True, perform multiple rounds of cleanup to maximize memory release
+        """
         if not self.torch_available:
             return
 
@@ -194,12 +253,31 @@ class HardwareConfig:
 
         import torch
 
+        # Log VRAM before cleanup
+        self.log_vram_usage("before cleanup")
+
+        # Perform aggressive garbage collection FIRST
+        # This ensures Python objects are freed before GPU cleanup
+        for _ in range(3 if aggressive else 1):
+            gc.collect()
+
         # Check what devices actually have allocated memory
         try:
             if self.device == "cuda" and torch.cuda.is_available():
-                # Clear CUDA cache
-                torch.cuda.empty_cache()
+                # Aggressive CUDA memory cleanup
+                # Multiple calls to empty_cache() can help release stubborn cached memory
+                for _ in range(3 if aggressive else 1):
+                    torch.cuda.empty_cache()
+
+                # Synchronize to ensure all GPU operations complete
                 torch.cuda.synchronize()
+
+                if aggressive:
+                    # Force PyTorch to release unused cached memory back to CUDA
+                    # This is more aggressive than empty_cache() alone
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.empty_cache()
+
         except Exception as e:
             logger.debug(f"CUDA memory cleanup skipped: {e}")
 
@@ -215,8 +293,11 @@ class HardwareConfig:
         except Exception as e:
             logger.debug(f"MPS memory cleanup skipped: {e}")
 
-        # Python garbage collection (always safe)
+        # Final garbage collection pass
         gc.collect()
+
+        # Log VRAM after cleanup
+        self.log_vram_usage("after cleanup")
 
     def get_environment_variables(self) -> dict[str, str]:
         """Get environment variables to optimize performance."""
