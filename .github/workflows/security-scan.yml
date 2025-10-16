@@ -1,24 +1,7 @@
 name: Security Scanning
 
 on:
-  push:
-    branches: [master, main, develop]
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '**/Dockerfile*'
-      - '.github/workflows/security-scan.yml'
-  pull_request:
-    branches: [master, main, develop]
-    paths:
-      - 'backend/**'
-      - 'frontend/**'
-      - '**/Dockerfile*'
-      - '.github/workflows/security-scan.yml'
-  schedule:
-    # Run weekly security scans on Sundays at 00:00 UTC
-    - cron: '0 0 * * 0'
-  workflow_dispatch:
+  workflow_dispatch:  # Manual triggering ONLY - automatic runs disabled
     inputs:
       component:
         description: 'Component to scan (backend, frontend, or all)'
@@ -29,6 +12,26 @@ on:
           - all
           - backend
           - frontend
+  # Automatic runs disabled - security scanning now handled by local build-all script
+  # GitHub runners have insufficient memory/disk space for Docker image builds (13.8GB backend)
+  # Re-enable when GitHub plan supports larger runner instances
+  # push:
+  #   branches: [master, main, develop]
+  #   paths:
+  #     - 'backend/**'
+  #     - 'frontend/**'
+  #     - '**/Dockerfile*'
+  #     - '.github/workflows/security-scan.yml'
+  # pull_request:
+  #   branches: [master, main, develop]
+  #   paths:
+  #     - 'backend/**'
+  #     - 'frontend/**'
+  #     - '**/Dockerfile*'
+  #     - '.github/workflows/security-scan.yml'
+  # schedule:
+  #   # Run weekly security scans on Sundays at 00:00 UTC
+  #   - cron: '0 0 * * 0'
 
 jobs:
   dockerfile-lint:

@@ -1,10 +1,13 @@
 name: Pre-commit Checks
 
 on:
-  push:
-    branches: [master, main, develop]
-  pull_request:
-    branches: [master, main, develop]
+  workflow_dispatch:  # Manual triggering ONLY - automatic runs disabled
+  # Automatic runs disabled - pre-commit hooks should run locally before commit
+  # Re-enable when GitHub plan supports sufficient runner resources
+  # push:
+  #   branches: [master, main, develop]
+  # pull_request:
+  #   branches: [master, main, develop]
 
 jobs:
   pre-commit:
