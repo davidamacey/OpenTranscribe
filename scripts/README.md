@@ -2,14 +2,128 @@
 
 This directory contains scripts for building Docker images, creating offline packages, and managing deployments.
 
+## Quick Start
+
+**Run complete build pipeline:**
+```bash
+# Interactive mode (recommended for first-time use)
+./scripts/build-all.sh --interactive
+
+# Direct execution with auto-detected version
+./scripts/build-all.sh
+
+# With specific version
+./scripts/build-all.sh v2.1.0
+
+# Background execution (non-interactive)
+nohup ./scripts/build-all.sh > build-$(date +%Y%m%d-%H%M%S).log 2>&1 &
+```
+
+See [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md) for complete documentation.
+
 ## Scripts Overview
 
+- **[build-all.sh](#complete-build-pipeline)** - Complete build pipeline (Docker + security + offline package)
 - **[docker-build-push.sh](#docker-build--push-script)** - Build and push Docker images to DockerHub
+- **[security-scan.sh](#security-scanner)** - Comprehensive security scanning for Docker images
 - **[build-offline-package.sh](#offline-package-builder)** - Create air-gapped deployment packages
 - **[install-offline-package.sh](#installation-script)** - Install OpenTranscribe on offline systems
 - **[opentr-offline.sh](#offline-management-wrapper)** - Manage offline installations
 - **[download-models.py](#model-downloader)** - Download AI models for offline packaging
 - **[fix-model-permissions.sh](#model-cache-permission-fixer)** - Fix permissions for non-root container migration
+
+---
+
+## Complete Build Pipeline
+
+Unified script that executes the complete build, security scan, and packaging workflow with optional interactive mode.
+
+### What It Does
+
+Runs two main phases:
+1. **Docker Build & Security Scanning** (~30-45 min)
+   - Builds multi-arch images (AMD64 + ARM64)
+   - Pushes to Docker Hub
+   - Runs security scans (Trivy, Grype, Syft, Hadolint, Dockle)
+
+2. **Offline Package Creation** (~1.5-2 hrs)
+   - Pulls images from registry
+   - Downloads AI models
+   - Creates deployment package
+
+### Usage
+
+```bash
+# Interactive mode (recommended for first-time use)
+./scripts/build-all.sh --interactive
+
+# Direct execution
+./scripts/build-all.sh                      # Auto-detected version
+./scripts/build-all.sh v2.1.0               # Specific version
+./scripts/build-all.sh -i v2.1.0            # Interactive with version
+
+# Background execution
+nohup ./scripts/build-all.sh > build-$(date +%Y%m%d-%H%M%S).log 2>&1 &
+
+# Fast mode (testing)
+SKIP_SECURITY_SCAN=true PLATFORMS=linux/amd64 ./scripts/build-all.sh
+
+# Get help
+./scripts/build-all.sh --help
+```
+
+### Interactive Mode
+
+When using `--interactive` or `-i`, the script will:
+1. Check Docker login status
+2. Validate HuggingFace token configuration
+3. Verify sufficient disk space (100GB+)
+4. Prompt for version tag (optional)
+5. Display configuration summary
+6. Ask for confirmation before starting build
+7. Show estimated completion time
+
+Example:
+```
+./scripts/build-all.sh --interactive
+
+[1/4] Checking Docker login...
+✅ Docker logged in as: davidamacey
+
+[2/4] Checking HuggingFace token...
+✅ HuggingFace token configured
+
+[3/4] Checking disk space...
+✅ Sufficient disk space: 150GB
+
+[4/4] Version configuration...
+Current git commit: a1b2c3d
+Enter version tag (or press Enter to use git commit SHA): v2.1.0
+✅ Version: v2.1.0
+
+Build Configuration
+Version:               v2.1.0
+Docker Hub User:       davidamacey
+Estimated Time:        2-3 hours
+
+Start build pipeline? (y/N) y
+```
+
+### Prerequisites
+
+- Docker logged in: `docker login`
+- HuggingFace token: `export HUGGINGFACE_TOKEN=hf_...` or in `.env`
+- 100GB+ free disk space
+
+### Output
+
+- Docker images on Docker Hub (`:latest` and `:{version}` tags)
+- Security reports in `./security-reports/`
+- Offline package in `./offline-package-build/`
+
+### Documentation
+
+- [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md) - Complete documentation
 
 ---
 

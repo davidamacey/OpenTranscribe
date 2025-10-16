@@ -2,7 +2,6 @@
 
 .github/DRAFT_ISSUES/
 offline-package-build/
-security-reports-*
 OT_TEST/
 
 # Environment variables
@@ -241,4 +240,6 @@ frontend/static/ffmpeg/
 
 # Private project management files
 GITHUB_OPTIMIZATION_TASKS.md
-security-reports/
+
+# Keep security reports for transparency
+# security-reports/ - intentionally tracked in repo
