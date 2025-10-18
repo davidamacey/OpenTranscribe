@@ -152,6 +152,7 @@ download_models_docker() {
     echo ""
 
     # Run the download with real-time output
+    # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
     if docker run --rm \
         $gpu_args \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
@@ -159,8 +160,8 @@ download_models_docker() {
         -e USE_GPU="${use_gpu}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
-        -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/root/.cache/huggingface" \
-        -v "$(realpath "$MODEL_CACHE_DIR/torch"):/root/.cache/torch" \
+        -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/home/appuser/.cache/huggingface" \
+        -v "$(realpath "$MODEL_CACHE_DIR/torch"):/home/appuser/.cache/torch" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py; then

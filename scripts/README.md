@@ -370,14 +370,14 @@ export HUGGINGFACE_TOKEN=your_token_here
 export WHISPER_MODEL=large-v2
 export DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
 
-# Run in Docker container
+# Run in Docker container (container runs as appuser, not root)
 docker run --rm \
     --gpus all \
     -e HUGGINGFACE_TOKEN \
     -e WHISPER_MODEL \
     -e DIARIZATION_MODEL \
-    -v ./models/huggingface:/root/.cache/huggingface \
-    -v ./models/torch:/root/.cache/torch \
+    -v ./models/huggingface:/home/appuser/.cache/huggingface \
+    -v ./models/torch:/home/appuser/.cache/torch \
     -v ./scripts/download-models.py:/app/download-models.py \
     davidamacey/opentranscribe-backend:latest \
     python /app/download-models.py

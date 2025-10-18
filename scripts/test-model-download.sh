@@ -20,7 +20,7 @@ mkdir -p "$TEST_CACHE/torch"
 echo "Test cache directory: $TEST_CACHE"
 echo ""
 
-# Run model download in Docker container (as root for cache access)
+# Run model download in Docker container (runs as appuser, not root)
 echo "Running model download..."
 docker run --rm \
     --gpus all \
@@ -29,8 +29,8 @@ docker run --rm \
     -e DIARIZATION_MODEL="pyannote/speaker-diarization-3.1" \
     -e USE_GPU="true" \
     -e COMPUTE_TYPE="float16" \
-    -v "${TEST_CACHE}/huggingface:/root/.cache/huggingface" \
-    -v "${TEST_CACHE}/torch:/root/.cache/torch" \
+    -v "${TEST_CACHE}/huggingface:/home/appuser/.cache/huggingface" \
+    -v "${TEST_CACHE}/torch:/home/appuser/.cache/torch" \
     -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
     -v "$(pwd)/test_videos:/app/test_videos:ro" \
     davidamacey/opentranscribe-backend:latest \

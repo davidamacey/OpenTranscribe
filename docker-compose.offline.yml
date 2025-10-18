@@ -86,8 +86,8 @@ services:
     pull_policy: never
     restart: always
     volumes:
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
     ports:
       - "${BACKEND_PORT:-8080}:8080"
@@ -167,8 +167,8 @@ services:
               capabilities: [gpu]
               device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
     depends_on:
       - postgres
@@ -257,8 +257,8 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/root/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/root/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - flower_data:/app
 
 volumes:
