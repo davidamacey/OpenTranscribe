@@ -658,6 +658,9 @@ prompt_huggingface_token() {
     read -s HUGGINGFACE_TOKEN </dev/tty
     echo
 
+    # Strip any 'HUGGINGFACE_TOKEN=' prefix if user pasted it
+    HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN#HUGGINGFACE_TOKEN=}"
+
     # Validate token format (basic check - should start with hf_)
     if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
         print_warning "No token entered - you can add it later in .env file"
@@ -963,6 +966,9 @@ download_ai_models() {
             echo "(Token will be hidden for security)"
             read -s HUGGINGFACE_TOKEN </dev/tty
             echo
+
+            # Strip any 'HUGGINGFACE_TOKEN=' prefix if user pasted it
+            HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN#HUGGINGFACE_TOKEN=}"
 
             # Validate and update .env file
             if [[ -n "$HUGGINGFACE_TOKEN" ]]; then
