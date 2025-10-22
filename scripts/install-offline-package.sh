@@ -108,11 +108,15 @@ validate_system() {
             local gpu_info=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
             print_success "GPU detected: $gpu_info"
 
-            # Check NVIDIA Container Toolkit
-            if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi > /dev/null 2>&1; then
-                print_success "NVIDIA Container Toolkit is working"
+            # Check NVIDIA Container Toolkit (check for package, not by running container)
+            if dpkg -l | grep -q nvidia-container-toolkit; then
+                local toolkit_version=$(dpkg -l | grep nvidia-container-toolkit | awk '{print $3}')
+                print_success "NVIDIA Container Toolkit installed: $toolkit_version"
+            elif rpm -qa | grep -q nvidia-container-toolkit; then
+                local toolkit_version=$(rpm -qa | grep nvidia-container-toolkit | head -1)
+                print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             else
-                print_warning "NVIDIA GPU detected but Container Toolkit not working"
+                print_warning "NVIDIA GPU detected but Container Toolkit not installed"
                 print_warning "Install it from: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
                 print_warning "OpenTranscribe will fall back to CPU mode"
             fi
@@ -124,8 +128,12 @@ validate_system() {
     fi
 
     # Check disk space (need at least 80GB)
-    local available_space=$(df -BG "$INSTALL_DIR/.." 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//' || echo "100")
-    if [ "$available_space" -lt 80 ]; then
+    local available_space=$(df -BG /opt 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
+    if [ -z "$available_space" ]; then
+        available_space=$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
+    fi
+
+    if [ -n "$available_space" ] && [ "$available_space" -lt 80 ]; then
         print_error "Insufficient disk space"
         print_error "Required: 80GB, Available: ${available_space}GB"
         exit 1
@@ -162,11 +170,28 @@ verify_package() {
     print_info "Verifying package checksums..."
 
     cd "$SCRIPT_DIR"
-    if sha256sum -c checksums.sha256 > /dev/null 2>&1; then
+
+    # Run checksum verification with detailed output
+    local checksum_output=$(sha256sum -c checksums.sha256 2>&1)
+    local checksum_result=$?
+
+    if [ $checksum_result -eq 0 ]; then
         print_success "Package integrity verified"
     else
         print_error "Package integrity check failed"
+        print_error "Details:"
+        echo "$checksum_output" | while read line; do
+            if [[ "$line" =~ FAILED ]]; then
+                print_error "  $line"
+            fi
+        done
         print_error "Package may be corrupted or tampered with"
+
+        # Show which files failed
+        echo
+        print_info "Failed checksums:"
+        echo "$checksum_output" | grep FAILED
+
         exit 1
     fi
     cd - > /dev/null
@@ -248,6 +273,10 @@ install_files() {
     cp "$SCRIPT_DIR/opentr-offline.sh" "$INSTALL_DIR/opentr.sh"
     chmod +x "$INSTALL_DIR/opentr.sh"
 
+    # Copy uninstall script
+    cp "$SCRIPT_DIR/uninstall.sh" "$INSTALL_DIR/uninstall.sh"
+    chmod +x "$INSTALL_DIR/uninstall.sh"
+
     print_success "Files installed"
 }
 
@@ -297,6 +326,62 @@ install_models() {
     print_success "AI models installed"
 }
 
+select_gpu_device() {
+    # Only prompt if GPU is available and multiple GPUs detected
+    local gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | wc -l)
+
+    if [ "$gpu_count" -le 1 ]; then
+        return 0
+    fi
+
+    echo
+    print_info "Multiple GPUs Detected: $gpu_count GPUs available"
+    echo
+    print_info "Available GPUs:"
+    nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader | while IFS=, read -r idx name mem_total mem_free; do
+        echo "  [${idx}] ${name} (${mem_total} total, ${mem_free} free)"
+    done
+
+    echo
+    print_info "Select which GPU to use for transcription processing"
+    echo
+
+    # Prompt user for GPU selection
+    while true; do
+        read -p "Enter GPU index to use [0-$((gpu_count-1))] (default: ${gpu_device_id}): " selected_gpu
+
+        # Use default if empty
+        if [ -z "$selected_gpu" ]; then
+            selected_gpu=$gpu_device_id
+            break
+        fi
+
+        # Validate input is a number
+        if ! [[ "$selected_gpu" =~ ^[0-9]+$ ]]; then
+            print_error "Invalid input. Please enter a number."
+            continue
+        fi
+
+        # Validate GPU index is within range
+        if [ "$selected_gpu" -ge 0 ] && [ "$selected_gpu" -lt "$gpu_count" ]; then
+            break
+        else
+            print_error "Invalid GPU index. Please enter a number between 0 and $((gpu_count-1))."
+        fi
+    done
+
+    # Update gpu_device_id with user selection
+    gpu_device_id=$selected_gpu
+
+    # Get selected GPU details
+    local gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$gpu_device_id")
+    local gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$gpu_device_id")
+
+    echo
+    print_success "Selected GPU ${gpu_device_id}: ${gpu_name} (${gpu_memory}MB)"
+    echo
+}
+
 create_env_file() {
     print_header "Creating Environment Configuration"
 
@@ -307,16 +392,33 @@ create_env_file() {
     local gpu_device_id="0"
 
     if command_exists nvidia-smi && nvidia-smi > /dev/null 2>&1; then
-        if docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi > /dev/null 2>&1; then
+        # Check if NVIDIA Container Toolkit is installed (package check, not container run)
+        if dpkg -l 2>/dev/null | grep -q nvidia-container-toolkit || rpm -qa 2>/dev/null | grep -q nvidia-container-toolkit; then
             use_gpu="true"
             torch_device="cuda"
             compute_type="float16"
             print_success "GPU support enabled"
+
+            # Allow user to select GPU if multiple available
+            select_gpu_device
+        else
+            print_warning "NVIDIA GPU detected but Container Toolkit not installed - using CPU mode"
         fi
     fi
 
     if [ "$use_gpu" = "false" ]; then
         print_info "GPU support disabled (CPU mode)"
+    fi
+
+    # Read WHISPER_MODEL from package manifest if available
+    local whisper_model="large-v2"
+    if [ -f "$SCRIPT_DIR/models/model_manifest.json" ]; then
+        # Extract whisper_model from JSON using grep and sed
+        local manifest_model=$(grep -o '"whisper_model"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/models/model_manifest.json" | sed 's/.*"whisper_model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        if [ -n "$manifest_model" ]; then
+            whisper_model="$manifest_model"
+            print_info "Using Whisper model from package: $whisper_model"
+        fi
     fi
 
     # Create .env file
@@ -367,7 +469,7 @@ COMPUTE_TYPE=$compute_type
 GPU_DEVICE_ID=$gpu_device_id
 
 # AI Models Configuration
-WHISPER_MODEL=large-v2
+WHISPER_MODEL=$whisper_model
 BATCH_SIZE=16
 DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
 MIN_SPEAKERS=1
@@ -388,9 +490,9 @@ ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL_NAME=claude-3-haiku-20240307
 
 # Service Ports
-FRONTEND_PORT=80
-BACKEND_PORT=8080
-FLOWER_PORT=5555
+FRONTEND_PORT=5173
+BACKEND_PORT=5174
+FLOWER_PORT=5175
 EOF
 
     print_success "Environment configuration created"
@@ -431,7 +533,7 @@ post_install_info() {
     echo -e "     sudo ./opentr.sh start\n"
 
     echo -e "  3. ${YELLOW}Access the application:${NC}"
-    echo -e "     http://localhost:80\n"
+    echo -e "     http://localhost:5173\n"
 
     echo -e "${CYAN}Management Commands:${NC}"
     echo -e "  cd $INSTALL_DIR"

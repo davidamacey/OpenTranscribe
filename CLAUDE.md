@@ -246,9 +246,11 @@ OpenTranscribe backend containers run as a non-root user (`appuser`, UID 1000) f
 - Compliant with security scanning tools (Trivy, Snyk, etc.)
 - Prevents host root compromise in case of container breach
 
-**Migration for Existing Deployments:**
+**Automatic Permission Management:**
 
-If you have an existing installation with model cache owned by root, run the permission fix script:
+The startup scripts (`./opentr.sh` and `./opentranscribe.sh`) automatically check and fix model cache permissions before starting containers. This ensures the non-root container user (UID 1000) can access the model cache without permission errors.
+
+If you encounter permission issues, you can manually fix them:
 
 ```bash
 # Fix permissions on existing model cache

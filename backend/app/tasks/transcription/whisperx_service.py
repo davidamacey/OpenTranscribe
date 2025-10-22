@@ -28,7 +28,7 @@ class WhisperXService:
         self.hardware_config = detect_hardware()
 
         # Model configuration
-        self.model_name = model_name or os.getenv("WHISPER_MODEL", "medium.en")
+        self.model_name = model_name or os.getenv("WHISPER_MODEL", "large-v2")
         self.models_dir = models_dir or Path.cwd() / "models"
 
         # Hardware-optimized settings

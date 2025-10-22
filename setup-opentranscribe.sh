@@ -713,48 +713,93 @@ configure_environment() {
 }
 
 select_whisper_model() {
-    echo -e "${YELLOW}🎤 Auto-selecting Whisper Model based on hardware...${NC}"
+    echo -e "${YELLOW}🎤 Selecting Whisper Model based on hardware...${NC}"
+    echo ""
 
     # Auto-select optimal model based on hardware with GPU memory detection
+    local RECOMMENDED_MODEL=""
+    local RECOMMENDATION_REASON=""
+
     case "$DETECTED_DEVICE" in
         "cuda")
             # Try to detect GPU memory for better model selection
             if command -v nvidia-smi &> /dev/null; then
                 GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
                 if [[ $GPU_MEMORY -gt 16000 ]]; then
-                    WHISPER_MODEL="large-v2"
-                    echo "✓ High-end GPU detected (${GPU_MEMORY}MB) - selecting large-v2 model"
+                    RECOMMENDED_MODEL="large-v2"
+                    RECOMMENDATION_REASON="High-end GPU detected (${GPU_MEMORY}MB VRAM)"
                 elif [[ $GPU_MEMORY -gt 8000 ]]; then
-                    WHISPER_MODEL="large-v2"
-                    echo "✓ Mid-range GPU detected (${GPU_MEMORY}MB) - selecting large-v2 model"
+                    RECOMMENDED_MODEL="large-v2"
+                    RECOMMENDATION_REASON="Mid-range GPU detected (${GPU_MEMORY}MB VRAM)"
                 elif [[ $GPU_MEMORY -gt 4000 ]]; then
-                    WHISPER_MODEL="medium"
-                    echo "✓ Entry-level GPU detected (${GPU_MEMORY}MB) - selecting medium model"
+                    RECOMMENDED_MODEL="medium"
+                    RECOMMENDATION_REASON="Entry-level GPU detected (${GPU_MEMORY}MB VRAM)"
                 else
-                    WHISPER_MODEL="small"
-                    echo "✓ Low-memory GPU detected (${GPU_MEMORY}MB) - selecting small model"
+                    RECOMMENDED_MODEL="small"
+                    RECOMMENDATION_REASON="Low-memory GPU detected (${GPU_MEMORY}MB VRAM)"
                 fi
             else
                 # Fallback if nvidia-smi fails
-                WHISPER_MODEL="medium"
-                echo "✓ CUDA detected - selecting medium model (safe default)"
+                RECOMMENDED_MODEL="medium"
+                RECOMMENDATION_REASON="CUDA detected - safe default"
             fi
             ;;
         "mps")
-            WHISPER_MODEL="small"
-            echo "✓ Apple Silicon detected - selecting small model for faster CPU processing"
-            echo "  Note: WhisperX will use CPU for compatibility, PyAnnote will use MPS acceleration"
-            echo "  Tip: Edit WHISPER_MODEL in .env to 'tiny' for even faster processing"
+            RECOMMENDED_MODEL="small"
+            RECOMMENDATION_REASON="Apple Silicon detected - optimized for CPU/MPS processing"
             ;;
         "cpu")
-            WHISPER_MODEL="base"
-            echo "✓ CPU processing - selecting base model (fastest for CPU)"
+            RECOMMENDED_MODEL="base"
+            RECOMMENDATION_REASON="CPU processing - fastest option"
             ;;
     esac
 
-    echo "✓ Selected model: $WHISPER_MODEL"
-    echo "💡 You can change this later by editing WHISPER_MODEL in the .env file"
-    echo "   Available options: tiny, base, small, medium, large-v2"
+    # Display recommendation
+    echo -e "${BLUE}Available Whisper Models:${NC}"
+    echo ""
+    echo "  Model       Size    Memory   Speed       Accuracy    Download"
+    echo "  ────────────────────────────────────────────────────────────────"
+    echo "  tiny        39MB    ~1GB     Fastest     Lowest      ~39MB"
+    echo "  base        74MB    ~1GB     Very Fast   Low         ~74MB"
+    echo "  small       244MB   ~2GB     Fast        Good        ~244MB"
+    echo "  medium      769MB   ~5GB     Moderate    Better      ~769MB"
+    echo "  large-v2    1.5GB   ~10GB    Slow        Best        ~1.5GB"
+    echo ""
+    echo -e "${GREEN}Recommendation: ${RECOMMENDED_MODEL}${NC}"
+    echo "  Reason: ${RECOMMENDATION_REASON}"
+    echo ""
+    echo "Note: Larger models provide better accuracy but require more memory"
+    echo "      and processing time. You can change this later in the .env file."
+    echo ""
+
+    # Prompt user for model selection
+    while true; do
+        read -p "Select model (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
+
+        # Use recommended if user just presses Enter
+        if [ -z "$user_model" ]; then
+            WHISPER_MODEL="$RECOMMENDED_MODEL"
+            break
+        fi
+
+        # Validate input
+        case "$user_model" in
+            tiny|base|small|medium|large-v2|large-v1)
+                WHISPER_MODEL="$user_model"
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, or large-v2${NC}"
+                ;;
+        esac
+    done
+
+    echo ""
+    echo -e "${GREEN}✓ Selected model: ${WHISPER_MODEL}${NC}"
+    if [ "$WHISPER_MODEL" != "$RECOMMENDED_MODEL" ]; then
+        echo -e "${YELLOW}  Note: You selected a different model than recommended${NC}"
+    fi
+    echo ""
 }
 
 select_gpu_device() {

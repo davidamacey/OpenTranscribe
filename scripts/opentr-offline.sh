@@ -108,7 +108,7 @@ cmd_start() {
     dc up -d
 
     print_success "OpenTranscribe started"
-    print_info "Access the application at: http://localhost:80"
+    print_info "Access the application at: http://localhost:5173"
     print_info "View logs with: ./opentr.sh logs"
 }
 
@@ -196,7 +196,8 @@ cmd_health() {
 }
 
 cmd_clean() {
-    print_warning "This will remove stopped containers and unused volumes"
+    print_warning "This will remove OpenTranscribe containers and volumes"
+    print_warning "All data will be lost (database, uploads, models cache)"
     read -p "Continue? (y/N) " -n 1 -r
     echo
 
@@ -205,12 +206,14 @@ cmd_clean() {
         exit 0
     fi
 
-    print_info "Cleaning up..."
+    print_info "Stopping OpenTranscribe services..."
+    dc down
 
-    docker system prune -f
-    docker volume prune -f
+    print_info "Removing OpenTranscribe containers and volumes..."
+    dc down -v
 
-    print_success "Cleanup complete"
+    print_success "Cleanup complete - OpenTranscribe containers and volumes removed"
+    print_info "Models cache preserved at: ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}"
 }
 
 cmd_backup() {

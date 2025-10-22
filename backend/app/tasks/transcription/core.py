@@ -176,7 +176,8 @@ def transcribe_audio_task(self, file_uuid: str):
             # Step 7: Run WhisperX pipeline
             try:
                 whisperx_service = WhisperXService(
-                    model_name="medium.en", models_dir=settings.MODEL_BASE_DIR
+                    model_name=os.getenv("WHISPER_MODEL", "large-v2"),
+                    models_dir=settings.MODEL_BASE_DIR,
                 )
 
                 with session_scope() as db:

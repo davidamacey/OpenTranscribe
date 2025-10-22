@@ -132,6 +132,7 @@ services:
       - TORCH_DEVICE=${TORCH_DEVICE:-cuda}
       - COMPUTE_TYPE=${COMPUTE_TYPE:-float16}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - HF_HUB_OFFLINE=1
       - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
       - BATCH_SIZE=${BATCH_SIZE:-16}
       - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
@@ -199,6 +200,7 @@ services:
       - TORCH_DEVICE=${TORCH_DEVICE:-cuda}
       - COMPUTE_TYPE=${COMPUTE_TYPE:-float16}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
+      - HF_HUB_OFFLINE=1
       - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
       - BATCH_SIZE=${BATCH_SIZE:-16}
       - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}

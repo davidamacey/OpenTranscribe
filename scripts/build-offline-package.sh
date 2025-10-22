@@ -269,6 +269,97 @@ EOF
 # AI MODELS
 #######################
 
+select_whisper_model_for_offline() {
+    print_header "Whisper Model Selection"
+
+    # Detect GPU if available for recommendation
+    local RECOMMENDED_MODEL="large-v2"
+    local RECOMMENDATION_REASON="Best accuracy - recommended for offline deployments"
+    local GPU_MEMORY=""
+
+    if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+        GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}" 2>/dev/null)
+        if [ -n "$GPU_MEMORY" ]; then
+            if [[ $GPU_MEMORY -gt 16000 ]]; then
+                RECOMMENDED_MODEL="large-v2"
+                RECOMMENDATION_REASON="High-end GPU detected (${GPU_MEMORY}MB VRAM) - best accuracy"
+            elif [[ $GPU_MEMORY -gt 8000 ]]; then
+                RECOMMENDED_MODEL="large-v2"
+                RECOMMENDATION_REASON="Mid-range GPU detected (${GPU_MEMORY}MB VRAM) - best accuracy"
+            elif [[ $GPU_MEMORY -gt 4000 ]]; then
+                RECOMMENDED_MODEL="medium"
+                RECOMMENDATION_REASON="Entry-level GPU detected (${GPU_MEMORY}MB VRAM)"
+            else
+                RECOMMENDED_MODEL="small"
+                RECOMMENDATION_REASON="Low-memory GPU detected (${GPU_MEMORY}MB VRAM)"
+            fi
+        fi
+    fi
+
+    echo -e "${BLUE}Available Whisper Models:${NC}"
+    echo ""
+    echo "  Model       Size    Memory   Speed       Accuracy    Download"
+    echo "  ────────────────────────────────────────────────────────────────"
+    echo "  tiny        39MB    ~1GB     Fastest     Lowest      ~39MB"
+    echo "  base        74MB    ~1GB     Very Fast   Low         ~74MB"
+    echo "  small       244MB   ~2GB     Fast        Good        ~244MB"
+    echo "  medium      769MB   ~5GB     Moderate    Better      ~769MB"
+    echo "  large-v2    1.5GB   ~10GB    Slow        Best        ~1.5GB"
+    echo ""
+    echo -e "${GREEN}Recommendation: ${RECOMMENDED_MODEL}${NC}"
+    echo "  Reason: ${RECOMMENDATION_REASON}"
+    echo ""
+    echo -e "${YELLOW}IMPORTANT for Offline Deployments:${NC}"
+    echo "  • Choose based on the GPU that will be used on the target system"
+    echo "  • The selected model will be included in the offline package"
+    echo "  • You cannot download a different model after deployment without internet"
+    echo "  • Consider the target system's GPU memory, not your current build system"
+    echo ""
+
+    # Check if WHISPER_MODEL is already set in environment
+    if [ -n "$WHISPER_MODEL" ]; then
+        print_info "WHISPER_MODEL already set to: $WHISPER_MODEL"
+        read -p "Use this model or select a different one? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_success "Using model: $WHISPER_MODEL"
+            return 0
+        fi
+    fi
+
+    # Prompt user for model selection
+    while true; do
+        read -p "Select model for offline package (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
+
+        # Use recommended if user just presses Enter
+        if [ -z "$user_model" ]; then
+            WHISPER_MODEL="$RECOMMENDED_MODEL"
+            break
+        fi
+
+        # Validate input
+        case "$user_model" in
+            tiny|base|small|medium|large-v2|large-v1)
+                WHISPER_MODEL="$user_model"
+                break
+                ;;
+            *)
+                print_error "Invalid model. Please choose: tiny, base, small, medium, or large-v2"
+                ;;
+        esac
+    done
+
+    echo ""
+    print_success "Selected model for offline package: ${WHISPER_MODEL}"
+    if [ "$WHISPER_MODEL" != "$RECOMMENDED_MODEL" ]; then
+        print_warning "Note: You selected a different model than recommended"
+    fi
+
+    # Export for use in download_models
+    export WHISPER_MODEL
+    echo ""
+}
+
 download_models() {
     print_header "Downloading AI Models"
 
@@ -281,8 +372,9 @@ download_models() {
     fi
 
     print_info "Starting model download container..."
-    print_info "This will download approximately 38GB of AI models"
-    print_warning "This may take 30-60 minutes depending on your internet speed..."
+    print_info "Downloading Whisper model: ${WHISPER_MODEL}"
+    print_info "This will download approximately 5-40GB depending on model size"
+    print_warning "This may take 10-60 minutes depending on your internet speed..."
 
     # Create temporary model cache directory
     local temp_model_cache="${BUILD_DIR}/temp_models"
@@ -404,6 +496,11 @@ copy_installation_scripts() {
     cp scripts/install-offline-package.sh "${PACKAGE_DIR}/install.sh"
     chmod +x "${PACKAGE_DIR}/install.sh"
 
+    # Copy uninstall script
+    print_info "Copying uninstall.sh..."
+    cp scripts/uninstall-offline-package.sh "${PACKAGE_DIR}/uninstall.sh"
+    chmod +x "${PACKAGE_DIR}/uninstall.sh"
+
     # Copy management wrapper
     print_info "Copying opentr-offline.sh..."
     cp scripts/opentr-offline.sh "${PACKAGE_DIR}/opentr-offline.sh"
@@ -510,6 +607,7 @@ main() {
     preflight_checks
     extract_docker_images
     setup_directories
+    select_whisper_model_for_offline
     pull_and_save_images
     download_models
     copy_configuration
