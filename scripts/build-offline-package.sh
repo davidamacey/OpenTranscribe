@@ -35,6 +35,7 @@ CONFIG_FILES=(
 SCRIPT_FILES=(
     "scripts/common.sh"
     "scripts/download-models.py"
+    "scripts/fix-model-permissions.sh"
 )
 
 #######################

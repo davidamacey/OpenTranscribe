@@ -81,6 +81,7 @@ services:
     restart: always
     volumes:
       - ./backend:/app
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     ports:
@@ -162,6 +163,7 @@ services:
               device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
       - ./backend:/app
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     depends_on:
@@ -271,6 +273,7 @@ services:
     # No authentication required as per user requirements
     volumes:
       - ./backend:/app
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 

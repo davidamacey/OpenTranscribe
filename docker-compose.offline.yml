@@ -86,6 +86,7 @@ services:
     pull_policy: never
     restart: always
     volumes:
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
@@ -167,6 +168,7 @@ services:
               capabilities: [gpu]
               device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
@@ -257,6 +259,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
+      # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - flower_data:/app

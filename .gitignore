@@ -3,6 +3,7 @@
 .github/DRAFT_ISSUES/
 offline-package-build/
 OT_TEST/
+opentranscribe/
 
 # Environment variables
 .env

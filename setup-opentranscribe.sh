@@ -90,6 +90,9 @@ detect_hardware_acceleration() {
             BATCH_SIZE="16"
             USE_GPU_RUNTIME="true"
 
+            # Get count of available GPUs
+            GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | wc -l)
+
             # Get default GPU (first available)
             DEFAULT_GPU=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits | head -n1)
             GPU_DEVICE_ID=${DEFAULT_GPU:-0}
@@ -699,6 +702,9 @@ configure_environment() {
     # Model selection based on hardware
     select_whisper_model
 
+    # GPU selection for multi-GPU systems
+    select_gpu_device
+
     # LLM configuration for AI features
     configure_llm_settings
 
@@ -714,7 +720,7 @@ select_whisper_model() {
         "cuda")
             # Try to detect GPU memory for better model selection
             if command -v nvidia-smi &> /dev/null; then
-                GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+                GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
                 if [[ $GPU_MEMORY -gt 16000 ]]; then
                     WHISPER_MODEL="large-v2"
                     echo "✓ High-end GPU detected (${GPU_MEMORY}MB) - selecting large-v2 model"
@@ -749,6 +755,66 @@ select_whisper_model() {
     echo "✓ Selected model: $WHISPER_MODEL"
     echo "💡 You can change this later by editing WHISPER_MODEL in the .env file"
     echo "   Available options: tiny, base, small, medium, large-v2"
+}
+
+select_gpu_device() {
+    # Only prompt if CUDA is detected and multiple GPUs are available
+    if [[ "$DETECTED_DEVICE" != "cuda" ]] || [[ ${GPU_COUNT:-0} -le 1 ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${YELLOW}🎮 Multiple GPUs Detected${NC}"
+    echo "================================================="
+    echo "Your system has ${GPU_COUNT} NVIDIA GPUs available."
+    echo ""
+    echo "Available GPUs:"
+    echo ""
+
+    # Display GPU list with detailed information
+    nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader | while IFS=, read -r idx name mem_total mem_free; do
+        echo "  [${idx}] ${name} (${mem_total} total, ${mem_free} free)"
+    done
+
+    echo ""
+    echo "Select which GPU to use for AI model downloads and transcription processing."
+    echo "Consider GPU availability, memory, and existing workloads when choosing."
+    echo ""
+
+    # Prompt user for GPU selection
+    while true; do
+        read -p "Enter GPU index to use [0-$((GPU_COUNT-1))] (default: ${GPU_DEVICE_ID}): " selected_gpu </dev/tty
+
+        # Use default if empty
+        if [[ -z "$selected_gpu" ]]; then
+            selected_gpu=$GPU_DEVICE_ID
+            break
+        fi
+
+        # Validate input is a number
+        if ! [[ "$selected_gpu" =~ ^[0-9]+$ ]]; then
+            echo -e "${RED}❌ Invalid input. Please enter a number.${NC}"
+            continue
+        fi
+
+        # Validate GPU index is within range
+        if [[ $selected_gpu -ge 0 && $selected_gpu -lt $GPU_COUNT ]]; then
+            break
+        else
+            echo -e "${RED}❌ Invalid GPU index. Please enter a number between 0 and $((GPU_COUNT-1)).${NC}"
+        fi
+    done
+
+    # Update GPU_DEVICE_ID with user selection
+    GPU_DEVICE_ID=$selected_gpu
+
+    # Get selected GPU details
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$GPU_DEVICE_ID")
+    GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$GPU_DEVICE_ID")
+
+    echo ""
+    echo -e "${GREEN}✓ Selected GPU ${GPU_DEVICE_ID}: ${GPU_NAME} (${GPU_MEMORY}MB)${NC}"
+    echo ""
 }
 
 configure_llm_settings() {
@@ -1042,23 +1108,76 @@ download_ai_models() {
     export WHISPER_MODEL
     export COMPUTE_TYPE
     export DETECTED_DEVICE
+    export GPU_DEVICE_ID
 
-    # Create models directory
-    mkdir -p models
+    # Create models directory structure with proper permissions
+    print_info "Creating model cache directories with proper permissions..."
 
-    # Run the download script
-    if bash scripts/download-models.sh models; then
-        echo ""
+    # Create main directory and subdirectories
+    mkdir -p models/huggingface models/torch
+
+    # Set ownership to prevent permission issues in non-root containers
+    # Container runs as UID 1000, so we need to ensure host directories are accessible
+    if [ "$(id -u)" -eq 0 ]; then
+        # Running as root - explicitly set ownership to UID 1000 for container compatibility
+        echo "  Detected root user - setting ownership to UID 1000 for container compatibility"
+        chown -R 1000:1000 models
+    else
+        # Running as regular user - ensure current user owns the directories
+        current_uid=$(id -u)
+        current_gid=$(id -g)
+        echo "  Setting ownership to current user (UID:GID $current_uid:$current_gid)"
+        chown -R "$current_uid:$current_gid" models 2>/dev/null || true
+    fi
+
+    # Set proper permissions (755 for directories)
+    chmod -R 755 models
+
+    # Verify directories are writable
+    if [ -w models/huggingface ] && [ -w models/torch ]; then
+        echo "✓ Model cache directories created with proper permissions"
+    else
+        print_warning "Model directories exist but may not be writable"
+        echo "  If you encounter permission errors, run: ./scripts/fix-model-permissions.sh"
+    fi
+
+    # Run the download script and capture exit status
+    # Important: Use || true to prevent script exit on download failure
+    set +e  # Temporarily disable exit on error
+    bash scripts/download-models.sh models
+    local download_exit_code=$?
+    set -e  # Re-enable exit on error
+
+    echo ""
+
+    # Check download result and provide clear feedback
+    if [ $download_exit_code -eq 0 ]; then
         print_success "✨ Models downloaded and cached successfully!"
         print_info "Docker containers will start with models ready to use"
         echo ""
         return 0
     else
+        print_warning "⚠️  Model download encountered errors or was incomplete"
         echo ""
-        print_warning "Model download failed or was incomplete"
-        echo "Models will be downloaded automatically when you first run the application."
+        echo -e "${YELLOW}What this means:${NC}"
+        echo "  • Setup will continue - this is NOT a critical failure"
+        echo "  • Models will download automatically when you first run the application"
+        echo "  • First transcription will take longer (10-30 minutes for initial download)"
         echo ""
-        return 1
+        echo -e "${YELLOW}To retry model download later:${NC}"
+        echo "  cd $PROJECT_DIR && bash scripts/download-models.sh models"
+        echo ""
+
+        # Ask if user wants to continue or abort
+        read -p "Continue with setup anyway? (Y/n): " continue_choice </dev/tty
+        if [[ $continue_choice =~ ^[Nn]$ ]]; then
+            print_error "Setup aborted by user"
+            exit 1
+        fi
+
+        print_info "Continuing setup without pre-downloaded models..."
+        echo ""
+        return 0  # Return success to allow setup to continue
     fi
 }
 
@@ -1125,8 +1244,12 @@ display_summary() {
     if [[ "$DETECTED_DEVICE" == "cuda" ]]; then
         echo "  • GPU Device ID: ${GPU_DEVICE_ID:-0}"
         if command -v nvidia-smi &> /dev/null; then
-            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -1)
-            echo "  • GPU: $GPU_NAME"
+            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
+            GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
+            echo "  • GPU: $GPU_NAME (${GPU_MEMORY}MB)"
+            if [[ ${GPU_COUNT:-1} -gt 1 ]]; then
+                echo "  • Total GPUs Available: ${GPU_COUNT}"
+            fi
         fi
     fi
 

@@ -59,7 +59,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd -r appuser && \
     useradd -r -g appuser -G video -u 1000 -m -s /bin/bash appuser && \
     mkdir -p /app /app/models /app/temp && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    mkdir -p /home/appuser/.cache/huggingface \
+             /home/appuser/.cache/torch \
+             /home/appuser/.cache/yt-dlp && \
+    chown -R appuser:appuser /home/appuser/.cache
 
 # Set working directory
 WORKDIR /app

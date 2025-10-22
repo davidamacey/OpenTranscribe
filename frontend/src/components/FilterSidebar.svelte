@@ -4,21 +4,21 @@
   import axiosInstance from '../lib/axios';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
-  
+
   // Type definitions for props and state
   /**
    * @typedef {Object} Tag
    * @property {number} id - Tag ID
    * @property {string} name - Tag name
    */
-  
+
   /**
    * @typedef {Object} Speaker
    * @property {number} id - Speaker ID
    * @property {string} name - Speaker name (original name like SPEAKER_01)
    * @property {string|null} display_name - Display name set by user
    */
-  
+
   /**
    * @typedef {Object} DateRange
    * @property {Date|null} from - Start date
@@ -38,20 +38,20 @@
    * @property {number|null} minHeight - Minimum height in pixels
    * @property {number|null} maxHeight - Maximum height in pixels
    */
-  
+
   // Props
   /** @type {string} */
   export let searchQuery = '';
-  
+
   /** @type {string[]} */
   export let selectedTags: string[] = [];
-  
+
   /** @type {string[]} */
   export let selectedSpeakers: string[] = [];
-  
+
   /** @type {DateRange} */
   export let dateRange: { from: Date | null, to: Date | null } = { from: null, to: null };
-  
+
   /** @type {string|null} */
   export let selectedCollectionId: string | null = null;
 
@@ -61,7 +61,7 @@
     min: null,
     max: null
   };
-  
+
   // Server-provided min/max values for duration
   /** @type {{ min: number, max: number }} */
   let durationRangeMinMax = {
@@ -87,7 +87,7 @@
 
   /** @type {boolean} */
   export let showAdvancedFilters = false;
-  
+
   // State
   /** @type {Tag[]} */
   let allTags: any[] = [];
@@ -108,57 +108,57 @@
 
   // Component refs
   let collectionsFilterRef: any;
-  
+
   /** @type {Speaker[]} */
   let allSpeakers: any[] = [];
-  
+
   /** @type {boolean} */
   let loadingTags = false;
-  
+
   /** @type {boolean} */
   let loadingSpeakers = false;
-  
+
   /** @type {string|null} */
   let errorTags: string | null = null;
-  
+
   /** @type {string|null} */
   let errorSpeakers: string | null = null;
-  
+
   // Available options for filters
   /** @type {string[]} */
   let availableFileTypes = ['audio', 'video'];
   /** @type {string[]} */
   let availableStatuses = ['pending', 'processing', 'completed', 'error'];
-  
+
   // Event dispatcher
   const dispatch = createEventDispatcher();
-  
+
   // Date input values
   /** @type {string} */
   let fromDate = '';
-  
+
   /** @type {string} */
   let toDate = '';
-  
-  // Duration input values  
+
+  // Duration input values
   /** @type {string} */
   let minDurationInput = '';
-  
+
   /** @type {string} */
   let maxDurationInput = '';
-  
+
   // File size input values
   /** @type {string} */
   let minFileSizeInput = '';
-  
+
   /** @type {string} */
   let maxFileSizeInput = '';
-  
+
   // Fetch all tags
   async function fetchTags() {
     loadingTags = true;
     errorTags = null;
-    
+
     try {
       const response = await axiosInstance.get('/tags/');
       allTags = response.data;
@@ -170,12 +170,12 @@
       loadingTags = false;
     }
   }
-  
+
   // Fetch all speakers for filtering (only those with display names)
   async function fetchSpeakers() {
     loadingSpeakers = true;
     errorSpeakers = null;
-    
+
     try {
       const response = await axiosInstance.get('/speakers/?for_filter=true');
       allSpeakers = response.data;
@@ -187,7 +187,7 @@
       loadingSpeakers = false;
     }
   }
-  
+
   /**
    * Handle tag selection
    * @param {string} tag - The tag to toggle
@@ -225,21 +225,21 @@
       selectedTags = selectedTags.filter(t => t !== tag.name);
     }
   }
-  
+
   /**
    * Handle speaker selection (multi-select like tags)
    * @param {string} speaker - The speaker to toggle
    */
   function toggleSpeaker(speaker: string) {
     const index = selectedSpeakers.indexOf(speaker);
-    
+
     if (index === -1) {
       selectedSpeakers = [...selectedSpeakers, speaker];
     } else {
       selectedSpeakers = selectedSpeakers.filter(s => s !== speaker);
     }
   }
-  
+
   /**
    * Handle from date input changes
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
@@ -255,7 +255,7 @@
       dateRange = { ...dateRange, from: null };
     }
   }
-  
+
   /**
    * Handle to date input changes
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
@@ -271,13 +271,13 @@
       dateRange = { ...dateRange, to: null };
     }
   }
-  
+
   // Fetch media metadata - currently not used, reserved for future enhancement
   async function fetchMediaMetadata() {
     try {
       const response = await axiosInstance.get('/files/metadata-filters');
       const metadataFilters = response.data;
-      
+
       // Update duration range with min/max values from server
       if (metadataFilters.duration) {
         durationRangeMinMax = {
@@ -289,35 +289,35 @@
       console.error('Error fetching media metadata:', error);
     }
   }
-  
+
   /**
    * Toggle a file type in the filter
    * @param {string} fileType - The file type to toggle
    */
   function toggleFileType(fileType: string) {
     const index = selectedFileTypes.indexOf(fileType);
-    
+
     if (index === -1) {
       selectedFileTypes = [...selectedFileTypes, fileType];
     } else {
       selectedFileTypes = selectedFileTypes.filter(ft => ft !== fileType);
     }
   }
-  
+
   /**
    * Toggle a status in the filter
    * @param {string} status - The status to toggle
    */
   function toggleStatus(status: string) {
     const index = selectedStatuses.indexOf(status);
-    
+
     if (index === -1) {
       selectedStatuses = [...selectedStatuses, status];
     } else {
       selectedStatuses = selectedStatuses.filter(s => s !== status);
     }
   }
-  
+
   /**
    * Handle min duration input change
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
@@ -326,7 +326,7 @@
     const value = event.currentTarget?.value;
     durationRange.min = value ? parseFloat(value) : null;
   }
-  
+
   /**
    * Handle max duration input change
    * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
@@ -345,7 +345,7 @@
     const value = event.currentTarget?.value;
     fileSizeRange[field] = value ? parseFloat(value) : null;
   }
-  
+
   /**
    * Handle resolution input changes - currently not used, reserved for future enhancement
    * @param {'minWidth'|'maxWidth'|'minHeight'|'maxHeight'} field - The field to update
@@ -355,12 +355,12 @@
   //   const value = event.currentTarget?.value;
   //   resolutionRange[field] = value ? parseInt(value, 10) : null;
   // }
-  
+
   // Toggle advanced filters visibility
   function toggleAdvancedFilters() {
     showAdvancedFilters = !showAdvancedFilters;
   }
-  
+
   // Apply filters
   function applyFilters() {
     dispatch('filter', {
@@ -376,7 +376,7 @@
       transcriptSearch
     });
   }
-  
+
   // Reset filters
   function resetFilters() {
     searchQuery = '';
@@ -392,32 +392,32 @@
     selectedStatuses = [];
     transcriptSearch = '';
     showAdvancedFilters = false; // Collapse advanced filters on reset
-    
+
     // Clear input field values
     minDurationInput = '';
     maxDurationInput = '';
     minFileSizeInput = '';
     maxFileSizeInput = '';
-    
+
     dispatch('reset');
   }
-  
+
   // Public method to refresh collections
   export function refreshCollections() {
     if (collectionsFilterRef && collectionsFilterRef.fetchCollections) {
       collectionsFilterRef.fetchCollections();
     }
   }
-  
+
   onMount(() => {
     fetchTags();
     fetchSpeakers();
-    
+
     // Initialize date inputs if dateRange has values
     if (dateRange.from instanceof Date) {
       fromDate = dateRange.from.toISOString().split('T')[0];
     }
-    
+
     if (dateRange.to instanceof Date) {
       toDate = dateRange.to.toISOString().split('T')[0];
     }
@@ -547,12 +547,12 @@
       </div>
     </div>
   </div>
-  
+
   <!-- Advanced Filters Toggle -->
   <div class="advanced-filters-divider">
     <hr class="divider-line" />
-    <button 
-      class="advanced-toggle-compact" 
+    <button
+      class="advanced-toggle-compact"
       on:click={toggleAdvancedFilters}
       title="{showAdvancedFilters ? 'Hide' : 'Show'} advanced filtering options including transcript search, duration, file size, type, and status filters"
     >
@@ -563,7 +563,7 @@
     </button>
     <hr class="divider-line" />
   </div>
-  
+
   <!-- Advanced Filters Section -->
   {#if showAdvancedFilters}
     <div class="advanced-filters-content" transition:slide={{ duration: 300 }}>
@@ -691,7 +691,7 @@
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .filter-header {
     display: flex;
     align-items: center;
@@ -753,49 +753,49 @@
   .reset-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .filter-section {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .filter-section h3 {
     font-size: 1rem;
     margin: 0;
   }
-  
+
   .filter-input {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 0.9rem;
   }
-  
+
   .date-inputs {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .date-group {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  
+
   .date-group label {
     font-size: 0.8rem;
-    color: var(--text-light);
+    color: var(--text-secondary);
   }
-  
+
   .tags-list,
   .speakers-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  
+
   .tag-button,
   .speaker-button {
     background-color: var(--background-color);
@@ -873,16 +873,16 @@
   /* Input help text */
   .input-help {
     font-size: 0.75rem;
-    color: var(--text-light, rgba(255, 255, 255, 0.6));
+    color: var(--text-secondary);
     margin-top: 0.25rem;
     display: block;
     font-style: italic;
   }
-  
+
   .loading-text,
   .empty-text {
     font-size: 0.9rem;
-    color: var(--text-light);
+    color: var(--text-secondary);
     margin: 0;
   }
   /* Advanced filters divider and toggle styles */
@@ -892,15 +892,15 @@
     margin: 0.75rem 0 0.5rem 0;
     position: relative;
   }
-  
+
   .divider-line {
     flex: 1;
     height: 1px;
     border: none;
-    background-color: var(--border-color, #e5e7eb);
+    background-color: var(--border-color);
     margin: 0;
   }
-  
+
   .advanced-toggle-compact {
     display: flex;
     align-items: center;
@@ -918,22 +918,22 @@
     white-space: nowrap;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   }
-  
+
   .advanced-toggle-compact:hover {
-    background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
+    background-color: var(--button-hover);
     color: var(--primary-color);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
-  
+
   .toggle-icon {
     transition: transform 0.2s ease;
     color: var(--primary-color);
   }
-  
+
   .toggle-icon.rotated {
     transform: rotate(180deg);
   }
-  
+
   .advanced-filters-content {
     /* Seamless integration with subtle visual distinction */
     padding: 0.5rem 0.25rem;
@@ -944,28 +944,28 @@
     border-radius: 8px;
     position: relative;
   }
-  
-  
+
+
   .advanced-filters-content .filter-section {
     margin-bottom: 1rem;
   }
-  
+
   .advanced-filters-content .filter-section:last-child {
     margin-bottom: 0;
   }
-  
+
   .range-inputs {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .range-group {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  
+
   .range-group input[type="number"] {
     padding: 0.5rem;
     border-radius: 4px;
@@ -975,16 +975,16 @@
     font-size: 0.9rem;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
-  
+
   .range-group input[type="number"]:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 2px var(--primary-color-light, rgba(59, 130, 246, 0.2));
   }
-  
+
   .range-group label {
     font-size: 0.85rem;
-    color: var(--text-color-light, var(--text-color));
+    color: var(--text-secondary);
     margin-bottom: 0.25rem;
   }
 
@@ -1061,39 +1061,39 @@
   /* Input help text */
   .input-help {
     font-size: 0.75rem;
-    color: var(--text-light, rgba(255, 255, 255, 0.6));
+    color: var(--text-secondary);
     margin-top: 0.25rem;
     display: block;
     font-style: italic;
   }
-  
+
   /* Responsive adjustments for advanced filters */
   @media (max-width: 768px) {
     .advanced-filters-divider {
       margin: 1rem 0 0.75rem 0;
     }
-    
+
     .advanced-toggle-compact {
       padding: 0.4rem 0.8rem;
       font-size: 0.8rem;
       margin: 0 0.5rem;
     }
-    
+
     .advanced-filters-content {
       padding: 0.75rem 0.25rem;
     }
-    
+
     .advanced-filters-content .filter-section {
       margin-bottom: 1rem;
     }
   }
-  
+
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     .toggle-icon {
       transition: none;
     }
-    
+
     .advanced-toggle-compact {
       transition: none;
     }

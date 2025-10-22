@@ -703,6 +703,52 @@ docker run --rm --gpus all nvidia/cuda:11.0-base nvidia-smi
 echo "USE_GPU=false" >> .env
 ```
 
+#### **Permission Errors (Model Cache / yt-dlp)**
+
+**Symptoms:**
+- Error: `Permission denied: '/home/appuser/.cache/huggingface/hub'`
+- Error: `Permission denied: '/home/appuser/.cache/yt-dlp'`
+- YouTube downloads fail with permission errors
+- Models fail to download or save
+
+**Cause:** Docker creates model cache directories with root ownership, but containers run as non-root user (UID 1000) for security.
+
+**Solution:**
+```bash
+# Option 1: Run the automated permission fix script (recommended)
+cd opentranscribe  # Or your installation directory
+./scripts/fix-model-permissions.sh
+
+# Option 2: Manual fix using Docker
+docker run --rm -v ./models:/models busybox chown -R 1000:1000 /models
+
+# Option 3: Manual fix using sudo (if available)
+sudo chown -R 1000:1000 ./models
+sudo chmod -R 755 ./models
+```
+
+**Prevention for New Installations:**
+- The latest setup script automatically creates directories with correct permissions
+- Re-run the one-line installer for new deployments:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+  ```
+
+**Why This Happens:**
+- Different Linux users have different UIDs (e.g., 1001, 1002)
+- Running setup as root creates root-owned directories
+- Docker version differences affect directory creation behavior
+- The containers run as UID 1000 for security (non-root user)
+
+**Verification:**
+```bash
+# Check directory ownership (should show UID 1000 or your user)
+ls -la models/
+
+# Test write permissions
+touch models/huggingface/test.txt && rm models/huggingface/test.txt
+```
+
 #### **Memory Issues**
 ```bash
 # Reduce model size

@@ -265,6 +265,10 @@ install_models() {
     print_info "Copying AI models to $INSTALL_DIR/models"
     print_warning "This may take 10-20 minutes (copying ~38GB)..."
 
+    # Create model cache directories with proper structure
+    mkdir -p "$INSTALL_DIR/models/huggingface"
+    mkdir -p "$INSTALL_DIR/models/torch"
+
     # Copy models
     if [ -d "$model_dir/huggingface" ]; then
         print_info "Copying HuggingFace models..."
@@ -280,6 +284,15 @@ install_models() {
     if [ -f "$model_dir/model_manifest.json" ]; then
         cp "$model_dir/model_manifest.json" "$INSTALL_DIR/models/"
     fi
+
+    # Set proper permissions for non-root container user (UID 1000)
+    print_info "Setting model cache permissions for container compatibility..."
+    chown -R 1000:1000 "$INSTALL_DIR/models" 2>/dev/null || {
+        print_warning "Could not set ownership to UID 1000 - you may need to run:"
+        echo "  sudo chown -R 1000:1000 $INSTALL_DIR/models"
+        echo "  Or use: $INSTALL_DIR/scripts/fix-model-permissions.sh"
+    }
+    chmod -R 755 "$INSTALL_DIR/models"
 
     print_success "AI models installed"
 }

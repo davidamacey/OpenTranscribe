@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Exit on error is removed to allow graceful error handling
+# set -e  # DO NOT use - we need to handle partial download failures
 
 # OpenTranscribe Model Downloader
 # Downloads all required AI models before application startup
@@ -153,7 +154,7 @@ download_models_docker() {
 
     # Run the download with real-time output
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
-    if docker run --rm \
+    docker run --rm \
         $gpu_args \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${whisper_model}" \
@@ -164,9 +165,14 @@ download_models_docker() {
         -v "$(realpath "$MODEL_CACHE_DIR/torch"):/home/appuser/.cache/torch" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         davidamacey/opentranscribe-backend:latest \
-        python /app/download-models.py; then
+        python /app/download-models.py
 
-        echo ""
+    local docker_exit_code=$?
+
+    echo ""
+
+    # Check if download succeeded
+    if [ $docker_exit_code -eq 0 ]; then
         local total_size=$(get_dir_size "$MODEL_CACHE_DIR")
         print_success "Models downloaded successfully ($total_size)"
 
@@ -175,9 +181,37 @@ download_models_docker() {
 
         return 0
     else
+        # Download failed - provide detailed error information
+        print_error "Model download failed (exit code: $docker_exit_code)"
         echo ""
-        print_error "Model download failed!"
-        print_warning "You can try running this script again, or start the application and models will download on first use."
+
+        # Check if any models were partially downloaded
+        local hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1 || echo "0")
+        local torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1 || echo "0")
+        local partial_size=$(get_dir_size "$MODEL_CACHE_DIR")
+
+        if [ "$((hf_size + torch_size))" -gt 1000000 ]; then
+            print_warning "Partial download detected ($partial_size)"
+            echo "Some models may have been downloaded successfully."
+            echo "Remaining models will be downloaded on first application use."
+        else
+            print_error "No models were downloaded"
+        fi
+
+        echo ""
+        echo -e "${YELLOW}Common causes:${NC}"
+        echo "  • Network connectivity issues"
+        echo "  • Docker image not available"
+        echo "  • Insufficient disk space"
+        echo "  • Invalid HuggingFace token"
+        echo ""
+        echo -e "${YELLOW}Next steps:${NC}"
+        echo "  1. Check your internet connection"
+        echo "  2. Verify HuggingFace token is valid"
+        echo "  3. Try running this script again: bash scripts/download-models.sh models"
+        echo "  4. Or continue setup - models will download automatically on first use"
+        echo ""
+
         return 1
     fi
 }
