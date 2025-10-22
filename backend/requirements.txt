@@ -45,4 +45,4 @@ ffmpeg-python>=0.2.0
 sentencepiece>=0.1.99
 psutil>=5.9.5
 pyexiftool>=0.5.0
-yt-dlp>=2023.11.16
+yt-dlp>=2025.1.7

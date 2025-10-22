@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -136,6 +137,25 @@ class YouTubeService:
             "max_filesize": 15 * 1024 * 1024 * 1024,  # 15GB limit (matches upload limit)
             # Ensure web-compatible MP4 output
             "merge_output_format": "mp4",
+            # Use configured temp directory for yt-dlp cache and temporary files
+            "cachedir": str(settings.TEMP_DIR / "yt-dlp-cache"),
+            "paths": {"temp": output_path},  # Use the provided output_path for temp files
+            # Anti-blocking measures for YouTube
+            "extractor_args": {
+                "youtube": {
+                    "player_client": [
+                        "android",
+                        "web",
+                    ],  # Try Android client first, fallback to web
+                    "player_skip": ["webpage", "configs"],  # Skip unnecessary requests
+                }
+            },
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-us,en;q=0.5",
+                "Sec-Fetch-Mode": "navigate",
+            },
             "postprocessors": [
                 {
                     "key": "FFmpegVideoConvertor",
@@ -464,8 +484,9 @@ class YouTubeService:
                 detail="Could not extract YouTube video ID",
             )
 
-        # Create temporary directory for download
-        temp_dir = tempfile.mkdtemp(prefix="youtube_download_")
+        # Create temporary directory for download in configured TEMP_DIR
+        # This ensures the non-root container user has write permissions
+        temp_dir = tempfile.mkdtemp(prefix="youtube_download_", dir=str(settings.TEMP_DIR))
 
         try:
             if progress_callback:

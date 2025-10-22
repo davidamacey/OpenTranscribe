@@ -176,12 +176,14 @@ class Settings(BaseSettings):
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
+    TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 
     # Initialization (CORS and directories)
     def __init__(self, **data):
         super().__init__(**data)
         # Ensure directories exist
         self.UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
+        self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
     class Config:
         env_file = ".env"
