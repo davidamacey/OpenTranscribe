@@ -294,17 +294,16 @@ download_models() {
 
     # Determine GPU arguments
     local gpu_args="--gpus all"
-    local cuda_visible_devices=""
     if [ -n "$GPU_DEVICE_ID" ]; then
         gpu_args="--gpus device=${GPU_DEVICE_ID}"
-        cuda_visible_devices="${GPU_DEVICE_ID}"
         print_info "Using GPU ${GPU_DEVICE_ID} for model downloads"
     fi
 
     # Run as appuser (non-root) matching container security configuration
+    # Note: --gpus device=X remaps that GPU to index 0 inside container
     docker run --rm \
         $gpu_args \
-        ${cuda_visible_devices:+-e CUDA_VISIBLE_DEVICES="${cuda_visible_devices}"} \
+        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v2}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \

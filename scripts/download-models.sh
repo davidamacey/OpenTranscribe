@@ -160,12 +160,11 @@ download_models_docker() {
 
     # Run the download with real-time output
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
-    # Note: When using --gpus device=X, Docker sets CUDA_VISIBLE_DEVICES automatically
-    # But we set it explicitly for clarity and compatibility
-    local cuda_visible_devices="${GPU_DEVICE_ID:-0}"
+    # Note: When using --gpus device=X, Docker remaps that GPU to index 0 inside container
+    # So we always use CUDA_VISIBLE_DEVICES=0 inside the container, regardless of host GPU index
     docker run --rm \
         $gpu_args \
-        -e CUDA_VISIBLE_DEVICES="${cuda_visible_devices}" \
+        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${whisper_model}" \
         -e USE_GPU="${use_gpu}" \
