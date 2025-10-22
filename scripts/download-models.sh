@@ -142,8 +142,14 @@ download_models_docker() {
     local gpu_args=""
     if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
         use_gpu="true"
-        gpu_args="--gpus all"
-        print_info "GPU detected - using GPU for faster model initialization"
+        # Use specific GPU if GPU_DEVICE_ID is set, otherwise use all GPUs
+        if [ -n "$GPU_DEVICE_ID" ]; then
+            gpu_args="--gpus device=${GPU_DEVICE_ID}"
+            print_info "GPU detected - using GPU ${GPU_DEVICE_ID} for model initialization"
+        else
+            gpu_args="--gpus all"
+            print_info "GPU detected - using GPU for faster model initialization"
+        fi
     else
         print_info "No GPU detected - using CPU (this is fine, just slower)"
     fi
@@ -154,8 +160,12 @@ download_models_docker() {
 
     # Run the download with real-time output
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
+    # Note: When using --gpus device=X, Docker sets CUDA_VISIBLE_DEVICES automatically
+    # But we set it explicitly for clarity and compatibility
+    local cuda_visible_devices="${GPU_DEVICE_ID:-0}"
     docker run --rm \
         $gpu_args \
+        -e CUDA_VISIBLE_DEVICES="${cuda_visible_devices}" \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${whisper_model}" \
         -e USE_GPU="${use_gpu}" \
