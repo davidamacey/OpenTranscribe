@@ -485,7 +485,27 @@ To update AI models, you need internet access or a new model package:
 
 ## Uninstallation
 
-### Complete Removal
+### Automated Uninstallation (Recommended)
+
+**Run the uninstall script:**
+```bash
+cd /opt/opentranscribe
+sudo ./uninstall.sh
+```
+
+The uninstall script will:
+- Offer to create a database backup before removal
+- Stop all OpenTranscribe services
+- Remove Docker volumes (with confirmation)
+- Optionally remove Docker images
+- Remove the installation directory `/opt/opentranscribe/`
+- Optionally clean up unused Docker resources
+
+This is the safest and most complete way to uninstall OpenTranscribe.
+
+### Manual Uninstallation
+
+If you prefer to uninstall manually or the script is unavailable:
 
 **Stop and remove services:**
 ```bash
@@ -503,7 +523,8 @@ sudo rm -rf /opt/opentranscribe
 ```bash
 docker rmi davidamacey/opentranscribe-backend:latest
 docker rmi davidamacey/opentranscribe-frontend:latest
-docker rmi postgres:14-alpine redis:7-alpine minio/minio:latest
+docker rmi postgres:17.5-alpine redis:8.2.2-alpine3.22
+docker rmi minio/minio:RELEASE.2025-09-07T16-13-09Z
 docker rmi opensearchproject/opensearch:2.5.0
 ```
 
