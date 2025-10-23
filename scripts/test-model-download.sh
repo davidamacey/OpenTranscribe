@@ -8,7 +8,8 @@ echo "=== Testing Model Download ==="
 
 # Load .env for HF token
 if [ -f .env ]; then
-    export HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    export HUGGINGFACE_TOKEN
 fi
 
 # Create test cache directory

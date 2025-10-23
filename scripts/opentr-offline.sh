@@ -84,6 +84,7 @@ check_env() {
     fi
 
     # Check for HuggingFace token
+    # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
     source "$INSTALL_DIR/.env"
     if [ -z "$HUGGINGFACE_TOKEN" ]; then
         print_warning "HUGGINGFACE_TOKEN is not set in .env file"
@@ -180,7 +181,8 @@ cmd_health() {
 
     for service in "${services[@]}"; do
         if dc ps "$service" | grep -q "Up"; then
-            local health=$(dc ps "$service" | grep "$service" | awk '{print $6}')
+            local health
+            health=$(dc ps "$service" | grep "$service" | awk '{print $6}')
             if [[ "$health" == *"healthy"* ]]; then
                 echo -e "  ${GREEN}✓${NC} $service - healthy"
             elif [[ "$health" == *"unhealthy"* ]]; then
@@ -222,13 +224,13 @@ cmd_backup() {
     local backup_dir="$INSTALL_DIR/backups"
     mkdir -p "$backup_dir"
 
-    local backup_file="$backup_dir/opentranscribe_backup_$(date +%Y%m%d_%H%M%S).sql"
+    local backup_file
+    backup_file="$backup_dir/opentranscribe_backup_$(date +%Y%m%d_%H%M%S).sql"
 
-    dc exec -T postgres pg_dump -U postgres opentranscribe > "$backup_file"
-
-    if [ $? -eq 0 ]; then
+    if dc exec -T postgres pg_dump -U postgres opentranscribe > "$backup_file"; then
         print_success "Backup created: $backup_file"
-        local size=$(du -sh "$backup_file" | cut -f1)
+        local size
+        size=$(du -sh "$backup_file" | cut -f1)
         print_info "Backup size: $size"
     else
         print_error "Backup failed"

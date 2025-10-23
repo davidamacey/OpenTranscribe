@@ -50,7 +50,8 @@ fix_model_cache_permissions() {
   fi
 
   # Check current ownership
-  local current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
+  local current_owner
+  current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
 
   # If directory is owned by root (0) or doesn't match container user (1000), fix permissions
   if [ "$current_owner" = "0" ] || [ "$current_owner" != "1000" ]; then
@@ -161,7 +162,7 @@ start_logs() {
   docker compose logs -f backend &
 
   # Open frontend logs in a new terminal window
-  docker compose logs -f $frontend_service &
+  docker compose logs -f "$frontend_service" &
 
   # Open celery worker logs
   docker compose logs -f celery-worker &

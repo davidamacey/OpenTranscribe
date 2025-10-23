@@ -228,7 +228,7 @@ build_docker_images() {
     if [ "$SKIP_SECURITY_SCAN" != "true" ] && [ -d "${PROJECT_ROOT}/security-reports" ]; then
         echo ""
         print_info "Security Reports Generated:"
-        ls -lh "${PROJECT_ROOT}/security-reports" | tail -n +2 | awk '{printf "  %-40s %8s\n", $9, $5}'
+        find "${PROJECT_ROOT}/security-reports" -maxdepth 1 -type f -exec ls -lh {} \; | awk '{printf "  %-40s %8s\n", $9, $5}'
         echo ""
     fi
 }
@@ -272,7 +272,7 @@ build_offline_package() {
     if [ -d "${PROJECT_ROOT}/offline-package-build" ]; then
         echo ""
         print_info "Offline Package Created:"
-        ls -lh "${PROJECT_ROOT}/offline-package-build"/*.tar.xz* 2>/dev/null | awk '{printf "  %-60s %10s\n", $9, $5}' || print_warning "Package files not found"
+        find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz*" -type f -exec ls -lh {} \; 2>/dev/null | awk '{printf "  %-60s %10s\n", $9, $5}' || print_warning "Package files not found"
         echo ""
     fi
 }
@@ -315,7 +315,7 @@ generate_final_summary() {
         echo -e "\n  ${YELLOW}Security Reports:${NC}"
         echo "    📁 ${PROJECT_ROOT}/security-reports/"
         local report_count
-        report_count=$(ls -1 "${PROJECT_ROOT}/security-reports" 2>/dev/null | wc -l)
+        report_count=$(find "${PROJECT_ROOT}/security-reports" -maxdepth 1 -type f 2>/dev/null | wc -l)
         echo "    📊 ${report_count} report files generated"
     fi
 
@@ -323,7 +323,7 @@ generate_final_summary() {
     if [ -d "${PROJECT_ROOT}/offline-package-build" ]; then
         echo -e "\n  ${YELLOW}Offline Package:${NC}"
         local package_file
-        package_file=$(ls -1 "${PROJECT_ROOT}/offline-package-build"/*.tar.xz 2>/dev/null | head -1)
+        package_file=$(find "${PROJECT_ROOT}/offline-package-build" -maxdepth 1 -name "*.tar.xz" -type f 2>/dev/null | head -1)
         if [ -n "$package_file" ]; then
             local package_size
             package_size=$(du -sh "$package_file" 2>/dev/null | cut -f1)
@@ -436,7 +436,7 @@ interactive_setup() {
     echo "Current git commit: ${git_commit}"
 
     if [ -z "$VERSION" ]; then
-        read -p "Enter version tag (or press Enter to use git commit SHA): " VERSION
+        read -r -p "Enter version tag (or press Enter to use git commit SHA): " VERSION
         if [ -z "$VERSION" ]; then
             VERSION="$git_commit"
         fi

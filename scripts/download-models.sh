@@ -51,12 +51,15 @@ check_models_exist() {
 
     # Check if models directory exists and has content
     if [ -d "$MODEL_CACHE_DIR/huggingface" ] && [ -d "$MODEL_CACHE_DIR/torch" ]; then
-        local hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1)
-        local torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1)
+        local hf_size
+        local torch_size
+        hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1)
+        torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1)
 
         # If both directories have substantial content (>100MB combined), assume models exist
         if [ "$((hf_size + torch_size))" -gt 100000000 ]; then
-            local total_size=$(get_dir_size "$MODEL_CACHE_DIR")
+            local total_size
+            total_size=$(get_dir_size "$MODEL_CACHE_DIR")
             print_success "Found existing models ($total_size)"
             echo -e "${YELLOW}Do you want to skip model download and use existing models? (Y/n)${NC}"
             read -n 1 -r
@@ -84,7 +87,8 @@ check_huggingface_token() {
 
     # Check .env file
     if [ -f "$REPO_ROOT/.env" ]; then
-        local token=$(grep "^HUGGINGFACE_TOKEN=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        local token
+        token=$(grep "^HUGGINGFACE_TOKEN=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
         if [ -n "$token" ]; then
             export HUGGINGFACE_TOKEN="$token"
             print_success "HuggingFace token loaded from .env file"
@@ -131,7 +135,8 @@ download_models_docker() {
     # Get Whisper model from .env or use default
     local whisper_model="large-v2"
     if [ -f "$REPO_ROOT/.env" ]; then
-        local env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        local env_model
+        env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi
@@ -162,6 +167,7 @@ download_models_docker() {
     # IMPORTANT: Backend runs as 'appuser' (UID 1000), so mount to /home/appuser/.cache
     # Note: When using --gpus device=X, Docker remaps that GPU to index 0 inside container
     # So we always use CUDA_VISIBLE_DEVICES=0 inside the container, regardless of host GPU index
+    # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
         -e CUDA_VISIBLE_DEVICES=0 \
@@ -182,11 +188,12 @@ download_models_docker() {
 
     # Check if download succeeded
     if [ $docker_exit_code -eq 0 ]; then
-        local total_size=$(get_dir_size "$MODEL_CACHE_DIR")
+        local total_size
+        total_size=$(get_dir_size "$MODEL_CACHE_DIR")
         print_success "Models downloaded successfully ($total_size)"
 
         # Create marker file to indicate successful download
-        echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$MODEL_CACHE_DIR/.download_complete"
+        date -u +"%Y-%m-%dT%H:%M:%SZ" > "$MODEL_CACHE_DIR/.download_complete"
 
         return 0
     else
@@ -195,9 +202,12 @@ download_models_docker() {
         echo ""
 
         # Check if any models were partially downloaded
-        local hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1 || echo "0")
-        local torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1 || echo "0")
-        local partial_size=$(get_dir_size "$MODEL_CACHE_DIR")
+        local hf_size
+        local torch_size
+        local partial_size
+        hf_size=$(du -sb "$MODEL_CACHE_DIR/huggingface" 2>/dev/null | cut -f1 || echo "0")
+        torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1 || echo "0")
+        partial_size=$(get_dir_size "$MODEL_CACHE_DIR")
 
         if [ "$((hf_size + torch_size))" -gt 1000000 ]; then
             print_warning "Partial download detected ($partial_size)"
@@ -225,44 +235,15 @@ download_models_docker() {
     fi
 }
 
-download_models_local() {
-    print_header "Downloading AI Models (Local Python)"
-
-    print_info "Checking for Python and required packages..."
-
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python3 not found. Using Docker method instead..."
-        download_models_docker
-        return $?
-    fi
-
-    # Check for required packages
-    local missing_packages=()
-    python3 -c "import whisperx" 2>/dev/null || missing_packages+=("whisperx")
-    python3 -c "import pyannote.audio" 2>/dev/null || missing_packages+=("pyannote-audio")
-
-    if [ ${#missing_packages[@]} -gt 0 ]; then
-        print_warning "Missing Python packages: ${missing_packages[*]}"
-        print_info "Using Docker method instead (recommended)..."
-        download_models_docker
-        return $?
-    fi
-
-    # Set environment variables for model cache
-    export HF_HOME="$MODEL_CACHE_DIR/huggingface"
-    export TORCH_HOME="$MODEL_CACHE_DIR/torch"
-
-    # Run Python download script
-    print_info "Running model download script..."
-    python3 "$SCRIPT_DIR/download-models.py"
-}
-
 show_summary() {
     print_header "Model Download Summary"
 
-    local total_size=$(get_dir_size "$MODEL_CACHE_DIR")
-    local hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
-    local torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
+    local total_size
+    local hf_size
+    local torch_size
+    total_size=$(get_dir_size "$MODEL_CACHE_DIR")
+    hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
+    torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
 
     echo -e "${GREEN}✅ Model cache ready!${NC}"
     echo ""

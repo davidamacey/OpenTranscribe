@@ -65,7 +65,9 @@ validate_system() {
 
     # Check OS
     if [ -f /etc/os-release ]; then
+        # shellcheck source=/dev/null  # Runtime file, not available during static analysis
         . /etc/os-release
+        # shellcheck disable=SC2153  # NAME and VERSION are set by /etc/os-release
         print_info "Operating System: $NAME $VERSION"
 
         if [[ ! "$ID" =~ ^(ubuntu|debian)$ ]]; then
@@ -89,7 +91,8 @@ validate_system() {
         exit 1
     fi
 
-    local docker_version=$(docker --version | cut -d' ' -f3 | cut -d',' -f1)
+    local docker_version
+    docker_version=$(docker --version | cut -d' ' -f3 | cut -d',' -f1)
     print_success "Docker installed: $docker_version"
 
     # Check if Docker is running
@@ -105,15 +108,18 @@ validate_system() {
     if command_exists nvidia-smi; then
         print_info "Checking NVIDIA GPU..."
         if nvidia-smi > /dev/null 2>&1; then
-            local gpu_info=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+            local gpu_info
+            gpu_info=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
             print_success "GPU detected: $gpu_info"
 
             # Check NVIDIA Container Toolkit (check for package, not by running container)
             if dpkg -l | grep -q nvidia-container-toolkit; then
-                local toolkit_version=$(dpkg -l | grep nvidia-container-toolkit | awk '{print $3}')
+                local toolkit_version
+                toolkit_version=$(dpkg -l | grep nvidia-container-toolkit | awk '{print $3}')
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             elif rpm -qa | grep -q nvidia-container-toolkit; then
-                local toolkit_version=$(rpm -qa | grep nvidia-container-toolkit | head -1)
+                local toolkit_version
+                toolkit_version=$(rpm -qa | grep nvidia-container-toolkit | head -1)
                 print_success "NVIDIA Container Toolkit installed: $toolkit_version"
             else
                 print_warning "NVIDIA GPU detected but Container Toolkit not installed"
@@ -128,7 +134,8 @@ validate_system() {
     fi
 
     # Check disk space (need at least 80GB)
-    local available_space=$(df -BG /opt 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
+    local available_space
+    available_space=$(df -BG /opt 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
     if [ -z "$available_space" ]; then
         available_space=$(df -BG / 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
     fi
@@ -143,7 +150,8 @@ validate_system() {
 
     # Check Docker Compose
     if docker compose version > /dev/null 2>&1; then
-        local compose_version=$(docker compose version --short)
+        local compose_version
+        compose_version=$(docker compose version --short)
         print_success "Docker Compose installed: $compose_version"
     else
         print_error "Docker Compose not available"
@@ -172,7 +180,8 @@ verify_package() {
     cd "$SCRIPT_DIR"
 
     # Run checksum verification with detailed output
-    local checksum_output=$(sha256sum -c checksums.sha256 2>&1)
+    local checksum_output
+    checksum_output=$(sha256sum -c checksums.sha256 2>&1)
     local checksum_result=$?
 
     if [ $checksum_result -eq 0 ]; then
@@ -180,7 +189,7 @@ verify_package() {
     else
         print_error "Package integrity check failed"
         print_error "Details:"
-        echo "$checksum_output" | while read line; do
+        echo "$checksum_output" | while read -r line; do
             if [[ "$line" =~ FAILED ]]; then
                 print_error "  $line"
             fi
@@ -221,7 +230,8 @@ load_docker_images() {
 
     for image_file in "${images[@]}"; do
         current=$((current + 1))
-        local image_name=$(basename "$image_file" .tar | tr '__' ':')
+        local image_name
+        image_name=$(basename "$image_file" .tar | tr '__' ':')
 
         echo -ne "${BLUE}[INFO]${NC} [$current/$total] Loading: $image_name"
 
@@ -328,7 +338,8 @@ install_models() {
 
 select_gpu_device() {
     # Only prompt if GPU is available and multiple GPUs detected
-    local gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | wc -l)
+    local gpu_count
+    gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | wc -l)
 
     if [ "$gpu_count" -le 1 ]; then
         return 0
@@ -348,7 +359,7 @@ select_gpu_device() {
 
     # Prompt user for GPU selection
     while true; do
-        read -p "Enter GPU index to use [0-$((gpu_count-1))] (default: ${gpu_device_id}): " selected_gpu
+        read -r -p "Enter GPU index to use [0-$((gpu_count-1))] (default: ${gpu_device_id}): " selected_gpu
 
         # Use default if empty
         if [ -z "$selected_gpu" ]; then
@@ -374,8 +385,10 @@ select_gpu_device() {
     gpu_device_id=$selected_gpu
 
     # Get selected GPU details
-    local gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$gpu_device_id")
-    local gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$gpu_device_id")
+    local gpu_name
+    local gpu_memory
+    gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$gpu_device_id")
+    gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$gpu_device_id")
 
     echo
     print_success "Selected GPU ${gpu_device_id}: ${gpu_name} (${gpu_memory}MB)"
@@ -414,7 +427,8 @@ create_env_file() {
     local whisper_model="large-v2"
     if [ -f "$SCRIPT_DIR/models/model_manifest.json" ]; then
         # Extract whisper_model from JSON using grep and sed
-        local manifest_model=$(grep -o '"whisper_model"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/models/model_manifest.json" | sed 's/.*"whisper_model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        local manifest_model
+        manifest_model=$(grep -o '"whisper_model"[[:space:]]*:[[:space:]]*"[^"]*"' "$SCRIPT_DIR/models/model_manifest.json" | sed 's/.*"whisper_model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
         if [ -n "$manifest_model" ]; then
             whisper_model="$manifest_model"
             print_info "Using Whisper model from package: $whisper_model"

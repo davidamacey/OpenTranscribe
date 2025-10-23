@@ -119,7 +119,7 @@ create_backup() {
             print_info "Backup preserved at: $backup_file"
             echo ""
             print_warning "IMPORTANT: Move this backup file to a safe location before continuing!"
-            read -p "Press Enter to continue after saving the backup..."
+            read -r -p "Press Enter to continue after saving the backup..."
         else
             print_warning "Backup file is empty or failed to create"
             return 1
@@ -296,7 +296,7 @@ remove_installation() {
         echo -e "${YELLOW}IMPORTANT: Backups found in $BACKUP_DIR${NC}"
         echo "Make sure you have saved these backups to another location!"
         echo ""
-        read -p "Press Enter to continue (backups will be deleted)..."
+        read -r -p "Press Enter to continue (backups will be deleted)..."
     fi
 
     # Remove the entire installation directory

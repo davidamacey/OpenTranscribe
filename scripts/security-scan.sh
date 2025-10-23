@@ -162,7 +162,8 @@ run_dockle() {
     print_header "Running Dockle on ${image}"
 
     local output_file="${OUTPUT_DIR}/${component}-dockle.json"
-    local abs_output_dir=$(cd "${OUTPUT_DIR}" && pwd)
+    local abs_output_dir
+    abs_output_dir=$(cd "${OUTPUT_DIR}" && pwd)
 
     # Run Dockle via Docker with mounted output directory and increased timeout
     if docker run --rm \
@@ -216,7 +217,6 @@ scan_trivy() {
     print_header "Scanning ${image} with Trivy"
 
     local json_output="${OUTPUT_DIR}/${component}-trivy.json"
-    local html_output="${OUTPUT_DIR}/${component}-trivy.html"
     local txt_output="${OUTPUT_DIR}/${component}-trivy.txt"
 
     # Run Trivy scan with multiple output formats
@@ -243,8 +243,10 @@ scan_trivy() {
     print_info "  - Text: ${txt_output}"
 
     # Check for CRITICAL vulnerabilities
-    local critical_count=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "${json_output}")
-    local high_count=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "${json_output}")
+    local critical_count
+    local high_count
+    critical_count=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "${json_output}")
+    high_count=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' "${json_output}")
 
     print_info "Found ${critical_count} CRITICAL and ${high_count} HIGH severity vulnerabilities"
 
@@ -293,8 +295,10 @@ scan_grype() {
     print_info "  - Text: ${txt_output}"
 
     # Check for CRITICAL vulnerabilities
-    local critical_count=$(jq '[.matches[]? | select(.vulnerability.severity == "Critical")] | length' "${json_output}")
-    local high_count=$(jq '[.matches[]? | select(.vulnerability.severity == "High")] | length' "${json_output}")
+    local critical_count
+    local high_count
+    critical_count=$(jq '[.matches[]? | select(.vulnerability.severity == "Critical")] | length' "${json_output}")
+    high_count=$(jq '[.matches[]? | select(.vulnerability.severity == "High")] | length' "${json_output}")
 
     print_info "Found ${critical_count} Critical and ${high_count} High severity vulnerabilities"
 
@@ -358,7 +362,8 @@ scan_component() {
     echo ""
 
     # Step 3: Generate SBOM
-    local sbom_file=$(generate_sbom "${image}" "${component}")
+    local sbom_file
+    sbom_file=$(generate_sbom "${image}" "${component}")
     echo ""
 
     # Step 4: Scan with Trivy
@@ -386,14 +391,14 @@ generate_summary() {
     echo ""
 
     print_info "Report files:"
-    ls -lh "${OUTPUT_DIR}" | tail -n +2
+    find "${OUTPUT_DIR}" -maxdepth 1 -type f -exec ls -lh {} \; | awk '{printf "  %-40s %8s\n", $9, $5}'
     echo ""
 
     # Generate HTML summary if reports exist
     if [ -f "${OUTPUT_DIR}/backend-trivy.json" ] || [ -f "${OUTPUT_DIR}/frontend-trivy.json" ]; then
         print_info "To view detailed reports:"
         for file in "${OUTPUT_DIR}"/*.json; do
-            [ -f "$file" ] && print_info "  - $(basename ${file})"
+            [ -f "$file" ] && print_info "  - $(basename "${file}")"
         done
     fi
 }

@@ -63,7 +63,7 @@ check_docker_login() {
 detect_changes() {
     local component=$1
 
-    if [ -z "$(git status --porcelain ${component}/)" ]; then
+    if [ -z "$(git status --porcelain "${component}/")" ]; then
         print_info "No uncommitted changes in ${component}"
         # Check last commit
         if git diff --name-only HEAD~1 HEAD | grep -q "^${component}/"; then

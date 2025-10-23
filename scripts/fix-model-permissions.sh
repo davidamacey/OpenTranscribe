@@ -61,12 +61,10 @@ fi
 fix_permissions_docker() {
     echo -e "${GREEN}Fixing permissions using Docker container...${NC}"
 
-    docker run --rm \
+    if docker run --rm \
         -v "$MODEL_CACHE_DIR:/models" \
         busybox:latest \
-        sh -c "chown -R 1000:1000 /models && find /models -type d -exec chmod 755 {} \; && find /models -type f -exec chmod 644 {} \;"
-
-    if [ $? -eq 0 ]; then
+        sh -c "chown -R 1000:1000 /models && find /models -type d -exec chmod 755 {} \; && find /models -type f -exec chmod 644 {} \;"; then
         echo -e "${GREEN}✓ Permissions fixed successfully!${NC}"
         return 0
     else
@@ -84,11 +82,9 @@ fix_permissions_sudo() {
         return 1
     fi
 
-    sudo chown -R 1000:1000 "$MODEL_CACHE_DIR"
-    sudo find "$MODEL_CACHE_DIR" -type d -exec chmod 755 {} \;
-    sudo find "$MODEL_CACHE_DIR" -type f -exec chmod 644 {} \;
-
-    if [ $? -eq 0 ]; then
+    if sudo chown -R 1000:1000 "$MODEL_CACHE_DIR" && \
+       sudo find "$MODEL_CACHE_DIR" -type d -exec chmod 755 {} \; && \
+       sudo find "$MODEL_CACHE_DIR" -type f -exec chmod 644 {} \;; then
         echo -e "${GREEN}✓ Permissions fixed successfully using sudo!${NC}"
         return 0
     else
