@@ -1,0 +1,54 @@
+{
+  "image": "davidamacey/opentranscribe-backend:latest",
+  "summary": {
+    "fatal": 1,
+    "warn": 1,
+    "info": 2,
+    "skip": 0,
+    "pass": 12
+  },
+  "details": [
+    {
+      "code": "CIS-DI-0010",
+      "title": "Do not store credential in environment variables/files",
+      "level": "FATAL",
+      "alerts": [
+        "Suspicious filename found : home/appuser/.local/lib/python3.12/site-packages/scipy/_lib/cobyqa/settings.py (You can suppress it with \"-af settings.py\")"
+      ]
+    },
+    {
+      "code": "DKL-DI-0006",
+      "title": "Avoid latest tag",
+      "level": "WARN",
+      "alerts": [
+        "Avoid 'latest' tag"
+      ]
+    },
+    {
+      "code": "CIS-DI-0005",
+      "title": "Enable Content trust for Docker",
+      "level": "INFO",
+      "alerts": [
+        "export DOCKER_CONTENT_TRUST=1 before docker pull/build"
+      ]
+    },
+    {
+      "code": "CIS-DI-0008",
+      "title": "Confirm safety of setuid/setgid files",
+      "level": "INFO",
+      "alerts": [
+        "setuid file: urwxr-xr-x usr/bin/su",
+        "setuid file: urwxr-xr-x usr/bin/mount",
+        "setgid file: grwxr-xr-x usr/bin/chage",
+        "setuid file: urwxr-xr-x usr/bin/chfn",
+        "setuid file: urwxr-xr-x usr/bin/newgrp",
+        "setuid file: urwxr-xr-x usr/bin/umount",
+        "setuid file: urwxr-xr-x usr/bin/chsh",
+        "setgid file: grwxr-xr-x usr/bin/expiry",
+        "setgid file: grwxr-xr-x usr/sbin/unix_chkpwd",
+        "setuid file: urwxr-xr-x usr/bin/passwd",
+        "setuid file: urwxr-xr-x usr/bin/gpasswd"
+      ]
+    }
+  ]
+}
