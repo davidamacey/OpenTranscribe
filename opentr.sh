@@ -5,6 +5,7 @@
 # Usage: ./opentr.sh [command] [options]
 
 # Source common functions
+# shellcheck source=scripts/common.sh
 source ./scripts/common.sh
 
 #######################
@@ -102,7 +103,8 @@ detect_and_configure_hardware() {
   fi
 
   # Set additional environment variables
-  export TARGETPLATFORM="linux/$([[ "$ARCH" == "arm64" ]] && echo "arm64" || echo "amd64")"
+  TARGETPLATFORM="linux/$([[ "$ARCH" == "arm64" ]] && echo "arm64" || echo "amd64")"
+  export TARGETPLATFORM
 
   echo "📋 Hardware Configuration:"
   echo "  Platform: $PLATFORM"
@@ -224,11 +226,11 @@ reset_and_init() {
   echo "⏳ Waiting for backend to be ready..."
   wait_for_backend_health
 
-  echo "🗄️ Setting up database..."
-  # Execute SQL dump file to initialize the database
-  docker compose -f $COMPOSE_FILE exec -T postgres psql -U postgres -d opentranscribe < ./database/init_db.sql
+  # Note: Database tables are automatically created by PostgreSQL's entrypoint
+  # from /docker-entrypoint-initdb.d/init_db.sql on first container start
+  # (when postgres_data volume is empty after 'down -v')
 
-  echo "👤 Creating admin user..."
+  echo "👤 Creating admin user and initial data..."
   docker compose -f $COMPOSE_FILE exec backend python -m app.initial_data
 
   echo "✅ Setup complete!"
@@ -249,9 +251,7 @@ backup_database() {
   echo "📦 Creating database backup: ${BACKUP_FILE}..."
   mkdir -p ./backups
 
-  docker compose exec -T postgres pg_dump -U postgres opentranscribe > ./backups/${BACKUP_FILE}
-
-  if [ $? -eq 0 ]; then
+  if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
     echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
   else
     echo "❌ Backup failed."
@@ -280,9 +280,7 @@ restore_database() {
   docker compose stop backend celery-worker
 
   # Restore the database
-  cat $BACKUP_FILE | docker compose exec -T postgres psql -U postgres opentranscribe
-
-  if [ $? -eq 0 ]; then
+  if docker compose exec -T postgres psql -U postgres opentranscribe < "$BACKUP_FILE"; then
     echo "✅ Database restored successfully."
     echo "🔄 Restarting services..."
     docker compose start backend celery-worker
@@ -359,14 +357,21 @@ restart_all() {
   docker compose ps
 }
 
-# Function to initialize the database without resetting containers
+# Function to manually initialize/update database schema without resetting containers
+# Use this when:
+#   - Adding new tables to existing database
+#   - Recovering from schema corruption
+#   - Updating schema without losing data (idempotent SQL with IF NOT EXISTS)
+# Note: On fresh install/reset, PostgreSQL automatically runs init_db.sql via entrypoint
 init_db() {
-  echo "🗄️ Initializing database..."
+  echo "🗄️ Manually initializing/updating database schema..."
+  echo "   (This is redundant after 'reset' but useful for schema updates)"
 
-  # Execute SQL dump file to initialize the database
+  # Execute SQL dump file to initialize/update the database
+  # SQL is idempotent (uses IF NOT EXISTS) so safe to run multiple times
   docker compose exec -T postgres psql -U postgres -d opentranscribe < ./database/init_db.sql
 
-  echo "👤 Creating admin user..."
+  echo "👤 Creating admin user and initial data..."
   docker compose exec backend python -m app.initial_data
 
   echo "✅ Database initialization complete."
@@ -446,7 +451,7 @@ check_docker
 case "$1" in
   start)
     ENV=${2:-dev}
-    start_app $ENV
+    start_app "$ENV"
     ;;
 
   stop)
@@ -462,7 +467,7 @@ case "$1" in
     echo "⚠️ Warning: This will delete all data! Continue? (y/n)"
     read -r confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
-      reset_and_init $ENV
+      reset_and_init "$ENV"
     else
       echo "❌ Reset cancelled."
     fi
@@ -476,7 +481,7 @@ case "$1" in
       docker compose -f $COMPOSE_FILE logs -f
     else
       echo "📋 Showing logs for $SERVICE... (press Ctrl+C to exit)"
-      docker compose -f $COMPOSE_FILE logs -f $SERVICE
+      docker compose -f $COMPOSE_FILE logs -f "$SERVICE"
     fi
     ;;
 
@@ -490,7 +495,7 @@ case "$1" in
     SERVICE=${2:-backend}
     echo "🔧 Opening shell in $SERVICE container..."
     COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE exec $SERVICE /bin/bash || docker compose -f $COMPOSE_FILE exec $SERVICE /bin/sh
+    docker compose -f $COMPOSE_FILE exec "$SERVICE" /bin/bash || docker compose -f $COMPOSE_FILE exec "$SERVICE" /bin/sh
     ;;
 
   backup)
@@ -498,7 +503,7 @@ case "$1" in
     ;;
 
   restore)
-    restore_database $2
+    restore_database "$2"
     ;;
 
   restart-backend)
