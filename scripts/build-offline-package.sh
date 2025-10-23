@@ -15,7 +15,8 @@ NC='\033[0m' # No Color
 
 # Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
 if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
-    export HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    export HUGGINGFACE_TOKEN
 fi
 
 # Configuration
@@ -23,20 +24,6 @@ VERSION="${1:-$(git rev-parse --short HEAD)}"
 PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
 BUILD_DIR="./offline-package-build"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"
-
-# Required files and directories
-CONFIG_FILES=(
-    "docker-compose.offline.yml"
-    ".env"
-    "database/init_db.sql"
-    "frontend/nginx.conf"
-)
-
-SCRIPT_FILES=(
-    "scripts/common.sh"
-    "scripts/download-models.py"
-    "scripts/fix-model-permissions.sh"
-)
 
 #######################
 # HELPER FUNCTIONS
@@ -118,7 +105,8 @@ preflight_checks() {
     print_success "Docker is running"
 
     # Check disk space (need at least 80GB free)
-    local available_space=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
+    local available_space
+    available_space=$(df -BG . | tail -1 | awk '{print $4}' | sed 's/G//')
     if [ "$available_space" -lt 80 ]; then
         print_warning "Less than 80GB free space available (${available_space}GB)"
         print_warning "Package building may fail if you run out of space"
@@ -160,7 +148,7 @@ extract_docker_images() {
     print_info "Source: docker-compose.yml (single source of truth)"
 
     # Get infrastructure images from main docker-compose.yml
-    INFRASTRUCTURE_IMAGES=($(extract_infrastructure_images))
+    mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
     # Add production application images (these use 'build:' in dev, pre-built images in prod)
     APPLICATION_IMAGES=(
@@ -225,7 +213,8 @@ pull_and_save_images() {
 
     for image in "${IMAGES[@]}"; do
         current=$((current + 1))
-        local image_file=$(echo "$image" | tr '/:' '__')
+        local image_file
+        image_file=$(echo "$image" | tr '/:' '__')
         local output_path="${PACKAGE_DIR}/docker-images/${image_file}.tar"
 
         print_info "[$current/$total_images] Processing: $image"
@@ -244,7 +233,8 @@ pull_and_save_images() {
             exit 1
         fi
 
-        local size=$(get_dir_size "$output_path")
+        local size
+        size=$(get_dir_size "$output_path")
         print_success "  Saved ($size)"
     done
 
@@ -329,7 +319,7 @@ select_whisper_model_for_offline() {
 
     # Prompt user for model selection
     while true; do
-        read -p "Select model for offline package (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
+        read -r -p "Select model for offline package (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
 
         # Use recommended if user just presses Enter
         if [ -z "$user_model" ]; then
@@ -358,6 +348,94 @@ select_whisper_model_for_offline() {
     # Export for use in download_models
     export WHISPER_MODEL
     echo ""
+}
+
+select_gpu_device_for_build() {
+    print_header "GPU Selection for Model Downloads"
+
+    # Check if nvidia-smi is available
+    if ! command_exists nvidia-smi; then
+        print_warning "nvidia-smi not found - GPU not available"
+        print_info "Model downloads will use CPU mode (slower)"
+        export GPU_DEVICE_ID=""
+        return 0
+    fi
+
+    # Check if any GPUs are detected
+    local gpu_count
+    gpu_count=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits 2>/dev/null | wc -l)
+
+    if [ "$gpu_count" -eq 0 ]; then
+        print_warning "No NVIDIA GPUs detected"
+        print_info "Model downloads will use CPU mode (slower)"
+        export GPU_DEVICE_ID=""
+        return 0
+    fi
+
+    # Single GPU - use it automatically
+    if [ "$gpu_count" -eq 1 ]; then
+        export GPU_DEVICE_ID="0"
+        local gpu_name
+        local gpu_memory
+        gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i 0 2>/dev/null)
+        gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i 0 2>/dev/null)
+        print_success "Using GPU 0: ${gpu_name} (${gpu_memory}MB)"
+        return 0
+    fi
+
+    # Multiple GPUs - prompt user to select
+    echo
+    print_info "Multiple GPUs Detected: $gpu_count GPUs available"
+    echo
+    print_info "Available GPUs:"
+    nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader | while IFS=, read -r idx name mem_total mem_free; do
+        echo "  [${idx}] ${name} (${mem_total} total, ${mem_free} free)"
+    done
+
+    echo
+    print_info "Select which GPU to use for model downloads"
+    print_warning "Choose a GPU that is not heavily used by other tasks"
+    echo
+
+    local selected_gpu="0"
+
+    # Prompt user for GPU selection
+    while true; do
+        read -r -p "Enter GPU index to use [0-$((gpu_count-1))] (default: 0): " user_input
+
+        # Use default if empty
+        if [ -z "$user_input" ]; then
+            selected_gpu="0"
+            break
+        fi
+
+        # Validate input is a number
+        if ! [[ "$user_input" =~ ^[0-9]+$ ]]; then
+            print_error "Invalid input. Please enter a number."
+            continue
+        fi
+
+        # Validate GPU index is within range
+        if [ "$user_input" -ge 0 ] && [ "$user_input" -lt "$gpu_count" ]; then
+            selected_gpu="$user_input"
+            break
+        else
+            print_error "Invalid GPU index. Please enter a number between 0 and $((gpu_count-1))."
+        fi
+    done
+
+    # Export GPU_DEVICE_ID for use in download_models
+    export GPU_DEVICE_ID="$selected_gpu"
+
+    # Get selected GPU details
+    local gpu_name
+    local gpu_memory
+    gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "$GPU_DEVICE_ID" 2>/dev/null)
+    gpu_memory=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "$GPU_DEVICE_ID" 2>/dev/null)
+
+    echo
+    print_success "Selected GPU ${GPU_DEVICE_ID}: ${gpu_name} (${gpu_memory}MB)"
+    echo
 }
 
 download_models() {
@@ -394,7 +472,7 @@ download_models() {
     # Run as appuser (non-root) matching container security configuration
     # Note: --gpus device=X remaps that GPU to index 0 inside container
     docker run --rm \
-        $gpu_args \
+        "$gpu_args" \
         -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v2}" \
@@ -435,7 +513,8 @@ download_models() {
     print_info "Cleaning up temporary files..."
     rm -rf "${temp_model_cache}"
 
-    local model_size=$(get_dir_size "${PACKAGE_DIR}/models")
+    local model_size
+    model_size=$(get_dir_size "${PACKAGE_DIR}/models")
     print_success "Models downloaded and packaged ($model_size)"
 }
 
@@ -456,7 +535,8 @@ copy_configuration() {
     # Extract and sync each infrastructure image version
     for img in "${INFRASTRUCTURE_IMAGES[@]}"; do
         # Get service name and image (e.g., postgres:17.5-alpine -> postgres and full image)
-        local service_name=$(echo "$img" | cut -d: -f1 | cut -d/ -f1)
+        local service_name
+        service_name=$(echo "$img" | cut -d: -f1 | cut -d/ -f1)
 
         # Update the image line in offline compose file for this service
         # Find the service block and update its image line
@@ -467,7 +547,7 @@ copy_configuration() {
 
     # Copy and template .env file
     print_info "Creating .env template..."
-    cat .env | sed 's/=.*/=/' > "${PACKAGE_DIR}/config/.env.template"
+    sed 's/=.*/=/' .env > "${PACKAGE_DIR}/config/.env.template"
 
     # Copy database init
     print_info "Copying database initialization..."
@@ -573,8 +653,10 @@ compress_package() {
 
     cd - > /dev/null
 
-    local compressed_size=$(get_dir_size "$output_file")
-    local uncompressed_size=$(get_dir_size "$PACKAGE_DIR")
+    local compressed_size
+    local uncompressed_size
+    compressed_size=$(get_dir_size "$output_file")
+    uncompressed_size=$(get_dir_size "$PACKAGE_DIR")
 
     print_success "Package compressed"
     print_info "Uncompressed size: $uncompressed_size"
@@ -608,6 +690,7 @@ main() {
     extract_docker_images
     setup_directories
     select_whisper_model_for_offline
+    select_gpu_device_for_build
     pull_and_save_images
     download_models
     copy_configuration
