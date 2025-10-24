@@ -18,13 +18,13 @@
   // Validation
   let emailValid = true;
   let passwordValid = true;
-  
+
   // Focus the email field on mount
   onMount(() => {
     const emailInput = document.getElementById('email');
     if (emailInput) emailInput.focus();
   });
-  
+
   // Validate email format
   /**
    * Validates an email address format
@@ -35,16 +35,16 @@
     const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return regex.test(String(email).toLowerCase());
   }
-  
+
   // Check form validity
   function validateForm() {
     formSubmitted = true;
     emailValid = email.trim() !== '' && validateEmail(email);
     passwordValid = password.trim() !== '';
-    
+
     return emailValid && passwordValid;
   }
-  
+
   // Handle form submission
   async function handleSubmit() {
     successMessage = "";
@@ -107,7 +107,7 @@
       loading = false;
     }
   }
-  
+
   // Toggle password visibility
   function togglePasswordVisibility() {
     showPassword = !showPassword;
@@ -123,7 +123,7 @@
       <h1>Login</h1>
       <p>Sign in to your account</p>
     </div>
-    
+
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if successMessage}
         <div class="success-message" role="alert" aria-live="polite">
@@ -133,13 +133,13 @@
           <span>{successMessage}</span>
         </div>
       {/if}
-      
+
       <div class="form-group {!emailValid && formSubmitted ? 'has-error' : ''}">
         <label for="email">Email</label>
-        <input 
-          type="email" 
-          id="email" 
-          bind:value={email} 
+        <input
+          type="email"
+          id="email"
+          bind:value={email}
           placeholder="Enter your email"
           aria-invalid={!emailValid && formSubmitted}
           autocomplete="email"
@@ -149,14 +149,15 @@
           <div class="field-error">Please enter a valid email address</div>
         {/if}
       </div>
-      
+
       <div class="form-group {!passwordValid && formSubmitted ? 'has-error' : ''}">
         <div class="password-header">
           <label for="password">Password</label>
-          <button 
-            type="button" 
-            class="toggle-password" 
+          <button
+            type="button"
+            class="toggle-password"
             on:click={togglePasswordVisibility}
+            tabindex="-1"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             title={showPassword ? 'Hide password text' : 'Show password text'}
           >
@@ -178,20 +179,20 @@
           </button>
         </div>
         {#if showPassword}
-          <input 
+          <input
             type="text"
-            id="password" 
-            bind:value={password} 
+            id="password"
+            bind:value={password}
             placeholder="Enter your password"
             aria-invalid={!passwordValid && formSubmitted}
             autocomplete="current-password"
             title="Enter your account password"
           />
         {:else}
-          <input 
+          <input
             type="password"
-            id="password" 
-            bind:value={password} 
+            id="password"
+            bind:value={password}
             placeholder="Enter your password"
             aria-invalid={!passwordValid && formSubmitted}
             autocomplete="current-password"
@@ -202,10 +203,10 @@
           <div class="field-error">Password is required</div>
         {/if}
       </div>
-      
-      <button 
-        type="submit" 
-        class="auth-button" 
+
+      <button
+        type="submit"
+        class="auth-button"
         disabled={loading}
         title="Sign in to your OpenTranscribe account"
       >
@@ -216,7 +217,7 @@
         {/if}
       </button>
     </form>
-    
+
     <div class="auth-links">
       <a
         href="/register"
@@ -236,7 +237,7 @@
     padding: 1rem;
     background-color: var(--background-color);
   }
-  
+
   .auth-card {
     background-color: var(--surface-color);
     border-radius: 8px;
@@ -245,40 +246,40 @@
     max-width: 400px;
     padding: 2rem;
   }
-  
+
   .auth-header {
     text-align: center;
     margin-bottom: 2rem;
   }
-  
+
   .auth-header h1 {
     font-size: 1.5rem;
     color: var(--text-color);
     margin-bottom: 0.5rem;
   }
-  
+
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
   }
-  
+
   .auth-form {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
-  
+
   .form-group {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .form-group label {
     font-size: 0.9rem;
     font-weight: 500;
   }
-  
+
   .form-group input {
     padding: 0.75rem 1rem;
     border: 1px solid var(--border-color);
@@ -286,12 +287,12 @@
     font-size: 1rem;
     transition: border-color 0.2s;
   }
-  
+
   .form-group input:focus {
     outline: none;
     border-color: var(--primary-color);
   }
-  
+
   .auth-button {
     background-color: #3b82f6;
     color: white;
@@ -308,37 +309,37 @@
     justify-content: center;
     gap: 0.5rem;
   }
-  
+
   .auth-button:hover:not(:disabled) {
     background-color: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .auth-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .auth-button:disabled {
     background-color: var(--border-color);
     cursor: not-allowed;
   }
-  
-  
+
+
   .auth-links {
     margin-top: 1.5rem;
     text-align: center;
     color: var(--text-light);
   }
-  
-  
+
+
   .password-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.5rem;
   }
-  
+
   .toggle-password {
     background: none;
     border: none;
@@ -350,21 +351,21 @@
     border-radius: 4px;
     transition: background-color 0.2s;
   }
-  
+
   .toggle-password:hover {
     background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
   }
-  
+
   .field-error {
     color: var(--error-color);
     font-size: 0.85rem;
     margin-top: 0.25rem;
   }
-  
+
   .has-error input {
     border-color: var(--error-color);
   }
-  
+
   .success-message {
     background-color: var(--success-color-light);
     color: var(--success-color);
@@ -376,12 +377,12 @@
     gap: 0.5rem;
     font-weight: 500;
   }
-  
+
   .success-message svg {
     flex-shrink: 0;
     opacity: 0.8;
   }
-  
+
   .spinner {
     display: inline-block;
     width: 1rem;
@@ -392,7 +393,7 @@
     animation: spin 1s ease-in-out infinite;
     margin-right: 0.5rem;
   }
-  
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
@@ -401,7 +402,7 @@
     text-align: center;
     margin-bottom: 1.5rem;
   }
-  
+
   .auth-logo .logo-banner {
     height: 60px;
     width: auto;

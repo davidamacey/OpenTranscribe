@@ -17,7 +17,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-5176}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -34,8 +34,8 @@ services:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_PORT:-5178}:9000"
+      - "${MINIO_CONSOLE_PORT:-5179}:9001"
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -48,7 +48,7 @@ services:
     pull_policy: never
     restart: always
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-5177}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -73,8 +73,8 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "${OPENSEARCH_PORT:-9200}:9200"
-      - "${OPENSEARCH_ADMIN_PORT:-9600}:9600"
+      - "${OPENSEARCH_PORT:-5180}:9200"
+      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
@@ -91,7 +91,7 @@ services:
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "${BACKEND_PORT:-5174}:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -228,7 +228,7 @@ services:
     pull_policy: never
     restart: always
     ports:
-      - "${FRONTEND_PORT:-80}:8080"
+      - "${FRONTEND_PORT:-5173}:8080"
     environment:
       - NODE_ENV=production
     depends_on:
@@ -253,7 +253,7 @@ services:
       --db=/app/flower.db
       --broker=redis://redis:6379/0
     ports:
-      - "${FLOWER_PORT:-5555}:5555"
+      - "${FLOWER_PORT:-5175}:5555"
     depends_on:
       - redis
       - celery-worker

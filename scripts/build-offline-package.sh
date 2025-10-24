@@ -471,8 +471,9 @@ download_models() {
 
     # Run as appuser (non-root) matching container security configuration
     # Note: --gpus device=X remaps that GPU to index 0 inside container
+    # shellcheck disable=SC2086
     docker run --rm \
-        "$gpu_args" \
+        $gpu_args \
         -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v2}" \

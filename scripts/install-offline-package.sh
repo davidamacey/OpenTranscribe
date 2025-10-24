@@ -444,27 +444,27 @@ create_env_file() {
 
 # Database Configuration
 POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
+POSTGRES_PORT=5176
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 POSTGRES_DB=opentranscribe
 
 # MinIO Object Storage
 MINIO_HOST=minio
-MINIO_PORT=9000
-MINIO_CONSOLE_PORT=9001
+MINIO_PORT=5178
+MINIO_CONSOLE_PORT=5179
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=$(openssl rand -hex 16)
 MEDIA_BUCKET_NAME=opentranscribe
 
 # Redis Configuration
 REDIS_HOST=redis
-REDIS_PORT=6379
+REDIS_PORT=5177
 
 # OpenSearch Configuration
 OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=9200
-OPENSEARCH_ADMIN_PORT=9600
+OPENSEARCH_PORT=5180
+OPENSEARCH_ADMIN_PORT=5181
 
 # JWT Authentication
 JWT_SECRET_KEY=$(openssl rand -hex 32)
