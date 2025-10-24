@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2025-10-22T19:34:10.921150993-04:00",
+  "CreatedAt": "2025-10-23T22:31:42.042318702-04:00",
   "ArtifactName": "davidamacey/opentranscribe-frontend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 128708608,
+    "Size": 128709632,
     "OS": {
       "Family": "alpine",
       "Name": "3.22.2"
     },
-    "ImageID": "sha256:8f39ddf96e8894c6075af37ada0b4e7095e43ab99c5baa3cfbf6e049ab6cfb9e",
+    "ImageID": "sha256:e37b8f59f167db4dd392603af98a7ab5be7bf9cca62ec951e9285ba87baa8b02",
     "DiffIDs": [
       "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1",
       "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a",
@@ -19,19 +19,19 @@
       "sha256:dc45ec6c902bb29d6c9884da6e5caed40f6cc1bb96ee4d7518197d4094153090",
       "sha256:1704c5a3d8da4ae6352d5eb6964facf4b1ffb3af8ae77d78b0d869ae1315f211",
       "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e",
-      "sha256:979f96a163893865a8647eae6138c29092b0e3394ca580b7760bc104483097f9",
-      "sha256:152463d5ddc965abf7a84cb784245e9f5086d4f4e7d8969b75ec61ee19c78d05",
-      "sha256:a3c717499e98e51b91f66eefb0e097a047483cba782abc936b10a68a2994e2d1"
+      "sha256:c04c9c332cb2baee643e31e50792427b1aac6199e2ffa653b5296bfa4eefd847",
+      "sha256:002337ef0912b4ca9ded9f55c5c8acaac464931825ed7b9ac143afaed9187efa",
+      "sha256:e8f883e12fd0991a91e1092f79b0aa18fe678ce1d9e30a892c614d4bfd71fdff"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-frontend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-frontend@sha256:bebe6cc38770c7fe94510ea832dfb05bc5e6cd2e859334832ffb1fce5acdf1c2"
+      "davidamacey/opentranscribe-frontend@sha256:845939451085af98c14e6e7ddffcc8c0da872b4ed8155a5fe1e5c8014a1eb10f"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2025-10-22T23:27:53.358411321Z",
+      "created": "2025-10-24T02:31:06.053926716Z",
       "history": [
         {
           "created": "2025-10-07T21:06:46Z",
@@ -140,46 +140,46 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-22T23:27:52Z",
+          "created": "2025-10-24T02:31:05Z",
           "created_by": "LABEL org.opencontainers.image.title=OpenTranscribe Frontend org.opencontainers.image.description=Svelte-based Progressive Web App for AI-powered transcription org.opencontainers.image.vendor=OpenTranscribe org.opencontainers.image.authors=OpenTranscribe Contributors org.opencontainers.image.licenses=MIT org.opencontainers.image.source=https://github.com/davidamacey/OpenTranscribe org.opencontainers.image.documentation=https://github.com/davidamacey/OpenTranscribe/blob/master/README.md",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-22T23:27:52Z",
+          "created": "2025-10-24T02:31:05Z",
           "created_by": "COPY /app/dist /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-22T23:27:52Z",
+          "created": "2025-10-24T02:31:05Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-22T23:27:53Z",
+          "created": "2025-10-24T02:31:06Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-22T23:27:53Z",
+          "created": "2025-10-24T02:31:06Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-22T23:27:53Z",
+          "created": "2025-10-24T02:31:06Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-22T23:27:53Z",
+          "created": "2025-10-24T02:31:06Z",
           "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1\"] \"30s\" \"3s\" \"5s\" \"0s\" '\\x03'}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-22T23:27:53Z",
+          "created": "2025-10-24T02:31:06Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -197,9 +197,9 @@
           "sha256:dc45ec6c902bb29d6c9884da6e5caed40f6cc1bb96ee4d7518197d4094153090",
           "sha256:1704c5a3d8da4ae6352d5eb6964facf4b1ffb3af8ae77d78b0d869ae1315f211",
           "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e",
-          "sha256:979f96a163893865a8647eae6138c29092b0e3394ca580b7760bc104483097f9",
-          "sha256:152463d5ddc965abf7a84cb784245e9f5086d4f4e7d8969b75ec61ee19c78d05",
-          "sha256:a3c717499e98e51b91f66eefb0e097a047483cba782abc936b10a68a2994e2d1"
+          "sha256:c04c9c332cb2baee643e31e50792427b1aac6199e2ffa653b5296bfa4eefd847",
+          "sha256:002337ef0912b4ca9ded9f55c5c8acaac464931825ed7b9ac143afaed9187efa",
+          "sha256:e8f883e12fd0991a91e1092f79b0aa18fe678ce1d9e30a892c614d4bfd71fdff"
         ]
       },
       "config": {
@@ -283,16 +283,16 @@
         "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
       },
       {
-        "Size": 37277696,
-        "DiffID": "sha256:979f96a163893865a8647eae6138c29092b0e3394ca580b7760bc104483097f9"
+        "Size": 37278208,
+        "DiffID": "sha256:c04c9c332cb2baee643e31e50792427b1aac6199e2ffa653b5296bfa4eefd847"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:152463d5ddc965abf7a84cb784245e9f5086d4f4e7d8969b75ec61ee19c78d05"
+        "DiffID": "sha256:002337ef0912b4ca9ded9f55c5c8acaac464931825ed7b9ac143afaed9187efa"
       },
       {
-        "Size": 37283328,
-        "DiffID": "sha256:a3c717499e98e51b91f66eefb0e097a047483cba782abc936b10a68a2994e2d1"
+        "Size": 37283840,
+        "DiffID": "sha256:e8f883e12fd0991a91e1092f79b0aa18fe678ce1d9e30a892c614d4bfd71fdff"
       }
     ]
   },

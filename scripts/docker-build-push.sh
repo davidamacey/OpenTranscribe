@@ -24,6 +24,13 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 PLATFORMS="linux/amd64,linux/arm64"
 BUILD_TARGET="${1:-all}"
 
+# Remote builder configuration
+# Set USE_REMOTE_BUILDER=true to use remote ARM64 builder (much faster!)
+# Set REMOTE_BUILDER_NAME to override the builder name
+USE_REMOTE_BUILDER="${USE_REMOTE_BUILDER:-false}"
+REMOTE_BUILDER_NAME="${REMOTE_BUILDER_NAME:-opentranscribe-multiarch}"
+DEFAULT_BUILDER_NAME="opentranscribe-builder"
+
 # Function to print colored output
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -190,6 +197,8 @@ Options:
 Environment Variables:
     DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
     PLATFORMS                 Target platforms (default: linux/amd64,linux/arm64)
+    USE_REMOTE_BUILDER        Use remote ARM64 builder for faster builds (default: false)
+    REMOTE_BUILDER_NAME       Remote builder name (default: opentranscribe-multiarch)
     NO_CACHE                  Build without cache (default: false)
     SKIP_SECURITY_SCAN        Skip security scanning (default: false)
     FAIL_ON_SECURITY_ISSUES   Fail build if security issues found (default: false)
@@ -199,6 +208,9 @@ Examples:
     $0              # Build and push both images with security scanning
     $0 backend      # Build and push only backend
     $0 auto         # Auto-detect and build changed components
+
+    # Use remote ARM64 builder for 10-20x faster builds
+    USE_REMOTE_BUILDER=true $0 all
 
     # Build without cache (fresh build)
     NO_CACHE=true $0 frontend
@@ -211,6 +223,14 @@ Examples:
 
     # Fail build if security issues found (recommended for CI)
     FAIL_ON_SECURITY_ISSUES=true FAIL_ON_CRITICAL=true $0 all
+
+Remote Builder Setup:
+    For dramatically faster ARM64 builds, set up a remote builder:
+    1. Run: ./scripts/setup-remote-builder.sh setup
+    2. Follow the interactive prompts to configure your Mac Studio
+    3. Use: USE_REMOTE_BUILDER=true $0
+
+    This uses native ARM64 compilation instead of QEMU emulation (10-20x faster!)
 
 Security Scanning:
     After building, images are automatically scanned with:
@@ -244,14 +264,34 @@ main() {
     check_docker
     check_docker_login
 
-    # Create buildx builder if it doesn't exist
-    if ! docker buildx inspect opentranscribe-builder > /dev/null 2>&1; then
-        print_info "Creating buildx builder..."
-        docker buildx create --name opentranscribe-builder --use
+    # Select and configure builder based on USE_REMOTE_BUILDER setting
+    if [ "${USE_REMOTE_BUILDER}" = "true" ]; then
+        # Use remote multi-arch builder
+        if ! docker buildx inspect "${REMOTE_BUILDER_NAME}" > /dev/null 2>&1; then
+            print_error "Remote builder '${REMOTE_BUILDER_NAME}' not found!"
+            print_info "Please run: ./scripts/setup-remote-builder.sh setup"
+            print_info "Or set USE_REMOTE_BUILDER=false to use QEMU emulation"
+            exit 1
+        fi
+        print_success "Using remote multi-arch builder: ${REMOTE_BUILDER_NAME}"
+        print_info "This will use native ARM64 builds on your remote machine (much faster!)"
+        docker buildx use "${REMOTE_BUILDER_NAME}"
         docker buildx inspect --bootstrap
     else
-        print_info "Using existing buildx builder"
-        docker buildx use opentranscribe-builder
+        # Use local builder with QEMU emulation (slower but works without setup)
+        if ! docker buildx inspect "${DEFAULT_BUILDER_NAME}" > /dev/null 2>&1; then
+            print_info "Creating local buildx builder (with QEMU emulation)..."
+            docker buildx create --name "${DEFAULT_BUILDER_NAME}" --use
+            docker buildx inspect --bootstrap
+        else
+            print_info "Using existing local buildx builder (with QEMU emulation)"
+            docker buildx use "${DEFAULT_BUILDER_NAME}"
+        fi
+        if [[ "${PLATFORMS}" == *"arm64"* ]]; then
+            print_warning "Building ARM64 with QEMU emulation (slow)"
+            print_info "For faster builds, set up remote builder: ./scripts/setup-remote-builder.sh"
+            print_info "Then use: USE_REMOTE_BUILDER=true $0"
+        fi
     fi
 
     case "${BUILD_TARGET}" in
@@ -324,6 +364,16 @@ main() {
     print_info "🔧 Switching back to default Docker builder..."
     docker buildx use default
     print_success "✅ Default builder restored. Local development builds will work normally."
+
+    # Show build performance info if using emulation
+    if [ "${USE_REMOTE_BUILDER}" = "false" ] && [[ "${PLATFORMS}" == *"arm64"* ]]; then
+        print_info ""
+        print_info "⚡ Performance Tip:"
+        print_info "You used QEMU emulation for ARM64 builds (10-20x slower than native)"
+        print_info "To speed up future builds, set up a remote ARM64 builder:"
+        print_info "  1. Run: ./scripts/setup-remote-builder.sh setup"
+        print_info "  2. Then: USE_REMOTE_BUILDER=true $0"
+    fi
 }
 
 # Run main function
