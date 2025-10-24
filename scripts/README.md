@@ -25,6 +25,7 @@ See [docs/BUILD_PIPELINE.md](../docs/BUILD_PIPELINE.md) for complete documentati
 
 - **[build-all.sh](#complete-build-pipeline)** - Complete build pipeline (Docker + security + offline package)
 - **[docker-build-push.sh](#docker-build--push-script)** - Build and push Docker images to DockerHub
+- **[setup-remote-builder.sh](#remote-arm64-builder-setup)** - Configure remote ARM64 builder for faster builds
 - **[security-scan.sh](#security-scanner)** - Comprehensive security scanning for Docker images
 - **[build-offline-package.sh](#offline-package-builder)** - Create air-gapped deployment packages
 - **[install-offline-package.sh](#installation-script)** - Install OpenTranscribe on offline systems
@@ -478,6 +479,227 @@ This script is **not needed** for fresh installations. The containers will autom
 
 ---
 
+## Remote ARM64 Builder Setup
+
+Configure your Mac Studio (or other ARM64 machine) as a remote builder for **10-20x faster ARM64 Docker builds** using native compilation instead of QEMU emulation.
+
+### Why Use This?
+
+Building multi-platform Docker images on x86_64 (Ubuntu/Intel) uses QEMU emulation for ARM64 builds, which is **extremely slow**:
+- **Without remote builder**: ARM64 builds take 2-3 hours (QEMU emulation)
+- **With remote builder**: ARM64 builds take 8-15 minutes (native Mac Studio)
+
+### How It Works
+
+1. **Ubuntu server** orchestrates the build and handles AMD64 compilation
+2. **Mac Studio** handles ARM64 compilation natively via SSH
+3. **Docker Buildx** automatically distributes platform-specific work
+4. Both platforms build **in parallel** and combine into a single multi-arch image
+5. Push to Docker Hub happens from Ubuntu server
+
+### Prerequisites
+
+**Remote machine (Mac Studio):**
+- Docker Desktop installed and running
+- SSH access configured from Ubuntu server
+- SSH key-based authentication (recommended)
+- Both machines on the same network
+
+**Ubuntu server:**
+- SSH client installed
+- Docker with buildx support
+- Ability to connect to Mac Studio via SSH
+
+### Quick Start
+
+```bash
+# 1. Test SSH connection to your Mac Studio first
+ssh user@mac-studio.local "echo 'Connection OK'"
+
+# 2. Run interactive setup
+./scripts/setup-remote-builder.sh setup
+
+# 3. Test the configuration
+./scripts/setup-remote-builder.sh test
+
+# 4. Use with docker-build-push.sh
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh
+```
+
+### Commands
+
+```bash
+# Interactive setup (recommended)
+./scripts/setup-remote-builder.sh setup
+
+# Setup with specific host
+./scripts/setup-remote-builder.sh setup --host user@192.168.1.100
+
+# Test connectivity and build capability
+./scripts/setup-remote-builder.sh test
+
+# Check current configuration
+./scripts/setup-remote-builder.sh status
+
+# Remove remote builder configuration
+./scripts/setup-remote-builder.sh remove
+
+# Get help
+./scripts/setup-remote-builder.sh help
+```
+
+### Setup Process
+
+The interactive setup will:
+
+1. **Prompt for remote host** (e.g., `user@mac-studio.local` or `user@192.168.1.100`)
+2. **Test SSH connectivity** to ensure access is working
+3. **Verify Docker** is running on the remote machine
+4. **Check platform** to confirm ARM64 architecture
+5. **Create Docker context** for remote connection
+6. **Create multi-node buildx builder**:
+   - Node 1 (local): `linux/amd64` builds
+   - Node 2 (remote): `linux/arm64` builds
+7. **Bootstrap the builder** (starts build containers on both nodes)
+
+### SSH Setup (One-Time)
+
+If you haven't set up SSH key-based authentication:
+
+```bash
+# On Ubuntu server, generate SSH key if needed
+ssh-keygen -t ed25519 -C "buildx-remote"
+
+# Copy public key to Mac Studio
+ssh-copy-id user@mac-studio.local
+
+# Test connection (should not prompt for password)
+ssh user@mac-studio.local "echo 'SSH key auth working'"
+```
+
+### Using the Remote Builder
+
+Once configured, use the remote builder with `docker-build-push.sh`:
+
+```bash
+# Enable remote builder
+export USE_REMOTE_BUILDER=true
+
+# Build and push (uses Mac Studio for ARM64)
+./scripts/docker-build-push.sh
+
+# Build specific component
+./scripts/docker-build-push.sh backend
+
+# Disable remote builder (use QEMU emulation)
+export USE_REMOTE_BUILDER=false
+./scripts/docker-build-push.sh
+```
+
+### Build Process Flow
+
+```
+Ubuntu Server (AMD64)
+├─ Sends build context to both builders via SSH
+├─ Local builder: Compiles linux/amd64 natively (8-15 min)
+└─ Remote builder (Mac Studio): Compiles linux/arm64 natively (8-15 min)
+    └─ SSH connection to Mac Studio
+        └─ Docker builds ARM64 image natively
+
+Both images combined → Multi-arch manifest → Push to Docker Hub
+Total time: ~15-30 min (parallel builds)
+```
+
+### Performance Comparison
+
+| Build Method | Backend Build Time | Speedup |
+|-------------|-------------------|---------|
+| QEMU emulation (without remote builder) | 2-3 hours | Baseline |
+| Native ARM64 (with remote builder) | 15-30 minutes | **10-20x faster** |
+
+### Verification
+
+After setup, verify the configuration:
+
+```bash
+# Check builder nodes
+./scripts/setup-remote-builder.sh status
+
+# Output should show:
+# Name:   opentranscribe-multiarch
+# Nodes:
+# - Node 1: local (linux/amd64)
+# - Node 2: remote-arm64 (linux/arm64)
+
+# Test a build
+./scripts/setup-remote-builder.sh test
+```
+
+### Troubleshooting
+
+**"Cannot connect via SSH"**
+- Ensure SSH is enabled on Mac Studio
+- Verify network connectivity: `ping mac-studio.local`
+- Test SSH manually: `ssh user@mac-studio.local "echo test"`
+- Set up SSH key authentication: `ssh-copy-id user@mac-studio.local`
+
+**"Docker is not accessible on remote machine"**
+- Ensure Docker Desktop is running on Mac Studio
+- Verify Docker works locally on Mac Studio: `docker ps`
+
+**"Remote machine is not ARM64"**
+- Check architecture on Mac Studio: `uname -m` (should show `arm64`)
+- The script will still work but won't provide the speed benefit
+
+**Build fails with "failed to ping builder"**
+- The remote builder may be sleeping. Restart builder:
+  ```bash
+  docker buildx inspect opentranscribe-multiarch --bootstrap
+  ```
+
+**"Unknown platform" errors**
+- Ensure both machines have buildx support:
+  ```bash
+  docker buildx version
+  ```
+
+### Advanced Configuration
+
+**Custom builder name:**
+```bash
+./scripts/setup-remote-builder.sh setup --name my-builder
+USE_REMOTE_BUILDER=true REMOTE_BUILDER_NAME=my-builder ./scripts/docker-build-push.sh
+```
+
+**Using Docker context instead of SSH:**
+```bash
+# Create Docker context manually
+docker context create mac-studio --docker "host=ssh://user@mac-studio.local"
+
+# Then follow normal setup
+./scripts/setup-remote-builder.sh setup
+```
+
+### Cleanup
+
+To remove the remote builder configuration:
+
+```bash
+# Remove builder and context
+./scripts/setup-remote-builder.sh remove
+
+# Manually remove if needed
+docker buildx rm opentranscribe-multiarch
+docker context rm remote-arm64
+```
+
+### Related Documentation
+
+- [Docker Buildx documentation](https://docs.docker.com/buildx/working-with-buildx/)
+- [docker-build-push.sh](#docker-build--push-script) - Main build script
+
+---
+
 ## Docker Build & Push Script
 
 Quick solution for building and pushing Docker images to Docker Hub locally while GitHub Actions handles automated deployments.
@@ -511,6 +733,9 @@ Quick solution for building and pushing Docker images to Docker Hub locally whil
 #### Environment Variables
 
 ```bash
+# Use remote ARM64 builder (10-20x faster!)
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh
+
 # Use different Docker Hub username
 DOCKERHUB_USERNAME=myusername ./scripts/docker-build-push.sh
 
@@ -519,6 +744,12 @@ PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
 
 # Build for multiple platforms (default)
 PLATFORMS=linux/amd64,linux/arm64 ./scripts/docker-build-push.sh
+
+# Disable cache for clean builds
+NO_CACHE=true ./scripts/docker-build-push.sh
+
+# Skip security scanning for faster iteration
+SKIP_SECURITY_SCAN=true ./scripts/docker-build-push.sh
 ```
 
 ### Image Tagging Strategy
@@ -546,30 +777,51 @@ Each build creates two tags:
 
 **Frontend (~2 minutes):**
 - AMD64: ~1 min
-- ARM64: ~1 min
+- ARM64: ~1 min (QEMU) or ~1 min (native with remote builder)
 - Image size: ~51 MB
 
-**Backend (~15-30 minutes):**
-- AMD64: ~8-15 min
-- ARM64: ~8-15 min
+**Backend (varies significantly):**
+
+| Build Method | AMD64 Time | ARM64 Time | Total Time |
+|-------------|-----------|-----------|-----------|
+| **QEMU emulation** (default) | ~8-15 min | **2-3 hours** | **2-3 hours** |
+| **Remote builder** (recommended) | ~8-15 min | ~8-15 min | **15-30 min** |
+| Single platform | ~8-15 min | N/A | ~8-15 min |
+
 - Image size: ~13.8 GB
+
+**⚡ Performance Tip:** Set up a [remote ARM64 builder](#remote-arm64-builder-setup) for **10-20x faster builds**!
 
 ### Tips for Faster Builds
 
-1. **Build single platform for testing:**
+1. **Use remote ARM64 builder (FASTEST for multi-platform):**
+   ```bash
+   # One-time setup
+   ./scripts/setup-remote-builder.sh setup
+
+   # Then for all future builds
+   USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh
+   ```
+
+2. **Build single platform for testing:**
    ```bash
    PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
    ```
 
-2. **Use auto mode during development:**
+3. **Use auto mode during development:**
    ```bash
    ./scripts/docker-build-push.sh auto
    ```
 
-3. **Build only what you need:**
+4. **Build only what you need:**
    ```bash
    # Just changed frontend code
    ./scripts/docker-build-push.sh frontend
+   ```
+
+5. **Skip security scanning during iteration:**
+   ```bash
+   SKIP_SECURITY_SCAN=true ./scripts/docker-build-push.sh backend
    ```
 
 ### Workflow Integration
@@ -606,12 +858,16 @@ docker buildx inspect --bootstrap
 docker login
 ```
 
-**Build is very slow**
+**Build is very slow (ARM64 taking hours)**
 ```bash
-# Build for single platform
+# Option 1: Use remote ARM64 builder (RECOMMENDED - 10-20x faster)
+./scripts/setup-remote-builder.sh setup
+USE_REMOTE_BUILDER=true ./scripts/docker-build-push.sh
+
+# Option 2: Build for single platform only
 PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
 
-# Check Docker resources
+# Option 3: Check Docker resources
 docker info | grep -i cpu
 docker info | grep -i memory
 ```
