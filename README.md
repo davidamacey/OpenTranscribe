@@ -479,25 +479,26 @@ OpenTranscribe offers flexible AI deployment options. Choose the approach that b
    ./opentr.sh start dev
    ```
 
-2. **Local vLLM (High-Performance GPUs)**
+2. **Local vLLM (Self-Hosted)**
    ```bash
-   # Configure for vLLM in .env
+   # Deploy vLLM server separately, then configure in .env
    LLM_PROVIDER=vllm
+   VLLM_BASE_URL=http://your-vllm-server:8000/v1
    VLLM_MODEL_NAME=gpt-oss-20b
 
-   # Start with vLLM service (requires 16GB+ VRAM)
-   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   # Start OpenTranscribe
+   ./opentr.sh start dev
    ```
 
-3. **Local Ollama (Consumer GPUs)**
+3. **Local Ollama (Self-Hosted)**
    ```bash
-   # Configure for Ollama in .env
+   # Deploy Ollama server separately, then configure in .env
    LLM_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://your-ollama-server:11434
    OLLAMA_MODEL_NAME=llama3.2:3b-instruct-q4_K_M
 
-   # Edit docker-compose.vllm.yml and uncomment ollama service
-   # Then start with both compose files
-   docker compose -f docker-compose.yml -f docker-compose.vllm.yml up
+   # Start OpenTranscribe
+   ./opentr.sh start dev
    ```
 
 **📋 Complete Provider Configuration:**

@@ -195,9 +195,8 @@ The application now includes optional AI-powered features using Large Language M
 - Features work independently - transcription works without LLM configuration
 
 **Deployment Options:**
-- **Cloud-Only**: Use `.env` configuration with external providers (OpenAI, Claude, etc.)
-- **Local vLLM**: Run `docker compose -f docker-compose.yml -f docker-compose.vllm.yml up`
-- **Local Ollama**: Uncomment ollama service in `docker-compose.vllm.yml` and use same command
+- **Cloud Providers**: Use `.env` configuration with external providers (OpenAI, Claude, OpenRouter, etc.)
+- **Self-Hosted LLM**: Configure vLLM or Ollama endpoints in `.env` (deployed separately)
 - **No LLM**: Leave LLM_PROVIDER empty for transcription-only mode
 
 ## Model Caching System

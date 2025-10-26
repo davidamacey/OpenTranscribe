@@ -386,11 +386,6 @@ create_configuration_files() {
         exit 1
     fi
 
-    # Download NVIDIA override file if GPU detected
-    if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
-        download_nvidia_override
-    fi
-
     # Download opentranscribe.sh management script
     download_management_script
 
@@ -439,44 +434,6 @@ create_production_compose() {
     echo "Alternative: You can manually download from:"
     echo "$download_url"
     exit 1
-}
-
-download_nvidia_override() {
-    echo "✓ Downloading NVIDIA GPU override configuration..."
-
-    # Download the NVIDIA override file from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nvidia.yml"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.nvidia.yml; then
-            # Validate downloaded file
-            if [ -s docker-compose.nvidia.yml ] && grep -q "runtime: nvidia" docker-compose.nvidia.yml; then
-                echo "✓ Downloaded and validated docker-compose.nvidia.yml"
-                return 0
-            else
-                echo "⚠️  Downloaded NVIDIA override file appears invalid, retrying..."
-                rm -f docker-compose.nvidia.yml
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${YELLOW}⚠️  Failed to download NVIDIA override file after $max_retries attempts${NC}"
-    echo "GPU acceleration may not work optimally, but CPU processing will still function."
-    echo "You can manually download from: $download_url"
 }
 
 download_management_script() {

@@ -82,11 +82,6 @@ services:
     restart: always
     volumes:
       - ./backend:/app
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     ports:
       - "5174:8080"
     healthcheck:
@@ -278,11 +273,6 @@ services:
     # No authentication required as per user requirements
     volumes:
       - ./backend:/app
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
 volumes:
   postgres_data:

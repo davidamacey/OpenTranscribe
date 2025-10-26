@@ -81,10 +81,6 @@ services:
     pull_policy: always
     restart: always
     volumes:
-      # Model cache directories - must be owned by UID 1000 on host
-      # Run scripts/fix-model-permissions.sh if you encounter permission errors
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - backend_temp:/app/temp
     ports:
       - "${BACKEND_PORT:-5174}:8080"
@@ -164,6 +160,14 @@ services:
     pull_policy: always
     restart: always
     command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
@@ -262,9 +266,6 @@ services:
       - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
     volumes:
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - flower_data:/app
 
 volumes:
