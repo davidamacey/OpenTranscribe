@@ -89,6 +89,8 @@ services:
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
     ports:
       - "${BACKEND_PORT:-5174}:8080"
@@ -172,6 +174,8 @@ services:
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - ${TEMP_DIR:-/opt/opentranscribe/temp}:/app/temp
     depends_on:
       - postgres
@@ -264,6 +268,8 @@ services:
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - flower_data:/app
 
 volumes:

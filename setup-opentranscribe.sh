@@ -1159,7 +1159,7 @@ download_ai_models() {
     print_info "Creating model cache directories with proper permissions..."
 
     # Create main directory and subdirectories
-    mkdir -p models/huggingface models/torch
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
@@ -1179,7 +1179,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"

@@ -3,7 +3,11 @@ set -e
 
 # OpenTranscribe Offline Package Builder
 # Creates a complete offline installation package for air-gapped deployments
-# Usage: ./scripts/build-offline-package.sh [version]
+# Usage: ./scripts/build-offline-package.sh [version] [--local]
+#
+# Options:
+#   version    Package version (default: git short hash)
+#   --local    Use locally built Docker images instead of pulling from Docker Hub
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,8 +23,27 @@ if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
     export HUGGINGFACE_TOKEN
 fi
 
+# Parse command line arguments
+USE_LOCAL_IMAGES=false
+VERSION=""
+
+for arg in "$@"; do
+    case $arg in
+        --local)
+            USE_LOCAL_IMAGES=true
+            shift
+            ;;
+        *)
+            # Assume it's the version if not a flag
+            if [ -z "$VERSION" ]; then
+                VERSION="$arg"
+            fi
+            ;;
+    esac
+done
+
 # Configuration
-VERSION="${1:-$(git rev-parse --short HEAD)}"
+VERSION="${VERSION:-$(git rev-parse --short HEAD)}"
 PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
 BUILD_DIR="./offline-package-build"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"
@@ -194,6 +217,8 @@ setup_directories() {
     mkdir -p "${PACKAGE_DIR}/docker-images"
     mkdir -p "${PACKAGE_DIR}/models/huggingface"
     mkdir -p "${PACKAGE_DIR}/models/torch"
+    mkdir -p "${PACKAGE_DIR}/models/nltk_data"
+    mkdir -p "${PACKAGE_DIR}/models/sentence-transformers"
     mkdir -p "${PACKAGE_DIR}/config"
     mkdir -p "${PACKAGE_DIR}/database"
     mkdir -p "${PACKAGE_DIR}/scripts"
@@ -219,11 +244,21 @@ pull_and_save_images() {
 
         print_info "[$current/$total_images] Processing: $image"
 
-        # Pull image
-        print_info "  Pulling image..."
-        if ! docker pull "$image"; then
-            print_error "  Failed to pull $image"
-            exit 1
+        # Pull image from Docker Hub (unless --local flag is set)
+        if [ "$USE_LOCAL_IMAGES" = true ]; then
+            print_info "  Using local image (skipping pull)..."
+            # Check if image exists locally
+            if ! docker image inspect "$image" &>/dev/null; then
+                print_error "  Local image not found: $image"
+                print_info "  Please build the image first with: docker compose build"
+                exit 1
+            fi
+        else
+            print_info "  Pulling image from Docker Hub..."
+            if ! docker pull "$image"; then
+                print_error "  Failed to pull $image"
+                exit 1
+            fi
         fi
 
         # Save image
@@ -458,6 +493,8 @@ download_models() {
     local temp_model_cache="${BUILD_DIR}/temp_models"
     mkdir -p "${temp_model_cache}/huggingface"
     mkdir -p "${temp_model_cache}/torch"
+    mkdir -p "${temp_model_cache}/nltk_data"
+    mkdir -p "${temp_model_cache}/sentence-transformers"
 
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
@@ -482,6 +519,8 @@ download_models() {
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -v "${temp_model_cache}/huggingface:/home/appuser/.cache/huggingface" \
         -v "${temp_model_cache}/torch:/home/appuser/.cache/torch" \
+        -v "${temp_model_cache}/nltk_data:/home/appuser/.cache/nltk_data" \
+        -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
         -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
@@ -501,6 +540,20 @@ download_models() {
         print_info "  Copied PyTorch/PyAnnote models"
     else
         print_warning "No PyTorch models found to copy"
+    fi
+
+    if [ -d "${temp_model_cache}/nltk_data" ] && [ "$(ls -A ${temp_model_cache}/nltk_data 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/nltk_data"/* "${PACKAGE_DIR}/models/nltk_data/"
+        print_info "  Copied NLTK data files"
+    else
+        print_warning "No NLTK data found to copy"
+    fi
+
+    if [ -d "${temp_model_cache}/sentence-transformers" ] && [ "$(ls -A ${temp_model_cache}/sentence-transformers 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/sentence-transformers"/* "${PACKAGE_DIR}/models/sentence-transformers/"
+        print_info "  Copied sentence-transformers models"
+    else
+        print_warning "No sentence-transformers models found to copy"
     fi
 
     # Check if model manifest was created (it's inside the huggingface cache dir)
@@ -635,6 +688,40 @@ EOF
 # COMPRESSION
 #######################
 
+prompt_compression() {
+    print_header "Package Compression"
+
+    local package_size
+    package_size=$(get_dir_size "$PACKAGE_DIR")
+
+    print_info "Package is ready to compress"
+    print_info "Uncompressed package size: $package_size"
+    print_info "Estimated compressed size: 15-20GB"
+    echo
+    print_warning "Compression will take 30-60 minutes using all CPU threads"
+    print_info "You can skip compression if:"
+    print_info "  - Testing the package locally"
+    print_info "  - Using fast local network transfer"
+    print_info "  - Planning to compress manually later"
+    echo
+
+    # Prompt user for compression
+    while true; do
+        read -p "Do you want to compress the package now? (y/n): " -r response
+        case $response in
+            [Yy]* )
+                return 0  # Compress
+                ;;
+            [Nn]* )
+                return 1  # Skip compression
+                ;;
+            * )
+                echo "Please answer y (yes) or n (no)."
+                ;;
+        esac
+    done
+}
+
 compress_package() {
     print_header "Compressing Package"
 
@@ -673,6 +760,20 @@ compress_package() {
     print_success "Package checksum created"
 }
 
+create_uncompressed_checksum() {
+    print_header "Creating Package Checksum"
+
+    print_info "Creating checksum for uncompressed package..."
+    cd "$BUILD_DIR"
+
+    # Create a checksum file listing all files in the package
+    find "$PACKAGE_NAME" -type f -exec sha256sum {} \; > "${PACKAGE_NAME}.sha256"
+
+    cd - > /dev/null
+
+    print_success "Checksum file created: ${BUILD_DIR}/${PACKAGE_NAME}.sha256"
+}
+
 #######################
 # MAIN
 #######################
@@ -698,21 +799,50 @@ main() {
     copy_installation_scripts
     copy_documentation
     finalize_package
-    compress_package
+
+    # Prompt for compression
+    if prompt_compression; then
+        # User chose to compress
+        compress_package
+        PACKAGE_COMPRESSED=true
+    else
+        # User chose to skip compression
+        print_info "Skipping compression..."
+        create_uncompressed_checksum
+        PACKAGE_COMPRESSED=false
+    fi
 
     # Final summary
     print_header "Build Complete!"
 
     echo -e "${GREEN}✅ Offline package created successfully!${NC}\n"
-    echo -e "Package location:"
-    echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz${NC}\n"
-    echo -e "Package checksum:"
-    echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz.sha256${NC}\n"
-    echo -e "Next steps:"
-    echo -e "  1. Verify checksum: ${YELLOW}sha256sum -c ${PACKAGE_NAME}.tar.xz.sha256${NC}"
-    echo -e "  2. Transfer package to target system"
-    echo -e "  3. Extract: ${YELLOW}tar -xf ${PACKAGE_NAME}.tar.xz${NC}"
-    echo -e "  4. Install: ${YELLOW}cd ${PACKAGE_NAME} && sudo ./install.sh${NC}\n"
+
+    if [ "$PACKAGE_COMPRESSED" = true ]; then
+        # Compressed package summary
+        echo -e "Package location:"
+        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz${NC}\n"
+        echo -e "Package checksum:"
+        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz.sha256${NC}\n"
+        echo -e "Next steps:"
+        echo -e "  1. Verify checksum: ${YELLOW}sha256sum -c ${PACKAGE_NAME}.tar.xz.sha256${NC}"
+        echo -e "  2. Transfer package to target system"
+        echo -e "  3. Extract: ${YELLOW}tar -xf ${PACKAGE_NAME}.tar.xz${NC}"
+        echo -e "  4. Install: ${YELLOW}cd ${PACKAGE_NAME} && sudo ./install.sh${NC}\n"
+    else
+        # Uncompressed package summary
+        echo -e "Package location (uncompressed):"
+        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}/${NC}\n"
+        echo -e "Package checksum:"
+        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.sha256${NC}\n"
+        echo -e "Next steps:"
+        echo -e "  ${YELLOW}Option 1: Transfer uncompressed${NC}"
+        echo -e "    1. Copy entire directory to target system"
+        echo -e "    2. Install: ${YELLOW}cd ${PACKAGE_NAME} && sudo ./install.sh${NC}\n"
+        echo -e "  ${YELLOW}Option 2: Compress manually later${NC}"
+        echo -e "    1. Compress: ${YELLOW}tar -cf - ${PACKAGE_NAME} | xz -9 -T0 > ${PACKAGE_NAME}.tar.xz${NC}"
+        echo -e "    2. Create checksum: ${YELLOW}sha256sum ${PACKAGE_NAME}.tar.xz > ${PACKAGE_NAME}.tar.xz.sha256${NC}"
+        echo -e "    3. Transfer and extract as usual\n"
+    fi
 
     print_success "🎉 Build process complete!"
 }

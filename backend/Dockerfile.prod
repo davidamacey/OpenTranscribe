@@ -62,6 +62,8 @@ RUN groupadd -r appuser && \
     chown -R appuser:appuser /app && \
     mkdir -p /home/appuser/.cache/huggingface \
              /home/appuser/.cache/torch \
+             /home/appuser/.cache/nltk_data \
+             /home/appuser/.cache/sentence-transformers \
              /home/appuser/.cache/yt-dlp && \
     chown -R appuser:appuser /home/appuser/.cache
 
@@ -81,7 +83,9 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
     LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.12/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib \
     HF_HOME=/home/appuser/.cache/huggingface \
     TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
-    TORCH_HOME=/home/appuser/.cache/torch
+    TORCH_HOME=/home/appuser/.cache/torch \
+    NLTK_DATA=/home/appuser/.cache/nltk_data \
+    SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers
 
 # Copy application code
 COPY --chown=appuser:appuser . .
