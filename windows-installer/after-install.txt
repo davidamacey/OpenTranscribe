@@ -1,0 +1,58 @@
+OpenTranscribe Installation Complete!
+
+Thank you for installing OpenTranscribe.
+
+ACCESSING THE APPLICATION:
+
+The application is now running and accessible at:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:5174/docs
+
+A shortcut has been created on your desktop for easy access.
+
+GETTING STARTED:
+
+1. Open your web browser and navigate to http://localhost:5173
+2. Create your first user account
+3. Upload an audio or video file for transcription
+4. Wait for transcription processing to complete
+5. Review results with speaker diarization and timestamps
+
+FIRST TIME SETUP:
+
+- Configure your HuggingFace token in Settings (required for speaker diarization)
+- Customize transcription settings (language, model options)
+- Set up LLM providers for AI summarization (optional)
+
+USEFUL COMMANDS:
+
+View Docker container logs:
+  docker logs -f opentranscribe-backend
+
+Check service status:
+  docker compose ps
+
+Restart services:
+  docker compose restart
+
+Stop services:
+  docker compose down
+
+ADDITIONAL SERVICES:
+
+- MinIO Console (S3 Storage): http://localhost:5179
+- Flower (Task Monitor): http://localhost:5175
+- OpenSearch Dashboards: http://localhost:5181
+
+DOCUMENTATION:
+
+- README-WINDOWS.md: Installation instructions and troubleshooting
+- README.md: Full application documentation
+- API Documentation: http://localhost:5174/docs
+
+SUPPORT:
+
+- GitHub Issues: https://github.com/davidamacey/opentranscribe/issues
+- Documentation: https://github.com/davidamacey/opentranscribe
+
+Enjoy using OpenTranscribe!

@@ -1,0 +1,74 @@
+OpenTranscribe Installation - Pre-Installation Information
+
+Welcome to OpenTranscribe, an AI-powered transcription application with speaker diarization, voice fingerprinting, and semantic search capabilities.
+
+PREREQUISITES REQUIRED:
+
+Before proceeding, ensure you have installed and configured:
+
+1. Windows 10/11 (Version 1809 or later)
+   - Pro, Enterprise, or Education edition recommended
+   - Home edition requires additional WSL 2 setup
+
+2. Docker Desktop for Windows (Latest version)
+   - Must be installed and running
+   - Configured for Linux containers (default)
+   - WSL 2 backend enabled
+
+3. WSL 2 (Windows Subsystem for Linux 2)
+   - Required by Docker Desktop
+   - Automatically configured by Docker Desktop installer
+
+4. NVIDIA GPU Drivers (Optional but Recommended)
+   - Version 450.80.02 or higher
+   - Required for GPU-accelerated transcription
+   - GPU support provides 10-50x faster processing
+   - Application will work without GPU using CPU mode
+
+5. System Requirements:
+   - Minimum: 16GB RAM, 100GB free disk space, 4 CPU cores
+   - Recommended: 32GB RAM, 200GB free disk space, 8 CPU cores
+   - NVIDIA GPU with 8GB+ VRAM (for best performance)
+
+INSTALLATION PROCESS:
+
+When you click Next, the installer will:
+
+1. VERIFY PREREQUISITES (automatic, ~30 seconds)
+   - Check Docker Desktop is running
+   - Verify WSL 2 configuration
+   - Confirm sufficient RAM, CPU, disk space
+   - Detect GPU availability (optional)
+
+   ⚠ Installation will STOP if prerequisites are not met
+   ⚠ You will receive detailed instructions to fix any issues
+
+2. INSTALL APPLICATION (if prerequisites pass)
+   - Load Docker container images (~10-30GB)
+   - Install AI models (~5-40GB depending on model size)
+   - Configure environment variables and networking
+   - Start OpenTranscribe services
+   - Create desktop shortcuts
+
+Total installation time: 5-15 minutes (after prerequisites pass)
+
+IMPORTANT NOTES:
+
+- Close any running applications to free up system resources
+- Ensure your system is plugged into power (laptops)
+- Disable antivirus temporarily if installation fails
+- First run will take longer as Docker initializes containers
+
+IF INSTALLATION IS BLOCKED:
+
+The installer will tell you exactly what's wrong. Common fixes:
+- Start Docker Desktop and wait for it to fully initialize
+- Free up disk space (need 100GB+ free)
+- Install/enable WSL 2: wsl --install
+- Update Windows to build 17763 or later
+
+You can also run check-prerequisites.ps1 manually for detailed diagnostics.
+
+For detailed documentation, see README-WINDOWS.md after installation.
+
+Click Next to begin the automated prerequisite check and installation.
