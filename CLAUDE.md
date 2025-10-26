@@ -215,9 +215,14 @@ ${MODEL_CACHE_DIR}/
 ├── huggingface/          # HuggingFace models cache
 │   ├── hub/             # WhisperX models (~1.5GB)
 │   └── transformers/    # PyAnnote transformer cache
-└── torch/               # PyTorch models cache
-    ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
-    └── pyannote/        # PyAnnote speaker models (~500MB)
+├── torch/               # PyTorch models cache
+│   ├── hub/checkpoints/ # Wav2Vec2 alignment model (~360MB)
+│   └── pyannote/        # PyAnnote speaker models (~500MB)
+├── nltk_data/           # NLTK data files
+│   ├── tokenizers/      # punkt_tab tokenizer (~13MB)
+│   └── taggers/         # POS taggers
+└── sentence-transformers/ # Sentence transformers models
+    └── sentence-transformers_all-MiniLM-L6-v2/ # Semantic search model (~80MB)
 ```
 
 ### Docker Volume Mappings
@@ -226,13 +231,15 @@ The system uses simple volume mappings to cache models to their natural location
 volumes:
   - ${MODEL_CACHE_DIR}/huggingface:/home/appuser/.cache/huggingface
   - ${MODEL_CACHE_DIR}/torch:/home/appuser/.cache/torch
+  - ${MODEL_CACHE_DIR}/nltk_data:/home/appuser/.cache/nltk_data
+  - ${MODEL_CACHE_DIR}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 ```
 
 ### Key Benefits
 - **No code complexity**: Models use their natural cache locations
 - **Persistent storage**: Models saved between container restarts
 - **User configurable**: Simple `.env` variable controls cache location
-- **No re-downloads**: Models cached after first download (2.5GB total)
+- **No re-downloads**: Models cached after first download (~2.6GB total)
 
 ## Security Features
 

@@ -462,12 +462,11 @@ def search_transcripts(
             try:
                 from sentence_transformers import SentenceTransformer
 
-                # Check if model exists locally or download it
-                model_path = os.path.join(settings.MODELS_DIRECTORY, "sentence-transformers")
-                os.makedirs(model_path, exist_ok=True)
-
-                # Load the model (will download if not present)
-                embedding_model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder=model_path)
+                # Load the model from the default cache location
+                # The cache location is controlled by SENTENCE_TRANSFORMERS_HOME environment variable
+                # which is set to /home/appuser/.cache/sentence-transformers in Dockerfile
+                # This ensures consistency with the volume mount: ${MODEL_CACHE_DIR}/sentence-transformers
+                embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
                 # Generate embedding for the query
                 query_embedding = embedding_model.encode(query).tolist()
@@ -1165,7 +1164,7 @@ def store_profile_embedding(
             index=settings.OPENSEARCH_SPEAKER_INDEX,
             body=doc,
             id=f"profile_{profile_uuid}",
-            refresh='wait_for'
+            refresh="wait_for",
         )
 
         logger.info(
@@ -1275,7 +1274,7 @@ def update_speaker_display_name(speaker_uuid: str, display_name: Optional[str]):
             index=settings.OPENSEARCH_SPEAKER_INDEX,
             id=str(speaker_uuid),
             body=update_body,
-            refresh='wait_for'
+            refresh="wait_for",
         )
 
         logger.info(f"Updated display name for speaker {speaker_uuid} to '{display_name}'")

@@ -46,7 +46,7 @@ fix_model_cache_permissions() {
   # Check if model cache directory exists
   if [ ! -d "$MODEL_CACHE_DIR" ]; then
     echo "📁 Creating model cache directory: $MODEL_CACHE_DIR"
-    mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch"
+    mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers"
   fi
 
   # Check current ownership

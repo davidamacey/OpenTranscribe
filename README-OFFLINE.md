@@ -24,7 +24,7 @@ The OpenTranscribe offline package provides a complete, self-contained deploymen
 - Installation and management scripts
 - Complete documentation
 
-**Package Size:** 15-20GB compressed (tar.xz), ~60GB uncompressed
+**Package Size:** 15-20GB compressed (tar.xz), ~60GB uncompressed (compression optional)
 
 ## System Requirements
 
@@ -83,34 +83,84 @@ System where OpenTranscribe will be installed:
    - Pull all required Docker images from DockerHub
    - Download AI models using your HuggingFace token
    - Package configuration files and scripts
+   - **Prompt for compression** (optional - see below)
    - Create integrity checksums
-   - Compress everything with multi-threaded xz
 
-2. **Build Duration:**
+2. **Compression Options:**
+
+   At the end of the build, you'll be prompted:
+   ```
+   Do you want to compress the package now? (y/n):
+   ```
+
+   **Option 1: Compress Now (recommended for transfer)**
+   - Takes 30-60 minutes using all CPU threads
+   - Creates `.tar.xz` file (15-20GB)
+   - Best for network transfer or USB
+
+   **Option 2: Skip Compression**
+   - Saves time if testing locally
+   - Leaves uncompressed directory (~60GB)
+   - Can compress manually later if needed
+   - Useful for fast local network transfers
+
+3. **Build Duration:**
    - Image pulling: 10-20 minutes
    - Model downloading: 30-60 minutes
-   - Compression: 30-60 minutes
-   - **Total: 1-2 hours**
+   - Compression: 30-60 minutes (if selected)
+   - **Total: 1-2 hours (with compression)**
+   - **Total: 30-90 minutes (without compression)**
 
-3. **Output:**
+4. **Output:**
+
+   **If compressed:**
    ```
    offline-package-build/
    ├── opentranscribe-offline-v{version}.tar.xz      (~15-20GB)
    └── opentranscribe-offline-v{version}.tar.xz.sha256
    ```
 
-4. **Verify Package:**
+   **If uncompressed:**
+   ```
+   offline-package-build/
+   ├── opentranscribe-offline-v{version}/            (~60GB directory)
+   └── opentranscribe-offline-v{version}.sha256
+   ```
+
+5. **Verify Package:**
+
+   **If compressed:**
    ```bash
    cd offline-package-build
    sha256sum -c opentranscribe-offline-v*.tar.xz.sha256
    ```
 
+   **If uncompressed:**
+   ```bash
+   cd offline-package-build
+   # Checksums are stored in the .sha256 file for individual verification
+   ```
+
+6. **Manual Compression (Optional):**
+
+   If you skipped compression, you can compress later:
+   ```bash
+   cd offline-package-build
+   tar -cf - opentranscribe-offline-v* | xz -9 -T0 > opentranscribe-offline-v{version}.tar.xz
+   sha256sum opentranscribe-offline-v*.tar.xz > opentranscribe-offline-v*.tar.xz.sha256
+   ```
+
 ### Transfer to Air-Gapped System
 
-Transfer both files to your air-gapped system using your preferred method:
-- USB drive
-- Network file transfer (if available)
-- Physical media
+Transfer the package to your air-gapped system using your preferred method:
+
+**If compressed:**
+- Transfer both `.tar.xz` and `.tar.xz.sha256` files
+- USB drive, network transfer, or physical media
+
+**If uncompressed:**
+- Transfer entire directory or compress first (see manual compression above)
+- For directory transfer: use rsync, network share, or external drive
 
 ## Installing on Air-Gapped System
 
@@ -140,9 +190,16 @@ Transfer both files to your air-gapped system using your preferred method:
 
 ### Installation Steps
 
-1. **Extract Package:**
+1. **Extract Package (if compressed):**
+
+   **If you have a compressed `.tar.xz` file:**
    ```bash
    tar -xf opentranscribe-offline-v*.tar.xz
+   cd opentranscribe-offline-v*/
+   ```
+
+   **If you transferred the uncompressed directory:**
+   ```bash
    cd opentranscribe-offline-v*/
    ```
 

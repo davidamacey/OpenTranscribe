@@ -307,6 +307,8 @@ install_models() {
     # Create model cache directories with proper structure
     mkdir -p "$INSTALL_DIR/models/huggingface"
     mkdir -p "$INSTALL_DIR/models/torch"
+    mkdir -p "$INSTALL_DIR/models/nltk_data"
+    mkdir -p "$INSTALL_DIR/models/sentence-transformers"
 
     # Copy models
     if [ -d "$model_dir/huggingface" ]; then
@@ -317,6 +319,16 @@ install_models() {
     if [ -d "$model_dir/torch" ]; then
         print_info "Copying PyTorch models..."
         cp -r "$model_dir/torch" "$INSTALL_DIR/models/"
+    fi
+
+    if [ -d "$model_dir/nltk_data" ]; then
+        print_info "Copying NLTK data..."
+        cp -r "$model_dir/nltk_data" "$INSTALL_DIR/models/"
+    fi
+
+    if [ -d "$model_dir/sentence-transformers" ]; then
+        print_info "Copying sentence-transformers models..."
+        cp -r "$model_dir/sentence-transformers" "$INSTALL_DIR/models/"
     fi
 
     # Copy model manifest if exists

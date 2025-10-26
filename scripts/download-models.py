@@ -6,6 +6,8 @@ This script downloads:
 - WhisperX models
 - PyAnnote speaker diarization models
 - Wav2Vec2 alignment models
+- NLTK data files (punkt_tab tokenizer)
+- Sentence-Transformers models (all-MiniLM-L6-v2)
 
 Models are cached to standard locations and a manifest is created.
 """
@@ -223,15 +225,111 @@ def download_alignment_models():
         print_error(f"Failed to download alignment models: {e}")
         return {"alignment": {"status": "failed", "error": str(e)}}
 
+def download_nltk_data():
+    """Download NLTK data files required by transformers/whisperx"""
+    print_header("Downloading NLTK Data")
+
+    try:
+        import nltk
+
+        # Set NLTK data path to user's cache directory
+        nltk_data_path = Path.home() / ".cache" / "nltk_data"
+        nltk_data_path.mkdir(parents=True, exist_ok=True)
+
+        # Add to NLTK's data path
+        if str(nltk_data_path) not in nltk.data.path:
+            nltk.data.path.insert(0, str(nltk_data_path))
+
+        print_info(f"NLTK data path: {nltk_data_path}")
+
+        # Download required NLTK data packages
+        # punkt_tab is required by transformers/whisperx for tokenization
+        required_packages = [
+            'punkt_tab',       # Punkt tokenizer (new tabular format)
+            'punkt',           # Punkt tokenizer (legacy format for compatibility)
+            'averaged_perceptron_tagger_eng',  # POS tagger (may be needed by transformers)
+        ]
+
+        downloaded = []
+        for package in required_packages:
+            try:
+                print_info(f"Downloading NLTK package: {package}")
+                nltk.download(package, download_dir=str(nltk_data_path), quiet=False)
+                downloaded.append(package)
+                print_success(f"  Downloaded: {package}")
+            except Exception as pkg_error:
+                print_error(f"  Failed to download {package}: {pkg_error}")
+
+        if downloaded:
+            print_success(f"NLTK data downloaded successfully ({len(downloaded)} packages)")
+        else:
+            raise Exception("No NLTK packages were downloaded")
+
+        return {
+            "nltk": {
+                "packages": downloaded,
+                "path": str(nltk_data_path),
+                "status": "downloaded"
+            }
+        }
+
+    except Exception as e:
+        print_error(f"Failed to download NLTK data: {e}")
+        return {"nltk": {"status": "failed", "error": str(e)}}
+
+def download_sentence_transformers():
+    """Download sentence-transformers model for semantic search"""
+    print_header("Downloading Sentence-Transformers Model")
+
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        model_name = "all-MiniLM-L6-v2"
+        cache_path = Path.home() / ".cache" / "sentence-transformers"
+        cache_path.mkdir(parents=True, exist_ok=True)
+
+        print_info(f"Model: {model_name}")
+        print_info(f"Cache path: {cache_path}")
+        print_info("Loading sentence-transformers model (this will download if needed)...")
+
+        # Load model (will download to cache if not present)
+        model = SentenceTransformer(model_name, cache_folder=str(cache_path))
+
+        # Test the model with a sample text to ensure it works
+        test_embedding = model.encode("This is a test sentence.")
+        print_info(f"  Embedding dimension: {len(test_embedding)}")
+
+        print_success(f"Sentence-transformers model '{model_name}' downloaded successfully")
+
+        # Clean up
+        del model
+
+        return {
+            "sentence_transformers": {
+                "model": model_name,
+                "path": str(cache_path),
+                "dimension": len(test_embedding),
+                "status": "downloaded"
+            }
+        }
+
+    except Exception as e:
+        print_error(f"Failed to download sentence-transformers model: {e}")
+        return {"sentence_transformers": {"status": "failed", "error": str(e)}}
+
 def get_cache_info():
     """Get information about cached models"""
     # Use default paths (same as backend)
     hf_home = str(Path.home() / ".cache" / "huggingface")
     torch_home = str(Path.home() / ".cache" / "torch")
+    nltk_home = str(Path.home() / ".cache" / "nltk_data")
+    sent_home = str(Path.home() / ".cache" / "sentence-transformers")
 
     cache_dirs = {
         "huggingface": Path(hf_home),
-        "torch": Path(torch_home)
+        "torch": Path(torch_home),
+        "nltk_data": Path(nltk_home),
+        "sentence_transformers": Path(sent_home)
     }
 
     info = {}
@@ -304,6 +402,8 @@ def main():
     results.update(download_whisperx_models())
     results.update(download_pyannote_models())
     results.update(download_alignment_models())
+    results.update(download_nltk_data())
+    results.update(download_sentence_transformers())
 
     # Create manifest
     manifest = create_manifest(results)
