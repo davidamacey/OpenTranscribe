@@ -579,6 +579,10 @@ download_models() {
 copy_configuration() {
     print_header "Copying Configuration Files"
 
+    # Copy base docker-compose.yml
+    print_info "Copying base docker-compose.yml..."
+    cp docker-compose.yml "${PACKAGE_DIR}/config/docker-compose.yml"
+
     # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
     print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
 
@@ -597,7 +601,7 @@ copy_configuration() {
         sed -i "s|image: ${service_name}[:/][^ ]*|image: ${img}|g" "$temp_compose"
     done
 
-    print_success "Infrastructure images synced from docker-compose.yml"
+    print_success "Infrastructure images synced (base + offline override pattern)"
 
     # Copy and template .env file
     print_info "Creating .env template..."

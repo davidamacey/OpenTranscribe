@@ -15,7 +15,8 @@ NC='\033[0m' # No Color
 
 # Configuration
 INSTALL_DIR="/opt/opentranscribe"
-COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
+# Use base + offline override pattern
+COMPOSE_FILES="-f $INSTALL_DIR/docker-compose.yml -f $INSTALL_DIR/docker-compose.offline.yml"
 BACKUP_DIR="$INSTALL_DIR/backups"
 
 #######################
@@ -64,8 +65,8 @@ check_installation() {
         exit 1
     fi
 
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        print_warning "Docker Compose file not found at: $COMPOSE_FILE"
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ] || [ ! -f "$INSTALL_DIR/docker-compose.offline.yml" ]; then
+        print_warning "Docker Compose files not found in: $INSTALL_DIR"
         print_warning "Installation may be incomplete or already removed"
     fi
 }
@@ -105,8 +106,8 @@ create_backup() {
     fi
 
     # Try to create backup if postgres container exists
-    if docker compose -f "$COMPOSE_FILE" ps postgres | grep -q "Up"; then
-        docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U postgres opentranscribe > "$backup_file" 2>/dev/null || {
+    if docker compose $COMPOSE_FILES ps postgres | grep -q "Up"; then
+        docker compose $COMPOSE_FILES exec -T postgres pg_dump -U postgres opentranscribe > "$backup_file" 2>/dev/null || {
             print_warning "Could not create backup - postgres may not be running"
             return 1
         }
@@ -160,8 +161,8 @@ confirm_uninstall() {
 stop_services() {
     print_header "Stopping Services"
 
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        print_warning "Docker Compose file not found - skipping service stop"
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ] || [ ! -f "$INSTALL_DIR/docker-compose.offline.yml" ]; then
+        print_warning "Docker Compose files not found - skipping service stop"
         return
     fi
 
@@ -179,7 +180,7 @@ stop_services() {
     }
 
     # Stop services without removing volumes yet
-    docker compose -f "$COMPOSE_FILE" down 2>/dev/null || {
+    docker compose $COMPOSE_FILES down 2>/dev/null || {
         print_warning "Some services may have already been stopped"
     }
 
@@ -189,8 +190,8 @@ stop_services() {
 remove_volumes() {
     print_header "Removing Docker Volumes"
 
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        print_warning "Docker Compose file not found - skipping volume removal"
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ] || [ ! -f "$INSTALL_DIR/docker-compose.offline.yml" ]; then
+        print_warning "Docker Compose files not found - skipping volume removal"
         return
     fi
 
@@ -222,7 +223,7 @@ remove_volumes() {
         return
     }
 
-    docker compose -f "$COMPOSE_FILE" down -v 2>/dev/null || {
+    docker compose $COMPOSE_FILES down -v 2>/dev/null || {
         print_warning "Some volumes may have already been removed"
     }
 

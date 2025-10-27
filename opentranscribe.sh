@@ -95,9 +95,9 @@ fix_model_cache_permissions() {
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
-    # Add development override if it exists
-    if [ -f docker-compose.override.yml ]; then
-        compose_files="$compose_files -f docker-compose.override.yml"
+    # Production deployment always uses prod overrides
+    if [ -f docker-compose.prod.yml ]; then
+        compose_files="$compose_files -f docker-compose.prod.yml"
     fi
 
     echo "$compose_files"

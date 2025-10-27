@@ -154,38 +154,66 @@ lint_dockerfile() {
     fi
 }
 
-# Function to run Dockle on image
+# Function to run Dockle on image with all CIS Docker Benchmark checks
 run_dockle() {
     local image=$1
     local component=$2
 
-    print_header "Running Dockle on ${image}"
+    print_header "Running Dockle (CIS Docker Benchmark) on ${image}"
 
     local output_file="${OUTPUT_DIR}/${component}-dockle.json"
     local abs_output_dir
     abs_output_dir=$(cd "${OUTPUT_DIR}" && pwd)
 
-    # Run Dockle via Docker with mounted output directory and increased timeout
+    # Run Dockle with ALL best practices enabled:
+    # - All CIS Docker Benchmark checks (runs by default)
+    # - Suppress known false positives
+    # - Exit code enforcement (fail on WARN or higher)
+    # - Generate both JSON and human-readable output
+    local dockle_base_args=(
+        --timeout 600s
+        --exit-code 1              # Exit with error code if issues found
+        --exit-level WARN          # Fail on WARN level or higher
+        --accept-file settings.py  # Suppress scipy library false positive
+        --accept-key KEY_SHA512    # Suppress NGINX signing key false positive
+        --ignore CIS-DI-0005       # Docker Content Trust (not applicable for all environments)
+        --ignore DKL-DI-0006       # Latest tag (intentional for our workflow)
+    )
+
+    # Run Dockle with JSON output
     if docker run --rm \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${abs_output_dir}:/output" \
         goodwithtech/dockle:latest \
-        --timeout 600s \
+        "${dockle_base_args[@]}" \
         --format json \
         --output "/output/${component}-dockle.json" \
         "${image}"; then
         print_success "Dockle scan completed (see ${output_file})"
 
-        # Display summary with increased timeout
+        # Display human-readable summary
+        echo ""
+        print_info "Dockle Summary (Human-Readable):"
         docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             goodwithtech/dockle:latest \
-            --timeout 600s \
+            "${dockle_base_args[@]}" \
             "${image}"
 
         return 0
     else
-        print_error "Dockle scan failed"
+        print_error "Dockle scan found security issues (level: WARN or higher)"
+        print_error "Review ${output_file} for details"
+
+        # Still display summary even on failure
+        echo ""
+        print_warning "Dockle Failure Details:"
+        docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            goodwithtech/dockle:latest \
+            "${dockle_base_args[@]}" \
+            "${image}" || true
+
         return 1
     fi
 }

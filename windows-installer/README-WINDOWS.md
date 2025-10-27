@@ -105,7 +105,7 @@ Total size: ~5-40GB depending on Whisper model size selected during build.
 ### Services Not Starting
 - Check Docker Desktop is in Linux containers mode (not Windows containers)
 - Verify WSL 2 is properly configured: `wsl --list --verbose`
-- Check logs: `docker compose logs`
+- Check logs: `docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml logs`
 
 ### GPU Not Detected
 - Verify NVIDIA drivers are installed: run `nvidia-smi` in PowerShell

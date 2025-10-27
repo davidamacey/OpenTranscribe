@@ -1,0 +1,55 @@
+# OpenTranscribe Development Overrides
+# This file is AUTOMATICALLY loaded in development (no -f flag needed!)
+#
+# Usage: Just run `docker compose up` - this file merges with docker-compose.yml
+#
+# This file contains ONLY development-specific settings:
+#   - Build from local Dockerfiles (instead of pulling images)
+#   - Mount source code for live reloading
+#   - Development-specific commands
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development (no AI models needed)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev  # Use development Dockerfile
+    volumes:
+      - ./frontend:/app  # Mount source code for development
+      - /app/node_modules  # Exclude node_modules from host mount
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"  # Dev Vite server port
+    environment:
+      - NODE_ENV=development  # Development mode
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5173"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - flower_data:/app

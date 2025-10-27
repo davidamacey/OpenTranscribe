@@ -1,244 +1,44 @@
-version: '3.8'
-
-# OpenTranscribe Production Configuration
-# Cross-platform compatible with automatic GPU detection
+# OpenTranscribe Production Overrides
+# Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# This file contains ONLY production-specific settings:
+#   - Pull pre-built images from Docker Hub
+#   - Production volume configurations
+#   - Production database initialization path
 
 services:
-  postgres:
-    image: postgres:17.5-alpine
-    restart: always
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-      - ./init_db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-    ports:
-      - "${POSTGRES_PORT:-5176}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    restart: always
-    volumes:
-      - minio_data:/data
-    environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-    ports:
-      - "${MINIO_PORT:-5178}:9000"
-      - "${MINIO_CONSOLE_PORT:-5179}:9001"
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
-
-  redis:
-    image: redis:8.2.2-alpine3.22
-    restart: always
-    ports:
-      - "${REDIS_PORT:-5177}:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 30s
-      retries: 50
-
-  opensearch:
-    image: opensearchproject/opensearch:2.5.0
-    restart: always
-    environment:
-      - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
-      - DISABLE_SECURITY_PLUGIN=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    volumes:
-      - opensearch_data:/usr/share/opensearch/data
-    ports:
-      - "${OPENSEARCH_PORT:-5180}:9200"
-      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
-      interval: 5s
-      timeout: 10s
-      retries: 20
-
   backend:
     image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
-    restart: always
-    volumes:
-      - backend_temp:/app/temp
-    ports:
-      - "${BACKEND_PORT:-5174}:8080"
-    environment:
-      # Database
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-      # Storage
-      - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
-      # Cache
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=6379
-      # Search
-      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=9200
-      # Security
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change_this_in_production}
-      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
-      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      # Models
-      - MODELS_DIRECTORY=${MODELS_DIRECTORY:-/app/models}
-      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
-      - TEMP_DIR=${TEMP_DIR:-/app/temp}
-      # Hardware (auto-detected)
-      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
-      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - USE_GPU=${USE_GPU:-auto}
-      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
-      # AI Models
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=${BATCH_SIZE:-auto}
-      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
-      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
-      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
-      # LLM Configuration
-      - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8000/v1}
-      - VLLM_API_KEY=${VLLM_API_KEY:-}
-      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      opensearch:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # No volumes needed - temp files live in container only
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
-    restart: always
-    command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
-      # Model cache directories - must be owned by UID 1000 on host
+      # Production: only model cache, no code mounts
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - backend_temp:/app/temp
-    environment:
-      # Same environment as backend
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-opentranscribe}
-      - MINIO_HOST=${MINIO_HOST:-minio}
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MEDIA_BUCKET_NAME=${MEDIA_BUCKET_NAME:-opentranscribe}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=6379
-      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch}
-      - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=${MODELS_DIRECTORY:-/app/models}
-      - MODEL_BASE_DIR=${MODEL_BASE_DIR:-/app/models}
-      - TEMP_DIR=${TEMP_DIR:-/app/temp}
-      - TORCH_DEVICE=${TORCH_DEVICE:-auto}
-      - COMPUTE_TYPE=${COMPUTE_TYPE:-auto}
-      - USE_GPU=${USE_GPU:-auto}
-      - GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=${BATCH_SIZE:-auto}
-      - DIARIZATION_MODEL=${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
-      - MIN_SPEAKERS=${MIN_SPEAKERS:-1}
-      - MAX_SPEAKERS=${MAX_SPEAKERS:-10}
-      # LLM Configuration
-      - LLM_PROVIDER=${LLM_PROVIDER:-vllm}
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8000/v1}
-      - VLLM_API_KEY=${VLLM_API_KEY:-}
-      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-    depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # No temp volume needed - temp files live in container only
 
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod  # Production build with NGINX
     pull_policy: always
-    restart: always
     ports:
-      - "${FRONTEND_PORT:-5173}:8080"
+      - "${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
     environment:
-      - NODE_ENV=production
-      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-5174}/api
-      - VITE_WS_BASE_URL=ws://localhost:${BACKEND_PORT:-5174}/ws
-      - VITE_FLOWER_PORT=${FLOWER_PORT:-5175}
-      - VITE_FLOWER_URL_PREFIX=${VITE_FLOWER_URL_PREFIX:-flower}
-    depends_on:
-      backend:
-        condition: service_healthy
+      - NODE_ENV=production  # Production mode
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
       interval: 10s
@@ -248,34 +48,7 @@ services:
 
   flower:
     image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
-    restart: always
-    command: >
-      python -m celery -A app.core.celery flower
-      --port=5555
-      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
-      --persistent=True
-      --db=/app/flower.db
-      --broker=redis://${REDIS_HOST:-redis}:6379/0
-    ports:
-      - "${FLOWER_PORT:-5175}:5555"
-    depends_on:
-      - redis
-      - celery-worker
-    environment:
-      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-    volumes:
-      - flower_data:/app
-
-volumes:
-  postgres_data:
-  minio_data:
-  redis_data:
-  opensearch_data:
-  backend_temp:
-  flower_data:
-
-networks:
-  default:
-    driver: bridge

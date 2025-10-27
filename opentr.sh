@@ -19,13 +19,15 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod]    - Start the application (dev mode by default)"
-  echo "  stop                - Stop OpenTranscribe containers"
-  echo "  status              - Show container status"
-  echo "  logs [service]      - View logs (all services by default)"
+  echo "  start [dev|prod] [--build]  - Start the application (dev mode by default)"
+  echo "                                --build: Build prod images locally (test before push)"
+  echo "  stop                        - Stop OpenTranscribe containers"
+  echo "  status                      - Show container status"
+  echo "  logs [service]              - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod]    - Reset and reinitialize (deletes all data!)"
+  echo "  reset [dev|prod] [--build]  - Reset and reinitialize (deletes all data!)"
+  echo "                                --build: Build prod images locally (test before push)"
   echo "  backup              - Create a database backup"
   echo "  restore [file]      - Restore database from backup"
   echo ""
@@ -43,15 +45,16 @@ show_help() {
   echo "  purge               - Remove everything including images (most destructive)"
   echo ""
   echo "Advanced Commands:"
-  echo "  init-db             - Initialize the database without resetting containers"
   echo "  health              - Check health status of all services"
   echo "  help                - Show this help menu"
   echo ""
   echo "Examples:"
-  echo "  ./opentr.sh start           # Start in development mode"
-  echo "  ./opentr.sh start prod      # Start in production mode"
-  echo "  ./opentr.sh logs backend    # View backend logs"
-  echo "  ./opentr.sh restart-backend # Restart backend services only"
+  echo "  ./opentr.sh start                # Start in development mode"
+  echo "  ./opentr.sh start prod           # Start in production mode (pulls from Docker Hub)"
+  echo "  ./opentr.sh start prod --build   # Test production build locally (before pushing)"
+  echo "  ./opentr.sh reset dev            # Reset development environment"
+  echo "  ./opentr.sh logs backend         # View backend logs"
+  echo "  ./opentr.sh restart-backend      # Restart backend services only"
   echo ""
 }
 
@@ -117,6 +120,7 @@ detect_and_configure_hardware() {
 # Function to start the environment
 start_app() {
   ENVIRONMENT=${1:-dev}
+  BUILD_FLAG=${2:-}
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
 
@@ -135,29 +139,27 @@ start_app() {
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
 
-  # Use docker-compose configuration
-  COMPOSE_FILE="docker-compose.yml"
-
-  # Determine which frontend service to use
   if [ "$ENVIRONMENT" = "prod" ]; then
-    FRONTEND_SERVICE="frontend-prod"
-    echo "🔄 Starting services in PRODUCTION mode..."
+    # Production: Use base + prod override files
+    # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
+
+    if [ "$BUILD_FLAG" = "--build" ]; then
+      echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
+      echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
+      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+    else
+      echo "🔄 Starting services in PRODUCTION mode (pulling from Docker Hub)..."
+      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+    fi
   else
-    FRONTEND_SERVICE="frontend"
-    echo "🔄 Starting services in DEVELOPMENT mode..."
+    # Development: Auto-loads docker-compose.override.yml (always builds)
+    echo "🔄 Starting services in DEVELOPMENT mode (auto-loads docker-compose.override.yml)..."
+    docker compose up -d --build
   fi
-
-  # Start infrastructure services first
-  echo "🚀 Starting infrastructure services..."
-  docker compose -f $COMPOSE_FILE up -d --build postgres redis minio opensearch
-
-  # Start application services with correct frontend
-  echo "🚀 Starting application services..."
-  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker $FRONTEND_SERVICE flower
 
   # Display container status
   echo "📊 Container status:"
-  docker compose -f $COMPOSE_FILE ps
+  docker compose ps
 
   # Print access information
   echo "✅ Services are starting up."
@@ -167,7 +169,7 @@ start_app() {
   echo "📋 To view logs, run:"
   echo "- All logs: docker compose logs -f"
   echo "- Backend logs: docker compose logs -f backend"
-  echo "- Frontend logs: docker compose logs -f $FRONTEND_SERVICE"
+  echo "- Frontend logs: docker compose logs -f frontend"
   echo "- Celery worker logs: docker compose logs -f celery-worker"
 
   # Print help information
@@ -177,6 +179,7 @@ start_app() {
 # Function to reset and initialize the environment
 reset_and_init() {
   ENVIRONMENT=${1:-dev}
+  BUILD_FLAG=${2:-}
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
 
@@ -189,20 +192,27 @@ reset_and_init() {
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
 
-  # Use docker-compose configuration
-  COMPOSE_FILE="docker-compose.yml"
-
-  # Determine which frontend service to use
   if [ "$ENVIRONMENT" = "prod" ]; then
-    FRONTEND_SERVICE="frontend-prod"
-    echo "🔄 Resetting in PRODUCTION mode..."
+    # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
+
+    if [ "$BUILD_FLAG" = "--build" ]; then
+      echo "🔄 Resetting in PRODUCTION mode with LOCAL BUILD (testing before push)..."
+      echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
+      COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+      BUILD_PROD=true
+    else
+      echo "🔄 Resetting in PRODUCTION mode (pulling from Docker Hub)..."
+      COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+      BUILD_PROD=false
+    fi
   else
-    FRONTEND_SERVICE="frontend"
-    echo "🔄 Resetting in DEVELOPMENT mode..."
+    echo "🔄 Resetting in DEVELOPMENT mode (auto-loads docker-compose.override.yml)..."
+    COMPOSE_CMD="docker compose"
+    BUILD_PROD=false
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."
-  docker compose -f $COMPOSE_FILE down -v
+  $COMPOSE_CMD down -v
 
   # Create necessary directories
   create_required_dirs
@@ -210,35 +220,26 @@ reset_and_init() {
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
 
-  # Start infrastructure services in a single command for efficiency
-  echo "🚀 Starting infrastructure services (postgres, redis, minio, opensearch)..."
-  docker compose -f $COMPOSE_FILE up -d --build postgres redis minio opensearch
-
-  # Wait a bit for infrastructure services to be ready - reduced from multiple sleeps
-  echo "⏳ Waiting for infrastructure services to initialize..."
-  sleep 5
-
-  # Start application services with correct frontend
-  echo "🚀 Starting application services (backend, celery-worker, $FRONTEND_SERVICE, flower)..."
-  docker compose -f $COMPOSE_FILE up -d --build backend celery-worker $FRONTEND_SERVICE flower
+  # Start all services - docker compose handles dependency ordering via depends_on
+  echo "🚀 Starting all services..."
+  if [ "$ENVIRONMENT" = "prod" ] && [ "$BUILD_PROD" = "true" ]; then
+    $COMPOSE_CMD up -d --build
+  elif [ "$ENVIRONMENT" = "prod" ]; then
+    $COMPOSE_CMD up -d
+  else
+    $COMPOSE_CMD up -d --build
+  fi
 
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."
   wait_for_backend_health
 
-  # Note: Database tables are automatically created by PostgreSQL's entrypoint
-  # from /docker-entrypoint-initdb.d/init_db.sql on first container start
-  # (when postgres_data volume is empty after 'down -v')
-
-  echo "👤 Creating admin user and initial data..."
-  docker compose -f $COMPOSE_FILE exec backend python -m app.initial_data
+  # Note: Database tables, admin user, and default tags are automatically created
+  # by PostgreSQL's entrypoint from /docker-entrypoint-initdb.d/init_db.sql
+  # on first container start (when postgres_data volume is empty after 'down -v')
 
   echo "✅ Setup complete!"
 
-  # Start log tailing
-  start_logs $FRONTEND_SERVICE
-
-  echo "📊 Log tailing started in background. You can now test the application."
   # Print access information
   print_access_info
 }
@@ -310,17 +311,8 @@ restart_backend() {
 restart_frontend() {
   echo "🔄 Restarting frontend service..."
 
-  # Determine environment
-  if docker compose ps | grep -q "frontend-prod"; then
-    ENV="prod"
-    FRONTEND_SERVICE="frontend-prod"
-  else
-    ENV="dev"
-    FRONTEND_SERVICE="frontend"
-  fi
-
   # Restart frontend in place
-  docker compose restart $FRONTEND_SERVICE
+  docker compose restart frontend
 
   echo "✅ Frontend service restarted successfully."
 
@@ -333,22 +325,8 @@ restart_frontend() {
 restart_all() {
   echo "🔄 Restarting all services without database reset..."
 
-  # Determine environment
-  if docker compose ps | grep -q "frontend-prod"; then
-    ENV="prod"
-    FRONTEND_SERVICE="frontend-prod"
-  else
-    ENV="dev"
-    FRONTEND_SERVICE="frontend"
-  fi
-
-  # First restart infrastructure services
-  echo "🔄 Restarting infrastructure services (redis, minio, opensearch)..."
-  docker compose restart redis minio opensearch
-
-  # Then restart application services
-  echo "🔄 Restarting application services..."
-  docker compose restart backend celery-worker flower $FRONTEND_SERVICE
+  # Restart all services in place - docker compose handles dependency ordering
+  docker compose restart
 
   echo "✅ All services restarted successfully."
 
@@ -357,35 +335,14 @@ restart_all() {
   docker compose ps
 }
 
-# Function to manually initialize/update database schema without resetting containers
-# Use this when:
-#   - Adding new tables to existing database
-#   - Recovering from schema corruption
-#   - Updating schema without losing data (idempotent SQL with IF NOT EXISTS)
-# Note: On fresh install/reset, PostgreSQL automatically runs init_db.sql via entrypoint
-init_db() {
-  echo "🗄️ Manually initializing/updating database schema..."
-  echo "   (This is redundant after 'reset' but useful for schema updates)"
-
-  # Execute SQL dump file to initialize/update the database
-  # SQL is idempotent (uses IF NOT EXISTS) so safe to run multiple times
-  docker compose exec -T postgres psql -U postgres -d opentranscribe < ./database/init_db.sql
-
-  echo "👤 Creating admin user and initial data..."
-  docker compose exec backend python -m app.initial_data
-
-  echo "✅ Database initialization complete."
-}
-
 # Function to remove containers and data volumes (but preserve images)
 remove_system() {
   echo "🗑️ Removing OpenTranscribe containers and data volumes..."
 
-  COMPOSE_FILE="docker-compose.yml"
-
   # Stop and remove containers and volumes
+  # Note: docker compose down automatically loads docker-compose.yml + docker-compose.override.yml
   echo "🗑️ Stopping containers and removing data volumes..."
-  docker compose -f $COMPOSE_FILE down -v
+  docker compose down -v
 
   echo "✅ Containers and data volumes removed. Images preserved for faster rebuilds."
 }
@@ -394,11 +351,10 @@ remove_system() {
 purge_system() {
   echo "💥 Purging ALL OpenTranscribe resources including images..."
 
-  COMPOSE_FILE="docker-compose.yml"
-
   # Stop and remove everything
+  # Note: docker compose down automatically loads docker-compose.yml + docker-compose.override.yml
   echo "🗑️ Stopping and removing containers, volumes, and images..."
-  docker compose -f $COMPOSE_FILE down -v --rmi all
+  docker compose down -v --rmi all
 
   # Remove any remaining OpenTranscribe images
   echo "🗑️ Removing any remaining OpenTranscribe images..."
@@ -451,23 +407,23 @@ check_docker
 case "$1" in
   start)
     ENV=${2:-dev}
-    start_app "$ENV"
+    BUILD_FLAG=${3:-}
+    start_app "$ENV" "$BUILD_FLAG"
     ;;
 
   stop)
     echo "🛑 Stopping all containers..."
-    # Use unified compose files
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE down
+    docker compose down
     echo "✅ All containers stopped."
     ;;
 
   reset)
     ENV=${2:-dev}
+    BUILD_FLAG=${3:-}
     echo "⚠️ Warning: This will delete all data! Continue? (y/n)"
     read -r confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
-      reset_and_init "$ENV"
+      reset_and_init "$ENV" "$BUILD_FLAG"
     else
       echo "❌ Reset cancelled."
     fi
@@ -475,27 +431,24 @@ case "$1" in
 
   logs)
     SERVICE=${2:-}
-    COMPOSE_FILE="docker-compose.yml"
     if [ -z "$SERVICE" ]; then
       echo "📋 Showing logs for all services... (press Ctrl+C to exit)"
-      docker compose -f $COMPOSE_FILE logs -f
+      docker compose logs -f
     else
       echo "📋 Showing logs for $SERVICE... (press Ctrl+C to exit)"
-      docker compose -f $COMPOSE_FILE logs -f "$SERVICE"
+      docker compose logs -f "$SERVICE"
     fi
     ;;
 
   status)
     echo "📊 Container status:"
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE ps
+    docker compose ps
     ;;
 
   shell)
     SERVICE=${2:-backend}
     echo "🔧 Opening shell in $SERVICE container..."
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE exec "$SERVICE" /bin/bash || docker compose -f $COMPOSE_FILE exec "$SERVICE" /bin/sh
+    docker compose exec "$SERVICE" /bin/bash || docker compose exec "$SERVICE" /bin/sh
     ;;
 
   backup)
@@ -521,20 +474,14 @@ case "$1" in
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE up -d --build backend celery-worker flower
+    docker compose up -d --build backend celery-worker flower
     echo "✅ Backend services rebuilt successfully."
     ;;
 
   rebuild-frontend)
     echo "🔨 Rebuilding frontend service..."
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE up -d --build frontend
+    docker compose up -d --build frontend
     echo "✅ Frontend service rebuilt successfully."
-    ;;
-
-  init-db)
-    init_db
     ;;
 
   remove)
@@ -564,8 +511,7 @@ case "$1" in
   build)
     echo "🔨 Rebuilding containers..."
     detect_and_configure_hardware
-    COMPOSE_FILE="docker-compose.yml"
-    docker compose -f $COMPOSE_FILE build
+    docker compose build
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
 
