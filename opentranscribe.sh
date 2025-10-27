@@ -95,17 +95,9 @@ fix_model_cache_permissions() {
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
-    # Add NVIDIA override if it exists and GPU is detected
-    if [ -f docker-compose.nvidia.yml ] && [ -f .env ]; then
-        source .env 2>/dev/null || true
-        if [[ "${USE_NVIDIA_RUNTIME:-false}" == "true" ]]; then
-            compose_files="$compose_files -f docker-compose.nvidia.yml"
-        fi
-    fi
-
-    # Add development override if it exists
-    if [ -f docker-compose.override.yml ]; then
-        compose_files="$compose_files -f docker-compose.override.yml"
+    # Production deployment always uses prod overrides
+    if [ -f docker-compose.prod.yml ]; then
+        compose_files="$compose_files -f docker-compose.prod.yml"
     fi
 
     echo "$compose_files"

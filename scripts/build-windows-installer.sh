@@ -600,13 +600,39 @@ download_models() {
 copy_configuration() {
     print_header "Copying Configuration Files"
 
-    # Copy docker-compose for Windows (offline version)
+    # Copy docker-compose for Windows (base + offline overlay)
     print_info "Copying docker-compose configuration..."
+    cp docker-compose.yml "${PACKAGE_DIR}/config/docker-compose.yml"
     cp docker-compose.offline.yml "${PACKAGE_DIR}/config/docker-compose.offline.yml"
 
-    # Copy .env.example as the base .env for Windows
-    print_info "Creating .env from .env.example..."
+    # Generate secure .env with auto-generated passwords for Windows installation
+    print_info "Creating .env with auto-generated secure passwords..."
     cp .env.example "${PACKAGE_DIR}/.env"
+
+    # Generate all secure credentials using openssl
+    print_info "Generating secure credentials (64-char JWT/encryption, 32-char passwords)..."
+    local POSTGRES_PASSWORD
+    local MINIO_ROOT_PASSWORD
+    local JWT_SECRET
+    local ENCRYPTION_KEY
+    local REDIS_PASSWORD
+    local OPENSEARCH_PASSWORD
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+    JWT_SECRET=$(openssl rand -hex 64)
+    ENCRYPTION_KEY=$(openssl rand -hex 64)
+    REDIS_PASSWORD=$(openssl rand -hex 32)
+    OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+
+    # Update .env with generated passwords
+    sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|g" "${PACKAGE_DIR}/.env"
+    sed -i "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}|g" "${PACKAGE_DIR}/.env"
+    sed -i "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=${JWT_SECRET}|g" "${PACKAGE_DIR}/.env"
+    sed -i "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|g" "${PACKAGE_DIR}/.env"
+    sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|g" "${PACKAGE_DIR}/.env"
+    sed -i "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}|g" "${PACKAGE_DIR}/.env"
+
+    print_success "Secure credentials generated for Windows installer"
 
     # Also copy .env.example as template for reference
     print_info "Copying .env.example as template..."

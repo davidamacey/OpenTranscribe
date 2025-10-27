@@ -499,7 +499,7 @@ Backups stored in: `/opt/opentranscribe/backups/`
 ```bash
 cd /opt/opentranscribe
 sudo ./opentr.sh stop
-docker compose -f docker-compose.yml run --rm postgres psql -U postgres -d opentranscribe < backups/backup_file.sql
+docker compose -f docker-compose.yml -f docker-compose.offline.yml run --rm postgres psql -U postgres -d opentranscribe < backups/backup_file.sql
 sudo ./opentr.sh start
 ```
 
@@ -568,7 +568,7 @@ If you prefer to uninstall manually or the script is unavailable:
 ```bash
 cd /opt/opentranscribe
 sudo ./opentr.sh stop
-sudo docker compose -f docker-compose.yml down -v
+sudo docker compose -f docker-compose.yml -f docker-compose.offline.yml down -v
 ```
 
 **Remove installation:**

@@ -12,22 +12,22 @@
   let loading = false;
   let saving = false;
   let testing = false;
-  
+
   let currentSettings: UserLLMSettings | null = null;
   let supportedProviders: ProviderDefaults[] = [];
   let hasSettings = false;
   let savedConfigurations: UserLLMSettings[] = [];
   let activeConfigurationId: string | null = null;
   let editingConfiguration: UserLLMSettings | null = null;
-  
+
   // Modal state
   let showConfigModal = false;
-  
+
   // Confirmation modals
   let showDeleteConfigModal = false;
   let configToDelete: UserLLMSettings | null = null;
   let showDeleteAllModal = false;
-  
+
   // Connection status for active configuration
   let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   let statusMessage = '';
@@ -46,7 +46,7 @@
 
   async function loadData() {
     loading = true;
-    
+
     try {
       // Load supported providers
       const providersResponse = await LLMSettingsApi.getSupportedProviders();
@@ -61,7 +61,7 @@
         if (activeConfigurationId && savedConfigurations.length > 0) {
           currentSettings = savedConfigurations.find(c => c.id === activeConfigurationId) || null;
           hasSettings = true;
-          
+
           // Check initial status if settings exist and update the central store
           await checkCurrentStatus();
         } else {
@@ -137,7 +137,7 @@
     showConfigModal = true;
     editingConfiguration = null;
   }
-  
+
   function openEditModal(config: UserLLMSettings) {
     showConfigModal = true;
     editingConfiguration = config;
@@ -157,17 +157,17 @@
 
     try {
       await LLMSettingsApi.setActiveConfiguration(configId);
-      
+
       // Update local state
       activeConfigurationId = configId;
       currentSettings = savedConfigurations.find(c => c.id === configId) || null;
       hasSettings = true;
-      
+
       // Check status of newly activated configuration
       await checkCurrentStatus();
 
       toastStore.success('Configuration activated successfully', 5000);
-      
+
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -182,10 +182,10 @@
 
   async function testSavedConfiguration(config: UserLLMSettings): Promise<void> {
     testing = true;
-    
+
     try {
       const result = await LLMSettingsApi.testConfiguration(config.id);
-      
+
       if (result.success) {
         toastStore.success(`${config.name}: ${result.message}`, 5000);
       } else {
@@ -203,7 +203,7 @@
     configToDelete = config;
     showDeleteConfigModal = true;
   }
-  
+
   async function deleteConfiguration() {
     if (!configToDelete) return;
 
@@ -211,25 +211,25 @@
 
     try {
       await LLMSettingsApi.deleteConfiguration(configToDelete.id);
-      
+
       // Remove from saved configurations
       savedConfigurations = savedConfigurations.filter(c => c.id !== configToDelete.id);
-      
+
       // If this was the active configuration, clear it
       if (configToDelete.id === activeConfigurationId) {
         activeConfigurationId = null;
         currentSettings = null;
         hasSettings = false;
-        
+
         // Reset global LLM status store
         llmStatusStore.reset();
       }
-      
+
       toastStore.success(`Configuration "${configToDelete.name}" deleted successfully`, 5000);
 
       configToDelete = null;
       showDeleteConfigModal = false;
-      
+
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -245,7 +245,7 @@
   function confirmDeleteAll() {
     showDeleteAllModal = true;
   }
-  
+
   async function deleteAllSettings() {
     if (!hasSettings) {
       toastStore.error('No settings to delete');
@@ -256,7 +256,7 @@
 
     try {
       await LLMSettingsApi.deleteSettings();
-      
+
       // Reset all local state
       savedConfigurations = [];
       activeConfigurationId = null;
@@ -265,14 +265,14 @@
       connectionStatus = 'unknown';
       statusMessage = '';
       statusLastChecked = null;
-      
+
       // Reset global LLM status store
       llmStatusStore.reset();
 
       toastStore.success('All LLM configurations deleted successfully', 5000);
 
       showDeleteAllModal = false;
-      
+
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
@@ -284,10 +284,10 @@
       saving = false;
     }
   }
-  
+
   function handleConfigSaved(event: CustomEvent<UserLLMSettings>) {
     const savedConfig = event.detail;
-    
+
     // Update the configurations list
     if (editingConfiguration) {
       // Update existing configuration
@@ -300,10 +300,10 @@
       // Add new configuration
       savedConfigurations = [...savedConfigurations, savedConfig];
     }
-    
+
     // Update hasSettings flag
     hasSettings = savedConfigurations.length > 0;
-    
+
     // Trigger parent component update
     if (onSettingsChange) {
       onSettingsChange();
@@ -331,17 +331,17 @@
       document.body.style.overflow = '';
     }
   }
-  
+
   // Handle keyboard shortcuts for modals
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  
+
   $: {
     // Clean up previous listener if exists
     if (keydownHandler) {
       document.removeEventListener('keydown', keydownHandler);
       keydownHandler = null;
     }
-    
+
     // Add new listener if modal is open
     if (showConfigModal) {
       keydownHandler = (event: KeyboardEvent) => {
@@ -355,12 +355,6 @@
 </script>
 
 <div class="llm-settings">
-  <div class="settings-header">
-    <h3>LLM Provider Configuration</h3>
-    <p>Configure your preferred Large Language Model provider for AI summarization and speaker identification.</p>
-  </div>
-
-
   {#if loading}
     <div class="loading">Loading LLM settings...</div>
   {:else}
@@ -383,7 +377,7 @@
           </button>
         {/if}
       </div>
-      
+
       {#if savedConfigurations.length > 0}
         <div class="config-list">
           {#each savedConfigurations as config}
@@ -395,7 +389,7 @@
                   <div class="config-url">{config.base_url}</div>
                 {/if}
               </div>
-              
+
               <div class="config-actions">
                 {#if config.id === activeConfigurationId}
                   <div class="config-status currently-active" title={statusMessage}>
@@ -407,7 +401,7 @@
                     <span class="status-text">Currently Active</span>
                   </div>
                 {:else}
-                  <button 
+                  <button
                     class="activate-button"
                     on:click={() => activateConfiguration(config.id)}
                     disabled={saving}
@@ -427,8 +421,8 @@
                     Activate
                   </button>
                 {/if}
-                
-                <button 
+
+                <button
                   class="test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
@@ -440,8 +434,8 @@
                     <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
                   </svg>
                 </button>
-                
-                <button 
+
+                <button
                   class="edit-button"
                   on:click={() => editConfiguration(config)}
                   disabled={saving}
@@ -452,8 +446,8 @@
                     <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                   </svg>
                 </button>
-                
-                <button 
+
+                <button
                   class="delete-config-button"
                   on:click={() => confirmDeleteConfiguration(config)}
                   disabled={saving}
@@ -470,12 +464,12 @@
             </div>
           {/each}
         </div>
-        
+
         <!-- Delete All Button -->
         {#if savedConfigurations.length > 0}
           <div class="delete-all-section">
-            <button 
-              class="delete-all-button" 
+            <button
+              class="delete-all-button"
               on:click={confirmDeleteAll}
               disabled={saving}
               title="Delete all saved configurations (LLM features will be disabled)"
@@ -513,7 +507,7 @@
 </div>
 
 <!-- LLM Configuration Modal -->
-<LLMConfigModal 
+<LLMConfigModal
   bind:show={showConfigModal}
   editingConfig={editingConfiguration}
   {supportedProviders}
@@ -557,30 +551,11 @@
     margin: 0 auto;
   }
 
-  .settings-header {
-    margin-bottom: 2rem;
-    text-align: center;
-  }
-
-  .settings-header h3 {
-    margin: 0 0 0.5rem;
-    color: var(--text-color);
-    font-size: 1.5rem;
-    font-weight: 600;
-  }
-
-  .settings-header p {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-    line-height: 1.5;
-  }
-
   .loading {
     text-align: center;
     padding: 3rem;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
   }
 
   .saved-configs-section {
@@ -601,7 +576,7 @@
     align-items: center;
     gap: 0.5rem;
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.125rem;
     font-weight: 500;
     color: var(--text-color);
   }
@@ -616,7 +591,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -627,7 +602,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .create-config-button:active {
     transform: translateY(0);
   }
@@ -667,7 +642,7 @@
   .config-name {
     font-weight: 500;
     color: var(--text-color);
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     margin-bottom: 0.25rem;
   }
 
@@ -800,7 +775,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
@@ -839,14 +814,14 @@
   .empty-state h4 {
     margin: 0 0 0.5rem;
     color: var(--text-color);
-    font-size: 1.1rem;
+    font-size: 1.125rem;
     font-weight: 500;
   }
 
   .empty-state p {
     margin: 0 0 1.5rem;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     line-height: 1.5;
   }
 
@@ -860,7 +835,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -871,7 +846,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .create-first-config-btn:active {
     transform: translateY(0);
   }

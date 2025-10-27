@@ -6,7 +6,8 @@
 
 # Installation directory
 INSTALL_DIR="/opt/opentranscribe"
-COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
+# Use base + offline override pattern
+COMPOSE_FILES="-f $INSTALL_DIR/docker-compose.yml -f $INSTALL_DIR/docker-compose.offline.yml"
 
 # Colors for output
 RED='\033[0;31m'
@@ -69,9 +70,9 @@ show_help() {
 
 # Check if running from correct directory
 check_location() {
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        print_error "Docker Compose file not found: $COMPOSE_FILE"
-        print_info "This script should be run from: $INSTALL_DIR"
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ] || [ ! -f "$INSTALL_DIR/docker-compose.offline.yml" ]; then
+        print_error "Docker Compose files not found in: $INSTALL_DIR"
+        print_info "Required: docker-compose.yml and docker-compose.offline.yml"
         exit 1
     fi
 }
@@ -95,7 +96,7 @@ check_env() {
 
 # Compose command wrapper
 dc() {
-    docker compose -f "$COMPOSE_FILE" "$@"
+    docker compose $COMPOSE_FILES "$@"
 }
 
 #######################

@@ -1,35 +1,38 @@
-version: '3.8'
+# OpenTranscribe Base Configuration
+# This file contains common configuration for all environments
+#
+# Usage:
+#   Development:   docker compose up (auto-loads docker-compose.override.yml)
+#   Production:    docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#   Offline:       docker compose -f docker-compose.yml -f docker-compose.offline.yml up
 
 services:
   postgres:
+    container_name: opentranscribe-postgres
     image: postgres:17.5-alpine
     restart: always
+    env_file: .env
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-      - ./database/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=opentranscribe
+      - ${INIT_DB_PATH:-./database/init_db.sql}:/docker-entrypoint-initdb.d/init_db.sql:ro
     ports:
-      - "5176:5432"
+      - "${POSTGRES_PORT:-5176}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   minio:
+    container_name: opentranscribe-minio
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
+    env_file: .env
     volumes:
       - minio_data:/data
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
     ports:
-      - "5178:9000"
-      - "5179:9001"
+      - "${MINIO_PORT:-5178}:9000"
+      - "${MINIO_CONSOLE_PORT:-5179}:9001"
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -38,19 +41,34 @@ services:
       retries: 5
 
   redis:
+    container_name: opentranscribe-redis
     image: redis:8.2.2-alpine3.22
     restart: always
+    env_file: .env
     ports:
-      - "5177:6379"
+      - "${REDIS_PORT:-5177}:6379"
     volumes:
       - redis_data:/data
+    # Use password if REDIS_PASSWORD is set in .env
+    command: >
+      sh -c "if [ -n \"$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass \"$REDIS_PASSWORD\";
+      else
+        redis-server;
+      fi"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: >
+        sh -c "if [ -n \"$REDIS_PASSWORD\" ]; then
+          redis-cli -a \"$REDIS_PASSWORD\" ping;
+        else
+          redis-cli ping;
+        fi"
       interval: 5s
       timeout: 30s
       retries: 50
 
   opensearch:
+    container_name: opentranscribe-opensearch
     image: opensearchproject/opensearch:2.5.0
     restart: always
     environment:
@@ -65,30 +83,36 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     ports:
-      - "5180:9200"
-      - "5181:9600"
+      - "${OPENSEARCH_PORT:-5180}:9200"
+      - "${OPENSEARCH_ADMIN_PORT:-5181}:9600"
     healthcheck:
       test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 20
 
-  # Development services that mirror production setup
-
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+    container_name: opentranscribe-backend
     restart: always
-    volumes:
-      - ./backend:/app
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    env_file: .env
+    # Backend handles API requests only - no AI models needed
+    # AI processing happens in celery-worker service
     ports:
-      - "5174:8080"
+      - "${BACKEND_PORT:-5174}:8080"
+    environment:
+      # Internal Docker network settings (hardcoded for service-to-service communication)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      # Container paths (hardcoded for internal use)
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
@@ -104,57 +128,11 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=opentranscribe
-      - MINIO_HOST=minio
-      - MINIO_PORT=9000
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENSEARCH_HOST=opensearch
-      - OPENSEARCH_PORT=9200
-      - JWT_SECRET_KEY=dev_secret_key_change_in_production
-      - JWT_ALGORITHM=HS256
-      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-      - MODELS_DIRECTORY=/app/models
-      - MODEL_BASE_DIR=/app/models
-      - TEMP_DIR=/app/temp
-      - USE_GPU=true
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=16
-      - COMPUTE_TYPE=float16
-      - DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
-      - MIN_SPEAKERS=1
-      - MAX_SPEAKERS=10
-      # LLM Configuration - defaults to external/cloud providers
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8012/v1}
-      - VLLM_API_KEY=${VLLM_API_KEY:-}
-      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss-20b}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
   celery-worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+    container_name: opentranscribe-celery-worker
     restart: always
+    env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
     runtime: nvidia
     deploy:
@@ -165,127 +143,87 @@ services:
               capabilities: [gpu]
               device_ids: ['${GPU_DEVICE_ID:-0}']
     volumes:
-      - ./backend:/app
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
     depends_on:
       - postgres
       - redis
       - minio
       - opensearch
+
+  celery-beat:
+    container_name: opentranscribe-celery-beat
+    restart: always
+    env_file: .env
+    command: celery -A app.core.celery beat --loglevel=info
     environment:
+      # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=opentranscribe
       - MINIO_HOST=minio
       - MINIO_PORT=9000
-      - MINIO_ROOT_USER=minioadmin
-      - MEDIA_BUCKET_NAME=opentranscribe
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - WHISPER_MODEL=${WHISPER_MODEL:-large-v2}
-      - BATCH_SIZE=16
-      - COMPUTE_TYPE=float16
-      - DIARIZATION_MODEL=pyannote/speaker-diarization-3.1
-      - MIN_SPEAKERS=1
-      - MAX_SPEAKERS=10
-      - MINIO_ROOT_PASSWORD=minioadmin
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
-      - MODELS_DIRECTORY=/app/models
       - OPENSEARCH_PORT=9200
-      - MODEL_BASE_DIR=/app/models
-      - TEMP_DIR=/app/temp
-      - USE_GPU=true
-      # LLM Configuration - defaults to external/cloud providers
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - VLLM_BASE_URL=${VLLM_BASE_URL:-http://localhost:8012/v1}
-      - VLLM_API_KEY=${VLLM_API_KEY:-}
-      - VLLM_MODEL_NAME=${VLLM_MODEL_NAME:-gpt-oss-20b}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL_NAME=${OPENAI_MODEL_NAME:-gpt-4o-mini}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://localhost:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-llama2:7b-chat}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - ANTHROPIC_MODEL_NAME=${ANTHROPIC_MODEL_NAME:-claude-3-haiku-20240307}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - OPENROUTER_MODEL_NAME=${OPENROUTER_MODEL_NAME:-anthropic/claude-3-haiku}
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+    depends_on:
+      - postgres
+      - redis
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
+    container_name: opentranscribe-frontend
     restart: always
-    volumes:
-      - ./frontend:/app
-      # Exclude node_modules from host to prevent permission issues
-      - /app/node_modules
-    ports:
-      - "5173:5173"
-    environment:
-      - NODE_ENV=development
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5173"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      backend:
-        condition: service_healthy
-
-  frontend-prod:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.prod
-    restart: unless-stopped
-    ports:
-      - "5173:8080"
-    environment:
-      - NODE_ENV=production
+    env_file: .env
+    # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
     depends_on:
       backend:
         condition: service_healthy
 
   flower:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+    container_name: opentranscribe-flower
     restart: always
+    env_file: .env
     command: >
       python -m celery -A app.core.celery flower
       --port=5555
-      --url_prefix=flower
+      --url_prefix=${VITE_FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/flower.db
-      --broker=redis://redis:6379/0
+      --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
     ports:
-      - "5175:5555"
+      - "${FLOWER_PORT:-5175}:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
     depends_on:
       - redis
       - celery-worker
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-    # No authentication required as per user requirements
     volumes:
-      - ./backend:/app
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Flower only needs persistent database for monitoring, not AI models
+      - flower_data:/app
 
 volumes:
   postgres_data:
   minio_data:
   redis_data:
   opensearch_data:
+  flower_data:
+
+networks:
+  default:
+    driver: bridge

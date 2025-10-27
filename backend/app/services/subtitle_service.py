@@ -17,12 +17,13 @@ from app.models.media import TranscriptSegment
 class SubtitleService:
     """Service for generating subtitle files from transcript data."""
 
-    # Movie-style subtitle formatting constants
+    # Movie-style subtitle formatting constants (industry standards)
     MAX_LINE_LENGTH = 42  # Optimal for readability
     MAX_LINES_PER_SUBTITLE = 2
     MIN_DISPLAY_TIME = 1.0  # Minimum 1 second display time
     MAX_DISPLAY_TIME = 6.0  # Maximum 6 seconds display time
     READING_SPEED_WPM = 200  # Words per minute for subtitle timing
+    MAX_CHARS_PER_SECOND = 20  # Maximum 20 characters per second for comfortable reading
 
     @staticmethod
     def format_timestamp(seconds: float) -> str:
@@ -37,10 +38,19 @@ class SubtitleService:
     def calculate_optimal_display_time(text: str) -> float:
         """Calculate optimal display time based on text length and reading speed."""
         word_count = len(text.split())
-        # Calculate time needed based on reading speed
+        char_count = len(text)
+
+        # Calculate time needed based on reading speed (words per minute)
         reading_time = (word_count / SubtitleService.READING_SPEED_WPM) * 60
-        # Add base time for short texts and cap at maximum
-        optimal_time = max(reading_time + 0.5, SubtitleService.MIN_DISPLAY_TIME)
+
+        # Also check character-per-second limit (industry standard)
+        chars_per_second_time = char_count / SubtitleService.MAX_CHARS_PER_SECOND
+
+        # Use the longer of the two to ensure comfortable reading
+        optimal_time = max(reading_time + 0.5, chars_per_second_time)
+
+        # Apply min/max constraints
+        optimal_time = max(optimal_time, SubtitleService.MIN_DISPLAY_TIME)
         return min(optimal_time, SubtitleService.MAX_DISPLAY_TIME)
 
     @staticmethod
@@ -73,6 +83,7 @@ class SubtitleService:
             return [full_text]
 
         # For longer text, handle speaker continuity properly
+        # IMPORTANT: Add speaker prefix to EVERY subtitle chunk for clarity
         formatted_subtitles = []
 
         # Split text into sentences for better breaking points
@@ -101,13 +112,8 @@ class SubtitleService:
                         break_on_hyphens=False,
                     )
 
-                    # For WebVTT, add speaker prefix to every subtitle chunk for clarity
-                    if (
-                        format_type.lower() == "webvtt"
-                        and speaker_prefix
-                        or not formatted_subtitles
-                        and speaker_prefix
-                    ):
+                    # Add speaker prefix to EVERY subtitle chunk
+                    if speaker_prefix:
                         subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
 
                     formatted_subtitles.append(
@@ -128,21 +134,14 @@ class SubtitleService:
                 break_on_hyphens=False,
             )
 
-            # For WebVTT, add speaker prefix to every subtitle chunk for clarity
-            if (
-                format_type.lower() == "webvtt"
-                and speaker_prefix
-                or not formatted_subtitles
-                and speaker_prefix
-            ):
-                subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
-
             # Split into multiple subtitles if needed
             for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
                 subtitle_chunk = subtitle_lines[i : i + SubtitleService.MAX_LINES_PER_SUBTITLE]
-                # For WebVTT multi-line chunks, add speaker prefix to each chunk
-                if format_type.lower() == "webvtt" and speaker_prefix and i > 0:
+
+                # Add speaker prefix to EVERY subtitle chunk (both first and continuation chunks)
+                if speaker_prefix:
                     subtitle_chunk[0] = f"{speaker_prefix}{subtitle_chunk[0]}"
+
                 formatted_subtitles.append("\n".join(subtitle_chunk))
 
         return formatted_subtitles if formatted_subtitles else [full_text]

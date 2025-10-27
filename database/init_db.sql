@@ -590,7 +590,7 @@ ANALYSIS GUIDELINES:
 **Content Type Adaptation:**
 - **Business Meetings**: Focus on decisions, action items, responsibilities, and next steps
 - **Interviews**: Highlight key insights shared, expertise demonstrated, and interesting revelations
-- **Podcasts**: Emphasize main themes, expert opinions, and engaging discussion points  
+- **Podcasts**: Emphasize main themes, expert opinions, and engaging discussion points
 - **Documentaries**: Focus on factual information, educational content, and key learnings
 - **Educational Content**: Prioritize concepts taught, examples given, and learning objectives
 
@@ -651,7 +651,7 @@ ANALYSIS GUIDELINES:
 Now analyze the provided transcript and generate your structured summary in valid JSON format.',
 TRUE, 'general', TRUE),
 
-('Speaker Identification Assistant', 'LLM-powered speaker identification suggestions to help users manually identify speakers', 
+('Speaker Identification Assistant', 'LLM-powered speaker identification suggestions to help users manually identify speakers',
 'You are an expert at analyzing speech patterns, content, and context clues to help identify speakers in transcripts. Your job is to provide suggestions to help users manually identify speakers - your predictions will NOT be automatically applied.
 
 TRANSCRIPT:
@@ -751,3 +751,11 @@ VALUES (
     CURRENT_TIMESTAMP
 ) ON CONFLICT (email) DO NOTHING;
 
+-- Insert default tags
+INSERT INTO tag (name, created_at)
+VALUES
+    ('Important', CURRENT_TIMESTAMP),
+    ('Meeting', CURRENT_TIMESTAMP),
+    ('Interview', CURRENT_TIMESTAMP),
+    ('Personal', CURRENT_TIMESTAMP)
+ON CONFLICT (name) DO NOTHING;

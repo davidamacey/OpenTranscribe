@@ -1,0 +1,61 @@
+# Dockle Ignore Configuration
+# https://github.com/goodwithtech/dockle
+#
+# This file documents which CIS Docker Benchmark checks are suppressed and why.
+# Note: Actual suppressions are in scripts/security-scan.sh via CLI flags.
+
+# Suppressed False Positives
+# ==========================
+
+# CIS-DI-0010: Do not store credential in environment variables/files
+# - settings.py: scipy library configuration file, not credentials
+# - KEY_SHA512: NGINX package signing key verification (public key), not a secret
+
+# Intentionally Ignored Checks
+# =============================
+
+# CIS-DI-0005: Enable Content trust for Docker
+# Reason: Not applicable for all deployment environments
+# Status: Acceptable INFO level warning
+
+# DKL-DI-0006: Avoid latest tag
+# Reason: Using :latest intentionally for development/testing workflow
+# Note: Production deployments should use specific version tags
+# Status: Acceptable WARN level
+
+# All Other CIS Docker Benchmark Checks: ENABLED ✅
+# ===================================================
+# The following checks are ACTIVE and will fail the build if violated:
+#
+# Security Checks:
+# - CIS-DI-0001: Create a user for the container (non-root user)
+# - CIS-DI-0002: Use trusted base images for containers
+# - CIS-DI-0003: Do not install unnecessary packages in containers
+# - CIS-DI-0004: Scan and rebuild images to include security patches
+# - CIS-DI-0006: Add HEALTHCHECK instruction to container images
+# - CIS-DI-0007: Do not use update instructions alone in Dockerfile
+# - CIS-DI-0008: Remove setuid and setgid permissions in images (INFO level)
+# - CIS-DI-0009: Use COPY instead of ADD in Dockerfile
+#
+# Dockle Additional Checks:
+# - DKL-DI-0001: Avoid sudo command
+# - DKL-DI-0002: Avoid sensitive directory mounting
+# - DKL-DI-0003: Avoid apt-get/apk/yum update
+# - DKL-DI-0004: Use apk add with --no-cache
+# - DKL-DI-0005: Clear apt-get caches after installation
+#
+# Exit Code Policy:
+# - FATAL: Immediate build failure
+# - WARN: Build failure (after suppressions)
+# - INFO: Warning only, no failure
+
+# To run Dockle manually with these settings:
+# docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+#   goodwithtech/dockle:latest \
+#   --exit-code 1 \
+#   --exit-level WARN \
+#   --accept-file settings.py \
+#   --accept-key KEY_SHA512 \
+#   --ignore CIS-DI-0005 \
+#   --ignore DKL-DI-0006 \
+#   your-image:latest

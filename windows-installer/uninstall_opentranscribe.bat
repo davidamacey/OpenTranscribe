@@ -95,7 +95,7 @@ if %SILENT_MODE% equ 0 (
 )
 
 REM Build docker compose down command with appropriate flags
-set "COMPOSE_CMD=docker compose -f "%INSTALL_DIR%config\docker-compose.offline.yml" down --remove-orphans"
+set "COMPOSE_CMD=docker compose -f "%INSTALL_DIR%config\docker-compose.yml" -f "%INSTALL_DIR%config\docker-compose.offline.yml" down --remove-orphans"
 
 REM Add -v flag if removing volumes
 if /i "!REMOVE_VOLUMES!"=="y" (
@@ -108,37 +108,45 @@ if /i "!REMOVE_IMAGES!"=="y" (
 )
 
 REM Use docker compose down to remove resources
-if exist "%INSTALL_DIR%config\docker-compose.offline.yml" (
-    if %SILENT_MODE% equ 0 (
-        echo Removing containers...
-        if /i "!REMOVE_VOLUMES!"=="y" echo Removing volumes...
-        if /i "!REMOVE_IMAGES!"=="y" echo Removing images...
-        echo.
-    )
-
-    REM Execute the compose down command
-    !COMPOSE_CMD!
-
-    if %errorlevel% equ 0 (
+if exist "%INSTALL_DIR%config\docker-compose.yml" (
+    if exist "%INSTALL_DIR%config\docker-compose.offline.yml" (
         if %SILENT_MODE% equ 0 (
+            echo Removing containers...
+            if /i "!REMOVE_VOLUMES!"=="y" echo Removing volumes...
+            if /i "!REMOVE_IMAGES!"=="y" echo Removing images...
             echo.
-            echo ✓ Containers removed
-            if /i "!REMOVE_VOLUMES!"=="y" echo ✓ Volumes removed
-            if /i "!REMOVE_IMAGES!"=="y" echo ✓ Images removed
-            echo ✓ Networks removed
-            echo.
+        )
+
+        REM Execute the compose down command
+        !COMPOSE_CMD!
+
+        if %errorlevel% equ 0 (
+            if %SILENT_MODE% equ 0 (
+                echo.
+                echo ✓ Containers removed
+                if /i "!REMOVE_VOLUMES!"=="y" echo ✓ Volumes removed
+                if /i "!REMOVE_IMAGES!"=="y" echo ✓ Images removed
+                echo ✓ Networks removed
+                echo.
+            )
+        ) else (
+            if %SILENT_MODE% equ 0 (
+                echo.
+                echo WARNING: Some resources may not have been removed.
+                echo Check that Docker Desktop is running and try again.
+                echo.
+            )
         )
     ) else (
         if %SILENT_MODE% equ 0 (
-            echo.
-            echo WARNING: Some resources may not have been removed.
-            echo Check that Docker Desktop is running and try again.
+            echo WARNING: docker-compose.offline.yml not found.
+            echo Cannot perform automatic cleanup.
             echo.
         )
     )
 ) else (
     if %SILENT_MODE% equ 0 (
-        echo WARNING: docker-compose.offline.yml not found.
+        echo WARNING: docker-compose.yml not found.
         echo Cannot perform automatic cleanup.
         echo.
         echo You can manually clean up with:

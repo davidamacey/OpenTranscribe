@@ -1,6 +1,7 @@
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import worker_process_init, task_postrun
+from celery.signals import task_postrun
+from celery.signals import worker_process_init
 
 from app.core.config import settings
 
@@ -51,7 +52,12 @@ celery_app.conf.update(
             "task": "periodic_health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
             "options": {"queue": "utility"},
-        }
+        },
+        "update-gpu-stats": {
+            "task": "update_gpu_stats",
+            "schedule": 30.0,  # Run every 30 seconds
+            "options": {"queue": "gpu"},  # Run on GPU worker
+        },
     },
 )
 
@@ -61,6 +67,7 @@ celery_app.conf.update(
 def init_worker_process(**kwargs):
     """Initialize worker process - dispose of any existing connections."""
     from app.db.base import engine
+
     engine.dispose()
 
 
@@ -68,4 +75,5 @@ def init_worker_process(**kwargs):
 def close_session_after_task(**kwargs):
     """Close database connections after each task to prevent stale connections."""
     from app.db.base import engine
+
     engine.dispose()

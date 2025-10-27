@@ -21,6 +21,9 @@
   // Import gallery store for modern state management
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../stores/gallery';
 
+  // Import settings modal store
+  import { settingsModalStore } from '../stores/settingsModalStore';
+
   // Create event dispatcher for gallery actions
   const dispatch = createEventDispatcher();
 
@@ -70,7 +73,7 @@
     logout();
     goto("/login");
   }
-  
+
   /**
    * Toggle the user dropdown menu
    * @param {MouseEvent} event - The mouse click event
@@ -83,7 +86,7 @@
       showNotificationsPanel.set(false);
     }
   }
-  
+
   /**
    * Toggle the notifications panel
    * @param {MouseEvent} event - The mouse click event
@@ -96,7 +99,7 @@
       showDropdown = false;
     }
   }
-  
+
   /**
    * Toggle recording controls popup
    */
@@ -138,8 +141,8 @@
     event.stopPropagation();
     navigate('/');
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('openAddMediaModal', { 
-        detail: { activeTab: 'record' } 
+      window.dispatchEvent(new CustomEvent('openAddMediaModal', {
+        detail: { activeTab: 'record' }
       }));
     }, 100);
     showRecordingControls = false;
@@ -153,13 +156,13 @@
     if (recordedBlob) {
       // Generate filename
       const filename = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
-      
+
       // Add to upload queue using background service
       uploadsStore.addRecording(recordedBlob, filename);
-      
+
       // Show success toast
       toastStore.success(`Upload started: ${filename}`);
-      
+
       // Clear recording after queuing upload
       recordingManager.clearRecording();
       showRecordingControls = false; // Close popup after upload
@@ -219,7 +222,7 @@
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     // Always show HH:MM:SS format for consistent width
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
@@ -247,7 +250,7 @@
       return 'RECORDING STANDBY';
     }
   }
-  
+
   // Recording controls ref for click outside detection
   let recordingControlsRef: HTMLElement | null = null;
 
@@ -264,18 +267,18 @@
       showRecordingControls = false;
     }
   }
-  
+
   // Setup and cleanup event listeners
   onMount(() => {
     document.addEventListener('click', handleClickOutside);
-    
+
     // Refresh user data to ensure we have the latest profile information
     // This ensures the navbar always shows the most up-to-date user info
     fetchUserInfo().catch(err => {
       console.error('Error refreshing user data in Navbar:', err);
     });
   });
-  
+
   onDestroy(() => {
     document.removeEventListener('click', handleClickOutside);
     unsubscribe();
@@ -366,7 +369,7 @@
     <div class="nav-links">
       <!-- Gallery link - only show when not on gallery/file pages -->
       {#if showGalleryLink}
-        <a 
+        <a
           href="/"
           title="Go back to your media library and files"
           class="nav-link"
@@ -379,10 +382,10 @@
           Back to Gallery
         </a>
       {/if}
-      
+
       <!-- Notifications button -->
-      <button 
-        class="notifications-btn" 
+      <button
+        class="notifications-btn"
         on:click={handleToggleNotifications}
         title="View notifications and alerts{$unreadCount > 0 ? ` (${$unreadCount} unread)` : ''}"
       >
@@ -394,12 +397,12 @@
           <span class="notification-badge">{$unreadCount}</span>
         {/if}
       </button>
-      
+
       <!-- Recording indicator (when active) -->
       {#if hasActiveRecording}
         <div class="recording-container">
-          <button 
-            class="recording-indicator {recordingStatusClass}" 
+          <button
+            class="recording-indicator {recordingStatusClass}"
             on:click={toggleRecordingControls}
             title="{getRecordingStatusTitle()} - Click for controls ({formatDuration(recordingDuration)})"
           >
@@ -431,11 +434,11 @@
                   {/if}
                 </div>
               </div>
-              
+
               <div class="popup-controls">
                 {#if isRecording}
                   <!-- Recording controls -->
-                  <button 
+                  <button
                     class="control-btn pause-btn"
                     on:click={handleTogglePause}
                     title={isPaused ? 'Resume recording' : 'Pause recording'}
@@ -451,8 +454,8 @@
                       </svg>
                     {/if}
                   </button>
-                  
-                  <button 
+
+                  <button
                     class="control-btn stop-btn"
                     on:click={handleStopRecording}
                     title="Stop recording"
@@ -463,7 +466,7 @@
                   </button>
                 {:else if recordedBlob}
                   <!-- Completed recording controls - reordered to prevent accidental deletion -->
-                  <button 
+                  <button
                     class="control-btn delete-btn"
                     on:click={handleDeleteRecording}
                     title="Delete recording"
@@ -475,8 +478,8 @@
                       <line x1="14" y1="11" x2="14" y2="17"></line>
                     </svg>
                   </button>
-                  
-                  <button 
+
+                  <button
                     class="control-btn upload-btn"
                     on:click={handleUploadRecording}
                     title="Upload recording"
@@ -488,9 +491,9 @@
                     </svg>
                   </button>
                 {/if}
-                
+
                 <!-- Always show expand button -->
-                <button 
+                <button
                   class="control-btn modal-btn"
                   on:click={handleOpenRecordingModal}
                   title="Open full recording interface"
@@ -512,11 +515,11 @@
       <div class="theme-toggle-container">
         <ThemeToggle />
       </div>
-      
+
       <!-- User profile dropdown -->
       <div class="user-dropdown" bind:this={dropdownRef}>
-        <button 
-          class="user-button" 
+        <button
+          class="user-button"
           on:click={toggleDropdown}
           title="Open user menu for settings, admin access, and logout"
         >
@@ -533,7 +536,7 @@
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
-        
+
         {#if showDropdown}
           <div class="dropdown-menu">
             <div class="dropdown-header">
@@ -541,10 +544,14 @@
               <strong>{$user ? $user.email : 'User'}</strong>
             </div>
             <div class="dropdown-divider"></div>
-            <a
-              href="/settings"
+            <button
               class="dropdown-item"
-              on:click|preventDefault={() => { showDropdown = false; goto("/settings"); }}
+              on:click={() => {
+                showDropdown = false;
+                // Open to admin section for admins, profile for regular users
+                const defaultSection = $user?.role === "admin" ? 'admin-users' : 'profile';
+                settingsModalStore.open(defaultSection);
+              }}
               title="Manage your account settings and preferences"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -552,39 +559,22 @@
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
               <span>Settings</span>
-            </a>
+            </button>
 
-            {#if $user && $user.role === "admin"}
-              <a
-                href="/admin"
-                class="dropdown-item"
-                on:click|preventDefault={() => { showDropdown = false; goto("/admin"); }}
-                title="Access admin dashboard for user management and system settings"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-                <span>Admin</span>
-              </a>
-            {/if}
-            
-            <button 
-              class="dropdown-item" 
+            <button
+              class="dropdown-item"
               on:click={() => {
                 // Get the current protocol and host
                 const protocol = window.location.protocol;
                 const host = window.location.hostname;
                 const port = import.meta.env.VITE_FLOWER_PORT || '5175';
                 const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-                
+
                 // Construct the URL properly with trailing slash
-                const url = urlPrefix 
-                  ? `${protocol}//${host}:${port}/${urlPrefix}/` 
+                const url = urlPrefix
+                  ? `${protocol}//${host}:${port}/${urlPrefix}/`
                   : `${protocol}//${host}:${port}/`;
-                
+
                 // Open Flower in a new tab with the correct URL
                 window.open(url, '_blank');
                 showDropdown = false;
@@ -598,8 +588,8 @@
               <span>Flower Dashboard</span>
             </button>
             <div class="dropdown-divider"></div>
-            <button 
-              class="dropdown-item logout" 
+            <button
+              class="dropdown-item logout"
               on:click={handleLogout}
               title="Sign out of your account"
             >
@@ -614,7 +604,7 @@
         {/if}
       </div>
     </div>
-    
+
     <div class="mobile-toggle">
       <button>
         <span class="sr-only">Menu</span>
@@ -646,16 +636,18 @@
     background-color: var(--surface-color);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     z-index: 1000;
+    overflow: visible; /* Allow button hover effects to display properly */
   }
-  
+
   .navbar-container {
     display: flex;
     align-items: center;
     height: 100%;
-    padding: 0 1.5rem;
+    padding: 0.75rem 1.5rem; /* Increased vertical padding to prevent button clipping on hover */
     max-width: 1600px;
     margin: 0 auto;
     gap: 3rem; /* Further increased spacing between sections */
+    overflow: visible; /* Allow button hover effects to display properly */
   }
 
   .navbar-spacer {
@@ -749,13 +741,13 @@
   .nav-btn:hover:not(:disabled) {
     background-color: #2563eb;
     color: white;
-    transform: translateY(-1px);
+    transform: scale(1.02); /* Changed from translateY to scale for smoother effect */
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
     text-decoration: none;
   }
 
   .nav-btn:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(1); /* Reset scale on click */
   }
 
   .nav-btn svg {
@@ -772,7 +764,7 @@
   .collections-btn:hover:not(:disabled) {
     background-color: #7c3aed !important;
     color: white !important;
-    transform: translateY(-1px) !important;
+    transform: scale(1.02) !important; /* Changed from translateY to scale */
     box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25) !important;
     text-decoration: none !important;
   }
@@ -785,7 +777,7 @@
   .select-files-btn:hover:not(:disabled) {
     background-color: #047857 !important;
     color: white !important;
-    transform: translateY(-1px) !important;
+    transform: scale(1.02) !important; /* Changed from translateY to scale */
     box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25) !important;
     text-decoration: none !important;
   }
@@ -798,7 +790,7 @@
   .delete-selected-btn:hover:not(:disabled) {
     background-color: #991b1b !important;
     color: white !important;
-    transform: translateY(-1px) !important;
+    transform: scale(1.02) !important; /* Changed from translateY to scale */
     box-shadow: 0 4px 8px rgba(220, 38, 38, 0.25) !important;
     text-decoration: none !important;
   }
@@ -811,7 +803,7 @@
   .cancel-selection-btn:hover:not(:disabled) {
     background-color: #4b5563 !important;
     color: white !important;
-    transform: translateY(-1px) !important;
+    transform: scale(1.02) !important; /* Changed from translateY to scale */
     box-shadow: 0 4px 8px rgba(107, 114, 128, 0.25) !important;
     text-decoration: none !important;
   }
@@ -824,11 +816,11 @@
   .add-to-collection-btn:hover:not(:disabled) {
     background-color: #047857 !important;
     color: white !important;
-    transform: translateY(-1px) !important;
+    transform: scale(1.02) !important; /* Changed from translateY to scale */
     box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25) !important;
     text-decoration: none !important;
   }
-  
+
   .navbar-brand {
     display: flex;
     align-items: center;
@@ -860,13 +852,13 @@
     border-radius: 6px;
     transition: inherit;
   }
-  
+
   .nav-links {
     display: flex;
     align-items: center;
     gap: 1.5rem;
   }
-  
+
   .nav-link {
     color: var(--text-color);
     text-decoration: none;
@@ -884,52 +876,52 @@
     position: relative;
     font-weight: 500;
   }
-  
+
   .nav-link:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-color);
   }
-  
+
   /* Focus states for accessibility */
   .nav-link:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
-  
+
   /* Responsive adjustments for mobile */
   @media (max-width: 768px) {
     .nav-links {
       gap: 0.5rem;
     }
-    
+
     .nav-link {
       padding: 0.4rem 0.8rem;
       font-size: 0.9rem;
     }
-    
+
   }
-  
+
   /* High contrast mode support */
   @media (prefers-contrast: high) {
     .nav-link:hover {
       border: 1px solid var(--primary-color);
     }
   }
-  
+
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     .nav-link {
       transition: none;
     }
   }
-  
-  
+
+
   .theme-toggle-container {
     display: flex;
     align-items: center;
     margin: 0 8px;
   }
-  
+
   .notifications-btn {
     position: relative;
     background: none;
@@ -943,11 +935,11 @@
     justify-content: center;
     transition: background-color 0.2s;
   }
-  
+
   .notifications-btn:hover {
     background-color: rgba(0, 0, 0, 0.05);
   }
-  
+
   .notification-badge {
     position: absolute;
     top: -5px;
@@ -963,12 +955,12 @@
     border-radius: 50%;
     font-weight: bold;
   }
-  
+
   /* User Dropdown Styles */
   .user-dropdown {
     position: relative;
   }
-  
+
   .user-button {
     display: flex;
     align-items: center;
@@ -982,11 +974,11 @@
     font-family: inherit;
     font-size: 1rem;
   }
-  
+
   .user-button:hover {
     background-color: rgba(0, 0, 0, 0.05);
   }
-  
+
   .user-avatar {
     display: flex;
     align-items: center;
@@ -998,7 +990,7 @@
     color: white;
     font-weight: 600;
   }
-  
+
   .username {
     font-weight: 500;
     white-space: nowrap;
@@ -1006,12 +998,12 @@
     text-overflow: ellipsis;
     max-width: 150px;
   }
-  
+
   .dropdown-icon {
     margin-left: 0.25rem;
     opacity: 0.7;
   }
-  
+
   .dropdown-menu {
     position: absolute;
     top: 100%;
@@ -1029,7 +1021,7 @@
     display: flex;
     flex-direction: column;
   }
-  
+
   .dropdown-header {
     padding: 0.75rem 1rem;
     color: var(--text-color-secondary);
@@ -1037,7 +1029,7 @@
     line-height: 1.4;
     white-space: normal;
   }
-  
+
   .dropdown-header strong {
     display: block;
     color: var(--text-color);
@@ -1045,15 +1037,15 @@
     margin-top: 0.25rem;
     word-break: break-all;
   }
-  
+
   .dropdown-divider {
     height: 1px;
     background-color: var(--border-color);
     margin: 0.125rem 0;
     border: none;
   }
-  
-  
+
+
   .dropdown-item {
     display: flex !important;
     align-items: center;
@@ -1076,7 +1068,7 @@
     white-space: nowrap;
     position: relative;
   }
-  
+
   /* Override any global link styles specifically for dropdown items */
   .dropdown-menu :global(a.dropdown-item) {
     color: var(--text-color) !important;
@@ -1092,24 +1084,24 @@
     background-color: transparent !important;
     transition: all 0.2s ease !important;
   }
-  
+
   .dropdown-menu :global(a.dropdown-item:hover) {
     color: var(--primary-color) !important;
     text-decoration: none !important;
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05)) !important;
     transform: translateX(2px) !important;
   }
-  
+
   .dropdown-menu :global(a.dropdown-item:visited) {
     color: var(--text-color) !important;
     text-decoration: none !important;
   }
-  
+
   .dropdown-menu :global(a.dropdown-item:visited:hover) {
     color: var(--primary-color) !important;
     text-decoration: none !important;
   }
-  
+
   .dropdown-item svg {
     width: 16px;
     height: 16px;
@@ -1117,7 +1109,7 @@
     opacity: 0.7;
     transition: all 0.2s ease;
   }
-  
+
   /* Ensure SVGs in Link components behave the same as button SVGs */
   .dropdown-menu :global(a.dropdown-item svg) {
     width: 16px !important;
@@ -1126,67 +1118,67 @@
     opacity: 0.7 !important;
     transition: all 0.2s ease !important;
   }
-  
+
   .dropdown-menu :global(a.dropdown-item:hover svg) {
     opacity: 1 !important;
     color: var(--primary-color) !important;
   }
-  
+
   .dropdown-item:hover {
     background-color: var(--hover-color, rgba(0, 0, 0, 0.05));
     color: var(--primary-color);
     transform: translateX(2px);
   }
-  
+
   .dropdown-item:hover svg {
     opacity: 1;
     color: var(--primary-color);
   }
-  
+
   .dropdown-item:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
   }
-  
+
   .dropdown-item.logout {
     color: var(--error-color, #ef4444);
     margin-top: 0.125rem;
   }
-  
+
   .dropdown-item.logout svg {
     opacity: 0.8;
   }
-  
+
   .dropdown-item.logout:hover {
     background-color: rgba(239, 68, 68, 0.1);
     color: var(--error-color, #dc2626);
     transform: translateX(2px);
   }
-  
+
   .dropdown-item.logout:hover svg {
     opacity: 1;
     color: var(--error-color, #dc2626);
   }
-  
+
   /* Active state for dropdown items */
   .dropdown-item:active {
     transform: translateX(1px);
     background-color: var(--primary-color-light, rgba(59, 130, 246, 0.1));
   }
-  
+
   /* Improved spacing between groups */
   .dropdown-item + .dropdown-divider {
     margin-top: 0.25rem;
   }
-  
+
   .dropdown-divider + .dropdown-item {
     margin-top: 0.125rem;
   }
-  
+
   .mobile-toggle {
     display: none;
   }
-  
+
   .sr-only {
     position: absolute;
     width: 1px;
@@ -1198,7 +1190,7 @@
     white-space: nowrap;
     border-width: 0;
   }
-  
+
   @media (max-width: 768px) {
     .navbar-container {
       gap: 0.5rem;
@@ -1270,19 +1262,19 @@
       transform: none; /* Disable transform on mobile for better touch experience */
     }
   }
-  
+
   /* Reduced motion preferences */
   @media (prefers-reduced-motion: reduce) {
     .dropdown-item,
     .dropdown-item svg {
       transition: none;
     }
-    
+
     .dropdown-item:hover {
       transform: none;
     }
   }
-  
+
   /* Recording Container and Indicator Styles */
   .recording-container {
     position: relative;
@@ -1412,7 +1404,7 @@
       animation: none;
       opacity: 1;
     }
-    
+
     .recording-indicator:hover {
       transform: none;
     }
@@ -1423,12 +1415,12 @@
     .dropdown-item {
       border: 1px solid transparent;
     }
-    
+
     .dropdown-item:hover {
       border-color: var(--primary-color);
       background-color: var(--hover-color);
     }
-    
+
     .dropdown-item.logout:hover {
       border-color: var(--error-color);
     }
@@ -1628,18 +1620,18 @@
     .control-btn {
       padding: 0.4rem;
     }
-    
+
     /* Adjust triangle for smaller screens */
     .recording-controls-popup::before,
     .recording-controls-popup::after {
       border-left-width: 6px;
       border-right-width: 6px;
     }
-    
+
     .recording-controls-popup::before {
       border-bottom-width: 6px;
     }
-    
+
     .recording-controls-popup::after {
       border-bottom-width: 5px;
       top: -5px;

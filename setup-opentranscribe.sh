@@ -249,25 +249,30 @@ validate_downloaded_files() {
 
     echo "✓ init_db.sql validated ($db_size bytes)"
 
-    # Validate docker-compose.yml
+    # Validate docker-compose files
     if [ ! -f "docker-compose.yml" ]; then
         echo -e "${RED}❌ docker-compose.yml file not found${NC}"
         return 1
     fi
 
-    # Check docker-compose syntax
-    if ! docker compose -f docker-compose.yml config > /dev/null 2>&1; then
-        echo -e "${RED}❌ docker-compose.yml syntax validation failed${NC}"
+    if [ ! -f "docker-compose.prod.yml" ]; then
+        echo -e "${RED}❌ docker-compose.prod.yml file not found${NC}"
         return 1
     fi
 
-    # Check for essential services
+    # Check docker-compose syntax (base + production overrides)
+    if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2>&1; then
+        echo -e "${RED}❌ docker-compose configuration validation failed${NC}"
+        return 1
+    fi
+
+    # Check for essential services in base file
     if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
         echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
         return 1
     fi
 
-    echo "✓ docker-compose.yml validated"
+    echo "✓ docker-compose.yml and docker-compose.prod.yml validated"
     echo "✓ All downloaded files validated successfully"
     return 0
 }
@@ -334,6 +339,9 @@ setup_project_directory() {
 create_database_files() {
     echo "✓ Downloading database initialization files..."
 
+    # Create database directory
+    mkdir -p database
+
     # Download the official init_db.sql from the repository
     local max_retries=3
     local retry_count=0
@@ -344,14 +352,14 @@ create_database_files() {
     local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/database/init_db.sql"
 
     while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o init_db.sql; then
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o database/init_db.sql; then
             # Validate downloaded file
-            if [ -s init_db.sql ] && grep -q "CREATE TABLE" init_db.sql && grep -q "admin@example.com" init_db.sql; then
-                echo "✓ Downloaded and validated init_db.sql"
+            if [ -s database/init_db.sql ] && grep -q "CREATE TABLE" database/init_db.sql && grep -q "admin@example.com" database/init_db.sql; then
+                echo "✓ Downloaded and validated database/init_db.sql"
                 return 0
             else
                 echo "⚠️  Downloaded file appears invalid, retrying..."
-                rm -f init_db.sql
+                rm -f database/init_db.sql
             fi
         else
             echo "⚠️  Download attempt $((retry_count + 1)) failed"
@@ -386,11 +394,6 @@ create_configuration_files() {
         exit 1
     fi
 
-    # Download NVIDIA override file if GPU detected
-    if [[ "$USE_GPU_RUNTIME" == "true" && "$DETECTED_DEVICE" == "cuda" ]]; then
-        download_nvidia_override
-    fi
-
     # Download opentranscribe.sh management script
     download_management_script
 
@@ -404,79 +407,72 @@ create_configuration_files() {
 create_production_compose() {
     echo "✓ Downloading production docker-compose configuration..."
 
-    # Download the official production compose file from the repository
     local max_retries=3
-    local retry_count=0
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
+
+    # Download base docker-compose.yml
+    echo "  Downloading base docker-compose.yml..."
+    local retry_count=0
+    local base_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.yml"
 
     while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.yml; then
-            # Validate downloaded file
-            if [ -s docker-compose.yml ] && grep -q "version:" docker-compose.yml && grep -q "services:" docker-compose.yml; then
-                echo "✓ Downloaded and validated production docker-compose.yml"
-                return 0
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$base_url" -o docker-compose.yml; then
+            if [ -s docker-compose.yml ] && grep -q "services:" docker-compose.yml; then
+                echo "  ✓ Downloaded base docker-compose.yml"
+                break
             else
-                echo "⚠️  Downloaded compose file appears invalid, retrying..."
+                echo "  ⚠️  Downloaded base file appears invalid, retrying..."
                 rm -f docker-compose.yml
             fi
         else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
         fi
 
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
 
-    echo -e "${RED}❌ Failed to download docker-compose configuration after $max_retries attempts${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from:"
-    echo "$download_url"
-    exit 1
-}
+    if [ $retry_count -ge $max_retries ]; then
+        echo -e "${RED}❌ Failed to download base docker-compose.yml${NC}"
+        echo "Please check your internet connection and try again."
+        echo "Alternative: You can manually download from: $base_url"
+        exit 1
+    fi
 
-download_nvidia_override() {
-    echo "✓ Downloading NVIDIA GPU override configuration..."
-
-    # Download the NVIDIA override file from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nvidia.yml"
+    # Download production overrides docker-compose.prod.yml
+    echo "  Downloading production overrides docker-compose.prod.yml..."
+    retry_count=0
+    local prod_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
 
     while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o docker-compose.nvidia.yml; then
-            # Validate downloaded file
-            if [ -s docker-compose.nvidia.yml ] && grep -q "runtime: nvidia" docker-compose.nvidia.yml; then
-                echo "✓ Downloaded and validated docker-compose.nvidia.yml"
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$prod_url" -o docker-compose.prod.yml; then
+            if [ -s docker-compose.prod.yml ] && grep -q "services:" docker-compose.prod.yml; then
+                echo "  ✓ Downloaded production docker-compose.prod.yml"
+                echo "✓ Production docker-compose configuration complete"
                 return 0
             else
-                echo "⚠️  Downloaded NVIDIA override file appears invalid, retrying..."
-                rm -f docker-compose.nvidia.yml
+                echo "  ⚠️  Downloaded prod file appears invalid, retrying..."
+                rm -f docker-compose.prod.yml
             fi
         else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
         fi
 
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
             sleep 2
         fi
     done
 
-    echo -e "${YELLOW}⚠️  Failed to download NVIDIA override file after $max_retries attempts${NC}"
-    echo "GPU acceleration may not work optimally, but CPU processing will still function."
-    echo "You can manually download from: $download_url"
+    echo -e "${RED}❌ Failed to download docker-compose.prod.yml${NC}"
+    echo "Please check your internet connection and try again."
+    echo "Alternative: You can manually download from: $prod_url"
+    exit 1
 }
 
 download_management_script() {
@@ -686,15 +682,37 @@ configure_environment() {
         return
     fi
 
-    # Generate secure JWT secret
+    # Generate all secure secrets using openssl or python3 fallback
+    echo "🔒 Generating secure credentials..."
+
     if command -v openssl &> /dev/null; then
-        JWT_SECRET=$(openssl rand -hex 32)
+        # Use openssl for cryptographically secure random generation
+        POSTGRES_PASSWORD=$(openssl rand -hex 32)
+        MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+        JWT_SECRET=$(openssl rand -hex 64)
+        ENCRYPTION_KEY=$(openssl rand -hex 64)
+        REDIS_PASSWORD=$(openssl rand -hex 32)
+        OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
     elif command -v python3 &> /dev/null; then
-        JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        # Fallback to Python's secrets module
+        POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
+        ENCRYPTION_KEY=$(python3 -c "import secrets; print(secrets.token_hex(64))")
+        REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
     else
-        JWT_SECRET="change_this_in_production_$(date +%s)"
-        echo "⚠️  Using basic JWT secret - consider generating a secure one"
+        # Basic fallback (not recommended for production)
+        POSTGRES_PASSWORD="postgres_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        MINIO_ROOT_PASSWORD="minio_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        JWT_SECRET="jwt_secret_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        ENCRYPTION_KEY="encryption_key_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        REDIS_PASSWORD="redis_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        OPENSEARCH_PASSWORD="opensearch_$(date +%s)_$(shuf -i 10000-99999 -n 1 2>/dev/null || echo $RANDOM)"
+        echo "⚠️  Using basic secrets - install openssl or python3 for cryptographically secure generation"
     fi
+
+    print_success "Secure credentials generated (64-char JWT/encryption, 32-char passwords)"
 
     # Prompt for HuggingFace token
     prompt_huggingface_token
@@ -971,8 +989,15 @@ create_env_file() {
     # Copy example and update values
     cp .env.example .env
 
-    # Update configuration values
+    # Update security credentials (auto-generated)
+    sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|g" .env
+    sed -i.bak "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD|g" .env
     sed -i.bak "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$JWT_SECRET|g" .env
+    sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
+    sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
+    sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
+
+    # Update AI model configuration
     sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
     sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env
     sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
@@ -1040,6 +1065,9 @@ create_env_file() {
     echo "# Hardware Configuration (Auto-detected)" >> .env
     echo "DETECTED_DEVICE=${DETECTED_DEVICE}" >> .env
     echo "USE_NVIDIA_RUNTIME=${USE_GPU_RUNTIME}" >> .env
+
+    # Note: INIT_DB_PATH uses default ./database/init_db.sql from .env.example
+    # All deployment methods now use the same standardized path
 
     # Clean up backup file
     rm -f .env.bak
@@ -1246,8 +1274,8 @@ validate_setup() {
         fi
     done
 
-    # Validate Docker Compose
-    if docker compose config &> /dev/null; then
+    # Validate Docker Compose (use production overlay)
+    if docker compose -f docker-compose.yml -f docker-compose.prod.yml config &> /dev/null; then
         echo "✓ Docker Compose configuration valid"
     else
         echo -e "${RED}❌ Docker Compose configuration invalid${NC}"
@@ -1264,13 +1292,13 @@ pull_docker_images() {
     print_info "This ensures you have the newest features and fixes"
     echo ""
 
-    # Pull images explicitly to ensure latest versions
-    if docker compose pull; then
+    # Pull images explicitly to ensure latest versions (use production overlay)
+    if docker compose -f docker-compose.yml -f docker-compose.prod.yml pull; then
         print_success "Docker images pulled successfully"
         return 0
     else
         print_warning "Failed to pull some images - will use cached versions"
-        print_info "You can manually pull images later with: docker compose pull"
+        print_info "You can manually pull images later with: docker compose -f docker-compose.yml -f docker-compose.prod.yml pull"
         return 1
     fi
 }

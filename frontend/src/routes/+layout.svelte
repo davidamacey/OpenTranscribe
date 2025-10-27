@@ -3,28 +3,33 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { get } from 'svelte/store';
-  
+
   // Import theme styles
   import "../styles/theme.css";
   import "../styles/form-elements.css";
   import "../styles/tables.css";
-  
+
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady } from "$stores/auth";
   import { theme } from "../stores/theme";
   import { llmStatusStore } from "../stores/llmStatus";
-  
+  import { networkStore } from "../stores/network";
+
   // Import components
   import Navbar from "../components/Navbar.svelte";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
+  import SettingsModal from "../components/SettingsModal.svelte";
 
   // Initialize auth state when the component mounts
   onMount(async () => {
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
+
+    // Initialize network connectivity monitoring
+    networkStore.initialize();
 
     try {
       await initAuth();
@@ -60,13 +65,14 @@
 
 </script>
 
-{#if $authReady} 
+{#if $authReady}
   <div class="app">
     <ToastContainer />
     {#if $isAuthenticated}
       <Navbar />
       <NotificationsPanel />
       <UploadManager />
+      <SettingsModal />
     {/if}
 
     {#if $isAuthenticated}
@@ -80,7 +86,7 @@
     {/if}
   </div>
 {:else}
-  <div>Loading application...</div> 
+  <div>Loading application...</div>
 {/if}
 
 <style>
@@ -89,7 +95,7 @@
     flex-direction: column;
     min-height: 100vh;
   }
-  
+
   .content {
     flex: 1;
     padding: 1rem;

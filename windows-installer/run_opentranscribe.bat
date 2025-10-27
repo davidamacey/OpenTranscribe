@@ -146,7 +146,7 @@ echo.
 
 REM Check if services are already running
 echo Checking for existing OpenTranscribe containers...
-docker compose -f "%INSTALL_DIR%config\docker-compose.offline.yml" ps --services --filter "status=running" >nul 2>&1
+docker compose -f "%INSTALL_DIR%config\docker-compose.yml" -f "%INSTALL_DIR%config\docker-compose.offline.yml" ps --services --filter "status=running" >nul 2>&1
 if %errorlevel% equ 0 (
     echo OpenTranscribe services are already running.
     echo.
@@ -157,7 +157,7 @@ if %errorlevel% equ 0 (
     echo Application is accessible at: http://localhost:5173
     echo.
     echo To stop OpenTranscribe, close this window or run:
-    echo   docker compose -f config\docker-compose.offline.yml down
+    echo   docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml down
     echo.
     pause
     exit /b 0
@@ -170,11 +170,12 @@ echo ========================================
 echo.
 
 REM Set environment variables for offline mode
-set "COMPOSE_FILE=%INSTALL_DIR%config\docker-compose.offline.yml"
+set "COMPOSE_FILE_BASE=%INSTALL_DIR%config\docker-compose.yml"
+set "COMPOSE_FILE_OFFLINE=%INSTALL_DIR%config\docker-compose.offline.yml"
 set "MODEL_CACHE_DIR=%INSTALL_DIR%models"
 
 echo Starting services with offline configuration...
-docker compose -f "%COMPOSE_FILE%" up -d
+docker compose -f "%COMPOSE_FILE_BASE%" -f "%COMPOSE_FILE_OFFLINE%" up -d
 
 if %errorlevel% neq 0 (
     echo.
@@ -182,8 +183,8 @@ if %errorlevel% neq 0 (
     echo.
     echo Troubleshooting:
     echo   1. Check Docker Desktop is running
-    echo   2. Check logs: docker compose -f config\docker-compose.offline.yml logs
-    echo   3. Try: docker compose -f config\docker-compose.offline.yml down
+    echo   2. Check logs: docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml logs
+    echo   3. Try: docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml down
     echo   4. Then run this script again
     echo.
     pause
@@ -201,7 +202,7 @@ timeout /t 15 >nul
 REM Check service health
 echo.
 echo Checking service health...
-docker compose -f "%COMPOSE_FILE%" ps
+docker compose -f "%COMPOSE_FILE_BASE%" -f "%COMPOSE_FILE_OFFLINE%" ps
 
 echo.
 echo ========================================
@@ -228,16 +229,16 @@ echo   Useful Commands
 echo ========================================
 echo.
 echo View logs:
-echo   docker compose -f config\docker-compose.offline.yml logs -f [service]
+echo   docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml logs -f [service]
 echo.
 echo Stop services:
-echo   docker compose -f config\docker-compose.offline.yml down
+echo   docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml down
 echo.
 echo Restart services:
-echo   docker compose -f config\docker-compose.offline.yml restart
+echo   docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml restart
 echo.
 echo Check status:
-echo   docker compose -f config\docker-compose.offline.yml ps
+echo   docker compose -f config\docker-compose.yml -f config\docker-compose.offline.yml ps
 echo.
 echo For detailed documentation, see README-WINDOWS.md
 echo.
