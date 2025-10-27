@@ -611,12 +611,18 @@ copy_configuration() {
 
     # Generate all secure credentials using openssl
     print_info "Generating secure credentials (64-char JWT/encryption, 32-char passwords)..."
-    local POSTGRES_PASSWORD=$(openssl rand -hex 32)
-    local MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
-    local JWT_SECRET=$(openssl rand -hex 64)
-    local ENCRYPTION_KEY=$(openssl rand -hex 64)
-    local REDIS_PASSWORD=$(openssl rand -hex 32)
-    local OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+    local POSTGRES_PASSWORD
+    local MINIO_ROOT_PASSWORD
+    local JWT_SECRET
+    local ENCRYPTION_KEY
+    local REDIS_PASSWORD
+    local OPENSEARCH_PASSWORD
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+    JWT_SECRET=$(openssl rand -hex 64)
+    ENCRYPTION_KEY=$(openssl rand -hex 64)
+    REDIS_PASSWORD=$(openssl rand -hex 32)
+    OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
 
     # Update .env with generated passwords
     sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|g" "${PACKAGE_DIR}/.env"
