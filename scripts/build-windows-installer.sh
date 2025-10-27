@@ -1,13 +1,15 @@
 #!/bin/bash
 set -e
 
-# OpenTranscribe Offline Package Builder
-# Creates a complete offline installation package for air-gapped deployments
-# Usage: ./scripts/build-offline-package.sh [version] [--local]
+# OpenTranscribe Windows Installer Builder
+# Creates a complete Windows installer package for offline deployment
+# Usage: ./scripts/build-windows-installer.sh [version] [--local]
 #
 # Options:
 #   version    Package version (default: git short hash)
 #   --local    Use locally built Docker images instead of pulling from Docker Hub
+#
+# This script runs on Linux and prepares all files needed for Inno Setup on Windows
 
 # Colors for output
 RED='\033[0;31m'
@@ -44,8 +46,8 @@ done
 
 # Configuration
 VERSION="${VERSION:-$(git rev-parse --short HEAD)}"
-PACKAGE_NAME="opentranscribe-offline-v${VERSION}"
-BUILD_DIR="./offline-package-build/linux"
+PACKAGE_NAME="opentranscribe-windows-v${VERSION}"
+BUILD_DIR="./offline-package-build/windows"
 PACKAGE_DIR="${BUILD_DIR}/${PACKAGE_NAME}"
 
 #######################
@@ -106,7 +108,7 @@ preflight_checks() {
     # Check for required commands
     local missing_commands=()
 
-    for cmd in docker git tar xz; do
+    for cmd in docker git tar; do
         if ! command_exists "$cmd"; then
             missing_commands+=("$cmd")
         fi
@@ -126,6 +128,28 @@ preflight_checks() {
     fi
 
     print_success "Docker is running"
+
+    # Check for required source files
+    local missing_files=()
+
+    if [ ! -f ".env.example" ]; then
+        missing_files+=(".env.example")
+    fi
+
+    if [ ! -f "windows-installer/README-WINDOWS.md" ]; then
+        missing_files+=("windows-installer/README-WINDOWS.md")
+    fi
+
+    if [ ! -f "windows-installer/installer.iss" ]; then
+        missing_files+=("windows-installer/installer.iss")
+    fi
+
+    if [ ${#missing_files[@]} -ne 0 ]; then
+        print_error "Missing required files: ${missing_files[*]}"
+        exit 1
+    fi
+
+    print_success "All required source files present"
 
     # Check disk space (need at least 80GB free)
     local available_space
@@ -158,7 +182,6 @@ extract_infrastructure_images() {
     fi
 
     # Extract infrastructure service images (postgres, redis, minio, opensearch)
-    # These are the same in both dev and production
     grep -E "^\s*image:\s*" "$compose_file" | \
         sed -E 's/^\s*image:\s*//; s/\s*$//' | \
         grep -v "^#" | \
@@ -173,7 +196,7 @@ extract_docker_images() {
     # Get infrastructure images from main docker-compose.yml
     mapfile -t INFRASTRUCTURE_IMAGES < <(extract_infrastructure_images)
 
-    # Add production application images (these use 'build:' in dev, pre-built images in prod)
+    # Add production application images
     APPLICATION_IMAGES=(
         "davidamacey/opentranscribe-backend:latest"
         "davidamacey/opentranscribe-frontend:latest"
@@ -247,7 +270,6 @@ pull_and_save_images() {
         # Pull image from Docker Hub (unless --local flag is set)
         if [ "$USE_LOCAL_IMAGES" = true ]; then
             print_info "  Using local image (skipping pull)..."
-            # Check if image exists locally
             if ! docker image inspect "$image" &>/dev/null; then
                 print_error "  Local image not found: $image"
                 print_info "  Please build the image first with: docker compose build"
@@ -335,8 +357,8 @@ select_whisper_model_for_offline() {
     echo "  Reason: ${RECOMMENDATION_REASON}"
     echo ""
     echo -e "${YELLOW}IMPORTANT for Offline Deployments:${NC}"
-    echo "  • Choose based on the GPU that will be used on the target system"
-    echo "  • The selected model will be included in the offline package"
+    echo "  • Choose based on the GPU that will be used on the Windows target system"
+    echo "  • The selected model will be included in the Windows installer"
     echo "  • You cannot download a different model after deployment without internet"
     echo "  • Consider the target system's GPU memory, not your current build system"
     echo ""
@@ -354,7 +376,7 @@ select_whisper_model_for_offline() {
 
     # Prompt user for model selection
     while true; do
-        read -r -p "Select model for offline package (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
+        read -r -p "Select model for Windows installer (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
 
         # Use recommended if user just presses Enter
         if [ -z "$user_model" ]; then
@@ -375,7 +397,7 @@ select_whisper_model_for_offline() {
     done
 
     echo ""
-    print_success "Selected model for offline package: ${WHISPER_MODEL}"
+    print_success "Selected model for Windows installer: ${WHISPER_MODEL}"
     if [ "$WHISPER_MODEL" != "$RECOMMENDED_MODEL" ]; then
         print_warning "Note: You selected a different model than recommended"
     fi
@@ -507,7 +529,6 @@ download_models() {
     fi
 
     # Run as appuser (non-root) matching container security configuration
-    # Note: --gpus device=X remaps that GPU to index 0 inside container
     # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
@@ -526,7 +547,7 @@ download_models() {
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 
-    # Copy models to package (files created as appuser UID 1000)
+    # Copy models to package
     print_info "Copying models to package..."
     if [ -d "${temp_model_cache}/huggingface" ] && [ "$(ls -A ${temp_model_cache}/huggingface 2>/dev/null)" ]; then
         cp -r "${temp_model_cache}/huggingface"/* "${PACKAGE_DIR}/models/huggingface/"
@@ -556,7 +577,7 @@ download_models() {
         print_warning "No sentence-transformers models found to copy"
     fi
 
-    # Check if model manifest was created (it's inside the huggingface cache dir)
+    # Check if model manifest was created
     if [ -f "${temp_model_cache}/huggingface/model_manifest.json" ]; then
         cp "${temp_model_cache}/huggingface/model_manifest.json" "${PACKAGE_DIR}/models/"
     else
@@ -579,81 +600,75 @@ download_models() {
 copy_configuration() {
     print_header "Copying Configuration Files"
 
-    # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
-    print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
+    # Copy docker-compose for Windows (offline version)
+    print_info "Copying docker-compose configuration..."
+    cp docker-compose.offline.yml "${PACKAGE_DIR}/config/docker-compose.offline.yml"
 
-    # Create temporary copy of offline compose
-    local temp_compose="${PACKAGE_DIR}/config/docker-compose.offline.yml"
-    cp docker-compose.offline.yml "$temp_compose"
+    # Copy .env.example as the base .env for Windows
+    print_info "Creating .env from .env.example..."
+    cp .env.example "${PACKAGE_DIR}/.env"
 
-    # Extract and sync each infrastructure image version
-    for img in "${INFRASTRUCTURE_IMAGES[@]}"; do
-        # Get service name and image (e.g., postgres:17.5-alpine -> postgres and full image)
-        local service_name
-        service_name=$(echo "$img" | cut -d: -f1 | cut -d/ -f1)
-
-        # Update the image line in offline compose file for this service
-        # Find the service block and update its image line
-        sed -i "s|image: ${service_name}[:/][^ ]*|image: ${img}|g" "$temp_compose"
-    done
-
-    print_success "Infrastructure images synced from docker-compose.yml"
-
-    # Copy and template .env file
-    print_info "Creating .env template..."
-    sed 's/=.*/=/' .env > "${PACKAGE_DIR}/config/.env.template"
+    # Also copy .env.example as template for reference
+    print_info "Copying .env.example as template..."
+    cp .env.example "${PACKAGE_DIR}/config/.env.example"
 
     # Copy database init
     print_info "Copying database initialization..."
     cp database/init_db.sql "${PACKAGE_DIR}/database/"
 
-    # Copy nginx config
-    print_info "Copying nginx configuration..."
-    cp frontend/nginx.conf "${PACKAGE_DIR}/config/"
-
-    # Copy common scripts
-    print_info "Copying utility scripts..."
-    cp scripts/common.sh "${PACKAGE_DIR}/scripts/"
+    # Copy nginx config if it exists
+    if [ -f "frontend/nginx.conf" ]; then
+        print_info "Copying nginx configuration..."
+        cp frontend/nginx.conf "${PACKAGE_DIR}/config/"
+    fi
 
     print_success "Configuration files copied"
 }
 
 #######################
-# INSTALLATION SCRIPTS
+# WINDOWS INSTALLER FILES
 #######################
 
-copy_installation_scripts() {
-    print_header "Copying Installation Scripts"
+copy_windows_installer_files() {
+    print_header "Copying Windows Installer Files"
 
-    # Copy installation script
-    print_info "Copying install.sh..."
-    cp scripts/install-offline-package.sh "${PACKAGE_DIR}/install.sh"
-    chmod +x "${PACKAGE_DIR}/install.sh"
+    # Copy existing installer files from windows-installer directory
+    print_info "Copying Inno Setup script..."
+    cp windows-installer/installer.iss "${PACKAGE_DIR}/"
 
-    # Copy uninstall script
-    print_info "Copying uninstall.sh..."
-    cp scripts/uninstall-offline-package.sh "${PACKAGE_DIR}/uninstall.sh"
-    chmod +x "${PACKAGE_DIR}/uninstall.sh"
+    print_info "Copying batch scripts..."
+    cp windows-installer/run_opentranscribe.bat "${PACKAGE_DIR}/"
+    cp windows-installer/uninstall_opentranscribe.bat "${PACKAGE_DIR}/"
 
-    # Copy management wrapper
-    print_info "Copying opentr-offline.sh..."
-    cp scripts/opentr-offline.sh "${PACKAGE_DIR}/opentr-offline.sh"
-    chmod +x "${PACKAGE_DIR}/opentr-offline.sh"
+    print_info "Copying installer assets..."
+    cp windows-installer/ot-icon.ico "${PACKAGE_DIR}/"
 
-    print_success "Installation scripts copied"
-}
+    # Copy license file (create minimal one if empty)
+    if [ -s windows-installer/license.txt ]; then
+        cp windows-installer/license.txt "${PACKAGE_DIR}/"
+    else
+        print_warning "license.txt is empty, creating placeholder..."
+        echo "OpenTranscribe - AI-Powered Transcription Application" > "${PACKAGE_DIR}/license.txt"
+        echo "" >> "${PACKAGE_DIR}/license.txt"
+        echo "Copyright (c) $(date +%Y)" >> "${PACKAGE_DIR}/license.txt"
+        echo "" >> "${PACKAGE_DIR}/license.txt"
+        echo "See LICENSE file in the main repository for full license terms." >> "${PACKAGE_DIR}/license.txt"
+    fi
 
-#######################
-# DOCUMENTATION
-#######################
+    cp windows-installer/preinstall.txt "${PACKAGE_DIR}/"
+    cp windows-installer/after-install.txt "${PACKAGE_DIR}/"
 
-copy_documentation() {
-    print_header "Copying Documentation"
+    # Copy prerequisite checker script
+    if [ -f "windows-installer/check-prerequisites.ps1" ]; then
+        print_info "Copying prerequisite checker..."
+        cp windows-installer/check-prerequisites.ps1 "${PACKAGE_DIR}/"
+    fi
 
-    print_info "Copying README-OFFLINE.md..."
-    cp README-OFFLINE.md "${PACKAGE_DIR}/"
+    # Copy Windows-specific README
+    print_info "Copying Windows README..."
+    cp windows-installer/README-WINDOWS.md "${PACKAGE_DIR}/"
 
-    print_success "Documentation copied"
+    print_success "Windows installer files copied"
 }
 
 #######################
@@ -663,115 +678,38 @@ copy_documentation() {
 finalize_package() {
     print_header "Finalizing Package"
 
-    # Create checksums
-    create_checksums "$PACKAGE_DIR"
+    # Create checksums for Docker images (important for integrity verification)
+    print_info "Creating Docker image checksums..."
+    cd "${PACKAGE_DIR}/docker-images"
+    for tar_file in *.tar; do
+        if [ -f "$tar_file" ]; then
+            sha256sum "$tar_file" >> checksums.sha256
+            print_info "  Checksum created for $tar_file"
+        fi
+    done
+    cd - > /dev/null
 
     # Create package info
     print_info "Creating package metadata..."
     cat > "${PACKAGE_DIR}/package-info.json" <<EOF
 {
-  "name": "OpenTranscribe Offline Package",
+  "name": "OpenTranscribe Windows Installer Package",
   "version": "${VERSION}",
   "created_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "created_by": "$(whoami)@$(hostname)",
   "git_commit": "$(git rev-parse HEAD)",
   "git_branch": "$(git rev-parse --abbrev-ref HEAD)",
   "docker_images": ${#IMAGES[@]},
-  "package_size_uncompressed": "$(get_dir_size "$PACKAGE_DIR")"
+  "whisper_model": "${WHISPER_MODEL}",
+  "package_size_uncompressed": "$(get_dir_size "$PACKAGE_DIR")",
+  "target_platform": "Windows 10/11 with Docker Desktop"
 }
 EOF
 
+    # Create checksums for entire package
+    create_checksums "$PACKAGE_DIR"
+
     print_success "Package finalized"
-}
-
-#######################
-# COMPRESSION
-#######################
-
-prompt_compression() {
-    print_header "Package Compression"
-
-    local package_size
-    package_size=$(get_dir_size "$PACKAGE_DIR")
-
-    print_info "Package is ready to compress"
-    print_info "Uncompressed package size: $package_size"
-    print_info "Estimated compressed size: 15-20GB"
-    echo
-    print_warning "Compression will take 30-60 minutes using all CPU threads"
-    print_info "You can skip compression if:"
-    print_info "  - Testing the package locally"
-    print_info "  - Using fast local network transfer"
-    print_info "  - Planning to compress manually later"
-    echo
-
-    # Prompt user for compression
-    while true; do
-        read -p "Do you want to compress the package now? (y/n): " -r response
-        case $response in
-            [Yy]* )
-                return 0  # Compress
-                ;;
-            [Nn]* )
-                return 1  # Skip compression
-                ;;
-            * )
-                echo "Please answer y (yes) or n (no)."
-                ;;
-        esac
-    done
-}
-
-compress_package() {
-    print_header "Compressing Package"
-
-    local output_file="${BUILD_DIR}/${PACKAGE_NAME}.tar.xz"
-
-    print_info "Compressing with multi-threaded xz..."
-    print_info "This may take 30-60 minutes..."
-    print_warning "Using all available CPU threads for maximum speed"
-
-    cd "$BUILD_DIR"
-
-    # Use xz with all threads (-T0) for maximum speed
-    # -9 for maximum compression
-    # -v for verbose output
-    # --keep to keep the source directory
-    tar -cf - "$PACKAGE_NAME" | xz -9 -T0 -v -c > "${PACKAGE_NAME}.tar.xz"
-
-    cd - > /dev/null
-
-    local compressed_size
-    local uncompressed_size
-    compressed_size=$(get_dir_size "$output_file")
-    uncompressed_size=$(get_dir_size "$PACKAGE_DIR")
-
-    print_success "Package compressed"
-    print_info "Uncompressed size: $uncompressed_size"
-    print_info "Compressed size: $compressed_size"
-    print_info "Location: $output_file"
-
-    # Create checksum for the compressed package
-    print_info "Creating package checksum..."
-    cd "$BUILD_DIR"
-    sha256sum "${PACKAGE_NAME}.tar.xz" > "${PACKAGE_NAME}.tar.xz.sha256"
-    cd - > /dev/null
-
-    print_success "Package checksum created"
-}
-
-create_uncompressed_checksum() {
-    print_header "Creating Package Checksum"
-
-    print_info "Creating checksum for uncompressed package..."
-    cd "$BUILD_DIR"
-
-    # Create a checksum file listing all files in the package
-    find "$PACKAGE_NAME" -type f -exec sha256sum {} \; > "${PACKAGE_NAME}.sha256"
-
-    cd - > /dev/null
-
-    print_success "Checksum file created: ${BUILD_DIR}/${PACKAGE_NAME}.sha256"
 }
 
 #######################
@@ -779,11 +717,11 @@ create_uncompressed_checksum() {
 #######################
 
 main() {
-    print_header "OpenTranscribe Offline Package Builder v${VERSION}"
+    print_header "OpenTranscribe Windows Installer Builder v${VERSION}"
 
-    print_info "This script will create a complete offline installation package"
+    print_info "This script will create a Windows installer package"
     print_info "Package name: ${PACKAGE_NAME}"
-    print_info "Estimated size: 15-20GB compressed, ~60GB uncompressed"
+    print_info "Estimated size: ~60GB uncompressed"
     print_warning "This process will take 1-2 hours and requires internet access"
     echo
 
@@ -796,60 +734,31 @@ main() {
     pull_and_save_images
     download_models
     copy_configuration
-    copy_installation_scripts
-    copy_documentation
+    copy_windows_installer_files
     finalize_package
-
-    # Prompt for compression
-    if prompt_compression; then
-        # User chose to compress
-        compress_package
-        PACKAGE_COMPRESSED=true
-    else
-        # User chose to skip compression
-        print_info "Skipping compression..."
-        create_uncompressed_checksum
-        PACKAGE_COMPRESSED=false
-    fi
 
     # Final summary
     print_header "Build Complete!"
 
-    echo -e "${GREEN}✅ Offline package created successfully!${NC}\n"
+    echo -e "${GREEN}✅ Windows installer package created successfully!${NC}\n"
 
-    echo -e "Build output structure:"
-    echo -e "  ${CYAN}./offline-package-build/${NC}"
-    echo -e "  ├── ${CYAN}linux/${NC}     (Linux offline package)"
-    echo -e "  │   └── ${YELLOW}opentranscribe-offline-v${VERSION}/${NC}"
-    echo -e "  └── ${CYAN}windows/${NC}   (Windows installer, if built)\n"
+    echo -e "Package location:"
+    echo -e "  ${CYAN}${PACKAGE_DIR}/${NC}\n"
 
-    if [ "$PACKAGE_COMPRESSED" = true ]; then
-        # Compressed package summary
-        echo -e "Package location:"
-        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz${NC}\n"
-        echo -e "Package checksum:"
-        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.tar.xz.sha256${NC}\n"
-        echo -e "Next steps:"
-        echo -e "  1. Verify: ${YELLOW}cd ${BUILD_DIR} && sha256sum -c ${PACKAGE_NAME}.tar.xz.sha256${NC}"
-        echo -e "  2. Transfer package to target system"
-        echo -e "  3. Extract: ${YELLOW}tar -xf ${PACKAGE_NAME}.tar.xz${NC}"
-        echo -e "  4. Install: ${YELLOW}cd ${PACKAGE_NAME} && sudo ./install.sh${NC}\n"
-    else
-        # Uncompressed package summary
-        echo -e "Package location (uncompressed):"
-        echo -e "  ${CYAN}${PACKAGE_DIR}/${NC}\n"
-        echo -e "Package checksum:"
-        echo -e "  ${CYAN}${BUILD_DIR}/${PACKAGE_NAME}.sha256${NC}\n"
-        echo -e "Next steps:"
-        echo -e "  ${YELLOW}Option 1: Transfer uncompressed${NC}"
-        echo -e "    1. Copy entire directory to target system"
-        echo -e "    2. Install: ${YELLOW}cd ${PACKAGE_NAME} && sudo ./install.sh${NC}\n"
-        echo -e "  ${YELLOW}Option 2: Compress manually later${NC}"
-        echo -e "    1. ${YELLOW}cd ${BUILD_DIR}${NC}"
-        echo -e "    2. Compress: ${YELLOW}tar -cf - ${PACKAGE_NAME} | xz -9 -T0 > ${PACKAGE_NAME}.tar.xz${NC}"
-        echo -e "    3. Checksum: ${YELLOW}sha256sum ${PACKAGE_NAME}.tar.xz > ${PACKAGE_NAME}.tar.xz.sha256${NC}"
-        echo -e "    4. Transfer and extract as usual\n"
-    fi
+    echo -e "Next steps:"
+    echo -e "  1. Transfer the entire folder to a Windows machine"
+    echo -e "  2. Install Inno Setup on Windows: ${YELLOW}https://jrsoftware.org/isdl.php${NC}"
+    echo -e "  3. Open ${YELLOW}installer.iss${NC} in Inno Setup Compiler"
+    echo -e "  4. Update the BuildDir path in installer.iss to match your Windows location"
+    echo -e "  5. Click Build → Compile to create the installer executable"
+    echo -e "  6. Run the generated .exe to install OpenTranscribe\n"
+
+    echo -e "Package contents:"
+    echo -e "  - Docker images: ${#IMAGES[@]} images"
+    echo -e "  - AI models: ${WHISPER_MODEL} and supporting models"
+    echo -e "  - Configuration files and database schema"
+    echo -e "  - Inno Setup script and batch files"
+    echo -e "  - Complete documentation\n"
 
     print_success "🎉 Build process complete!"
 }
