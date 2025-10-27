@@ -11,38 +11,38 @@
   let saving = false;
   let error = '';
   let success = '';
-  
+
   let allPrompts: SummaryPrompt[] = [];
   let activePrompt: SummaryPrompt | null = null;
   let selectedPromptId: number | null = null;
-  
+
   // Create/Edit prompt form
   let showCreateForm = false;
   let editingPrompt: SummaryPrompt | null = null;
-  
+
   // View prompt modal
   let showViewModal = false;
   let viewingPrompt: SummaryPrompt | null = null;
-  
+
   // Delete confirmation modal
   let showDeleteModal = false;
   let promptToDelete: SummaryPrompt | null = null;
-  
+
   // Unsaved changes confirmation modal
   let showUnsavedChangesModal = false;
   let pendingCloseAction: (() => void) | null = null;
-  
+
   // Form dirty state tracking
   let originalFormData = {};
   let isDirty = false;
-  
+
   let formData = {
     name: '',
     description: '',
     prompt_text: '',
     content_type: 'general'
   };
-  
+
   const contentTypes = [
     { value: 'general', label: 'General' },
     { value: 'meeting', label: 'Meeting' },
@@ -55,7 +55,7 @@
   onMount(async () => {
     await loadData();
   });
-  
+
   onDestroy(() => {
     // Cleanup: ensure body scrolling is restored and event listeners removed
     document.body.style.overflow = '';
@@ -68,7 +68,7 @@
   async function loadData() {
     loading = true;
     error = '';
-    
+
     try {
       // Load all prompts
       const promptsResponse = await PromptsApi.getPrompts({
@@ -82,14 +82,14 @@
       const activeResponse = await PromptsApi.getActivePrompt();
       activePrompt = activeResponse.active_prompt;
       selectedPromptId = activeResponse.active_prompt_id;
-      
+
       // Auto-select universal prompt if no prompt is selected
       if (!selectedPromptId && allPrompts.length > 0) {
-        const universalPrompt = allPrompts.find(p => 
-          p.is_system_default && 
+        const universalPrompt = allPrompts.find(p =>
+          p.is_system_default &&
           (p.name.toLowerCase().includes('universal') || p.name.toLowerCase().includes('general'))
         );
-        
+
         if (universalPrompt) {
           await setActivePrompt(universalPrompt.id);
         } else {
@@ -111,16 +111,16 @@
   async function setActivePrompt(promptId: number) {
     saving = true;
     error = '';
-    
+
     try {
       await PromptsApi.setActivePrompt({
         prompt_id: promptId
       });
-      
+
       selectedPromptId = promptId;
       activePrompt = allPrompts.find(p => p.id === promptId) || null;
       success = 'Active prompt updated successfully';
-      
+
       if (onSettingsChange) {
         onSettingsChange();
       }
@@ -149,7 +149,7 @@
       error = 'System prompts cannot be edited';
       return;
     }
-    
+
     showCreateForm = true;
     editingPrompt = prompt;
     formData = {
@@ -168,7 +168,7 @@
       showUnsavedChangesModal = true;
       return;
     }
-    
+
     executeCloseForm();
   }
 
@@ -213,26 +213,26 @@
       if (editingPrompt) {
         // Update existing prompt
         const updatedPrompt = await PromptsApi.updatePrompt(editingPrompt.id, formData);
-        
+
         // Update in the list
         const index = allPrompts.findIndex(p => p.id === updatedPrompt.id);
         if (index >= 0) {
           allPrompts[index] = updatedPrompt;
           allPrompts = [...allPrompts]; // Trigger reactivity
         }
-        
+
         success = 'Prompt updated successfully';
       } else {
         // Create new prompt
         const newPrompt = await PromptsApi.createPrompt(formData);
-        
+
         allPrompts = [...allPrompts, newPrompt];
         success = 'Prompt created successfully';
       }
-      
+
       // Force close after successful save (no dirty check needed)
       closeForm(true);
-      
+
       if (onSettingsChange) {
         onSettingsChange();
       }
@@ -249,7 +249,7 @@
       error = 'System prompts cannot be deleted';
       return;
     }
-    
+
     promptToDelete = prompt;
     showDeleteModal = true;
   }
@@ -259,19 +259,19 @@
 
     saving = true;
     error = '';
-    
+
     try {
       await PromptsApi.deletePrompt(promptToDelete.id);
-      
+
       // Remove from list
       allPrompts = allPrompts.filter(p => p.id !== promptToDelete.id);
-      
+
       // Check if we deleted the active prompt
       const wasActivePrompt = selectedPromptId === promptToDelete.id;
-      
+
       // Check if we have any remaining user prompts after deletion
       const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
-      
+
       // If no user prompts remain, automatically activate Universal Content Analyzer (regardless of which prompt was active)
       if (remainingUserPrompts.length === 0) {
         try {
@@ -279,7 +279,7 @@
           const activeResponse = await PromptsApi.getActivePrompt();
           selectedPromptId = activeResponse.active_prompt_id;
           activePrompt = activeResponse.active_prompt;
-          
+
           if (activePrompt && activePrompt.name) {
             success = `Prompt deleted successfully. ${activePrompt.name} is now active and will be used for all future summaries.`;
           } else {
@@ -299,7 +299,7 @@
       } else {
         success = 'Prompt deleted successfully';
       }
-      
+
       if (onSettingsChange) {
         onSettingsChange();
       }
@@ -316,22 +316,22 @@
   // Separate prompts by type - exclude speaker_identification from UI
   $: systemPrompts = allPrompts.filter(p => p.is_system_default && p.content_type !== 'speaker_identification');
   $: userPrompts = allPrompts.filter(p => !p.is_system_default);
-  
+
   function viewPrompt(prompt: SummaryPrompt) {
     viewingPrompt = prompt;
     showViewModal = true;
   }
-  
+
   function closeViewModal() {
     showViewModal = false;
     viewingPrompt = null;
   }
-  
+
   $: isFormValid = !!(formData.name && formData.name.trim() && formData.prompt_text && formData.prompt_text.trim());
-  
+
   // Track form changes for dirty state
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
-  
+
   // Function to prevent native tooltip flicker and position tooltip
   function removeTitle(event) {
     // Remove title attribute to prevent native tooltip
@@ -343,18 +343,18 @@
     if (element) {
       element.removeAttribute('title');
     }
-    
+
     // Position the tooltip dynamically
     const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
     const tooltip = event.target.closest('.info-tooltip');
-    
+
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
   }
 
   // Copy functionality - matches SummaryModal pattern
   let copyButtonText = 'Copy';
-  
+
   function copyPromptText(text: string) {
     if (!text) return;
 
@@ -374,7 +374,7 @@
       }
     );
   }
-  
+
   // Prevent body scrolling when modals are open
   $: {
     if (showCreateForm || showViewModal || showUnsavedChangesModal) {
@@ -383,17 +383,17 @@
       document.body.style.overflow = '';
     }
   }
-  
+
   // Handle keyboard shortcuts for modals
   let keydownHandler: ((event: KeyboardEvent) => void) | null = null;
-  
+
   $: {
     // Clean up previous listener if exists
     if (keydownHandler) {
       document.removeEventListener('keydown', keydownHandler);
       keydownHandler = null;
     }
-    
+
     // Add new listener if modal is open
     if (showCreateForm || showViewModal || showUnsavedChangesModal) {
       keydownHandler = (event: KeyboardEvent) => {
@@ -410,15 +410,10 @@
       document.addEventListener('keydown', keydownHandler);
     }
   }
-  
+
 </script>
 
 <div class="prompt-settings">
-  <div class="settings-header">
-    <h3>AI Summarization Prompts</h3>
-    <p>Manage your AI summarization prompts to customize how transcripts are analyzed and summarized.</p>
-  </div>
-
   {#if success}
     <div class="message success">
       {success}
@@ -446,7 +441,7 @@
             System Prompts
           </h4>
         </div>
-        
+
         <div class="config-list">
           {#each systemPrompts as prompt}
             <div class="config-item" class:active={selectedPromptId === prompt.id}>
@@ -502,8 +497,8 @@
                     Activate
                   </button>
                 {/if}
-                
-                <button 
+
+                <button
                   class="view-button"
                   on:click={() => viewPrompt(prompt)}
                   title="View prompt text"
@@ -586,8 +581,8 @@
                     Activate
                   </button>
                 {/if}
-                
-                <button 
+
+                <button
                   class="view-button"
                   on:click={() => viewPrompt(prompt)}
                   title="View prompt text"
@@ -597,7 +592,7 @@
                     <circle cx="12" cy="12" r="3"/>
                   </svg>
                 </button>
-                <button 
+                <button
                   class="edit-button"
                   on:click={() => openEditForm(prompt)}
                   disabled={saving}
@@ -608,7 +603,7 @@
                     <path d="m18.5 2.5 a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                   </svg>
                 </button>
-                <button 
+                <button
                   class="delete-config-button"
                   on:click={() => confirmDeletePrompt(prompt)}
                   disabled={saving}
@@ -678,7 +673,7 @@
           </h3>
           <button class="close-button" on:click={() => closeForm()} title={isDirty ? 'Close (unsaved changes will be lost)' : 'Close'}>×</button>
         </div>
-        
+
         <form on:submit|preventDefault={savePrompt} class="prompt-form">
           <div class="form-group">
             <label for="name">Prompt Name *</label>
@@ -906,22 +901,11 @@
     max-width: 800px;
   }
 
-  .settings-header h3 {
-    margin: 0 0 0.5rem 0;
-    color: var(--text-color);
-  }
-
-  .settings-header p {
-    margin: 0 0 1.5rem 0;
-    color: var(--text-light);
-    font-size: 0.9rem;
-  }
-
   .message {
     padding: 0.75rem 1rem;
     border-radius: 4px;
     margin-bottom: 1rem;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
   }
 
   .message.success {
@@ -959,7 +943,7 @@
   .action-button {
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -983,7 +967,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .action-button.primary:active:not(:disabled) {
     transform: translateY(0);
   }
@@ -1023,7 +1007,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -1034,7 +1018,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .create-config-button:active {
     transform: translateY(0);
   }
@@ -1149,7 +1133,7 @@
     align-items: center;
     gap: 0.5rem;
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.125rem;
     font-weight: 500;
     color: var(--text-color);
   }
@@ -1195,7 +1179,7 @@
   .config-name {
     font-weight: 500;
     color: var(--text-color);
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     margin-bottom: 0.25rem;
     display: flex;
     align-items: center;
@@ -1242,7 +1226,7 @@
   .info-tooltip[data-tooltip] {
     /* Remove any title attribute behavior */
   }
-  
+
   .info-tooltip[data-tooltip]:hover {
     /* Prevent native tooltip from showing */
   }
@@ -1283,14 +1267,14 @@
   .empty-state h4 {
     margin: 0 0 0.5rem;
     color: var(--text-color);
-    font-size: 1.1rem;
+    font-size: 1.125rem;
     font-weight: 500;
   }
 
   .empty-state p {
     margin: 0 0 1.5rem;
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     line-height: 1.5;
   }
 
@@ -1304,7 +1288,7 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -1315,7 +1299,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .create-first-config-btn:active {
     transform: translateY(0);
   }
@@ -1346,7 +1330,7 @@
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 0.85rem;
+    font-size: 0.8125rem;
   }
 
   .copy-button-header:hover {
@@ -1524,7 +1508,7 @@
   .close-button {
     background: none;
     border: none;
-    font-size: 1.5rem;
+    font-size: 1.125rem;
     cursor: pointer;
     color: var(--text-light);
     padding: 0;
@@ -1554,7 +1538,7 @@
 
   label {
     font-weight: 500;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     color: var(--text-color);
   }
 
@@ -1562,7 +1546,7 @@
     padding: 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     background-color: var(--background-color);
     color: var(--text-color);
     transition: border-color 0.2s ease;
@@ -1658,7 +1642,7 @@
     gap: 0.5rem;
     margin-bottom: 0.25rem;
   }
-  
+
   .tip-icon {
     flex-shrink: 0;
   }
@@ -1675,7 +1659,7 @@
 
   .detail-row {
     margin-bottom: 0.75rem;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
   }
 
   .detail-row strong {
@@ -1695,7 +1679,7 @@
 
   .prompt-text-display {
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 0.9rem;
+    font-size: 0.8125rem;
     line-height: 1.6;
     color: var(--text-color);
     white-space: pre-wrap;

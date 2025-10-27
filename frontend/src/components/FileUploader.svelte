@@ -13,6 +13,7 @@
   // Import upload store for background uploads
   import { uploadsStore } from '../stores/uploads';
   import { toastStore } from '../stores/toast';
+  import { settingsModalStore } from '../stores/settingsModalStore';
 
   // Import audio extraction types, service, and settings API
   import type { ExtractedAudio } from '../lib/types/audioExtraction';
@@ -1942,7 +1943,14 @@
             Max: {Math.floor(maxRecordingDuration / 60)}min • Quality: {recordingQuality} • Auto-stop: {autoStopEnabled ? 'On' : 'Off'}
           </div>
           <div class="settings-link-centered">
-            <a href="/settings" class="change-settings-link" title="Go to user settings to change recording preferences">Change settings</a>
+            <button
+              type="button"
+              class="change-settings-link"
+              on:click={() => settingsModalStore.open('recording')}
+              title="Go to user settings to change recording preferences"
+            >
+              Change settings
+            </button>
           </div>
         </div>
       {/if}
@@ -3061,6 +3069,11 @@
     font-size: 0.85rem;
     font-weight: 500;
     white-space: nowrap;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font-family: inherit;
   }
 
   .change-settings-link:hover {

@@ -81,14 +81,6 @@
 </script>
 
 <div class="audio-extraction-settings">
-  <div class="settings-header">
-    <h3>Audio Extraction Settings</h3>
-    <p class="settings-description">
-      Configure how OpenTranscribe handles large video files. Audio extraction reduces upload size by 90%+
-      while preserving transcription quality.
-    </p>
-  </div>
-
   {#if loading}
     <div class="loading-state">
       <div class="spinner"></div>
@@ -238,23 +230,6 @@
     padding: 1.5rem 0;
   }
 
-  .settings-header {
-    margin-bottom: 2rem;
-  }
-
-  .settings-header h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .settings-description {
-    margin: 0;
-    color: var(--text-secondary);
-    line-height: 1.6;
-  }
-
   .loading-state {
     display: flex;
     flex-direction: column;
@@ -299,7 +274,7 @@
   }
 
   .label-hint {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 400;
     color: var(--text-secondary);
   }
@@ -337,7 +312,7 @@
   }
 
   .label-description {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
     line-height: 1.4;
   }
@@ -408,7 +383,7 @@
     padding: 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: 6px;
-    font-size: 1rem;
+    font-size: 0.8125rem;
     background: var(--background-color);
     color: var(--text-color);
     transition: all 0.2s ease;
@@ -422,7 +397,7 @@
 
   .input-hint {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
   }
 
@@ -432,7 +407,7 @@
     border: 1px solid rgba(239, 68, 68, 0.2);
     border-radius: 6px;
     color: #ef4444;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
 
   .form-actions {
@@ -503,7 +478,7 @@
     margin: 0;
     padding-left: 1.25rem;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     line-height: 1.6;
   }
 

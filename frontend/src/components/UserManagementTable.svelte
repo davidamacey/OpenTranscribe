@@ -3,7 +3,7 @@
   import axiosInstance from '../lib/axios';
   import { user } from '../stores/auth';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  
+
   /**
    * @typedef {Object} User
    * @property {string} id
@@ -14,7 +14,7 @@
    * @property {boolean} [is_active]
    * @property {string} [full_name]
    */
-  
+
   /** @type {Array<User>} */
   export let users = [];
 
@@ -54,26 +54,26 @@
 
   /** @type {boolean} */
   let showAddUserForm = false;
-  
+
   /** @type {string} */
   let searchTerm = '';
-  
+
   /** @type {Array<User>} */
   let filteredUsers = [];
-  
+
   /** @type {string|null} */
   let currentUserId = null;
-  
+
   // Subscribe to the user store to get the current user ID
   $: if ($user) {
     currentUserId = $user.id;
   } else {
     currentUserId = null;
   }
-  
+
   /** @type {string|null} */
   let successMessage = null;
-  
+
   /** @type {string|null} */
   let errorMessage = null;
 
@@ -90,9 +90,9 @@
       filteredUsers = [...users];
       return;
     }
-    
+
     const term = searchTerm.toLowerCase();
-    filteredUsers = users.filter(user => 
+    filteredUsers = users.filter(user =>
       (user.full_name && user.full_name.toLowerCase().includes(term)) ||
       (user.email && user.email.toLowerCase().includes(term))
     );
@@ -106,7 +106,7 @@
       errorMessage = 'Please fill out all required fields';
       return;
     }
-    
+
     try {
       // The backend expects full_name as a required field
       // Using username as the full_name since that's what we collect
@@ -118,16 +118,16 @@
         is_active: true,
         is_superuser: newRole === 'admin' // Set superuser based on role
       });
-      
+
       // Add new user to the list and reset form
       newUsername = '';
       newEmail = '';
       newPassword = '';
       newRole = 'user';
       showAddUserForm = false;
-      
+
       successMessage = 'User created successfully';
-      
+
       // Refresh the user list
       onRefresh();
     } catch (err) {
@@ -188,7 +188,7 @@
     try {
       await axiosInstance.delete(`/api/users/${userId}`);
       successMessage = 'User deleted successfully';
-      
+
       // Refresh user list
       onRefresh();
     } catch (err) {
@@ -196,7 +196,7 @@
       errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
     }
   }
-  
+
   /**
    * Update a user's role
    * @param {string} userId
@@ -206,7 +206,7 @@
     try {
       await axiosInstance.put(`/api/users/${userId}`, { role });
       successMessage = `User role updated to ${role}`;
-      
+
       // Refresh user list
       onRefresh();
     } catch (err) {
@@ -214,7 +214,7 @@
       errorMessage = err instanceof Error ? err.message : 'Failed to update user role';
     }
   }
-  
+
   /**
    * Handle role change event
    * @param {string} userId
@@ -244,7 +244,7 @@
    */
   function formatDate(dateString) {
     if (!dateString) return 'N/A';
-    
+
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
       year: 'numeric',
@@ -254,7 +254,7 @@
       minute: '2-digit'
     });
   }
-  
+
   /**
    * Clear any messages
    */
@@ -262,7 +262,7 @@
     successMessage = null;
     errorMessage = null;
   }
-  
+
   /**
    * Toggle add user form
    */
@@ -276,7 +276,7 @@
       newRole = 'user';
     }
   }
-  
+
   // Ensure users are filtered when they change
   $: {
     users; // Track changes to users
@@ -291,70 +291,70 @@
       <button on:click={clearMessages}>×</button>
     </div>
   {/if}
-  
+
   {#if successMessage}
     <div class="alert alert-success">
       <p>{successMessage}</p>
       <button on:click={clearMessages}>×</button>
     </div>
   {/if}
-  
+
   <div class="table-controls">
     <div class="search-container">
-      <input 
-        type="text" 
-        placeholder="Search users by name or email..." 
+      <input
+        type="text"
+        placeholder="Search users by name or email..."
         on:input={handleSearchInput}
         value={searchTerm}
         title="Search users by name or email"
       />
     </div>
-    
-    <button 
-      on:click={toggleAddUserForm} 
+
+    <button
+      on:click={toggleAddUserForm}
       class="add-button"
       title="{showAddUserForm ? 'Cancel adding a new user' : 'Create a new user account'}"
     >
       {showAddUserForm ? 'Cancel' : 'Add User'}
     </button>
   </div>
-  
+
   {#if showAddUserForm}
     <div class="add-user-form">
       <h3>Add New User</h3>
       <div class="form-group">
         <label for="username">Full Name</label>
-        <input 
-          type="text" 
-          id="username" 
-          bind:value={newUsername} 
+        <input
+          type="text"
+          id="username"
+          bind:value={newUsername}
           placeholder="Full Name"
           required
         />
       </div>
-      
+
       <div class="form-group">
         <label for="email">Email</label>
-        <input 
-          type="email" 
-          id="email" 
-          bind:value={newEmail} 
+        <input
+          type="email"
+          id="email"
+          bind:value={newEmail}
           placeholder="Email"
           required
         />
       </div>
-      
+
       <div class="form-group">
         <label for="password">Password</label>
-        <input 
-          type="password" 
-          id="password" 
-          bind:value={newPassword} 
+        <input
+          type="password"
+          id="password"
+          bind:value={newPassword}
           placeholder="Password"
           required
         />
       </div>
-      
+
       <div class="form-group">
         <label for="role">Role</label>
         <select id="role" bind:value={newRole}>
@@ -362,15 +362,15 @@
           <option value="admin">Admin</option>
         </select>
       </div>
-      
-      <button 
-        on:click={createUser} 
+
+      <button
+        on:click={createUser}
         class="create-button"
         title="Create the new user account with the provided information"
       >Create User</button>
     </div>
   {/if}
-  
+
   {#if loading}
     <div class="loading-state">
       <p>Loading users...</p>
@@ -397,7 +397,7 @@
             <td>{currentUser.email}</td>
             <td>
               {#if currentUser.id !== currentUserId}
-                <select 
+                <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.id, e)}
                   title="Change the role for {currentUser.full_name || currentUser.email}"
@@ -413,14 +413,14 @@
             <td>
               <div class="table-actions">
                 {#if currentUser.id !== currentUserId}
-                  <button 
+                  <button
                     class="recover-button"
                     on:click={() => onUserRecovery(currentUser.id)}
                     title="Recover stuck files for {currentUser.full_name || currentUser.email}"
                   >
                     Recover Files
                   </button>
-                  <button 
+                  <button
                     class="delete-button"
                     on:click={() => deleteUser(currentUser.id)}
                     title="Permanently delete {currentUser.full_name || currentUser.email}'s account"
@@ -458,25 +458,26 @@
     width: 100%;
     margin-bottom: 2rem;
   }
-  
+
   .table-controls {
     display: flex;
     justify-content: space-between;
     margin-bottom: 1rem;
   }
-  
+
   .search-container {
     flex: 1;
     margin-right: 1rem;
   }
-  
+
   .search-container input {
     width: 100%;
     padding: 0.5rem;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-size: 0.8125rem;
   }
-  
+
   .add-button {
     background-color: #3b82f6;
     color: white;
@@ -484,12 +485,12 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .add-button:hover:not(:disabled),
   .add-button:focus:not(:disabled) {
     background-color: #2563eb;
@@ -498,11 +499,11 @@
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
     text-decoration: none;
   }
-  
+
   .add-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .add-user-form {
     background-color: var(--card-background);
     padding: 1rem;
@@ -511,23 +512,30 @@
     border: 1px solid var(--border-color);
     color: var(--text-color);
   }
-  
+
+  .add-user-form h3 {
+    font-size: 1.125rem;
+    margin-bottom: 1rem;
+  }
+
   .form-group {
     margin-bottom: 0.5rem;
   }
-  
+
   .form-group label {
     display: block;
     margin-bottom: 0.25rem;
+    font-size: 0.8125rem;
   }
-  
+
   .form-group input, .form-group select {
     width: 100%;
     padding: 0.5rem;
     border: 1px solid #ccc;
     border-radius: 4px;
+    font-size: 0.8125rem;
   }
-  
+
   .create-button {
     background-color: #3b82f6;
     color: white;
@@ -535,13 +543,13 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     margin-top: 0.5rem;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .create-button:hover:not(:disabled),
   .create-button:focus:not(:disabled) {
     background-color: #2563eb;
@@ -550,11 +558,11 @@
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
     text-decoration: none;
   }
-  
+
   .create-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .users-table {
     width: 100%;
     border-collapse: collapse;
@@ -563,28 +571,29 @@
     overflow: hidden;
     box-shadow: var(--card-shadow);
   }
-  
+
   .users-table th, .users-table td {
     padding: 0.75rem;
     border-bottom: 1px solid var(--border-color);
     text-align: left;
     color: var(--text-color);
+    font-size: 0.8125rem;
   }
-  
+
   .users-table th {
     background-color: var(--table-header-bg);
     font-weight: bold;
   }
-  
+
   .users-table tr:hover {
     background-color: var(--table-row-hover);
   }
-  
+
   .table-actions {
     display: flex;
     gap: 0.5rem;
   }
-  
+
   .delete-button {
     background-color: #ef4444;
     color: white;
@@ -592,12 +601,12 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
   }
-  
+
   .delete-button:hover:not(:disabled),
   .delete-button:focus:not(:disabled) {
     background-color: #d32f2f;
@@ -606,16 +615,16 @@
     box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
     text-decoration: none;
   }
-  
+
   .delete-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .delete-button:disabled {
     background-color: #6c757d;
     cursor: not-allowed;
   }
-  
+
   .recover-button {
     background-color: #10b981;
     color: white;
@@ -623,13 +632,13 @@
     padding: 0.6rem 1.2rem;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 0.95rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
     margin-right: 0.5rem;
   }
-  
+
   .recover-button:hover:not(:disabled),
   .recover-button:focus:not(:disabled) {
     background-color: #059669;
@@ -638,26 +647,27 @@
     box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25);
     text-decoration: none;
   }
-  
+
   .recover-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .recover-button:disabled {
     background-color: #6c757d;
     cursor: not-allowed;
   }
-  
+
   .current-role {
     font-weight: bold;
     text-transform: capitalize;
   }
-  
+
   .self-user {
     font-style: italic;
     color: var(--text-secondary);
+    font-size: 0.8125rem;
   }
-  
+
   .alert {
     padding: 0.75rem;
     margin-bottom: 1rem;
@@ -665,28 +675,29 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    font-size: 0.8125rem;
   }
-  
+
   .alert-error {
     background-color: #f8d7da;
     color: #721c24;
     border: 1px solid #f5c6cb;
   }
-  
+
   .alert-success {
     background-color: #d4edda;
     color: #155724;
     border: 1px solid #c3e6cb;
   }
-  
+
   .alert button {
     background: none;
     border: none;
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     cursor: pointer;
     color: inherit;
   }
-  
+
   .loading-state, .empty-state {
     padding: 2rem;
     text-align: center;
@@ -694,6 +705,7 @@
     border-radius: 4px;
     margin-top: 1rem;
     color: var(--text-color);
+    font-size: 0.8125rem;
   }
 
   /* Modal button styling to match app design */
@@ -703,7 +715,7 @@
     border: none !important;
     padding: 0.6rem 1.2rem !important;
     border-radius: 10px !important;
-    font-size: 0.95rem !important;
+    font-size: 0.8125rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
@@ -722,7 +734,7 @@
     border: 1px solid var(--border-color) !important;
     padding: 0.6rem 1.2rem !important;
     border-radius: 10px !important;
-    font-size: 0.95rem !important;
+    font-size: 0.8125rem !important;
     font-weight: 500 !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;

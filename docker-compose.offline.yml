@@ -38,6 +38,11 @@ services:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
 
+  celery-beat:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    # No volumes needed - scheduler state lives in container only
+
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
     pull_policy: never

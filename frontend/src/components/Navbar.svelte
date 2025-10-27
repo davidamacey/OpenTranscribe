@@ -21,6 +21,9 @@
   // Import gallery store for modern state management
   import { galleryStore, galleryState, selectedCount, allFilesSelected } from '../stores/gallery';
 
+  // Import settings modal store
+  import { settingsModalStore } from '../stores/settingsModalStore';
+
   // Create event dispatcher for gallery actions
   const dispatch = createEventDispatcher();
 
@@ -541,10 +544,14 @@
               <strong>{$user ? $user.email : 'User'}</strong>
             </div>
             <div class="dropdown-divider"></div>
-            <a
-              href="/settings"
+            <button
               class="dropdown-item"
-              on:click|preventDefault={() => { showDropdown = false; goto("/settings"); }}
+              on:click={() => {
+                showDropdown = false;
+                // Open to admin section for admins, profile for regular users
+                const defaultSection = $user?.role === "admin" ? 'admin-users' : 'profile';
+                settingsModalStore.open(defaultSection);
+              }}
               title="Manage your account settings and preferences"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -552,24 +559,7 @@
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
               <span>Settings</span>
-            </a>
-
-            {#if $user && $user.role === "admin"}
-              <a
-                href="/admin"
-                class="dropdown-item"
-                on:click|preventDefault={() => { showDropdown = false; goto("/admin"); }}
-                title="Access admin dashboard for user management and system settings"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-                <span>Admin</span>
-              </a>
-            {/if}
+            </button>
 
             <button
               class="dropdown-item"

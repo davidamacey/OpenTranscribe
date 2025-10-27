@@ -167,6 +167,25 @@ services:
       - minio
       - opensearch
 
+  celery-beat:
+    container_name: opentranscribe-celery-beat
+    restart: always
+    env_file: .env
+    command: celery -A app.core.celery beat --loglevel=info
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+    depends_on:
+      - postgres
+      - redis
+
   frontend:
     container_name: opentranscribe-frontend
     restart: always

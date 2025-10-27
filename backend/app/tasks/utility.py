@@ -5,6 +5,7 @@ This module contains general utility tasks. Recovery-specific tasks
 have been moved to app.tasks.recovery for better organization.
 """
 
+import json
 import logging
 
 from app.core.celery import celery_app
@@ -70,6 +71,94 @@ def check_tasks_health(self):
         summary["error"] = str(e)
 
     return summary
+
+
+@celery_app.task(name="update_gpu_stats", bind=True)
+def update_gpu_stats(self):
+    """
+    Periodic task to update GPU statistics in Redis.
+
+    This task runs on the celery worker (which has GPU access) and stores
+    GPU memory stats in Redis so the backend API can retrieve them.
+
+    Returns:
+        Dictionary with GPU stats or error status
+    """
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            gpu_stats = {
+                "available": False,
+                "name": "No GPU Available",
+                "memory_total": "N/A",
+                "memory_used": "N/A",
+                "memory_free": "N/A",
+                "memory_percent": "N/A",
+            }
+        else:
+            # Get GPU device info
+            device_id = 0  # Primary GPU
+            gpu_properties = torch.cuda.get_device_properties(device_id)
+
+            # Get memory stats (in bytes)
+            memory_reserved = torch.cuda.memory_reserved(device_id)
+            memory_total = gpu_properties.total_memory
+            memory_free = memory_total - memory_reserved
+
+            # Calculate percentage used
+            memory_percent = (memory_reserved / memory_total * 100) if memory_total > 0 else 0
+
+            # Format bytes to human-readable
+            def format_bytes(byte_count):
+                for unit in ["B", "KB", "MB", "GB", "TB"]:
+                    if byte_count < 1024 or unit == "TB":
+                        return f"{byte_count:.2f} {unit}"
+                    byte_count /= 1024
+                return f"{byte_count:.2f} TB"
+
+            gpu_stats = {
+                "available": True,
+                "name": gpu_properties.name,
+                "memory_total": format_bytes(memory_total),
+                "memory_used": format_bytes(memory_reserved),
+                "memory_free": format_bytes(memory_free),
+                "memory_percent": f"{memory_percent:.1f}%",
+            }
+
+        # Store in Redis with 60 second expiration
+        redis_client = celery_app.backend.client
+        redis_client.setex(
+            "gpu_stats",
+            60,  # Expire after 60 seconds
+            json.dumps(gpu_stats),
+        )
+
+        logger.debug(f"Updated GPU stats in Redis: {gpu_stats}")
+        return gpu_stats
+
+    except ImportError:
+        logger.warning("PyTorch not available for GPU monitoring")
+        gpu_stats = {
+            "available": False,
+            "name": "PyTorch Not Installed",
+            "memory_total": "N/A",
+            "memory_used": "N/A",
+            "memory_free": "N/A",
+            "memory_percent": "N/A",
+        }
+        return gpu_stats
+    except Exception as e:
+        logger.error(f"Error updating GPU stats: {str(e)}")
+        return {
+            "available": False,
+            "name": "Error",
+            "memory_total": "Unknown",
+            "memory_used": "Unknown",
+            "memory_free": "Unknown",
+            "memory_percent": "Unknown",
+            "error": str(e),
+        }
 
 
 # All recovery tasks have been moved to app.tasks.recovery

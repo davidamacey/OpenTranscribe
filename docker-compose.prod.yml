@@ -29,6 +29,14 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # No temp volume needed - temp files live in container only
 
+  celery-beat:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    # No volumes needed - scheduler state lives in container only
+
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
     build:

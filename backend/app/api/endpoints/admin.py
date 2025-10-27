@@ -124,6 +124,42 @@ def get_disk_usage():
         }
 
 
+def get_gpu_usage():
+    """Get GPU usage information from Redis (updated by celery worker)"""
+    try:
+        import json
+
+        from app.core.celery import celery_app
+
+        # Try to get GPU stats from Redis (set by celery worker task)
+        redis_client = celery_app.backend.client
+        gpu_stats_json = redis_client.get("gpu_stats")
+
+        if gpu_stats_json:
+            gpu_stats = json.loads(gpu_stats_json)
+            return gpu_stats
+        else:
+            # No stats available yet - worker hasn't reported
+            return {
+                "available": False,
+                "name": "GPU stats not yet available",
+                "memory_total": "N/A",
+                "memory_used": "N/A",
+                "memory_free": "N/A",
+                "memory_percent": "N/A",
+            }
+    except Exception as e:
+        logger.error(f"Error getting GPU usage from Redis: {e}")
+        return {
+            "available": False,
+            "name": "Error",
+            "memory_total": "Unknown",
+            "memory_used": "Unknown",
+            "memory_free": "Unknown",
+            "memory_percent": "Unknown",
+        }
+
+
 def format_bytes(byte_count):
     """Format bytes to a human-readable string"""
     for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -238,6 +274,7 @@ async def get_admin_stats(
                 "cpu": get_cpu_usage(),
                 "memory": get_memory_usage(),
                 "disk": get_disk_usage(),
+                "gpu": get_gpu_usage(),
                 "uptime": get_system_uptime(),
             }
         except Exception as e:
@@ -248,6 +285,14 @@ async def get_admin_stats(
                     "per_cpu": [],
                     "logical_cores": 0,
                     "physical_cores": 0,
+                },
+                "gpu": {
+                    "available": False,
+                    "name": "Error",
+                    "memory_total": "Unknown",
+                    "memory_used": "Unknown",
+                    "memory_free": "Unknown",
+                    "memory_percent": "Unknown",
                 },
                 "memory": {
                     "total": "Unknown",
@@ -265,28 +310,40 @@ async def get_admin_stats(
             }
 
         # Get user statistics
+        from datetime import datetime
+        from datetime import timedelta
+        from datetime import timezone
+
         total_users = db.query(User).count()
         active_users = db.query(User).filter(User.is_active).count()
         inactive_users = total_users - active_users
         superusers = db.query(User).filter(User.is_superuser).count()
 
+        # Calculate new users in last 7 days
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        new_users = db.query(User).filter(User.created_at >= seven_days_ago).count()
+
         # Get file statistics
+        from sqlalchemy.sql import func
+
         total_files = db.query(MediaFile).count()
+
+        # Calculate new files in last 7 days
+        new_files = db.query(MediaFile).filter(MediaFile.upload_time >= seven_days_ago).count()
 
         # Count files by status
         pending_files = db.query(MediaFile).filter(MediaFile.status == "pending").count()
-
         processing_files = db.query(MediaFile).filter(MediaFile.status == "processing").count()
-
         completed_files = db.query(MediaFile).filter(MediaFile.status == "completed").count()
-
         error_files = db.query(MediaFile).filter(MediaFile.status == "error").count()
 
         # Get total file size
-        from sqlalchemy.sql import func
-
         total_size_result = db.query(func.sum(MediaFile.file_size)).scalar()
         total_size = total_size_result if total_size_result else 0
+
+        # Get total duration (in seconds)
+        total_duration_result = db.query(func.sum(MediaFile.duration)).scalar()
+        total_duration = total_duration_result if total_duration_result else 0
 
         # Get transcript statistics
         total_segments = db.query(TranscriptSegment).count()
@@ -294,9 +351,43 @@ async def get_admin_stats(
         # Get speaker statistics
         total_speakers = db.query(Speaker).count()
 
-        # Get recent tasks (last 10)
+        # Get task statistics
         from app.models.media import Task
 
+        total_tasks = db.query(Task).count()
+        pending_tasks = db.query(Task).filter(Task.status == "pending").count()
+        running_tasks = db.query(Task).filter(Task.status == "running").count()
+        completed_tasks = db.query(Task).filter(Task.status == "completed").count()
+        failed_tasks = db.query(Task).filter(Task.status == "failed").count()
+
+        # Calculate success rate
+        success_rate = 0
+        if total_tasks > 0:
+            success_rate = round((completed_tasks / total_tasks) * 100, 2)
+
+        # Calculate average processing time for completed tasks
+        avg_processing_time = 0
+        completed_task_list = (
+            db.query(Task)
+            .filter(
+                Task.status == "completed",
+                Task.created_at.isnot(None),
+                Task.completed_at.isnot(None),
+            )
+            .all()
+        )
+
+        if completed_task_list:
+            total_time = sum(
+                (task.completed_at - task.created_at).total_seconds()
+                for task in completed_task_list
+                if task.completed_at and task.created_at
+            )
+            avg_processing_time = (
+                total_time / len(completed_task_list) if completed_task_list else 0
+            )
+
+        # Get recent tasks (last 10)
         recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(10).all()
         recent = []
         for task in recent_tasks:
@@ -304,9 +395,6 @@ async def get_admin_stats(
             if task.completed_at and task.created_at:
                 elapsed = (task.completed_at - task.created_at).total_seconds()
             elif task.created_at:
-                from datetime import datetime
-                from datetime import timezone
-
                 # Make sure both datetimes are timezone-aware
                 now = datetime.now(timezone.utc)
                 created_at = task.created_at
@@ -331,9 +419,13 @@ async def get_admin_stats(
                 "active": active_users,
                 "inactive": inactive_users,
                 "superusers": superusers,
+                "new": new_users,
             },
             "files": {
                 "total": total_files,
+                "new": new_files,
+                "total_duration": round(total_duration, 2) if total_duration else 0,
+                "segments": total_segments,
                 "by_status": {
                     "pending": pending_files,
                     "processing": processing_files,
@@ -343,17 +435,30 @@ async def get_admin_stats(
                 "total_size": total_size,
             },
             "transcripts": {"total_segments": total_segments},
-            "speakers": {"total": total_speakers},
+            "speakers": {
+                "total": total_speakers,
+                "avg_per_file": round(total_speakers / total_files, 2) if total_files > 0 else 0,
+            },
             "system": {
                 "version": "1.0.0",
                 "uptime": system_stats["uptime"],
                 "memory": system_stats["memory"],
                 "cpu": system_stats["cpu"],
                 "disk": system_stats["disk"],
+                "gpu": system_stats["gpu"],
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
             },
-            "tasks": {"recent": recent},
+            "tasks": {
+                "total": total_tasks,
+                "pending": pending_tasks,
+                "running": running_tasks,
+                "completed": completed_tasks,
+                "failed": failed_tasks,
+                "success_rate": success_rate,
+                "avg_processing_time": round(avg_processing_time, 2),
+                "recent": recent,
+            },
         }
 
         return stats

@@ -32,7 +32,7 @@ show_help() {
   echo "  restore [file]      - Restore database from backup"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, celery & flower without database reset"
+  echo "  restart-backend     - Restart backend, celery-worker, celery-beat & flower without database reset"
   echo "  restart-frontend    - Restart frontend without affecting backend services"
   echo "  restart-all         - Restart all services without resetting database"
   echo "  rebuild-backend     - Rebuild and update backend services with code changes"
@@ -171,6 +171,7 @@ start_app() {
   echo "- Backend logs: docker compose logs -f backend"
   echo "- Frontend logs: docker compose logs -f frontend"
   echo "- Celery worker logs: docker compose logs -f celery-worker"
+  echo "- Celery beat logs: docker compose logs -f celery-beat"
 
   # Print help information
   print_help_commands
@@ -278,27 +279,27 @@ restore_database() {
   echo "🔄 Restoring database from ${BACKUP_FILE}..."
 
   # Stop services that use the database
-  docker compose stop backend celery-worker
+  docker compose stop backend celery-worker celery-beat
 
   # Restore the database
   if docker compose exec -T postgres psql -U postgres opentranscribe < "$BACKUP_FILE"; then
     echo "✅ Database restored successfully."
     echo "🔄 Restarting services..."
-    docker compose start backend celery-worker
+    docker compose start backend celery-worker celery-beat
   else
     echo "❌ Database restore failed."
     echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker
+    docker compose start backend celery-worker celery-beat
     exit 1
   fi
 }
 
 # Function to restart backend services (backend, celery, flower) without database reset
 restart_backend() {
-  echo "🔄 Restarting backend services (backend, celery-worker, flower)..."
+  echo "🔄 Restarting backend services (backend, celery-worker, celery-beat, flower)..."
 
   # Restart backend services in place
-  docker compose restart backend celery-worker flower
+  docker compose restart backend celery-worker celery-beat flower
 
   echo "✅ Backend services restarted successfully."
 
@@ -474,7 +475,7 @@ case "$1" in
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
-    docker compose up -d --build backend celery-worker flower
+    docker compose up -d --build backend celery-worker celery-beat flower
     echo "✅ Backend services rebuilt successfully."
     ;;
 

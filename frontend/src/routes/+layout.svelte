@@ -21,6 +21,7 @@
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
+  import SettingsModal from "../components/SettingsModal.svelte";
 
   // Initialize auth state when the component mounts
   onMount(async () => {
@@ -71,6 +72,7 @@
       <Navbar />
       <NotificationsPanel />
       <UploadManager />
+      <SettingsModal />
     {/if}
 
     {#if $isAuthenticated}
