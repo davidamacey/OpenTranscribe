@@ -111,6 +111,19 @@
 
   /** @type {Speaker[]} */
   let allSpeakers: any[] = [];
+  let dropdownSpeakers: any[] = [];  // All speakers for multiselect dropdown
+
+  // Reactive: Prepare dropdown speakers with proper format
+  $: dropdownSpeakers = allSpeakers.map(speaker => ({
+    id: speaker.id,
+    name: speaker.display_name || speaker.name,
+    count: speaker.media_count || 0
+  }));
+
+  // Reactive: Convert selected speaker names to IDs for multiselect
+  $: selectedSpeakerIds = allSpeakers
+    .filter(speaker => selectedSpeakers.includes(speaker.display_name || speaker.name))
+    .map(speaker => speaker.id);
 
   /** @type {boolean} */
   let loadingTags = false;
@@ -237,6 +250,34 @@
       selectedSpeakers = [...selectedSpeakers, speaker];
     } else {
       selectedSpeakers = selectedSpeakers.filter(s => s !== speaker);
+    }
+  }
+
+  /**
+   * Handle speaker selection from multiselect dropdown
+   * @param {CustomEvent} event - Event with speaker id
+   */
+  function handleSpeakerSelect(event: CustomEvent) {
+    const speakerId = event.detail.id;
+    const speaker = allSpeakers.find(s => s.id === speakerId);
+    if (speaker) {
+      const speakerName = speaker.display_name || speaker.name;
+      if (!selectedSpeakers.includes(speakerName)) {
+        selectedSpeakers = [...selectedSpeakers, speakerName];
+      }
+    }
+  }
+
+  /**
+   * Handle speaker deselection from multiselect dropdown
+   * @param {CustomEvent} event - Event with speaker id
+   */
+  function handleSpeakerDeselect(event: CustomEvent) {
+    const speakerId = event.detail.id;
+    const speaker = allSpeakers.find(s => s.id === speakerId);
+    if (speaker) {
+      const speakerName = speaker.display_name || speaker.name;
+      selectedSpeakers = selectedSpeakers.filter(s => s !== speakerName);
     }
   }
 
@@ -507,16 +548,32 @@
       <p class="empty-text">No speakers detected yet</p>
     {:else}
       <div class="speakers-list">
-        {#each allSpeakers as speaker}
+        {#each allSpeakers.slice(0, 4) as speaker}
           <button
             class="speaker-button {selectedSpeakers.includes(speaker.display_name || speaker.name) ? 'selected' : ''}"
             on:click={() => toggleSpeaker(speaker.display_name || speaker.name)}
-            title="Filter files containing speaker '{speaker.display_name || speaker.name}'. Click to toggle selection."
+            title="Filter files with speaker '{speaker.display_name || speaker.name}'. {speaker.media_count ? `Appears in ${speaker.media_count} file${speaker.media_count > 1 ? 's' : ''}` : ''}"
           >
             {speaker.display_name || speaker.name}
+            {#if speaker.media_count}
+              <span class="speaker-count">{speaker.media_count}</span>
+            {/if}
           </button>
         {/each}
       </div>
+      {#if allSpeakers.length > 0}
+        <div class="dropdown-section">
+          <SearchableMultiSelect
+            options={dropdownSpeakers}
+            selectedIds={selectedSpeakerIds}
+            placeholder="Select speakers to filter..."
+            maxHeight="300px"
+            showCounts={true}
+            on:select={handleSpeakerSelect}
+            on:deselect={handleSpeakerDeselect}
+          />
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -818,7 +875,8 @@
     border-color: var(--primary-color);
   }
 
-  .tag-count {
+  .tag-count,
+  .speaker-count {
     background-color: rgba(0, 0, 0, 0.2);
     border-radius: 10px;
     padding: 0.1rem 0.4rem;
@@ -827,7 +885,8 @@
     margin-left: 0.2rem;
   }
 
-  .tag-button.selected .tag-count {
+  .tag-button.selected .tag-count,
+  .speaker-button.selected .speaker-count {
     background-color: rgba(255, 255, 255, 0.3);
   }
 

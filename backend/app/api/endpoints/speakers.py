@@ -125,19 +125,51 @@ def _sort_speakers(speakers):
     return speakers
 
 
-def _get_unique_speakers_for_filter(speakers):
-    """Get unique speakers by display name for filter use."""
-    seen_names = set()
+def _get_unique_speakers_for_filter(speakers, db: Session, current_user: User):
+    """
+    Get unique speakers by display name for filter use with media file counts.
+    Returns list of dicts with id, name, display_name, and media_count.
+    """
+    from sqlalchemy import func
+
+    # Query to get distinct display names with media file counts
+    # Group by display_name and count distinct media files for each
+    speaker_counts = (
+        db.query(
+            Speaker.display_name,
+            func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
+        )
+        .filter(
+            Speaker.user_id == current_user.id,
+            Speaker.display_name.isnot(None),
+            Speaker.display_name != "",
+            ~Speaker.display_name.op("~")(r"^SPEAKER_\d+$"),
+        )
+        .group_by(Speaker.display_name)
+        .order_by(func.count(func.distinct(Speaker.media_file_id)).desc(), Speaker.display_name)
+        .all()
+    )
+
+    # Convert to list of dicts with proper format
     unique_speakers = []
-    for speaker in speakers:
-        display_name = speaker.display_name or speaker.name
-        if (
-            display_name not in seen_names
-            and not display_name.startswith("SPEAKER_")
-            and display_name.strip() != ""
-        ):
-            seen_names.add(display_name)
-            unique_speakers.append(speaker)
+    for display_name, media_count in speaker_counts:
+        # Get a representative speaker for this display name to get ID
+        representative_speaker = (
+            db.query(Speaker)
+            .filter(Speaker.user_id == current_user.id, Speaker.display_name == display_name)
+            .first()
+        )
+
+        if representative_speaker:
+            unique_speakers.append(
+                {
+                    "id": representative_speaker.id,
+                    "name": representative_speaker.name,
+                    "display_name": display_name,
+                    "media_count": media_count,
+                }
+            )
+
     return unique_speakers
 
 
@@ -190,7 +222,7 @@ def list_speakers(
         speakers = _sort_speakers(speakers)
 
         if for_filter:
-            return _get_unique_speakers_for_filter(speakers)
+            return _get_unique_speakers_for_filter(speakers, db, current_user)
 
         # Add profile information to speakers
         result = []
