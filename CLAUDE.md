@@ -46,7 +46,53 @@ Use `./opentr.sh` for all development operations:
 # Database backup/restore
 ./opentr.sh backup
 ./opentr.sh restore backups/backup_file.sql
+
+# Multi-GPU scaling (optional - for high-throughput systems)
+./opentr.sh start dev --gpu-scale
+./opentr.sh reset dev --gpu-scale
 ```
+
+### Multi-GPU Worker Scaling (Optional)
+
+For systems with multiple GPUs, you can enable parallel GPU workers to significantly increase transcription throughput.
+
+**Use Case**: You have multiple GPUs and want to maximize processing speed by running multiple transcription workers in parallel.
+
+**Example Hardware Setup**:
+- GPU 0: NVIDIA RTX A6000 (49GB) - Running LLM model
+- GPU 1: RTX 3080 Ti (12GB) - Default single worker (disabled when scaling)
+- GPU 2: NVIDIA RTX A6000 (49GB) - Scaled workers (4 parallel)
+
+**Configuration** (in `.env`):
+```bash
+GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
+GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
+```
+
+**Usage**:
+```bash
+# Start with GPU scaling enabled
+./opentr.sh start dev --gpu-scale
+
+# Reset with GPU scaling enabled
+./opentr.sh reset dev --gpu-scale
+
+# View scaled worker logs
+docker compose logs -f celery-worker-gpu-scaled
+```
+
+**How It Works**:
+- When `--gpu-scale` flag is used, the system loads `docker-compose.gpu-scale.yml` overlay
+- Default single GPU worker is disabled (`scale: 0`)
+- A new single container is created with `concurrency=4` (configurable via `GPU_SCALE_WORKERS`)
+- The container runs 4 parallel Celery workers within a single process
+- All workers target the specified GPU device and process from the `gpu` queue
+- Celery automatically distributes tasks across the worker pool
+
+**Performance**: With 4 parallel workers on a high-end GPU like the A6000, you can process 4 videos simultaneously, significantly reducing total processing time for batches of media files.
+
+**Scaling**: Simply change `GPU_SCALE_WORKERS` in your `.env` file to adjust the number of concurrent workers (e.g., 2, 4, 6, 8) based on your GPU's memory and processing capacity.
 
 ### Docker Build & Push (Production Images)
 
