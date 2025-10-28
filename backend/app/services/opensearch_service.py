@@ -80,9 +80,6 @@ def ensure_indices_exist():
                         "number_of_shards": 1,
                         "number_of_replicas": 0,
                         "knn": True,
-                        "knn.algo_param.ef_search": 100,
-                        "knn.algo_param.ef_construction": 200,
-                        "knn.algo_param.m": 16,
                     }
                 },
                 "mappings": {
@@ -376,7 +373,7 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
         logger.error(f"Error bulk indexing speaker embeddings: {e}")
 
 
-def search_transcripts(
+def search_transcripts(  # noqa: C901
     query: str,
     user_id: int,
     speaker: Optional[str] = None,
