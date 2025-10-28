@@ -61,8 +61,8 @@
       <div class="modal-content">
         <div class="modal-header">
           <h2 id="modal-title" class="modal-title">{title}</h2>
-          <button 
-            class="modal-close-button" 
+          <button
+            class="modal-close-button"
             on:click={handleClose}
             aria-label="Close dialog"
             title="Close dialog"
@@ -73,15 +73,15 @@
             </svg>
           </button>
         </div>
-        
+
         <div class="modal-body">
           <p id="modal-message" class="modal-message">{message}</p>
         </div>
-        
+
         <div class="modal-footer">
           {#if cancelText}
-            <button 
-              class="modal-button {cancelButtonClass}" 
+            <button
+              class="modal-button {cancelButtonClass}"
               on:click={handleCancel}
               type="button"
             >
@@ -112,7 +112,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 1200;  /* Higher than SettingsModal (1100) to appear on top */
     padding: 1rem;
   }
 

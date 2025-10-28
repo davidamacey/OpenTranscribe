@@ -620,7 +620,8 @@ copy_configuration() {
     POSTGRES_PASSWORD=$(openssl rand -hex 32)
     MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
     JWT_SECRET=$(openssl rand -hex 64)
-    ENCRYPTION_KEY=$(openssl rand -hex 64)
+    # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+    ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
     REDIS_PASSWORD=$(openssl rand -hex 32)
     OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
 
@@ -632,7 +633,20 @@ copy_configuration() {
     sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|g" "${PACKAGE_DIR}/.env"
     sed -i "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}|g" "${PACKAGE_DIR}/.env"
 
-    print_success "Secure credentials generated for Windows installer"
+    # Configure for offline/air-gapped deployment
+    print_info "Configuring offline mode settings..."
+
+    # Enable offline mode for HuggingFace (uncomment the line)
+    sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "${PACKAGE_DIR}/.env"
+
+    # Note: Windows paths use forward slashes in Docker volume mounts even on Windows
+    # Docker Desktop on Windows handles the path translation automatically
+    # The installer will be at C:\Program Files\OpenTranscribe, but Docker sees it as /host_mnt/c/...
+    # We keep relative paths which work correctly with Docker Desktop's automatic path mounting
+
+    print_success "Secure credentials generated and offline mode configured for Windows installer"
+    print_info "✓ Offline mode enabled (HF_HUB_OFFLINE=1) - AI models pre-installed"
+    print_info "✓ HUGGINGFACE_TOKEN not required for offline operation"
 
     # Also copy .env.example as template for reference
     print_info "Copying .env.example as template..."

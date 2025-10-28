@@ -84,13 +84,18 @@ check_env() {
         exit 1
     fi
 
-    # Check for HuggingFace token
+    # Check for offline mode (HF_HUB_OFFLINE=1 means models are pre-installed, no token needed)
     # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
     source "$INSTALL_DIR/.env"
-    if [ -z "$HUGGINGFACE_TOKEN" ]; then
-        print_warning "HUGGINGFACE_TOKEN is not set in .env file"
-        print_warning "Speaker diarization will not work without it"
-        print_info "Get your token at: https://huggingface.co/settings/tokens"
+
+    # In offline mode, HuggingFace token is NOT required (models are pre-downloaded)
+    if [ "${HF_HUB_OFFLINE}" != "1" ]; then
+        # Not in offline mode - check if token is set
+        if [ -z "$HUGGINGFACE_TOKEN" ]; then
+            print_warning "HUGGINGFACE_TOKEN is not set in .env file"
+            print_warning "Speaker diarization will not work without it"
+            print_info "Get your token at: https://huggingface.co/settings/tokens"
+        fi
     fi
 }
 

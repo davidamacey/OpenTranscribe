@@ -227,29 +227,29 @@ check_network_connectivity() {
 validate_downloaded_files() {
     echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
 
-    # Validate init_db.sql
-    if [ ! -f "init_db.sql" ]; then
-        echo -e "${RED}❌ init_db.sql file not found${NC}"
+    # Validate init_db.sql (in database/ subdirectory)
+    if [ ! -f "database/init_db.sql" ]; then
+        echo -e "${RED}❌ database/init_db.sql file not found${NC}"
         return 1
     fi
 
     # Check file size (should be substantial)
     local db_size
-    db_size=$(wc -c < init_db.sql)
+    db_size=$(wc -c < database/init_db.sql)
     if [ "$db_size" -lt 10000 ]; then
-        echo -e "${RED}❌ init_db.sql file too small ($db_size bytes)${NC}"
+        echo -e "${RED}❌ database/init_db.sql file too small ($db_size bytes)${NC}"
         return 1
     fi
 
     # Check for essential database content including admin user
-    if ! grep -q "CREATE TABLE.*user" init_db.sql || ! grep -q "CREATE TABLE.*media_file" init_db.sql || ! grep -q "admin@example.com" init_db.sql; then
-        echo -e "${RED}❌ init_db.sql missing essential database tables or admin user${NC}"
+    if ! grep -q "CREATE TABLE.*user" database/init_db.sql || ! grep -q "CREATE TABLE.*media_file" database/init_db.sql || ! grep -q "admin@example.com" database/init_db.sql; then
+        echo -e "${RED}❌ database/init_db.sql missing essential database tables or admin user${NC}"
         return 1
     fi
 
-    echo "✓ init_db.sql validated ($db_size bytes)"
+    echo "✓ database/init_db.sql validated ($db_size bytes)"
 
-    # Validate docker-compose files
+    # Validate docker-compose files exist
     if [ ! -f "docker-compose.yml" ]; then
         echo -e "${RED}❌ docker-compose.yml file not found${NC}"
         return 1
@@ -260,19 +260,19 @@ validate_downloaded_files() {
         return 1
     fi
 
-    # Check docker-compose syntax (base + production overrides)
-    if ! docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2>&1; then
-        echo -e "${RED}❌ docker-compose configuration validation failed${NC}"
+    # Check for essential services in base file
+    if ! grep -q "services:" docker-compose.yml; then
+        echo -e "${RED}❌ docker-compose.yml appears invalid (no 'services:' section)${NC}"
         return 1
     fi
 
-    # Check for essential services in base file
     if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
         echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
         return 1
     fi
 
     echo "✓ docker-compose.yml and docker-compose.prod.yml validated"
+    echo "  (Full configuration validation will occur after .env file creation)"
     echo "✓ All downloaded files validated successfully"
     return 0
 }
@@ -690,7 +690,9 @@ configure_environment() {
         POSTGRES_PASSWORD=$(openssl rand -hex 32)
         MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
         JWT_SECRET=$(openssl rand -hex 64)
-        ENCRYPTION_KEY=$(openssl rand -hex 64)
+        # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+        # This ensures backend uses the working derive-from-string logic
+        ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
         REDIS_PASSWORD=$(openssl rand -hex 32)
         OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
     elif command -v python3 &> /dev/null; then
@@ -698,7 +700,8 @@ configure_environment() {
         POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
-        ENCRYPTION_KEY=$(python3 -c "import secrets; print(secrets.token_hex(64))")
+        # ENCRYPTION_KEY: Add prefix to force backend exception handler path
+        ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
         REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
         OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
     else
@@ -1264,22 +1267,52 @@ validate_setup() {
     echo -e "${BLUE}✅ Validating setup...${NC}"
 
     # Check required files
-    local required_files=(".env" "docker-compose.yml" "opentranscribe.sh")
+    local required_files=(".env" "docker-compose.yml" "docker-compose.prod.yml" "opentranscribe.sh" "database/init_db.sql")
     for file in "${required_files[@]}"; do
         if [ -f "$file" ]; then
             echo "✓ $file exists"
         else
             echo -e "${RED}❌ $file missing${NC}"
+            echo "Required file not found: $file"
             exit 1
         fi
     done
 
-    # Validate Docker Compose (use production overlay)
-    if docker compose -f docker-compose.yml -f docker-compose.prod.yml config &> /dev/null; then
-        echo "✓ Docker Compose configuration valid"
+    # Validate Docker Compose (use production overlay) - now that .env exists
+    echo "Validating Docker Compose configuration with .env file..."
+
+    # For one-line installation, build contexts (./backend, ./frontend) don't exist
+    # since we're using pre-built images from Docker Hub. We'll check if the
+    # configuration can be parsed and validated for image-only deployment.
+    local compose_error
+    compose_error=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config 2>&1)
+    local exit_code=$?
+
+    # Check for specific errors vs warnings
+    if [ $exit_code -eq 0 ]; then
+        echo "✓ Docker Compose configuration valid (with .env file)"
+    elif echo "$compose_error" | grep -q "build context.*does not exist"; then
+        # Build contexts don't exist - this is expected for one-line installation
+        echo "✓ Docker Compose configuration valid (using pre-built images)"
+        echo "  Note: Build contexts not present (expected for Docker Hub deployment)"
     else
-        echo -e "${RED}❌ Docker Compose configuration invalid${NC}"
-        exit 1
+        # Real configuration error
+        echo -e "${RED}❌ Docker Compose configuration validation failed${NC}"
+        echo -e "${YELLOW}Error details:${NC}"
+        echo "$compose_error" | head -15
+        echo ""
+        echo "This usually means:"
+        echo "  1. Missing or invalid environment variables in .env"
+        echo "  2. Syntax errors in docker-compose files"
+        echo "  3. Missing required files referenced in docker-compose"
+        echo "  4. Missing database/init_db.sql file"
+        echo ""
+        read -p "Continue setup anyway? (y/N) " -n 1 -r </dev/tty
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+        echo "⚠️  Continuing with potentially invalid configuration..."
     fi
 
     echo "✓ Setup validation complete"

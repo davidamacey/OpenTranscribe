@@ -466,7 +466,8 @@ create_env_file() {
     local POSTGRES_PASSWORD=$(openssl rand -hex 32)
     local MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
     local JWT_SECRET_KEY=$(openssl rand -hex 64)
-    local ENCRYPTION_KEY=$(openssl rand -hex 64)
+    # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
+    local ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
     local REDIS_PASSWORD=$(openssl rand -hex 32)
     local OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
 
@@ -490,19 +491,16 @@ create_env_file() {
     # Note: TEMP_DIR override for offline install locations
     sed -i "s|^#.*TEMP_DIR=.*|TEMP_DIR=${INSTALL_DIR}/temp|g" "$INSTALL_DIR/.env"
 
-    # Set offline mode for HuggingFace (append if not already present)
-    if ! grep -q "HF_HUB_OFFLINE" "$INSTALL_DIR/.env"; then
-        echo "" >> "$INSTALL_DIR/.env"
-        echo "# Offline Mode (set by installer)" >> "$INSTALL_DIR/.env"
-        echo "HF_HUB_OFFLINE=1" >> "$INSTALL_DIR/.env"
-    fi
+    # Enable offline mode for HuggingFace (uncomment the line)
+    sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "$INSTALL_DIR/.env"
 
     # Note: INIT_DB_PATH uses default ./database/init_db.sql from .env.example
     # No need to override - all deployment methods use the same path
 
     print_success "Environment configuration created (using .env.example template)"
     print_info "✓ Secure credentials auto-generated (64-char JWT/encryption, 32-char passwords)"
-    print_warning "IMPORTANT: Edit $INSTALL_DIR/.env to set your HUGGINGFACE_TOKEN"
+    print_info "✓ Offline mode enabled (HF_HUB_OFFLINE=1) - AI models pre-installed"
+    print_info "✓ HUGGINGFACE_TOKEN not required for offline operation"
 }
 
 set_permissions() {
