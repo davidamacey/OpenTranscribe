@@ -82,7 +82,7 @@ def create_media_file_record(
             is_public=False,
             duration=None,
             language=None,
-            summary=None,
+            summary_data=None,
             translated_text=None,
             file_hash=file_hash,
             thumbnail_path=None,

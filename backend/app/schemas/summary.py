@@ -1,20 +1,28 @@
 """
 Pydantic schemas for AI summarization functionality
+
+Updated to support flexible summary structures from custom AI prompts.
+No hard-coded field requirements - accepts any valid JSON structure.
 """
 
 from datetime import datetime
 from typing import Any
+from typing import Dict
 from typing import Literal
 from typing import Optional
 from typing import Union
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 
 
+# Legacy schemas kept for backward compatibility with default BLUF prompt
 class SpeakerInfo(BaseModel):
+    """Speaker information (optional, used by default BLUF prompt)"""
+
     name: str = Field(..., description="Speaker name or label")
     talk_time_seconds: Union[int, float] = Field(..., description="Total talk time in seconds")
     percentage: float = Field(..., description="Percentage of total talk time")
@@ -29,12 +37,16 @@ class SpeakerInfo(BaseModel):
 
 
 class ContentSection(BaseModel):
+    """Content section (optional, used by some prompts)"""
+
     time_range: str = Field(..., description="Time range for this section")
     topic: str = Field(..., description="Topic or title")
     key_points: list[str] = Field(..., description="Key discussion points")
 
 
 class ActionItem(BaseModel):
+    """Action item (optional, used by default BLUF prompt)"""
+
     text: str = Field(..., description="Action item description")
     assigned_to: Optional[str] = Field(None, description="Person assigned")
     due_date: Optional[str] = Field(None, description="Due date in YYYY-MM-DD format")
@@ -44,6 +56,8 @@ class ActionItem(BaseModel):
 
 
 class SummaryMetadata(BaseModel):
+    """Metadata about summary generation (always present)"""
+
     provider: str = Field(..., description="LLM provider used")
     model: str = Field(..., description="Model name")
     usage_tokens: Optional[int] = None
@@ -55,6 +69,8 @@ class SummaryMetadata(BaseModel):
 
 
 class MajorTopic(BaseModel):
+    """Major topic (optional, used by default BLUF prompt)"""
+
     topic: str
     importance: Literal["high", "medium", "low"]
     key_points: list[str]
@@ -62,18 +78,36 @@ class MajorTopic(BaseModel):
 
 
 class SummaryData(BaseModel):
-    bluf: str
-    brief_summary: str
-    major_topics: list[MajorTopic]
-    action_items: list[ActionItem]
-    key_decisions: list[str]
-    follow_up_items: list[str]
-    metadata: SummaryMetadata
+    """
+    Flexible summary data structure that accepts ANY valid JSON structure.
+
+    This schema is designed to accommodate custom AI prompts with different
+    output formats. Fields from the default BLUF prompt are optional for
+    backward compatibility, but any additional fields are allowed.
+
+    Examples:
+    - Default BLUF format: {bluf, brief_summary, major_topics, ...}
+    - Custom format: {executive_summary, risks, recommendations, ...}
+    - Any other valid JSON structure from custom prompts
+    """
+
+    model_config = ConfigDict(extra="allow")  # Allow additional fields
+
+    # Optional fields for backward compatibility with default BLUF prompt
+    bluf: Optional[str] = None
+    brief_summary: Optional[str] = None
+    major_topics: Optional[list[Any]] = None
+    action_items: Optional[list[Any]] = None
+    key_decisions: Optional[list[Any]] = None
+    follow_up_items: Optional[list[Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class SummaryResponse(BaseModel):
-    file_id: UUID  # Changed from int to UUID
-    summary_data: SummaryData
+    """Response containing flexible summary data"""
+
+    file_id: UUID
+    summary_data: Dict[str, Any]  # Flexible structure - accepts any JSON
     source: Literal["opensearch", "postgresql"]
     document_id: Optional[str] = None
     created_at: Optional[datetime] = None

@@ -3,14 +3,13 @@
   import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate } from '../../lib/api/prompts';
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import { copyToClipboard } from '$lib/utils/clipboard';
+  import { toastStore } from '../../stores/toast';
 
   export let onSettingsChange: (() => void) | null = null;
 
   // State variables
   let loading = false;
   let saving = false;
-  let error = '';
-  let success = '';
 
   let allPrompts: SummaryPrompt[] = [];
   let activePrompt: SummaryPrompt | null = null;
@@ -67,7 +66,6 @@
 
   async function loadData() {
     loading = true;
-    error = '';
 
     try {
       // Load all prompts
@@ -102,7 +100,7 @@
       }
     } catch (err: any) {
       console.error('Error loading prompts:', err);
-      error = err.response?.data?.detail || 'Failed to load prompts';
+      toastStore.error(err.response?.data?.detail || 'Failed to load prompts');
     } finally {
       loading = false;
     }
@@ -110,7 +108,6 @@
 
   async function setActivePrompt(promptId: number) {
     saving = true;
-    error = '';
 
     try {
       await PromptsApi.setActivePrompt({
@@ -119,14 +116,14 @@
 
       selectedPromptId = promptId;
       activePrompt = allPrompts.find(p => p.id === promptId) || null;
-      success = 'Active prompt updated successfully';
+      toastStore.success('Active prompt updated successfully');
 
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
       console.error('Error setting active prompt:', err);
-      error = err.response?.data?.detail || 'Failed to set active prompt';
+      toastStore.error(err.response?.data?.detail || 'Failed to set active prompt');
     } finally {
       saving = false;
     }
@@ -146,7 +143,7 @@
 
   function openEditForm(prompt: SummaryPrompt) {
     if (prompt.is_system_default) {
-      error = 'System prompts cannot be edited';
+      toastStore.error('System prompts cannot be edited');
       return;
     }
 
@@ -182,8 +179,6 @@
       content_type: 'general'
     };
     originalFormData = { ...formData };
-    error = '';
-    success = '';
   }
 
   function handleUnsavedChangesConfirm() {
@@ -201,13 +196,11 @@
 
   async function savePrompt() {
     if (!formData.name.trim() || !formData.prompt_text.trim()) {
-      error = 'Name and prompt text are required';
+      toastStore.error('Name and prompt text are required');
       return;
     }
 
     saving = true;
-    error = '';
-    success = '';
 
     try {
       if (editingPrompt) {
@@ -221,13 +214,13 @@
           allPrompts = [...allPrompts]; // Trigger reactivity
         }
 
-        success = 'Prompt updated successfully';
+        toastStore.success('Prompt updated successfully');
       } else {
         // Create new prompt
         const newPrompt = await PromptsApi.createPrompt(formData);
 
         allPrompts = [...allPrompts, newPrompt];
-        success = 'Prompt created successfully';
+        toastStore.success('Prompt created successfully');
       }
 
       // Force close after successful save (no dirty check needed)
@@ -238,7 +231,7 @@
       }
     } catch (err: any) {
       console.error('Error saving prompt:', err);
-      error = err.response?.data?.detail || 'Failed to save prompt';
+      toastStore.error(err.response?.data?.detail || 'Failed to save prompt');
     } finally {
       saving = false;
     }
@@ -246,7 +239,7 @@
 
   function confirmDeletePrompt(prompt: SummaryPrompt) {
     if (prompt.is_system_default) {
-      error = 'System prompts cannot be deleted';
+      toastStore.error('System prompts cannot be deleted');
       return;
     }
 
@@ -258,7 +251,6 @@
     if (!promptToDelete) return;
 
     saving = true;
-    error = '';
 
     try {
       await PromptsApi.deletePrompt(promptToDelete.id);
@@ -281,23 +273,23 @@
           activePrompt = activeResponse.active_prompt;
 
           if (activePrompt && activePrompt.name) {
-            success = `Prompt deleted successfully. ${activePrompt.name} is now active and will be used for all future summaries.`;
+            toastStore.success(`Prompt deleted successfully. ${activePrompt.name} is now active and will be used for all future summaries.`);
           } else {
-            success = 'Prompt deleted successfully. Default system prompt is now active.';
+            toastStore.success('Prompt deleted successfully. Default system prompt is now active.');
           }
         } catch (activeErr: any) {
           console.error('Error getting fallback active prompt:', activeErr);
           selectedPromptId = null;
           activePrompt = null;
-          success = 'Prompt deleted successfully';
+          toastStore.success('Prompt deleted successfully');
         }
       } else if (wasActivePrompt) {
         // Just clear the selection if it was active but we still have user prompts
         selectedPromptId = null;
         activePrompt = null;
-        success = 'Prompt deleted successfully';
+        toastStore.success('Prompt deleted successfully');
       } else {
-        success = 'Prompt deleted successfully';
+        toastStore.success('Prompt deleted successfully');
       }
 
       if (onSettingsChange) {
@@ -305,7 +297,7 @@
       }
     } catch (err: any) {
       console.error('Error deleting prompt:', err);
-      error = err.response?.data?.detail || 'Failed to delete prompt';
+      toastStore.error(err.response?.data?.detail || 'Failed to delete prompt');
     } finally {
       saving = false;
       promptToDelete = null;
@@ -414,18 +406,6 @@
 </script>
 
 <div class="prompt-settings">
-  {#if success}
-    <div class="message success">
-      {success}
-    </div>
-  {/if}
-
-  {#if error}
-    <div class="message error">
-      {error}
-    </div>
-  {/if}
-
   {#if loading}
     <div class="loading">Loading prompts...</div>
   {:else}
@@ -901,24 +881,6 @@
     max-width: 800px;
   }
 
-  .message {
-    padding: 0.75rem 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-    font-size: 0.8125rem;
-  }
-
-  .message.success {
-    background-color: rgba(16, 185, 129, 0.1);
-    color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-  }
-
-  .message.error {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: var(--error-color);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-  }
 
   .loading {
     text-align: center;

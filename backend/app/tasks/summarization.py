@@ -141,7 +141,7 @@ def summarize_transcript_task(
                     logger.warning(f"Could not clear OpenSearch summary: {e}")
 
             # Clear PostgreSQL summary fields
-            media_file.summary = None
+            media_file.summary_data = None
             media_file.summary_opensearch_id = None
 
         # Set summary status to processing
@@ -271,7 +271,7 @@ def summarize_transcript_task(
 
                 # Set summary status to skipped (indicating no LLM configured)
                 media_file.summary_status = "not_configured"
-                media_file.summary = None
+                media_file.summary_data = None
                 db.commit()
 
                 # Send notification that LLM is not configured
@@ -358,8 +358,9 @@ def summarize_transcript_task(
         # Update task progress
         update_task_status(db, task_id, "in_progress", progress=0.7)
 
-        # Store summary in PostgreSQL
-        media_file.summary = summary_data.get("brief_summary", "Summary generation failed")
+        # Store complete structured summary in PostgreSQL (JSONB)
+        media_file.summary_data = summary_data
+        media_file.summary_schema_version = 1
 
         # Store structured summary in OpenSearch
         try:
@@ -373,8 +374,10 @@ def summarize_transcript_task(
             )
             loop.close()
 
-            # Add file and user information to summary data
-            summary_data.update(
+            # Make a copy for OpenSearch indexing with tracking fields
+            # This prevents polluting the PostgreSQL-stored summary with OpenSearch metadata
+            opensearch_data = summary_data.copy()
+            opensearch_data.update(
                 {
                     "file_id": file_id,
                     "user_id": media_file.user_id,
@@ -387,7 +390,7 @@ def summarize_transcript_task(
             # Index in OpenSearch
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            document_id = loop.run_until_complete(summary_service.index_summary(summary_data))
+            document_id = loop.run_until_complete(summary_service.index_summary(opensearch_data))
             loop.close()
 
             if document_id:
@@ -399,15 +402,42 @@ def summarize_transcript_task(
                 media_file.summary_status = "completed"
                 db.commit()
 
-                # Send completion notification with summary text for frontend
+                # Send completion notification with summary preview for frontend
+                # Extract brief preview from summary_data for notification
+                summary_preview = (
+                    summary_data.get("brief_summary")
+                    or summary_data.get("bluf")
+                    or "Summary generated successfully"
+                )
                 send_summary_notification(
                     media_file.user_id,
                     file_id,
                     "completed",
                     "AI summary generation completed successfully",
                     100,
-                    summary_data=media_file.summary,  # Send the brief summary text for frontend
+                    summary_data=summary_preview,  # Send preview text for frontend notification
                     summary_opensearch_id=document_id,
+                )
+            else:
+                # OpenSearch indexing returned None (client not initialized)
+                logger.warning("OpenSearch client not available, summary saved to PostgreSQL only")
+                media_file.summary_status = "completed"
+                db.commit()
+
+                # Send completion notification without OpenSearch ID
+                summary_preview = (
+                    summary_data.get("brief_summary")
+                    or summary_data.get("bluf")
+                    or "Summary generated successfully"
+                )
+                send_summary_notification(
+                    media_file.user_id,
+                    file_id,
+                    "completed",
+                    "AI summary generation completed (search not available)",
+                    100,
+                    summary_data=summary_preview,
+                    summary_opensearch_id=None,
                 )
 
         except Exception as e:
@@ -419,34 +449,27 @@ def summarize_transcript_task(
             db.commit()
 
             # Send completion notification with summary data (OpenSearch failed but summary exists)
+            # Extract brief preview from summary_data for notification
+            summary_preview = (
+                summary_data.get("brief_summary")
+                or summary_data.get("bluf")
+                or "Summary generated successfully"
+            )
             send_summary_notification(
                 media_file.user_id,
                 file_id,
                 "completed",
                 "AI summary generation completed (search indexing failed)",
                 100,
-                summary_data=media_file.summary,  # Send the brief summary text for frontend
+                summary_data=summary_preview,  # Send preview text for frontend notification
                 summary_opensearch_id=None,  # No OpenSearch ID since indexing failed
             )
 
-        # Send completion notification with summary text for frontend
-        try:
-            send_summary_notification(
-                media_file.user_id,
-                file_id,
-                "completed",
-                "AI summary generation completed successfully",
-                100,
-                summary_data=summary_data.get("brief_summary", ""),
-            )
-            logger.info(f"Sent completion notification to user {media_file.user_id}")
-        except Exception as notif_error:
-            logger.error(f"Failed to send completion notification: {notif_error}")
-            # Don't fail the task if notification fails
-
         logger.info("=== Summarization Task Completed Successfully ===")
         logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
-        logger.info(f"Final summary length: {len(media_file.summary)} characters")
+        logger.info(
+            f"Final summary data keys: {list(media_file.summary_data.keys()) if media_file.summary_data else 'None'}"
+        )
         logger.info(f"Summary status: {media_file.summary_status}")
 
         # OpenSearch indexing error handling removed since we're skipping it

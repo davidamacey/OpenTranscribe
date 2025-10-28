@@ -48,11 +48,12 @@ class MediaFile(Base):
     is_public = Column(Boolean, default=False)  # Whether file is publicly accessible
     language = Column(String, nullable=True)  # Detected language code
     status = Column(Enum(FileStatus), default=FileStatus.PENDING)
-    summary = Column(Text, nullable=True)
+    summary_data = Column(JSON, nullable=True)  # Complete structured AI summary (flexible format)
     summary_opensearch_id = Column(String, nullable=True)  # OpenSearch document ID for summary
     summary_status = Column(
         String, default="pending", nullable=True
-    )  # pending, processing, completed, failed
+    )  # pending, processing, completed, failed, not_configured
+    summary_schema_version = Column(Integer, default=1)  # Track summary schema evolution
     translated_text = Column(Text, nullable=True)  # For non-English transcripts
     file_hash = Column(String, nullable=True, index=True)  # SHA-256 hash for duplicate detection
     thumbnail_path = Column(String, nullable=True)  # Path to video thumbnail in storage

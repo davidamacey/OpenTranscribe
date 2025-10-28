@@ -213,7 +213,7 @@ class LLMService:
                 "options": {
                     "temperature": kwargs.get("temperature", self.config.temperature),
                     "num_predict": kwargs.get("max_tokens", self.config.response_tokens),
-                }
+                },
             }
             # Add format parameter for structured output if provided
             if "format" in kwargs:
@@ -308,7 +308,9 @@ class LLMService:
             elif self.config.provider == LLMProvider.OLLAMA:
                 # Ollama native response format
                 if "message" not in data:
-                    logger.error(f"Ollama response missing 'message' field. Response keys: {list(data.keys())}")
+                    logger.error(
+                        f"Ollama response missing 'message' field. Response keys: {list(data.keys())}"
+                    )
                     logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
                     raise Exception("No message in Ollama response")
 
@@ -317,7 +319,9 @@ class LLMService:
 
                 # Debug logging for Ollama responses
                 if not content:
-                    logger.error(f"Ollama message field exists but content is empty. Message: {data.get('message')}")
+                    logger.error(
+                        f"Ollama message field exists but content is empty. Message: {data.get('message')}"
+                    )
                     logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
 
                 # Ollama provides token counts in separate fields
@@ -655,7 +659,12 @@ class LLMService:
     def _parse_summary_response(
         self, response: LLMResponse, transcript_length: int, extra_metadata: dict = None
     ) -> dict[str, Any]:
-        """Parse LLM response into structured summary"""
+        """
+        Parse LLM response into flexible structured summary.
+
+        IMPORTANT: This method accepts ANY valid JSON structure from custom AI prompts.
+        No field validation is performed - we trust the LLM to follow the prompt format.
+        """
         try:
             content = response.content.strip()
 
@@ -670,25 +679,10 @@ class LLMService:
             elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()
 
+            # Parse JSON - accept ANY structure
             summary_data = json.loads(content)
 
-            # Validate required fields
-            required_fields = [
-                "bluf",
-                "brief_summary",
-                "major_topics",
-                "action_items",
-                "key_decisions",
-                "follow_up_items",
-            ]
-            for field in required_fields:
-                if field not in summary_data:
-                    summary_data[field] = (
-                        []
-                        if field
-                        in ["major_topics", "action_items", "key_decisions", "follow_up_items"]
-                        else ""
-                    )
+            # NO FIELD VALIDATION - accept any structure from custom prompts
 
             # Add metadata
             metadata = {
@@ -704,18 +698,20 @@ class LLMService:
 
             summary_data["metadata"] = metadata
 
+            logger.info(
+                f"Successfully parsed flexible summary with fields: {list(summary_data.keys())}"
+            )
             return summary_data
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse summary JSON: {e}")
             logger.error(f"Response content: {response.content[:500]}...")
+
+            # Return minimal error structure
             return {
-                "bluf": "Failed to generate structured summary.",
-                "brief_summary": f"Summary generation failed due to JSON parsing error: {str(e)}",
-                "major_topics": [],
-                "action_items": [],
-                "key_decisions": [],
-                "follow_up_items": [],
+                "error": "JSON parsing failed",
+                "error_detail": str(e),
+                "raw_response_preview": response.content[:500],
                 "metadata": {
                     "provider": self.config.provider.value,
                     "model": self.config.model,

@@ -3,7 +3,7 @@
   import { writable } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { websocketStore } from '$stores/websocket';
-  
+
   // Import new components
   import VideoPlayer from '$components/VideoPlayer.svelte';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
@@ -22,7 +22,7 @@
   import { isLLMAvailable } from '$stores/llmStatus';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
-  
+
   // No need for a global commentsForExport variable - we'll fetch when needed
 
   // Props - SvelteKit passes data from +page.ts
@@ -111,7 +111,7 @@
 
   // Reactive store for file updates
   const reactiveFile = writable(null);
-  
+
 
   /**
    * Fetches file details from the API
@@ -127,7 +127,7 @@
 
     try {
       const response = await axiosInstance.get(`/api/files/${fileId}`);
-      
+
       if (response.data && typeof response.data === 'object' && file) {
         // Update all transcript and processing-related fields while preserving UI state flags
         file.transcript_segments = response.data.transcript_segments || [];
@@ -135,24 +135,24 @@
         file.waveform_data = response.data.waveform_data;
         file.duration = response.data.duration;
         file.duration_seconds = response.data.duration_seconds;
-        
+
         // Update metadata and processing info
         file.processed_at = response.data.processed_at;
         file.analytics = response.data.analytics;
-        
+
         // Update collections if they changed
         collections = response.data.collections || [];
-        
+
         // Update file object
         file = { ...file };
         reactiveFile.set(file);
-        
+
         // Process the new transcript data
         processTranscriptData();
-        
+
         // Fetch analytics separately to get the latest data
         await fetchAnalytics(fileId);
-        
+
       }
     } catch (error) {
       console.error('Error fetching transcript data:', error);
@@ -161,7 +161,7 @@
 
   async function fetchFileDetails(fileIdOrEvent?: string): Promise<void> {
     const targetFileId = typeof fileIdOrEvent === 'string' ? fileIdOrEvent : fileId;
-    
+
     if (!targetFileId) {
       console.error('FileDetail: No file ID provided to fetchFileDetails');
       errorMessage = 'No file ID provided';
@@ -174,7 +174,7 @@
       errorMessage = '';
 
       const response = await axiosInstance.get(`/api/files/${targetFileId}`);
-      
+
       if (response.data && typeof response.data === 'object') {
         file = response.data;
         collections = response.data.collections || [];
@@ -182,10 +182,10 @@
 
         // Set up video URL using the simple-video endpoint
         setupVideoUrl(targetFileId);
-        
+
         // Process transcript data from the file response
         processTranscriptData();
-        
+
         // Fetch analytics separately
         await fetchAnalytics(targetFileId);
 
@@ -387,15 +387,15 @@
     // Check if this is a video file with completed transcription
     const isVideo = file?.content_type && file.content_type.startsWith('video/');
     const hasTranscript = file?.status === 'completed';
-    
+
     // Always use the original video for playback - we'll add subtitles via WebVTT tracks
     videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
-    
+
     // Ensure URL has proper formatting
     if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
       videoUrl = '/' + videoUrl;
     }
-    
+
     // Reset video element check flag to prompt afterUpdate to try initialization
     videoElementChecked = false;
   }
@@ -415,9 +415,9 @@
     if (playerInitialized || !videoUrl) {
       return;
     }
-    
+
     const mediaElement = document.querySelector('#player') as HTMLMediaElement;
-    
+
     if (!mediaElement) {
       return;
     }
@@ -432,16 +432,16 @@
   function updateCurrentSegment(currentPlaybackTime: number): void {
     const transcriptData = file?.transcript_segments;
     if (!file || !transcriptData || !Array.isArray(transcriptData)) return;
-    
+
     const allSegments = document.querySelectorAll('.transcript-segment');
     allSegments.forEach(segment => {
       segment.classList.remove('active-segment');
     });
-    
+
     const currentSegment = transcriptData.find((segment: any) => {
       return currentPlaybackTime >= segment.start_time && currentPlaybackTime <= segment.end_time;
     });
-    
+
     if (currentSegment) {
       const segmentElement = document.querySelector(`[data-segment-id="${currentSegment.id || `${currentSegment.start_time}-${currentSegment.end_time}`}"]`);
       if (segmentElement) {
@@ -700,41 +700,41 @@
   // Format seconds to SRT timestamp format (HH:MM:SS,mmm)
   function formatSrtTimestamp(seconds: number): string {
     if (isNaN(seconds) || seconds < 0) seconds = 0;
-    
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
     const milliseconds = Math.floor((seconds % 1) * 1000);
-    
+
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(milliseconds).padStart(3, '0')}`;
   }
 
   // Format seconds to VTT timestamp format (HH:MM:SS.mmm)
   function formatVttTimestamp(seconds: number): string {
     if (isNaN(seconds) || seconds < 0) seconds = 0;
-    
+
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
     const milliseconds = Math.floor((seconds % 1) * 1000);
-    
+
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(milliseconds).padStart(3, '0')}`;
   }
 
   async function handleSaveSegment(event: any) {
     const segment = event.detail.segment;
     if (!segment || !editingSegmentText) return;
-    
+
     try {
       savingTranscript = true;
-      
+
       // Call backend API to update the specific segment
       const segmentUpdate = {
         text: editingSegmentText
       };
-      
+
       const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segment.id}`, segmentUpdate);
-      
+
       if (response.data) {
         // Update the transcript store FIRST for reactivity
         transcriptStore.updateSegmentText(segment.id, editingSegmentText);
@@ -760,15 +760,15 @@
               resolved_speaker_name: originalSegment.resolved_speaker_name
             };
 
-            
+
             // Update file with new segments array
-            file = { 
-              ...file, 
-              transcript_segments: updatedSegments 
+            file = {
+              ...file,
+              transcript_segments: updatedSegments
             };
             reactiveFile.set(file);
-            
-            
+
+
             // Clear cached processed videos so downloads will use updated transcript
             try {
               await axiosInstance.delete(`/api/files/${file.id}/cache`);
@@ -777,7 +777,7 @@
             }
           }
         }
-        
+
         editingSegmentId = null;
         editingSegmentText = '';
 
@@ -815,13 +815,13 @@
 
   async function handleSaveTranscript() {
     if (!editedTranscript || !file) return;
-    
+
     try {
       savingTranscript = true;
       const response = await axiosInstance.put(`/api/files/${fileId}/transcript`, {
         transcript: editedTranscript
       });
-      
+
       if (response.data) {
         // Refresh file data to get updated segments
         await fetchFileDetails(fileId);
@@ -844,7 +844,7 @@
     const format = event.detail.format;
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
-    
+
     // Check if there are any comments for this file
     let hasComments = false;
     try {
@@ -864,14 +864,14 @@
       // If we can't check comments, assume no comments
       hasComments = false;
     }
-    
+
     // If no comments, export directly without modal
     if (!hasComments) {
       pendingExportFormat = format;
       processExportWithComments(false);
       return;
     }
-    
+
     // If comments exist, show confirmation modal
     pendingExportFormat = format;
     showExportConfirmation = true;
@@ -894,10 +894,10 @@
           const endpoint = `/comments/files/${file.id}/comments`;
           const response = await axiosInstance.get(endpoint, { headers });
           fileComments = response.data || [];
-          
+
           // Get current user data from localStorage
           const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          
+
           // Add current user data to each comment
           fileComments = fileComments.map((comment: any) => {
             // If the comment is from the current user, add their details
@@ -918,7 +918,7 @@
             }
             return comment;
           });
-          
+
           // Sort comments by timestamp
           fileComments.sort((a: any, b: any) => a.timestamp - b.timestamp);
         }
@@ -927,34 +927,34 @@
         // Continue with export even if comments can't be fetched
       }
     }
-    
+
     try {
       // Sort transcript data by start_time to ensure proper ordering
       transcriptData = [...transcriptData].sort((a: any, b: any) => a.start_time - b.start_time);
-      
+
       // Create speaker display name mapping
       const speakerMapping = new Map();
       speakerList.forEach((speaker: any) => {
         speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
       });
-      
+
       // Helper function to get speaker display name
       const getSpeakerDisplayName = (segment: any) => {
         const speakerName = segment.speaker_label || segment.speaker?.name || 'Speaker';
         return speakerMapping.get(speakerName) || segment.speaker?.display_name || speakerName;
       };
-      
+
       // Client-side export with updated speaker names
       let content = '';
       const filename = file.filename.replace(/\.[^/.]+$/, '');
-      
+
       switch (format) {
         case 'txt':
           // Create transcript content with segments
           let segments = transcriptData.map((seg: any) =>
             `[${formatSimpleTimestamp(seg.start_time || seg.start || 0)} --> ${formatSimpleTimestamp(seg.end_time || seg.end || 0)}] ${getSpeakerDisplayName(seg)}: ${seg.text}`
           );
-          
+
           // Add comments if requested
           if (includeComments && fileComments.length > 0) {
             const commentLines = fileComments.map((comment: any) => {
@@ -963,7 +963,7 @@
             });
             segments = mergeCommentsWithTranscript(segments, commentLines, transcriptData, fileComments);
           }
-          
+
           content = segments.join('\n\n');
           break;
         case 'json':
@@ -977,7 +977,7 @@
               text: seg.text
             }))
           };
-          
+
           // Add comments to JSON if requested
           if (includeComments && fileComments.length > 0) {
             jsonData.comments = fileComments.map((comment: any) => ({
@@ -986,7 +986,7 @@
               text: comment.text
             }));
           }
-          
+
           content = JSON.stringify(jsonData, null, 2);
           break;
         case 'csv':
@@ -999,12 +999,12 @@
             const escapedText = `"${seg.text.replace(/"/g, '""')}"`;
             return `${start},${end},"${speaker}",${escapedText}`;
           });
-          
+
           // Add comments to CSV if requested
           if (includeComments && fileComments.length > 0) {
             // Add comment column to header if comments are included
             csvHeader = 'Start Time,End Time,Speaker,Text,Comment Type';
-            
+
             // Add comments as separate rows
             const commentRows = fileComments.map((comment: any) => {
               const timestamp = comment.timestamp;
@@ -1013,14 +1013,14 @@
               // Add comment rows with user info in the Speaker column and 'COMMENT' in Comment Type
               return `${timestamp},${timestamp},"USER COMMENT: ${userName}",${escapedText},"COMMENT"`;
             });
-            
+
             // Combine segment rows (with empty Comment Type) with comment rows
             csvRows = csvRows.map((row: string) => row + ',""');
-            csvRows = mergeSortedArrays(csvRows, commentRows, 
+            csvRows = mergeSortedArrays(csvRows, commentRows,
               transcriptData.map((seg: any) => seg.start_time || seg.start || 0),
               fileComments.map((comment: any) => comment.timestamp));
           }
-          
+
           content = csvHeader + '\n' + csvRows.join('\n');
           break;
         case 'srt':
@@ -1034,7 +1034,7 @@
             isComment: boolean;
           }> = [];
           let counter = 1;
-          
+
           // Add transcript segments
           transcriptData.forEach((seg: any) => {
             const startTime = formatSrtTimestamp(seg.start_time || seg.start || 0);
@@ -1051,7 +1051,7 @@
               isComment: false
             });
           });
-          
+
           // Add comments if requested
           if (includeComments && fileComments.length > 0) {
             fileComments.forEach(comment => {
@@ -1059,7 +1059,7 @@
               const formattedTime = formatSrtTimestamp(timestamp);
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
               const text = `USER COMMENT: ${userName}: ${comment.text}`;
-              
+
               srtItems.push({
                 index: counter++,
                 startTime: timestamp,
@@ -1070,18 +1070,18 @@
                 isComment: true
               });
             });
-            
+
             // Sort by start time
             srtItems.sort((a: any, b: any) => a.startTime - b.startTime);
-            
+
             // Reassign indices after sorting
             srtItems.forEach((item: any, idx: number) => {
               item.index = idx + 1;
             });
           }
-          
+
           // Generate SRT content
-          content = srtItems.map((item: any) => 
+          content = srtItems.map((item: any) =>
             `${item.index}\n${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
           ).join('\n');
           break;
@@ -1094,7 +1094,7 @@
             text: string;
             isComment: boolean;
           }> = [];
-          
+
           // Add transcript segments
           transcriptData.forEach((seg: any) => {
             const startTime = formatVttTimestamp(seg.start_time || seg.start || 0);
@@ -1110,7 +1110,7 @@
               isComment: false
             });
           });
-          
+
           // Add comments if requested
           if (includeComments && fileComments.length > 0) {
             fileComments.forEach(comment => {
@@ -1118,7 +1118,7 @@
               const formattedTime = formatVttTimestamp(timestamp);
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
               const text = `USER COMMENT: ${userName}: ${comment.text}`;
-              
+
               vttItems.push({
                 startTime: timestamp,
                 endTime: timestamp + 2, // Show comment for 2 seconds
@@ -1128,20 +1128,20 @@
                 isComment: true
               });
             });
-            
+
             // Sort by start time
             vttItems.sort((a: any, b: any) => a.startTime - b.startTime);
           }
-          
+
           // Generate VTT content
-          content = 'WEBVTT\n\n' + vttItems.map((item: any) => 
+          content = 'WEBVTT\n\n' + vttItems.map((item: any) =>
             `${item.formattedStart} --> ${item.formattedEnd}\n${item.text}\n`
           ).join('\n');
           break;
         default:
           content = transcriptData.map((seg: any) => seg.text).join(' ');
       }
-      
+
       const blob = new Blob([content], { type: 'text/plain' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1168,7 +1168,7 @@
     // Just close the modal without doing anything
     showExportConfirmation = false;
   }
-  
+
   /**
    * Merges transcript segments and comments in chronological order
    * @param {string[]} segments - Array of formatted transcript segment strings
@@ -1181,11 +1181,11 @@
     // Create arrays of timestamps for sorting
     const segmentTimes = transcriptData.map((seg: any) => seg.start_time || seg.start || 0);
     const commentTimes = comments.map((comment: any) => comment.timestamp);
-    
+
     // Create merged array of segment and comment entries
     let merged = [];
     let si = 0, ci = 0;
-    
+
     // Merge two sorted arrays (segments and comments) by timestamp
     while (si < segments.length && ci < commentLines.length) {
       if (segmentTimes[si] <= commentTimes[ci]) {
@@ -1196,22 +1196,22 @@
         ci++;
       }
     }
-    
+
     // Add any remaining segments
     while (si < segments.length) {
       merged.push(segments[si]);
       si++;
     }
-    
+
     // Add any remaining comments
     while (ci < commentLines.length) {
       merged.push(commentLines[ci]);
       ci++;
     }
-    
+
     return merged;
   }
-  
+
   /**
    * Merges two arrays based on their corresponding timestamp arrays
    * @param {any[]} arr1 - First array
@@ -1223,7 +1223,7 @@
   function mergeSortedArrays<T>(arr1: T[], arr2: T[], times1: number[], times2: number[]): T[] {
     let merged = [];
     let i = 0, j = 0;
-    
+
     while (i < arr1.length && j < arr2.length) {
       if (times1[i] <= times2[j]) {
         merged.push(arr1[i]);
@@ -1233,17 +1233,17 @@
         j++;
       }
     }
-    
+
     while (i < arr1.length) {
       merged.push(arr1[i]);
       i++;
     }
-    
+
     while (j < arr2.length) {
       merged.push(arr2[j]);
       j++;
     }
-    
+
     return merged;
   }
 
@@ -1492,10 +1492,10 @@
 
   function handleCollectionsUpdated(event: any) {
     const { collections: updatedCollections } = event.detail;
-    
+
     // Update collections array
     collections = updatedCollections;
-    
+
     // Update file object if it exists
     if (file) {
       file.collections = updatedCollections;
@@ -1534,41 +1534,41 @@
 
   async function handleReprocess(event: CustomEvent) {
     const { fileId } = event.detail;
-    
-    
+
+
     try {
       reprocessing = true;
-      
+
       // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
-      
+
       // Optimistically set file to processing state for immediate UI feedback
       if (file) {
         file.status = 'processing';
         file.progress = 0;
         // Clear transcript data to show placeholder state during reprocessing
         file.transcript_segments = [];
-        file.summary = null;
+        file.summary_data = null;
         file.summary_opensearch_id = null;
-        
+
         // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
         if (llmAvailable) {
           summaryGenerating = true;
           generatingSummary = true;
         }
-        
+
         file = file; // Trigger reactivity
       }
-      
+
       await axiosInstance.post(`/api/files/${fileId}/reprocess`);
-      
+
       // Don't immediately fetch - let WebSocket notifications handle updates
       // The file is now pending/processing and notifications will update the UI
-      
+
     } catch (error) {
       console.error('❌ Error starting reprocess:', error);
       toastStore.error('Failed to start reprocessing. Please try again.');
-      
+
       // Revert optimistic update on error
       if (file) {
         await fetchFileDetails(fileId);
@@ -1580,21 +1580,21 @@
 
   async function handleReprocessHeader() {
     if (!file?.id) return;
-    
+
     try {
       reprocessing = true;
-      
+
       // Reset notification processing state for reprocessing
       lastProcessedNotificationState = '';
-      
+
       // Optimistically set file to processing state for immediate UI feedback
       file.status = 'processing';
       file.progress = 0;
       // Clear transcript data to show placeholder state during reprocessing
       file.transcript_segments = [];
-      file.summary = null;
+      file.summary_data = null;
       file.summary_opensearch_id = null;
-      
+
       // Set summary generating state if LLM is available (reprocessing triggers auto-summary)
       if (llmAvailable) {
         summaryGenerating = true;
@@ -1602,16 +1602,16 @@
       }
 
       file = file; // Trigger reactivity
-      
+
       await axiosInstance.post(`/api/files/${file.id}/reprocess`);
-      
+
       // Don't immediately fetch - let WebSocket notifications handle updates
       toastStore.success('Reprocessing started successfully');
-      
+
     } catch (error) {
       console.error('❌ Error starting reprocess (header):', error);
       toastStore.error('Failed to start reprocessing. Please try again.');
-      
+
       // Revert optimistic update on error
       await fetchFileDetails(file.id);
     } finally {
@@ -1625,20 +1625,20 @@
    */
   async function handleGenerateSummary() {
     if (!file?.id) return;
-    
+
     // Check if LLM is available
     if (!$isLLMAvailable) {
       return;
     }
-    
+
     try {
       generatingSummary = true;
 
       await axiosInstance.post(`/api/files/${file.id}/summarize`);
-      
+
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
-      
+
       // The WebSocket will update summaryGenerating = true when processing starts
     } catch (error: any) {
       console.error('Error generating summary:', error);
@@ -1655,7 +1655,7 @@
    */
   async function loadSummary() {
     if (!file?.id) return;
-    
+
     try {
       const response = await axiosInstance.get(`/api/files/${file.id}/summary`);
       summaryData = response.data.summary_data;
@@ -1719,10 +1719,10 @@
 
     // Subscribe to WebSocket notifications for real-time updates
     wsUnsubscribe = websocketStore.subscribe(($ws) => {
-      
-      
+
+
       if ($ws.notifications.length > 0) {
-        
+
         // Find the most recently updated notification for the current file
         const currentFileNotifications = $ws.notifications.filter(n => {
           const notificationFileId = String(n.data?.file_id || '');
@@ -1740,38 +1740,38 @@
           const bTime = b.timestamp;
           return new Date(bTime).getTime() - new Date(aTime).getTime();
         });
-        
+
         const latestNotification = currentFileNotifications[0];
-        
-        
+
+
         // Create a unique state signature to detect content changes, not just ID changes
         const notificationState = `${latestNotification.id}_${latestNotification.status}_${latestNotification.progress?.percentage}_${latestNotification.currentStep}_${latestNotification.timestamp}`;
-        
+
         // Only process if the notification content has changed (not just new ID)
         if (notificationState !== lastProcessedNotificationState) {
           lastProcessedNotificationState = notificationState;
-          
+
           // Check if this notification is for our current file
           // Skip if fileId is not set yet (component still initializing)
           if (!fileId) {
             return;
           }
-          
+
           // Convert both to strings for comparison since notification sends file_id as string
           const notificationFileId = String(latestNotification.data?.file_id);
           const currentFileId = String(fileId);
-          
-          
+
+
           if (notificationFileId === currentFileId && notificationFileId !== 'undefined' && currentFileId !== 'undefined') {
-            
+
             // Handle transcription status updates
             if (latestNotification.type === 'transcription_status') {
-              
+
               // Get status from notification (progressive notifications set it at root level)
               const notificationStatus = latestNotification.status || latestNotification.data?.status;
               const notificationProgress = latestNotification.progress?.percentage || latestNotification.data?.progress;
-              
-              
+
+
               // Update progress in real-time for processing updates
               if (notificationStatus === 'processing' && notificationProgress !== undefined) {
                 if (file) {
@@ -1781,7 +1781,7 @@
                   currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || 'Processing...';
                   file = { ...file }; // Trigger reactivity
                   reactiveFile.set(file);
-                  
+
                 }
               } else if (notificationStatus === 'completed' || notificationStatus === 'success' || notificationStatus === 'complete' || notificationStatus === 'finished') {
                 // Transcription completed - show completion and refresh
@@ -1789,7 +1789,7 @@
                   file.progress = 100;
                   file.status = 'completed';
                   currentProcessingStep = 'Processing complete!';
-                  
+
                   // Show AI summary spinner only if LLM is available after transcription completion
                   if (llmAvailable) {
                     summaryGenerating = true;
@@ -1801,11 +1801,11 @@
                     generatingSummary = false;
                     reprocessing = false;
                   }
-                  
+
                   file = { ...file }; // Trigger reactivity
                   reactiveFile.set(file);
                 }
-                
+
                 // Clear processing step and refresh transcript data after completion
                 setTimeout(async () => {
                   currentProcessingStep = ''; // Clear processing step
@@ -1830,9 +1830,9 @@
                 fetchFileDetails();
               }
             }
-            
+
             // WebSocket notifications for file updates
-            
+
             // Handle summarization status updates
             if (latestNotification.type === 'summarization_status') {
               // Only process notifications for the current file
@@ -1845,8 +1845,8 @@
 
               // Get status from notification (progressive notifications set it at root level)
               const status = latestNotification.status || latestNotification.data?.status;
-              
-              
+
+
               if (status === 'queued' || status === 'processing' || status === 'generating') {
                 // Summary generation started - show spinner only if LLM is available
                 if (llmAvailable) {
@@ -1865,14 +1865,16 @@
 
                 // Reset reprocessing flag when summary completes (final step of reprocessing)
                 reprocessing = false;
-                
+
                 if (file) {
                   // Update summary-related fields from notification data
-                  const summaryContent = latestNotification.data?.summary;
+                  // Note: The notification contains a brief preview, not the full summary_data
+                  const summaryPreview = latestNotification.data?.summary;
                   const summaryId = latestNotification.data?.summary_opensearch_id;
 
-                  if (summaryContent) {
-                    file.summary = summaryContent;
+                  // Set a flag to indicate summary exists (full data fetched via API)
+                  if (summaryPreview || summaryId) {
+                    file.summary_data = { preview: summaryPreview }; // Minimal indicator
                   }
                   if (summaryId) {
                     file.summary_opensearch_id = summaryId;
@@ -1886,7 +1888,7 @@
                 // Summary failed - stop spinners and show error
                 summaryGenerating = false;
                 generatingSummary = false;
-                
+
                 // Get error message from notification
                 const errorMessage = latestNotification.data?.message || latestNotification.message || 'Failed to generate summary';
                 const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') ||
@@ -1896,7 +1898,7 @@
                 if (!isLLMConfigError) {
                   toastStore.error(errorMessage, 5000);
                 }
-                
+
               }
               } // Close the else block for file ID matching
             }
@@ -2003,7 +2005,7 @@
   {:else if errorMessage}
     <div class="error-container">
       <p class="error-message">{errorMessage}</p>
-      <button 
+      <button
         on:click={() => fetchFileDetails()}
         title="Retry loading the file details"
       >Try Again</button>
@@ -2011,11 +2013,11 @@
   {:else if file}
     <div class="file-header">
       <FileHeader {file} {currentProcessingStep} />
-      
-      
-      <MetadataDisplay 
-        {file} 
-        bind:showMetadata 
+
+
+      <MetadataDisplay
+        {file}
+        bind:showMetadata
       />
     </div>
 
@@ -2028,7 +2030,7 @@
           <div class="header-buttons">
             <!-- View Full Transcript Button - LEFT of AI Summary -->
             {#if file && file.transcript_segments && file.transcript_segments.length > 0 && file.status !== 'processing'}
-              <button 
+              <button
                 class="view-transcript-btn"
                 on:click={() => showTranscriptModal = true}
                 title="View full transcript in modal"
@@ -2040,9 +2042,9 @@
                 Transcript
               </button>
             {/if}
-          <!-- Debug: Summary button state: hasSummary={!!(file?.summary || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
-          {#if file?.summary || file?.summary_opensearch_id}
-            <button 
+          <!-- Debug: Summary button state: hasSummary={!!(file?.summary_data || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
+          {#if file?.summary_data || file?.summary_opensearch_id}
+            <button
               class="view-summary-btn"
               on:click={handleShowSummary}
               title="View AI-generated summary in BLUF format"
@@ -2054,7 +2056,7 @@
             </button>
           {:else if summaryGenerating || generatingSummary}
             <!-- Show generating state even when no summary exists yet -->
-            <button 
+            <button
               class="generate-summary-btn"
               disabled
               title="AI summary is being generated..."
@@ -2063,12 +2065,12 @@
               <span>AI Summary</span>
             </button>
           {:else if file?.status === 'completed'}
-            <button 
+            <button
               class="generate-summary-btn"
               on:click={handleGenerateSummary}
               disabled={generatingSummary || summaryGenerating || !llmAvailable}
-              title={!llmAvailable ? 'AI summary features are not available. Configure an LLM provider in Settings.' : 
-                     (generatingSummary || summaryGenerating) ? 'AI summary is being generated...' : 
+              title={!llmAvailable ? 'AI summary features are not available. Configure an LLM provider in Settings.' :
+                     (generatingSummary || summaryGenerating) ? 'AI summary is being generated...' :
                      'Generate AI-powered summary with key insights and action items'}
             >
               {#if generatingSummary || summaryGenerating}
@@ -2084,8 +2086,8 @@
           {/if}
           <!-- Reprocess Button - icon only with tooltip -->
           {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
-            <button 
-              class="reprocess-button-header" 
+            <button
+              class="reprocess-button-header"
               on:click={handleReprocessHeader}
               disabled={reprocessing}
               title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
@@ -2101,7 +2103,7 @@
           {/if}
           </div>
         </div>
-        
+
         <VideoPlayer
           bind:this={videoPlayerComponent}
           {videoUrl}
@@ -2129,7 +2131,7 @@
             />
           </div>
         {/if}
-        
+
         <TagsSection
           {file}
           bind:isTagsExpanded
@@ -2153,13 +2155,13 @@
           transcriptStore={$transcriptStore}
         />
 
-        <CommentSection 
-          fileId={file?.id ? String(file.id) : ''} 
-          {currentTime} 
+        <CommentSection
+          fileId={file?.id ? String(file.id) : ''}
+          {currentTime}
           on:seekTo={handleSeekTo}
         />
       </section>
-      
+
       <!-- Right column: Transcript -->
       {#if file && file.transcript_segments}
         <section class="transcript-column">
@@ -2281,23 +2283,23 @@
     on:reprocessSummary={async (_event) => {
       // 1. Close modal immediately
       showSummaryModal = false;
-      
+
       // 2. Update button to show spinner state
       summaryGenerating = true;
 
       // 3. Clear the summary from file object to trigger "generating" button state
       if (file) {
-        file.summary = null;
+        file.summary_data = null;
         file.summary_opensearch_id = null;
         file = { ...file }; // Trigger reactivity
       }
-      
+
       // 4. Trigger the API call for reprocessing
       try {
         await axiosInstance.post(`/api/files/${file.id}/summarize`, {
           force_regenerate: true
         });
-        
+
         // WebSocket will handle the rest of the status updates
       } catch (error) {
         console.error('Failed to start reprocess:', error);
@@ -2327,8 +2329,8 @@
     color: var(--text-color);
   }
 
-  .loading-container, 
-  .error-container, 
+  .loading-container,
+  .error-container,
   .no-file-container {
     display: flex;
     flex-direction: column;
@@ -2517,7 +2519,7 @@
     border-color: var(--primary-color);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }
-  
+
   .view-summary-btn:active {
     transform: scale(0.98);
   }
@@ -2578,7 +2580,7 @@
     div.file-detail-page {
       padding: 1rem;
     }
-    
+
     .main-content-grid {
       gap: 20px;
     }
