@@ -268,10 +268,17 @@ install_files() {
     mkdir -p "$INSTALL_DIR/scripts"
     mkdir -p "$INSTALL_DIR/temp"
 
-    # Copy Docker Compose configuration (base + offline override pattern)
+    # Copy Docker Compose configuration (base + offline override pattern + gpu-scale)
     print_info "Copying configuration files..."
     cp "$SCRIPT_DIR/config/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml"
     cp "$SCRIPT_DIR/config/docker-compose.offline.yml" "$INSTALL_DIR/docker-compose.offline.yml"
+
+    # Copy gpu-scale.yml if it exists (for multi-GPU systems)
+    if [ -f "$SCRIPT_DIR/config/docker-compose.gpu-scale.yml" ]; then
+        cp "$SCRIPT_DIR/config/docker-compose.gpu-scale.yml" "$INSTALL_DIR/docker-compose.gpu-scale.yml"
+        print_info "  Copied docker-compose.gpu-scale.yml (multi-GPU support)"
+    fi
+
     cp "$SCRIPT_DIR/database/init_db.sql" "$INSTALL_DIR/database/"
     cp "$SCRIPT_DIR/config/nginx.conf" "$INSTALL_DIR/config/"
 

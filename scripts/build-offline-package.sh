@@ -584,6 +584,10 @@ copy_configuration() {
     print_info "Copying base docker-compose.yml..."
     cp docker-compose.yml "${PACKAGE_DIR}/config/docker-compose.yml"
 
+    # Copy docker-compose.gpu-scale.yml for multi-GPU support
+    print_info "Copying docker-compose.gpu-scale.yml (multi-GPU scaling)..."
+    cp docker-compose.gpu-scale.yml "${PACKAGE_DIR}/config/docker-compose.gpu-scale.yml"
+
     # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
     print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
 

@@ -453,6 +453,10 @@ create_production_compose() {
         if curl -fsSL --connect-timeout 10 --max-time 30 "$prod_url" -o docker-compose.prod.yml; then
             if [ -s docker-compose.prod.yml ] && grep -q "services:" docker-compose.prod.yml; then
                 echo "  ✓ Downloaded production docker-compose.prod.yml"
+
+                # Download optional gpu-scale overlay (non-fatal)
+                download_gpu_scale_overlay
+
                 echo "✓ Production docker-compose configuration complete"
                 return 0
             else
@@ -473,6 +477,28 @@ create_production_compose() {
     echo "Please check your internet connection and try again."
     echo "Alternative: You can manually download from: $prod_url"
     exit 1
+}
+
+download_gpu_scale_overlay() {
+    # Optional: Download docker-compose.gpu-scale.yml for multi-GPU support
+    # This is non-fatal - users can skip if they don't have multi-GPU setups
+    echo "  Downloading optional docker-compose.gpu-scale.yml (multi-GPU support)..."
+
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local gpu_scale_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.gpu-scale.yml"
+
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_scale_url" -o docker-compose.gpu-scale.yml 2>/dev/null; then
+        if [ -s docker-compose.gpu-scale.yml ] && grep -q "celery-worker-gpu-scaled:" docker-compose.gpu-scale.yml; then
+            echo "  ✓ Downloaded docker-compose.gpu-scale.yml (optional multi-GPU scaling)"
+        else
+            echo "  ⚠️  Downloaded gpu-scale file appears invalid, removing..."
+            rm -f docker-compose.gpu-scale.yml
+        fi
+    else
+        echo "  ℹ️  docker-compose.gpu-scale.yml not available (optional feature)"
+    fi
 }
 
 download_management_script() {

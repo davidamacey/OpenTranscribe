@@ -600,10 +600,14 @@ download_models() {
 copy_configuration() {
     print_header "Copying Configuration Files"
 
-    # Copy docker-compose for Windows (base + offline overlay)
+    # Copy docker-compose for Windows (base + offline overlay + gpu-scale)
     print_info "Copying docker-compose configuration..."
     cp docker-compose.yml "${PACKAGE_DIR}/config/docker-compose.yml"
     cp docker-compose.offline.yml "${PACKAGE_DIR}/config/docker-compose.offline.yml"
+
+    # Copy gpu-scale.yml for multi-GPU Windows systems
+    print_info "Copying docker-compose.gpu-scale.yml (multi-GPU scaling)..."
+    cp docker-compose.gpu-scale.yml "${PACKAGE_DIR}/config/docker-compose.gpu-scale.yml"
 
     # Generate secure .env with auto-generated passwords for Windows installation
     print_info "Creating .env with auto-generated secure passwords..."
