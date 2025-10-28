@@ -31,7 +31,10 @@ class OpenSearchSummaryService:
 
     def _ensure_summary_index_exists(self):
         """
-        Create the summary index if it doesn't exist
+        Create the summary index with dynamic mapping to support flexible summary structures.
+
+        This approach allows any JSON structure from custom AI prompts while still
+        providing full-text search and analytics capabilities.
         """
         if not self.client:
             logger.warning("OpenSearch client not initialized")
@@ -39,7 +42,7 @@ class OpenSearchSummaryService:
 
         try:
             if not self.client.indices.exists(index=self.index_name):
-                # Define the mapping for summary documents
+                # Define flexible mapping that accepts any summary structure
                 index_config = {
                     "settings": {
                         "index": {
@@ -57,7 +60,9 @@ class OpenSearchSummaryService:
                         },
                     },
                     "mappings": {
+                        "dynamic": True,  # Allow new fields from custom prompts
                         "properties": {
+                            # Core tracking fields (always present)
                             "file_id": {"type": "integer"},
                             "user_id": {"type": "integer"},
                             "summary_version": {"type": "integer"},
@@ -65,92 +70,35 @@ class OpenSearchSummaryService:
                             "model": {"type": "keyword"},
                             "created_at": {"type": "date"},
                             "updated_at": {"type": "date"},
-                            # Core summary content
-                            "bluf": {"type": "text", "analyzer": "summary_analyzer"},
-                            "brief_summary": {
-                                "type": "text",
-                                "analyzer": "summary_analyzer",
+                            # Flexible summary content - stores complete JSON structure
+                            # Disabled indexing prevents type conflicts between different prompt formats
+                            # All searchable text is extracted to searchable_content field
+                            "summary_content": {
+                                "type": "object",
+                                "enabled": False,  # Store but don't index nested fields
                             },
-                            # Major topics (nested objects)
-                            "major_topics": {
-                                "type": "nested",
-                                "properties": {
-                                    "topic": {
-                                        "type": "text",
-                                        "analyzer": "summary_analyzer",
-                                    },
-                                    "importance": {"type": "keyword"},
-                                    "key_points": {
-                                        "type": "text",
-                                        "analyzer": "summary_analyzer",
-                                    },
-                                    "participants": {"type": "keyword"},
-                                },
-                            },
-                            # Action items (nested objects)
-                            "action_items": {
-                                "type": "nested",
-                                "properties": {
-                                    "text": {
-                                        "type": "text",
-                                        "analyzer": "summary_analyzer",
-                                    },
-                                    "assigned_to": {"type": "keyword"},
-                                    "due_date": {
-                                        "type": "date",
-                                        "format": "yyyy-MM-dd||epoch_millis",
-                                    },
-                                    "priority": {"type": "keyword"},
-                                    "context": {
-                                        "type": "text",
-                                        "analyzer": "summary_analyzer",
-                                    },
-                                    "status": {"type": "keyword"},  # pending, completed, cancelled
-                                },
-                            },
-                            # Key decisions
-                            "key_decisions": {
-                                "type": "text",
-                                "analyzer": "summary_analyzer",
-                            },
-                            # Follow-up items
-                            "follow_up_items": {
-                                "type": "text",
-                                "analyzer": "summary_analyzer",
-                            },
-                            # Metadata
-                            "metadata": {
-                                "properties": {
-                                    "transcript_length": {"type": "integer"},
-                                    "processing_time_ms": {"type": "integer"},
-                                    "confidence_score": {"type": "float"},
-                                    "language": {"type": "keyword"},
-                                    "usage_tokens": {"type": "integer"},
-                                    "error": {"type": "text"},
-                                }
-                            },
-                            # Full-text searchable combined content
+                            # Full-text searchable combined content (extracted from all text fields)
                             "searchable_content": {
                                 "type": "text",
                                 "analyzer": "summary_analyzer",
                             },
-                        }
+                        },
                     },
                 }
 
                 self.client.indices.create(index=self.index_name, body=index_config)
 
-                logger.info(f"Created summary index: {self.index_name}")
+                logger.info(f"Created flexible summary index: {self.index_name}")
 
         except Exception as e:
             logger.error(f"Error creating summary index: {e}")
 
     async def index_summary(self, summary_data: dict[str, Any]) -> str:
         """
-        Index a summary document in OpenSearch
+        Index a summary document in OpenSearch with flexible structure support.
 
         Args:
-            summary_data: Summary data dictionary containing all summary information
+            summary_data: Summary data dictionary (any JSON structure)
 
         Returns:
             Document ID of the indexed summary
@@ -163,51 +111,31 @@ class OpenSearchSummaryService:
             # Generate a unique document ID
             doc_id = str(uuid.uuid4())
 
-            # Prepare the document for indexing
-            doc = self._prepare_summary_document(summary_data)
+            # Extract core tracking fields before preparing document
+            file_id = summary_data.get("file_id")
+            user_id = summary_data.get("user_id")
+            summary_version = summary_data.get("summary_version", 1)
+            provider = summary_data.get("provider", "unknown")
+            model = summary_data.get("model", "unknown")
+
+            # Create a clean copy WITHOUT tracking fields for summary_content storage
+            clean_summary_data = {
+                k: v
+                for k, v in summary_data.items()
+                if k not in ("file_id", "user_id", "summary_version", "provider", "model")
+            }
+
+            # Prepare the document with flexible structure (without tracking fields)
+            doc = self._prepare_summary_document(clean_summary_data)
+
+            # Add core tracking fields at root level (not in summary_content)
+            doc["file_id"] = file_id
+            doc["user_id"] = user_id
+            doc["summary_version"] = summary_version
+            doc["provider"] = provider
+            doc["model"] = model
             doc["created_at"] = datetime.datetime.now().isoformat()
             doc["updated_at"] = datetime.datetime.now().isoformat()
-
-            # Sanitize action items to ensure due_date is valid or None
-            import re
-
-            for action_item in doc.get("action_items", []):
-                due_date = action_item.get("due_date")
-                if due_date:
-                    # Check if it's a valid date format (YYYY-MM-DD)
-                    if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(due_date)):
-                        # Invalid date format - set to None
-                        logger.warning(
-                            f"Invalid due_date format '{due_date}' for action item, setting to None"
-                        )
-                        action_item["due_date"] = None
-
-            # Normalize key_decisions and follow_up_items to strings (OpenSearch expects text, not dicts)
-            if "key_decisions" in doc and isinstance(doc["key_decisions"], list):
-                normalized_decisions = []
-                for decision in doc["key_decisions"]:
-                    if isinstance(decision, dict):
-                        # Extract text from dict structure
-                        decision_text = (
-                            decision.get("decision", "")
-                            or decision.get("text", "")
-                            or str(decision)
-                        )
-                        normalized_decisions.append(decision_text)
-                    else:
-                        normalized_decisions.append(str(decision))
-                doc["key_decisions"] = normalized_decisions
-
-            if "follow_up_items" in doc and isinstance(doc["follow_up_items"], list):
-                normalized_followups = []
-                for item in doc["follow_up_items"]:
-                    if isinstance(item, dict):
-                        # Extract text from dict structure
-                        item_text = item.get("item", "") or item.get("text", "") or str(item)
-                        normalized_followups.append(item_text)
-                    else:
-                        normalized_followups.append(str(item))
-                doc["follow_up_items"] = normalized_followups
 
             # Index the document
             self.client.index(
@@ -217,30 +145,41 @@ class OpenSearchSummaryService:
                 refresh=True,  # Make document immediately searchable
             )
 
-            logger.info(f"Indexed summary for file {summary_data.get('file_id')}: {doc_id}")
+            logger.info(f"Indexed flexible summary for file {file_id}: {doc_id}")
             return doc_id
 
         except Exception as e:
             logger.error(f"Error indexing summary: {e}")
+            logger.error(
+                f"Summary data keys: {list(summary_data.keys()) if summary_data else 'None'}"
+            )
             return None
 
     async def get_summary(self, document_id: str) -> Optional[dict[str, Any]]:
         """
-        Retrieve a summary document by ID
+        Retrieve a summary document by ID with flexible structure.
 
         Args:
             document_id: OpenSearch document ID
 
         Returns:
-            Summary document or None if not found
+            Summary document with summary_content extracted, or None if not found
         """
         if not self.client:
             return None
 
         try:
             response = self.client.get(index=self.index_name, id=document_id)
+            source = response["_source"]
 
-            return response["_source"]
+            # Extract the flexible summary_content and merge with metadata
+            summary_content = source.get("summary_content", {})
+            metadata = source.get("metadata", {})
+
+            # Reconstruct the full summary with metadata
+            full_summary = {**summary_content, "metadata": metadata}
+
+            return full_summary
 
         except NotFoundError:
             logger.warning(f"Summary document not found: {document_id}")
@@ -251,7 +190,7 @@ class OpenSearchSummaryService:
 
     async def get_summary_by_file_id(self, file_id: int, user_id: int) -> Optional[dict[str, Any]]:
         """
-        Get the latest summary for a specific file
+        Get the latest summary for a specific file with flexible structure support.
 
         Args:
             file_id: Media file ID
@@ -285,9 +224,23 @@ class OpenSearchSummaryService:
 
             if response["hits"]["hits"]:
                 hit = response["hits"]["hits"][0]
-                summary_data = hit["_source"]
+                source = hit["_source"]
 
-                return {"document_id": hit["_id"], **summary_data}
+                # Extract the flexible summary_content and merge with metadata
+                summary_content = source.get("summary_content", {})
+                metadata = source.get("metadata", {})
+
+                # Reconstruct the full summary with metadata (user-facing content only)
+                full_summary = {**summary_content, "metadata": metadata}
+
+                # Return only user-facing data, filtering out OpenSearch tracking fields
+                # (file_id, user_id, summary_version, provider, model)
+                return {
+                    "document_id": hit["_id"],
+                    "summary_data": full_summary,
+                    "created_at": source.get("created_at"),
+                    "updated_at": source.get("updated_at"),
+                }
 
             return None
 
@@ -605,56 +558,55 @@ class OpenSearchSummaryService:
 
     def _prepare_summary_document(self, summary_data: dict[str, Any]) -> dict[str, Any]:
         """
-        Prepare summary data for indexing
+        Prepare summary data for indexing with flexible structure support.
+
+        Extracts all text content recursively for full-text search while
+        preserving the complete JSON structure in summary_content field.
 
         Args:
-            summary_data: Raw summary data
+            summary_data: Raw summary data (any JSON structure)
 
         Returns:
             Processed document ready for indexing
         """
-        # Create searchable content by combining all text fields
-        searchable_parts = [
-            summary_data.get("bluf", ""),
-            summary_data.get("brief_summary", ""),
-        ]
 
-        # Add major topics
-        for topic in summary_data.get("major_topics", []):
-            searchable_parts.append(topic.get("topic", ""))
-            searchable_parts.extend(topic.get("key_points", []))
+        def extract_text_recursively(obj: Any, collected_text: list[str]) -> None:
+            """
+            Recursively extract all text values from any JSON structure.
 
-        # Add action items
-        for item in summary_data.get("action_items", []):
-            searchable_parts.extend([item.get("text", ""), item.get("context", "")])
+            This allows full-text search to work regardless of the summary format.
+            """
+            if obj is None:
+                return
+            elif isinstance(obj, str):
+                if obj.strip():  # Only add non-empty strings
+                    collected_text.append(obj)
+            elif isinstance(obj, dict):
+                # Skip metadata to avoid polluting search with technical details
+                for key, value in obj.items():
+                    if key != "metadata":
+                        extract_text_recursively(value, collected_text)
+            elif isinstance(obj, list):
+                for item in obj:
+                    extract_text_recursively(item, collected_text)
+            # Skip numbers, booleans, etc.
 
-        # Add decisions and follow-ups (handle both str and dict formats)
-        for decision in summary_data.get("key_decisions", []):
-            if isinstance(decision, dict):
-                # If it's a dict, extract text fields
-                searchable_parts.append(decision.get("decision", "") or decision.get("text", ""))
-            else:
-                # If it's a string, use it directly
-                searchable_parts.append(str(decision))
+        # Extract all text content for searchable_content
+        searchable_parts = []
+        extract_text_recursively(summary_data, searchable_parts)
 
-        for follow_up in summary_data.get("follow_up_items", []):
-            if isinstance(follow_up, dict):
-                # If it's a dict, extract text fields
-                searchable_parts.append(follow_up.get("item", "") or follow_up.get("text", ""))
-            else:
-                # If it's a string, use it directly
-                searchable_parts.append(str(follow_up))
+        # Separate metadata and summary content
+        metadata = summary_data.pop("metadata", {})
 
-        # Create the document
+        # Create the document with flexible structure
         doc = {
-            **summary_data,
+            # Store complete summary in flexible field
+            "summary_content": summary_data,
+            # Create searchable text index
             "searchable_content": " ".join(filter(None, searchable_parts)),
+            # Preserve metadata at root level for filtering
+            "metadata": metadata,
         }
-
-        # Ensure action items have status field
-        for item in doc.get("action_items", []):
-            if "status" not in item:
-                item["status"] = "pending"
 
         return doc
 

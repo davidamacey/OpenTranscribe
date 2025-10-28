@@ -15,6 +15,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
 from app.tasks.transcription import transcribe_audio_task
+from app.tasks.waveform import generate_waveform_task
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
 from app.utils.thumbnail import generate_and_upload_thumbnail
@@ -82,7 +83,7 @@ def create_media_file_record(
             is_public=False,
             duration=None,
             language=None,
-            summary=None,
+            summary_data=None,
             translated_text=None,
             file_hash=file_hash,
             thumbnail_path=None,
@@ -125,15 +126,22 @@ def upload_file_to_storage(
         logger.info("Skipping S3 upload in test environment")
 
 
-def start_transcription_task(file_uuid: str) -> None:
+def start_transcription_task(file_id: int, file_uuid: str) -> None:
     """
-    Start the background transcription task.
+    Start the background transcription and waveform generation tasks in parallel.
 
     Args:
+        file_id: Database ID of the media file
         file_uuid: UUID of the media file to transcribe
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        # Launch GPU transcription task
         transcribe_audio_task.delay(file_uuid)
+        # Launch CPU waveform generation task in parallel
+        generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
+        logger.info(
+            f"Started parallel tasks for file {file_id}: transcription (GPU) and waveform (CPU)"
+        )
     else:
         logger.info("Skipping Celery task in test environment")
 
@@ -284,8 +292,8 @@ async def process_file_upload(
             db.commit()
             db.refresh(db_file)
 
-            # Start background transcription
-            start_transcription_task(str(db_file.uuid))
+            # Start background transcription and waveform generation in parallel
+            start_transcription_task(db_file.id, str(db_file.uuid))
 
             logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
             return db_file

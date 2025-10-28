@@ -38,6 +38,33 @@ services:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
 
+  celery-download-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    volumes:
+      # Offline: Use absolute paths for airgapped systems
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1
+
+  celery-cpu-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    # No volumes needed for CPU worker
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1
+
+  celery-nlp-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    # No volumes needed for NLP worker
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1
+
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
@@ -46,7 +73,35 @@ services:
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
     pull_policy: never
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   flower:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
+    ports:
+      - "${FLOWER_PORT:-5175}:5555"  # Flower web UI
+
+  # GPU Scaled Worker Override (for use with docker-compose.gpu-scale.yml)
+  # This overrides the development build settings with production image
+  celery-worker-gpu-scaled:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    build: null  # Remove build section for offline
+    volumes:
+      # Offline: Use absolute paths and remove development source mount
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1

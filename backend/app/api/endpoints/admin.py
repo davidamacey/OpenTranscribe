@@ -353,12 +353,16 @@ async def get_admin_stats(
 
         # Get task statistics
         from app.models.media import Task
+        from app.utils.task_utils import TASK_STATUS_COMPLETED
+        from app.utils.task_utils import TASK_STATUS_FAILED
+        from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
+        from app.utils.task_utils import TASK_STATUS_PENDING
 
         total_tasks = db.query(Task).count()
-        pending_tasks = db.query(Task).filter(Task.status == "pending").count()
-        running_tasks = db.query(Task).filter(Task.status == "running").count()
-        completed_tasks = db.query(Task).filter(Task.status == "completed").count()
-        failed_tasks = db.query(Task).filter(Task.status == "failed").count()
+        pending_tasks = db.query(Task).filter(Task.status == TASK_STATUS_PENDING).count()
+        running_tasks = db.query(Task).filter(Task.status == TASK_STATUS_IN_PROGRESS).count()
+        completed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_COMPLETED).count()
+        failed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_FAILED).count()
 
         # Calculate success rate
         success_rate = 0
@@ -370,7 +374,7 @@ async def get_admin_stats(
         completed_task_list = (
             db.query(Task)
             .filter(
-                Task.status == "completed",
+                Task.status == TASK_STATUS_COMPLETED,
                 Task.created_at.isnot(None),
                 Task.completed_at.isnot(None),
             )
@@ -412,6 +416,27 @@ async def get_admin_stats(
                 }
             )
 
+        # Get AI model configuration
+        from app.core.config import settings
+
+        models_info = {
+            "whisper": {
+                "name": settings.WHISPER_MODEL,
+                "description": f"Whisper {settings.WHISPER_MODEL}",
+                "purpose": "Speech Recognition & Transcription",
+            },
+            "diarization": {
+                "name": settings.PYANNOTE_MODEL,
+                "description": "PyAnnote Speaker Diarization 3.1",
+                "purpose": "Speaker Identification & Segmentation",
+            },
+            "alignment": {
+                "name": "Wav2Vec2 (Language-Adaptive)",
+                "description": "WhisperX Alignment Model",
+                "purpose": "Word-Level Timestamp Alignment",
+            },
+        }
+
         # Construct the response
         stats = {
             "users": {
@@ -439,6 +464,7 @@ async def get_admin_stats(
                 "total": total_speakers,
                 "avg_per_file": round(total_speakers / total_files, 2) if total_files > 0 else 0,
             },
+            "models": models_info,
             "system": {
                 "version": "1.0.0",
                 "uptime": system_stats["uptime"],

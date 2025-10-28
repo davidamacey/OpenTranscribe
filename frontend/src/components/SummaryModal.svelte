@@ -4,41 +4,41 @@
   import axiosInstance from '$lib/axios';
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
-  
+
   // Import smaller components
   import SummaryDisplay from './SummaryDisplay.svelte';
   import SummarySearch from './SummarySearch.svelte';
   import SummaryActions from './SummaryActions.svelte';
-  
+
   export let fileId: number;
   export let fileName: string = '';
   export let isOpen: boolean = false;
-  
+
   const dispatch = createEventDispatcher<{
     close: void;
     generateSummary: { fileId: number };
     reprocessSummary: { fileId: number };
   }>();
-  
+
   let summary: SummaryData | null = null;
   let loading = false;
   let error: string | null = null;
   let generating = false;
   let summaryStatus: string = 'pending';
   let canRetry: boolean = false;
-  
+
   // Get LLM availability from centralized store
   $: llmAvailable = $isLLMAvailable;
-  
+
   // Search within summary
   let searchQuery = '';
   let currentMatchIndex = 0;
   let totalMatches = 0;
-  
+
   $: if (isOpen && fileId) {
     loadSummary();
   }
-  
+
   $: if (searchQuery && summary) {
     totalMatches = countMatches(searchQuery, summary);
     currentMatchIndex = 0;
@@ -46,7 +46,7 @@
     totalMatches = 0;
     currentMatchIndex = 0;
   }
-  
+
   // Handle body scroll prevention when modal opens/closes
   $: {
     if (isOpen) {
@@ -55,18 +55,18 @@
       document.body.style.overflow = '';
     }
   }
-  
+
   async function loadSummary() {
     if (!fileId) return;
-    
+
     loading = true;
     error = null;
-    
+
     try {
       // First, check summary status and LLM availability
       try {
         const statusResponse = await axiosInstance.get(`/api/files/${fileId}/summary-status`);
-        
+
         if (statusResponse.status === 200) {
           const statusData = statusResponse.data;
           summaryStatus = statusData.summary_status;
@@ -77,7 +77,7 @@
         console.warn('Failed to load summary status:', statusErr);
         // Continue with summary loading even if status check fails
       }
-      
+
       // Then try to load the actual summary if it exists
       try {
         const response = await axiosInstance.get(`/api/files/${fileId}/summary`);
@@ -98,25 +98,25 @@
       loading = false;
     }
   }
-  
+
   async function generateSummary() {
     if (!fileId) return;
-    
+
     generating = true;
     error = null;
-    
+
     try {
       const response = await fetch(`/api/files/${fileId}/summarize`, {
         method: 'POST',
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         // Poll for completion (simplified - you might want to use WebSockets)
         setTimeout(() => {
           loadSummary();
         }, 5000);
-        
+
         dispatch('generateSummary', { fileId });
       } else {
         const errorData = await response.json();
@@ -131,22 +131,22 @@
 
   async function retryFailedSummary() {
     if (!fileId) return;
-    
+
     generating = true;
     error = null;
-    
+
     try {
       const response = await fetch(`/api/files/${fileId}/retry-summary`, {
         method: 'POST',
         credentials: 'include'
       });
-      
+
       if (response.ok) {
         // Poll for completion
         setTimeout(() => {
           loadSummary();
         }, 5000);
-        
+
         dispatch('generateSummary', { fileId });
       } else {
         const errorData = await response.json();
@@ -161,126 +161,114 @@
 
   function reprocessSummary() {
     if (!fileId) return;
-    
+
     // Simply dispatch event to parent - parent handles everything
     dispatch('reprocessSummary', { fileId });
   }
-  
+
   function countMatches(query: string, summaryData: SummaryData): number {
     if (!query.trim() || !summaryData) return 0;
-    
+
     const searchTerm = query.toLowerCase();
+    return countMatchesRecursive(summaryData, searchTerm);
+  }
+
+  function countMatchesRecursive(obj: any, searchTerm: string): number {
+    if (!obj) return 0;
+
     let count = 0;
-    
-    // Count in BLUF
-    count += countInText(summaryData.bluf, searchTerm);
-    
-    // Count in brief summary
-    count += countInText(summaryData.brief_summary, searchTerm);
-    
-    // Count in major topics
-    if (summaryData.major_topics) {
-      summaryData.major_topics.forEach(topic => {
-        count += countInText(topic.topic, searchTerm);
-        if (topic.key_points) {
-          topic.key_points.forEach(point => {
-            count += countInText(point, searchTerm);
-          });
-        }
-        if (topic.participants) {
-          topic.participants.forEach(participant => {
-            count += countInText(participant, searchTerm);
-          });
+
+    if (typeof obj === 'string') {
+      count += countInText(obj, searchTerm);
+    } else if (Array.isArray(obj)) {
+      obj.forEach(item => {
+        count += countMatchesRecursive(item, searchTerm);
+      });
+    } else if (typeof obj === 'object') {
+      // Skip metadata field
+      Object.entries(obj).forEach(([key, value]) => {
+        if (key !== 'metadata') {
+          count += countMatchesRecursive(value, searchTerm);
         }
       });
     }
-    
-    // Count in key decisions
-    summaryData.key_decisions.forEach(decision => {
-      count += countInText(decision, searchTerm);
-    });
-    
-    // Count in follow-up items
-    summaryData.follow_up_items.forEach(item => {
-      count += countInText(item, searchTerm);
-    });
-    
+
     return count;
   }
-  
+
   function countInText(text: string, searchTerm: string): number {
     if (!text || !searchTerm) return 0;
     const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const matches = text.toLowerCase().match(new RegExp(escapedTerm, 'g'));
     return matches ? matches.length : 0;
   }
-  
+
   function cycleToNextMatch() {
     if (totalMatches > 0) {
       currentMatchIndex = (currentMatchIndex + 1) % totalMatches;
       scrollToCurrentMatch();
     }
   }
-  
+
   function cycleToPreviousMatch() {
     if (totalMatches > 0) {
       currentMatchIndex = currentMatchIndex > 0 ? currentMatchIndex - 1 : totalMatches - 1;
       scrollToCurrentMatch();
     }
   }
-  
+
   function scrollToCurrentMatch() {
     // Wait for the DOM to update with new highlighting
     setTimeout(() => {
       const currentMatch = document.querySelector(`[data-match-index="${currentMatchIndex}"].current-match`);
       if (currentMatch) {
-        currentMatch.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'center', 
-          inline: 'nearest' 
+        currentMatch.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest'
         });
       } else {
         // Fallback: find any current-match element
         const fallbackMatch = document.querySelector('.current-match');
         if (fallbackMatch) {
-          fallbackMatch.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center', 
-            inline: 'nearest' 
+          fallbackMatch.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
           });
         }
       }
     }, 50);
   }
-  
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       dispatch('close');
     }
   }
-  
-  function handleSearchKeydown(event: KeyboardEvent) {
+
+  function handleSearchKeydown(event: CustomEvent<KeyboardEvent>) {
     // Handle other non-Enter keys if needed
-    if (event.key === 'Escape') {
+    if (event.detail.key === 'Escape') {
       searchQuery = '';
     }
   }
-  
+
   function handleBackdropClick() {
     dispatch('close');
   }
-  
+
   function handleCloseButton(event: Event) {
     event.preventDefault();
     event.stopPropagation();
     dispatch('close');
   }
-  
+
   function handleModalClick(event: Event) {
     // Prevent backdrop click when clicking inside modal
     event.stopPropagation();
   }
-  
+
   function handleCopy() {
     if (!summary) return;
 
@@ -302,67 +290,127 @@
       }
     );
   }
-  
-  function removeEmojis(text: string): string {
+
+  function removeEmojis(text: string | null | undefined): string {
     // Remove all emoji characters using Unicode ranges
+    if (!text) return '';
     return text.replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '').trim();
   }
-  
+
   function formatSummaryAsMarkdown(data: SummaryData): string {
     let markdown = `# AI Summary - ${fileName}\n\n`;
-    
-    // BLUF
-    markdown += `## Executive Summary (BLUF)\n${removeEmojis(data.bluf)}\n\n`;
-    
-    // Brief Summary
-    markdown += `## Brief Summary\n${removeEmojis(data.brief_summary)}\n\n`;
-    
-    // Major Topics
-    if (data.major_topics && data.major_topics.length > 0) {
-      markdown += `## Major Topics Discussed\n`;
-      data.major_topics.forEach(topic => {
-        // Use text indicators instead of emojis
-        const importanceText = topic.importance === 'high' ? '[HIGH] ' : topic.importance === 'medium' ? '[MED] ' : '[LOW] ';
-        markdown += `### ${importanceText}${removeEmojis(topic.topic)}\n`;
-        if (topic.participants.length > 0) {
-          markdown += `*Key participants: ${topic.participants.join(', ')}*\n\n`;
-        }
-        topic.key_points.forEach(point => {
-          markdown += `- ${removeEmojis(point)}\n`;
+
+    // Check if this is standard BLUF format or custom format
+    const isStandardBLUF = !!(data.bluf && data.brief_summary);
+
+    if (isStandardBLUF) {
+      // Standard BLUF format
+      if (data.bluf) {
+        markdown += `## Executive Summary (BLUF)\n${removeEmojis(data.bluf)}\n\n`;
+      }
+
+      // Brief Summary
+      if (data.brief_summary) {
+        markdown += `## Brief Summary\n${removeEmojis(data.brief_summary)}\n\n`;
+      }
+
+      // Major Topics
+      if (data.major_topics && data.major_topics.length > 0) {
+        markdown += `## Major Topics Discussed\n`;
+        data.major_topics.forEach((topic: any) => {
+          // Use text indicators instead of emojis
+          const importanceText = topic.importance === 'high' ? '[HIGH] ' : topic.importance === 'medium' ? '[MED] ' : '[LOW] ';
+          markdown += `### ${importanceText}${removeEmojis(topic.topic || '')}\n`;
+          if (topic.participants && topic.participants.length > 0) {
+            markdown += `*Key participants: ${topic.participants.join(', ')}*\n\n`;
+          }
+          if (topic.key_points && topic.key_points.length > 0) {
+            topic.key_points.forEach((point: string) => {
+              markdown += `- ${removeEmojis(point)}\n`;
+            });
+          }
+          markdown += '\n';
+        });
+      }
+
+      // Key Decisions
+      if (data.key_decisions && data.key_decisions.length > 0) {
+        markdown += `## Key Decisions\n`;
+        data.key_decisions.forEach((decision: any) => {
+          const text = typeof decision === 'string' ? decision : (decision.decision || JSON.stringify(decision));
+          markdown += `- ${removeEmojis(text)}\n`;
         });
         markdown += '\n';
-      });
+      }
+
+      // Follow-up Items
+      if (data.follow_up_items && data.follow_up_items.length > 0) {
+        markdown += `## Follow-up Items\n`;
+        data.follow_up_items.forEach((item: any) => {
+          const text = typeof item === 'string' ? item : (item.item || JSON.stringify(item));
+          markdown += `- ${removeEmojis(text)}\n`;
+        });
+        markdown += '\n';
+      }
+    } else {
+      // Custom format - recursively convert any structure to markdown
+      markdown += formatCustomSummaryMarkdown(data, 2);
     }
-    
-    // Key Decisions
-    if (data.key_decisions.length > 0) {
-      markdown += `## Key Decisions\n`;
-      data.key_decisions.forEach(decision => {
-        markdown += `- ${removeEmojis(decision)}\n`;
-      });
-      markdown += '\n';
-    }
-    
-    // Follow-up Items
-    if (data.follow_up_items.length > 0) {
-      markdown += `## Follow-up Items\n`;
-      data.follow_up_items.forEach(item => {
-        markdown += `- ${removeEmojis(item)}\n`;
-      });
-      markdown += '\n';
-    }
-    
+
     // AI Disclaimer
-    markdown += `---\n\n*AI-generated summary - please verify important details. `;
-    markdown += `Generated by ${data.metadata.provider} (${data.metadata.model})`;
-    if (data.metadata.processing_time_ms) {
-      markdown += ` in ${(data.metadata.processing_time_ms / 1000).toFixed(1)}s`;
+    if (data.metadata) {
+      markdown += `---\n\n*AI-generated summary - please verify important details. `;
+      markdown += `Generated by ${data.metadata.provider} (${data.metadata.model})`;
+      if (data.metadata.processing_time_ms) {
+        markdown += ` in ${(data.metadata.processing_time_ms / 1000).toFixed(1)}s`;
+      }
+      markdown += `.*\n`;
     }
-    markdown += `.*\n`;
-    
+
     return markdown;
   }
-  
+
+  function formatCustomSummaryMarkdown(obj: any, headingLevel: number = 2): string {
+    let markdown = '';
+    const headingPrefix = '#'.repeat(headingLevel);
+
+    for (const [key, value] of Object.entries(obj)) {
+      // Skip metadata field
+      if (key === 'metadata') continue;
+
+      // Format key as heading
+      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      markdown += `${headingPrefix} ${formattedKey}\n`;
+
+      // Format value based on type
+      if (value === null || value === undefined) {
+        markdown += `*No data*\n\n`;
+      } else if (typeof value === 'string') {
+        markdown += `${removeEmojis(value)}\n\n`;
+      } else if (Array.isArray(value)) {
+        value.forEach(item => {
+          if (typeof item === 'string') {
+            markdown += `- ${removeEmojis(item)}\n`;
+          } else if (typeof item === 'object' && item !== null) {
+            // Extract text from object
+            const text = item.text || item.decision || item.item || item.description || JSON.stringify(item);
+            markdown += `- ${removeEmojis(text)}\n`;
+          } else {
+            markdown += `- ${String(item)}\n`;
+          }
+        });
+        markdown += '\n';
+      } else if (typeof value === 'object' && value !== null) {
+        // Nested object - recurse with increased heading level
+        markdown += formatCustomSummaryMarkdown(value, headingLevel + 1);
+      } else {
+        markdown += `${String(value)}\n\n`;
+      }
+    }
+
+    return markdown;
+  }
+
   let copyButtonText = 'Copy';
 </script>
 
@@ -393,7 +441,7 @@
         <h2 class="modal-title" id="summary-modal-title">AI Summary - {fileName}</h2>
         <div class="header-actions">
           {#if summary}
-            <button 
+            <button
               class="copy-button-header"
               class:copied={copyButtonText === 'Copied!'}
               on:click={handleCopy}
@@ -413,10 +461,10 @@
                 Copy
               {/if}
             </button>
-            
+
             <!-- Reprocess button when summary exists and LLM is available -->
             {#if llmAvailable}
-              <button 
+              <button
                 class="reprocess-button-header"
                 on:click={reprocessSummary}
                 disabled={generating}
@@ -442,7 +490,7 @@
           </button>
         </div>
       </div>
-      
+
       {#if loading}
         <div class="loading-container">
           <div class="spinner"></div>
@@ -464,7 +512,7 @@
         </div>
       {:else}
         {#if summary}
-          <SummarySearch 
+          <SummarySearch
             bind:searchQuery
             {totalMatches}
             {currentMatchIndex}
@@ -475,14 +523,14 @@
             on:nextMatch={cycleToNextMatch}
             on:previousMatch={cycleToPreviousMatch}
           />
-          
+
           <SummaryDisplay
             {summary}
             {searchQuery}
             {currentMatchIndex}
           />
         {/if}
-        
+
         <SummaryActions
           {summary}
           {generating}
@@ -690,16 +738,16 @@
     .modal-backdrop {
       padding: 0;
     }
-    
+
     .modal-container {
       border-radius: 0;
       max-height: 100vh;
     }
-    
+
     .modal-header {
       padding: 1rem;
     }
-    
+
     .modal-title {
       font-size: 1.25rem;
     }

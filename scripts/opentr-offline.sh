@@ -6,8 +6,11 @@
 
 # Installation directory
 INSTALL_DIR="/opt/opentranscribe"
-# Use base + offline override pattern
-COMPOSE_FILES="-f $INSTALL_DIR/docker-compose.yml -f $INSTALL_DIR/docker-compose.offline.yml"
+# Compose files are built dynamically to ensure correct override order
+# CRITICAL: offline.yml MUST be last to ensure offline settings override everything
+BASE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
+OFFLINE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.offline.yml"
+GPU_SCALE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.gpu-scale.yml"
 
 # Colors for output
 RED='\033[0;31m'
@@ -44,25 +47,27 @@ show_help() {
     echo "Usage: ./opentr.sh [command] [options]"
     echo ""
     echo "Basic Commands:"
-    echo "  start               - Start all services"
-    echo "  stop                - Stop all services"
-    echo "  restart             - Restart all services"
-    echo "  status              - Show service status"
-    echo "  logs [service]      - View logs (all services by default)"
+    echo "  start [--gpu-scale]      - Start all services"
+    echo "                             --gpu-scale: Enable multi-GPU worker scaling"
+    echo "  stop                     - Stop all services"
+    echo "  restart [--gpu-scale]    - Restart all services"
+    echo "  status                   - Show service status"
+    echo "  logs [service]           - View logs (all services by default)"
     echo ""
     echo "Service Management:"
-    echo "  restart-backend     - Restart backend services only"
-    echo "  restart-frontend    - Restart frontend only"
-    echo "  shell [service]     - Open shell in a service container"
+    echo "  restart-backend          - Restart backend services only"
+    echo "  restart-frontend         - Restart frontend only"
+    echo "  shell [service]          - Open shell in a service container"
     echo ""
     echo "Maintenance:"
-    echo "  health              - Check health status of all services"
-    echo "  clean               - Clean up stopped containers and unused volumes"
-    echo "  backup              - Create database backup"
-    echo "  help                - Show this help menu"
+    echo "  health                   - Check health status of all services"
+    echo "  clean                    - Clean up stopped containers and unused volumes"
+    echo "  backup                   - Create database backup"
+    echo "  help                     - Show this help menu"
     echo ""
     echo "Examples:"
     echo "  ./opentr.sh start"
+    echo "  ./opentr.sh start --gpu-scale      # Enable multi-GPU scaling"
     echo "  ./opentr.sh logs backend"
     echo "  ./opentr.sh restart-backend"
     echo ""
@@ -84,19 +89,48 @@ check_env() {
         exit 1
     fi
 
-    # Check for HuggingFace token
+    # Check for offline mode (HF_HUB_OFFLINE=1 means models are pre-installed, no token needed)
     # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
     source "$INSTALL_DIR/.env"
-    if [ -z "$HUGGINGFACE_TOKEN" ]; then
-        print_warning "HUGGINGFACE_TOKEN is not set in .env file"
-        print_warning "Speaker diarization will not work without it"
-        print_info "Get your token at: https://huggingface.co/settings/tokens"
+
+    # In offline mode, HuggingFace token is NOT required (models are pre-downloaded)
+    if [ "${HF_HUB_OFFLINE}" != "1" ]; then
+        # Not in offline mode - check if token is set
+        if [ -z "$HUGGINGFACE_TOKEN" ]; then
+            print_warning "HUGGINGFACE_TOKEN is not set in .env file"
+            print_warning "Speaker diarization will not work without it"
+            print_info "Get your token at: https://huggingface.co/settings/tokens"
+        fi
     fi
 }
 
-# Compose command wrapper
+# Compose command wrapper - COMPOSE_FILES must be set before calling
 dc() {
+    if [ -z "$COMPOSE_FILES" ]; then
+        print_error "COMPOSE_FILES not set! This is a bug."
+        exit 1
+    fi
     docker compose $COMPOSE_FILES "$@"
+}
+
+# Build compose files list in correct order
+# Order: base.yml -> [gpu-scale.yml] -> offline.yml (offline MUST be last)
+build_compose_files() {
+    local use_gpu_scale="$1"
+
+    COMPOSE_FILES="-f $BASE_COMPOSE_FILE"
+
+    # Add GPU scaling BEFORE offline (if requested)
+    if [ "$use_gpu_scale" = "true" ]; then
+        if [ -f "$GPU_SCALE_COMPOSE_FILE" ]; then
+            COMPOSE_FILES="$COMPOSE_FILES -f $GPU_SCALE_COMPOSE_FILE"
+        else
+            print_warning "docker-compose.gpu-scale.yml not found - GPU scaling not available"
+        fi
+    fi
+
+    # ALWAYS add offline last to ensure offline settings override everything
+    COMPOSE_FILES="$COMPOSE_FILES -f $OFFLINE_COMPOSE_FILE"
 }
 
 #######################
@@ -104,18 +138,48 @@ dc() {
 #######################
 
 cmd_start() {
+    local use_gpu_scale="false"
+
+    # Parse optional flags
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --gpu-scale)
+                use_gpu_scale="true"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     print_info "Starting OpenTranscribe..."
+
+    # Build compose files in correct order (offline.yml MUST be last)
+    build_compose_files "$use_gpu_scale"
+
+    if [ "$use_gpu_scale" = "true" ]; then
+        print_info "Multi-GPU scaling enabled"
+    fi
+
     check_env
 
     dc up -d
 
     print_success "OpenTranscribe started"
     print_info "Access the application at: http://localhost:5173"
-    print_info "View logs with: ./opentr.sh logs"
+    if [ "$use_gpu_scale" = "true" ]; then
+        print_info "View GPU scaled workers: ./opentr.sh logs celery-worker-gpu-scaled"
+    else
+        print_info "View logs with: ./opentr.sh logs"
+    fi
 }
 
 cmd_stop() {
     print_info "Stopping OpenTranscribe..."
+
+    # Build compose files (no gpu-scale for stop)
+    build_compose_files "false"
 
     dc down
 
@@ -123,7 +187,29 @@ cmd_stop() {
 }
 
 cmd_restart() {
+    local use_gpu_scale="false"
+
+    # Parse optional flags
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --gpu-scale)
+                use_gpu_scale="true"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     print_info "Restarting OpenTranscribe..."
+
+    # Build compose files in correct order (offline.yml MUST be last)
+    build_compose_files "$use_gpu_scale"
+
+    if [ "$use_gpu_scale" = "true" ]; then
+        print_info "Multi-GPU scaling enabled"
+    fi
 
     dc restart
 
@@ -134,11 +220,17 @@ cmd_status() {
     print_info "Service Status:"
     echo ""
 
+    # Build compose files (no gpu-scale for status)
+    build_compose_files "false"
+
     dc ps
 }
 
 cmd_logs() {
     local service="${1:-}"
+
+    # Build compose files (no gpu-scale for logs)
+    build_compose_files "false"
 
     if [ -n "$service" ]; then
         print_info "Viewing logs for: $service"
@@ -152,13 +244,19 @@ cmd_logs() {
 cmd_restart_backend() {
     print_info "Restarting backend services..."
 
-    dc restart backend celery-worker flower
+    # Build compose files (no gpu-scale for restart-backend)
+    build_compose_files "false"
+
+    dc restart backend celery-worker celery-download-worker celery-cpu-worker celery-nlp-worker flower
 
     print_success "Backend services restarted"
 }
 
 cmd_restart_frontend() {
     print_info "Restarting frontend..."
+
+    # Build compose files (no gpu-scale for restart-frontend)
+    build_compose_files "false"
 
     dc restart frontend
 
@@ -170,6 +268,9 @@ cmd_shell() {
 
     print_info "Opening shell in $service container..."
 
+    # Build compose files (no gpu-scale for shell)
+    build_compose_files "false"
+
     dc exec "$service" /bin/bash
 }
 
@@ -177,11 +278,14 @@ cmd_health() {
     print_info "Checking service health..."
     echo ""
 
+    # Build compose files (no gpu-scale for health)
+    build_compose_files "false"
+
     # Check each service
-    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "frontend" "flower")
+    local services=("postgres" "redis" "minio" "opensearch" "backend" "celery-worker" "celery-download-worker" "celery-cpu-worker" "celery-nlp-worker" "frontend" "flower")
 
     for service in "${services[@]}"; do
-        if dc ps "$service" | grep -q "Up"; then
+        if dc ps "$service" 2>/dev/null | grep -q "Up"; then
             local health
             health=$(dc ps "$service" | grep "$service" | awk '{print $6}')
             if [[ "$health" == *"healthy"* ]]; then
@@ -209,6 +313,9 @@ cmd_clean() {
         exit 0
     fi
 
+    # Build compose files (no gpu-scale for clean)
+    build_compose_files "false"
+
     print_info "Stopping OpenTranscribe services..."
     dc down
 
@@ -221,6 +328,9 @@ cmd_clean() {
 
 cmd_backup() {
     print_info "Creating database backup..."
+
+    # Build compose files (no gpu-scale for backup)
+    build_compose_files "false"
 
     local backup_dir="$INSTALL_DIR/backups"
     mkdir -p "$backup_dir"
@@ -253,13 +363,13 @@ main() {
 
     case "$command" in
         start)
-            cmd_start
+            cmd_start "$@"
             ;;
         stop)
             cmd_stop
             ;;
         restart)
-            cmd_restart
+            cmd_restart "$@"
             ;;
         status)
             cmd_status

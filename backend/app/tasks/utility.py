@@ -81,10 +81,15 @@ def update_gpu_stats(self):
     This task runs on the celery worker (which has GPU access) and stores
     GPU memory stats in Redis so the backend API can retrieve them.
 
+    Uses nvidia-smi to get accurate GPU memory usage including all processes,
+    not just PyTorch allocated memory.
+
     Returns:
         Dictionary with GPU stats or error status
     """
     try:
+        import subprocess
+
         import torch
 
         if not torch.cuda.is_available():
@@ -97,17 +102,37 @@ def update_gpu_stats(self):
                 "memory_percent": "N/A",
             }
         else:
-            # Get GPU device info
+            # Get GPU device info from PyTorch
             device_id = 0  # Primary GPU
             gpu_properties = torch.cuda.get_device_properties(device_id)
 
-            # Get memory stats (in bytes)
-            memory_reserved = torch.cuda.memory_reserved(device_id)
-            memory_total = gpu_properties.total_memory
-            memory_free = memory_total - memory_reserved
+            # Use nvidia-smi for accurate memory usage (includes all processes)
+            # Format: memory.used,memory.total,memory.free (in MiB)
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=memory.used,memory.total,memory.free",
+                    "--format=csv,noheader,nounits",
+                    f"--id={device_id}",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Parse the output: "used, total, free" in MiB
+            memory_values = result.stdout.strip().split(", ")
+            memory_used_mib = float(memory_values[0])
+            memory_total_mib = float(memory_values[1])
+            memory_free_mib = float(memory_values[2])
+
+            # Convert MiB to bytes for formatting
+            memory_used = memory_used_mib * 1024 * 1024
+            memory_total = memory_total_mib * 1024 * 1024
+            memory_free = memory_free_mib * 1024 * 1024
 
             # Calculate percentage used
-            memory_percent = (memory_reserved / memory_total * 100) if memory_total > 0 else 0
+            memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
 
             # Format bytes to human-readable
             def format_bytes(byte_count):
@@ -121,7 +146,7 @@ def update_gpu_stats(self):
                 "available": True,
                 "name": gpu_properties.name,
                 "memory_total": format_bytes(memory_total),
-                "memory_used": format_bytes(memory_reserved),
+                "memory_used": format_bytes(memory_used),
                 "memory_free": format_bytes(memory_free),
                 "memory_percent": f"{memory_percent:.1f}%",
             }

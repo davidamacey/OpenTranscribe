@@ -1,0 +1,78 @@
+# docker-compose.gpu-scale.yml
+# Optional overlay for multi-GPU worker scaling
+#
+# This overlay enables parallel GPU workers on a dedicated GPU device,
+# significantly increasing transcription throughput for users with multiple GPUs.
+#
+# Usage:
+#   ./opentr.sh start dev --gpu-scale
+#   OR
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gpu-scale.yml up
+#
+# Configuration:
+#   Set these variables in your .env file:
+#   - GPU_SCALE_ENABLED=true          # Enable GPU scaling (default: false)
+#   - GPU_SCALE_DEVICE_ID=2           # GPU device ID to use (default: 2)
+#   - GPU_SCALE_WORKERS=4             # Number of parallel workers (default: 4)
+#
+# Example Hardware Setup:
+#   GPU 0: NVIDIA RTX A6000 (49GB)    - Running LLM model
+#   GPU 1: RTX 3080 Ti (12GB)         - Default single worker (disabled when scaling enabled)
+#   GPU 2: NVIDIA RTX A6000 (49GB)    - Scaled workers (4 parallel in single container)
+
+services:
+  # Disable the default single GPU worker when scaling is enabled
+  celery-worker:
+    scale: 0
+
+  # Scaled GPU Worker - Single container with multiple concurrent workers
+  celery-worker-gpu-scaled:
+    container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-scaled
+    restart: always
+    env_file: .env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    runtime: nvidia
+    command: >
+      celery -A app.core.celery worker
+      -Q gpu
+      --concurrency=${GPU_SCALE_WORKERS:-4}
+      --prefetch-multiplier=${GPU_SCALE_WORKERS:-4}
+      --max-tasks-per-child=10
+      -n gpu-scaled@%h
+      --loglevel=info
+    volumes:
+      # Development: Mount source code
+      - ./backend:/app
+      # Model cache directories - must be owned by UID 1000 on host
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    environment:
+      # Internal Docker network settings (same as other workers)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
+      - CUDA_VISIBLE_DEVICES=${GPU_SCALE_DEVICE_ID:-2}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${GPU_SCALE_DEVICE_ID:-2}"]
+              capabilities: [gpu]
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch

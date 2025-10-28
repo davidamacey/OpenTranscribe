@@ -507,11 +507,12 @@ download_models() {
     fi
 
     # Run as appuser (non-root) matching container security configuration
-    # Note: --gpus device=X remaps that GPU to index 0 inside container
+    # IMPORTANT: When using --gpus device=X, Docker isolates that GPU and it appears as the only GPU in the container
+    # Do NOT set CUDA_VISIBLE_DEVICES as it conflicts with Docker's GPU isolation and causes CUDA errors
+    # PyTorch will automatically use the only available GPU
     # shellcheck disable=SC2086
     docker run --rm \
         $gpu_args \
-        -e CUDA_VISIBLE_DEVICES=0 \
         -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN}" \
         -e WHISPER_MODEL="${WHISPER_MODEL:-large-v2}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
@@ -583,6 +584,10 @@ copy_configuration() {
     print_info "Copying base docker-compose.yml..."
     cp docker-compose.yml "${PACKAGE_DIR}/config/docker-compose.yml"
 
+    # Copy docker-compose.gpu-scale.yml for multi-GPU support
+    print_info "Copying docker-compose.gpu-scale.yml (multi-GPU scaling)..."
+    cp docker-compose.gpu-scale.yml "${PACKAGE_DIR}/config/docker-compose.gpu-scale.yml"
+
     # Sync infrastructure image versions from docker-compose.yml to docker-compose.offline.yml
     print_info "Syncing infrastructure image versions to docker-compose.offline.yml..."
 
@@ -603,9 +608,9 @@ copy_configuration() {
 
     print_success "Infrastructure images synced (base + offline override pattern)"
 
-    # Copy and template .env file
-    print_info "Creating .env template..."
-    sed 's/=.*/=/' .env > "${PACKAGE_DIR}/config/.env.template"
+    # Copy .env.example file (required by installation script)
+    print_info "Copying .env.example..."
+    cp .env.example "${PACKAGE_DIR}/.env.example"
 
     # Copy database init
     print_info "Copying database initialization..."

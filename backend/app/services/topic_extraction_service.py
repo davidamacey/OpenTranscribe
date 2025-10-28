@@ -16,7 +16,7 @@ Key Features:
 import json
 import logging
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlalchemy.orm import Session
 
@@ -158,7 +158,10 @@ IMPORTANT GUIDELINES:
             return None
 
     def extract_topics(
-        self, media_file_id: int, force_regenerate: bool = False
+        self,
+        media_file_id: int,
+        force_regenerate: bool = False,
+        progress_callback: Optional[Callable[[str], None]] = None,
     ) -> Optional[TopicSuggestion]:
         """
         Extract tag and collection suggestions from a transcript using LLM
@@ -166,6 +169,7 @@ IMPORTANT GUIDELINES:
         Args:
             media_file_id: Media file ID
             force_regenerate: Force re-extraction even if exists
+            progress_callback: Optional callback function for progress updates
 
         Returns:
             TopicSuggestion instance or None
@@ -189,6 +193,10 @@ IMPORTANT GUIDELINES:
             )
             return existing
 
+        # Notify: Reading transcript
+        if progress_callback:
+            progress_callback("Reading transcript from database...")
+
         # Get transcript text
         transcript = self._get_transcript_text(media_file)
         if not transcript:
@@ -201,10 +209,18 @@ IMPORTANT GUIDELINES:
             logger.warning(f"LLM not configured for user {media_file.user_id}")
             return None
 
+        # Notify: Building AI prompt
+        if progress_callback:
+            progress_callback("Building AI prompt...")
+
         # Extract suggestions using LLM
         logger.info(
             f"Extracting suggestions for file {media_file_id} using {llm_service.config.provider}"
         )
+
+        # Notify: Calling LLM
+        if progress_callback:
+            progress_callback("Calling AI model (this may take a moment)...")
 
         llm_response = self._call_llm_for_extraction(
             llm_service=llm_service,
@@ -212,6 +228,10 @@ IMPORTANT GUIDELINES:
             file_id=media_file_id,
             duration=media_file.duration or 0,
         )
+
+        # Notify: Processing response
+        if progress_callback:
+            progress_callback("Processing AI response...")
 
         if not llm_response:
             logger.error(f"Failed to extract suggestions for file {media_file_id}")

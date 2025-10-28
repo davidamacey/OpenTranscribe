@@ -80,7 +80,7 @@ def test_update_file(client, user_token_headers, db_session):
     # Now test updating the file
     update_data = {
         "filename": "updated_filename.mp3",
-        "summary": "This is a test summary",
+        "summary_data": {"bluf": "This is a test summary"},
     }
     response = client.put(f"/api/files/{file_id}", headers=user_token_headers, json=update_data)
     assert response.status_code == 200
@@ -88,14 +88,14 @@ def test_update_file(client, user_token_headers, db_session):
 
     assert file_data["id"] == file_id
     assert file_data["filename"] == "updated_filename.mp3"
-    assert file_data["summary"] == "This is a test summary"
+    assert file_data["summary_data"]["bluf"] == "This is a test summary"
 
     # Verify changes in the database
     from app.models.media import MediaFile
 
     db_file = db_session.query(MediaFile).filter(MediaFile.id == file_id).first()
     assert db_file.filename == "updated_filename.mp3"
-    assert db_file.summary == "This is a test summary"
+    assert db_file.summary_data["bluf"] == "This is a test summary"
 
 
 def test_delete_file(client, user_token_headers, db_session):

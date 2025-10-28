@@ -69,7 +69,7 @@ services:
 
   opensearch:
     container_name: opentranscribe-opensearch
-    image: opensearchproject/opensearch:2.5.0
+    image: opensearchproject/opensearch:3.3.1
     restart: always
     environment:
       - discovery.type=single-node
@@ -133,7 +133,7 @@ services:
     container_name: opentranscribe-celery-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q gpu,nlp,utility,celery --concurrency=1
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=1
     runtime: nvidia
     deploy:
       resources:
@@ -161,6 +161,74 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+
+  celery-download-worker:
+    container_name: opentranscribe-celery-download-worker
+    restart: always
+    env_file: .env
+    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=3 --max-tasks-per-child=10
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+
+  celery-cpu-worker:
+    container_name: opentranscribe-celery-cpu-worker
+    restart: always
+    env_file: .env
+    command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility --concurrency=8 --max-tasks-per-child=20
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+
+  celery-nlp-worker:
+    container_name: opentranscribe-celery-nlp-worker
+    restart: always
+    env_file: .env
+    command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=4 --max-tasks-per-child=50
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
     depends_on:
       - postgres
       - redis

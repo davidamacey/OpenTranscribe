@@ -49,7 +49,7 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
 
     try:
         # Reset summary fields
-        media_file.summary = None
+        media_file.summary_data = None
         media_file.summary_opensearch_id = None
         media_file.summary_status = "pending"
 

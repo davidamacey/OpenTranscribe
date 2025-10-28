@@ -108,12 +108,12 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
 
         logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
 
-        # Send processing notification
+        # Send initial processing notification
         send_topic_extraction_notification(
             user_id=user_id,
             file_id=file_id,
             status="processing",
-            message="Analyzing transcript topics...",
+            message="Preparing AI analysis...",
         )
 
         # Create topic extraction service
@@ -133,10 +133,28 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 "reason": "LLM not configured",
             }
 
-        # Extract topics
+        # Send notification before LLM processing
+        send_topic_extraction_notification(
+            user_id=user_id,
+            file_id=file_id,
+            status="processing",
+            message="Analyzing transcript with AI...",
+        )
+
+        # Create a notification callback for the service to use
+        def notify_progress(message: str):
+            send_topic_extraction_notification(
+                user_id=user_id,
+                file_id=file_id,
+                status="processing",
+                message=message,
+            )
+
+        # Extract topics with progress callback
         suggestion = extraction_service.extract_topics(
             media_file_id=file_id,
             force_regenerate=force_regenerate,
+            progress_callback=notify_progress,
         )
 
         if not suggestion:
@@ -155,6 +173,14 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                 "status": "failed",
                 "error": error_msg,
             }
+
+        # Send notification that AI processing is complete, now storing results
+        send_topic_extraction_notification(
+            user_id=user_id,
+            file_id=file_id,
+            status="processing",
+            message="Saving AI suggestions...",
+        )
 
         # Count suggestions
         tag_count = len(suggestion.suggested_tags or [])

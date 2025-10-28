@@ -19,15 +19,17 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod] [--build]  - Start the application (dev mode by default)"
-  echo "                                --build: Build prod images locally (test before push)"
-  echo "  stop                        - Stop OpenTranscribe containers"
-  echo "  status                      - Show container status"
-  echo "  logs [service]              - View logs (all services by default)"
+  echo "  start [dev|prod] [--build] [--gpu-scale]  - Start the application (dev mode by default)"
+  echo "                                               --build: Build prod images locally (test before push)"
+  echo "                                               --gpu-scale: Enable multi-GPU worker scaling"
+  echo "  stop                                       - Stop OpenTranscribe containers"
+  echo "  status                                     - Show container status"
+  echo "  logs [service]                             - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod] [--build]  - Reset and reinitialize (deletes all data!)"
-  echo "                                --build: Build prod images locally (test before push)"
+  echo "  reset [dev|prod] [--build] [--gpu-scale]  - Reset and reinitialize (deletes all data!)"
+  echo "                                               --build: Build prod images locally (test before push)"
+  echo "                                               --gpu-scale: Enable multi-GPU worker scaling"
   echo "  backup              - Create a database backup"
   echo "  restore [file]      - Restore database from backup"
   echo ""
@@ -49,12 +51,13 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Examples:"
-  echo "  ./opentr.sh start                # Start in development mode"
-  echo "  ./opentr.sh start prod           # Start in production mode (pulls from Docker Hub)"
-  echo "  ./opentr.sh start prod --build   # Test production build locally (before pushing)"
-  echo "  ./opentr.sh reset dev            # Reset development environment"
-  echo "  ./opentr.sh logs backend         # View backend logs"
-  echo "  ./opentr.sh restart-backend      # Restart backend services only"
+  echo "  ./opentr.sh start                    # Start in development mode"
+  echo "  ./opentr.sh start dev --gpu-scale    # Start with multi-GPU scaling enabled"
+  echo "  ./opentr.sh start prod               # Start in production mode (pulls from Docker Hub)"
+  echo "  ./opentr.sh start prod --build       # Test production build locally (before pushing)"
+  echo "  ./opentr.sh reset dev                # Reset development environment"
+  echo "  ./opentr.sh logs backend             # View backend logs"
+  echo "  ./opentr.sh restart-backend          # Restart backend services only"
   echo ""
 }
 
@@ -120,9 +123,34 @@ detect_and_configure_hardware() {
 # Function to start the environment
 start_app() {
   ENVIRONMENT=${1:-dev}
-  BUILD_FLAG=${2:-}
+  shift || true  # Remove first argument
+
+  # Parse optional flags
+  BUILD_FLAG=""
+  GPU_SCALE_FLAG=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --build)
+        BUILD_FLAG="--build"
+        shift
+        ;;
+      --gpu-scale)
+        GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      *)
+        echo "⚠️  Unknown flag: $1"
+        shift
+        ;;
+    esac
+  done
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
+
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    echo "🎯 Multi-GPU scaling enabled"
+  fi
 
   # Ensure Docker is running
   check_docker
@@ -139,27 +167,43 @@ start_app() {
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
 
+  # Build compose file list based on environment and flags
+  COMPOSE_FILES="-f docker-compose.yml"
+
   if [ "$ENVIRONMENT" = "prod" ]; then
     # Production: Use base + prod override files
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
     # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
 
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
-      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+      BUILD_CMD="--build"
     else
       echo "🔄 Starting services in PRODUCTION mode (pulling from Docker Hub)..."
-      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+      BUILD_CMD=""
     fi
   else
     # Development: Auto-loads docker-compose.override.yml (always builds)
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.override.yml"
     echo "🔄 Starting services in DEVELOPMENT mode (auto-loads docker-compose.override.yml)..."
-    docker compose up -d --build
+    BUILD_CMD="--build"
   fi
+
+  # Add GPU scaling overlay if requested
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
+    echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
+  fi
+
+  # Start services with appropriate compose files
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_FILES up -d $BUILD_CMD
 
   # Display container status
   echo "📊 Container status:"
-  docker compose ps
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_FILES ps
 
   # Print access information
   echo "✅ Services are starting up."
@@ -170,7 +214,11 @@ start_app() {
   echo "- All logs: docker compose logs -f"
   echo "- Backend logs: docker compose logs -f backend"
   echo "- Frontend logs: docker compose logs -f frontend"
-  echo "- Celery worker logs: docker compose logs -f celery-worker"
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    echo "- GPU scaled workers: docker compose logs -f celery-worker-gpu-scaled"
+  else
+    echo "- Celery worker logs: docker compose logs -f celery-worker"
+  fi
   echo "- Celery beat logs: docker compose logs -f celery-beat"
 
   # Print help information
@@ -180,9 +228,34 @@ start_app() {
 # Function to reset and initialize the environment
 reset_and_init() {
   ENVIRONMENT=${1:-dev}
-  BUILD_FLAG=${2:-}
+  shift || true  # Remove first argument
+
+  # Parse optional flags
+  BUILD_FLAG=""
+  GPU_SCALE_FLAG=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --build)
+        BUILD_FLAG="--build"
+        shift
+        ;;
+      --gpu-scale)
+        GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      *)
+        echo "⚠️  Unknown flag: $1"
+        shift
+        ;;
+    esac
+  done
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
+
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    echo "🎯 Multi-GPU scaling enabled"
+  fi
 
   # Ensure Docker is running
   check_docker
@@ -193,27 +266,38 @@ reset_and_init() {
   # Set build environment
   export BUILD_ENV="$ENVIRONMENT"
 
+  # Build compose file list based on environment and flags
+  COMPOSE_FILES="-f docker-compose.yml"
+
   if [ "$ENVIRONMENT" = "prod" ]; then
+    # Production: Use base + prod override files
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
     # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
 
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Resetting in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
-      COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
-      BUILD_PROD=true
+      BUILD_CMD="--build"
     else
       echo "🔄 Resetting in PRODUCTION mode (pulling from Docker Hub)..."
-      COMPOSE_CMD="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
-      BUILD_PROD=false
+      BUILD_CMD=""
     fi
   else
+    # Development: Auto-loads docker-compose.override.yml (always builds)
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.override.yml"
     echo "🔄 Resetting in DEVELOPMENT mode (auto-loads docker-compose.override.yml)..."
-    COMPOSE_CMD="docker compose"
-    BUILD_PROD=false
+    BUILD_CMD="--build"
+  fi
+
+  # Add GPU scaling overlay if requested
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
+    echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."
-  $COMPOSE_CMD down -v
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_FILES down -v
 
   # Create necessary directories
   create_required_dirs
@@ -223,13 +307,8 @@ reset_and_init() {
 
   # Start all services - docker compose handles dependency ordering via depends_on
   echo "🚀 Starting all services..."
-  if [ "$ENVIRONMENT" = "prod" ] && [ "$BUILD_PROD" = "true" ]; then
-    $COMPOSE_CMD up -d --build
-  elif [ "$ENVIRONMENT" = "prod" ]; then
-    $COMPOSE_CMD up -d
-  else
-    $COMPOSE_CMD up -d --build
-  fi
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_FILES up -d $BUILD_CMD
 
   # Wait for backend to be ready for database operations
   echo "⏳ Waiting for backend to be ready..."
@@ -407,9 +486,8 @@ check_docker
 # Process the command
 case "$1" in
   start)
-    ENV=${2:-dev}
-    BUILD_FLAG=${3:-}
-    start_app "$ENV" "$BUILD_FLAG"
+    shift  # Remove 'start' command
+    start_app "$@"  # Pass all remaining arguments
     ;;
 
   stop)
@@ -419,12 +497,11 @@ case "$1" in
     ;;
 
   reset)
-    ENV=${2:-dev}
-    BUILD_FLAG=${3:-}
+    shift  # Remove 'reset' command
     echo "⚠️ Warning: This will delete all data! Continue? (y/n)"
     read -r confirm
     if [[ $confirm =~ ^[Yy]$ ]]; then
-      reset_and_init "$ENV" "$BUILD_FLAG"
+      reset_and_init "$@"  # Pass all remaining arguments
     else
       echo "❌ Reset cancelled."
     fi

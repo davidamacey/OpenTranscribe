@@ -12,6 +12,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.transcription",
+        "app.tasks.waveform",
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.utility",
@@ -32,19 +33,39 @@ celery_app.conf.update(
     task_track_started=True,
     worker_prefetch_multiplier=1,  # One task at a time for GPU tasks
     task_routes={
+        # GPU Queue - GPU-intensive AI tasks ONLY (concurrency=1, requires GPU)
+        # WhisperX transcription + PyAnnote diarization - runs continuously without blocking
         "app.tasks.transcription.*": {"queue": "gpu"},
-        "transcribe_audio": {"queue": "gpu"},  # Explicit routing for transcription task
-        "process_youtube_url_task": {"queue": "gpu"},  # Explicit routing for YouTube task
-        "generate_waveform_data": {"queue": "utility"},  # Waveform generation is CPU-bound
+        "transcribe_audio": {"queue": "gpu"},
+        # Download Queue - Network I/O tasks (concurrency=3, no GPU)
+        # YouTube downloads in parallel, immediately dispatch to GPU when complete
+        "process_youtube_url_task": {"queue": "download"},
+        "process_youtube_playlist_task": {"queue": "download"},
+        # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
+        # Audio/video processing that doesn't need GPU - modern CPUs have 8+ cores
+        "generate_waveform_task": {"queue": "cpu"},
+        "generate_waveform_data": {"queue": "cpu"},
+        "extract_audio": {"queue": "cpu"},
+        "analyze_transcript": {"queue": "cpu"},
+        # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
+        # These are I/O-bound API calls to external LLM services (vLLM, OpenAI, etc.)
+        # Moderate concurrency to avoid overwhelming LLM APIs and maintain stability
+        # Run AFTER transcription, don't block next transcription from starting
         "app.tasks.summarization.*": {"queue": "nlp"},
+        "summarize_transcript": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
+        "app.tasks.speaker_tasks.*": {"queue": "nlp"},
+        "identify_speakers_llm": {"queue": "nlp"},
+        "app.tasks.topic_extraction.*": {"queue": "nlp"},
+        "extract_topics_from_transcript": {"queue": "nlp"},
+        # Utility Queue - Lightweight maintenance tasks (concurrency=2)
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
-        "app.tasks.youtube_processing.*": {"queue": "gpu"},  # GPU queue for video processing
-        "app.tasks.speaker_tasks.*": {"queue": "nlp"},  # Speaker tasks use NLP queue
-        "identify_speakers_llm": {"queue": "nlp"},  # Explicit routing for speaker identification
-        "app.tasks.topic_extraction.*": {"queue": "nlp"},  # Topic extraction uses LLM
-        "extract_topics_from_transcript": {"queue": "nlp"},  # Explicit routing for topic extraction
+        "check_tasks_health": {"queue": "utility"},
+        "update_gpu_stats": {"queue": "utility"},
+        "startup_recovery": {"queue": "utility"},
+        "recover_user_files": {"queue": "utility"},
+        "periodic_health_check": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

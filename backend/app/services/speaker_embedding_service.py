@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from typing import Any
 from typing import Optional
@@ -17,7 +18,9 @@ logger = logging.getLogger(__name__)
 class SpeakerEmbeddingService:
     """Service for extracting speaker embeddings using pyannote."""
 
-    def __init__(self, model_name: str = "pyannote/embedding", models_dir: str = None):
+    def __init__(
+        self, model_name: str = "pyannote/embedding", models_dir: Optional[str] = None
+    ):
         """
         Initialize the speaker embedding service.
 
@@ -26,7 +29,9 @@ class SpeakerEmbeddingService:
             models_dir: Directory to cache models
         """
         self.model_name = model_name
-        self.models_dir = models_dir or Path(settings.MODEL_BASE_DIR) / "pyannote"
+        self.models_dir: Path = (
+            Path(models_dir) if models_dir else Path(settings.MODEL_BASE_DIR) / "pyannote"
+        )
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
         # Hardware detection
@@ -42,7 +47,8 @@ class SpeakerEmbeddingService:
         try:
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
-            if not hf_token:
+            # Only warn about missing token if not in offline mode (models pre-downloaded)
+            if not hf_token and os.getenv("HF_HUB_OFFLINE") != "1":
                 logger.warning(
                     "No HUGGINGFACE_TOKEN found in settings. This may be required for gated models."
                 )
@@ -114,8 +120,8 @@ class SpeakerEmbeddingService:
         Returns:
             Dictionary mapping speaker IDs to lists of embeddings
         """
-        speaker_embeddings = {}
-        speaker_segments = {}  # Collect segments per speaker
+        speaker_embeddings: dict[int, list[np.ndarray]] = {}
+        speaker_segments: dict[int, list[dict[str, Any]]] = {}  # Collect segments per speaker
 
         # First, collect all segments for each speaker
         for segment in segments:
@@ -194,7 +200,8 @@ class SpeakerEmbeddingService:
         """
         from app.services.similarity_service import SimilarityService
 
-        return SimilarityService.cosine_similarity(embedding1, embedding2)
+        result: float = SimilarityService.cosine_similarity(embedding1, embedding2)
+        return result
 
     def extract_reference_embedding(self, audio_paths: list[str]) -> Optional[np.ndarray]:
         """

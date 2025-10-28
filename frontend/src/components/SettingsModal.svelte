@@ -70,6 +70,11 @@
       recent: []
     },
     speakers: { total: 0, avg_per_file: 0 },
+    models: {
+      whisper: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
+      diarization: { name: 'N/A', description: 'N/A', purpose: 'N/A' },
+      alignment: { name: 'N/A', description: 'N/A', purpose: 'N/A' }
+    },
     system: {
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
       memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
@@ -632,6 +637,12 @@
     result += `${secs}s`;
     return result;
   }
+
+  // Helper function for formatting status text
+  function formatStatus(status: string): string {
+    // Replace underscores with spaces and capitalize
+    return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
 </script>
 
 {#if isOpen}
@@ -1047,29 +1058,48 @@
                     <div class="stat-detail">Speakers: {stats.speakers?.total || 0}</div>
                   </div>
 
-                  <!-- System Resources -->
-                  <div class="stat-card stat-card-with-bar">
-                    <div class="stat-card-content">
-                      <h4>CPU Usage</h4>
-                      <div class="stat-value">{stats.system?.cpu?.total_percent || '0%'}</div>
-                    </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: {parseFloat(stats.system?.cpu?.total_percent) || 0}%"></div>
-                    </div>
+                  <!-- AI Models -->
+                  <div class="stat-card model-card">
+                    <h4>AI Models</h4>
+                    {#if stats.models}
+                      <div class="model-info">
+                        <div class="model-item">
+                          <span class="model-label">Whisper Model:</span>
+                          <span class="model-value">{stats.models.whisper?.name || 'N/A'}</span>
+                        </div>
+                        <div class="model-item">
+                          <span class="model-label">Diarization:</span>
+                          <span class="model-value">{stats.models.diarization?.name || 'N/A'}</span>
+                        </div>
+                        <div class="model-item">
+                          <span class="model-label">Alignment:</span>
+                          <span class="model-value">{stats.models.alignment?.name || 'N/A'}</span>
+                        </div>
+                      </div>
+                    {:else}
+                      <div class="stat-detail">Model info not available</div>
+                    {/if}
                   </div>
 
-                  <div class="stat-card stat-card-with-bar">
-                    <div class="stat-card-content">
-                      <h4>Memory Usage</h4>
-                      <div class="stat-value">{stats.system?.memory?.percent || '0%'}</div>
-                      <div class="stat-detail">
-                        <span>Total: {stats.system?.memory?.total || 'Unknown'}</span>
-                        <span>Used: {stats.system?.memory?.used || 'Unknown'}</span>
-                        <span>Available: {stats.system?.memory?.available || 'Unknown'}</span>
+                  <!-- System Resources: CPU & Memory -->
+                  <div class="stat-card stat-card-stacked">
+                    <div class="stat-section">
+                      <h4>CPU Usage</h4>
+                      <div class="stat-value">{stats.system?.cpu?.total_percent || '0%'}</div>
+                      <div class="progress-bar">
+                        <div class="progress-fill" style="width: {parseFloat(stats.system?.cpu?.total_percent) || 0}%"></div>
                       </div>
                     </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
+
+                    <div class="stat-section">
+                      <h4>Memory Usage</h4>
+                      <div class="stat-value">{stats.system?.memory?.percent || '0%'}</div>
+                      <div class="stat-detail-compact">
+                        {stats.system?.memory?.used || 'Unknown'} / {stats.system?.memory?.total || 'Unknown'}
+                      </div>
+                      <div class="progress-bar">
+                        <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
+                      </div>
                     </div>
                   </div>
 
@@ -1135,7 +1165,7 @@
                               <td>{task.id.substring(0, 8)}...</td>
                               <td>{task.type}</td>
                               <td>
-                                <span class="status-badge status-{task.status}">{task.status}</span>
+                                <span class="status-badge status-{task.status}">{formatStatus(task.status)}</span>
                               </td>
                               <td>{new Date(task.created_at).toLocaleString()}</td>
                               <td>{formatTime(task.elapsed)}</td>
@@ -1222,7 +1252,7 @@
                               <tr>
                                 <td>{task.id}</td>
                                 <td>{task.task_type}</td>
-                                <td><span class="status-badge status-{task.status}">{task.status}</span></td>
+                                <td><span class="status-badge status-{task.status}">{formatStatus(task.status)}</span></td>
                                 <td>{new Date(task.created_at).toLocaleString()}</td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryTask(task.id)}>
@@ -1256,7 +1286,7 @@
                               <tr>
                                 <td>{file.id}</td>
                                 <td>{file.filename}</td>
-                                <td><span class="status-badge status-{file.status}">{file.status}</span></td>
+                                <td><span class="status-badge status-{file.status}">{formatStatus(file.status)}</span></td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryFile(file.id)}>
                                     Retry
@@ -1737,6 +1767,39 @@
     flex-direction: column;
   }
 
+  .stat-card-stacked {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .stat-section {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-section h4 {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 0.5rem 0;
+  }
+
+  .stat-section .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin-bottom: 0.375rem;
+  }
+
+  .stat-detail-compact {
+    font-size: 0.6875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.375rem;
+  }
+
   .stat-card-content {
     flex: 1;
     display: flex;
@@ -1854,7 +1917,8 @@
   }
 
   .status-running,
-  .status-processing {
+  .status-processing,
+  .status-in_progress {
     background-color: #dbeafe;
     color: #1e40af;
   }
@@ -1877,7 +1941,8 @@
   }
 
   :global([data-theme='dark']) .status-running,
-  :global([data-theme='dark']) .status-processing {
+  :global([data-theme='dark']) .status-processing,
+  :global([data-theme='dark']) .status-in_progress {
     background-color: #1e3a8a;
     color: #93c5fd;
   }
@@ -1932,6 +1997,38 @@
     color: var(--text-secondary);
     font-size: 0.8125rem;
     font-style: italic;
+  }
+
+  /* AI Models Card Styles */
+  .model-card {
+    grid-column: span 1;
+  }
+
+  .model-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .model-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .model-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+  }
+
+  .model-value {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-color);
+    font-family: 'Courier New', Courier, monospace;
   }
 
   /* Responsive Design */

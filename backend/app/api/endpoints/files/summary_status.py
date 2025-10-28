@@ -59,7 +59,7 @@ async def get_summary_status(
     return {
         "file_id": str(media_file.uuid),  # Use UUID for frontend
         "summary_status": media_file.summary_status or "pending",
-        "summary_exists": bool(media_file.summary or media_file.summary_opensearch_id),
+        "summary_exists": bool(media_file.summary_data or media_file.summary_opensearch_id),
         "llm_available": llm_available,
         "can_retry": can_retry,
         "transcription_status": media_file.status,

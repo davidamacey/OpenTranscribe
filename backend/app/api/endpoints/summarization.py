@@ -163,34 +163,30 @@ async def get_file_summary(
     try:
         # Try to get structured summary from OpenSearch
         summary_service = OpenSearchSummaryService()
-        summary = await summary_service.get_summary_by_file_id(file_id, current_user.id)
+        opensearch_result = await summary_service.get_summary_by_file_id(file_id, current_user.id)
 
-        if summary:
-            # Normalize LLM response field names to match Pydantic schema
-            # This handles cases where LLM returns different field names
-
-            # Normalize major_topics
-            for topic in summary.get("major_topics", []):
-                if "importance" not in topic:
-                    topic["importance"] = "medium"  # Default value
-                if "participants" not in topic:
-                    topic["participants"] = []  # Default empty list
-
-            # Normalize action_items (LLM may use 'item' instead of 'text')
-            for action in summary.get("action_items", []):
-                if "text" not in action and "item" in action:
-                    action["text"] = action.pop("item")
-                # Ensure all required fields exist
-                if "text" not in action:
-                    action["text"] = "No description"
-                if "priority" not in action:
-                    action["priority"] = "medium"
-                if "context" not in action:
-                    action["context"] = ""
+        if opensearch_result and opensearch_result.get("summary_data"):
+            # Return flexible summary structure - no field normalization needed
+            # The summary can have any structure from custom AI prompts
+            summary_data = opensearch_result.get("summary_data", {})
 
             return SummaryResponse(
-                file_id=media_file.uuid, summary_data=summary, source="opensearch"
-            )  # Use UUID
+                file_id=media_file.uuid,
+                summary_data=summary_data,
+                source="opensearch",
+                document_id=opensearch_result.get("document_id"),
+                created_at=opensearch_result.get("created_at"),
+                updated_at=opensearch_result.get("updated_at"),
+            )
+
+        # Fallback: Try to get from PostgreSQL if OpenSearch failed
+        if media_file.summary_data:
+            logger.info(f"Returning summary from PostgreSQL for file {file_id}")
+            return SummaryResponse(
+                file_id=media_file.uuid,
+                summary_data=media_file.summary_data,
+                source="postgresql",
+            )
 
         # No summary available
         raise HTTPException(
@@ -422,8 +418,8 @@ async def delete_summary(
                 deleted = True
 
         # Clear PostgreSQL summary
-        if media_file.summary:
-            media_file.summary = None
+        if media_file.summary_data:
+            media_file.summary_data = None
             deleted = True
 
         if deleted:

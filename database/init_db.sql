@@ -30,9 +30,10 @@ CREATE TABLE IF NOT EXISTS media_file (
     status VARCHAR(50) DEFAULT 'pending',
     is_public BOOLEAN DEFAULT FALSE,
     language VARCHAR(10) NULL,
-    summary TEXT NULL,
+    summary_data JSONB NULL, -- Complete structured AI summary (flexible format)
     summary_opensearch_id VARCHAR(255) NULL, -- OpenSearch document ID for summary
-    summary_status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed
+    summary_status VARCHAR(50) DEFAULT 'pending', -- pending, processing, completed, failed, not_configured
+    summary_schema_version INTEGER DEFAULT 1, -- Track summary schema evolution
     translated_text TEXT NULL,
     file_hash VARCHAR(255) NULL,
     thumbnail_path VARCHAR(500) NULL,
@@ -332,8 +333,7 @@ CREATE TABLE IF NOT EXISTS summary_prompt (
     is_active BOOLEAN NOT NULL DEFAULT TRUE, -- Whether the prompt is available for use
     content_type VARCHAR(50), -- Optional: 'meeting', 'interview', 'podcast', 'documentary', 'general'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_system_default_per_content_type UNIQUE (content_type, is_system_default) DEFERRABLE INITIALLY DEFERRED
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- User settings table for storing user preferences including active summary prompt
@@ -375,6 +375,12 @@ CREATE TABLE IF NOT EXISTS user_llm_settings (
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_user_id ON summary_prompt(user_id);
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_is_system_default ON summary_prompt(is_system_default);
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_content_type ON summary_prompt(content_type);
+
+-- Partial unique index: only one system prompt per content_type (allows unlimited user prompts)
+CREATE UNIQUE INDEX IF NOT EXISTS unique_system_default_per_content_type
+ON summary_prompt(content_type)
+WHERE is_system_default = TRUE;
+
 CREATE INDEX IF NOT EXISTS idx_user_setting_user_id ON user_setting(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_setting_key ON user_setting(setting_key);
 

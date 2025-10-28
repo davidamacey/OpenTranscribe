@@ -9,7 +9,7 @@ OpenTranscribe is a containerized AI-powered transcription application with thes
 - **Backend**: FastAPI with async support and OpenAPI documentation
 - **Database**: PostgreSQL with SQLAlchemy ORM (no migrations during development)
 - **Storage**: MinIO S3-compatible object storage
-- **Search**: OpenSearch for full-text and vector search
+- **Search**: OpenSearch 3.3.1 (Apache Lucene 10) for full-text and vector search
 - **Queue**: Celery with Redis for background AI processing
 - **Monitoring**: Flower for task monitoring
 
@@ -46,7 +46,53 @@ Use `./opentr.sh` for all development operations:
 # Database backup/restore
 ./opentr.sh backup
 ./opentr.sh restore backups/backup_file.sql
+
+# Multi-GPU scaling (optional - for high-throughput systems)
+./opentr.sh start dev --gpu-scale
+./opentr.sh reset dev --gpu-scale
 ```
+
+### Multi-GPU Worker Scaling (Optional)
+
+For systems with multiple GPUs, you can enable parallel GPU workers to significantly increase transcription throughput.
+
+**Use Case**: You have multiple GPUs and want to maximize processing speed by running multiple transcription workers in parallel.
+
+**Example Hardware Setup**:
+- GPU 0: NVIDIA RTX A6000 (49GB) - Running LLM model
+- GPU 1: RTX 3080 Ti (12GB) - Default single worker (disabled when scaling)
+- GPU 2: NVIDIA RTX A6000 (49GB) - Scaled workers (4 parallel)
+
+**Configuration** (in `.env`):
+```bash
+GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
+GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
+```
+
+**Usage**:
+```bash
+# Start with GPU scaling enabled
+./opentr.sh start dev --gpu-scale
+
+# Reset with GPU scaling enabled
+./opentr.sh reset dev --gpu-scale
+
+# View scaled worker logs
+docker compose logs -f celery-worker-gpu-scaled
+```
+
+**How It Works**:
+- When `--gpu-scale` flag is used, the system loads `docker-compose.gpu-scale.yml` overlay
+- Default single GPU worker is disabled (`scale: 0`)
+- A new single container is created with `concurrency=4` (configurable via `GPU_SCALE_WORKERS`)
+- The container runs 4 parallel Celery workers within a single process
+- All workers target the specified GPU device and process from the `gpu` queue
+- Celery automatically distributes tasks across the worker pool
+
+**Performance**: With 4 parallel workers on a high-end GPU like the A6000, you can process 4 videos simultaneously, significantly reducing total processing time for batches of media files.
+
+**Scaling**: Simply change `GPU_SCALE_WORKERS` in your `.env` file to adjust the number of concurrent workers (e.g., 2, 4, 6, 8) based on your GPU's memory and processing capacity.
 
 ### Docker Build & Push (Production Images)
 
@@ -154,7 +200,7 @@ For production deployments, migrations will be handled differently.
 - API Docs: http://localhost:5174/docs
 - MinIO Console: http://localhost:5179
 - Flower Dashboard: http://localhost:5175/flower
-- OpenSearch: http://localhost:5180
+- OpenSearch: http://localhost:5180 (v3.3.1 with Lucene 10)
 
 ### Important File Locations
 - Environment config: `.env` (never overwrite without confirmation)
@@ -234,6 +280,24 @@ ${MODEL_CACHE_DIR}/
 └── sentence-transformers/ # Sentence transformers models
     └── sentence-transformers_all-MiniLM-L6-v2/ # Semantic search model (~80MB)
 ```
+
+### Speaker Diarization Configuration
+
+**MIN_SPEAKERS / MAX_SPEAKERS Parameters:**
+
+PyAnnote's speaker diarization uses sklearn's `AgglomerativeClustering`, which has **NO hard maximum limit** on the number of speakers:
+- Default: `MIN_SPEAKERS=1`, `MAX_SPEAKERS=20`
+- Can be increased to 50+ for large conferences/events with many speakers
+- No hard upper limit - only constrained by the number of audio samples
+- Performance threshold at `max(100, 0.02 * n_samples)` where algorithm behavior changes for efficiency
+
+**Use Cases:**
+- Small meetings: 2-5 speakers (default works fine)
+- Medium meetings: 5-15 speakers (default works fine)
+- Large conferences: 15-50 speakers (increase MAX_SPEAKERS to 30-50)
+- Very large events: 50+ speakers (increase MAX_SPEAKERS accordingly)
+
+**Note**: Higher values may impact processing time but will not cause errors.
 
 ### Docker Volume Mappings
 The system uses simple volume mappings to cache models to their natural locations:

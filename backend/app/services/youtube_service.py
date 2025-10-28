@@ -32,9 +32,14 @@ from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
 
-# YouTube URL validation regex
+# YouTube URL validation regex - supports both videos and playlists
 YOUTUBE_URL_PATTERN = re.compile(
-    r"^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/)|youtu\.be/)[\w\-_]+.*$"
+    r"^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/|playlist\?list=)|youtu\.be/)[\w\-_]+.*$"
+)
+
+# YouTube playlist URL validation regex
+YOUTUBE_PLAYLIST_PATTERN = re.compile(
+    r"^https?://(www\.)?youtube\.com/playlist\?list=([\w\-_]+).*$"
 )
 
 
@@ -46,7 +51,7 @@ class YouTubeService:
 
     def is_valid_youtube_url(self, url: str) -> bool:
         """
-        Validate if URL is a valid YouTube URL.
+        Validate if URL is a valid YouTube URL (video or playlist).
 
         Args:
             url: URL to validate
@@ -55,6 +60,18 @@ class YouTubeService:
             True if valid YouTube URL, False otherwise
         """
         return bool(YOUTUBE_URL_PATTERN.match(url.strip()))
+
+    def is_playlist_url(self, url: str) -> bool:
+        """
+        Check if URL is a YouTube playlist URL.
+
+        Args:
+            url: URL to validate
+
+        Returns:
+            True if URL is a playlist, False if it's a single video
+        """
+        return bool(YOUTUBE_PLAYLIST_PATTERN.match(url.strip()))
 
     def extract_video_info(self, url: str) -> dict[str, Any]:
         """
@@ -84,6 +101,73 @@ class YouTubeService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to extract video information: {str(e)}",
+            ) from e
+
+    def extract_playlist_info(self, url: str) -> dict[str, Any]:
+        """
+        Extract playlist metadata and video list without downloading.
+
+        Args:
+            url: YouTube playlist URL
+
+        Returns:
+            Dictionary with playlist information including:
+            - playlist_id: Playlist ID
+            - playlist_title: Playlist title
+            - playlist_uploader: Playlist creator
+            - video_count: Number of videos
+            - videos: List of video entries with URLs and basic info
+
+        Raises:
+            HTTPException: If unable to extract playlist information
+        """
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": "in_playlist",  # Extract video info without downloading
+            "skip_download": True,
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+                if not info:
+                    raise ValueError("No playlist information found")
+
+                # Extract video entries
+                entries = info.get("entries", [])
+                videos = []
+
+                for idx, entry in enumerate(entries):
+                    if entry:  # Some entries might be None (unavailable videos)
+                        video_id = entry.get("id")
+                        if video_id:
+                            videos.append(
+                                {
+                                    "video_id": video_id,
+                                    "url": f"https://www.youtube.com/watch?v={video_id}",
+                                    "title": entry.get("title", "Unknown"),
+                                    "duration": entry.get("duration"),
+                                    "uploader": entry.get("uploader"),
+                                    "playlist_index": idx + 1,
+                                }
+                            )
+
+                return {
+                    "playlist_id": info.get("id"),
+                    "playlist_title": info.get("title", "Unknown Playlist"),
+                    "playlist_uploader": info.get("uploader") or info.get("channel"),
+                    "playlist_description": info.get("description"),
+                    "video_count": len(videos),
+                    "videos": videos,
+                }
+
+        except Exception as e:
+            logger.error(f"Error extracting playlist info from {url}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to extract playlist information: {str(e)}",
             ) from e
 
     def download_video(
@@ -607,3 +691,200 @@ class YouTubeService:
                 logger.debug(f"Cleaned up temporary directory: {temp_dir}")
             except Exception as e:
                 logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
+
+    def process_youtube_playlist_sync(
+        self,
+        url: str,
+        db: Session,
+        user: User,
+        progress_callback: Optional[Callable[[int, str, dict], None]] = None,
+    ) -> dict[str, Any]:
+        """
+        Process a YouTube playlist by extracting video list and creating placeholder MediaFile records.
+
+        This method extracts the playlist information and creates MediaFile records for each video.
+        Individual video downloads are handled by separate Celery tasks for parallel processing.
+
+        Args:
+            url: YouTube playlist URL
+            db: Database session
+            user: User requesting the processing
+            progress_callback: Optional callback for progress updates (progress, message, data)
+
+        Returns:
+            Dictionary containing:
+            - playlist_info: Playlist metadata
+            - media_files: List of created MediaFile records
+            - skipped_videos: List of videos that were skipped (duplicates or errors)
+
+        Raises:
+            HTTPException: If playlist extraction fails
+        """
+        if not self.is_playlist_url(url):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL is not a valid YouTube playlist",
+            )
+
+        # Extract playlist information
+        logger.info(f"Extracting playlist information from: {url}")
+        if progress_callback:
+            progress_callback(10, "Extracting playlist information...", {})
+
+        try:
+            playlist_info = self.extract_playlist_info(url)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error extracting playlist info: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to extract playlist information: {str(e)}",
+            ) from e
+
+        video_count = playlist_info.get("video_count", 0)
+        if video_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Playlist is empty or contains no accessible videos",
+            )
+
+        logger.info(
+            f"Found {video_count} videos in playlist: {playlist_info.get('playlist_title')}"
+        )
+        if progress_callback:
+            progress_callback(
+                20,
+                f"Found {video_count} videos in playlist...",
+                {"video_count": video_count, "playlist_title": playlist_info.get("playlist_title")},
+            )
+
+        # Create placeholder MediaFile records for each video
+        created_media_files = []
+        skipped_videos = []
+        videos = playlist_info.get("videos", [])
+
+        for idx, video_entry in enumerate(videos):
+            try:
+                video_id = video_entry.get("video_id")
+                video_url = video_entry.get("url")
+                video_title = video_entry.get("title", "Unknown")
+                playlist_index = video_entry.get("playlist_index", idx + 1)
+
+                # Calculate progress (20-90% range)
+                progress = int(20 + (idx / video_count) * 70)
+                if progress_callback:
+                    progress_callback(
+                        progress,
+                        f"Processing video {idx + 1} of {video_count}: {video_title[:50]}...",
+                        {
+                            "current_video": idx + 1,
+                            "total_videos": video_count,
+                            "video_title": video_title,
+                        },
+                    )
+
+                # Check for existing video with same YouTube ID
+                from sqlalchemy import text
+
+                existing_video = (
+                    db.query(MediaFile)
+                    .filter(
+                        MediaFile.user_id == user.id,
+                        text("metadata_raw->>'youtube_id' = :youtube_id"),
+                    )
+                    .params(youtube_id=video_id)
+                    .first()
+                )
+
+                if existing_video:
+                    logger.info(
+                        f"Video already exists in library: {video_title} (YouTube ID: {video_id})"
+                    )
+                    skipped_videos.append(
+                        {
+                            "video_id": video_id,
+                            "title": video_title,
+                            "reason": "duplicate",
+                            "existing_file_id": existing_video.id,
+                        }
+                    )
+                    continue
+
+                # Create placeholder MediaFile record
+                placeholder_metadata = {
+                    "youtube_id": video_id,
+                    "youtube_url": video_url,
+                    "title": video_title,
+                    "processing": True,
+                    "from_playlist": True,
+                    "playlist_id": playlist_info.get("playlist_id"),
+                    "playlist_title": playlist_info.get("playlist_title"),
+                    "playlist_url": url,
+                    "playlist_index": playlist_index,
+                }
+
+                media_file = MediaFile(
+                    user_id=user.id,
+                    filename=video_title[:255],
+                    storage_path="",  # Will be set by background task
+                    file_size=0,  # Will be set by background task
+                    content_type="video/mp4",  # Default, will be updated
+                    duration=video_entry.get("duration"),
+                    status=FileStatus.PROCESSING,
+                    title=video_title,
+                    author=video_entry.get("uploader"),
+                    source_url=video_url,
+                    metadata_raw=placeholder_metadata,
+                    metadata_important=placeholder_metadata,
+                )
+
+                db.add(media_file)
+                db.flush()  # Flush to get the ID without committing
+
+                created_media_files.append(media_file)
+                logger.info(
+                    f"Created placeholder MediaFile {media_file.id} for playlist video: {video_title}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error creating placeholder for video {video_title}: {e}")
+                skipped_videos.append(
+                    {
+                        "video_id": video_entry.get("video_id"),
+                        "title": video_entry.get("title", "Unknown"),
+                        "reason": f"error: {str(e)}",
+                    }
+                )
+                continue
+
+        # Commit all placeholder records
+        db.commit()
+
+        # Refresh all created media files
+        for media_file in created_media_files:
+            db.refresh(media_file)
+
+        if progress_callback:
+            progress_callback(
+                100,
+                f"Playlist processing complete: {len(created_media_files)} videos queued",
+                {
+                    "created_count": len(created_media_files),
+                    "skipped_count": len(skipped_videos),
+                },
+            )
+
+        logger.info(
+            f"Playlist processing complete: {len(created_media_files)} videos created, "
+            f"{len(skipped_videos)} skipped"
+        )
+
+        return {
+            "playlist_info": playlist_info,
+            "media_files": created_media_files,
+            "skipped_videos": skipped_videos,
+            "created_count": len(created_media_files),
+            "skipped_count": len(skipped_videos),
+            "total_videos": video_count,
+        }
