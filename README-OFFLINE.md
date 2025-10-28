@@ -255,7 +255,7 @@ The `.env` file contains auto-detected settings. You may customize:
 - `WHISPER_MODEL` - Transcription model size (default: large-v2)
   - Options: tiny, base, small, medium, large-v1, large-v2
 - `BATCH_SIZE` - Processing batch size (default: 16)
-- `MIN_SPEAKERS` / `MAX_SPEAKERS` - Speaker detection range
+- `MIN_SPEAKERS` / `MAX_SPEAKERS` - Speaker detection range (default: 1-20, can be increased to 50+ for large events)
 
 **Hardware Settings (auto-detected):**
 - `USE_GPU` - Enable GPU acceleration

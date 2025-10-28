@@ -235,6 +235,24 @@ ${MODEL_CACHE_DIR}/
     └── sentence-transformers_all-MiniLM-L6-v2/ # Semantic search model (~80MB)
 ```
 
+### Speaker Diarization Configuration
+
+**MIN_SPEAKERS / MAX_SPEAKERS Parameters:**
+
+PyAnnote's speaker diarization uses sklearn's `AgglomerativeClustering`, which has **NO hard maximum limit** on the number of speakers:
+- Default: `MIN_SPEAKERS=1`, `MAX_SPEAKERS=20`
+- Can be increased to 50+ for large conferences/events with many speakers
+- No hard upper limit - only constrained by the number of audio samples
+- Performance threshold at `max(100, 0.02 * n_samples)` where algorithm behavior changes for efficiency
+
+**Use Cases:**
+- Small meetings: 2-5 speakers (default works fine)
+- Medium meetings: 5-15 speakers (default works fine)
+- Large conferences: 15-50 speakers (increase MAX_SPEAKERS to 30-50)
+- Very large events: 50+ speakers (increase MAX_SPEAKERS accordingly)
+
+**Note**: Higher values may impact processing time but will not cause errors.
+
 ### Docker Volume Mappings
 The system uses simple volume mappings to cache models to their natural locations:
 ```yaml

@@ -213,7 +213,7 @@ class WhisperXService:
         return aligned_result
 
     def perform_speaker_diarization(
-        self, audio, hf_token: str = None, max_speakers: int = 10, min_speakers: int = 1
+        self, audio, hf_token: str = None, max_speakers: int = 20, min_speakers: int = 1
     ) -> dict[str, Any]:
         """
         Perform speaker diarization on audio.
@@ -221,7 +221,7 @@ class WhisperXService:
         Args:
             audio: Loaded audio data
             hf_token: HuggingFace token for accessing models
-            max_speakers: Maximum number of speakers
+            max_speakers: Maximum number of speakers (default: 20, can be increased to 50+ for large conferences)
             min_speakers: Minimum number of speakers
 
         Returns:

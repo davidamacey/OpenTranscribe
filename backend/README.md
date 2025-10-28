@@ -88,7 +88,7 @@ Required environment variables for AI processing:
 | `BATCH_SIZE` | Batch size for processing (reduce if low on GPU memory) | `16` |
 | `COMPUTE_TYPE` | Computation precision (`float16` or `int8`) | `float16` |
 | `MIN_SPEAKERS` | Minimum number of speakers to detect (optional) | `1` |
-| `MAX_SPEAKERS` | Maximum number of speakers to detect (optional) | `10` |
+| `MAX_SPEAKERS` | Maximum number of speakers to detect (optional, can be increased to 50+ for large events) | `20` |
 | `HUGGINGFACE_TOKEN` | HuggingFace API token for diarization models | Required |
 | `MODEL_CACHE_DIR` | Host directory to cache downloaded models | `./models` |
 
@@ -112,7 +112,7 @@ You also need to accept the user agreement for the following models:
 #### Troubleshooting AI Processing
 - **High GPU Memory Usage**: Try reducing `BATCH_SIZE` or changing `COMPUTE_TYPE` to `int8`
 - **Slow Processing**: Consider using a smaller model like `medium` or `small`
-- **Speaker Identification Issues**: Adjust `MIN_SPEAKERS` and `MAX_SPEAKERS` if you know the approximate speaker count
+- **Speaker Identification Issues**: Adjust `MIN_SPEAKERS` and `MAX_SPEAKERS` if you know the approximate speaker count (no hard limit - can be set to 50+ for large conferences)
 
 #### AI/ML References
 - [WhisperX GitHub Repository](https://github.com/m-bain/whisperX)

@@ -165,7 +165,7 @@ def download_pyannote_models():
         diarize_segments = diarize_model(
             audio,
             min_speakers=1,
-            max_speakers=10
+            max_speakers=20
         )
 
         print_success("  Diarization completed")

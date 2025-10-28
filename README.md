@@ -457,7 +457,7 @@ BATCH_SIZE=16                       # Reduce if GPU memory limited
 
 # Speaker detection
 MIN_SPEAKERS=1                      # Minimum speakers to detect
-MAX_SPEAKERS=10                     # Maximum speakers to detect
+MAX_SPEAKERS=20                     # Maximum speakers to detect (can be increased to 50+ for large conferences)
 
 # Model caching (recommended)
 MODEL_CACHE_DIR=./models            # Directory to store downloaded AI models
