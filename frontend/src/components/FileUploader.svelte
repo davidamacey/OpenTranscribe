@@ -61,11 +61,9 @@
   let currentFileId: string | null = null; // Track the current file UUID for cancellation
   let token = ''; // Store the auth token
 
-  // URL processing state
+  // URL processing state (no inline messages - use toast notifications only)
   let youtubeUrl = '';
   let processingUrl = false;
-  let urlError = '';
-  let urlStatusMessage = '';
 
   // Local recording UI state
   let showRecordingInfo = false;
@@ -153,7 +151,7 @@
     uploadError: { error: string };
   }>();
 
-  // URL validation regex for YouTube
+  // URL validation regex for YouTube (supports both videos and playlists)
   const YOUTUBE_URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.*$/;
 
   // Track allowed file types with more comprehensive list
@@ -1094,8 +1092,7 @@
   function resetUrlState() {
     youtubeUrl = '';
     processingUrl = false;
-    urlError = '';
-    urlStatusMessage = '';
+    // URL state reset (no inline messages)
     currentFileId = null;
   }
 
@@ -1143,7 +1140,7 @@
 
       if (text && text.trim()) {
         youtubeUrl = text.trim();
-        urlError = ''; // Clear any previous errors
+        // Validation passed
         toastStore.success('✓ Pasted from clipboard');
       } else {
         toastStore.info('Clipboard appears to be empty');
@@ -1183,12 +1180,12 @@
   // Process YouTube URL
   async function processYouTubeUrl() {
     if (!youtubeUrl.trim()) {
-      urlError = 'Please enter a YouTube URL';
+      toastStore.error('Please enter a YouTube URL');
       return;
     }
 
     if (!isValidYouTubeUrl(youtubeUrl)) {
-      urlError = 'Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=...)';
+      toastStore.error('Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=...)');
       return;
     }
 
@@ -1198,8 +1195,6 @@
     }
 
     processingUrl = true;
-    urlError = '';
-    urlStatusMessage = 'Starting YouTube processing...';
 
     try {
       // Call the API endpoint directly for immediate processing
@@ -1207,150 +1202,47 @@
         url: youtubeUrl.trim()
       });
 
-      // Get the media file response
-      const mediaFile = response.data;
+      // Get the response data
+      const responseData = response.data;
 
       // Clear form immediately after successful submission
-      const processedUrl = youtubeUrl.trim();
       youtubeUrl = '';
-      urlError = '';
-      urlStatusMessage = '';
 
-      // Dispatch success event to close modal
-      dispatch('uploadComplete', { fileId: mediaFile.id, isUrl: true });
+      // Check if this is a playlist or single video response
+      if (responseData.type === 'playlist') {
+        // Playlist processing started
+        dispatch('uploadComplete', { isUrl: true, multiple: true });
 
-      // Show success toast with more descriptive message
-      toastStore.success(`YouTube video "${mediaFile.title || 'video'}" added to processing queue`);
+        // Show success toast for playlist
+        toastStore.success(responseData.message || 'Playlist processing started. Videos will appear as they are extracted.');
+      } else {
+        // Single video response (MediaFile object)
+        const mediaFile = responseData;
+
+        // Dispatch success event to close modal
+        dispatch('uploadComplete', { fileId: mediaFile.id, isUrl: true });
+
+        // Show success toast with more descriptive message
+        toastStore.success(`YouTube video "${mediaFile.title || 'video'}" added to processing queue`);
+      }
 
     } catch (error: unknown) {
-      // YouTube processing error - show user-friendly messages
+      // YouTube processing error - show user-friendly messages via toast only
       const axiosError = error as any;
 
       // Handle different types of errors
       if (axiosError.response?.status === 409) {
         // Duplicate video
-        urlError = axiosError.response.data.detail || 'This YouTube video already exists in your library';
-        toastStore.warning(urlError);
+        toastStore.warning(axiosError.response.data.detail || 'This YouTube video already exists in your library');
       } else if (axiosError.response?.status === 400) {
         // Bad request (invalid URL, etc.)
-        urlError = axiosError.response.data.detail || 'Invalid YouTube URL';
-        toastStore.error(urlError);
+        toastStore.error(axiosError.response.data.detail || 'Invalid YouTube URL');
       } else {
         // Other errors
-        urlError = 'Failed to process YouTube URL. Please try again.';
-        toastStore.error(urlError);
+        toastStore.error('Failed to process YouTube URL. Please try again.');
       }
     } finally {
       processingUrl = false;
-    }
-
-    // Original modal-based processing (commented out but kept for reference)
-    /*
-    urlError = '';
-    processingUrl = true;
-    urlProgress = 0;
-    urlStatusMessage = 'Processing YouTube URL...';
-    currentFileId = null;
-
-    // Create cancel token
-    cancelTokenSource = axios.CancelToken.source();
-
-    try {
-      const response = await axiosInstance.post('/api/files/process-url', {
-        url: youtubeUrl.trim()
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        timeout: 300000, // 5 minutes for URL processing
-        cancelToken: cancelTokenSource.token,
-        onUploadProgress: (progressEvent: AxiosProgressEvent) => {
-          if (progressEvent.total) {
-            urlProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          }
-        }
-      });
-
-      const result = response.data;
-      currentFileId = result.id;
-      urlProgress = 100;
-      urlStatusMessage = 'YouTube video processed successfully!';
-
-      // Dispatch success event
-      dispatch('uploadComplete', { fileId: result.id });
-
-    } catch (err: unknown) {
-      if (axios.isCancel(err)) {
-        return; // Expected cancellation
-      }
-
-      // Handle different types of errors
-      if (err && typeof err === 'object' && 'response' in err && err.response &&
-          typeof err.response === 'object' && err.response !== null) {
-        const response = err.response as {
-          status?: number;
-          data?: { detail?: string; message?: string };
-        };
-
-        if (response.status === 400) {
-          urlError = response.data?.detail || 'Invalid YouTube URL';
-        } else if (response.status === 401) {
-          urlError = 'Session expired. Please log in again.';
-        } else if (response.status === 429) {
-          urlError = 'Too many requests. Please wait a moment and try again.';
-        } else {
-          urlError = response.data?.detail || response.data?.message || 'Failed to process YouTube URL';
-        }
-      } else {
-        urlError = 'Network error. Please check your connection and try again.';
-      }
-
-      dispatch('uploadError', { error: urlError });
-
-    } finally {
-      processingUrl = false;
-      cancelTokenSource = null;
-    }
-    */
-  }
-
-  // Cancel URL processing
-  async function cancelUrlProcessing() {
-    if (processingUrl && !isCancelling) {
-      isCancelling = true;
-      urlStatusMessage = 'Cancelling URL processing...';
-
-      try {
-        if (cancelTokenSource) {
-          cancelTokenSource.cancel('URL processing cancelled by user');
-        }
-
-        if (currentFileId) {
-          try {
-            await axiosInstance.delete(`/api/files/${currentFileId}`, {
-              headers: {
-                'Authorization': `Bearer ${token}`
-              }
-            });
-            urlStatusMessage = 'URL processing cancelled successfully';
-          } catch (err) {
-            urlStatusMessage = 'URL processing cancelled but cleanup may be incomplete';
-          }
-        } else {
-          urlStatusMessage = 'URL processing cancelled';
-        }
-
-        setTimeout(() => {
-          resetUrlState();
-        }, 2000);
-      } catch (err) {
-        urlStatusMessage = 'Error during cancellation';
-        setTimeout(() => {
-          resetUrlState();
-        }, 2000);
-      }
-    } else {
-      resetUrlState();
     }
   }
 
@@ -1730,26 +1622,6 @@
           </button>
         </div>
       </div>
-
-      {#if urlError}
-        <div class="message error-message">
-          <div class="message-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-          </div>
-          <div class="message-content">{urlError}</div>
-        </div>
-      {/if}
-
-      {#if processingUrl}
-        <div class="url-processing-status">
-          <div class="processing-spinner"></div>
-          <p class="processing-message">{urlStatusMessage}</p>
-        </div>
-      {/if}
 
       <div class="url-info">
         <p class="url-description">

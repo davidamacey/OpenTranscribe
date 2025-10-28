@@ -637,6 +637,12 @@
     result += `${secs}s`;
     return result;
   }
+
+  // Helper function for formatting status text
+  function formatStatus(status: string): string {
+    // Replace underscores with spaces and capitalize
+    return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
 </script>
 
 {#if isOpen}
@@ -1159,7 +1165,7 @@
                               <td>{task.id.substring(0, 8)}...</td>
                               <td>{task.type}</td>
                               <td>
-                                <span class="status-badge status-{task.status}">{task.status}</span>
+                                <span class="status-badge status-{task.status}">{formatStatus(task.status)}</span>
                               </td>
                               <td>{new Date(task.created_at).toLocaleString()}</td>
                               <td>{formatTime(task.elapsed)}</td>
@@ -1246,7 +1252,7 @@
                               <tr>
                                 <td>{task.id}</td>
                                 <td>{task.task_type}</td>
-                                <td><span class="status-badge status-{task.status}">{task.status}</span></td>
+                                <td><span class="status-badge status-{task.status}">{formatStatus(task.status)}</span></td>
                                 <td>{new Date(task.created_at).toLocaleString()}</td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryTask(task.id)}>
@@ -1280,7 +1286,7 @@
                               <tr>
                                 <td>{file.id}</td>
                                 <td>{file.filename}</td>
-                                <td><span class="status-badge status-{file.status}">{file.status}</span></td>
+                                <td><span class="status-badge status-{file.status}">{formatStatus(file.status)}</span></td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryFile(file.id)}>
                                     Retry
@@ -1911,7 +1917,8 @@
   }
 
   .status-running,
-  .status-processing {
+  .status-processing,
+  .status-in_progress {
     background-color: #dbeafe;
     color: #1e40af;
   }
@@ -1934,7 +1941,8 @@
   }
 
   :global([data-theme='dark']) .status-running,
-  :global([data-theme='dark']) .status-processing {
+  :global([data-theme='dark']) .status-processing,
+  :global([data-theme='dark']) .status-in_progress {
     background-color: #1e3a8a;
     color: #93c5fd;
   }
