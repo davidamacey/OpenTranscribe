@@ -34,6 +34,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
+- **YouTube Integration**: Direct URL processing with automatic playlist support
+- **YouTube Playlist Processing**: Extract and queue all videos from playlists for batch transcription
 - **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
 - **Custom File Titles**: Edit display names for media files with real-time search index updates
@@ -47,10 +49,13 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
-- **Full-Text Indexing**: Lightning-fast content search with OpenSearch
-- **Advanced Filtering**: Filter by speaker, date, tags, duration, and more
+- **Full-Text Indexing**: Lightning-fast content search with OpenSearch 3.3.1 (Apache Lucene 10)
+- **9.5x Faster Vector Search**: Significantly improved semantic search performance
+- **25% Faster Queries**: Enhanced full-text search with lower latency
+- **Advanced Filtering**: Filter by speaker, date, tags, duration, and more with searchable dropdowns
 - **Smart Tagging**: Organize content with custom tags and categories
 - **Collections System**: Group related media files into organized collections for better project management
+- **Speaker Usage Counts**: See which speakers appear most frequently across your media library
 
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
@@ -58,12 +63,16 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Meeting Efficiency Analytics**: Silence ratio analysis and participation balance tracking
 - **Real-Time Analytics Computation**: Server-side analytics computation with automatic refresh capabilities
 - **Cross-Video Speaker Analytics**: Track speaker patterns and participation across multiple recordings
-- **AI-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with meeting insights
+- **AI-Powered Summarization**: Generate summaries with flexible JSON schemas from custom prompts
+- **BLUF Format Support**: Default Bottom Line Up Front structured summaries with action items
+- **Custom Summary Formats**: Create unlimited AI prompts with ANY JSON structure
+- **Flexible Schema Storage**: JSONB storage supporting multiple prompt types simultaneously
 - **Multi-Provider LLM Support**: Use local vLLM, OpenAI, Ollama, Claude, or OpenRouter for AI features
 - **Intelligent Section Processing**: Automatically handles transcripts of any length using section-by-section analysis
 - **Custom AI Prompts**: Create and manage custom summarization prompts for different content types
 - **LLM Configuration Management**: User-specific LLM settings with encrypted API key storage
 - **Provider Testing**: Test LLM connections and validate configurations before use
+- **Real-Time Topic Extraction**: AI-powered topic extraction with granular progress notifications
 
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
@@ -98,6 +107,15 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
 
+### ⚡ **Performance & Scaling**
+- **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems
+- **Specialized Worker Queues**: GPU (transcription), Download (YouTube), CPU (waveform), NLP (AI features)
+- **Parallel Waveform Processing**: CPU-based waveform generation runs simultaneously with GPU transcription
+- **Non-Blocking Architecture**: LLM tasks don't delay next transcription (45-75s faster per 3-hour file)
+- **Configurable Concurrency**: GPU(1-4), CPU(8), Download(3), NLP(4) workers for optimal resource utilization
+- **Enhanced Speaker Detection**: Support for 20+ speakers (can scale to 50+ for large conferences)
+- **Accurate GPU Monitoring**: nvidia-smi integration for real-time system-wide memory tracking
+
 ### 📱 **Enhanced User Experience**
 - **Progressive Web App**: Installable app experience with offline capabilities
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
@@ -124,7 +142,12 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### **Backend**
 - **FastAPI** - High-performance async Python web framework
 - **SQLAlchemy 2.0** - Modern ORM with type safety
-- **Celery + Redis** - Distributed task processing for AI workloads
+- **Celery + Redis** - Multi-queue distributed task processing for AI workloads
+  - **GPU Queue** (concurrency=1-4): GPU-intensive transcription and diarization
+  - **Download Queue** (concurrency=3): Parallel YouTube video/playlist downloads
+  - **CPU Queue** (concurrency=8): Waveform generation and audio processing
+  - **NLP Queue** (concurrency=4): LLM API calls and AI features
+  - **Utility Queue** (concurrency=2): Health checks and maintenance tasks
 - **WebSocket** - Real-time communication for live updates
 
 ### **AI/ML Stack**
@@ -137,11 +160,15 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
 
 ### **Infrastructure**
-- **PostgreSQL** - Reliable relational database
+- **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas
 - **MinIO** - S3-compatible object storage
-- **OpenSearch** - Full-text and vector search engine
-- **Docker** - Containerized deployment
+- **OpenSearch 3.3.1** - Full-text and vector search engine with Apache Lucene 10
+  - 9.5x faster vector search performance
+  - 25% faster queries with lower latency
+  - 75% lower p90 latency for aggregations
+- **Docker** - Containerized deployment with multi-stage builds
 - **NGINX** - Production web server
+- **Complete Offline Support** - Full airgapped/offline deployment capability
 
 ## 🚀 Quick Start
 
@@ -233,10 +260,32 @@ The `opentr.sh` script provides comprehensive management for all application ope
 ```bash
 # Start the application
 ./opentr.sh start [dev|prod]     # Start in development or production mode
+./opentr.sh start dev --gpu-scale # Start with multi-GPU scaling (optional)
 ./opentr.sh stop                 # Stop all services
 ./opentr.sh status               # Show container status
 ./opentr.sh logs [service]       # View logs (all or specific service)
 ```
+
+### **Multi-GPU Scaling (Optional)**
+For systems with multiple GPUs, enable parallel GPU workers for significantly increased transcription throughput:
+
+```bash
+# Configure in .env
+GPU_SCALE_ENABLED=true      # Enable multi-GPU scaling
+GPU_SCALE_DEVICE_ID=2       # Which GPU to use (default: 2)
+GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
+
+# Start with GPU scaling
+./opentr.sh start dev --gpu-scale
+./opentr.sh reset dev --gpu-scale
+
+# Example hardware setup:
+# GPU 0: LLM model (vLLM, Ollama)
+# GPU 1: Default single worker (disabled when scaling)
+# GPU 2: 4 parallel workers (processes 4 videos simultaneously)
+```
+
+**Performance:** Process 4 transcriptions simultaneously on a high-end GPU, significantly reducing total processing time for batch uploads.
 
 ### **Development Workflow**
 ```bash
