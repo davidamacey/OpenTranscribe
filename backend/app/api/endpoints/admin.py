@@ -412,6 +412,27 @@ async def get_admin_stats(
                 }
             )
 
+        # Get AI model configuration
+        from app.core.config import settings
+
+        models_info = {
+            "whisper": {
+                "name": settings.WHISPER_MODEL,
+                "description": f"Whisper {settings.WHISPER_MODEL}",
+                "purpose": "Speech Recognition & Transcription",
+            },
+            "diarization": {
+                "name": settings.PYANNOTE_MODEL,
+                "description": "PyAnnote Speaker Diarization 3.1",
+                "purpose": "Speaker Identification & Segmentation",
+            },
+            "alignment": {
+                "name": "Wav2Vec2 (Language-Adaptive)",
+                "description": "WhisperX Alignment Model",
+                "purpose": "Word-Level Timestamp Alignment",
+            },
+        }
+
         # Construct the response
         stats = {
             "users": {
@@ -439,6 +460,7 @@ async def get_admin_stats(
                 "total": total_speakers,
                 "avg_per_file": round(total_speakers / total_files, 2) if total_files > 0 else 0,
             },
+            "models": models_info,
             "system": {
                 "version": "1.0.0",
                 "uptime": system_stats["uptime"],
