@@ -31,7 +31,6 @@ from .storage import generate_full_transcript
 from .storage import get_unique_speaker_names
 from .storage import save_transcript_segments
 from .storage import update_media_file_transcription_status
-from .waveform_generator import WaveformGenerator
 from .whisperx_service import WhisperXService
 
 logger = logging.getLogger(__name__)
@@ -144,31 +143,12 @@ def transcribe_audio_task(self, file_uuid: str):
             except Exception as e:
                 logger.warning(f"Error extracting media metadata: {e}")
 
-            # Step 5.5: Generate waveform data
+            # Step 6: Prepare audio for transcription
+            # Note: Waveform generation now runs in parallel on CPU queue
             with session_scope() as db:
                 update_task_status(db, task_id, "in_progress", progress=0.25)
 
-            send_progress_notification(user_id, file_id, 0.25, "Generating waveform visualization")
-            try:
-                waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
-
-                if waveform_data:
-                    with session_scope() as db:
-                        media_file = get_refreshed_object(db, MediaFile, file_id)
-                        if media_file:
-                            media_file.waveform_data = waveform_data
-                            db.commit()
-                            logger.info(f"Waveform data cached for file {file_id}")
-            except Exception as e:
-                logger.warning(f"Error generating waveform data: {e}")
-                # Continue processing even if waveform generation fails
-
-            # Step 6: Prepare audio for transcription
-            with session_scope() as db:
-                update_task_status(db, task_id, "in_progress", progress=0.3)
-
-            send_progress_notification(user_id, file_id, 0.3, "Preparing audio for transcription")
+            send_progress_notification(user_id, file_id, 0.25, "Preparing audio for transcription")
             audio_file_path = prepare_audio_for_transcription(
                 temp_file_path, content_type, temp_dir
             )

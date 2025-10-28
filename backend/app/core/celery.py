@@ -12,6 +12,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.transcription",
+        "app.tasks.waveform",
         "app.tasks.summarization",
         "app.tasks.analytics",
         "app.tasks.utility",
@@ -42,6 +43,7 @@ celery_app.conf.update(
         "process_youtube_playlist_task": {"queue": "download"},
         # CPU Queue - CPU-intensive parallel tasks (concurrency=8, no GPU)
         # Audio/video processing that doesn't need GPU - modern CPUs have 8+ cores
+        "generate_waveform_task": {"queue": "cpu"},
         "generate_waveform_data": {"queue": "cpu"},
         "extract_audio": {"queue": "cpu"},
         "analyze_transcript": {"queue": "cpu"},

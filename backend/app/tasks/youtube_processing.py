@@ -23,6 +23,7 @@ from app.services.formatting_service import FormattingService
 from app.services.youtube_service import YouTubeService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
+from app.tasks.waveform import generate_waveform_task
 
 logger = logging.getLogger(__name__)
 
@@ -237,12 +238,17 @@ def process_youtube_url_task(
                         f"Failed to send file_updated notification for YouTube completion {file_id}: {e}"
                     )
 
-                # Start transcription task
+                # Start transcription and waveform tasks in parallel
                 try:
+                    # Launch GPU transcription task
                     transcribe_audio_task.delay(file_uuid)
-                    logger.info(f"Started transcription task for MediaFile {file_id}")
+                    # Launch CPU waveform generation task in parallel
+                    generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
+                    logger.info(
+                        f"Started parallel tasks for MediaFile {file_id}: transcription (GPU) and waveform (CPU)"
+                    )
                 except Exception as e:
-                    logger.error(f"Failed to start transcription task for {file_id}: {e}")
+                    logger.error(f"Failed to start tasks for {file_id}: {e}")
                     # Don't fail the whole process if task scheduling fails
 
                 return {
