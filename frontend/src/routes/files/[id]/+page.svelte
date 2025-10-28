@@ -203,19 +203,24 @@
 
   /**
    * Load AI suggestions for tags and collections
+   *
+   * Always loads suggestions if they exist in the database, regardless of current LLM configuration.
+   * This ensures users can see and use previously generated suggestions even if LLM is no longer configured.
    */
   async function loadAISuggestions(): Promise<void> {
-    if (!fileId || !llmAvailable) return;
+    if (!fileId) return;
 
     try {
       const suggestions = await getAISuggestions(fileId);
-      if (suggestions && suggestions.status === 'pending') {
+      // Load suggestions regardless of status or current LLM configuration
+      // The UI components will handle display logic based on status
+      if (suggestions && suggestions.status !== 'rejected') {
         aiTagSuggestions = suggestions.tags || [];
         aiCollectionSuggestions = suggestions.collections || [];
       }
     } catch (error) {
       console.error('Error loading AI suggestions:', error);
-      // Silent fail - suggestions are optional
+      // Silent fail - suggestions are optional (404 is expected if none exist)
     }
   }
 
@@ -1903,6 +1908,36 @@
                 loadSpeakers().then(() => {
                   loadingVoiceSuggestions = false;
                 });
+              }
+            }
+
+            // Handle topic extraction status updates (AI suggestions for tags/collections)
+            if (latestNotification.type === 'topic_extraction_status') {
+              const status = latestNotification.status || latestNotification.data?.status;
+              const message = latestNotification.message || latestNotification.data?.message;
+
+              if (status === 'processing') {
+                // Update processing step to show what's happening
+                currentProcessingStep = message || 'Analyzing transcript with AI...';
+
+              } else if (status === 'completed') {
+                // Show completion message briefly before clearing
+                currentProcessingStep = message || 'AI suggestions complete!';
+
+                // Reload AI suggestions when extraction completes
+                // This will fetch the newly generated suggestions and update the UI dynamically
+                loadAISuggestions().catch(err => {
+                  console.error('Error reloading AI suggestions after extraction:', err);
+                });
+
+                // Clear processing step after a brief delay
+                setTimeout(() => {
+                  currentProcessingStep = '';
+                }, 2000);
+
+              } else if (status === 'failed' || status === 'not_configured') {
+                // Clear processing step on failure
+                currentProcessingStep = '';
               }
             }
 
