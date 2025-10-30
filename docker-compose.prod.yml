@@ -29,6 +29,33 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # No temp volume needed - temp files live in container only
 
+  celery-download-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    volumes:
+      # Production: only model cache for download worker
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+
+  celery-cpu-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    # No volumes needed - CPU worker doesn't need model cache
+
+  celery-nlp-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    # No volumes needed - NLP worker doesn't need model cache
+
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
     build:

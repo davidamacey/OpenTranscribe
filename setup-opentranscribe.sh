@@ -821,7 +821,7 @@ select_whisper_model() {
 
     # Prompt user for model selection
     while true; do
-        read -p "Select model (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model
+        read -p "Select model (tiny/base/small/medium/large-v2) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
 
         # Use recommended if user just presses Enter
         if [ -z "$user_model" ]; then
