@@ -1364,79 +1364,95 @@ pull_docker_images() {
 
 display_summary() {
     echo ""
-    echo -e "${GREEN}🎉 OpenTranscribe Setup Complete!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}🎉  OpenTranscribe Setup Complete!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "${BLUE}📋 Hardware Configuration Summary:${NC}"
-    echo "  • Platform: $DETECTED_PLATFORM ($ARCH)"
-    echo "  • Device: $DETECTED_DEVICE"
-    echo "  • Compute Type: $COMPUTE_TYPE"
-    echo "  • Batch Size: $BATCH_SIZE"
-    echo "  • Docker Runtime: ${DOCKER_RUNTIME:-default}"
+    echo -e "${YELLOW}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║  🚀  QUICK START - Get Up and Running Now!      ║${NC}"
+    echo -e "${YELLOW}╚══════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${GREEN}1. Navigate to the project directory:${NC}"
+    echo "   ${BLUE}cd $PROJECT_DIR${NC}"
+    echo ""
+    echo -e "${GREEN}2. Start OpenTranscribe:${NC}"
+    echo "   ${BLUE}./opentranscribe.sh start${NC}"
+    echo ""
+    echo -e "${GREEN}3. Wait 30-60 seconds for services to initialize${NC}"
+    echo ""
+    echo -e "${GREEN}4. Open your browser and visit:${NC}"
+    echo "   ${BLUE}http://localhost:${FRONTEND_PORT:-5173}${NC}"
+    echo ""
+    echo -e "${GREEN}5. Login with default credentials:${NC}"
+    echo "   Email:    ${BLUE}admin@example.com${NC}"
+    echo "   Password: ${BLUE}password${NC}"
+    echo "   ${RED}⚠️  Change password after first login!${NC}"
+    echo ""
+    echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
+    echo ""
 
+    # Configuration Summary (less prominent, for reference)
+    echo -e "${BLUE}📋 Configuration Summary${NC}"
+    echo "┌─ Hardware:"
+    echo "│  • Platform: $DETECTED_PLATFORM ($ARCH)"
+    echo "│  • Device: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
     if [[ "$DETECTED_DEVICE" == "cuda" ]]; then
-        echo "  • GPU Device ID: ${GPU_DEVICE_ID:-0}"
         if command -v nvidia-smi &> /dev/null; then
-            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
-            GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}")
-            echo "  • GPU: $GPU_NAME (${GPU_MEMORY}MB)"
-            if [[ ${GPU_COUNT:-1} -gt 1 ]]; then
-                echo "  • Total GPUs Available: ${GPU_COUNT}"
-            fi
+            GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}" 2>/dev/null || echo "Unknown")
+            GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits -i "${GPU_DEVICE_ID:-0}" 2>/dev/null || echo "Unknown")
+            echo "│  • GPU: $GPU_NAME (${GPU_MEMORY}MB) [Device ID: ${GPU_DEVICE_ID:-0}]"
         fi
     fi
-
-    echo ""
-    echo -e "${BLUE}📋 Application Configuration:${NC}"
-    echo "  • Whisper Model: $WHISPER_MODEL"
-    echo "  • Speaker Diarization: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "Enabled" || echo "Disabled")"
-    echo "  • LLM Provider: ${LLM_PROVIDER:-vllm} (for AI summarization)"
-    echo "  • Project Directory: $PROJECT_DIR"
-    echo ""
-
-    echo -e "${YELLOW}🚀 To start OpenTranscribe:${NC}"
-    echo "  cd $PROJECT_DIR"
-    echo "  ./opentranscribe.sh start"
+    echo "│"
+    echo "└─ Application:"
+    echo "   • Whisper Model: $WHISPER_MODEL"
+    echo "   • Speaker Diarization: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "✅ Enabled" || echo "⚠️  Not configured")"
+    echo "   • LLM Provider: ${LLM_PROVIDER:-vllm}"
+    echo "   • Project Location: $PROJECT_DIR"
     echo ""
 
-    echo -e "${RED}⚠️  Speaker Diarization Setup Required${NC}"
-    echo "To enable speaker identification:"
-    echo "1. Get a free token at: https://huggingface.co/settings/tokens"
-    echo "2. Edit the .env file and add: HUGGINGFACE_TOKEN=your_token_here"
-    echo "3. Restart the application: ./opentranscribe.sh restart"
+    # Access URLs
+    echo -e "${BLUE}🌐 Service URLs (after starting)${NC}"
+    echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
+    echo "  • Task Monitor:      http://localhost:${FLOWER_PORT:-5175}/flower"
+    echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
     echo ""
+
+    # Management commands
+    echo -e "${BLUE}📚 Useful Management Commands${NC}"
+    echo "  ${BLUE}./opentranscribe.sh status${NC}  - Check service status"
+    echo "  ${BLUE}./opentranscribe.sh logs${NC}    - View logs (Ctrl+C to exit)"
+    echo "  ${BLUE}./opentranscribe.sh restart${NC} - Restart all services"
+    echo "  ${BLUE}./opentranscribe.sh stop${NC}    - Stop all services"
+    echo "  ${BLUE}./opentranscribe.sh help${NC}    - Show all commands"
+    echo ""
+
+    # Optional setup notices (collapsed, less prominent)
+    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+        echo -e "${YELLOW}💡 Optional: Enable Speaker Diarization${NC}"
+        echo "   To identify who said what in transcripts:"
+        echo "   1. Get free token: https://huggingface.co/settings/tokens"
+        echo "   2. Edit .env file: HUGGINGFACE_TOKEN=your_token_here"
+        echo "   3. Run: ./opentranscribe.sh restart"
+        echo ""
+    fi
 
     if [[ -z "$VLLM_BASE_URL" && "$LLM_PROVIDER" == "vllm" ]]; then
-        echo -e "${YELLOW}🤖 LLM Setup for AI Features${NC}"
-        echo "To enable AI summarization and speaker identification:"
-        echo "1. Set up your LLM server (vLLM, Ollama, etc.)"
-        echo "2. Edit the .env file and configure LLM_* variables"
-        echo "3. Restart the application: ./opentranscribe.sh restart"
+        echo -e "${YELLOW}💡 Optional: Enable AI Summarization${NC}"
+        echo "   To get AI-powered transcript summaries:"
+        echo "   1. Set up LLM server (vLLM, Ollama, OpenAI, etc.)"
+        echo "   2. Edit .env file and configure LLM_* variables"
+        echo "   3. Run: ./opentranscribe.sh restart"
         echo ""
     fi
 
     if [[ "$DETECTED_DEVICE" == "cuda" && "$DOCKER_RUNTIME" != "nvidia" ]]; then
-        echo -e "${YELLOW}💡 Note: NVIDIA GPU detected but runtime not configured${NC}"
-        echo "If you experience GPU issues, check NVIDIA Container Toolkit installation:"
-        echo "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+        echo -e "${YELLOW}⚠️  Note: NVIDIA GPU detected but runtime not fully configured${NC}"
+        echo "   If you experience GPU issues:"
+        echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
         echo ""
     fi
-
-    echo -e "${GREEN}🌐 Access URLs (after starting):${NC}"
-    echo "  • Web Interface: http://localhost:${FRONTEND_PORT:-5173}"
-    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
-    echo "  • Task Monitor: http://localhost:${FLOWER_PORT:-5175}/flower"
-    echo "  • MinIO Console: http://localhost:${MINIO_CONSOLE_PORT:-5179}"
-    echo ""
-    echo -e "${GREEN}🔐 Default Admin Login:${NC}"
-    echo "  • Email: admin@example.com"
-    echo "  • Password: password"
-    echo "  • Change password after first login!"
-    echo ""
-    echo -e "${GREEN}📚 Management Commands:${NC}"
-    echo "  • ./opentranscribe.sh help   # Show all commands"
-    echo "  • ./opentranscribe.sh status # Check service status"
-    echo "  • ./opentranscribe.sh logs   # View logs"
-    echo "  • ./opentranscribe.sh health # Check service health"
 }
 
 #######################
