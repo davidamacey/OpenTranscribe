@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 from typing import Union
 
 from pydantic import field_validator
@@ -93,7 +94,7 @@ class Settings(BaseSettings):
     # AI Models settings
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
-    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN")
+    HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # LLM Configuration - Users configure through web UI, stored in database
     # These are system fallbacks for quick access when no user settings exist
