@@ -1096,6 +1096,17 @@
     currentFileId = null;
   }
 
+  // Cancel or clear URL processing
+  function cancelUrlProcessing() {
+    if (processingUrl) {
+      // If actively processing, reset state and notify user
+      processingUrl = false;
+      toastStore.info('URL processing cancelled');
+    }
+    // Clear the URL field
+    resetUrlState();
+  }
+
   // Switch tabs with recording protection
   function switchTab(tab: 'file' | 'url' | 'record') {
     if (tab === activeTab) return;
