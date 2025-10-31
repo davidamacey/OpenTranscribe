@@ -470,13 +470,19 @@ create_env_file() {
 
     # Generate all secure credentials using openssl
     print_info "Generating secure credentials..."
-    local POSTGRES_PASSWORD=$(openssl rand -hex 32)
-    local MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
-    local JWT_SECRET_KEY=$(openssl rand -hex 64)
+    local POSTGRES_PASSWORD
+    POSTGRES_PASSWORD=$(openssl rand -hex 32)
+    local MINIO_ROOT_PASSWORD
+    MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+    local JWT_SECRET_KEY
+    JWT_SECRET_KEY=$(openssl rand -hex 64)
     # ENCRYPTION_KEY: Add prefix to make it invalid base64, forcing backend exception handler path
-    local ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
-    local REDIS_PASSWORD=$(openssl rand -hex 32)
-    local OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+    local ENCRYPTION_KEY
+    ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
+    local REDIS_PASSWORD
+    REDIS_PASSWORD=$(openssl rand -hex 32)
+    local OPENSEARCH_PASSWORD
+    OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
 
     # Replace placeholders with generated passwords
     sed -i "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|g" "$INSTALL_DIR/.env"
@@ -495,8 +501,8 @@ create_env_file() {
 
     # Update installation-specific paths
     sed -i "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=${INSTALL_DIR}/models|g" "$INSTALL_DIR/.env"
-    # Note: TEMP_DIR override for offline install locations
-    sed -i "s|^#.*TEMP_DIR=.*|TEMP_DIR=${INSTALL_DIR}/temp|g" "$INSTALL_DIR/.env"
+    # Note: TEMP_DIR no longer needs override - all containers use /app/temp internally
+    # Explicit TEMP_DIR=/app/temp set in docker-compose.yml for all backend services
 
     # Enable offline mode for HuggingFace (uncomment the line)
     sed -i "s|^#.*HF_HUB_OFFLINE=.*|HF_HUB_OFFLINE=1|g" "$INSTALL_DIR/.env"

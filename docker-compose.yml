@@ -247,6 +247,7 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
       interval: 30s
@@ -274,6 +275,7 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
     healthcheck:
       test: ["CMD-SHELL", "python3 -c 'import os,time; exit(0 if os.path.exists(\"/app/celerybeat-schedule\") and time.time()-os.path.getmtime(\"/app/celerybeat-schedule\")<300 else 1)'"]
       interval: 30s
@@ -323,6 +325,7 @@ services:
       - "${FLOWER_PORT:-5175}:5555"
     environment:
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
+      - TEMP_DIR=/app/temp
     depends_on:
       - redis
       - celery-worker
