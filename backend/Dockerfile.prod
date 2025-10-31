@@ -21,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy only requirements first for better layer caching
 COPY requirements.txt .
 
+# Upgrade pip to latest version first (security fix for CVE-2025-8869)
+RUN pip install --user --no-cache-dir --upgrade pip
+
 # Install Python dependencies
 # All packages now use cuDNN 9 for CUDA 12.8 compatibility
 # PyTorch 2.8.0+cu128 - includes CVE-2025-32434 security fix
