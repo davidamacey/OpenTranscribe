@@ -75,7 +75,7 @@ services:
     environment:
       - NODE_ENV=production  # Production mode
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080"]
       interval: 10s
       timeout: 5s
       retries: 5
