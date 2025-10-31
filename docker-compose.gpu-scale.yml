@@ -26,14 +26,10 @@ services:
     scale: 0
 
   # Scaled GPU Worker - Single container with multiple concurrent workers
+  # This overlay enables the service and configures GPU scaling settings
+  # Image, build, and pull_policy settings come from overlay files (prod.yml, offline.yml)
   celery-worker-gpu-scaled:
-    container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-scaled
-    restart: always
-    env_file: .env
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    runtime: nvidia
+    scale: 1  # Enable this service (overrides scale: 0 from base)
     command: >
       celery -A app.core.celery worker
       -Q gpu
@@ -42,14 +38,6 @@ services:
       --max-tasks-per-child=10
       -n gpu-scaled@%h
       --loglevel=info
-    volumes:
-      # Development: Mount source code
-      - ./backend:/app
-      # Model cache directories - must be owned by UID 1000 on host
-      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     environment:
       # Internal Docker network settings (same as other workers)
       - POSTGRES_HOST=postgres

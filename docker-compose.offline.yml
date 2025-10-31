@@ -90,14 +90,14 @@ services:
     ports:
       - "${FLOWER_PORT:-5175}:5555"  # Flower web UI
 
-  # GPU Scaled Worker Override (for use with docker-compose.gpu-scale.yml)
-  # This overrides the development build settings with production image
+  # GPU Scaled Worker - Offline overrides
+  # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1
+  # This overlay only provides offline-specific settings (image, pull_policy, paths)
   celery-worker-gpu-scaled:
     image: davidamacey/opentranscribe-backend:latest
-    pull_policy: never
-    build: null  # Remove build section for offline
+    pull_policy: never  # Use pre-loaded images (no network access)
     volumes:
-      # Offline: Use absolute paths and remove development source mount
+      # Offline: Use absolute paths for airgapped systems
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
       - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
