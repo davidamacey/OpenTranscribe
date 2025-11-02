@@ -4,21 +4,8 @@ Report Summary
 ┌────────────────────────────────────────────────────────────┬────────┬─────────────────┬─────────┐
 │                           Target                           │  Type  │ Vulnerabilities │ Secrets │
 ├────────────────────────────────────────────────────────────┼────────┼─────────────────┼─────────┤
-│ davidamacey/opentranscribe-frontend:latest (alpine 3.22.2) │ alpine │        1        │    -    │
+│ davidamacey/opentranscribe-frontend:latest (alpine 3.22.2) │ alpine │        0        │    -    │
 └────────────────────────────────────────────────────────────┴────────┴─────────────────┴─────────┘
 Legend:
 - '-': Not scanned
 - '0': Clean (no security findings detected)
-
-
-davidamacey/opentranscribe-frontend:latest (alpine 3.22.2)
-==========================================================
-Total: 1 (MEDIUM: 0, HIGH: 0, CRITICAL: 1)
-
-┌─────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬─────────────────────────────────────────────────────────────┐
-│ Library │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                            │
-├─────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼─────────────────────────────────────────────────────────────┤
-│ pcre2   │ CVE-2025-58050 │ CRITICAL │ fixed  │ 10.43-r1          │ 10.46-r0      │ pcre2: PCRE2: heap-buffer-overflow read in match_ref due to │
-│         │                │          │        │                   │               │ missing boundary restoration in...                          │
-│         │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-58050                  │
-└─────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴─────────────────────────────────────────────────────────────┘

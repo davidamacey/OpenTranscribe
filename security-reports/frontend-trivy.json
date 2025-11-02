@@ -1,185 +1,179 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2025-10-27T03:18:56.552383291-04:00",
+  "CreatedAt": "2025-10-31T08:53:57.395959394-04:00",
   "ArtifactName": "davidamacey/opentranscribe-frontend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 128662528,
+    "Size": 128798720,
     "OS": {
       "Family": "alpine",
       "Name": "3.22.2"
     },
-    "ImageID": "sha256:3f7eb8e427dc2bbf57080e09bb57dddfbc8e18192c84564da55dd9e2f5fd47dc",
+    "ImageID": "sha256:1593cc027075ec72941af4b1fa9e6ea7658fbd682ffb88850f1ac3ec23e4b036",
     "DiffIDs": [
       "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1",
-      "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a",
-      "sha256:ed6be5e2fd3344bf7298424195ed5e013e433de466479ca0966a568442d0e77e",
-      "sha256:abbef7f883142e780f114b3dc34eb0aed8b857926abe515215c15da379f21413",
-      "sha256:3e4655a388760170cfe7a19371dcacdf54e4de712c225dc337f3ca4a06888753",
-      "sha256:dc45ec6c902bb29d6c9884da6e5caed40f6cc1bb96ee4d7518197d4094153090",
-      "sha256:1704c5a3d8da4ae6352d5eb6964facf4b1ffb3af8ae77d78b0d869ae1315f211",
-      "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e",
-      "sha256:acdacff3ed5f900567b14f5a592d47e6b32a7284bd4b481a34342bdafd8ffda2",
-      "sha256:f1ead00a2748229a6bb65def2c74d34bbcb8851a2dfc70b86449691ff5bbef27",
-      "sha256:482a6a3ef40199bee0d3d285c2c0774d0d17c0f2ef969a2a8f05ca459e7ef7c0"
+      "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc",
+      "sha256:2660a7d4b906e8971834a94fe42c4308aa83aec0f7a1d590f21cab4ac85ab303",
+      "sha256:2c79d5d895bb2e6ac5cbfc4eaf09318c655d5713d2629542e29d0564a5dc84f8",
+      "sha256:b74d92be8225184e9cce1d356d9852b23fd4593ac2bc2b1e2e843dac819758ca",
+      "sha256:3297b9628ff3624c5cec418fce70b84e81cee2d50beec077b58fb6daf478df56",
+      "sha256:99ea4bde418df15b6e7a8b9e4aed69b3b46a7176e7dcd26ee8f715cf0f29a4a2",
+      "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac",
+      "sha256:a231a0417d74c4e59d0d0b05ccf637c81ce0293db0a0f1351510fb6f2a26e8f0",
+      "sha256:c1fc1e3e9cfb421e1cd1e425feb897a40e59b6c152f73206f692588ef8f853db",
+      "sha256:a91c4c3c0df59442ca069b1842a37f42d4a1e8092abd8c57a8cd688fa4708b70"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-frontend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-frontend@sha256:016dd4fe59222f3136d96534c38179ebcb0d64d8645d5335d5685b7a70c20293"
+      "davidamacey/opentranscribe-frontend@sha256:9d868d794dd3341e5c64b97efd4fa139a870df70db8dc82f9ab5977529564232"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2025-10-27T07:15:50.8011345Z",
+      "created": "2025-10-31T12:51:02.072362518Z",
       "history": [
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-08T11:04:56Z",
           "created_by": "ADD alpine-minirootfs-3.22.2-x86_64.tar.gz / # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-08T11:04:56Z",
           "created_by": "CMD [\"/bin/sh\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "LABEL maintainer=NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
-          "created_by": "ENV NGINX_VERSION=1.29.2",
+          "created": "2025-10-28T21:49:51Z",
+          "created_by": "ENV NGINX_VERSION=1.29.3",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "ENV PKG_RELEASE=1",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "ENV DYNPKG_RELEASE=1",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
-          "created_by": "RUN /bin/sh -c set -x     \u0026\u0026 addgroup -g 101 -S nginx     \u0026\u0026 adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx     \u0026\u0026 apkArch=\"$(cat /etc/apk/arch)\"     \u0026\u0026 nginxPackages=\"         nginx=${NGINX_VERSION}-r${PKG_RELEASE}     \"     \u0026\u0026 apk add --no-cache --virtual .checksum-deps         openssl     \u0026\u0026 case \"$apkArch\" in         x86_64|aarch64)             set -x             \u0026\u0026 KEY_SHA512=\"e09fa32f0a0eab2b879ccbbc4d0e4fb9751486eedda75e35fac65802cc9faa266425edf83e261137a2f4d16281ce2c1a5f4502930fe75154723da014214f0655\"             \u0026\u0026 wget -O /tmp/nginx_signing.rsa.pub https://nginx.org/keys/nginx_signing.rsa.pub             \u0026\u0026 if echo \"$KEY_SHA512 */tmp/nginx_signing.rsa.pub\" | sha512sum -c -; then                 echo \"key verification succeeded!\";                 mv /tmp/nginx_signing.rsa.pub /etc/apk/keys/;             else                 echo \"key verification failed!\";                 exit 1;             fi             \u0026\u0026 apk add -X \"https://nginx.org/packages/mainline/alpine/v$(egrep -o '^[0-9]+\\.[0-9]+' /etc/alpine-release)/main\" --no-cache $nginxPackages             ;;         *)             set -x             \u0026\u0026 tempDir=\"$(mktemp -d)\"             \u0026\u0026 chown nobody:nobody $tempDir             \u0026\u0026 apk add --no-cache --virtual .build-deps                 gcc                 libc-dev                 make                 openssl-dev                 pcre2-dev                 zlib-dev                 linux-headers                 bash                 alpine-sdk                 findutils                 curl             \u0026\u0026 su nobody -s /bin/sh -c \"                 export HOME=${tempDir}                 \u0026\u0026 cd ${tempDir}                 \u0026\u0026 curl -f -L -O https://github.com/nginx/pkg-oss/archive/${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 PKGOSSCHECKSUM=\\\"633b2a8b56bd48527d7e293a255fd706dfbb5a9c47605ff18e91a2a409801043ee00ecb0da5fadf9cdf1d483c5ca848e81c1861870619523e15ca9e494b6e700 *${NGINX_VERSION}-${PKG_RELEASE}.tar.gz\\\"                 \u0026\u0026 if [ \\\"\\$(openssl sha512 -r ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz)\\\" = \\\"\\$PKGOSSCHECKSUM\\\" ]; then                     echo \\\"pkg-oss tarball checksum verification succeeded!\\\";                 else                     echo \\\"pkg-oss tarball checksum verification failed!\\\";                     exit 1;                 fi                 \u0026\u0026 tar xzvf ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 cd pkg-oss-${NGINX_VERSION}-${PKG_RELEASE}                 \u0026\u0026 cd alpine                 \u0026\u0026 make base                 \u0026\u0026 apk index --allow-untrusted -o ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz ${tempDir}/packages/alpine/${apkArch}/*.apk                 \u0026\u0026 abuild-sign -k ${tempDir}/.abuild/abuild-key.rsa ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz                 \"             \u0026\u0026 cp ${tempDir}/.abuild/abuild-key.rsa.pub /etc/apk/keys/             \u0026\u0026 apk del --no-network .build-deps             \u0026\u0026 apk add -X ${tempDir}/packages/alpine/ --no-cache $nginxPackages             ;;     esac     \u0026\u0026 apk del --no-network .checksum-deps     \u0026\u0026 if [ -n \"$tempDir\" ]; then rm -rf \"$tempDir\"; fi     \u0026\u0026 if [ -f \"/etc/apk/keys/abuild-key.rsa.pub\" ]; then rm -f /etc/apk/keys/abuild-key.rsa.pub; fi     \u0026\u0026 apk add --no-cache gettext-envsubst     \u0026\u0026 apk add --no-cache tzdata     \u0026\u0026 ln -sf /dev/stdout /var/log/nginx/access.log     \u0026\u0026 ln -sf /dev/stderr /var/log/nginx/error.log     \u0026\u0026 mkdir /docker-entrypoint.d # buildkit",
+          "created": "2025-10-28T21:49:51Z",
+          "created_by": "RUN /bin/sh -c set -x     \u0026\u0026 addgroup -g 101 -S nginx     \u0026\u0026 adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx     \u0026\u0026 apkArch=\"$(cat /etc/apk/arch)\"     \u0026\u0026 nginxPackages=\"         nginx=${NGINX_VERSION}-r${PKG_RELEASE}     \"     \u0026\u0026 apk add --no-cache --virtual .checksum-deps         openssl     \u0026\u0026 case \"$apkArch\" in         x86_64|aarch64)             set -x             \u0026\u0026 KEY_SHA512=\"e09fa32f0a0eab2b879ccbbc4d0e4fb9751486eedda75e35fac65802cc9faa266425edf83e261137a2f4d16281ce2c1a5f4502930fe75154723da014214f0655\"             \u0026\u0026 wget -O /tmp/nginx_signing.rsa.pub https://nginx.org/keys/nginx_signing.rsa.pub             \u0026\u0026 if echo \"$KEY_SHA512 */tmp/nginx_signing.rsa.pub\" | sha512sum -c -; then                 echo \"key verification succeeded!\";                 mv /tmp/nginx_signing.rsa.pub /etc/apk/keys/;             else                 echo \"key verification failed!\";                 exit 1;             fi             \u0026\u0026 apk add -X \"https://nginx.org/packages/mainline/alpine/v$(egrep -o '^[0-9]+\\.[0-9]+' /etc/alpine-release)/main\" --no-cache $nginxPackages             ;;         *)             set -x             \u0026\u0026 tempDir=\"$(mktemp -d)\"             \u0026\u0026 chown nobody:nobody $tempDir             \u0026\u0026 apk add --no-cache --virtual .build-deps                 gcc                 libc-dev                 make                 openssl-dev                 pcre2-dev                 zlib-dev                 linux-headers                 bash                 alpine-sdk                 findutils                 curl             \u0026\u0026 su nobody -s /bin/sh -c \"                 export HOME=${tempDir}                 \u0026\u0026 cd ${tempDir}                 \u0026\u0026 curl -f -L -O https://github.com/nginx/pkg-oss/archive/${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 PKGOSSCHECKSUM=\\\"249858446828ace0c81ea3e057135aa368f3dab83430cf867bb9fc32598948f29c4bd50908491da704536af1106aa87553f6a76cc126c6833dc9b14dd00564b8 *${NGINX_VERSION}-${PKG_RELEASE}.tar.gz\\\"                 \u0026\u0026 if [ \\\"\\$(openssl sha512 -r ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz)\\\" = \\\"\\$PKGOSSCHECKSUM\\\" ]; then                     echo \\\"pkg-oss tarball checksum verification succeeded!\\\";                 else                     echo \\\"pkg-oss tarball checksum verification failed!\\\";                     exit 1;                 fi                 \u0026\u0026 tar xzvf ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 cd pkg-oss-${NGINX_VERSION}-${PKG_RELEASE}                 \u0026\u0026 cd alpine                 \u0026\u0026 make base                 \u0026\u0026 apk index --allow-untrusted -o ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz ${tempDir}/packages/alpine/${apkArch}/*.apk                 \u0026\u0026 abuild-sign -k ${tempDir}/.abuild/abuild-key.rsa ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz                 \"             \u0026\u0026 cp ${tempDir}/.abuild/abuild-key.rsa.pub /etc/apk/keys/             \u0026\u0026 apk del --no-network .build-deps             \u0026\u0026 apk add -X ${tempDir}/packages/alpine/ --no-cache $nginxPackages             ;;     esac     \u0026\u0026 apk del --no-network .checksum-deps     \u0026\u0026 if [ -n \"$tempDir\" ]; then rm -rf \"$tempDir\"; fi     \u0026\u0026 if [ -f \"/etc/apk/keys/abuild-key.rsa.pub\" ]; then rm -f /etc/apk/keys/abuild-key.rsa.pub; fi     \u0026\u0026 apk add --no-cache gettext-envsubst     \u0026\u0026 apk add --no-cache tzdata     \u0026\u0026 ln -sf /dev/stdout /var/log/nginx/access.log     \u0026\u0026 ln -sf /dev/stderr /var/log/nginx/error.log     \u0026\u0026 mkdir /docker-entrypoint.d # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "COPY docker-entrypoint.sh / # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "COPY 10-listen-on-ipv6-by-default.sh /docker-entrypoint.d # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "COPY 15-local-resolvers.envsh /docker-entrypoint.d # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "COPY 20-envsubst-on-templates.sh /docker-entrypoint.d # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "COPY 30-tune-worker-processes.sh /docker-entrypoint.d # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "ENTRYPOINT [\"/docker-entrypoint.sh\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "EXPOSE map[80/tcp:{}]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "STOPSIGNAL SIGQUIT",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T21:49:51Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
-          "created_by": "ENV NJS_VERSION=0.9.3",
+          "created": "2025-10-28T22:11:24Z",
+          "created_by": "ENV NJS_VERSION=0.9.4",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
+          "created": "2025-10-28T22:11:24Z",
           "created_by": "ENV NJS_RELEASE=1",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-07T21:06:46Z",
-          "created_by": "RUN /bin/sh -c set -x     \u0026\u0026 apkArch=\"$(cat /etc/apk/arch)\"     \u0026\u0026 nginxPackages=\"         nginx=${NGINX_VERSION}-r${PKG_RELEASE}         nginx-module-xslt=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-geoip=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-image-filter=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-njs=${NGINX_VERSION}.${NJS_VERSION}-r${NJS_RELEASE}     \"     \u0026\u0026 apk add --no-cache --virtual .checksum-deps         openssl     \u0026\u0026 case \"$apkArch\" in         x86_64|aarch64)             apk add -X \"https://nginx.org/packages/mainline/alpine/v$(egrep -o '^[0-9]+\\.[0-9]+' /etc/alpine-release)/main\" --no-cache $nginxPackages             ;;         *)             set -x             \u0026\u0026 tempDir=\"$(mktemp -d)\"             \u0026\u0026 chown nobody:nobody $tempDir             \u0026\u0026 apk add --no-cache --virtual .build-deps                 gcc                 libc-dev                 make                 openssl-dev                 pcre2-dev                 zlib-dev                 linux-headers                 libxslt-dev                 gd-dev                 geoip-dev                 libedit-dev                 bash                 alpine-sdk                 findutils                 curl             \u0026\u0026 su nobody -s /bin/sh -c \"                 export HOME=${tempDir}                 \u0026\u0026 cd ${tempDir}                 \u0026\u0026 curl -f -L -O https://github.com/nginx/pkg-oss/archive/${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 PKGOSSCHECKSUM=\\\"633b2a8b56bd48527d7e293a255fd706dfbb5a9c47605ff18e91a2a409801043ee00ecb0da5fadf9cdf1d483c5ca848e81c1861870619523e15ca9e494b6e700 *${NGINX_VERSION}-${PKG_RELEASE}.tar.gz\\\"                 \u0026\u0026 if [ \\\"\\$(openssl sha512 -r ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz)\\\" = \\\"\\$PKGOSSCHECKSUM\\\" ]; then                     echo \\\"pkg-oss tarball checksum verification succeeded!\\\";                 else                     echo \\\"pkg-oss tarball checksum verification failed!\\\";                     exit 1;                 fi                 \u0026\u0026 tar xzvf ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 cd pkg-oss-${NGINX_VERSION}-${PKG_RELEASE}                 \u0026\u0026 cd alpine                 \u0026\u0026 make module-geoip module-image-filter module-njs module-xslt                 \u0026\u0026 apk index --allow-untrusted -o ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz ${tempDir}/packages/alpine/${apkArch}/*.apk                 \u0026\u0026 abuild-sign -k ${tempDir}/.abuild/abuild-key.rsa ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz                 \"             \u0026\u0026 cp ${tempDir}/.abuild/abuild-key.rsa.pub /etc/apk/keys/             \u0026\u0026 apk del --no-network .build-deps             \u0026\u0026 apk add -X ${tempDir}/packages/alpine/ --no-cache $nginxPackages             ;;     esac     \u0026\u0026 apk del --no-network .checksum-deps     \u0026\u0026 if [ -n \"$tempDir\" ]; then rm -rf \"$tempDir\"; fi     \u0026\u0026 if [ -f \"/etc/apk/keys/abuild-key.rsa.pub\" ]; then rm -f /etc/apk/keys/abuild-key.rsa.pub; fi     \u0026\u0026 apk add --no-cache curl ca-certificates # buildkit",
+          "created": "2025-10-28T22:11:24Z",
+          "created_by": "RUN /bin/sh -c set -x     \u0026\u0026 apkArch=\"$(cat /etc/apk/arch)\"     \u0026\u0026 nginxPackages=\"         nginx=${NGINX_VERSION}-r${PKG_RELEASE}         nginx-module-xslt=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-geoip=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-image-filter=${NGINX_VERSION}-r${DYNPKG_RELEASE}         nginx-module-njs=${NGINX_VERSION}.${NJS_VERSION}-r${NJS_RELEASE}     \"     \u0026\u0026 apk add --no-cache --virtual .checksum-deps         openssl     \u0026\u0026 case \"$apkArch\" in         x86_64|aarch64)             apk add -X \"https://nginx.org/packages/mainline/alpine/v$(egrep -o '^[0-9]+\\.[0-9]+' /etc/alpine-release)/main\" --no-cache $nginxPackages             ;;         *)             set -x             \u0026\u0026 tempDir=\"$(mktemp -d)\"             \u0026\u0026 chown nobody:nobody $tempDir             \u0026\u0026 apk add --no-cache --virtual .build-deps                 gcc                 libc-dev                 make                 openssl-dev                 pcre2-dev                 zlib-dev                 linux-headers                 libxslt-dev                 gd-dev                 geoip-dev                 libedit-dev                 bash                 alpine-sdk                 findutils                 curl             \u0026\u0026 su nobody -s /bin/sh -c \"                 export HOME=${tempDir}                 \u0026\u0026 cd ${tempDir}                 \u0026\u0026 curl -f -L -O https://github.com/nginx/pkg-oss/archive/${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 PKGOSSCHECKSUM=\\\"249858446828ace0c81ea3e057135aa368f3dab83430cf867bb9fc32598948f29c4bd50908491da704536af1106aa87553f6a76cc126c6833dc9b14dd00564b8 *${NGINX_VERSION}-${PKG_RELEASE}.tar.gz\\\"                 \u0026\u0026 if [ \\\"\\$(openssl sha512 -r ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz)\\\" = \\\"\\$PKGOSSCHECKSUM\\\" ]; then                     echo \\\"pkg-oss tarball checksum verification succeeded!\\\";                 else                     echo \\\"pkg-oss tarball checksum verification failed!\\\";                     exit 1;                 fi                 \u0026\u0026 tar xzvf ${NGINX_VERSION}-${PKG_RELEASE}.tar.gz                 \u0026\u0026 cd pkg-oss-${NGINX_VERSION}-${PKG_RELEASE}                 \u0026\u0026 cd alpine                 \u0026\u0026 make module-geoip module-image-filter module-njs module-xslt                 \u0026\u0026 apk index --allow-untrusted -o ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz ${tempDir}/packages/alpine/${apkArch}/*.apk                 \u0026\u0026 abuild-sign -k ${tempDir}/.abuild/abuild-key.rsa ${tempDir}/packages/alpine/${apkArch}/APKINDEX.tar.gz                 \"             \u0026\u0026 cp ${tempDir}/.abuild/abuild-key.rsa.pub /etc/apk/keys/             \u0026\u0026 apk del --no-network .build-deps             \u0026\u0026 apk add -X ${tempDir}/packages/alpine/ --no-cache $nginxPackages             ;;     esac     \u0026\u0026 apk del --no-network .checksum-deps     \u0026\u0026 if [ -n \"$tempDir\" ]; then rm -rf \"$tempDir\"; fi     \u0026\u0026 if [ -f \"/etc/apk/keys/abuild-key.rsa.pub\" ]; then rm -f /etc/apk/keys/abuild-key.rsa.pub; fi     \u0026\u0026 apk add --no-cache curl ca-certificates # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:00Z",
           "created_by": "LABEL org.opencontainers.image.title=OpenTranscribe Frontend org.opencontainers.image.description=Svelte-based Progressive Web App for AI-powered transcription org.opencontainers.image.vendor=OpenTranscribe org.opencontainers.image.authors=OpenTranscribe Contributors org.opencontainers.image.licenses=MIT org.opencontainers.image.source=https://github.com/davidamacey/OpenTranscribe org.opencontainers.image.documentation=https://github.com/davidamacey/OpenTranscribe/blob/master/README.md",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:00Z",
           "created_by": "COPY /app/dist /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:00Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:02Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:02Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:02Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-10-27T07:15:50Z",
-          "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1\"] \"30s\" \"3s\" \"5s\" \"0s\" '\\x03'}",
-          "comment": "buildkit.dockerfile.v0",
-          "empty_layer": true
-        },
-        {
-          "created": "2025-10-27T07:15:50Z",
+          "created": "2025-10-31T12:51:02Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -190,16 +184,16 @@
         "type": "layers",
         "diff_ids": [
           "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1",
-          "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a",
-          "sha256:ed6be5e2fd3344bf7298424195ed5e013e433de466479ca0966a568442d0e77e",
-          "sha256:abbef7f883142e780f114b3dc34eb0aed8b857926abe515215c15da379f21413",
-          "sha256:3e4655a388760170cfe7a19371dcacdf54e4de712c225dc337f3ca4a06888753",
-          "sha256:dc45ec6c902bb29d6c9884da6e5caed40f6cc1bb96ee4d7518197d4094153090",
-          "sha256:1704c5a3d8da4ae6352d5eb6964facf4b1ffb3af8ae77d78b0d869ae1315f211",
-          "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e",
-          "sha256:acdacff3ed5f900567b14f5a592d47e6b32a7284bd4b481a34342bdafd8ffda2",
-          "sha256:f1ead00a2748229a6bb65def2c74d34bbcb8851a2dfc70b86449691ff5bbef27",
-          "sha256:482a6a3ef40199bee0d3d285c2c0774d0d17c0f2ef969a2a8f05ca459e7ef7c0"
+          "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc",
+          "sha256:2660a7d4b906e8971834a94fe42c4308aa83aec0f7a1d590f21cab4ac85ab303",
+          "sha256:2c79d5d895bb2e6ac5cbfc4eaf09318c655d5713d2629542e29d0564a5dc84f8",
+          "sha256:b74d92be8225184e9cce1d356d9852b23fd4593ac2bc2b1e2e843dac819758ca",
+          "sha256:3297b9628ff3624c5cec418fce70b84e81cee2d50beec077b58fb6daf478df56",
+          "sha256:99ea4bde418df15b6e7a8b9e4aed69b3b46a7176e7dcd26ee8f715cf0f29a4a2",
+          "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac",
+          "sha256:a231a0417d74c4e59d0d0b05ccf637c81ce0293db0a0f1351510fb6f2a26e8f0",
+          "sha256:c1fc1e3e9cfb421e1cd1e425feb897a40e59b6c152f73206f692588ef8f853db",
+          "sha256:a91c4c3c0df59442ca069b1842a37f42d4a1e8092abd8c57a8cd688fa4708b70"
         ]
       },
       "config": {
@@ -208,25 +202,15 @@
           "-g",
           "daemon off;"
         ],
-        "Healthcheck": {
-          "Test": [
-            "CMD-SHELL",
-            "wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1"
-          ],
-          "Interval": 30000000000,
-          "Timeout": 3000000000,
-          "StartPeriod": 5000000000,
-          "Retries": 3
-        },
         "Entrypoint": [
           "/docker-entrypoint.sh"
         ],
         "Env": [
           "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-          "NGINX_VERSION=1.29.2",
+          "NGINX_VERSION=1.29.3",
           "PKG_RELEASE=1",
           "DYNPKG_RELEASE=1",
-          "NJS_VERSION=0.9.3",
+          "NJS_VERSION=0.9.4",
           "NJS_RELEASE=1"
         ],
         "Labels": {
@@ -255,44 +239,44 @@
         "DiffID": "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1"
       },
       {
-        "Size": 4589568,
-        "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+        "Size": 4664320,
+        "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
       },
       {
         "Size": 3584,
-        "DiffID": "sha256:ed6be5e2fd3344bf7298424195ed5e013e433de466479ca0966a568442d0e77e"
+        "DiffID": "sha256:2660a7d4b906e8971834a94fe42c4308aa83aec0f7a1d590f21cab4ac85ab303"
       },
       {
         "Size": 4608,
-        "DiffID": "sha256:abbef7f883142e780f114b3dc34eb0aed8b857926abe515215c15da379f21413"
+        "DiffID": "sha256:2c79d5d895bb2e6ac5cbfc4eaf09318c655d5713d2629542e29d0564a5dc84f8"
       },
       {
         "Size": 2560,
-        "DiffID": "sha256:3e4655a388760170cfe7a19371dcacdf54e4de712c225dc337f3ca4a06888753"
+        "DiffID": "sha256:b74d92be8225184e9cce1d356d9852b23fd4593ac2bc2b1e2e843dac819758ca"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:dc45ec6c902bb29d6c9884da6e5caed40f6cc1bb96ee4d7518197d4094153090"
+        "DiffID": "sha256:3297b9628ff3624c5cec418fce70b84e81cee2d50beec077b58fb6daf478df56"
       },
       {
         "Size": 7168,
-        "DiffID": "sha256:1704c5a3d8da4ae6352d5eb6964facf4b1ffb3af8ae77d78b0d869ae1315f211"
+        "DiffID": "sha256:99ea4bde418df15b6e7a8b9e4aed69b3b46a7176e7dcd26ee8f715cf0f29a4a2"
       },
       {
-        "Size": 40922624,
-        "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+        "Size": 40931840,
+        "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
       },
       {
-        "Size": 37254656,
-        "DiffID": "sha256:acdacff3ed5f900567b14f5a592d47e6b32a7284bd4b481a34342bdafd8ffda2"
+        "Size": 37280768,
+        "DiffID": "sha256:a231a0417d74c4e59d0d0b05ccf637c81ce0293db0a0f1351510fb6f2a26e8f0"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:f1ead00a2748229a6bb65def2c74d34bbcb8851a2dfc70b86449691ff5bbef27"
+        "DiffID": "sha256:c1fc1e3e9cfb421e1cd1e425feb897a40e59b6c152f73206f692588ef8f853db"
       },
       {
-        "Size": 37260288,
-        "DiffID": "sha256:482a6a3ef40199bee0d3d285c2c0774d0d17c0f2ef969a2a8f05ca459e7ef7c0"
+        "Size": 37286400,
+        "DiffID": "sha256:a91c4c3c0df59442ca069b1842a37f42d4a1e8092abd8c57a8cd688fa4708b70"
       }
     ]
   },
@@ -493,7 +477,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:e91d6c62643fd698b33834963d893547520ca622",
           "InstalledFiles": [
@@ -550,7 +534,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:889fa02c5f7cdd90283ce2b68959e9c44e5dfbf2",
           "InstalledFiles": [
@@ -639,7 +623,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:beda10a0487b4e456c5a25d5bae9af8b6d4b6be1",
           "InstalledFiles": [
@@ -669,7 +653,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:04905c8ed0de23926e7f151791fb17503e6ebf16",
           "InstalledFiles": [
@@ -874,7 +858,7 @@
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:e34713fe1adcd194fb3982f97d1d194a413759d4",
           "InstalledFiles": [
@@ -904,7 +888,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:f8a4adf353c174e5287521b7893ce54b4c5f4d86",
           "InstalledFiles": [
@@ -1010,7 +994,7 @@
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:bf31020f338d745eda4d86c72190cbe0b5d58bbf",
           "InstalledFiles": [
@@ -1037,7 +1021,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:3ea7f1b77ee57b7073c6f1b76b84d5b82eeff09a",
           "InstalledFiles": [
@@ -1069,7 +1053,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+            "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
           },
           "Digest": "sha1:8e48d4e81518696607a4fae33aae16ea1a0e8c1b",
           "InstalledFiles": [
@@ -1128,7 +1112,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:784720dff5ae1bfb83024357021fd2b6d91c2646",
           "InstalledFiles": [
@@ -1156,7 +1140,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:8c3724586ce305e5e6552acf4b89004f7fc05dd9",
           "InstalledFiles": [
@@ -1183,7 +1167,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:1c8732214d0947cdbca8b7905576c0d0bc3deb3b",
           "InstalledFiles": [
@@ -1255,7 +1239,7 @@
             "zstd-libs@1.5.7-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:d0c265e4db3a95d6e31e13e5ea29dd20b19ea768",
           "InstalledFiles": [
@@ -1282,7 +1266,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:77ae2dcc6ce1090ad524fe1c4b1d70e34e330db7",
           "InstalledFiles": [
@@ -1310,7 +1294,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:b7d0c4c1e0034b66e53b770c5533c8c65eba3464",
           "InstalledFiles": [
@@ -1337,7 +1321,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:071003d14b18ec974b86a1e1318149e28bc51d53",
           "InstalledFiles": [
@@ -1365,7 +1349,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:6945911dc2b13485e97460d9df2716ad1a0aa32d",
           "InstalledFiles": [
@@ -1400,7 +1384,7 @@
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:f6ad8bb47f8c932555774eb07149b7a7f6b844a7",
           "InstalledFiles": [
@@ -1427,7 +1411,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:7fd48ac7e3a4c176e40ff590b3c9153600210f48",
           "InstalledFiles": [
@@ -1456,7 +1440,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:e2e93b247187a15a2164f4b7e5f4a725a3b5d488",
           "InstalledFiles": [
@@ -1483,7 +1467,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+            "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
           },
           "Digest": "sha1:8f44275c3149194ffa1b7bae29469289f758ed3d",
           "InstalledFiles": [
@@ -1512,7 +1496,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:1afd9c6c695403a3b67000f0099d8a302eb3aed9",
           "InstalledFiles": [
@@ -1544,7 +1528,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:65a135e641ef9b082f98f70ba100e8617a319042",
           "InstalledFiles": [
@@ -1572,7 +1556,7 @@
             "ncurses-terminfo-base@6.5_p20250503-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:42901f1528399d67e07e14085ee53f1a369b240a",
           "InstalledFiles": [
@@ -1600,7 +1584,7 @@
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:40a4d0e8c5e7cb6f8858b30a4ff9da1770b32604",
           "InstalledFiles": [
@@ -1629,7 +1613,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:351ae123ebf705f090c43fc793996dba2fa21ebb",
           "InstalledFiles": [
@@ -1656,7 +1640,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:e8bf6a7b6110eaed365ba0b5a38b81e94d48d2bb",
           "InstalledFiles": [
@@ -1685,7 +1669,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:0b93bafd8425e719a1e8d9b667c41c5fbfd81f38",
           "InstalledFiles": [
@@ -1741,7 +1725,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:edf5cac1e98ffe4fb3609f48ded83b35bec14c9d",
           "InstalledFiles": [
@@ -1769,7 +1753,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:9472d9ab2b634a61ad5edc9b4754fdb1e34bdef9",
           "InstalledFiles": [
@@ -1796,7 +1780,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:7fd7cf3c40bb89626ce3ae9c45049b3636a60deb",
           "InstalledFiles": [
@@ -1824,7 +1808,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:b493c8c7e5838ebd63dd68c5414bff9ebef45942",
           "InstalledFiles": [
@@ -1852,7 +1836,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:65356d06ac940f03c80adacfedb2d4b4a95a1a03",
           "InstalledFiles": [
@@ -2072,7 +2056,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:0b1fc4b588f11e15acb33344849a797b1b76b196",
           "InstalledFiles": [
@@ -2101,7 +2085,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:1bce85e6488dabca4ddef7578f29d14647d252ae",
           "InstalledFiles": [
@@ -2177,7 +2161,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:93b3045edc2bc6b6c9bff981705293a465c9c3b6",
           "InstalledFiles": [
@@ -2205,7 +2189,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:0c16fb7e4b6352c59985ddf17099df039df36bbe",
           "InstalledFiles": [
@@ -2234,7 +2218,7 @@
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:6ddad9a7b827ee30cd620f78e10a693464853d82",
           "InstalledFiles": [
@@ -2264,7 +2248,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:00b0146fdf821d82f9f5010d74cd30296b12b7eb",
           "InstalledFiles": [
@@ -2294,7 +2278,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:d734fe1c8636cd7c3648a19c9f19d092bcc435c8",
           "InstalledFiles": [
@@ -2327,7 +2311,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:a4f280f992c6c57678fda6eb302fff59f6492b52",
           "InstalledFiles": [
@@ -2357,7 +2341,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:d1c3dd7c2cd3fe9939c3093e4f362d47702b70f6",
           "InstalledFiles": [
@@ -2438,7 +2422,7 @@
           ],
           "Maintainer": "Natanael Copa \u003cncopa@alpinelinux.org\u003e",
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:fea2cc088f02df2feb5da718e70123647f0ef8f7",
           "InstalledFiles": [
@@ -2504,7 +2488,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:25feb492160beba9dd4bea4a169a65fd2eccc493",
           "InstalledFiles": [
@@ -2513,16 +2497,16 @@
           ]
         },
         {
-          "ID": "nginx@1.29.2-r1",
+          "ID": "nginx@1.29.3-r1",
           "Name": "nginx",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/nginx@1.29.2-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "7d3465b640667c8f"
+            "PURL": "pkg:apk/alpine/nginx@1.29.3-r1?arch=x86_64\u0026distro=3.22.2",
+            "UID": "5ce6f0a4683e36e5"
           },
-          "Version": "1.29.2-r1",
+          "Version": "1.29.3-r1",
           "Arch": "x86_64",
           "SrcName": "nginx",
-          "SrcVersion": "1.29.2-r1",
+          "SrcVersion": "1.29.3-r1",
           "Licenses": [
             "2-clause",
             "BSD-3-Clause",
@@ -2534,13 +2518,13 @@
             "libcrypto3@3.5.4-r0",
             "libssl3@3.5.4-r0",
             "musl@1.2.5-r10",
-            "pcre2@10.43-r1",
+            "pcre2@10.46-r0",
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+            "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
           },
-          "Digest": "sha1:72d42aa8dd42653a5544d3f09e97a3c67bc23485",
+          "Digest": "sha1:41e9fb63f3074db21f508c49137dc2c3e7f95009",
           "InstalledFiles": [
             "etc/init.d/nginx",
             "etc/init.d/nginx-debug",
@@ -2562,16 +2546,16 @@
           ]
         },
         {
-          "ID": "nginx-module-geoip@1.29.2-r1",
+          "ID": "nginx-module-geoip@1.29.3-r1",
           "Name": "nginx-module-geoip",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/nginx-module-geoip@1.29.2-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "2772522add4a8f08"
+            "PURL": "pkg:apk/alpine/nginx-module-geoip@1.29.3-r1?arch=x86_64\u0026distro=3.22.2",
+            "UID": "3000d42afd3ea223"
           },
-          "Version": "1.29.2-r1",
+          "Version": "1.29.3-r1",
           "Arch": "x86_64",
           "SrcName": "nginx-module-geoip",
-          "SrcVersion": "1.29.2-r1",
+          "SrcVersion": "1.29.3-r1",
           "Licenses": [
             "2-clause",
             "BSD-3-Clause",
@@ -2582,12 +2566,12 @@
             "busybox-binsh@1.37.0-r19",
             "geoip@1.6.12-r6",
             "musl@1.2.5-r10",
-            "nginx@1.29.2-r1"
+            "nginx@1.29.3-r1"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
-          "Digest": "sha1:f5780108848ab518039c160288163ad9a2cdfaff",
+          "Digest": "sha1:be8b54a175fc78bf98ee82795078d848162c9e05",
           "InstalledFiles": [
             "usr/lib/nginx/modules/ngx_http_geoip_module-debug.so",
             "usr/lib/nginx/modules/ngx_http_geoip_module.so",
@@ -2597,16 +2581,16 @@
           ]
         },
         {
-          "ID": "nginx-module-image-filter@1.29.2-r1",
+          "ID": "nginx-module-image-filter@1.29.3-r1",
           "Name": "nginx-module-image-filter",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/nginx-module-image-filter@1.29.2-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "8137084a32e48362"
+            "PURL": "pkg:apk/alpine/nginx-module-image-filter@1.29.3-r1?arch=x86_64\u0026distro=3.22.2",
+            "UID": "1ec37a3f3756d65f"
           },
-          "Version": "1.29.2-r1",
+          "Version": "1.29.3-r1",
           "Arch": "x86_64",
           "SrcName": "nginx-module-image-filter",
-          "SrcVersion": "1.29.2-r1",
+          "SrcVersion": "1.29.3-r1",
           "Licenses": [
             "2-clause",
             "BSD-3-Clause",
@@ -2617,12 +2601,12 @@
             "busybox-binsh@1.37.0-r19",
             "libgd@2.3.3-r10",
             "musl@1.2.5-r10",
-            "nginx@1.29.2-r1"
+            "nginx@1.29.3-r1"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
-          "Digest": "sha1:793f57fcac2232a6c92876686561a3f6d17a7905",
+          "Digest": "sha1:7464728cf5e994b391bffc0034903d6451231267",
           "InstalledFiles": [
             "usr/lib/nginx/modules/ngx_http_image_filter_module-debug.so",
             "usr/lib/nginx/modules/ngx_http_image_filter_module.so",
@@ -2630,16 +2614,16 @@
           ]
         },
         {
-          "ID": "nginx-module-njs@1.29.2.0.9.3-r1",
+          "ID": "nginx-module-njs@1.29.3.0.9.4-r1",
           "Name": "nginx-module-njs",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/nginx-module-njs@1.29.2.0.9.3-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "a9caa615c6d76a74"
+            "PURL": "pkg:apk/alpine/nginx-module-njs@1.29.3.0.9.4-r1?arch=x86_64\u0026distro=3.22.2",
+            "UID": "58a053ab9ce68bc"
           },
-          "Version": "1.29.2.0.9.3-r1",
+          "Version": "1.29.3.0.9.4-r1",
           "Arch": "x86_64",
           "SrcName": "nginx-module-njs",
-          "SrcVersion": "1.29.2.0.9.3-r1",
+          "SrcVersion": "1.29.3.0.9.4-r1",
           "Licenses": [
             "2-clause",
             "BSD-3-Clause",
@@ -2652,14 +2636,14 @@
             "libedit@20250104.3.1-r1",
             "libxml2@2.13.9-r0",
             "musl@1.2.5-r10",
-            "nginx@1.29.2-r1",
-            "pcre2@10.43-r1",
+            "nginx@1.29.3-r1",
+            "pcre2@10.46-r0",
             "zlib@1.3.1-r2"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
-          "Digest": "sha1:8caa825397548c218e9c42b819ea0d6d858d003f",
+          "Digest": "sha1:8ede82717ad1e1fa6086e9f1621224078d1f1b1b",
           "InstalledFiles": [
             "usr/bin/njs",
             "usr/lib/nginx/modules/ngx_http_js_module-debug.so",
@@ -2671,16 +2655,16 @@
           ]
         },
         {
-          "ID": "nginx-module-xslt@1.29.2-r1",
+          "ID": "nginx-module-xslt@1.29.3-r1",
           "Name": "nginx-module-xslt",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/nginx-module-xslt@1.29.2-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "b2c7d25ecd838df"
+            "PURL": "pkg:apk/alpine/nginx-module-xslt@1.29.3-r1?arch=x86_64\u0026distro=3.22.2",
+            "UID": "c0dcf4148e1255b5"
           },
-          "Version": "1.29.2-r1",
+          "Version": "1.29.3-r1",
           "Arch": "x86_64",
           "SrcName": "nginx-module-xslt",
-          "SrcVersion": "1.29.2-r1",
+          "SrcVersion": "1.29.3-r1",
           "Licenses": [
             "2-clause",
             "BSD-3-Clause",
@@ -2692,12 +2676,12 @@
             "libxml2@2.13.9-r0",
             "libxslt@1.1.43-r3",
             "musl@1.2.5-r10",
-            "nginx@1.29.2-r1"
+            "nginx@1.29.3-r1"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
-          "Digest": "sha1:dc34193c5f20c6fe17c6af2b1f42165a2c63d637",
+          "Digest": "sha1:080f896e54556ee0221cfd6ff86a637246c13bfb",
           "InstalledFiles": [
             "usr/lib/nginx/modules/ngx_http_xslt_filter_module-debug.so",
             "usr/lib/nginx/modules/ngx_http_xslt_filter_module.so",
@@ -2705,16 +2689,16 @@
           ]
         },
         {
-          "ID": "pcre2@10.43-r1",
+          "ID": "pcre2@10.46-r0",
           "Name": "pcre2",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/pcre2@10.43-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "8520896ebdb68699"
+            "PURL": "pkg:apk/alpine/pcre2@10.46-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "e457112c42035fbf"
           },
-          "Version": "10.43-r1",
+          "Version": "10.46-r0",
           "Arch": "x86_64",
           "SrcName": "pcre2",
-          "SrcVersion": "10.43-r1",
+          "SrcVersion": "10.46-r0",
           "Licenses": [
             "BSD-3-Clause"
           ],
@@ -2723,14 +2707,14 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+            "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
           },
-          "Digest": "sha1:b3ef6da02d09ea70001e9770b314b6adf3586c7a",
+          "Digest": "sha1:8237724bdc50c57c16e64eb0d522d85abc500d10",
           "InstalledFiles": [
             "usr/lib/libpcre2-8.so.0",
-            "usr/lib/libpcre2-8.so.0.12.0",
+            "usr/lib/libpcre2-8.so.0.14.0",
             "usr/lib/libpcre2-posix.so.3",
-            "usr/lib/libpcre2-posix.so.3.0.5"
+            "usr/lib/libpcre2-posix.so.3.0.6"
           ]
         },
         {
@@ -2810,7 +2794,7 @@
             "zstd-libs@1.5.7-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:959de72ef2d15a017f24e729e4dba2199b82d735",
           "InstalledFiles": [
@@ -2834,7 +2818,7 @@
           ],
           "Maintainer": "Natanael Copa \u003cncopa@alpinelinux.org\u003e",
           "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
+            "DiffID": "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc"
           },
           "Digest": "sha1:182532a94e272a7ae1d262249729c8bcbb10891d",
           "InstalledFiles": [
@@ -3465,7 +3449,7 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:fdcdb7d0dc44dd546165ae313122b01d6a20f931",
           "InstalledFiles": [
@@ -3520,71 +3504,13 @@
             "musl@1.2.5-r10"
           ],
           "Layer": {
-            "DiffID": "sha256:e9a26559275da161c8178875c4f23d4b16b02f3f22949e8a3630d25d73f8362e"
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
           },
           "Digest": "sha1:50c83112b5619f48d36d69190a4cb7c71f15c7d2",
           "InstalledFiles": [
             "usr/lib/libzstd.so.1",
             "usr/lib/libzstd.so.1.5.7"
           ]
-        }
-      ],
-      "Vulnerabilities": [
-        {
-          "VulnerabilityID": "CVE-2025-58050",
-          "PkgID": "pcre2@10.43-r1",
-          "PkgName": "pcre2",
-          "PkgIdentifier": {
-            "PURL": "pkg:apk/alpine/pcre2@10.43-r1?arch=x86_64\u0026distro=3.22.2",
-            "UID": "8520896ebdb68699"
-          },
-          "InstalledVersion": "10.43-r1",
-          "FixedVersion": "10.46-r0",
-          "Status": "fixed",
-          "Layer": {
-            "DiffID": "sha256:1967fccdbe5ecc2a4a26c981e4e8acb1b502bdf4f857a3873055be24c206250a"
-          },
-          "SeveritySource": "nvd",
-          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-58050",
-          "DataSource": {
-            "ID": "alpine",
-            "Name": "Alpine Secdb",
-            "URL": "https://secdb.alpinelinux.org/"
-          },
-          "Title": "pcre2: PCRE2: heap-buffer-overflow read in match_ref due to missing boundary restoration in SCS",
-          "Description": "The PCRE2 library is a set of C functions that implement regular expression pattern matching. In version 10.45, a heap-buffer-overflow read vulnerability exists in the PCRE2 regular expression matching engine, specifically within the handling of the (*scs:...) (Scan SubString) verb when combined with (*ACCEPT) in src/pcre2_match.c. This vulnerability may potentially lead to information disclosure if the out-of-bounds data read during the memcmp affects the final match result in a way observable by the attacker. This issue has been resolved in version 10.46.",
-          "Severity": "CRITICAL",
-          "CweIDs": [
-            "CWE-122",
-            "CWE-125",
-            "CWE-787"
-          ],
-          "VendorSeverity": {
-            "nvd": 4,
-            "redhat": 2,
-            "ubuntu": 2
-          },
-          "CVSS": {
-            "nvd": {
-              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:H",
-              "V3Score": 9.1
-            },
-            "redhat": {
-              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:L",
-              "V3Score": 6.5
-            }
-          },
-          "References": [
-            "https://access.redhat.com/security/cve/CVE-2025-58050",
-            "https://github.com/PCRE2Project/pcre2/commit/a141712e5967d448c7ce13090ab530c8e3d82254",
-            "https://github.com/PCRE2Project/pcre2/releases/tag/pcre2-10.46",
-            "https://github.com/PCRE2Project/pcre2/security/advisories/GHSA-c2gv-xgf5-5cc2",
-            "https://nvd.nist.gov/vuln/detail/CVE-2025-58050",
-            "https://ubuntu.com/security/notices/USN-7777-1",
-            "https://www.cve.org/CVERecord?id=CVE-2025-58050"
-          ],
-          "PublishedDate": "2025-08-27T19:15:37.56Z",
-          "LastModifiedDate": "2025-09-09T15:27:39.573Z"
         }
       ]
     }
