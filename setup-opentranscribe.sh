@@ -1286,25 +1286,45 @@ download_ai_models() {
         echo ""
         return 0
     else
-        print_warning "⚠️  Model download encountered errors or was incomplete"
+        print_error "⚠️  ⚠️  CRITICAL: Model download failed"
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  WITHOUT PYANNOTE MODELS, TRANSCRIPTION WILL NOT WORK!           ║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
         echo ""
         echo -e "${YELLOW}What this means:${NC}"
-        echo "  • Setup will continue - this is NOT a critical failure"
-        echo "  • Models will download automatically when you first run the application"
-        echo "  • First transcription will take longer (10-30 minutes for initial download)"
+        echo -e "  ${RED}• The transcription pipeline REQUIRES speaker diarization models${NC}"
+        echo -e "  ${RED}• Without PyAnnote models, ALL transcriptions will FAIL${NC}"
+        echo "  • Models will auto-download on first use (10-30 minute delay)"
+        echo "  • First transcription attempt may fail if models can't download"
         echo ""
-        echo -e "${YELLOW}To retry model download later:${NC}"
-        echo "  cd $PROJECT_DIR && bash scripts/download-models.sh models"
+        echo -e "${YELLOW}Most common cause: Missing gated model access${NC}"
+        echo "  You likely have NOT accepted BOTH PyAnnote model agreements"
+        echo ""
+        echo -e "${CYAN}To fix before starting:${NC}"
+        echo "  1. Accept both model agreements (URLs shown above)"
+        echo "  2. Wait 1-2 minutes for permissions to propagate"
+        echo "  3. Run: cd $PROJECT_DIR && bash scripts/download-models.sh models"
+        echo ""
+        echo -e "${YELLOW}Or continue and fix later:${NC}"
+        echo "  • Models will download when you first transcribe a file"
+        echo "  • Ensure you've accepted model agreements before first use"
         echo ""
 
-        # Ask if user wants to continue or abort
-        read -p "Continue with setup anyway? (Y/n): " continue_choice </dev/tty
-        if [[ $continue_choice =~ ^[Nn]$ ]]; then
-            print_error "Setup aborted by user"
+        # Ask if user wants to continue or abort with default to NO
+        read -p "Continue setup WITHOUT models? (y/N): " continue_choice </dev/tty
+        if [[ ! $continue_choice =~ ^[Yy]$ ]]; then
+            print_error "Setup aborted - please fix model access and run setup again"
+            echo ""
+            echo "Quick fix steps:"
+            echo "  1. Accept: https://huggingface.co/pyannote/segmentation-3.0"
+            echo "  2. Accept: https://huggingface.co/pyannote/speaker-diarization-3.1"
+            echo "  3. Wait 1-2 minutes"
+            echo "  4. Run setup again"
             exit 1
         fi
 
-        print_info "Continuing setup without pre-downloaded models..."
+        print_warning "⚠️  Continuing WITHOUT models - transcription will not work until models download"
         echo ""
         return 0  # Return success to allow setup to continue
     fi
