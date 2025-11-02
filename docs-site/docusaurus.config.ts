@@ -89,12 +89,13 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
-        {
-          type: 'docSidebar',
-          sidebarId: 'apiSidebar',
-          position: 'left',
-          label: 'API Reference',
-        },
+        // TODO: Uncomment when API pages are created
+        // {
+        //   type: 'docSidebar',
+        //   sidebarId: 'apiSidebar',
+        //   position: 'left',
+        //   label: 'API Reference',
+        // },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/davidamacey/OpenTranscribe',
@@ -118,13 +119,18 @@ const config: Config = {
               to: '/docs/installation/docker-compose',
             },
             {
-              label: 'User Guide',
-              to: '/docs/user-guide/uploading-files',
+              label: 'FAQ',
+              to: '/docs/faq',
             },
-            {
-              label: 'API Reference',
-              to: '/docs/api/authentication',
-            },
+            // TODO: Add when pages are created
+            // {
+            //   label: 'User Guide',
+            //   to: '/docs/user-guide/uploading-files',
+            // },
+            // {
+            //   label: 'API Reference',
+            //   to: '/docs/api/authentication',
+            // },
           ],
         },
         {
@@ -139,9 +145,14 @@ const config: Config = {
               href: 'https://github.com/davidamacey/OpenTranscribe/issues',
             },
             {
-              label: 'Contributing',
-              to: '/docs/developer-guide/contributing',
+              label: 'GitHub Repository',
+              href: 'https://github.com/davidamacey/OpenTranscribe',
             },
+            // TODO: Add when page is created
+            // {
+            //   label: 'Contributing',
+            //   to: '/docs/developer-guide/contributing',
+            // },
           ],
         },
         {
