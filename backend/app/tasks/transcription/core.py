@@ -377,6 +377,35 @@ def transcribe_audio_task(self, file_uuid: str):
                     "segments": len(processed_segments),
                 }
 
+            except PermissionError as e:
+                # Handle HuggingFace gated model access errors specifically
+                logger.error(f"PyAnnote model access error: {str(e)}")
+
+                error_message = str(e)
+
+                # Store detailed error for user
+                with session_scope() as db:
+                    update_task_status(
+                        db,
+                        task_id,
+                        "failed",
+                        error_message=error_message,
+                        completed=True,
+                    )
+                    update_media_file_status(db, file_id, FileStatus.ERROR)
+                    # Store the specific error for user guidance
+                    media_file = get_refreshed_object(db, MediaFile, file_id)
+                    if media_file:
+                        media_file.last_error_message = error_message
+                        db.commit()
+
+                send_error_notification(user_id, file_id, error_message)
+                return {
+                    "status": "error",
+                    "message": error_message,
+                    "error_type": "gated_model_access",
+                }
+
             except Exception as e:
                 logger.error(f"Error in WhisperX processing: {str(e)}")
 
@@ -417,6 +446,11 @@ def transcribe_audio_task(self, file_uuid: str):
                         completed=True,
                     )
                     update_media_file_status(db, file_id, FileStatus.ERROR)
+                    # Store the specific error for user guidance
+                    media_file = get_refreshed_object(db, MediaFile, file_id)
+                    if media_file:
+                        media_file.last_error_message = error_message
+                        db.commit()
 
                 send_error_notification(user_id, file_id, error_message)
                 return {"status": "error", "message": error_message}

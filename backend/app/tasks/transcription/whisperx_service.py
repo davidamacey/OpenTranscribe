@@ -229,6 +229,7 @@ class WhisperXService:
 
         Raises:
             RuntimeError: If cuDNN library compatibility issues occur
+            PermissionError: If HuggingFace token doesn't have access to gated PyAnnote models
             ImportError: If WhisperX is not installed
         """
         try:
@@ -263,6 +264,44 @@ class WhisperXService:
 
         except Exception as e:
             error_msg = str(e)
+
+            # Detect HuggingFace gated model access errors (same checks as download scripts)
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                logger.error(f"HuggingFace authentication error: {error_msg}")
+                raise PermissionError(
+                    "Cannot access PyAnnote speaker diarization models. "
+                    "Your HuggingFace token does not have access to the required gated models. "
+                    "You must accept BOTH model agreements on HuggingFace: "
+                    "pyannote/segmentation-3.0 (https://huggingface.co/pyannote/segmentation-3.0) and "
+                    "pyannote/speaker-diarization-3.1 (https://huggingface.co/pyannote/speaker-diarization-3.1). "
+                    "After accepting both agreements, wait 1-2 minutes for permissions to propagate, "
+                    "restart the application containers, and re-upload your file for transcription."
+                ) from e
+
+            # Detect 403 Forbidden errors
+            if "403" in error_msg or "forbidden" in error_msg.lower():
+                logger.error(f"HuggingFace permission error: {error_msg}")
+                raise PermissionError(
+                    "Access forbidden to PyAnnote models. "
+                    "Your HuggingFace token may not have the required Read permissions, "
+                    "or you have not accepted the gated model agreements. "
+                    "Please verify your token has Read permissions at https://huggingface.co/settings/tokens "
+                    "and accept both model agreements: pyannote/segmentation-3.0 and pyannote/speaker-diarization-3.1."
+                ) from e
+
+            # Detect generic Hub errors that indicate missing model access
+            if (
+                "cannot find the requested files" in error_msg.lower()
+                or "locate the file on the hub" in error_msg.lower()
+            ):
+                logger.error(f"HuggingFace model access error: {error_msg}")
+                raise PermissionError(
+                    "Cannot download PyAnnote models from HuggingFace. "
+                    "This usually means you have not accepted the gated model agreements. "
+                    "Please accept both model agreements at https://huggingface.co/pyannote/segmentation-3.0 "
+                    "and https://huggingface.co/pyannote/speaker-diarization-3.1, "
+                    "wait 1-2 minutes for permissions to propagate, then restart the application and try again."
+                ) from e
 
             # Detect cuDNN library compatibility issues
             if "libcudnn" in error_msg.lower():
