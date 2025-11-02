@@ -644,21 +644,36 @@ create_production_env_example() {
 
 prompt_huggingface_token() {
     echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
-    echo "================================================="
-    echo -e "${RED}⚠️  IMPORTANT: A HuggingFace token is REQUIRED for speaker diarization!${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${RED}⚠️  IMPORTANT: Token + Model Agreements REQUIRED!${NC}"
     echo ""
     echo "Without this token:"
     echo "  • Transcription will work normally"
     echo "  • Speaker diarization (who said what) will NOT work"
     echo "  • Models cannot be pre-downloaded (will download on first use)"
     echo ""
-    echo "To get your FREE token:"
+    echo -e "${CYAN}Step 1: Get your FREE HuggingFace token${NC}"
     echo "  1. Visit: https://huggingface.co/settings/tokens"
     echo "  2. Click 'New token'"
     echo "  3. Give it a name (e.g., 'OpenTranscribe')"
     echo "  4. Select 'Read' permissions"
     echo "  5. Copy the token"
+    echo ""
+    echo -e "${CYAN}Step 2: Accept BOTH gated model agreements (CRITICAL!)${NC}"
+    echo -e "  ${RED}You MUST accept BOTH models or downloads will fail!${NC}"
+    echo ""
+    echo "  1. Segmentation Model:"
+    echo "     https://huggingface.co/pyannote/segmentation-3.0"
+    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo "  2. Speaker Diarization Model:"
+    echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
     # Ask if they want to enter token now
@@ -1125,6 +1140,14 @@ download_ai_models() {
         echo ""
         echo "Without a token, speaker diarization will not work and models cannot be pre-downloaded."
         echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${RED}REMINDER: You need BOTH steps completed:${NC}"
+        echo "  1. HuggingFace token (Read permissions)"
+        echo "  2. Accept BOTH gated model agreements:"
+        echo "     • https://huggingface.co/pyannote/segmentation-3.0"
+        echo "     • https://huggingface.co/pyannote/speaker-diarization-3.1"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
         read -p "Would you like to enter your HuggingFace token now? (y/N) " -n 1 -r </dev/tty
         echo
         echo
@@ -1146,6 +1169,10 @@ download_ai_models() {
 
                 if [[ "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
                     print_success "HuggingFace token configured and saved to .env!"
+                    echo ""
+                    echo -e "${YELLOW}⚠️  FINAL REMINDER:${NC} Ensure you accepted BOTH model agreements:"
+                    echo "   • pyannote/segmentation-3.0"
+                    echo "   • pyannote/speaker-diarization-3.1"
                     echo ""
                 else
                     print_warning "Token doesn't start with 'hf_' - this may not be valid"

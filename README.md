@@ -199,7 +199,16 @@ Then follow the on-screen instructions. The setup script will:
 - **Automatically download and cache AI models (~2.5GB)** if token is provided
 - Set up the management script (`opentranscribe.sh`)
 
-**Note:** The script will prompt you for your HuggingFace token during setup. If you provide it, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
+**⚠️ IMPORTANT - HuggingFace Setup:**
+The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**
+
+1. **Get a FREE token:** Visit [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. **Accept BOTH gated model agreements** (required for speaker diarization):
+   - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0) - Click "Agree and access repository"
+   - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1) - Click "Agree and access repository"
+3. **Enter your token** when prompted by the installer
+
+If you provide a valid token with both model agreements accepted, AI models will be downloaded and cached before Docker starts, ensuring the app is ready to use immediately. If you skip this step, models will download on first use (10-30 minute delay).
 
 Once setup is complete, start OpenTranscribe with:
 
@@ -618,10 +627,19 @@ OpenTranscribe requires a HuggingFace token for speaker diarization and voice fi
 2. Click "New token" and select "Read" access
 3. Copy the generated token
 
-#### **2. Accept Model User Agreements**
-You must accept the user agreements for these models:
-- [Segmentation Model](https://huggingface.co/pyannote/segmentation-3.0) - Click "Agree and access repository"
-- [Speaker Diarization Model](https://huggingface.co/pyannote/speaker-diarization-3.1) - Click "Agree and access repository"
+#### **2. Accept Model User Agreements** ⚠️ **CRITICAL - MUST ACCEPT BOTH!**
+
+**You MUST accept the user agreements for BOTH PyAnnote models or speaker diarization will fail:**
+
+1. **Segmentation Model** (Required):
+   - Visit: [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+   - Click: **"Agree and access repository"**
+
+2. **Speaker Diarization Model** (Required):
+   - Visit: [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+   - Click: **"Agree and access repository"**
+
+> **⚠️ Common Issue:** If you only accept one model agreement, downloads will fail with `'NoneType' object has no attribute 'eval'` error. You MUST accept BOTH agreements.
 
 #### **3. Configure Token**
 Add your token to the environment configuration:

@@ -77,6 +77,104 @@ def download_whisperx_models():
         print_error(f"Failed to download WhisperX models: {e}")
         return {"whisperx": {"status": "failed", "error": str(e)}}
 
+def validate_gated_model_access():
+    """Validate access to gated PyAnnote models before attempting download"""
+    print_info("Validating access to gated PyAnnote models...")
+    print_info("")
+
+    try:
+        from huggingface_hub import HfApi
+
+        hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+        if not hf_token:
+            return False, "No HuggingFace token provided"
+
+        # List of REQUIRED gated models
+        gated_models = [
+            "pyannote/segmentation-3.0",
+            "pyannote/speaker-diarization-3.1"
+        ]
+
+        api = HfApi()
+        inaccessible_models = []
+        access_errors = {}
+
+        for model_id in gated_models:
+            try:
+                # Try to get model info - this will fail if user hasn't accepted the license
+                model_info = api.model_info(model_id, token=hf_token)
+                print_success(f"  ✓ Access confirmed: {model_id}")
+            except Exception as e:
+                error_msg = str(e)
+                inaccessible_models.append(model_id)
+                access_errors[model_id] = error_msg
+
+                # Determine error type
+                if "401" in error_msg or "Unauthorized" in error_msg:
+                    print_error(f"  ✗ Access DENIED (401 Unauthorized): {model_id}")
+                    print_error(f"     You have NOT accepted the model agreement!")
+                elif "403" in error_msg or "Forbidden" in error_msg:
+                    print_error(f"  ✗ Access DENIED (403 Forbidden): {model_id}")
+                    print_error(f"     Token may not have required permissions")
+                else:
+                    print_error(f"  ✗ Cannot access: {model_id}")
+                    print_error(f"     Error: {error_msg[:80]}")
+
+        print_info("")
+
+        if inaccessible_models:
+            error_msg = f"Cannot access {len(inaccessible_models)} required gated model(s)"
+            print_error("VALIDATION FAILED: Missing gated model access!")
+            return False, (error_msg, access_errors)
+
+        print_success("✅ All required gated models are accessible!")
+        print_info("")
+        return True, None
+
+    except ImportError:
+        # huggingface_hub might not be available, skip validation but warn
+        print_info("  ⚠️  Skipping gated model validation (huggingface_hub not available)")
+        print_info("  This is not recommended - validation may fail during download")
+        print_info("")
+        return True, None
+    except Exception as e:
+        # Unexpected error during validation - don't block but warn strongly
+        print_error(f"  ⚠️  Could not validate gated models: {e}")
+        print_info("  Proceeding anyway, but download may fail...")
+        print_info("")
+        return True, None
+
+def validate_pyannote_download():
+    """Validate that all expected PyAnnote models were downloaded to the torch cache"""
+    torch_cache = Path.home() / ".cache" / "torch" / "pyannote"
+
+    # Expected PyAnnote model directories
+    expected_models = {
+        "segmentation-3.0": "models--pyannote--segmentation-3.0",
+        "speaker-diarization-3.1": "models--pyannote--speaker-diarization-3.1",
+        "wespeaker-voxceleb": "models--pyannote--wespeaker-voxceleb-resnet34-LM"
+    }
+
+    validation_result = {
+        "all_present": True,
+        "models": {}
+    }
+
+    if not torch_cache.exists():
+        validation_result["all_present"] = False
+        for model_name in expected_models.keys():
+            validation_result["models"][model_name] = False
+        return validation_result
+
+    for model_name, model_dir in expected_models.items():
+        model_path = torch_cache / model_dir
+        is_present = model_path.exists() and model_path.is_dir()
+        validation_result["models"][model_name] = is_present
+        if not is_present:
+            validation_result["all_present"] = False
+
+    return validation_result
+
 def download_pyannote_models():
     """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
     print_header("Downloading PyAnnote Models")
@@ -89,7 +187,54 @@ def download_pyannote_models():
         hf_token = os.environ.get("HUGGINGFACE_TOKEN")
         if not hf_token:
             print_error("HUGGINGFACE_TOKEN not set!")
+            print_error("")
+            print_error("A HuggingFace token is REQUIRED for speaker diarization models.")
+            print_error("")
+            print_error("To get your FREE token:")
+            print_error("  1. Visit: https://huggingface.co/settings/tokens")
+            print_error("  2. Click 'New token' and select 'Read' permissions")
+            print_error("  3. Copy the token")
+            print_error("")
+            print_error("Then set it as an environment variable:")
+            print_error("  export HUGGINGFACE_TOKEN=your_token_here")
             return {"pyannote": {"status": "failed", "error": "No HuggingFace token"}}
+
+        # Validate access to gated models BEFORE attempting download
+        has_access, access_result = validate_gated_model_access()
+        if not has_access:
+            print_error("")
+            print_error("=" * 80)
+            print_error("❌ GATED MODEL ACCESS DENIED - DOWNLOAD CANNOT PROCEED")
+            print_error("=" * 80)
+            print_error("")
+            print_error("⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO REQUIRED PYANNOTE MODELS")
+            print_error("")
+            print_error("This means you have NOT accepted the model user agreements.")
+            print_error("")
+            print_error("╔════════════════════════════════════════════════════════════════════╗")
+            print_error("║  REQUIRED ACTION: Accept BOTH model agreements on HuggingFace      ║")
+            print_error("╚════════════════════════════════════════════════════════════════════╝")
+            print_error("")
+            print_error("Step 1: Visit the Segmentation Model page")
+            print_error("   URL: https://huggingface.co/pyannote/segmentation-3.0")
+            print_error("   → Look for the 'Agree and access repository' button")
+            print_error("   → Click it to accept the terms")
+            print_error("")
+            print_error("Step 2: Visit the Speaker Diarization Model page")
+            print_error("   URL: https://huggingface.co/pyannote/speaker-diarization-3.1")
+            print_error("   → Look for the 'Agree and access repository' button")
+            print_error("   → Click it to accept the terms")
+            print_error("")
+            print_error("Step 3: Wait 1-2 minutes for permissions to propagate")
+            print_error("")
+            print_error("Step 4: Run this script again:")
+            print_error("   bash scripts/download-models.sh models")
+            print_error("")
+            print_error("=" * 80)
+            print_error("")
+
+            error_msg = access_result[0] if isinstance(access_result, tuple) else access_result
+            return {"pyannote": {"status": "failed", "error": error_msg}}
 
         # Use default paths (same as backend) - let WhisperX/PyAnnote handle caching
         print_info("Using WhisperX full pipeline (same as backend) to download all models")
@@ -182,15 +327,64 @@ def download_pyannote_models():
         del audio
         torch.cuda.empty_cache() if device == "cuda" else None
 
+        # Validate that all expected PyAnnote models were downloaded
+        validation_result = validate_pyannote_download()
+        if not validation_result["all_present"]:
+            print_error("")
+            print_error("=" * 70)
+            print_error("WARNING: Some PyAnnote models may not have downloaded completely")
+            print_error("=" * 70)
+            print_error("")
+            print_error("Expected models:")
+            for model_name, present in validation_result["models"].items():
+                status = "✓ Found" if present else "✗ Missing"
+                print_error(f"  {status}: {model_name}")
+            print_error("")
+            print_error("If you encounter errors during transcription:")
+            print_error("  1. Verify you accepted BOTH gated model agreements")
+            print_error("  2. Run this script again to re-download models")
+            print_error("")
+
         return {
             "pyannote": {
                 "model": "pyannote/speaker-diarization-3.1",
-                "status": "downloaded"
+                "status": "downloaded",
+                "validation": validation_result
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download PyAnnote models: {e}")
+        error_msg = str(e)
+        print_error(f"Failed to download PyAnnote models: {error_msg}")
+
+        # Check if this looks like a gated model access error
+        if "cannot find the requested files" in error_msg.lower() or \
+           "locate the file on the hub" in error_msg.lower() or \
+           "403" in error_msg or \
+           "401" in error_msg:
+            print_error("")
+            print_error("=" * 70)
+            print_error("⚠️  THIS LOOKS LIKE A GATED MODEL ACCESS ERROR!")
+            print_error("=" * 70)
+            print_error("")
+            print_error("This error usually means you haven't accepted the model agreements.")
+            print_error("")
+            print_error("You MUST accept BOTH PyAnnote gated model agreements:")
+            print_error("")
+            print_error("  1. Segmentation Model:")
+            print_error("     https://huggingface.co/pyannote/segmentation-3.0")
+            print_error("     → Click 'Agree and access repository'")
+            print_error("")
+            print_error("  2. Speaker Diarization Model:")
+            print_error("     https://huggingface.co/pyannote/speaker-diarization-3.1")
+            print_error("     → Click 'Agree and access repository'")
+            print_error("")
+            print_error("After accepting BOTH agreements:")
+            print_error("  • Wait 1-2 minutes for permissions to propagate")
+            print_error("  • Run this script again: bash scripts/download-models.sh models")
+            print_error("")
+            print_error("=" * 70)
+
         return {"pyannote": {"status": "failed", "error": str(e)}}
 
 def download_alignment_models():

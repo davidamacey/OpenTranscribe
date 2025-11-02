@@ -98,18 +98,33 @@ check_huggingface_token() {
 
     print_error "HUGGINGFACE_TOKEN not found!"
     echo ""
-    echo -e "${YELLOW}A HuggingFace token is required to download speaker diarization models.${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}  HUGGINGFACE TOKEN REQUIRED FOR SPEAKER DIARIZATION${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "To get your FREE token:"
-    echo "1. Go to: https://huggingface.co/settings/tokens"
-    echo "2. Click 'New token'"
-    echo "3. Give it a name (e.g., 'OpenTranscribe')"
-    echo "4. Select 'Read' permissions"
-    echo "5. Copy the token"
+    echo -e "${CYAN}To download PyAnnote speaker diarization models, you need:${NC}"
     echo ""
-    echo "Then either:"
-    echo "  • Export it: export HUGGINGFACE_TOKEN=your_token_here"
-    echo "  • Add it to .env file: HUGGINGFACE_TOKEN=your_token_here"
+    echo "1. Create a FREE HuggingFace token:"
+    echo "   • Visit: https://huggingface.co/settings/tokens"
+    echo "   • Click 'New token'"
+    echo "   • Give it a name (e.g., 'OpenTranscribe')"
+    echo "   • Select 'Read' permissions"
+    echo "   • Copy the token"
+    echo ""
+    echo -e "${RED}2. Accept BOTH gated model agreements (REQUIRED):${NC}"
+    echo -e "   ${YELLOW}• Segmentation Model:${NC}"
+    echo "     https://huggingface.co/pyannote/segmentation-3.0"
+    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo -e "   ${YELLOW}• Speaker Diarization Model:${NC}"
+    echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo "3. Configure your token:"
+    echo "   • Export it: export HUGGINGFACE_TOKEN=your_token_here"
+    echo "   • Or add to .env file: HUGGINGFACE_TOKEN=your_token_here"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     exit 1
 }
@@ -209,26 +224,65 @@ download_models_docker() {
         torch_size=$(du -sb "$MODEL_CACHE_DIR/torch" 2>/dev/null | cut -f1 || echo "0")
         partial_size=$(get_dir_size "$MODEL_CACHE_DIR")
 
+        # Check if this is likely a gated model access issue
+        # Expected size with all models is ~11GB, partial download ~5-6GB suggests PyAnnote models missing
+        local expected_min_size=10000000000  # 10GB in bytes
+        local has_pyannote_models=false
+
+        if [ -d "$MODEL_CACHE_DIR/torch/pyannote" ]; then
+            # Check if PyAnnote models exist
+            if [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--segmentation-3.0" ] && \
+               [ -d "$MODEL_CACHE_DIR/torch/pyannote/models--pyannote--speaker-diarization-3.1" ]; then
+                has_pyannote_models=true
+            fi
+        fi
+
         if [ "$((hf_size + torch_size))" -gt 1000000 ]; then
             print_warning "Partial download detected ($partial_size)"
             echo "Some models may have been downloaded successfully."
+
+            if [ "$has_pyannote_models" = false ] && [ "$((hf_size + torch_size))" -lt "$expected_min_size" ]; then
+                echo ""
+                echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${RED}⚠️  MISSING PYANNOTE MODELS - LIKELY GATED ACCESS ISSUE!${NC}"
+                echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo ""
+                echo "PyAnnote speaker diarization models were NOT downloaded."
+                echo "This usually means you haven't accepted the model agreements."
+                echo ""
+            fi
+
             echo "Remaining models will be downloaded on first application use."
         else
             print_error "No models were downloaded"
         fi
 
         echo ""
-        echo -e "${YELLOW}Common causes:${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}REQUIRED: Accept BOTH PyAnnote Gated Model Agreements${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo "You MUST accept BOTH of these model agreements on HuggingFace:"
+        echo ""
+        echo "  1. Segmentation Model:"
+        echo "     https://huggingface.co/pyannote/segmentation-3.0"
+        echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+        echo ""
+        echo "  2. Speaker Diarization Model:"
+        echo "     https://huggingface.co/pyannote/speaker-diarization-3.1"
+        echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+        echo ""
+        echo -e "${CYAN}After accepting BOTH agreements:${NC}"
+        echo "  • Wait 1-2 minutes for permissions to propagate"
+        echo "  • Run this script again: bash scripts/download-models.sh models"
+        echo ""
+        echo -e "${YELLOW}Other possible causes:${NC}"
         echo "  • Network connectivity issues"
         echo "  • Docker image not available"
         echo "  • Insufficient disk space"
-        echo "  • Invalid HuggingFace token"
+        echo "  • Invalid HuggingFace token (check it has 'Read' permissions)"
         echo ""
-        echo -e "${YELLOW}Next steps:${NC}"
-        echo "  1. Check your internet connection"
-        echo "  2. Verify HuggingFace token is valid"
-        echo "  3. Try running this script again: bash scripts/download-models.sh models"
-        echo "  4. Or continue setup - models will download automatically on first use"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
 
         return 1
