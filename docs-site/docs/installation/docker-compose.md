@@ -499,7 +499,6 @@ sudo chown -R 1000:1000 ./models
 - **[GPU Setup](./gpu-setup.md)** - Enable GPU acceleration
 - **[Configuration](../configuration/environment-variables.md)** - Customize settings
 - **[Troubleshooting](./troubleshooting.md)** - Resolve common issues
-- **[Production Deployment](../deployment/production.md)** - Deploy to production
 
 ## Getting Help
 

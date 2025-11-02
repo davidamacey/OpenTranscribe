@@ -234,7 +234,6 @@ If you encounter issues:
 
 - **User Guide**: Learn about [all features](../user-guide/uploading-files.md)
 - **Configuration**: Customize [environment variables](../configuration/environment-variables.md)
-- **API**: Explore the [API documentation](../api/authentication.md)
 - **Development**: Learn to [contribute](../developer-guide/contributing.md)
 
 Welcome to OpenTranscribe! 🎉
