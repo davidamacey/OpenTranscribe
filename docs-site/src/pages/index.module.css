@@ -8,6 +8,7 @@
   text-align: center;
   position: relative;
   overflow: hidden;
+  background: linear-gradient(180deg, var(--ifm-color-primary-darker) 0%, var(--ifm-color-primary-dark) 100%);
 }
 
 @media screen and (max-width: 996px) {
@@ -16,8 +17,120 @@
   }
 }
 
+.heroDescription {
+  font-size: 1.2rem;
+  margin: 1.5rem auto;
+  max-width: 800px;
+  color: var(--ifm-hero-text-color);
+  opacity: 0.9;
+}
+
 .buttons {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.quickInstall {
+  margin-top: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.installCommand {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+  margin: 0;
+  max-width: 90%;
+  overflow-x: auto;
+}
+
+.installCommand code {
+  color: #fff;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+/* Stats Section */
+.stats {
+  padding: 4rem 0;
+  background-color: var(--ifm-background-surface-color);
+}
+
+.stat {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.statNumber {
+  font-size: 3rem;
+  font-weight: bold;
+  color: var(--ifm-color-primary);
+  margin-bottom: 0.5rem;
+}
+
+.statLabel {
+  font-size: 1rem;
+  color: var(--ifm-color-emphasis-600);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Demo Section */
+.demo {
+  padding: 4rem 0;
+  background-color: var(--ifm-background-color);
+}
+
+.demoPlaceholder {
+  background: var(--ifm-color-emphasis-100);
+  border: 2px dashed var(--ifm-color-emphasis-300);
+  border-radius: 12px;
+  padding: 4rem 2rem;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.demoPlaceholder p {
+  font-size: 1.2rem;
+  max-width: 600px;
+}
+
+/* CTA Section */
+.cta {
+  padding: 4rem 0;
+  background: linear-gradient(180deg, var(--ifm-color-primary-lightest) 0%, var(--ifm-color-primary-lighter) 100%);
+}
+
+[data-theme='dark'] .cta {
+  background: linear-gradient(180deg, var(--ifm-color-primary-darkest) 0%, var(--ifm-color-primary-darker) 100%);
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+  .statNumber {
+    font-size: 2rem;
+  }
+
+  .heroDescription {
+    font-size: 1rem;
+  }
+
+  .installCommand code {
+    font-size: 0.8rem;
+  }
+
+  .demoPlaceholder {
+    min-height: 300px;
+    padding: 2rem 1rem;
+  }
+
+  .demoPlaceholder p {
+    font-size: 1rem;
+  }
 }
