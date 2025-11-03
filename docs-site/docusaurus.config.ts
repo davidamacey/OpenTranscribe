@@ -15,7 +15,7 @@ const config: Config = {
   },
 
   // Set the production url of your site here
-  url: 'https://docs.opentranscribe.io',
+  url: 'https://opentranscribe.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/',
@@ -72,13 +72,10 @@ const config: Config = {
         alt: 'OpenTranscribe Logo',
         src: 'img/logo.png',
         srcDark: 'img/logo-dark.png',
-        href: 'https://opentranscribe.io',
-        target: '_self',
       },
       items: [
         {
-          type: 'docSidebar',
-          sidebarId: 'docsSidebar',
+          to: '/docs/getting-started/introduction',
           position: 'left',
           label: 'Docs',
         },
