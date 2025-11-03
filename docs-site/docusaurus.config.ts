@@ -72,6 +72,8 @@ const config: Config = {
         alt: 'OpenTranscribe Logo',
         src: 'img/logo.png',
         srcDark: 'img/logo-dark.png',
+        href: 'https://opentranscribe.io',
+        target: '_self',
       },
       items: [
         {

@@ -55,10 +55,10 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Features',
       items: [
+        'features/transcription',
+        'features/speaker-diarization',
         'features/llm-integration',
         // TODO: Add more feature pages
-        // 'features/transcription',
-        // 'features/speaker-diarization',
         // 'features/search',
         // 'features/analytics',
         // 'features/pwa',
