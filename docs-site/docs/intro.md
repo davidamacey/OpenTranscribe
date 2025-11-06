@@ -2,46 +2,120 @@
 sidebar_position: 1
 ---
 
-# Tutorial Intro
+# Welcome to OpenTranscribe
 
-Let's discover **Docusaurus in less than 5 minutes**.
+OpenTranscribe is a powerful, AI-powered transcription and media analysis platform that transforms your audio and video files into searchable, organized, and actionable content.
+
+## Quick Start Workflow
+
+<div style={{textAlign: 'center', margin: '2rem 0'}}>
+  <img src="/img/opentranscribe-workflow.gif" alt="OpenTranscribe Workflow" style={{maxWidth: '100%', width: '800px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'}} />
+  <p style={{marginTop: '1rem', fontStyle: 'italic', color: 'var(--ifm-color-emphasis-600)'}}>
+    Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections
+  </p>
+</div>
+
+## What is OpenTranscribe?
+
+OpenTranscribe is a containerized web application that provides:
+
+- 🎧 **High-Accuracy Transcription** using WhisperX and faster-whisper
+- 👥 **Automatic Speaker Identification** with voice fingerprinting
+- 🤖 **AI-Powered Summarization** with customizable prompts
+- 🔍 **Full-Text & Semantic Search** using OpenSearch 3.3.1
+- 📊 **Speaker Analytics** with talk time and interaction patterns
+- 🎬 **YouTube Integration** for direct video import
+- 🗂️ **Smart Organization** with tags and collections
+
+## Key Features at a Glance
+
+### Upload & Process Media
+
+<img src="/img/screenshots/upload/00-upload-file-drag-drop.png" alt="Drag-and-drop file upload interface" style={{maxWidth: '100%', width: '700px', borderRadius: '4px'}} />
+
+Upload local files via drag-and-drop or import videos directly from YouTube. Supports multiple formats (MP3, WAV, OGG, FLAC, AAC, M4A, MP4, WEBM) and automatic playlist processing for batch operations.
+
+### Interactive Transcripts with Named Speakers
+
+<img src="/img/screenshots/transcript/02-transcript-with-named-speakers-fullscreen.png" alt="Transcript with identified speakers and video playback" style={{maxWidth: '100%', width: '700px', borderRadius: '4px'}} />
+
+View timestamped transcripts with synchronized video playback, waveform visualization, and click-to-seek functionality. Speakers are automatically detected and can be named for easy reference.
+
+### AI-Powered BLUF Summaries
+
+<img src="/img/screenshots/ai-features/02-ai-summary-view-full.png" alt="AI-generated BLUF summary with structured sections" style={{maxWidth: '100%', width: '700px', borderRadius: '4px'}} />
+
+Generate comprehensive BLUF (Bottom Line Up Front) format summaries with Executive Summary, Major Topics, Key Decisions, and Follow-up Items automatically extracted by AI. Searchable and customizable.
+
+### Voice Fingerprinting & Speaker Matching
+
+<img src="/img/screenshots/speakers/06-speaker-voice-similarity-expanded.png" alt="Voice similarity analysis showing speaker matching percentages" style={{maxWidth: '100%', width: '700px', borderRadius: '4px'}} />
+
+Advanced voice fingerprinting technology analyzes speaker similarities across videos. Match speakers with confidence scores and track the same person across multiple recordings.
+
+### Powerful Organization & Search
+
+<img src="/img/screenshots/gallery/01-gallery-filters-expanded-tags-visible.png" alt="Gallery with comprehensive filters and tag management" style={{maxWidth: '100%', width: '700px', borderRadius: '4px'}} />
+
+Filter and search your media library by speaker, tags, collections, date range, and more. AI-suggested tags and collections help organize content automatically.
 
 ## Getting Started
 
-Get started by **creating a new site**.
+Ready to dive in? Start with these guides:
 
-Or **try Docusaurus immediately** with **[docusaurus.new](https://docusaurus.new)**.
+1. **[Installation Guide](./installation)** - Get OpenTranscribe running on your system
+2. **[User Guide](./user-guide)** - Learn how to use all features
+3. **[Screenshots](./screenshots)** - Visual guide to every feature
+4. **[Configuration](./configuration)** - Customize your installation
 
-### What you'll need
+## System Requirements
 
-- [Node.js](https://nodejs.org/en/download/) version 20.0 or above:
-  - When installing Node.js, you are recommended to check all checkboxes related to dependencies.
+### Minimum Requirements
+- **CPU**: 4 cores
+- **RAM**: 8GB
+- **GPU**: Optional (CPU-only mode available)
+- **Storage**: 20GB + space for media files and models (~3GB)
 
-## Generate a new site
+### Recommended for Best Performance
+- **CPU**: 8+ cores
+- **RAM**: 16GB+
+- **GPU**: NVIDIA GPU with 8GB+ VRAM (for fast transcription)
+- **Storage**: 50GB+ SSD
 
-Generate a new Docusaurus site using the **classic template**.
+## Technology Stack
 
-The classic template will automatically be added to your project after you run the command:
+OpenTranscribe is built with modern, open-source technologies:
 
-```bash
-npm init docusaurus@latest my-website classic
-```
+### AI & Machine Learning
+- **WhisperX** - Fast ASR with word-level timestamps
+- **faster-whisper** - High-performance Whisper implementation
+- **pyannote-audio** - Speaker diarization toolkit
 
-You can type this command into Command Prompt, Powershell, Terminal, or any other integrated terminal of your code editor.
+### Backend & Infrastructure
+- **Python** - Programming language
+- **FastAPI** - Modern web framework for APIs
+- **PostgreSQL** - Advanced database system
+- **OpenSearch 3.3.1** - Full-text and vector search (Apache Lucene 10)
 
-The command also installs all necessary dependencies you need to run Docusaurus.
+### Frontend
+- **Svelte** - Cybernetically enhanced web apps
+- **TypeScript** - Typed superset of JavaScript
 
-## Start your site
+### Queue & Task Processing
+- **Celery** - Distributed task queue
+- **Redis** - In-memory data store & message broker
+- **Flower** - Celery monitoring & management tool
 
-Run the development server:
+## Support & Community
 
-```bash
-cd my-website
-npm run start
-```
+- **Documentation**: [docs.opentranscribe.app](https://docs.opentranscribe.app)
+- **GitHub**: [github.com/opentranscribe/transcribe-app](https://github.com/opentranscribe/transcribe-app)
+- **Issues**: Report bugs and request features on GitHub
 
-The `cd` command changes the directory you're working with. In order to work with your newly created Docusaurus site, you'll need to navigate the terminal there.
+## License
 
-The `npm run start` command builds your website locally and serves it through a development server, ready for you to view at http://localhost:3000/.
+OpenTranscribe is open-source software licensed under the MIT License. See [LICENSE](https://github.com/opentranscribe/transcribe-app/blob/master/LICENSE) for details.
 
-Open `docs/intro.md` (this page) and edit some lines: the site **reloads automatically** and displays your changes.
+---
+
+*Ready to get started? Head over to the [Installation Guide](./installation) to set up OpenTranscribe on your system.*

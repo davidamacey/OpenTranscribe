@@ -1,0 +1,838 @@
+{
+  "total_processed": 104,
+  "total_skipped": 0,
+  "screenshots": [
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.43.12.png",
+      "category": "gallery",
+      "filename": "01-gallery-filters-expanded-tags-visible.png",
+      "path": "/img/screenshots/gallery/01-gallery-filters-expanded-tags-visible.png",
+      "description": "Gallery view showing the filters sidebar with expanded tags section, displaying tags like Space, Important, Interview, Meeting, and Personal. Shows single completed Apollo 11 video in the gallery with filters panel open on the left side.",
+      "size_kb": 47.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.43.29.png",
+      "category": "speakers",
+      "filename": "01-speaker-editor-modal-empty-labels.png",
+      "path": "/img/screenshots/speakers/01-speaker-editor-modal-empty-labels.png",
+      "description": "Speaker editor modal showing Edit Speaker Names panel with multiple speakers (SPEAKER_00 through SPEAKER_07) displayed with their default labels. Shows the color legend and Save Speaker Names button at the bottom. Comments & Notes section visible on the left with a comment from Admin User.",
+      "size_kb": 47.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.44.18.png",
+      "category": "transcript",
+      "filename": "01-transcript-view-speaker-editor-open.png",
+      "path": "/img/screenshots/transcript/01-transcript-view-speaker-editor-open.png",
+      "description": "Main transcript view with video player showing Apollo 11 footage, waveform visualization, and transcript panel on the right. Speaker editor panel is open at the bottom showing Edit Speaker Names interface with multiple speakers and color legend.",
+      "size_kb": 93.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.44.27.png",
+      "category": "speakers",
+      "filename": "02-speaker-names-with-historical-figures.png",
+      "path": "/img/screenshots/speakers/02-speaker-names-with-historical-figures.png",
+      "description": "Speaker editor showing speakers assigned with Apollo 11 historical figure names: Michael Collins, John F. Kennedy, Narrator, President Nixon, Ed Aldrin, Buzz Aldrin, and President Johnson. Save Speaker Names button is visible and active.",
+      "size_kb": 67.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.44.36.png",
+      "category": "speakers",
+      "filename": "03-speaker-names-saving-state.png",
+      "path": "/img/screenshots/speakers/03-speaker-names-saving-state.png",
+      "description": "Speaker editor in saving state, showing the 'Saving...' loading indicator on the Save Speaker Names button. Displays the same Apollo 11 speaker names with the saving operation in progress.",
+      "size_kb": 210.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.44.41.png",
+      "category": "transcript",
+      "filename": "02-transcript-with-named-speakers-fullscreen.png",
+      "path": "/img/screenshots/transcript/02-transcript-with-named-speakers-fullscreen.png",
+      "description": "Full transcript view showing video player with Apollo 11 moon footage and transcript entries with properly named speakers (NARRATOR, ED ALDRIN, MICHAEL COLLINS) instead of generic speaker labels. Video is mid-playback at 20:24 of 28:32.",
+      "size_kb": 209.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.44.50.png",
+      "category": "ai-features",
+      "filename": "01-speaker-profile-suggestions-expanded.png",
+      "path": "/img/screenshots/ai-features/01-speaker-profile-suggestions-expanded.png",
+      "description": "Speaker editor showing the Profile badge next to Michael Collins with AI suggestions expanded. Displays '5 suggestions available' with 'Michael Collins' appears in 1 video' dropdown showing AI-powered speaker identification suggestions.",
+      "size_kb": 112.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.00.png",
+      "category": "gallery",
+      "filename": "02-gallery-speakers-filter-populated.png",
+      "path": "/img/screenshots/gallery/02-gallery-speakers-filter-populated.png",
+      "description": "Gallery filters sidebar showing the Speakers section populated with specific speaker names from the Apollo 11 video: Buzz Aldrin, Ed Aldrin, John F. Kennedy, and Michael Collins, each showing '1' occurrence. Date Range filters visible below.",
+      "size_kb": 114.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.04.png",
+      "category": "gallery",
+      "filename": "03-gallery-tags-filter-dropdown-expanded.png",
+      "path": "/img/screenshots/gallery/03-gallery-tags-filter-dropdown-expanded.png",
+      "description": "Gallery view with the 'Select tags to filter...' dropdown expanded, showing a searchable list of all available tags with checkboxes: Space, Important, Interview, Meeting, and Personal. Search field visible at the top of the dropdown.",
+      "size_kb": 122.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.39.png",
+      "category": "gallery",
+      "filename": "04-gallery-empty-state-light-mode.png",
+      "path": "/img/screenshots/gallery/04-gallery-empty-state-light-mode.png",
+      "description": "Gallery view in light mode showing completely empty state with message 'Your media library is empty. Use the uploader above to add your first media file!' Filters sidebar visible on the left with tags, collections, and date range filters.",
+      "size_kb": 108.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.46.png",
+      "category": "upload",
+      "filename": "01-add-media-modal-youtube-tab.png",
+      "path": "/img/screenshots/upload/01-add-media-modal-youtube-tab.png",
+      "description": "Add Media modal with YouTube URL tab selected, showing input field with a sample YouTube playlist URL. Instructions explain that the video will be downloaded and transcribed automatically. 'Process Video' button visible with 'Clear' option.",
+      "size_kb": 103.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.52.png",
+      "category": "gallery",
+      "filename": "05-gallery-multiple-videos-processing.png",
+      "path": "/img/screenshots/gallery/05-gallery-multiple-videos-processing.png",
+      "description": "Gallery grid view showing 12 space documentary videos all in 'Processing' status with orange badges. Titles include 'Eight Months to Mars', 'Age of Man in Space, 1975', 'Life Beyond Earth', 'Seeds of Discovery', and various other NASA-themed content.",
+      "size_kb": 93.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.45.58.png",
+      "category": "workflow",
+      "filename": "01-notifications-panel-youtube-playlist-processing.png",
+      "path": "/img/screenshots/workflow/01-notifications-panel-youtube-playlist-processing.png",
+      "description": "Notifications panel expanded on the right side showing multiple YouTube Processing tasks at various stages: preparing for download (15%), starting download, download complete, and playlist processing updates. Shows 'Playlist NASA: 28 of 28 videos queued for download' notification.",
+      "size_kb": 105.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.06.png",
+      "category": "workflow",
+      "filename": "02-notifications-youtube-downloads-progress.png",
+      "path": "/img/screenshots/workflow/02-notifications-youtube-downloads-progress.png",
+      "description": "Notifications panel showing YouTube download progress for multiple videos with percentage indicators. Various stages displayed: starting download (10%), download complete, and transcription updates (42%). Includes videos like 'Astronaut Interview: Kathryn D. Sullivan' and 'Washington Headquarters'.",
+      "size_kb": 124.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.13.png",
+      "category": "gallery",
+      "filename": "06-gallery-mixed-processing-states.png",
+      "path": "/img/screenshots/gallery/06-gallery-mixed-processing-states.png",
+      "description": "Gallery showing scrolled view with videos in mixed states: some Processing (orange badge), some Pending (orange badge), and some completed with thumbnails visible. Bottom row shows completed videos including 'The Eagle Has Landed', 'Washington Headquarters', 'Skylab High School in Space', and 'Bridge to Space'.",
+      "size_kb": 169.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.18.png",
+      "category": "workflow",
+      "filename": "03-notifications-youtube-transcription-progress.png",
+      "path": "/img/screenshots/workflow/03-notifications-youtube-transcription-progress.png",
+      "description": "Notifications panel showing YouTube Processing and Transcription Update notifications. One shows 'Aligning word-level timestamps' at 66% for Skylab High School video. Multiple download and transcription status updates visible with progress percentages.",
+      "size_kb": 120.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.25.png",
+      "category": "gallery",
+      "filename": "07-gallery-processing-with-thumbnails.png",
+      "path": "/img/screenshots/gallery/07-gallery-processing-with-thumbnails.png",
+      "description": "Gallery view scrolled down showing videos transitioning from processing to completed. Multiple videos have generated thumbnails including 'Exploration of the Planets (1971)' showing solar system diagram and 'Astronaut Interview: Kathryn D. Sullivan' showing interview footage.",
+      "size_kb": 109.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.31.png",
+      "category": "gallery",
+      "filename": "08-gallery-scroll-more-completed.png",
+      "path": "/img/screenshots/gallery/08-gallery-scroll-more-completed.png",
+      "description": "Further scrolled gallery view showing more completed videos with thumbnails. Videos include 'Planet Mars: 1979', '51-L Teacher Training: Space Station Briefing', 'Who's Out There - 1975', 'Power for Apollo: Saturn V', 'Space for Women - 1981', 'Exploration of the Planets (1971)', 'Astronaut Interview', and 'Space for Women (Extended Version)'.",
+      "size_kb": 112.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.36.png",
+      "category": "workflow",
+      "filename": "04-gallery-single-video-completed-notifications.png",
+      "path": "/img/screenshots/workflow/04-gallery-single-video-completed-notifications.png",
+      "description": "Gallery view showing single completed Apollo 11 video with thumbnail. Notifications panel open on right showing three task completion notifications: Summarization Update (50%), Topic Extraction (0%), and Transcription Update (completed successfully).",
+      "size_kb": 116.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.41.png",
+      "category": "workflow",
+      "filename": "05-notifications-topic-extraction-complete.png",
+      "path": "/img/screenshots/workflow/05-notifications-topic-extraction-complete.png",
+      "description": "Notifications panel with updated status showing Topic Extraction completed with 'Found 8 tags and 3 collections'. Summarization Update shows 50% progress for generating AI summary. Transcription Update shows completion. All notifications timestamped 'Just now'.",
+      "size_kb": 135.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.48.png",
+      "category": "workflow",
+      "filename": "06-notifications-summarization-complete.png",
+      "path": "/img/screenshots/workflow/06-notifications-summarization-complete.png",
+      "description": "Notifications panel showing all AI processing tasks completed: Summarization Update at 100% (AI summary generation completed successfully), Topic Extraction (Found 8 tags and 3 collections), and Transcription completed. Shows the full workflow completion.",
+      "size_kb": 196.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.53.png",
+      "category": "transcript",
+      "filename": "03-transcript-summary-tab-available.png",
+      "path": "/img/screenshots/transcript/03-transcript-summary-tab-available.png",
+      "description": "Transcript view showing the Summary tab available next to Transcript tab. Video player shows Apollo 11 footage, and the interface indicates AI summary has been generated. Export, Hide Speaker Editor, and Download buttons visible at bottom.",
+      "size_kb": 148.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.46.58.png",
+      "category": "ai-features",
+      "filename": "02-ai-summary-view-full.png",
+      "path": "/img/screenshots/ai-features/02-ai-summary-view-full.png",
+      "description": "AI Summary modal displaying comprehensive BLUF (Bottom Line Up Front) format summary of Apollo 11 documentary. Shows Executive Summary, Brief Summary, Major Topics Discussed (Mission Overview and Launch, Lunar Landing and Surface Operations, Scientific Experiments, etc.), Key Decisions, and Follow-up Items sections.",
+      "size_kb": 155.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.47.05.png",
+      "category": "ai-features",
+      "filename": "03-ai-summary-search-feature.png",
+      "path": "/img/screenshots/ai-features/03-ai-summary-search-feature.png",
+      "description": "AI Summary view with search functionality active. Search bar shows 'Saturn V' query with navigation showing '1/3' results. The term 'Saturn V' is highlighted in orange within the summary text, demonstrating the search-and-highlight feature within AI-generated summaries.",
+      "size_kb": 129.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.47.18.png",
+      "category": "ai-features",
+      "filename": "04-ai-summary-scrolled-sections.png",
+      "path": "/img/screenshots/ai-features/04-ai-summary-scrolled-sections.png",
+      "description": "AI Summary scrolled down showing middle sections including Return Journey and Recovery, Historical Context and Global Impact, Key Decisions, and Follow-up Items. Bottom shows disclaimer: 'AI-generated summary - please verify important details. Generated by vllm (gpt-oss-20b)'.",
+      "size_kb": 131.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.55.52.png",
+      "category": "transcript",
+      "filename": "04-transcript-ai-tags-expanded.png",
+      "path": "/img/screenshots/transcript/04-transcript-ai-tags-expanded.png",
+      "description": "Transcript view with Tags section expanded showing 'AI Suggested Tags' with 8 suggestions. Displays suggested tags: apollo 11, moon landing, first step, eagle, tranquility base, neil armstrong with checkboxes. 'Suggested: Important, Interview, Meeting, Personal' shown below with 'Add tags from library...' dropdown.",
+      "size_kb": 103.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.56.10.png",
+      "category": "transcript",
+      "filename": "05-transcript-ai-collections-expanded.png",
+      "path": "/img/screenshots/transcript/05-transcript-ai-collections-expanded.png",
+      "description": "Transcript view showing Collections section expanded with 'AI Suggested Collections' displaying 3 suggestions: Apollo 11 Mission, Moon Landing Events, and Space Exploration Milestones. Each suggestion shows a checkmark icon. NASA collection already added showing 'X' to remove.",
+      "size_kb": 96.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.56.13.png",
+      "category": "transcript",
+      "filename": "06-transcript-collections-and-tags-applied.png",
+      "path": "/img/screenshots/transcript/06-transcript-collections-and-tags-applied.png",
+      "description": "Transcript view showing both Tags and Collections sections with AI-suggested items successfully applied. Tags section shows 'Space' tag, and Collections shows 'NASA' with AI Suggested Collections displaying Apollo 11 Mission, Moon Landing Events, and Space Exploration Milestones.",
+      "size_kb": 107.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.56.26.png",
+      "category": "speakers",
+      "filename": "04-speaker-identification-voice-analysis.png",
+      "path": "/img/screenshots/speakers/04-speaker-identification-voice-analysis.png",
+      "description": "Speaker editor showing AI speaker identification with voice analysis feature. President Nixon's speaker profile expanded showing 'Voice:' section with similarity scores to other speakers: President Nixon 100%, John F. Kennedy 71%, Ed Aldrin 85%, President Johnson 68%, Buzz Aldrin 86%. Shows cross-video voice matching capabilities.",
+      "size_kb": 124.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.56.30.png",
+      "category": "ai-features",
+      "filename": "05-speaker-voice-fingerprint-files.png",
+      "path": "/img/screenshots/ai-features/05-speaker-voice-fingerprint-files.png",
+      "description": "Speaker identification showing voice fingerprint analysis with 'Files where \"President Nixon\" appears:' section. Shows current video 'The Eagle has Landed, The Flight of...' marked with checkmark as 'Current'. Demonstrates speaker appearance tracking across multiple videos.",
+      "size_kb": 140.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.56.48.png",
+      "category": "speakers",
+      "filename": "05-speaker-editor-all-profiles-collapsed.png",
+      "path": "/img/screenshots/speakers/05-speaker-editor-all-profiles-collapsed.png",
+      "description": "Speaker editor showing all speaker profiles in collapsed state with Profile badges. Shows multiple speakers (SPEAKER_02 Narrator, SPEAKER_03 President Nixon, SPEAKER_05 Ed Aldrin, SPEAKER_06 Buzz Aldrin, SPEAKER_07 President Johnson) each with '5 suggestions available' indicators and orange Profile badges.",
+      "size_kb": 141.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.57.35.png",
+      "category": "workflow",
+      "filename": "07-transcript-collections-suggested-applied.png",
+      "path": "/img/screenshots/workflow/07-transcript-collections-suggested-applied.png",
+      "description": "Transcript view showing Collections panel with AI-suggested collections expanded. 'NASA' collection visible with 'Add collection...' input field. Shows the AI Suggested Collections section with 3 items: Apollo 11 Mission, Moon Landing Events, and Space Exploration Milestones with checkmarks indicating they can be applied.",
+      "size_kb": 140.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.58.14.png",
+      "category": "gallery",
+      "filename": "09-gallery-empty-state-dark-mode.png",
+      "path": "/img/screenshots/gallery/09-gallery-empty-state-dark-mode.png",
+      "description": "Gallery empty state in dark mode showing 'Your media library is empty. Use the uploader above to add your first media file!' message. Filters sidebar visible on left with Search Files, Tags, Collections, Speakers sections and Date Range pickers.",
+      "size_kb": 166.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.58.26.png",
+      "category": "upload",
+      "filename": "02-add-media-youtube-url-filled.png",
+      "path": "/img/screenshots/upload/02-add-media-youtube-url-filled.png",
+      "description": "Add Media modal with YouTube URL tab selected showing a filled YouTube playlist URL in the input field. Description explains automatic download and transcription process. Support note indicates 'YouTube videos and playlists' are supported. Clear and Process Video buttons visible.",
+      "size_kb": 213.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.58.32.png",
+      "category": "gallery",
+      "filename": "10-gallery-bulk-processing-grid.png",
+      "path": "/img/screenshots/gallery/10-gallery-bulk-processing-grid.png",
+      "description": "Gallery grid showing 12 videos all in Processing state with orange badges. Displays space-themed documentary titles including '[private video]', 'Eight Months to Mars', 'Age of Man in Space, 1975', 'Life Beyond Earth', 'Seeds of Discovery (1970)', 'The Time of Apollo (1975)', and others arranged in a 4-column grid.",
+      "size_kb": 204.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.58.42.png",
+      "category": "workflow",
+      "filename": "08-notifications-playlist-download-starting.png",
+      "path": "/img/screenshots/workflow/08-notifications-playlist-download-starting.png",
+      "description": "Notifications panel showing YouTube playlist processing starting. Displays multiple notifications including 'Preparing for download...' at 15%, 'Playlist processing complete: 28 videos queued', and 'Playlist Processing: Playlist NASA: 28 of 28 videos queued for download' with 100% completion bar.",
+      "size_kb": 193.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.58.52.png",
+      "category": "workflow",
+      "filename": "09-notifications-multiple-downloads-transcribing.png",
+      "path": "/img/screenshots/workflow/09-notifications-multiple-downloads-transcribing.png",
+      "description": "Notifications panel showing multiple concurrent processes: YouTube downloads starting (10%), transcription updates showing 'Running initial transcription' at 42%, download completions, and various video processing states. Shows parallel processing of multiple videos from the NASA playlist.",
+      "size_kb": 170.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.59.06.png",
+      "category": "gallery",
+      "filename": "11-gallery-videos-completing-with-thumbnails.png",
+      "path": "/img/screenshots/gallery/11-gallery-videos-completing-with-thumbnails.png",
+      "description": "Gallery showing transition state where some videos are still Processing while others have completed and generated thumbnails. Bottom row shows completed videos with visible thumbnails: 'The Eagle Has Landed', 'Washington Headquarters - ATS-III Pictures of the Earth', 'Skylab High School in Space', and 'Bridge to Space'.",
+      "size_kb": 201.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 06.59.11.png",
+      "category": "workflow",
+      "filename": "10-notifications-word-level-alignment.png",
+      "path": "/img/screenshots/workflow/10-notifications-word-level-alignment.png",
+      "description": "Notifications panel showing advanced transcription phase with 'Aligning word-level timestamps' at 66% progress for Skylab High School video. Also shows YouTube processing downloads at various percentages (32%, 43%) and transcription start notifications for multiple videos.",
+      "size_kb": 199.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.00.09.png",
+      "category": "gallery",
+      "filename": "12-gallery-mostly-completed-state.png",
+      "path": "/img/screenshots/gallery/12-gallery-mostly-completed-state.png",
+      "description": "Gallery showing majority of videos completed with generated thumbnails visible. Mix of space documentary content including planets, astronauts, and space equipment. Some videos still showing Processing status in upper rows while bottom rows are fully completed.",
+      "size_kb": 198.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.00.15.png",
+      "category": "gallery",
+      "filename": "13-gallery-all-completed-overview.png",
+      "path": "/img/screenshots/gallery/13-gallery-all-completed-overview.png",
+      "description": "Full gallery view showing all 28 videos from NASA playlist fully completed with thumbnails. Diverse space documentary content visible spanning different eras and topics. Shows successful bulk YouTube playlist processing completion.",
+      "size_kb": 195.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.00.35.png",
+      "category": "processing",
+      "filename": "01-processing-progress-42-percent-transcription.png",
+      "path": "/img/screenshots/processing/01-processing-progress-42-percent-transcription.png",
+      "description": "Processing view showing Apollo 11 video at 42% completion with progress bar and workflow stages. Status shows 'Processing in Progress: Running initial transcription'. Progress timeline shows Setup and Transcription stages completed, currently in Analysis phase. File Details section collapsed below.",
+      "size_kb": 202.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.00.40.png",
+      "category": "processing",
+      "filename": "02-processing-progress-50-percent-alignment.png",
+      "path": "/img/screenshots/processing/02-processing-progress-50-percent-alignment.png",
+      "description": "Processing view at 50% showing 'Aligning word-level timestamps' status. Progress bar indicates Transcription phase is active with Setup completed. Shows the word-level alignment sub-task of the transcription process. Same Apollo 11 video with Tags (Space), Collections (NASA), and Analytics Overview sections visible.",
+      "size_kb": 173.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.00.56.png",
+      "category": "processing",
+      "filename": "03-processing-progress-65-percent-speaker-assignment.png",
+      "path": "/img/screenshots/processing/03-processing-progress-65-percent-speaker-assignment.png",
+      "description": "Processing at 65% showing 'Assigning speakers to transcript' status. Progress timeline indicates Analysis phase is now active with Setup and Transcription completed. Shows speaker diarization task in progress with message 'Transcript is being generated...' in the main area.",
+      "size_kb": 190.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.01.03.png",
+      "category": "workflow",
+      "filename": "11-notifications-ai-tasks-starting.png",
+      "path": "/img/screenshots/workflow/11-notifications-ai-tasks-starting.png",
+      "description": "Notifications panel showing completion of transcription and start of AI-powered tasks. Shows 'Summarization Update: Generating AI summary with LLM' at 50%, 'Topic Extraction: Calling AI model (this may take a moment)...' at 0%, and 'Transcription Update: Transcription completed successfully'. Demonstrates AI workflow progression.",
+      "size_kb": 193.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.01.12.png",
+      "category": "workflow",
+      "filename": "12-notifications-topic-extraction-tags-collections.png",
+      "path": "/img/screenshots/workflow/12-notifications-topic-extraction-tags-collections.png",
+      "description": "Notifications panel showing Topic Extraction completion with 'Found 8 tags and 3 collections' result. Summarization Update at 50% and Transcription completed. Shows successful AI-powered content analysis and tag/collection suggestion generation.",
+      "size_kb": 188.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.01.17.png",
+      "category": "workflow",
+      "filename": "13-notifications-all-tasks-complete.png",
+      "path": "/img/screenshots/workflow/13-notifications-all-tasks-complete.png",
+      "description": "Notifications panel showing all processing tasks completed: Summarization Update shows 'AI summary generation completed successfully', Topic Extraction found tags and collections, and Transcription completed. Shows complete end-to-end processing workflow from upload through AI analysis.",
+      "size_kb": 195.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.01.35.png",
+      "category": "settings",
+      "filename": "01-settings-llm-configuration-create.png",
+      "path": "/img/screenshots/settings/01-settings-llm-configuration-create.png",
+      "description": "Settings page showing 'Create LLM Configuration' modal overlay. Modal displays form fields for Configuration Name (filled with 'Local vLLM'), Provider dropdown (vLLM selected), Base URL (http://192.168.30.11:8012/v1), Model Name (gpt-oss-20b), and Advanced Settings section with Max Tokens (131000) and Temperature (0.3). Test Connection button shows success message in green.",
+      "size_kb": 190.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.02.03.png",
+      "category": "settings",
+      "filename": "02-settings-llm-provider-saved.png",
+      "path": "/img/screenshots/settings/02-settings-llm-provider-saved.png",
+      "description": "Settings page LLM Provider Configuration showing saved configuration 'Local vLLM' with details (vLLM, gpt-oss-20b, http://192.168.30.11:8012/v1). Configuration card shows Activate button (green), test connection button, edit button, and delete button. 'Delete All Configurations' button shown in red below.",
+      "size_kb": 231.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.03.00.png",
+      "category": "settings",
+      "filename": "03-settings-ai-summarization-prompts.png",
+      "path": "/img/screenshots/settings/03-settings-ai-summarization-prompts.png",
+      "description": "Settings showing AI Summarization Prompts page with System Prompts section. Shows 'View Prompt: Universal Content Analyzer' modal displaying prompt details including Type: general, Description, System Prompt: Yes, and full Prompt Text visible showing the expert content analyst instructions for BLUF format summaries. Copy button available for prompt text.",
+      "size_kb": 394.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.03.22.png",
+      "category": "processing",
+      "filename": "04-processing-complete-with-summary-button.png",
+      "path": "/img/screenshots/processing/04-processing-complete-with-summary-button.png",
+      "description": "Processing view after completion showing video player with Apollo 11 footage. Transcript tab active with 'Generate AI Summary' button visible. Shows transition state where transcription is complete but AI summary hasn't been generated yet. 'Transcript is being generated...' message still showing.",
+      "size_kb": 270.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.03.43.png",
+      "category": "processing",
+      "filename": "05-processing-complete-ready-for-interaction.png",
+      "path": "/img/screenshots/processing/05-processing-complete-ready-for-interaction.png",
+      "description": "Completed processing view showing video player with Apollo 11 lunar module footage, full waveform visualization, transcript entries visible on right side, and metadata sections (Tags, Collections, Analytics Overview, Comments & Notes) expanded. Video ready for full user interaction and playback.",
+      "size_kb": 394.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.08.58.png",
+      "category": "settings",
+      "filename": "04-settings-sidebar-administration.png",
+      "path": "/img/screenshots/settings/04-settings-sidebar-administration.png",
+      "description": "Settings page showing left sidebar navigation with two main sections: ADMINISTRATION (Users, Statistics, Task Health, System Settings) and USER SETTINGS (Profile, Password, Recording, Audio Extraction, AI Summarization Prompts, LLM Provider Configuration highlighted in blue). Background shows Comments & Notes section partially visible.",
+      "size_kb": 128.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.03.png",
+      "category": "info",
+      "filename": "01-file-status-dashboard-overview.png",
+      "path": "/img/screenshots/info/01-file-status-dashboard-overview.png",
+      "description": "File Status page showing 'My Files Status' dashboard with statistics: 1 Total Files, 1 Completed, 0 Processing, 0 Pending, 0 Errors. Green success message 'All your files are processing normally!' displayed. Recent Files section shows Apollo 11 video completed 3 minutes ago. All Tasks section below with filter dropdowns.",
+      "size_kb": 127.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.07.png",
+      "category": "info",
+      "filename": "02-file-status-task-details-modal.png",
+      "path": "/img/screenshots/info/02-file-status-task-details-modal.png",
+      "description": "File Status page with 'File Details: The Eagle Has Landed, The Flight of Apollo 11, 1969' modal open. Shows File Information (name, size 70 MB, duration 27:48, language, completion time) and Task Details sections. Analytics and Speaker_identification tasks shown as COMPLETED with timestamps and processing times.",
+      "size_kb": 96.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.11.png",
+      "category": "info",
+      "filename": "03-task-details-all-stages-expanded.png",
+      "path": "/img/screenshots/info/03-task-details-all-stages-expanded.png",
+      "description": "Task Details modal scrolled to show all four processing stages: Analytics (0s processing time), Speaker_identification (33s), Summarization (41s), and Transcription (1m 33s). Each shows task created, last updated, task completed timestamps and processing times. Demonstrates complete processing pipeline visibility.",
+      "size_kb": 147.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.18.png",
+      "category": "gallery",
+      "filename": "14-gallery-collections-management-modal.png",
+      "path": "/img/screenshots/gallery/14-gallery-collections-management-modal.png",
+      "description": "Gallery view with 'Manage Collections' modal open showing Collections section with 'New Collection' button. Single collection 'NASA' listed showing '0 files' with edit and delete action buttons. Simple collection management interface for organizing media files.",
+      "size_kb": 147.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.27.png",
+      "category": "gallery",
+      "filename": "15-gallery-create-collection-modal.png",
+      "path": "/img/screenshots/gallery/15-gallery-create-collection-modal.png",
+      "description": "Gallery showing 'Create New Collection' modal with form fields for Name (filled with 'My Collection') and Description (placeholder text 'Describe this collection...'). Cancel and Create Collection buttons at bottom. Background shows Apollo 11 video thumbnail.",
+      "size_kb": 197.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.09.32.png",
+      "category": "gallery",
+      "filename": "16-gallery-edit-collection-modal.png",
+      "path": "/img/screenshots/gallery/16-gallery-edit-collection-modal.png",
+      "description": "Gallery with 'Edit Collection' modal open showing NASA collection details. Name field shows 'NASA', Description field has placeholder. Cancel and Update Collection button at bottom. Modal for editing existing collection metadata.",
+      "size_kb": 197.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.10.26.png",
+      "category": "gallery",
+      "filename": "17-gallery-select-files-mode-inactive.png",
+      "path": "/img/screenshots/gallery/17-gallery-select-files-mode-inactive.png",
+      "description": "Gallery with Select Files button active showing Apollo 11 video with selection checkbox visible in bottom right corner of thumbnail. Header buttons changed to show 'Select all', 'Add to Collection', 'Delete 0 selected', and 'Cancel Selection' options. Bulk selection mode activated.",
+      "size_kb": 198.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.11.05.png",
+      "category": "gallery",
+      "filename": "18-gallery-file-selected-actions-enabled.png",
+      "path": "/img/screenshots/gallery/18-gallery-file-selected-actions-enabled.png",
+      "description": "Gallery in selection mode with Apollo 11 video selected (blue border, checked checkbox). Header shows 'Deselect all', 'Add to Collection' (green), 'Delete 1 selected' (red), and 'Cancel Selection' buttons. Demonstrates single file selected state with bulk action buttons enabled.",
+      "size_kb": 134.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.12.05.png",
+      "category": "gallery",
+      "filename": "19-gallery-add-to-collection-modal.png",
+      "path": "/img/screenshots/gallery/19-gallery-add-to-collection-modal.png",
+      "description": "Gallery showing 'Manage Collections' modal with Apollo 11 video selected in background (blue border). NASA collection shows 'Add 1 file' button (blue), indicating selected file can be added to collection. Demonstrates bulk collection assignment workflow.",
+      "size_kb": 138.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.12.11.png",
+      "category": "gallery",
+      "filename": "20-gallery-delete-confirmation-modal.png",
+      "path": "/img/screenshots/gallery/20-gallery-delete-confirmation-modal.png",
+      "description": "Gallery with 'Delete Selected Files' confirmation modal overlay. Modal asks 'Are you sure you want to delete 1 selected file(s)? This action cannot be undone.' Shows Cancel and Confirm (red) buttons. Apollo 11 video selected in background with blue border.",
+      "size_kb": 211.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.22.52.png",
+      "category": "settings",
+      "filename": "05-settings-users-admin-panel.png",
+      "path": "/img/screenshots/settings/05-settings-users-admin-panel.png",
+      "description": "Settings page showing Users administration panel. Left sidebar shows ADMINISTRATION section with Users selected. Main area likely shows user management interface for admin functions (partially visible in background).",
+      "size_kb": 127.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.22.56.png",
+      "category": "settings",
+      "filename": "06-settings-statistics-dashboard.png",
+      "path": "/img/screenshots/settings/06-settings-statistics-dashboard.png",
+      "description": "Settings page with Statistics selected in the ADMINISTRATION sidebar. Shows system statistics and usage metrics dashboard for monitoring application performance and user activity.",
+      "size_kb": 124.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.23.04.png",
+      "category": "settings",
+      "filename": "07-settings-task-health-monitoring.png",
+      "path": "/img/screenshots/settings/07-settings-task-health-monitoring.png",
+      "description": "Settings page showing Task Health section selected under ADMINISTRATION. Interface for monitoring background task processing health, worker status, and system processing capabilities.",
+      "size_kb": 363.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.23.15.png",
+      "category": "settings",
+      "filename": "08-settings-system-settings-panel.png",
+      "path": "/img/screenshots/settings/08-settings-system-settings-panel.png",
+      "description": "Settings page with System Settings selected under ADMINISTRATION section. Shows system-wide configuration options and application settings management interface.",
+      "size_kb": 98.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.24.04.png",
+      "category": "settings",
+      "filename": "09-settings-profile-user-settings.png",
+      "path": "/img/screenshots/settings/09-settings-profile-user-settings.png",
+      "description": "Settings page showing Profile section selected under USER SETTINGS. Personal user profile configuration page for managing individual user account settings and preferences.",
+      "size_kb": 144.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.24.10.png",
+      "category": "settings",
+      "filename": "10-settings-password-change.png",
+      "path": "/img/screenshots/settings/10-settings-password-change.png",
+      "description": "Settings page with Password section selected under USER SETTINGS. Interface for users to change their account password with standard password update form.",
+      "size_kb": 139.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.25.05.png",
+      "category": "settings",
+      "filename": "11-settings-recording-configuration.png",
+      "path": "/img/screenshots/settings/11-settings-recording-configuration.png",
+      "description": "Settings showing Recording section under USER SETTINGS. Configuration page for audio recording settings including microphone selection, quality settings, and recording preferences for the Record Audio feature.",
+      "size_kb": 125.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.25.15.png",
+      "category": "settings",
+      "filename": "12-settings-audio-extraction-options.png",
+      "path": "/img/screenshots/settings/12-settings-audio-extraction-options.png",
+      "description": "Settings page with Audio Extraction selected under USER SETTINGS. Configuration options for audio extraction from video files including format, quality, and processing preferences.",
+      "size_kb": 92.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.25.28.png",
+      "category": "settings",
+      "filename": "13-settings-ai-prompts-management.png",
+      "path": "/img/screenshots/settings/13-settings-ai-prompts-management.png",
+      "description": "Settings showing AI Summarization Prompts page with System Prompts section visible. Interface for managing AI prompt templates used for content analysis and summarization. Shows prompts list for customizing LLM behavior.",
+      "size_kb": 188.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.25.43.png",
+      "category": "settings",
+      "filename": "14-settings-llm-configuration-list.png",
+      "path": "/img/screenshots/settings/14-settings-llm-configuration-list.png",
+      "description": "Settings page showing LLM Provider Configuration with saved 'Local vLLM' configuration displayed. Shows configuration card with provider details, connection status, and management buttons (Activate, Test, Edit, Delete). Create Configuration button visible at top right.",
+      "size_kb": 99.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.26.14.png",
+      "category": "processing",
+      "filename": "06-processing-initial-state-42-percent.png",
+      "path": "/img/screenshots/processing/06-processing-initial-state-42-percent.png",
+      "description": "Processing view showing Apollo 11 video at 42% completion during initial transcription phase. Progress bar shows Setup and Transcription stages with message 'Transcript is being generated...' Video player shows Apollo 11 lunar surface footage. File Details, Tags, Collections, and Analytics sections visible but collapsed.",
+      "size_kb": 100.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.26.59.png",
+      "category": "processing",
+      "filename": "07-processing-word-alignment-50-percent.png",
+      "path": "/img/screenshots/processing/07-processing-word-alignment-50-percent.png",
+      "description": "Processing at 50% during 'Aligning word-level timestamps' phase. Shows progression from initial transcription to word-level alignment task. Progress timeline indicates currently in Transcription stage moving toward Analysis. Same interface layout with video player and metadata sections.",
+      "size_kb": 100.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.27.14.png",
+      "category": "processing",
+      "filename": "08-processing-speaker-analysis-65-percent.png",
+      "path": "/img/screenshots/processing/08-processing-speaker-analysis-65-percent.png",
+      "description": "Processing at 65% showing 'Assigning speakers to transcript' status message. Analysis phase active in progress timeline. Demonstrates speaker diarization task in progress. Video player and interface elements remain visible during processing.",
+      "size_kb": 230.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.27.37.png",
+      "category": "workflow",
+      "filename": "14-notifications-summarization-in-progress.png",
+      "path": "/img/screenshots/workflow/14-notifications-summarization-in-progress.png",
+      "description": "Notifications panel showing AI processing tasks: Summarization Update at 50% 'Generating AI summary with LLM', Topic Extraction at 0% starting, and Transcription completed. Shows transition from transcription to AI analysis phase in the processing workflow.",
+      "size_kb": 228.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.28.13.png",
+      "category": "workflow",
+      "filename": "15-notifications-topic-extraction-complete.png",
+      "path": "/img/screenshots/workflow/15-notifications-topic-extraction-complete.png",
+      "description": "Notifications showing Topic Extraction completion with 'Found 8 tags and 3 collections', Summarization at 50%, and Transcription completed. Demonstrates AI-powered content analysis producing structured metadata from transcript content.",
+      "size_kb": 227.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.28.26.png",
+      "category": "workflow",
+      "filename": "16-notifications-summary-complete-with-tabs.png",
+      "path": "/img/screenshots/workflow/16-notifications-summary-complete-with-tabs.png",
+      "description": "Notifications panel showing all AI tasks completed. Transcript view below shows Summary tab now available next to Transcript tab, indicating AI summary has been successfully generated and is ready to view.",
+      "size_kb": 221.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.28.38.png",
+      "category": "ai-features",
+      "filename": "06-ai-summary-full-document-view.png",
+      "path": "/img/screenshots/ai-features/06-ai-summary-full-document-view.png",
+      "description": "Full AI Summary modal showing comprehensive BLUF summary of Apollo 11 documentary. Displays Executive Summary stating Apollo 11 successfully landed first humans on Moon. Shows Brief Summary with documentary overview, Major Topics Discussed with Mission Overview, Lunar Landing sections, and beginning of Scientific Experiments section. Copy and Reprocess buttons available.",
+      "size_kb": 220.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.28.55.png",
+      "category": "ai-features",
+      "filename": "07-ai-summary-middle-sections.png",
+      "path": "/img/screenshots/ai-features/07-ai-summary-middle-sections.png",
+      "description": "AI Summary scrolled to middle showing Major Topics sections including lunar geology equipment deployment, lunar material collection, Apollo 11 EVA usage, Return Journey and Recovery section with Eagle ascent and Columbia docking details, and Historical Context section mentioning Kennedy's pledge and Nixon's remarks.",
+      "size_kb": 177.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.29.23.png",
+      "category": "transcript",
+      "filename": "07-transcript-tags-ai-suggestions-panel.png",
+      "path": "/img/screenshots/transcript/07-transcript-tags-ai-suggestions-panel.png",
+      "description": "Transcript view with Tags section expanded showing AI Suggested Tags with 8 items. Space tag already applied (with X to remove). Shows 'Add tag...' input field and AI suggestions dropdown with tags like apollo 11, moon landing, first step, eagle, tranquility base, neil armstrong. Suggested common tags (Important, Interview, Meeting, Personal) and 'Add tags from library...' option below.",
+      "size_kb": 201.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.29.31.png",
+      "category": "transcript",
+      "filename": "08-transcript-collections-ai-suggestions.png",
+      "path": "/img/screenshots/transcript/08-transcript-collections-ai-suggestions.png",
+      "description": "Transcript showing Collections section with NASA collection already applied. AI Suggested Collections section displays 3 suggestions: Apollo 11 Mission, Moon Landing Events, and Space Exploration Milestones with checkmarks, ready to be added to the video.",
+      "size_kb": 201.6
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.30.06.png",
+      "category": "speakers",
+      "filename": "06-speaker-voice-similarity-expanded.png",
+      "path": "/img/screenshots/speakers/06-speaker-voice-similarity-expanded.png",
+      "description": "Speaker editor with President Nixon's profile expanded showing AI-powered voice similarity analysis. Displays 'Voice:' section with similarity percentages to other speakers in the same video: President Nixon 100%, John F. Kennedy 71%, Ed Aldrin 85%, President Johnson 68%, Buzz Aldrin 86%. Demonstrates voice fingerprinting technology.",
+      "size_kb": 124.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.36.50.png",
+      "category": "gallery",
+      "filename": "21-gallery-empty-state-awaiting-upload.png",
+      "path": "/img/screenshots/gallery/21-gallery-empty-state-awaiting-upload.png",
+      "description": "Clean gallery empty state in dark mode with centered message 'Your media library is empty. Use the uploader above to add your first media file!' Full filters sidebar visible showing all available filter categories collapsed. Invites user to begin using the application.",
+      "size_kb": 94.7
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.38.51.png",
+      "category": "upload",
+      "filename": "03-add-media-modal-tabs-overview.png",
+      "path": "/img/screenshots/upload/03-add-media-modal-tabs-overview.png",
+      "description": "Add Media modal showing three upload methods as tabs: Upload File, YouTube URL (active), and Record Audio. YouTube URL tab displays input field for video URL with instructions and Process Video button. Clean modal interface for choosing upload method.",
+      "size_kb": 128.4
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.38.59.png",
+      "category": "gallery",
+      "filename": "22-gallery-processing-playlist-initial.png",
+      "path": "/img/screenshots/gallery/22-gallery-processing-playlist-initial.png",
+      "description": "Gallery showing 12 videos all in Processing state from NASA playlist. All thumbnails show processing icon with orange 'Processing' badges. First row includes [private video], Eight Months to Mars, Age of Man in Space 1975, Within this Decade: America in Space - 1969. Grid layout showing batch processing in progress.",
+      "size_kb": 157.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.39.04.png",
+      "category": "workflow",
+      "filename": "17-notifications-playlist-queued.png",
+      "path": "/img/screenshots/workflow/17-notifications-playlist-queued.png",
+      "description": "Notifications panel showing YouTube playlist processing notifications. Multiple notifications visible: 'Preparing for download...' at 15%, 'Playlist processing complete: 28 videos queued', and 'Playlist Processing: Playlist NASA: 28 of 28 videos queued for download' at 100%. Shows successful playlist detection and queue preparation.",
+      "size_kb": 203.0
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.39.14.png",
+      "category": "workflow",
+      "filename": "18-notifications-concurrent-downloads.png",
+      "path": "/img/screenshots/workflow/18-notifications-concurrent-downloads.png",
+      "description": "Notifications showing multiple videos downloading and transcribing simultaneously. Mix of 'YouTube Processing: Starting YouTube video download...' (10%), 'YouTube download complete, starting transcription...', 'Transcription Update: Running initial transcription' (42%), and other progress updates. Demonstrates parallel processing capabilities.",
+      "size_kb": 226.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.39.26.png",
+      "category": "gallery",
+      "filename": "23-gallery-thumbnails-generating.png",
+      "path": "/img/screenshots/gallery/23-gallery-thumbnails-generating.png",
+      "description": "Gallery view showing videos transitioning from processing to completed. Bottom row shows completed videos with generated thumbnails: The Eagle Has Landed (Apollo 11 lunar module), Washington Headquarters (Earth from space), Skylab High School (astronaut), and Bridge to Space (satellite). Shows automatic thumbnail generation from video content.",
+      "size_kb": 286.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.39.38.png",
+      "category": "workflow",
+      "filename": "19-notifications-download-progress-percentages.png",
+      "path": "/img/screenshots/workflow/19-notifications-download-progress-percentages.png",
+      "description": "Notifications panel showing various download progress percentages: 'Exploration of the Planets' at 32%, 'Space for Women (Extended Version)' at 43%, 'Space for Women - 1981' at 15%. Also shows transcription alignment at 66% for Skylab video and multiple download completion notifications. Active parallel processing display.",
+      "size_kb": 225.8
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.39.48.png",
+      "category": "gallery",
+      "filename": "24-gallery-partial-completion-grid.png",
+      "path": "/img/screenshots/gallery/24-gallery-partial-completion-grid.png",
+      "description": "Gallery showing about half the videos completed with thumbnails while others still processing. Visible completed videos include space station diagrams, astronaut interviews, Earth imagery, and spacecraft. Upper rows still showing processing placeholders. Demonstrates progressive completion of batch job.",
+      "size_kb": 354.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.44.09.png",
+      "category": "gallery",
+      "filename": "25-gallery-completed-notifications-active.png",
+      "path": "/img/screenshots/gallery/25-gallery-completed-notifications-active.png",
+      "description": "Gallery view with single Apollo 11 video and notifications panel open showing processing completion. Three notifications visible: Summarization Update at 50%, Topic Extraction at 0%, and Transcription completed successfully. Shows post-transcription AI processing workflow.",
+      "size_kb": 173.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.44.26.png",
+      "category": "gallery",
+      "filename": "26-gallery-notifications-extraction-done.png",
+      "path": "/img/screenshots/gallery/26-gallery-notifications-extraction-done.png",
+      "description": "Gallery with notifications showing Topic Extraction completed with 'Found 8 tags and 3 collections'. Summarization still at 50% and Transcription completed. Demonstrates successful AI content analysis producing metadata suggestions.",
+      "size_kb": 171.9
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.44.41.png",
+      "category": "gallery",
+      "filename": "27-gallery-all-ai-tasks-complete.png",
+      "path": "/img/screenshots/gallery/27-gallery-all-ai-tasks-complete.png",
+      "description": "Gallery showing all three processing stages completed in notifications: Summarization Update completed (100%), Topic Extraction found tags and collections, Transcription completed successfully. Single Apollo 11 video visible with all AI processing finished and ready for user interaction.",
+      "size_kb": 131.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.44.46.png",
+      "category": "gallery",
+      "filename": "28-gallery-collections-modal-empty.png",
+      "path": "/img/screenshots/gallery/28-gallery-collections-modal-empty.png",
+      "description": "Gallery with Manage Collections modal open showing NASA collection with 0 files. New Collection button at top right. Single Apollo 11 video visible in background. Collections management interface for organizing video library.",
+      "size_kb": 118.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.44.52.png",
+      "category": "gallery",
+      "filename": "29-gallery-create-collection-form.png",
+      "path": "/img/screenshots/gallery/29-gallery-create-collection-form.png",
+      "description": "Gallery showing Create New Collection modal with Name field filled as 'My Collection' and Description placeholder visible. Cancel and Create Collection buttons at bottom. Background shows Apollo 11 video thumbnail. Form for creating new collection to organize media.",
+      "size_kb": 117.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.00.png",
+      "category": "gallery",
+      "filename": "30-gallery-edit-nasa-collection.png",
+      "path": "/img/screenshots/gallery/30-gallery-edit-nasa-collection.png",
+      "description": "Gallery with Edit Collection modal open for NASA collection. Name field shows 'NASA', Description field empty with placeholder. Cancel and Update Collection button (blue) at bottom. Modal for modifying existing collection metadata and settings.",
+      "size_kb": 138.1
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.04.png",
+      "category": "gallery",
+      "filename": "31-gallery-selection-mode-enabled.png",
+      "path": "/img/screenshots/gallery/31-gallery-selection-mode-enabled.png",
+      "description": "Gallery in selection mode with Apollo 11 video showing checkbox in bottom right corner (unchecked). Header changed to show 'Select all', 'Add to Collection', 'Delete 0 selected', and 'Cancel Selection' buttons. Bulk actions toolbar active but no files selected yet.",
+      "size_kb": 140.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.12.png",
+      "category": "gallery",
+      "filename": "32-gallery-video-selected-blue-border.png",
+      "path": "/img/screenshots/gallery/32-gallery-video-selected-blue-border.png",
+      "description": "Gallery with Apollo 11 video selected, shown by blue border and checked checkbox. Header shows 'Deselect all', 'Add to Collection' (green), 'Delete 1 selected' (red), and 'Cancel Selection' buttons. Single file selected state with bulk action buttons enabled.",
+      "size_kb": 136.5
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.19.png",
+      "category": "gallery",
+      "filename": "33-gallery-delete-file-confirmation.png",
+      "path": "/img/screenshots/gallery/33-gallery-delete-file-confirmation.png",
+      "description": "Gallery showing Delete Selected Files confirmation modal: 'Are you sure you want to delete 1 selected file(s)? This action cannot be undone.' Cancel and Confirm (red) buttons shown. Apollo 11 video selected in background. Destructive action confirmation dialog.",
+      "size_kb": 125.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.31.png",
+      "category": "info",
+      "filename": "04-file-status-overview-dashboard.png",
+      "path": "/img/screenshots/info/04-file-status-overview-dashboard.png",
+      "description": "File Status page displaying My Files Status dashboard with metrics: 1 Total Files, 1 Completed, 0 Processing, 0 Pending, 0 Errors. Green checkmark with 'All your files are processing normally!' message. Recent Files shows Apollo 11 completed 3 minutes ago. Flower Dashboard and Hide Tasks buttons visible.",
+      "size_kb": 89.3
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.37.png",
+      "category": "info",
+      "filename": "05-file-details-information-modal.png",
+      "path": "/img/screenshots/info/05-file-details-information-modal.png",
+      "description": "File Status with File Details modal showing comprehensive file information: name, status (COMPLETED in green), file size (70 MB), duration (27:48), language (en), upload time, completion time, and file age. Task Details section shows Analytics and Speaker_identification tasks as COMPLETED with timestamps.",
+      "size_kb": 148.2
+    },
+    {
+      "original_name": "Screenshot 2025-11-03 at 07.45.41.png",
+      "category": "info",
+      "filename": "06-task-details-processing-times.png",
+      "path": "/img/screenshots/info/06-task-details-processing-times.png",
+      "description": "Task Details modal scrolled showing all processing stages with timing data: Analytics (0s), Speaker_identification (33s), Summarization (41s), and Transcription (1m 33s). Each task shows task created, last updated, task completed timestamps and processing time. Full pipeline performance visibility.",
+      "size_kb": 153.0
+    }
+  ]
+}

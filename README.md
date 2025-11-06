@@ -6,7 +6,17 @@
 
 OpenTranscribe is a powerful, containerized web application for transcribing and analyzing audio/video files using state-of-the-art AI models. Built with modern technologies and designed for scalability, it provides an end-to-end solution for speech-to-text conversion, speaker identification, and content analysis.
 
-> **Note**: This application is 99.9% created by AI using Windsurf and various commercial LLMs, demonstrating the power of AI-assisted development.
+> **Note**: This application is 99.9% written by AI using frontier models from commercial providers, demonstrating the power of AI-assisted development.
+
+## 📸 Quick Look
+
+<p align="center">
+  <img src="docs-site/static/img/opentranscribe-workflow.gif" alt="OpenTranscribe Workflow" width="800">
+</p>
+
+<p align="center"><em>Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections</em></p>
+
+> 📚 **For detailed screenshots and visual guides**, see the [Complete Documentation](https://docs.opentranscribe.app)
 
 ## ✨ Key Features
 
