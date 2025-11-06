@@ -149,9 +149,11 @@ Thumbs.db
 
 # Test files
 test-output/
-screenshots/
+/screenshots/
 videos/
 test_videos/
+# Allow documentation screenshots
+!docs-site/static/img/screenshots/
 
 # Temporary files
 *.tmp
