@@ -120,15 +120,19 @@ run_security_scan() {
 build_backend() {
     print_info "Building backend image..."
     print_info "Platforms: ${PLATFORMS}"
-    print_info "Tags: latest, ${COMMIT_SHA}"
+    print_info "Version: ${VERSION_FULL}"
+    print_info "Tags: latest, ${VERSION_FULL}, ${VERSION_MAJOR_MINOR}, ${VERSION_MAJOR}, ${COMMIT_SHA}"
 
     cd backend
 
-    # Build and push multi-arch image
+    # Build and push multi-arch image with all version tags
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
         --tag "${REPO_BACKEND}:latest" \
+        --tag "${REPO_BACKEND}:${VERSION_FULL}" \
+        --tag "${REPO_BACKEND}:${VERSION_MAJOR_MINOR}" \
+        --tag "${REPO_BACKEND}:${VERSION_MAJOR}" \
         --tag "${REPO_BACKEND}:${COMMIT_SHA}" \
         ${CACHE_FLAG} \
         --push \
@@ -137,7 +141,12 @@ build_backend() {
     cd ..
 
     print_success "Backend image built and pushed successfully"
-    print_info "Tags: ${REPO_BACKEND}:latest, ${REPO_BACKEND}:${COMMIT_SHA}"
+    print_info "Tags pushed:"
+    print_info "  - ${REPO_BACKEND}:latest"
+    print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
+    print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR_MINOR}"
+    print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR}"
+    print_info "  - ${REPO_BACKEND}:${COMMIT_SHA}"
 
     # Remove old local image and pull fresh amd64 image for scanning
     print_info "Pulling fresh amd64 image from registry for security scan..."
@@ -152,15 +161,19 @@ build_backend() {
 build_frontend() {
     print_info "Building frontend image..."
     print_info "Platforms: ${PLATFORMS}"
-    print_info "Tags: latest, ${COMMIT_SHA}"
+    print_info "Version: ${VERSION_FULL}"
+    print_info "Tags: latest, ${VERSION_FULL}, ${VERSION_MAJOR_MINOR}, ${VERSION_MAJOR}, ${COMMIT_SHA}"
 
     cd frontend
 
-    # Build and push multi-arch image
+    # Build and push multi-arch image with all version tags
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
         --tag "${REPO_FRONTEND}:latest" \
+        --tag "${REPO_FRONTEND}:${VERSION_FULL}" \
+        --tag "${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}" \
+        --tag "${REPO_FRONTEND}:${VERSION_MAJOR}" \
         --tag "${REPO_FRONTEND}:${COMMIT_SHA}" \
         ${CACHE_FLAG} \
         --push \
@@ -169,7 +182,12 @@ build_frontend() {
     cd ..
 
     print_success "Frontend image built and pushed successfully"
-    print_info "Tags: ${REPO_FRONTEND}:latest, ${REPO_FRONTEND}:${COMMIT_SHA}"
+    print_info "Tags pushed:"
+    print_info "  - ${REPO_FRONTEND}:latest"
+    print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
+    print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}"
+    print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR}"
+    print_info "  - ${REPO_FRONTEND}:${COMMIT_SHA}"
 
     # Remove old local image and pull fresh amd64 image for scanning
     print_info "Pulling fresh amd64 image from registry for security scan..."
@@ -195,6 +213,7 @@ Options:
     help        Show this help message
 
 Environment Variables:
+    VERSION                   Semantic version (e.g., v1.2.3) - overrides VERSION file
     DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
     PLATFORMS                 Target platforms (default: linux/amd64,linux/arm64)
     USE_REMOTE_BUILDER        Use remote ARM64 builder for faster builds (default: false)
@@ -208,6 +227,13 @@ Examples:
     $0              # Build and push both images with security scanning
     $0 backend      # Build and push only backend
     $0 auto         # Auto-detect and build changed components
+
+    # Specify version (creates tags: v1.2.3, v1.2, v1, latest)
+    VERSION=v1.2.3 $0 all
+
+    # Version from VERSION file (recommended for releases)
+    echo "v1.2.3" > VERSION
+    $0 all
 
     # Use remote ARM64 builder for 10-20x faster builds
     USE_REMOTE_BUILDER=true $0 all
@@ -223,6 +249,13 @@ Examples:
 
     # Fail build if security issues found (recommended for CI)
     FAIL_ON_SECURITY_ISSUES=true FAIL_ON_CRITICAL=true $0 all
+
+Versioning:
+    The script supports semantic versioning via VERSION file or environment variable:
+    - Creates tags: vX.Y.Z (full), vX.Y (minor), vX (major), latest, commit-sha
+    - Version can be specified as v1.2.3 or 1.2.3 (v prefix added automatically)
+    - Environment variable VERSION overrides VERSION file
+    - If neither exists, defaults to v0.0.0 with a warning
 
 Remote Builder Setup:
     For dramatically faster ARM64 builds, set up a remote builder:
@@ -247,11 +280,48 @@ EOF
 
 # Main script
 main() {
+    # Version management - read from VERSION file or environment variable
+    if [ -n "${VERSION}" ]; then
+        # Use VERSION from environment variable
+        SEMVER="${VERSION}"
+    elif [ -f "VERSION" ]; then
+        # Read VERSION from file
+        SEMVER=$(cat VERSION | tr -d '[:space:]')
+    else
+        # Default version if neither exists
+        SEMVER="v0.0.0"
+    fi
+
+    # Validate semantic version format (vX.Y.Z or X.Y.Z)
+    if [[ ! "${SEMVER}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_error "Invalid semantic version format: ${SEMVER}"
+        print_error "Expected format: v1.2.3 or 1.2.3"
+        exit 1
+    fi
+
+    # Ensure version starts with 'v'
+    if [[ ! "${SEMVER}" =~ ^v ]]; then
+        SEMVER="v${SEMVER}"
+    fi
+
+    # Parse version components for additional tags
+    VERSION_FULL="${SEMVER}"  # e.g., v1.2.3
+    VERSION_MAJOR_MINOR=$(echo "${SEMVER}" | cut -d. -f1-2)  # e.g., v1.2
+    VERSION_MAJOR=$(echo "${SEMVER}" | cut -d. -f1)  # e.g., v1
+
     print_info "OpenTranscribe Docker Build & Push Script"
     print_info "=========================================="
-    print_info "Commit: ${COMMIT_SHA}"
-    print_info "Branch: ${BRANCH}"
+    print_info "Version: ${VERSION_FULL}"
+    print_info "Commit:  ${COMMIT_SHA}"
+    print_info "Branch:  ${BRANCH}"
     print_info ""
+
+    # Warn if using default version
+    if [ "${SEMVER}" = "v0.0.0" ]; then
+        print_warning "No VERSION file or VERSION env var found, using default: ${SEMVER}"
+        print_warning "Create a VERSION file or set VERSION environment variable for production builds"
+        print_info ""
+    fi
 
     # Cache control - set NO_CACHE=true to force rebuild without cache
     CACHE_FLAG=""
@@ -341,22 +411,34 @@ main() {
 
     print_success "All builds completed successfully!"
     print_info ""
-    print_info "Images pushed to Docker Hub:"
+    print_info "Images pushed to Docker Hub with version ${VERSION_FULL}:"
     if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ]; then
+        print_info "Backend:"
         print_info "  - ${REPO_BACKEND}:latest"
+        print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
+        print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR_MINOR}"
+        print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR}"
         print_info "  - ${REPO_BACKEND}:${COMMIT_SHA}"
     fi
     if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ]; then
+        print_info "Frontend:"
         print_info "  - ${REPO_FRONTEND}:latest"
+        print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
+        print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}"
+        print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR}"
         print_info "  - ${REPO_FRONTEND}:${COMMIT_SHA}"
     fi
     print_info ""
-    print_info "To pull these images:"
+    print_info "To pull specific versions:"
     if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ]; then
-        print_info "  docker pull ${REPO_BACKEND}:latest"
+        print_info "  docker pull ${REPO_BACKEND}:latest           # Always latest"
+        print_info "  docker pull ${REPO_BACKEND}:${VERSION_FULL}  # Specific version"
+        print_info "  docker pull ${REPO_BACKEND}:${VERSION_MAJOR}            # Major version"
     fi
     if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ]; then
-        print_info "  docker pull ${REPO_FRONTEND}:latest"
+        print_info "  docker pull ${REPO_FRONTEND}:latest           # Always latest"
+        print_info "  docker pull ${REPO_FRONTEND}:${VERSION_FULL}  # Specific version"
+        print_info "  docker pull ${REPO_FRONTEND}:${VERSION_MAJOR}            # Major version"
     fi
 
     # CRITICAL: Switch back to default builder to prevent interference with local dev builds

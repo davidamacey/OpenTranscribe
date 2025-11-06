@@ -935,7 +935,13 @@ WHISPER_MODEL=base                # Faster processing
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) - see the [LICENSE](LICENSE) file for details.
+
+The AGPL-3.0 license ensures that:
+- The source code remains open and accessible to everyone
+- Any modifications to the software must be made available to users
+- Network use (SaaS) requires source code availability
+- Protects the open source community and prevents proprietary forks
 
 ## 🙏 Acknowledgments
 

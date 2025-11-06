@@ -57,7 +57,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 
 ### Open Source & Self-Hosted
 - **Full control** over your data - nothing leaves your infrastructure
-- **MIT License** - use it however you want
+- **AGPL-3.0 License** - open source with network copyleft protection
 - **No subscription fees** - one-time setup, unlimited use
 - **Privacy-first** - ideal for sensitive content (legal, medical, business)
 

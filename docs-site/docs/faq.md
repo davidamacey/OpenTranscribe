@@ -15,7 +15,7 @@ OpenTranscribe is an open-source, self-hosted AI-powered transcription and media
 
 ### Is OpenTranscribe free?
 
-Yes! OpenTranscribe is completely free and open-source under the MIT License. There are no subscription fees, usage limits, or hidden costs. You can use it for personal, commercial, or any other purpose.
+Yes! OpenTranscribe is completely free and open-source under the GNU Affero General Public License v3.0 (AGPL-3.0). There are no subscription fees, usage limits, or hidden costs. You can use it for personal, commercial, or any other purpose, as long as you comply with the AGPL-3.0 license terms.
 
 ### What makes OpenTranscribe different from other transcription services?
 
@@ -29,7 +29,7 @@ Yes! OpenTranscribe is completely free and open-source under the MIT License. Th
 
 ### Can I use OpenTranscribe commercially?
 
-Yes! The MIT License permits commercial use without restrictions.
+Yes! The AGPL-3.0 license permits commercial use. However, if you modify OpenTranscribe and offer it as a network service (SaaS), you must make your modified source code available to your users under the same AGPL-3.0 license.
 
 ## Installation & Setup
 
