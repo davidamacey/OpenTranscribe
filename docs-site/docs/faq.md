@@ -369,13 +369,15 @@ We welcome contributions! See [Contributing Guide](./developer-guide/contributin
 
 ### Can I customize OpenTranscribe?
 
-Yes! OpenTranscribe is open source (MIT License):
+Yes! OpenTranscribe is open source (AGPL-3.0 License):
 - Modify the code
 - Add custom features
 - Integrate with other services
 - White-label for your organization
 
 See [Developer Guide](./developer-guide/architecture.md) to get started.
+
+**Important:** If you modify OpenTranscribe and offer it as a network service (SaaS), you must make your modified source code available to your users under the AGPL-3.0 license.
 
 ### How is OpenTranscribe built?
 
@@ -398,22 +400,33 @@ See [Architecture](./developer-guide/architecture.md) for details.
 
 ### What is the license?
 
-OpenTranscribe is licensed under the **MIT License** - one of the most permissive open-source licenses. You can:
+OpenTranscribe is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** - a strong copyleft open-source license. You can:
 - Use commercially
 - Modify the code
 - Distribute
-- Sublicense
 - Private use
 
-No restrictions, no royalties, no obligations (except including the license notice).
+**Key requirement:** If you modify OpenTranscribe and offer it as a network service (SaaS), you must provide your users access to the modified source code under the same AGPL-3.0 license. This ensures the open source community benefits from improvements.
 
 ### Can I sell OpenTranscribe?
 
-Yes! The MIT License permits commercial use, including selling the software or offering it as a service.
+Yes! The AGPL-3.0 license permits commercial use, including:
+- Offering it as a paid service
+- Selling access to your installation
+- Using it for commercial transcription work
+
+**Important:** If you modify the code and run it as a network service, you must make your modifications available under AGPL-3.0.
 
 ### Do I need to credit OpenTranscribe?
 
-Not required, but appreciated! The MIT License only requires that you include the original license notice in copies of the software.
+Credit is appreciated but not required. The AGPL-3.0 license requires that you:
+1. Include the original license notice in copies of the software
+2. Make source code available if you offer it as a network service
+3. Preserve copyright notices
+
+### What if I don't want to share my modifications?
+
+If you modify OpenTranscribe for internal use only (not as a network service), you don't need to share your changes. The AGPL-3.0 only requires source disclosure when you offer the software as a service to others over a network.
 
 ### What about the AI models' licenses?
 
