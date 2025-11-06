@@ -163,7 +163,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} OpenTranscribe. Open Source under MIT License.`,
+      copyright: `Copyright © ${new Date().getFullYear()} OpenTranscribe. Open Source under AGPL-3.0 License.`,
     },
     prism: {
       theme: prismThemes.github,

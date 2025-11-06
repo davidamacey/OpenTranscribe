@@ -86,7 +86,7 @@ function HomepageStats() {
           </div>
           <div className="col col--3">
             <div className={styles.stat}>
-              <div className={styles.statNumber}>MIT</div>
+              <div className={styles.statNumber}>AGPL-3.0</div>
               <div className={styles.statLabel}>Open Source</div>
             </div>
           </div>

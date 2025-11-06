@@ -36,7 +36,7 @@ LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
       org.opencontainers.image.description="Svelte-based Progressive Web App for AI-powered transcription" \
       org.opencontainers.image.vendor="OpenTranscribe" \
       org.opencontainers.image.authors="OpenTranscribe Contributors" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="AGPL-3.0" \
       org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
 

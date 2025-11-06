@@ -100,7 +100,7 @@ Fully configured Docusaurus site with:
 - Troubleshooting (common errors and solutions)
 - Security & Privacy (data security, encryption)
 - Development & Contribution (how to contribute, tech stack)
-- Licensing & Legal (MIT license, commercial use)
+- Licensing & Legal (AGPL-3.0 license, commercial use)
 
 ### 4. Custom Homepage
 **Files:**
@@ -118,7 +118,7 @@ Fully configured Docusaurus site with:
   - 🔍 Hybrid Search
   - 🔒 Privacy-First
   - ⚡ Production-Ready
-- Statistics section (70x speed, 50+ languages, 100% local, MIT license)
+- Statistics section (70x speed, 50+ languages, 100% local, AGPL-3.0 license)
 - Demo placeholder section
 - Call-to-action section
 - Custom blue color scheme
