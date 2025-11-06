@@ -17,6 +17,23 @@ function HomepageHeader() {
           {siteConfig.title}
         </Heading>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
+
+        <div style={{textAlign: 'center', margin: '1.5rem auto', maxWidth: '600px'}}>
+          <img
+            src="/img/opentranscribe-workflow.gif"
+            alt="OpenTranscribe Complete Workflow"
+            style={{
+              maxWidth: '100%',
+              width: '100%',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+            }}
+          />
+          <p style={{marginTop: '0.5rem', fontSize: '0.9rem', fontStyle: 'italic', opacity: 0.8}}>
+            Complete workflow: Login → Upload → Process → Transcribe → Speaker Identification → AI Tags & Collections
+          </p>
+        </div>
+
         <p className={styles.heroDescription}>
           Self-hosted, open-source AI transcription with speaker identification,
           AI summarization, and powerful search. Privacy-first, production-ready, and 70x realtime speed.
@@ -43,24 +60,6 @@ function HomepageHeader() {
   );
 }
 
-function HomepageDemo() {
-  return (
-    <section className={styles.demo}>
-      <div className="container">
-        <Heading as="h2" className="text--center margin-bottom--lg">
-          See OpenTranscribe in Action
-        </Heading>
-        <div className={styles.demoPlaceholder}>
-          {/* Placeholder for screenshot or demo video */}
-          <p className="text--center text--muted">
-            📸 Interactive transcript with speaker labels, waveform visualization,
-            and AI-powered search coming soon
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function HomepageStats() {
   return (
@@ -129,7 +128,6 @@ export default function Home(): ReactNode {
       <main>
         <HomepageStats />
         <HomepageFeatures />
-        <HomepageDemo />
         <HomepageCTA />
       </main>
     </Layout>
