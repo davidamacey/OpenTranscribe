@@ -9,6 +9,8 @@
   import LLMSettings from '$components/settings/LLMSettings.svelte';
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
+  import RetrySettings from '$components/settings/RetrySettings.svelte';
+  import GarbageCleanupSettings from '$components/settings/GarbageCleanupSettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -1312,9 +1314,16 @@
           {#if activeSection === 'admin-settings' && isAdmin}
             <div class="content-section">
               <h3 class="section-title">System Settings</h3>
-              <p class="section-description">System-wide configuration (Coming Soon)</p>
-              <div class="placeholder-message">
-                <p>System settings management will be available in a future update.</p>
+              <p class="section-description">System-wide configuration options</p>
+
+              <!-- Retry Settings -->
+              <div class="settings-subsection">
+                <RetrySettings />
+              </div>
+
+              <!-- Garbage Cleanup Settings -->
+              <div class="settings-subsection">
+                <GarbageCleanupSettings />
               </div>
             </div>
           {/if}
@@ -1989,6 +1998,14 @@
     padding: 2rem;
     color: var(--text-secondary);
     font-size: 0.8125rem;
+  }
+
+  .settings-subsection {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
   }
 
   .empty-state {

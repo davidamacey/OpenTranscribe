@@ -12,7 +12,7 @@
 
 - ~~**Add speaker count settings to import/reprocess UI**~~ ✅ DONE 2025-12-07 | Settings dialog added for min, max, and fixed speaker count configuration.
 
-- **Auto-cleanup garbage transcription segments** | Problem: WhisperX can misinterpret background noise as extremely long "words" (e.g., 442-character "Brrrrr...") with no spaces, causing UI layout issues (horizontal scrollbars). | Files: `backend/app/tasks/transcription/core.py`, `frontend/src/components/settings/`, `backend/app/api/endpoints/settings/` | Solution: Add configurable setting for max word length threshold (default: 50 chars). During transcription post-processing, detect segments containing words exceeding threshold and either replace with `[background noise]`, flag for review, or truncate. Setting should be accessible in UI under transcription settings.
+- ~~**Auto-cleanup garbage transcription segments**~~ ✅ DONE 2025-12-07 | Detects long garbage words (>50 chars, no spaces) caused by WhisperX misinterpreting background noise and replaces with `[background noise]`. Configurable in Admin System Settings: toggle enable/disable, set max word length threshold (20-200). Files: `backend/app/tasks/transcription/core.py` (cleanup function), `backend/app/services/system_settings_service.py`, `backend/app/api/endpoints/admin.py` (GET/PUT endpoints), `frontend/src/components/settings/GarbageCleanupSettings.svelte`, `database/init_db.sql` (default settings).
 
 ## Bug Reports - 2025-12-06 22:51
 

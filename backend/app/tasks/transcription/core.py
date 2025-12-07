@@ -36,6 +36,46 @@ from .whisperx_service import WhisperXService
 logger = logging.getLogger(__name__)
 
 
+def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list, int]:
+    """
+    Clean garbage words from transcript segments.
+
+    Garbage words are very long continuous strings (no spaces) that typically result from
+    WhisperX misinterpreting background noise (fans, static, rumbling) as speech.
+
+    Args:
+        segments: List of transcript segments with 'text' field
+        max_word_length: Maximum word length threshold (words longer are replaced)
+
+    Returns:
+        Tuple of (cleaned segments, count of garbage words replaced)
+    """
+    garbage_count = 0
+    cleaned_segments = []
+
+    for segment in segments:
+        text = segment.get("text", "")
+        words = text.split()
+        cleaned_words = []
+
+        for word in words:
+            # Check if word exceeds max length and has no spaces
+            # (spaces would indicate it's not a single garbage word)
+            if len(word) > max_word_length and " " not in word:
+                cleaned_words.append("[background noise]")
+                garbage_count += 1
+                logger.debug(f"Replaced garbage word ({len(word)} chars): {word[:30]}...")
+            else:
+                cleaned_words.append(word)
+
+        # Create a copy of the segment with cleaned text
+        cleaned_segment = segment.copy()
+        cleaned_segment["text"] = " ".join(cleaned_words)
+        cleaned_segments.append(cleaned_segment)
+
+    return cleaned_segments, garbage_count
+
+
 # Import for automatic summarization, speaker identification, and analytics
 def trigger_automatic_summarization(file_id: int, file_uuid: str):
     """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
@@ -267,6 +307,22 @@ def transcribe_audio_task(
                 processed_segments = process_segments_with_speakers(
                     result["segments"], speaker_mapping
                 )
+
+                # Step 8.5: Clean garbage words from transcription
+                with session_scope() as db:
+                    from app.services import system_settings_service
+
+                    garbage_config = system_settings_service.get_garbage_cleanup_config(db)
+
+                if garbage_config["garbage_cleanup_enabled"]:
+                    processed_segments, garbage_count = clean_garbage_words(
+                        processed_segments, garbage_config["max_word_length"]
+                    )
+                    if garbage_count > 0:
+                        logger.info(
+                            f"Cleaned {garbage_count} garbage word(s) from file {file_id} "
+                            f"(threshold: {garbage_config['max_word_length']} chars)"
+                        )
 
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.75)
