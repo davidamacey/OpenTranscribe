@@ -19,6 +19,7 @@ from .endpoints import summarization
 from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import topics
+from .endpoints import transcript_segments
 from .endpoints import user_files
 from .endpoints import user_settings
 from .endpoints import users
@@ -92,6 +93,9 @@ include_router_with_consistency(
     user_settings.router, prefix="/user-settings", tags=["user-settings"]
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
+include_router_with_consistency(
+    transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
+)
 
 # Include WebSocket router without prefix since it handles its own paths
 api_router.include_router(websockets.router, tags=["websockets"])
