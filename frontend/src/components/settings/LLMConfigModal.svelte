@@ -316,7 +316,7 @@
 
     // Check if API key is required for this provider
     const providerConfig = getProviderDefaults(formData.provider);
-    if (providerConfig?.requires_api_key && !formData.api_key) {
+    if (providerConfig?.requires_api_key && !formData.api_key && !editingConfig?.has_api_key) {
       openaiModelsError = 'Please enter an API key first';
       return;
     }
@@ -529,7 +529,7 @@
                   type="button"
                   class="discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
-                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key)}
+                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key && !editingConfig?.has_api_key)}
                   title="Discover available models from API endpoint"
                 >
                   {#if loadingOpenAIModels}
@@ -621,9 +621,14 @@
           </div>
 
           <!-- API Key (if required) -->
-          {#if getProviderDefaults(formData.provider)?.requires_api_key}
+          {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
             <div class="form-group">
-              <label for="api-key">API Key *</label>
+              <label for="api-key">
+                API Key {#if !editingConfig}*{/if}
+                {#if editingConfig?.has_api_key}
+                  <span class="stored-indicator" title="API key is currently stored">✓ stored</span>
+                {/if}
+              </label>
               <div class="api-key-input">
                 {#if showApiKey}
                   <input
@@ -1252,5 +1257,15 @@
   :global(.modal-warning-button:active) {
     transform: translateY(0) !important;
     box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
+  }
+
+  .stored-indicator {
+    color: #10b981;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-left: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
 </style>
