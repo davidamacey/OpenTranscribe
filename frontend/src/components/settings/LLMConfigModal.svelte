@@ -124,12 +124,15 @@
     return true;
   })();
 
+  // Masked API key indicator for edit mode
+  const MASKED_API_KEY = '••••••••••••••••';
+
   function populateForm(config: UserLLMSettings) {
     formData = {
       name: config.name,
       provider: config.provider as any,
       model_name: config.model_name,
-      api_key: '', // Never populate API key for security
+      api_key: config.has_api_key ? MASKED_API_KEY : '', // Show masked indicator if key exists
       base_url: config.base_url || '',
       max_tokens: config.max_tokens,
       temperature: config.temperature,
@@ -206,19 +209,26 @@
 
   async function saveConfiguration() {
     if (!isFormValid) return;
-    
+
     saving = true;
-    
+
     try {
       let savedConfig;
+      // Prepare data - don't send masked API key placeholder
+      const dataToSave = { ...formData };
+      if (dataToSave.api_key === MASKED_API_KEY) {
+        // User didn't change the API key, don't send it (backend keeps existing)
+        delete dataToSave.api_key;
+      }
+
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, formData);
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, dataToSave);
         toastStore.success('Configuration updated successfully', 5000);
       } else {
-        savedConfig = await LLMSettingsApi.createSettings(formData);
+        savedConfig = await LLMSettingsApi.createSettings(dataToSave);
         toastStore.success('Configuration created successfully', 5000);
       }
-      
+
       dispatch('saved', savedConfig);
       closeModal(true);
     } catch (err: any) {
@@ -316,7 +326,9 @@
 
     // Check if API key is required for this provider
     const providerConfig = getProviderDefaults(formData.provider);
-    if (providerConfig?.requires_api_key && !formData.api_key && !editingConfig?.has_api_key) {
+    const hasValidApiKey = formData.api_key && formData.api_key !== MASKED_API_KEY;
+    const hasStoredApiKey = editingConfig?.has_api_key;
+    if (providerConfig?.requires_api_key && !hasValidApiKey && !hasStoredApiKey) {
       openaiModelsError = 'Please enter an API key first';
       return;
     }
@@ -325,9 +337,13 @@
     openaiModelsError = '';
 
     try {
+      // Don't send masked placeholder as actual API key
+      const apiKeyToSend = (formData.api_key && formData.api_key !== MASKED_API_KEY)
+        ? formData.api_key
+        : undefined;
       const result = await LLMSettingsApi.getOpenAICompatibleModels(
         formData.base_url,
-        formData.api_key || undefined,
+        apiKeyToSend,
         editingConfig?.id  // Pass config ID for edit mode to use stored key
       );
       if (result.success && result.models) {
@@ -638,7 +654,7 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder={editingConfig ? 'Enter new API key (leave blank to keep current)' : 'Enter your API key'}
+                    placeholder={editingConfig?.has_api_key ? '' : 'Enter your API key'}
                     required={!editingConfig}
                   />
                 {:else}
@@ -648,7 +664,7 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder={editingConfig ? 'Enter new API key (leave blank to keep current)' : 'Enter your API key'}
+                    placeholder={editingConfig?.has_api_key ? '' : 'Enter your API key'}
                     required={!editingConfig}
                   />
                 {/if}
