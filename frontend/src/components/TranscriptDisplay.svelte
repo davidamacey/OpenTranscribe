@@ -951,6 +951,7 @@
   .transcript-display {
     max-height: 600px;
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
   }
 
@@ -965,12 +966,14 @@
   .segment-row {
     display: flex;
     align-items: stretch;
+    min-width: 0; /* Allow flex container to shrink */
+    width: 100%;
   }
 
   .segment-content {
-    flex: 1;
+    flex: 1 1 0; /* Allow shrinking below content size */
     display: grid;
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
     gap: 12px;
     align-items: center;
     padding: 8px 12px;
@@ -981,6 +984,9 @@
     transition: all 0.2s ease;
     border-radius: 4px;
     margin: 2px 4px;
+    min-width: 0; /* Allow grid to shrink */
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .segment-content:hover {
@@ -1024,6 +1030,10 @@
     line-height: 1.4;
     position: relative;
     padding-left: 12px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0; /* Allow text to shrink in grid layout */
   }
 
   .segment-text::before {
@@ -1502,7 +1512,7 @@
 
   @media (max-width: 768px) {
     .segment-content {
-      grid-template-columns: auto auto 1fr;
+      grid-template-columns: auto auto minmax(0, 1fr);
       gap: 8px;
       padding: 8px;
     }

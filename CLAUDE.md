@@ -115,6 +115,26 @@ PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
 
 See [scripts/README.md](scripts/README.md) for detailed documentation.
 
+### Local Development Builds (No Docker Hub Push)
+
+When making code changes and testing locally without pushing to Docker Hub:
+
+```bash
+# Build backend image locally (always use --no-cache for code changes)
+cd ~/prj/src/OpenTranscribe
+docker build --no-cache -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
+
+# Restart production with local image (use docker-compose.local.yml to prevent pulling)
+cd ~/prj/opentranscribe
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml up -d --force-recreate
+```
+
+**Important:**
+- `--no-cache` is required because Docker may cache the COPY layer even when files changed
+- `--force-recreate` ensures containers use the new image
+- `docker-compose.local.yml` sets `pull_policy: never` to prevent overwriting local images with Docker Hub versions
+- Never use `./opentranscribe.sh update` with local builds (it pulls from Docker Hub)
+
 ### Frontend Development
 ```bash
 # From frontend/ directory

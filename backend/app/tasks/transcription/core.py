@@ -176,6 +176,9 @@ def transcribe_audio_task(self, file_uuid: str):
                     audio_file_path,
                     settings.HUGGINGFACE_TOKEN,
                     progress_callback=whisperx_progress_callback,
+                    min_speakers=settings.MIN_SPEAKERS,
+                    max_speakers=settings.MAX_SPEAKERS,
+                    num_speakers=settings.NUM_SPEAKERS,
                 )
 
                 # Check if transcription produced any valid content

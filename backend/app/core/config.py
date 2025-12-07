@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN", None)
 
+    # Speaker diarization settings
+    MIN_SPEAKERS: int = int(os.getenv("MIN_SPEAKERS", "1"))
+    MAX_SPEAKERS: int = int(os.getenv("MAX_SPEAKERS", "20"))
+    # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
+    NUM_SPEAKERS: Optional[int] = int(os.getenv("NUM_SPEAKERS")) if os.getenv("NUM_SPEAKERS") else None
+
     # LLM Configuration - Users configure through web UI, stored in database
     # These are system fallbacks for quick access when no user settings exist
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "")
