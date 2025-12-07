@@ -212,8 +212,11 @@ export class LLMSettingsApi {
 
   /**
    * Get available models from an OpenAI-compatible API endpoint
+   * @param baseUrl - The base URL of the API
+   * @param apiKey - Optional API key (for new configs)
+   * @param configId - Optional config ID (for edit mode - uses stored key)
    */
-  static async getOpenAICompatibleModels(baseUrl: string, apiKey?: string): Promise<{
+  static async getOpenAICompatibleModels(baseUrl: string, apiKey?: string, configId?: string): Promise<{
     success: boolean;
     models: Array<{
       name: string;
@@ -227,7 +230,8 @@ export class LLMSettingsApi {
     const response = await axiosInstance.get(`${this.BASE_PATH}/openai-compatible/models`, {
       params: {
         base_url: baseUrl,
-        api_key: apiKey
+        api_key: apiKey,
+        config_id: configId
       }
     });
     return response.data;

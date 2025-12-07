@@ -327,7 +327,8 @@
     try {
       const result = await LLMSettingsApi.getOpenAICompatibleModels(
         formData.base_url,
-        formData.api_key || undefined
+        formData.api_key || undefined,
+        editingConfig?.id  // Pass config ID for edit mode to use stored key
       );
       if (result.success && result.models) {
         openaiCompatibleModels = result.models;

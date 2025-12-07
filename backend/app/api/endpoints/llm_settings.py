@@ -754,13 +754,36 @@ async def get_ollama_models(
 async def get_openai_compatible_models(
     base_url: str,
     api_key: str | None = None,
+    config_id: str | None = None,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get available models from an OpenAI-compatible API endpoint
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers
+
+    If config_id is provided and no api_key, will use the stored API key from that config.
     """
     import aiohttp
+
+    # If no api_key provided but config_id is, look up the stored key
+    effective_api_key = api_key
+    if not effective_api_key and config_id:
+        try:
+            config_uuid = uuid.UUID(config_id)
+            config = (
+                db.query(models.UserLLMSettings)
+                .filter(
+                    models.UserLLMSettings.uuid == config_uuid,
+                    models.UserLLMSettings.user_id == current_user.id,
+                )
+                .first()
+            )
+            if config and config.api_key:
+                # Decrypt the stored API key
+                effective_api_key = decrypt_api_key(config.api_key)
+        except (ValueError, Exception) as e:
+            logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
 
     try:
         # Clean up base URL
@@ -772,8 +795,8 @@ async def get_openai_compatible_models(
 
         # Prepare headers
         headers = {}
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        if effective_api_key:
+            headers["Authorization"] = f"Bearer {effective_api_key}"
 
         timeout = aiohttp.ClientTimeout(total=10)
         async with (
