@@ -212,6 +212,14 @@ export class LLMSettingsApi {
   }
 
   /**
+   * Get the decrypted API key for a specific configuration
+   */
+  static async getConfigApiKey(configId: string): Promise<{ api_key: string | null }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${configId}/api-key`);
+    return response.data;
+  }
+
+  /**
    * Get available models from an OpenAI-compatible API endpoint
    * @param baseUrl - The base URL of the API
    * @param apiKey - Optional API key (for new configs)

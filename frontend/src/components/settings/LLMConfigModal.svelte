@@ -124,20 +124,38 @@
     return true;
   })();
 
-  // Masked API key indicator for edit mode
-  const MASKED_API_KEY = '••••••••••••••••';
+  // Loading state for API key fetch
+  let loadingApiKey = false;
 
-  function populateForm(config: UserLLMSettings) {
+  async function populateForm(config: UserLLMSettings) {
     formData = {
       name: config.name,
       provider: config.provider as any,
       model_name: config.model_name,
-      api_key: config.has_api_key ? MASKED_API_KEY : '', // Show masked indicator if key exists
+      api_key: '', // Will be populated below if exists
       base_url: config.base_url || '',
       max_tokens: config.max_tokens,
       temperature: config.temperature,
       is_active: config.is_active
     };
+
+    // Fetch the actual API key if one is stored
+    if (config.has_api_key && config.id) {
+      loadingApiKey = true;
+      try {
+        const result = await LLMSettingsApi.getConfigApiKey(config.id);
+        if (result.api_key) {
+          formData.api_key = result.api_key;
+          formData = { ...formData }; // Trigger reactivity
+        }
+      } catch (err) {
+        console.error('Failed to fetch API key:', err);
+        // Don't show error to user, just leave field empty
+      } finally {
+        loadingApiKey = false;
+      }
+    }
+
     originalFormData = { ...formData };
   }
 
@@ -214,18 +232,11 @@
 
     try {
       let savedConfig;
-      // Prepare data - don't send masked API key placeholder
-      const dataToSave = { ...formData };
-      if (dataToSave.api_key === MASKED_API_KEY) {
-        // User didn't change the API key, don't send it (backend keeps existing)
-        delete dataToSave.api_key;
-      }
-
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, dataToSave);
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, formData);
         toastStore.success('Configuration updated successfully', 5000);
       } else {
-        savedConfig = await LLMSettingsApi.createSettings(dataToSave);
+        savedConfig = await LLMSettingsApi.createSettings(formData);
         toastStore.success('Configuration created successfully', 5000);
       }
 
@@ -246,16 +257,11 @@
     testResult = null;
 
     try {
-      // Don't send masked placeholder as actual API key
-      const apiKeyToSend = (formData.api_key && formData.api_key !== MASKED_API_KEY)
-        ? formData.api_key
-        : undefined;
       const result = await LLMSettingsApi.testConnection({
         provider: formData.provider,
         model_name: formData.model_name,
-        api_key: apiKeyToSend,
-        base_url: formData.base_url || undefined,
-        config_id: editingConfig?.id  // Pass config ID to use stored key
+        api_key: formData.api_key || undefined,
+        base_url: formData.base_url || undefined
       });
       
       testResult = result;
@@ -331,9 +337,7 @@
 
     // Check if API key is required for this provider
     const providerConfig = getProviderDefaults(formData.provider);
-    const hasValidApiKey = formData.api_key && formData.api_key !== MASKED_API_KEY;
-    const hasStoredApiKey = editingConfig?.has_api_key;
-    if (providerConfig?.requires_api_key && !hasValidApiKey && !hasStoredApiKey) {
+    if (providerConfig?.requires_api_key && !formData.api_key) {
       openaiModelsError = 'Please enter an API key first';
       return;
     }
@@ -342,14 +346,9 @@
     openaiModelsError = '';
 
     try {
-      // Don't send masked placeholder as actual API key
-      const apiKeyToSend = (formData.api_key && formData.api_key !== MASKED_API_KEY)
-        ? formData.api_key
-        : undefined;
       const result = await LLMSettingsApi.getOpenAICompatibleModels(
         formData.base_url,
-        apiKeyToSend,
-        editingConfig?.id  // Pass config ID for edit mode to use stored key
+        formData.api_key || undefined
       );
       if (result.success && result.models) {
         openaiCompatibleModels = result.models;
@@ -551,7 +550,7 @@
                   type="button"
                   class="discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
-                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key && !editingConfig?.has_api_key)}
+                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key)}
                   title="Discover available models from API endpoint"
                 >
                   {#if loadingOpenAIModels}
@@ -647,9 +646,6 @@
             <div class="form-group">
               <label for="api-key">
                 API Key {#if !editingConfig}*{/if}
-                {#if editingConfig?.has_api_key}
-                  <span class="stored-indicator" title="API key is currently stored">✓ stored</span>
-                {/if}
               </label>
               <div class="api-key-input">
                 {#if showApiKey}
@@ -659,7 +655,7 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder={editingConfig?.has_api_key ? '' : 'Enter your API key'}
+                    placeholder="Enter your API key"
                     required={!editingConfig}
                   />
                 {:else}
@@ -669,7 +665,7 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder={editingConfig?.has_api_key ? '' : 'Enter your API key'}
+                    placeholder="Enter your API key"
                     required={!editingConfig}
                   />
                 {/if}
@@ -1279,15 +1275,5 @@
   :global(.modal-warning-button:active) {
     transform: translateY(0) !important;
     box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2) !important;
-  }
-
-  .stored-indicator {
-    color: #10b981;
-    font-size: 0.75rem;
-    font-weight: 500;
-    margin-left: 0.5rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
   }
 </style>

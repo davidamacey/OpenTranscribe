@@ -697,6 +697,35 @@ async def test_specific_configuration(
     return result
 
 
+@router.get("/config/{config_uuid}/api-key")
+async def get_config_api_key(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get the decrypted API key for a specific configuration.
+    Only the owner can access their own API keys.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+
+    if user_config.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this configuration",
+        )
+
+    if not user_config.api_key:
+        return {"api_key": None}
+
+    # Decrypt API key
+    api_key = decrypt_api_key(user_config.api_key)
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+
+    return {"api_key": api_key}
+
+
 @router.get("/ollama/models")
 async def get_ollama_models(
     base_url: str,
