@@ -53,6 +53,7 @@ export interface ConnectionTestRequest {
   model_name: string;
   api_key?: string;
   base_url?: string;
+  config_id?: string;  // For edit mode - uses stored API key
 }
 
 export interface ConnectionTestResponse {

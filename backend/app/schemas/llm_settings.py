@@ -139,6 +139,7 @@ class ConnectionTestRequest(BaseModel):
     model_name: str
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    config_id: Optional[UUID] = None  # For edit mode - uses stored API key
 
 
 class ConnectionTestResponse(BaseModel):

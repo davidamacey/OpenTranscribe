@@ -502,14 +502,34 @@ def delete_all_user_configurations(
 async def test_llm_connection(
     *,
     test_request: schemas.ConnectionTestRequest,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Test connection to LLM provider without saving settings
+    Test connection to LLM provider without saving settings.
+    If config_id is provided and no api_key, will use the stored API key from that config.
     """
     start_time = time.time()
 
     try:
+        # If no api_key provided but config_id is, look up the stored key
+        effective_api_key = test_request.api_key
+        if not effective_api_key and test_request.config_id:
+            try:
+                config = (
+                    db.query(models.UserLLMSettings)
+                    .filter(
+                        models.UserLLMSettings.uuid == test_request.config_id,
+                        models.UserLLMSettings.user_id == current_user.id,
+                    )
+                    .first()
+                )
+                if config and config.api_key:
+                    # Decrypt the stored API key
+                    effective_api_key = decrypt_api_key(config.api_key)
+            except Exception as e:
+                logger.warning(f"Could not retrieve stored API key for config {test_request.config_id}: {e}")
+
         # Map schema enum to service enum
         service_provider = ServiceLLMProvider(test_request.provider.value)
 
@@ -517,7 +537,7 @@ async def test_llm_connection(
         config = LLMConfig(
             provider=service_provider,
             model=test_request.model_name,
-            api_key=test_request.api_key,
+            api_key=effective_api_key,
             base_url=test_request.base_url,
         )
 

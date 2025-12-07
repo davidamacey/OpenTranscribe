@@ -241,16 +241,21 @@
 
   async function testConnection() {
     if (!isConnectionTestValid) return;
-    
+
     testing = true;
     testResult = null;
-    
+
     try {
+      // Don't send masked placeholder as actual API key
+      const apiKeyToSend = (formData.api_key && formData.api_key !== MASKED_API_KEY)
+        ? formData.api_key
+        : undefined;
       const result = await LLMSettingsApi.testConnection({
         provider: formData.provider,
         model_name: formData.model_name,
-        api_key: formData.api_key || undefined,
-        base_url: formData.base_url || undefined
+        api_key: apiKeyToSend,
+        base_url: formData.base_url || undefined,
+        config_id: editingConfig?.id  // Pass config ID to use stored key
       });
       
       testResult = result;
