@@ -62,6 +62,10 @@
   let originalSpeakerNames: Map<string, string> = new Map(); // Track original names for change detection
   let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
+  let showReprocessSettings = false;
+  let reprocessMinSpeakers: number | null = null;
+  let reprocessMaxSpeakers: number | null = null;
+  let reprocessNumSpeakers: number | null = null;
   let summaryData: any = null;
   let showSummaryModal = false;
   let showTranscriptModal = false;
@@ -1603,7 +1607,25 @@
 
       file = file; // Trigger reactivity
 
-      await axiosInstance.post(`/api/files/${file.id}/reprocess`);
+      // Build request body with speaker parameters if provided
+      const requestBody: any = {};
+      if (reprocessMinSpeakers !== null) {
+        requestBody.min_speakers = reprocessMinSpeakers;
+      }
+      if (reprocessMaxSpeakers !== null) {
+        requestBody.max_speakers = reprocessMaxSpeakers;
+      }
+      if (reprocessNumSpeakers !== null) {
+        requestBody.num_speakers = reprocessNumSpeakers;
+      }
+
+      await axiosInstance.post(`/api/files/${file.id}/reprocess`, Object.keys(requestBody).length > 0 ? requestBody : undefined);
+
+      // Reset settings after starting
+      showReprocessSettings = false;
+      reprocessMinSpeakers = null;
+      reprocessMaxSpeakers = null;
+      reprocessNumSpeakers = null;
 
       // Don't immediately fetch - let WebSocket notifications handle updates
       toastStore.success('Reprocessing started successfully');
@@ -1618,6 +1640,9 @@
       reprocessing = false;
     }
   }
+
+  // Validation for reprocess settings
+  $: reprocessSettingsValid = !(reprocessMinSpeakers !== null && reprocessMaxSpeakers !== null && reprocessMinSpeakers > reprocessMaxSpeakers);
 
 
   /**
@@ -2084,22 +2109,100 @@
               {/if}
             </button>
           {/if}
-          <!-- Reprocess Button - icon only with tooltip -->
+          <!-- Reprocess Button with settings dropdown -->
           {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
-            <button
-              class="reprocess-button-header"
-              on:click={handleReprocessHeader}
-              disabled={reprocessing}
-              title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-              </svg>
-              {#if reprocessing}
-                <div class="spinner-small"></div>
+            <div class="reprocess-dropdown-container">
+              <button
+                class="reprocess-button-header"
+                on:click={() => showReprocessSettings = !showReprocessSettings}
+                disabled={reprocessing}
+                title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M23 4v6h-6"></path>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                {#if reprocessing}
+                  <div class="spinner-small"></div>
+                {/if}
+              </button>
+
+              {#if showReprocessSettings}
+                <div class="reprocess-settings-dropdown">
+                  <div class="reprocess-settings-header">
+                    <h4>Speaker Diarization Settings</h4>
+                    <p>Configure speaker detection. Leave empty for defaults.</p>
+                  </div>
+
+                  <div class="reprocess-settings-row">
+                    <div class="reprocess-setting-field">
+                      <label for="header-min-speakers">Min Speakers</label>
+                      <input
+                        id="header-min-speakers"
+                        type="number"
+                        min="1"
+                        placeholder="Default"
+                        bind:value={reprocessMinSpeakers}
+                        disabled={reprocessNumSpeakers !== null}
+                      />
+                    </div>
+
+                    <div class="reprocess-setting-field">
+                      <label for="header-max-speakers">Max Speakers</label>
+                      <input
+                        id="header-max-speakers"
+                        type="number"
+                        min="1"
+                        placeholder="Default"
+                        bind:value={reprocessMaxSpeakers}
+                        disabled={reprocessNumSpeakers !== null}
+                      />
+                    </div>
+                  </div>
+
+                  <div class="reprocess-setting-field">
+                    <label for="header-num-speakers">
+                      Fixed Speaker Count
+                      <span class="setting-hint">Overrides min/max</span>
+                    </label>
+                    <input
+                      id="header-num-speakers"
+                      type="number"
+                      min="1"
+                      placeholder="Default"
+                      bind:value={reprocessNumSpeakers}
+                    />
+                  </div>
+
+                  {#if !reprocessSettingsValid}
+                    <div class="reprocess-validation-error">
+                      Min speakers must be &le; max speakers
+                    </div>
+                  {/if}
+
+                  <div class="reprocess-settings-actions">
+                    <button
+                      class="btn-cancel"
+                      on:click={() => {
+                        showReprocessSettings = false;
+                        reprocessMinSpeakers = null;
+                        reprocessMaxSpeakers = null;
+                        reprocessNumSpeakers = null;
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      class="btn-confirm"
+                      on:click={handleReprocessHeader}
+                      disabled={reprocessing || !reprocessSettingsValid}
+                    >
+                      Start Reprocessing
+                    </button>
+                  </div>
+                </div>
               {/if}
-            </button>
+            </div>
           {/if}
           </div>
         </div>
@@ -2481,6 +2584,168 @@
     height: 12px;
     animation: spin 1s linear infinite;
     flex-shrink: 0;
+  }
+
+  .reprocess-dropdown-container {
+    position: relative;
+  }
+
+  .reprocess-settings-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    width: 320px;
+    padding: 1rem;
+    background-color: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    animation: slideDown 0.15s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .reprocess-settings-header {
+    margin-bottom: 1rem;
+  }
+
+  .reprocess-settings-header h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .reprocess-settings-header p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .reprocess-settings-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .reprocess-setting-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .reprocess-setting-field label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .reprocess-setting-field .setting-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+    display: block;
+  }
+
+  .reprocess-setting-field input {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--input-background, var(--card-background));
+    color: var(--text-primary);
+    font-size: 0.9rem;
+  }
+
+  .reprocess-setting-field input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+
+  .reprocess-setting-field input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--disabled-background, #f5f5f5);
+  }
+
+  :global(.dark) .reprocess-setting-field input:disabled {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .reprocess-setting-field input::placeholder {
+    color: var(--text-light);
+  }
+
+  .reprocess-validation-error {
+    padding: 0.5rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #dc2626;
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
+  }
+
+  :global(.dark) .reprocess-validation-error {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .reprocess-settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .reprocess-settings-actions .btn-cancel {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .reprocess-settings-actions .btn-cancel:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+
+  .reprocess-settings-actions .btn-confirm {
+    padding: 0.5rem 1rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .reprocess-settings-actions .btn-confirm:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+
+  .reprocess-settings-actions .btn-confirm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .video-column h4 {
