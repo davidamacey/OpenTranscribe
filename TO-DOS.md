@@ -2,7 +2,7 @@
 
 ## Feature Requests (2025-12-06)
 
-- **Add retry count reset to UI** | Problem: Users hit max retry limit and cannot reprocess files without database access | Files: `frontend/src/components/`, `backend/app/api/endpoints/files/` | Solution: Add admin button to reset retry count for a file, or auto-reset on manual reprocess
+- **Add retry count reset to UI** | Problem: Users hit max retry limit (3) and get "400 Bad Request" when trying to reprocess files. Currently requires database access to fix. | Workaround: Run `./scripts/reset-retries.sh` or `./scripts/reset-retries.sh <file_uuid>` | Files: `frontend/src/components/`, `backend/app/api/endpoints/files/reprocess.py:148-152` | Solution: Add admin button to reset retry count for a file, or auto-reset on manual reprocess request
 
 - **Speaker merge UI** | Problem: PyAnnote NUM_SPEAKERS constraint doesn't work - 7 actual speakers detected as 19 | Files: `frontend/src/components/`, `backend/app/api/endpoints/speakers/` | Solution: Allow users to merge multiple detected speakers into one, reassigning all segments
 
