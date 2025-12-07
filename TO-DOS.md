@@ -17,3 +17,5 @@
 ## Bug Reports - 2025-12-06 22:51
 
 - ~~**Fix custom OpenAI-compatible server connection via HTTP**~~ ✅ FIXED 2025-12-07 | Root cause: `LLMProvider.OPENAI` endpoint was hardcoded to `https://api.openai.com/v1/chat/completions`, ignoring `config.base_url`. Fixed by using `build_endpoint(config.base_url)` with fallback to official API.
+
+- ~~**API Key field missing in edit mode**~~ ✅ FIXED 2025-12-07 | API key now fetched and populated in edit mode like other fields. Added backend endpoint to return decrypted key for authorized user's own configs.
