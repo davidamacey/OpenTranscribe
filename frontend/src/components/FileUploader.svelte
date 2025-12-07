@@ -86,6 +86,12 @@
   let estimatedTimeRemaining = '';
   let uploadStartTime = 0;
 
+  // Speaker diarization settings
+  let showAdvancedSettings = false;
+  let minSpeakers: number | null = null;
+  let maxSpeakers: number | null = null;
+  let numSpeakers: number | null = null;
+
   // Get token from localStorage on component mount
   onMount(async () => {
     token = localStorage.getItem('token') || '';
@@ -760,10 +766,21 @@
 
     // Use background upload service for consistency with URLs and multiple files
     try {
-      const uploadId = uploadsStore.addFile(file);
+      // Pass speaker parameters if provided
+      const speakerParams = {
+        minSpeakers: minSpeakers,
+        maxSpeakers: maxSpeakers,
+        numSpeakers: numSpeakers,
+      };
+
+      const uploadId = uploadsStore.addFile(file, speakerParams);
 
       // Clear form and close modal
       file = null;
+      minSpeakers = null;
+      maxSpeakers = null;
+      numSpeakers = null;
+      showAdvancedSettings = false;
       if (fileInput) fileInput.value = '';
       dispatch('uploadComplete', { uploadId, isFile: true });
 
@@ -1522,6 +1539,90 @@
         </div>
       </div>
 
+      <!-- Advanced Settings Panel -->
+      <div class="advanced-settings-panel">
+        <button
+          type="button"
+          class="advanced-settings-toggle"
+          on:click={() => showAdvancedSettings = !showAdvancedSettings}
+          title="Configure speaker diarization settings"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
+          </svg>
+          Advanced Settings
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron {showAdvancedSettings ? 'open' : ''}">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+
+        {#if showAdvancedSettings}
+          <div class="advanced-settings-content">
+            <div class="settings-help-text">
+              <p>Configure speaker diarization settings for this file. Leave empty to use system defaults.</p>
+            </div>
+
+            <div class="settings-row">
+              <div class="setting-field">
+                <label for="min-speakers">
+                  Min Speakers
+                  <span class="setting-hint">Minimum expected speakers</span>
+                </label>
+                <input
+                  id="min-speakers"
+                  type="number"
+                  min="1"
+                  placeholder="Uses default"
+                  bind:value={minSpeakers}
+                  disabled={numSpeakers !== null}
+                />
+              </div>
+
+              <div class="setting-field">
+                <label for="max-speakers">
+                  Max Speakers
+                  <span class="setting-hint">Maximum expected speakers</span>
+                </label>
+                <input
+                  id="max-speakers"
+                  type="number"
+                  min="1"
+                  placeholder="Uses default"
+                  bind:value={maxSpeakers}
+                  disabled={numSpeakers !== null}
+                />
+              </div>
+            </div>
+
+            <div class="setting-field">
+              <label for="num-speakers">
+                Fixed Speaker Count
+                <span class="setting-hint">Exact number of speakers (overrides min/max)</span>
+              </label>
+              <input
+                id="num-speakers"
+                type="number"
+                min="1"
+                placeholder="Uses default"
+                bind:value={numSpeakers}
+              />
+            </div>
+
+            {#if minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers}
+              <div class="validation-error">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                Min speakers must be less than or equal to max speakers
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
       <div class="file-actions">
         <button
           type="button"
@@ -1535,7 +1636,7 @@
         <button
           class="upload-button"
           on:click={uploadFile}
-          disabled={uploading}
+          disabled={uploading || (minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers)}
           title="Upload the selected file for transcription"
         >
           {uploading ? 'Uploading...' : 'Upload'}
@@ -2053,6 +2154,158 @@
     color: var(--text-light);
     font-size: 0.8rem;
     margin: 0.25rem 0 0;
+  }
+
+  /* Advanced Settings Panel */
+  .advanced-settings-panel {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--surface-color);
+    overflow: hidden;
+  }
+
+  .advanced-settings-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-align: left;
+  }
+
+  .advanced-settings-toggle:hover {
+    color: var(--text-primary);
+    background-color: var(--hover-color, rgba(0, 0, 0, 0.02));
+  }
+
+  :global(.dark) .advanced-settings-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .advanced-settings-toggle .chevron {
+    margin-left: auto;
+    transition: transform 0.2s ease;
+  }
+
+  .advanced-settings-toggle .chevron.open {
+    transform: rotate(180deg);
+  }
+
+  .advanced-settings-content {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--card-background);
+    animation: slideDown 0.2s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .settings-help-text {
+    margin-bottom: 1rem;
+  }
+
+  .settings-help-text p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .settings-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .setting-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .setting-field label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .setting-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-secondary);
+  }
+
+  .setting-field input {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--input-background, var(--card-background));
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+  }
+
+  .setting-field input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .setting-field input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: var(--disabled-background, #f5f5f5);
+  }
+
+  :global(.dark) .setting-field input:disabled {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .setting-field input::placeholder {
+    color: var(--text-light);
+  }
+
+  .validation-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #dc2626;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  :global(.dark) .validation-error {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #f87171;
+  }
+
+  .validation-error svg {
+    flex-shrink: 0;
   }
 
   .file-actions {

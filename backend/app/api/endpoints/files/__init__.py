@@ -92,8 +92,25 @@ async def upload_media_file(
     if request and request.headers.get("X-File-Hash"):
         file_hash = request.headers.get("X-File-Hash")
 
+    # Get speaker diarization parameters from headers if provided
+    min_speakers = None
+    max_speakers = None
+    num_speakers = None
+    if request:
+        if request.headers.get("X-Min-Speakers"):
+            with contextlib.suppress(ValueError):
+                min_speakers = int(request.headers.get("X-Min-Speakers"))
+        if request.headers.get("X-Max-Speakers"):
+            with contextlib.suppress(ValueError):
+                max_speakers = int(request.headers.get("X-Max-Speakers"))
+        if request.headers.get("X-Num-Speakers"):
+            with contextlib.suppress(ValueError):
+                num_speakers = int(request.headers.get("X-Num-Speakers"))
+
     # Process the file upload
-    db_file = await process_file_upload(file, db, current_user, existing_file_uuid, file_hash)
+    db_file = await process_file_upload(
+        file, db, current_user, existing_file_uuid, file_hash, min_speakers, max_speakers, num_speakers
+    )
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
@@ -537,11 +554,21 @@ def update_transcript_segment(
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 async def reprocess_media_file(
     file_uuid: str,
+    reprocess_request: Optional["ReprocessRequest"] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Reprocess a media file for transcription"""
-    return await process_file_reprocess(file_uuid, db, current_user)
+    """Reprocess a media file for transcription with optional speaker diarization settings"""
+    from app.schemas.media import ReprocessRequest
+
+    # Extract speaker parameters from request if provided
+    min_speakers = reprocess_request.min_speakers if reprocess_request else None
+    max_speakers = reprocess_request.max_speakers if reprocess_request else None
+    num_speakers = reprocess_request.num_speakers if reprocess_request else None
+
+    return await process_file_reprocess(
+        file_uuid, db, current_user, min_speakers, max_speakers, num_speakers
+    )
 
 
 @router.delete("/{file_uuid}/cache", status_code=204)

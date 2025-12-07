@@ -72,12 +72,17 @@ def trigger_automatic_summarization(file_id: int, file_uuid: str):
 
 
 @celery_app.task(bind=True, name="transcribe_audio")
-def transcribe_audio_task(self, file_uuid: str):
+def transcribe_audio_task(
+    self, file_uuid: str, min_speakers: int = None, max_speakers: int = None, num_speakers: int = None
+):
     """
     Process an audio/video file with WhisperX for transcription and Pyannote for diarization.
 
     Args:
         file_uuid: UUID of the MediaFile to transcribe
+        min_speakers: Optional minimum number of speakers for diarization (falls back to settings.MIN_SPEAKERS)
+        max_speakers: Optional maximum number of speakers for diarization (falls back to settings.MAX_SPEAKERS)
+        num_speakers: Optional fixed number of speakers for diarization (falls back to settings.NUM_SPEAKERS)
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
@@ -172,13 +177,14 @@ def transcribe_audio_task(self, file_uuid: str):
                     send_progress_notification(user_id, file_id, progress, message)
 
                 # Run full WhisperX pipeline with progress updates
+                # Use provided parameters or fall back to environment settings
                 result = whisperx_service.process_full_pipeline(
                     audio_file_path,
                     settings.HUGGINGFACE_TOKEN,
                     progress_callback=whisperx_progress_callback,
-                    min_speakers=settings.MIN_SPEAKERS,
-                    max_speakers=settings.MAX_SPEAKERS,
-                    num_speakers=settings.NUM_SPEAKERS,
+                    min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
+                    max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+                    num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
                 )
 
                 # Check if transcription produced any valid content

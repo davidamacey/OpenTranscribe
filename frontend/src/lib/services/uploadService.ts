@@ -26,6 +26,10 @@ export interface UploadItem {
   // Extraction metadata (for extracted-audio type)
   extractionMetadata?: any; // ExtractedAudioMetadata from audio extraction
   compressionRatio?: number; // Percentage for display (0-100)
+  // Speaker diarization parameters
+  minSpeakers?: number | null;
+  maxSpeakers?: number | null;
+  numSpeakers?: number | null;
 }
 
 // Upload configuration constants
@@ -81,10 +85,15 @@ class UploadService {
   }
 
   // Queue management
-  addUpload(type: UploadType, source: File | string | Blob, name?: string): string {
+  addUpload(
+    type: UploadType,
+    source: File | string | Blob,
+    name?: string,
+    speakerParams?: { minSpeakers?: number | null; maxSpeakers?: number | null; numSpeakers?: number | null }
+  ): string {
     const id = this.generateId();
     const uploadName = name || this.getSourceName(source);
-    
+
     const upload: UploadItem = {
       id,
       type,
@@ -94,17 +103,20 @@ class UploadService {
       status: 'queued',
       progress: 0,
       retryCount: 0,
+      minSpeakers: speakerParams?.minSpeakers,
+      maxSpeakers: speakerParams?.maxSpeakers,
+      numSpeakers: speakerParams?.numSpeakers,
     };
 
     this.uploads.set(id, upload);
     this.processingQueue.push(id);
     this.persistUploads();
-    
+
     this.emit('added', id, upload);
-    
+
     // Start processing if we have capacity
     this.processQueue();
-    
+
     return id;
   }
 
@@ -303,12 +315,26 @@ class UploadService {
     const formData = new FormData();
     formData.append('file', file);
 
+    // Build headers with speaker parameters if provided
+    const headers: Record<string, string> = {
+      'Content-Type': 'multipart/form-data',
+      'X-File-ID': fileId,
+      'X-File-Hash': fileHash || '',
+    };
+
+    // Add speaker diarization parameters to headers if provided
+    if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
+      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
+    }
+    if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
+      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
+    }
+    if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
+      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
+    }
+
     await axiosInstance.post('/files', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        'X-File-ID': fileId,
-        'X-File-Hash': fileHash || '',
-      },
+      headers,
       timeout: UPLOAD_TIMEOUT_MS,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,

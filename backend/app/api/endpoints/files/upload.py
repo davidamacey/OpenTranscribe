@@ -126,17 +126,28 @@ def upload_file_to_storage(
         logger.info("Skipping S3 upload in test environment")
 
 
-def start_transcription_task(file_id: int, file_uuid: str) -> None:
+def start_transcription_task(
+    file_id: int,
+    file_uuid: str,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    num_speakers: Optional[int] = None,
+) -> None:
     """
     Start the background transcription and waveform generation tasks in parallel.
 
     Args:
         file_id: Database ID of the media file
         file_uuid: UUID of the media file to transcribe
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        # Launch GPU transcription task
-        transcribe_audio_task.delay(file_uuid)
+        # Launch GPU transcription task with speaker parameters
+        transcribe_audio_task.delay(
+            file_uuid, min_speakers=min_speakers, max_speakers=max_speakers, num_speakers=num_speakers
+        )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
         logger.info(
@@ -152,6 +163,9 @@ async def process_file_upload(
     current_user: User,
     existing_file_uuid: Optional[str] = None,
     client_file_hash: Optional[str] = None,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    num_speakers: Optional[int] = None,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -293,7 +307,9 @@ async def process_file_upload(
             db.refresh(db_file)
 
             # Start background transcription and waveform generation in parallel
-            start_transcription_task(db_file.id, str(db_file.uuid))
+            start_transcription_task(
+                db_file.id, str(db_file.uuid), min_speakers, max_speakers, num_speakers
+            )
 
             logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
             return db_file
