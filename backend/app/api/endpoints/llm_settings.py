@@ -750,6 +750,82 @@ async def get_ollama_models(
         }
 
 
+@router.get("/openai-compatible/models")
+async def get_openai_compatible_models(
+    base_url: str,
+    api_key: str | None = None,
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from an OpenAI-compatible API endpoint
+    Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers
+    """
+    import aiohttp
+
+    try:
+        # Clean up base URL
+        clean_url = base_url.strip().rstrip("/")
+        if not clean_url.endswith("/v1"):
+            clean_url = f"{clean_url}/v1"
+
+        models_url = f"{clean_url}/models"
+
+        # Prepare headers
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(models_url, headers=headers) as response,
+        ):
+            if response.status == 200:
+                data = await response.json()
+                models = []
+
+                if "data" in data:
+                    for model in data["data"]:
+                        models.append(
+                            {
+                                "name": model.get("id", ""),
+                                "id": model.get("id", ""),
+                                "owned_by": model.get("owned_by", ""),
+                                "created": model.get("created", 0),
+                            }
+                        )
+
+                return {
+                    "success": True,
+                    "models": models,
+                    "total": len(models),
+                    "message": f"Found {len(models)} models",
+                }
+            else:
+                error_text = await response.text()
+                return {
+                    "success": False,
+                    "models": [],
+                    "total": 0,
+                    "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
+                }
+    except aiohttp.ClientError as e:
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Connection error: {str(e)}",
+        }
+    except Exception as e:
+        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}")
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Unexpected error: {str(e)}",
+        }
+
+
 @router.get("/encryption-test")
 def test_encryption_endpoint(
     current_user: models.User = Depends(get_current_active_user),

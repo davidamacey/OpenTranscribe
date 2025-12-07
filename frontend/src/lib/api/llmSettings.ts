@@ -211,6 +211,29 @@ export class LLMSettingsApi {
   }
 
   /**
+   * Get available models from an OpenAI-compatible API endpoint
+   */
+  static async getOpenAICompatibleModels(baseUrl: string, apiKey?: string): Promise<{
+    success: boolean;
+    models: Array<{
+      name: string;
+      id: string;
+      owned_by: string;
+      created: number;
+    }>;
+    total: number;
+    message: string;
+  }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/openai-compatible/models`, {
+      params: {
+        base_url: baseUrl,
+        api_key: apiKey
+      }
+    });
+    return response.data;
+  }
+
+  /**
    * Test the encryption system
    */
   static async testEncryption(): Promise<{ status: string; message: string }> {

@@ -8,7 +8,7 @@
 
 - **Reassign segment to different speaker** | Problem: Individual transcript segments may be attributed to wrong speaker | Files: `frontend/src/components/TranscriptSegment.svelte`, `backend/app/api/endpoints/transcripts/` | Solution: Add UI to reassign a single segment's speaker from dropdown of available speakers
 
-- **Auto-populate OpenAI models in LLM settings** | Problem: Users must manually type model names when configuring OpenAI provider. | Files: `frontend/src/components/settings/LLMSettings.svelte`, `backend/app/api/endpoints/settings/` | Solution: When OpenAI is selected as provider, fetch available models via OpenAI API (/v1/models) and populate dropdown
+- ~~**Auto-populate OpenAI models in LLM settings**~~ ✅ DONE 2025-12-07 | Added "Discover Models" button for OpenAI, vLLM, and OpenRouter providers. Backend endpoint fetches from `/v1/models`, frontend displays model selector dropdown. Button disabled until required fields filled (base_url, api_key for providers that need it).
 
 - **Add speaker count settings to import/reprocess UI** | Problem: Speaker diarization parameters (MIN_SPEAKERS, MAX_SPEAKERS, NUM_SPEAKERS) are only configurable via environment variables, requiring container restart. Users need per-file control. | Files: `frontend/src/components/UploadModal.svelte`, `frontend/src/components/FileActions.svelte`, `backend/app/api/endpoints/files/`, `backend/app/tasks/transcription/core.py:175-182` | Solution: Add three optional fields to upload form and reprocess dialog: min speakers, max speakers, and fixed speaker count. If fixed count is set, it overrides min/max. Pass values to transcription task, falling back to env defaults when not specified.
 
@@ -16,4 +16,4 @@
 
 ## Bug Reports - 2025-12-06 22:51
 
-- **Fix custom OpenAI-compatible server connection via HTTP** | Problem: Calling a custom OpenAI-compatible server via HTTP with a custom port fails. The LLM provider configuration may be enforcing HTTPS or not properly handling non-standard ports. | Files: `backend/app/services/llm_service.py`, `backend/app/core/config.py:110-127`, `frontend/src/components/settings/` | Solution: Verify HTTP URLs are accepted without upgrade to HTTPS, ensure custom ports are preserved in API calls
+- ~~**Fix custom OpenAI-compatible server connection via HTTP**~~ ✅ FIXED 2025-12-07 | Root cause: `LLMProvider.OPENAI` endpoint was hardcoded to `https://api.openai.com/v1/chat/completions`, ignoring `config.base_url`. Fixed by using `build_endpoint(config.base_url)` with fallback to official API.

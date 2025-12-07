@@ -52,6 +52,17 @@
   let ollamaModelsError = '';
   let showModelSelector = false;
 
+  // OpenAI-compatible model discovery
+  let loadingOpenAIModels = false;
+  let openaiCompatibleModels: Array<{
+    name: string;
+    id: string;
+    owned_by: string;
+    created: number;
+  }> = [];
+  let openaiModelsError = '';
+  let showOpenAIModelSelector = false;
+
   // Auto-fade timer for test results
   let testResultTimer: NodeJS.Timeout;
   
@@ -143,6 +154,9 @@
     ollamaModels = [];
     ollamaModelsError = '';
     showModelSelector = false;
+    openaiCompatibleModels = [];
+    openaiModelsError = '';
+    showOpenAIModelSelector = false;
   }
 
 
@@ -292,6 +306,46 @@
     if (size === 0) return '';
     const gb = (size / (1024 ** 3)).toFixed(1);
     return `${gb}GB`;
+  }
+
+  async function loadOpenAICompatibleModels() {
+    if (!formData.base_url) {
+      openaiModelsError = 'Please enter a base URL first';
+      return;
+    }
+
+    // Check if API key is required for this provider
+    const providerConfig = getProviderDefaults(formData.provider);
+    if (providerConfig?.requires_api_key && !formData.api_key) {
+      openaiModelsError = 'Please enter an API key first';
+      return;
+    }
+
+    loadingOpenAIModels = true;
+    openaiModelsError = '';
+
+    try {
+      const result = await LLMSettingsApi.getOpenAICompatibleModels(
+        formData.base_url,
+        formData.api_key || undefined
+      );
+      if (result.success && result.models) {
+        openaiCompatibleModels = result.models;
+        showOpenAIModelSelector = true;
+      } else {
+        openaiModelsError = result.message;
+      }
+    } catch (err: any) {
+      openaiModelsError = err.response?.data?.detail || 'Failed to load models';
+    } finally {
+      loadingOpenAIModels = false;
+    }
+  }
+
+  function selectOpenAIModel(modelId: string) {
+    formData.model_name = modelId;
+    formData = { ...formData }; // Force reactivity update
+    showOpenAIModelSelector = false;
   }
 
   // Apply provider defaults when provider changes
@@ -470,6 +524,31 @@
                   {/if}
                   Discover Models
                 </button>
+              {:else if formData.provider === 'openai' || formData.provider === 'vllm' || formData.provider === 'openrouter'}
+                <button
+                  type="button"
+                  class="discover-models-btn"
+                  on:click={loadOpenAICompatibleModels}
+                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key)}
+                  title="Discover available models from API endpoint"
+                >
+                  {#if loadingOpenAIModels}
+                    <div class="spinner-mini"></div>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                  {/if}
+                  Discover Models
+                </button>
               {/if}
             </label>
             <input
@@ -481,14 +560,14 @@
               placeholder={getProviderDefaults(formData.provider)?.default_model || 'Enter model name'}
               required
             />
-            
+
             <!-- Ollama Model Selector -->
             {#if showModelSelector && ollamaModels.length > 0}
               <div class="model-selector">
                 <h4>Available Models:</h4>
                 <div class="model-list">
                   {#each ollamaModels as model}
-                    <button 
+                    <button
                       type="button"
                       class="model-item"
                       on:click={() => selectOllamaModel(model.name, model)}
@@ -505,9 +584,39 @@
                 </button>
               </div>
             {/if}
-            
+
             {#if ollamaModelsError}
               <div class="error-text">{ollamaModelsError}</div>
+            {/if}
+
+            <!-- OpenAI-Compatible Model Selector -->
+            {#if showOpenAIModelSelector && openaiCompatibleModels.length > 0}
+              <div class="model-selector">
+                <h4>Available Models:</h4>
+                <div class="model-list">
+                  {#each openaiCompatibleModels as model}
+                    <button
+                      type="button"
+                      class="model-item"
+                      on:click={() => selectOpenAIModel(model.id)}
+                    >
+                      <div class="model-info">
+                        <div class="model-name">{model.id}</div>
+                        {#if model.owned_by}
+                          <div class="model-details">{model.owned_by}</div>
+                        {/if}
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+                <button type="button" class="close-selector" on:click={() => showOpenAIModelSelector = false}>
+                  Close
+                </button>
+              </div>
+            {/if}
+
+            {#if openaiModelsError}
+              <div class="error-text">{openaiModelsError}</div>
             {/if}
           </div>
 
