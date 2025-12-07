@@ -2,11 +2,11 @@
 
 ## Feature Requests (2025-12-06)
 
-- **Add retry count reset to UI** | Problem: Users hit max retry limit (3) and get "400 Bad Request" when trying to reprocess files. Currently requires database access to fix. | Workaround: Run `./scripts/reset-retries.sh` or `./scripts/reset-retries.sh <file_uuid>` | Files: `frontend/src/components/`, `backend/app/api/endpoints/files/reprocess.py:148-152` | Solution: Add admin button to reset retry count for a file, or auto-reset on manual reprocess request
+- ~~**Add retry count reset to UI**~~ ✅ DONE 2025-12-07 | Added comprehensive retry management: (1) Admin "System Settings" panel with configurable max retries and toggle to disable limits, (2) "Reset Retries" button on file detail page for admins when files hit retry limit, (3) Backend uses dynamic config from system_settings table. Files: `backend/app/models/system_settings.py`, `backend/app/services/system_settings_service.py`, `backend/app/api/endpoints/admin.py`, `frontend/src/components/settings/RetrySettings.svelte`
 
-- **Speaker merge UI** | Problem: PyAnnote NUM_SPEAKERS constraint doesn't work - 7 actual speakers detected as 19 | Files: `frontend/src/components/`, `backend/app/api/endpoints/speakers/` | Solution: Allow users to merge multiple detected speakers into one, reassigning all segments
+- ~~**Speaker merge UI**~~ ✅ DONE 2025-12-07 | Multi-select checkboxes to merge duplicate speakers. Files: `frontend/src/components/SpeakerMerge.svelte`, `frontend/src/lib/api/speakers.ts`. Uses existing backend merge endpoint.
 
-- **Reassign segment to different speaker** | Problem: Individual transcript segments may be attributed to wrong speaker | Files: `frontend/src/components/TranscriptSegment.svelte`, `backend/app/api/endpoints/transcripts/` | Solution: Add UI to reassign a single segment's speaker from dropdown of available speakers
+- ~~**Reassign segment to different speaker**~~ ✅ DONE 2025-12-07 | Inline dropdown on segment speaker names. Click speaker badge to reassign via portal dropdown. Backend: `PUT /api/transcripts/segments/{uuid}/speaker`. Files: `frontend/src/components/SegmentSpeakerDropdown.svelte`, `frontend/src/lib/api/transcripts.ts`, `backend/app/api/endpoints/transcript_segments.py`
 
 - ~~**Auto-populate OpenAI models in LLM settings**~~ ✅ DONE 2025-12-07 | Added "Discover Models" button for OpenAI, vLLM, and OpenRouter providers. Backend endpoint fetches from `/v1/models`, frontend displays model selector dropdown. Button disabled until required fields filled (base_url, api_key for providers that need it).
 
