@@ -78,11 +78,11 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OLLAMA,
             default_model="llama2:7b-chat",
-            default_base_url="http://localhost:11434/v1",
+            default_base_url="http://localhost:11434",
             requires_api_key=False,
             supports_custom_url=True,
             max_context_length=4096,
-            description="Ollama for local model deployment",
+            description="Ollama for local model deployment - uses native /api/chat endpoint",
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.CLAUDE,
