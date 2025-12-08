@@ -74,6 +74,13 @@
   let currentProcessingStep = ''; // Current processing step from WebSocket notifications
   let lastProcessedNotificationState = ''; // Track processed notification state globally
 
+  // Transcript pagination state
+  let totalSegments = 0;
+  let segmentLimit = 500;
+  let segmentOffset = 0;
+  let loadingMoreSegments = false;
+  $: hasMoreSegments = totalSegments > (file?.transcript_segments?.length || 0);
+
   // AI Suggestions state
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
@@ -184,6 +191,11 @@
         collections = response.data.collections || [];
         reactiveFile.set(file);
 
+        // Track pagination metadata
+        totalSegments = response.data.total_segments || 0;
+        segmentLimit = response.data.segment_limit || 500;
+        segmentOffset = response.data.segment_offset || 0;
+
         // Set up video URL using the simple-video endpoint
         setupVideoUrl(targetFileId);
 
@@ -201,6 +213,44 @@
       console.error('Error fetching file details:', error);
       errorMessage = 'Failed to load file details. Please try again.';
       isLoading = false;
+    }
+  }
+
+  /**
+   * Load more transcript segments for large transcripts
+   */
+  async function loadMoreSegments(): Promise<void> {
+    if (!fileId || loadingMoreSegments || !hasMoreSegments) return;
+
+    try {
+      loadingMoreSegments = true;
+      const currentCount = file?.transcript_segments?.length || 0;
+      const nextOffset = currentCount;
+
+      const response = await axiosInstance.get(`/api/files/${fileId}`, {
+        params: {
+          segment_limit: segmentLimit,
+          segment_offset: nextOffset
+        }
+      });
+
+      if (response.data && response.data.transcript_segments) {
+        // Append new segments to existing ones
+        file.transcript_segments = [
+          ...(file.transcript_segments || []),
+          ...response.data.transcript_segments
+        ];
+        file = { ...file }; // Trigger reactivity
+        reactiveFile.set(file);
+
+        // Update pagination state
+        totalSegments = response.data.total_segments || totalSegments;
+      }
+    } catch (error) {
+      console.error('Error loading more segments:', error);
+      toastStore.addToast('Failed to load more segments', 'error');
+    } finally {
+      loadingMoreSegments = false;
     }
   }
 
@@ -2282,6 +2332,9 @@
           {isEditingSpeakers}
           {speakerList}
           {reprocessing}
+          {totalSegments}
+          {hasMoreSegments}
+          {loadingMoreSegments}
           on:segmentClick={handleSegmentClick}
           on:editSegment={handleEditSegment}
           on:saveSegment={handleSaveSegment}
@@ -2293,6 +2346,7 @@
           on:speakerNameChanged={handleSpeakerNameChanged}
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
+          on:loadMore={loadMoreSegments}
         />
         </section>
       {:else}

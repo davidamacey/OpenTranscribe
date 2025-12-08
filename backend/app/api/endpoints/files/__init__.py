@@ -199,11 +199,27 @@ def list_media_files(
 @router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
     file_uuid: str,
+    segment_limit: Optional[int] = Query(
+        500,
+        description="Maximum number of transcript segments to return. Use None for all segments.",
+        ge=1,
+    ),
+    segment_offset: int = Query(
+        0,
+        description="Offset for transcript segment pagination",
+        ge=0,
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get a specific media file with transcript details"""
-    return get_media_file_detail(db, file_uuid, current_user)
+    """Get a specific media file with transcript details.
+
+    For large transcripts, use segment_limit and segment_offset for pagination.
+    Default returns first 500 segments. Use segment_limit=0 to get all segments.
+    """
+    # segment_limit=0 means get all segments
+    effective_limit = None if segment_limit == 0 else segment_limit
+    return get_media_file_detail(db, file_uuid, current_user, effective_limit, segment_offset)
 
 
 @router.put("/{file_uuid}", response_model=MediaFileSchema)

@@ -194,7 +194,13 @@ def set_file_urls(db_file: MediaFile) -> None:
             db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 
 
-def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> MediaFileDetail:
+def get_media_file_detail(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    segment_limit: int = None,
+    segment_offset: int = 0,
+) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
 
@@ -202,6 +208,8 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
         db: Database session
         file_uuid: File UUID
         current_user: Current user
+        segment_limit: Maximum number of transcript segments to return (None = all)
+        segment_offset: Offset for transcript segment pagination (default 0)
 
     Returns:
         MediaFileDetail object with all computed and formatted data
@@ -237,14 +245,30 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
 
         # Get transcript segments with speakers (sorted by start_time for consistent ordering)
         from sqlalchemy.orm import joinedload
+        from sqlalchemy import func
 
-        transcript_segments = (
+        # First get total count for pagination metadata
+        total_segments = (
+            db.query(func.count(TranscriptSegment.id))
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .scalar()
+        )
+
+        # Build base query with eager loading and ordering
+        segment_query = (
             db.query(TranscriptSegment)
             .options(joinedload(TranscriptSegment.speaker))
             .filter(TranscriptSegment.media_file_id == file_id)
             .order_by(TranscriptSegment.start_time)
-            .all()
         )
+
+        # Apply pagination if limit is specified
+        if segment_offset > 0:
+            segment_query = segment_query.offset(segment_offset)
+        if segment_limit is not None:
+            segment_query = segment_query.limit(segment_limit)
+
+        transcript_segments = segment_query.all()
 
         # Add computed status to speakers in segments
         for segment in transcript_segments:
@@ -298,6 +322,11 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
             formatted_segments.append(formatted_segment)
 
         response.transcript_segments = formatted_segments
+
+        # Add pagination metadata
+        response.total_segments = total_segments
+        response.segment_limit = segment_limit
+        response.segment_offset = segment_offset
 
         # Ensure changes are committed
         db.commit()

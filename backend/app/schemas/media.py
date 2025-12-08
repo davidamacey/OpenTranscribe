@@ -293,6 +293,11 @@ class MediaFileDetail(MediaFile):
     # Additional formatted fields for detail view
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
+    # Transcript pagination metadata
+    total_segments: Optional[int] = None  # Total number of transcript segments
+    segment_limit: Optional[int] = None  # Max segments returned (None = all)
+    segment_offset: Optional[int] = None  # Offset for pagination
+
 
 class TagBase(BaseModel):
     name: str
