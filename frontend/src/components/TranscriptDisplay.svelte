@@ -702,6 +702,7 @@
           {#if speakerList && speakerList.length > 1}
             <SpeakerMerge
               speakers={speakerList}
+              transcriptSegments={file?.transcript_segments || []}
               on:merged={handleSpeakersMerged}
             />
           {/if}

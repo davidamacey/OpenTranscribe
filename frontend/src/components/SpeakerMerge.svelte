@@ -1,13 +1,18 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { slide } from 'svelte/transition';
   import { mergeSpeakers } from '$lib/api/speakers';
   import { toastStore } from '$stores/toast';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker } from '$lib/types/speaker';
 
   export let speakers: Speaker[] = [];
+  export let transcriptSegments: any[] = []; // Transcript segments for live segment counting
 
   const dispatch = createEventDispatcher();
+
+  // Collapsible state - default to collapsed since merge is used less frequently
+  let isCollapsed = true;
 
   // Track selected speakers
   let selectedSpeakers = new Set<string>();
@@ -21,8 +26,28 @@
   // Reactive: Enable merge button only when 2+ speakers selected
   $: canMerge = selectedSpeakers.size >= 2;
 
-  // Reactive: Get segment count for each speaker
+  // Reactive: Calculate segment counts from transcript data for live updates
+  $: segmentCountMap = (() => {
+    const counts = new Map<string, number>();
+    if (transcriptSegments && transcriptSegments.length > 0) {
+      for (const segment of transcriptSegments) {
+        const speakerId = segment.speaker?.uuid || segment.speaker?.id || segment.speaker_id;
+        if (speakerId) {
+          counts.set(speakerId, (counts.get(speakerId) || 0) + 1);
+        }
+      }
+    }
+    return counts;
+  })();
+
+  // Get segment count for a speaker (live from transcript or fallback to stored value)
   function getSegmentCount(speaker: Speaker): number {
+    // Prefer live count from transcript segments
+    const liveCount = segmentCountMap.get(speaker.uuid);
+    if (liveCount !== undefined) {
+      return liveCount;
+    }
+    // Fallback to stored value
     return speaker.segment_count || 0;
   }
 
@@ -117,55 +142,83 @@
 </script>
 
 <div class="speaker-merge">
-  <div class="merge-header">
-    <h5>Merge Speakers</h5>
-    <p class="help-text">Select 2 or more speakers to merge into one. All segments will be reassigned to the target speaker.</p>
-  </div>
-
-  <div class="speaker-grid">
-    {#each speakers as speaker}
-      <label class="speaker-card" class:selected={selectedSpeakers.has(speaker.uuid)}>
-        <input
-          type="checkbox"
-          checked={selectedSpeakers.has(speaker.uuid)}
-          on:change={() => toggleSpeaker(speaker.uuid)}
-        />
-        <div class="speaker-info">
-          <span
-            class="speaker-badge"
-            style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
-          >
-            {speaker.display_name || speaker.name}
-          </span>
-          <span class="segment-count">{getSegmentCount(speaker)} segment{getSegmentCount(speaker) !== 1 ? 's' : ''}</span>
-        </div>
-      </label>
-    {/each}
-  </div>
-
-  <div class="merge-actions">
-    <button
-      class="btn-secondary"
-      on:click={clearSelection}
-      disabled={selectedSpeakers.size === 0}
+  <button
+    class="merge-header-toggle"
+    on:click={() => isCollapsed = !isCollapsed}
+    aria-expanded={!isCollapsed}
+    aria-controls="merge-content"
+  >
+    <div class="merge-header-left">
+      <h5>Merge Speakers</h5>
+      <span class="merge-header-hint">Combine multiple speakers into one</span>
+    </div>
+    <svg
+      class="chevron-icon"
+      class:rotated={!isCollapsed}
+      xmlns="http://www.w3.org/2000/svg"
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
     >
-      Clear Selection
-    </button>
-    <button
-      class="btn-primary"
-      on:click={openTargetDialog}
-      disabled={!canMerge}
-      title={canMerge ? 'Select target speaker and merge' : 'Select at least 2 speakers to merge'}
-    >
-      {#if selectedSpeakers.size === 0}
-        Merge Selected (0)
-      {:else if selectedSpeakers.size === 1}
-        Merge Selected (1) - Need 1 more
-      {:else}
-        Merge Selected ({selectedSpeakers.size})
-      {/if}
-    </button>
-  </div>
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  </button>
+
+  {#if !isCollapsed}
+    <div id="merge-content" class="merge-content" transition:slide={{ duration: 200 }}>
+      <p class="help-text">Select 2 or more speakers to merge into one. All segments will be reassigned to the target speaker.</p>
+
+      <div class="speaker-grid">
+        {#each speakers as speaker}
+          <label class="speaker-card" class:selected={selectedSpeakers.has(speaker.uuid)}>
+            <input
+              type="checkbox"
+              checked={selectedSpeakers.has(speaker.uuid)}
+              on:change={() => toggleSpeaker(speaker.uuid)}
+            />
+            <div class="speaker-info">
+              <span
+                class="speaker-badge"
+                style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
+              >
+                {speaker.display_name || speaker.name}
+              </span>
+              <span class="segment-count">{getSegmentCount(speaker)} segment{getSegmentCount(speaker) !== 1 ? 's' : ''}</span>
+            </div>
+          </label>
+        {/each}
+      </div>
+
+      <div class="merge-actions">
+        <button
+          class="btn-secondary"
+          on:click={clearSelection}
+          disabled={selectedSpeakers.size === 0}
+        >
+          Clear Selection
+        </button>
+        <button
+          class="btn-primary"
+          on:click={openTargetDialog}
+          disabled={!canMerge}
+          title={canMerge ? 'Select target speaker and merge' : 'Select at least 2 speakers to merge'}
+        >
+          {#if selectedSpeakers.size === 0}
+            Merge Selected (0)
+          {:else if selectedSpeakers.size === 1}
+            Merge Selected (1) - Need 1 more
+          {:else}
+            Merge Selected ({selectedSpeakers.size})
+          {/if}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   {#if showTargetDialog}
     <div class="modal-overlay" on:click={closeTargetDialog} on:keydown={(e) => e.key === 'Escape' && closeTargetDialog()} role="presentation">
@@ -213,7 +266,7 @@
             Cancel
           </button>
           <button
-            class="btn-primary btn-danger"
+            class="btn-primary"
             on:click={performMerge}
             disabled={!targetSpeaker || merging}
           >
@@ -222,8 +275,10 @@
                 <path d="M21 12a9 9 0 11-6.219-8.56"/>
               </svg>
               Merging...
+            {:else if targetSpeaker}
+              Confirm Merge into {targetSpeaker.display_name || targetSpeaker.name}
             {:else}
-              Merge {selectedSpeakers.size - 1} into Target
+              Select a Target Speaker
             {/if}
           </button>
         </div>
@@ -234,18 +289,60 @@
 
 <style>
   .speaker-merge {
-    margin-top: 1rem;
-    padding: 1rem;
+    margin-bottom: 1.5rem;
     background: var(--background-secondary);
     border: 1px solid var(--border-color);
     border-radius: 8px;
+    overflow: hidden;
   }
 
-  .merge-header h5 {
-    margin: 0 0 0.5rem 0;
+  .merge-header-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+
+  .merge-header-toggle:hover {
+    background: var(--surface-hover);
+  }
+
+  .merge-header-left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+
+  .merge-header-left h5 {
+    margin: 0;
     font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .merge-header-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .chevron-icon {
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .chevron-icon.rotated {
+    transform: rotate(180deg);
+  }
+
+  .merge-content {
+    padding: 0 1rem 1rem;
   }
 
   .help-text {
@@ -333,8 +430,8 @@
   .btn-primary,
   .btn-secondary {
     padding: 0.6rem 1.2rem;
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: 10px;
+    font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -345,19 +442,26 @@
   }
 
   .btn-primary {
-    background: var(--primary-color);
+    background-color: #3b82f6;
     color: white;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background-color: #2563eb;
     transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-primary:disabled {
-    opacity: 0.5;
+    opacity: 0.6;
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
   }
 
   .btn-secondary {
@@ -372,14 +476,6 @@
   .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-
-  .btn-danger {
-    background: #ef4444;
-  }
-
-  .btn-danger:hover:not(:disabled) {
-    background: #dc2626;
   }
 
   /* Modal Styles */

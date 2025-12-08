@@ -85,3 +85,13 @@ TOKEN_ESTIMATION_BUFFER = 1.1  # 10% buffer for safety
 DEFAULT_CHUNK_SIZE = 16384  # 16KB default chunk size
 VIDEO_CHUNK_SIZE = 65536  # 64KB for video streaming
 AUDIO_CHUNK_SIZE = 8192  # 8KB for audio streaming
+
+# Transcription settings defaults
+DEFAULT_TRANSCRIPTION_MIN_SPEAKERS = 1
+DEFAULT_TRANSCRIPTION_MAX_SPEAKERS = 20
+DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
+DEFAULT_GARBAGE_CLEANUP_ENABLED = True
+DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
+
+# Valid speaker prompt behaviors
+VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]

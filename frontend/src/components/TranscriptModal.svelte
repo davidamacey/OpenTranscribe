@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { getSpeakerColorForSegment } from '$lib/utils/speakerColors';
   import { processedTranscriptSegments, transcriptStore } from '../stores/transcriptStore';
   import { copyToClipboard } from '$lib/utils/clipboard';
@@ -8,16 +8,33 @@
   export let fileName: string = '';
   export let isOpen: boolean = false;
 
+  // Pagination props
+  export let totalSegments: number = 0;
+  export let hasMoreSegments: boolean = false;
+  export let loadingMoreSegments: boolean = false;
+
   // Reference fileId to suppress warning (will be tree-shaken in production)
   $: { fileId; }
 
   const dispatch = createEventDispatcher<{
     close: void;
+    loadMore: void;
   }>();
 
   let loading = false;
   let error: string | null = null;
   let consolidatedTranscript = '';
+
+  // Infinite scroll sentinel element
+  let infiniteScrollSentinel: HTMLElement | null = null;
+  let infiniteScrollObserver: IntersectionObserver | null = null;
+
+  // Scroll progress tracking (reading progress bar)
+  let scrollProgress: number = 0;
+  let transcriptContentElement: HTMLElement | null = null;
+
+  // Calculate loaded segments info from the store
+  $: loadedSegments = $processedTranscriptSegments?.length || 0;
 
   // Search functionality
   let searchQuery = '';
@@ -178,12 +195,56 @@
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  
-  // Clean up body overflow when component is destroyed
+
+  // Handle scroll to update progress bar
+  function handleTranscriptScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    if (target) {
+      const scrollHeight = target.scrollHeight - target.clientHeight;
+      if (scrollHeight > 0) {
+        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+      }
+    }
+  }
+
+  // Set up infinite scroll observer
+  function setupInfiniteScrollObserver() {
+    if (typeof IntersectionObserver !== 'undefined' && !infiniteScrollObserver) {
+      infiniteScrollObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry?.isIntersecting && hasMoreSegments && !loadingMoreSegments) {
+            dispatch('loadMore');
+          }
+        },
+        { rootMargin: '200px' } // Trigger 200px before reaching the sentinel
+      );
+    }
+  }
+
+  // Observe the sentinel element when it's available
+  $: if (infiniteScrollSentinel && infiniteScrollObserver) {
+    infiniteScrollObserver.observe(infiniteScrollSentinel);
+  }
+
+  // Reset scroll progress when modal opens
+  $: if (isOpen) {
+    scrollProgress = 0;
+    setupInfiniteScrollObserver();
+  }
+
+  // Clean up body overflow and observer when component is destroyed
   onMount(() => {
     return () => {
       document.body.style.overflow = '';
     };
+  });
+
+  onDestroy(() => {
+    if (infiniteScrollObserver) {
+      infiniteScrollObserver.disconnect();
+      infiniteScrollObserver = null;
+    }
   });
 </script>
 
@@ -310,54 +371,100 @@
       {/if}
       
       <!-- Transcript Content -->
-      <div class="modal-content">
-        {#if loading}
-          <div class="loading-container">
-            <div class="spinner"></div>
-            <p>Loading transcript...</p>
+      <div class="modal-content-wrapper">
+        <!-- Reading progress bar at top -->
+        {#if displaySegments.length > 0}
+          <div class="reading-progress-bar">
+            <div
+              class="reading-progress-fill"
+              style="width: {scrollProgress}%"
+            ></div>
           </div>
-        {:else if error}
-          <div class="error-container">
-            <div class="error-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <path d="M12 9v4"/>
-                <path d="m12 17 .01 0"/>
-              </svg>
+        {/if}
+
+        <div
+          class="modal-content"
+          bind:this={transcriptContentElement}
+          on:scroll={handleTranscriptScroll}
+        >
+          {#if loading}
+            <div class="loading-container">
+              <div class="spinner"></div>
+              <p>Loading transcript...</p>
             </div>
-            <div class="error-message">
-              <h3>Error Loading Transcript</h3>
-              <p>{error}</p>
-            </div>
-          </div>
-        {:else if displaySegments.length > 0}
-          <div class="transcript-content">
-            {#each displaySegments as segment}
-              <div class="transcript-segment">
-                <div class="segment-header">
-                  <div
-                    class="segment-speaker"
-                    style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
-                  >{segment.speakerName}</div>
-                  <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
-                </div>
-                <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+          {:else if error}
+            <div class="error-container">
+              <div class="error-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                  <path d="M12 9v4"/>
+                  <path d="m12 17 .01 0"/>
+                </svg>
               </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="no-transcript">
-            <div class="no-transcript-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14,2 14,8 20,8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10,9 9,9 8,9"></polyline>
-              </svg>
+              <div class="error-message">
+                <h3>Error Loading Transcript</h3>
+                <p>{error}</p>
+              </div>
             </div>
-            <h3>No Transcript Available</h3>
-            <p>This file doesn't have a transcript available yet.</p>
+          {:else if displaySegments.length > 0}
+            <div class="transcript-content">
+              {#each displaySegments as segment}
+                <div class="transcript-segment">
+                  <div class="segment-header">
+                    <div
+                      class="segment-speaker"
+                      style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                    >{segment.speakerName}</div>
+                    <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+                  </div>
+                  <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+                </div>
+              {/each}
+
+              <!-- Infinite scroll sentinel and loading indicator -->
+              {#if hasMoreSegments}
+                <div
+                  class="infinite-scroll-sentinel"
+                  bind:this={infiniteScrollSentinel}
+                >
+                  {#if loadingMoreSegments}
+                    <div class="loading-more-indicator">
+                      <span class="loading-spinner"></span>
+                      <span>Loading more segments...</span>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="no-transcript">
+              <div class="no-transcript-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14,2 14,8 20,8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10,9 9,9 8,9"></polyline>
+                </svg>
+              </div>
+              <h3>No Transcript Available</h3>
+              <p>This file doesn't have a transcript available yet.</p>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Segments loaded info -->
+        {#if totalSegments > 0 && hasMoreSegments}
+          <div class="segments-loaded-info">
+            <span class="segments-count">{loadedSegments} speaker blocks loaded</span>
+            {#if loadingMoreSegments}
+              <span class="loading-indicator">
+                <span class="loading-spinner-small"></span>
+                Loading...
+              </span>
+            {:else}
+              <span class="more-available">(more available)</span>
+            {/if}
           </div>
         {/if}
       </div>
@@ -390,6 +497,97 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .modal-content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Reading progress bar - horizontal bar at top showing scroll position */
+  .reading-progress-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border-color);
+    z-index: 10;
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+
+  .reading-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.1s ease-out;
+    border-radius: 0;
+  }
+
+  /* Infinite scroll styles */
+  .infinite-scroll-sentinel {
+    min-height: 1px;
+    padding: 8px 0;
+  }
+
+  .loading-more-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .loading-more-indicator .loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Segments loaded info bar */
+  .segments-loaded-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .segments-count {
+    font-weight: 500;
+  }
+
+  .more-available {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .loading-spinner-small {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
 
   .modal-header {

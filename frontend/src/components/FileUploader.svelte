@@ -20,6 +20,16 @@
   import { getAudioExtractionSettings, type AudioExtractionSettings } from '../lib/api/audioExtractionSettings';
   import { audioExtractionService } from '../lib/services/audioExtractionService';
 
+  // Import transcription settings API
+  import {
+    getTranscriptionSettings,
+    getTranscriptionSystemDefaults,
+    type TranscriptionSettings,
+    type TranscriptionSystemDefaults,
+    type SpeakerPromptBehavior,
+    DEFAULT_TRANSCRIPTION_SETTINGS
+  } from '../lib/api/transcriptionSettings';
+
   // Import network connectivity store
   import { isOnline } from '../stores/network';
 
@@ -92,6 +102,11 @@
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
 
+  // User transcription preferences
+  let transcriptionSettings: TranscriptionSettings | null = null;
+  let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
+  let userHasManuallyToggledSettings = false; // Track if user manually expanded/collapsed
+
   // Reactive validation for speaker settings - ensure values are >= 1 if set
   $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
@@ -114,6 +129,30 @@
         extraction_threshold_mb: 100,
         remember_choice: false,
         show_modal: true,
+      };
+    }
+
+    // Load transcription settings (user preferences and system defaults)
+    try {
+      const [userSettings, systemDefaults] = await Promise.all([
+        getTranscriptionSettings(),
+        getTranscriptionSystemDefaults()
+      ]);
+      transcriptionSettings = userSettings;
+      transcriptionSystemDefaults = systemDefaults;
+
+      // Apply initial behavior based on user preference
+      applyTranscriptionPreferences();
+    } catch (err) {
+      console.error('Failed to load transcription settings:', err);
+      // Use client-side defaults if loading fails
+      transcriptionSettings = { ...DEFAULT_TRANSCRIPTION_SETTINGS };
+      transcriptionSystemDefaults = {
+        min_speakers: 1,
+        max_speakers: 20,
+        garbage_cleanup_enabled: true,
+        garbage_cleanup_threshold: 50,
+        valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom']
       };
     }
 
@@ -212,7 +251,105 @@
     }
   }
 
+  /**
+   * Apply transcription preferences based on user settings.
+   * Called on component mount and when a file is selected.
+   *
+   * Behavior based on speaker_prompt_behavior:
+   * - "always_prompt": Auto-expand Advanced Settings, pre-fill with user's saved values
+   * - "use_defaults": Hide Advanced Settings, use null values (backend uses system defaults)
+   * - "use_custom": Hide Advanced Settings, use user's saved min/max values
+   */
+  function applyTranscriptionPreferences() {
+    if (!transcriptionSettings || userHasManuallyToggledSettings) {
+      return; // Don't override if user has manually changed settings
+    }
 
+    const behavior = transcriptionSettings.speaker_prompt_behavior;
+
+    switch (behavior) {
+      case 'always_prompt':
+        // Auto-expand and pre-fill with user's saved values (or null if not set)
+        showAdvancedSettings = true;
+        minSpeakers = transcriptionSettings.min_speakers || null;
+        maxSpeakers = transcriptionSettings.max_speakers || null;
+        break;
+
+      case 'use_defaults':
+        // Keep settings collapsed, use null (backend applies system defaults)
+        showAdvancedSettings = false;
+        minSpeakers = null;
+        maxSpeakers = null;
+        break;
+
+      case 'use_custom':
+        // Keep settings collapsed, pre-fill with user's saved values
+        showAdvancedSettings = false;
+        minSpeakers = transcriptionSettings.min_speakers || null;
+        maxSpeakers = transcriptionSettings.max_speakers || null;
+        break;
+
+      default:
+        // Fallback: show settings panel
+        showAdvancedSettings = false;
+    }
+  }
+
+  /**
+   * Handle manual toggle of Advanced Settings panel.
+   * Once user manually toggles, we don't auto-apply preferences anymore.
+   */
+  function toggleAdvancedSettings() {
+    userHasManuallyToggledSettings = true;
+    showAdvancedSettings = !showAdvancedSettings;
+  }
+
+  /**
+   * Get the effective speaker settings for upload based on user preferences.
+   * Returns the values to pass to the upload API.
+   */
+  function getEffectiveSpeakerSettings(): { minSpeakers: number | null; maxSpeakers: number | null; numSpeakers: number | null } {
+    // If user manually interacted with settings, use current form values
+    if (userHasManuallyToggledSettings) {
+      return { minSpeakers, maxSpeakers, numSpeakers };
+    }
+
+    // Otherwise, apply behavior based on preferences
+    if (!transcriptionSettings) {
+      return { minSpeakers, maxSpeakers, numSpeakers };
+    }
+
+    const behavior = transcriptionSettings.speaker_prompt_behavior;
+
+    switch (behavior) {
+      case 'use_defaults':
+        // Return null to let backend use system defaults
+        return { minSpeakers: null, maxSpeakers: null, numSpeakers: null };
+
+      case 'use_custom':
+        // Use user's saved preferences
+        return {
+          minSpeakers: transcriptionSettings.min_speakers || null,
+          maxSpeakers: transcriptionSettings.max_speakers || null,
+          numSpeakers: null
+        };
+
+      case 'always_prompt':
+      default:
+        // Use current form values (user should have seen/modified them)
+        return { minSpeakers, maxSpeakers, numSpeakers };
+    }
+  }
+
+  /**
+   * Reset the transcription preferences state when a new file is selected.
+   * This allows the automatic behavior to re-apply.
+   */
+  function resetTranscriptionPreferencesState() {
+    userHasManuallyToggledSettings = false;
+    numSpeakers = null;
+    applyTranscriptionPreferences();
+  }
 
   // Start recording using global recording manager
   async function startRecording() {
@@ -519,6 +656,9 @@
     error = '';
     file = selectedFile;
 
+    // Reset transcription preferences state to allow auto-behavior for new file
+    resetTranscriptionPreferencesState();
+
     // Check if file has a valid type
     if (!selectedFile.type) {
       // Try to determine type from extension if browser doesn't provide it
@@ -771,11 +911,12 @@
 
     // Use background upload service for consistency with URLs and multiple files
     try {
-      // Pass speaker parameters if provided
+      // Get effective speaker parameters based on user preferences
+      const effectiveSettings = getEffectiveSpeakerSettings();
       const speakerParams = {
-        minSpeakers: minSpeakers,
-        maxSpeakers: maxSpeakers,
-        numSpeakers: numSpeakers,
+        minSpeakers: effectiveSettings.minSpeakers,
+        maxSpeakers: effectiveSettings.maxSpeakers,
+        numSpeakers: effectiveSettings.numSpeakers,
       };
 
       const uploadId = uploadsStore.addFile(file, speakerParams);
@@ -786,6 +927,7 @@
       maxSpeakers = null;
       numSpeakers = null;
       showAdvancedSettings = false;
+      userHasManuallyToggledSettings = false; // Reset for next upload
       if (fileInput) fileInput.value = '';
       dispatch('uploadComplete', { uploadId, isFile: true });
 
@@ -1546,21 +1688,49 @@
 
       <!-- Advanced Settings Panel -->
       <div class="advanced-settings-panel">
-        <button
-          type="button"
-          class="advanced-settings-toggle"
-          on:click={() => showAdvancedSettings = !showAdvancedSettings}
-          title="Configure speaker diarization settings"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
-          </svg>
-          Advanced Settings
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron {showAdvancedSettings ? 'open' : ''}">
-            <polyline points="6 9 12 15 18 9"></polyline>
-          </svg>
-        </button>
+        <!-- Show settings info based on user preferences -->
+        {#if transcriptionSettings && !userHasManuallyToggledSettings}
+          {#if transcriptionSettings.speaker_prompt_behavior === 'use_defaults'}
+            <div class="settings-info-note">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>Using system defaults{#if transcriptionSystemDefaults} (min: {transcriptionSystemDefaults.min_speakers}, max: {transcriptionSystemDefaults.max_speakers}){/if}</span>
+              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>Customize</button>
+            </div>
+          {:else if transcriptionSettings.speaker_prompt_behavior === 'use_custom'}
+            <div class="settings-info-note">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>Using your saved settings (min: {transcriptionSettings.min_speakers}, max: {transcriptionSettings.max_speakers})</span>
+              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>Customize</button>
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Toggle button for Advanced Settings -->
+        {#if !transcriptionSettings || transcriptionSettings.speaker_prompt_behavior === 'always_prompt' || userHasManuallyToggledSettings || showAdvancedSettings}
+          <button
+            type="button"
+            class="advanced-settings-toggle"
+            on:click={toggleAdvancedSettings}
+            title="Configure speaker diarization settings"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
+            </svg>
+            Advanced Settings
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron {showAdvancedSettings ? 'open' : ''}">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        {/if}
 
         {#if showAdvancedSettings}
           <div class="advanced-settings-content">
@@ -1578,7 +1748,7 @@
                   id="min-speakers"
                   type="number"
                   min="1"
-                  placeholder="Uses default"
+                  placeholder={transcriptionSystemDefaults ? `Default: ${transcriptionSystemDefaults.min_speakers}` : 'Uses default'}
                   bind:value={minSpeakers}
                   disabled={numSpeakers !== null}
                 />
@@ -1593,7 +1763,7 @@
                   id="max-speakers"
                   type="number"
                   min="1"
-                  placeholder="Uses default"
+                  placeholder={transcriptionSystemDefaults ? `Default: ${transcriptionSystemDefaults.max_speakers}` : 'Uses default'}
                   bind:value={maxSpeakers}
                   disabled={numSpeakers !== null}
                 />
@@ -2168,6 +2338,47 @@
     border-radius: 8px;
     background-color: var(--surface-color);
     overflow: hidden;
+  }
+
+  /* Settings info note (shown when using defaults or custom settings) */
+  .settings-info-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    background-color: var(--info-background, rgba(59, 130, 246, 0.05));
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  :global(.dark) .settings-info-note {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+
+  .settings-info-note svg {
+    flex-shrink: 0;
+    color: var(--info-color, #3b82f6);
+  }
+
+  .settings-info-note span {
+    flex: 1;
+  }
+
+  .settings-override-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--primary-color, #3b82f6);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .settings-override-link:hover {
+    color: var(--primary-color-dark, #2563eb);
   }
 
   .advanced-settings-toggle {

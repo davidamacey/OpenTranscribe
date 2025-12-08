@@ -224,6 +224,20 @@ def list_speakers(
         if for_filter:
             return _get_unique_speakers_for_filter(speakers, db, current_user)
 
+        # Pre-calculate segment counts for all speakers in one query
+        from sqlalchemy import func
+
+        speaker_ids = [s.id for s in speakers]
+        segment_counts = {}
+        if speaker_ids:
+            count_results = (
+                db.query(TranscriptSegment.speaker_id, func.count(TranscriptSegment.id))
+                .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
+                .group_by(TranscriptSegment.speaker_id)
+                .all()
+            )
+            segment_counts = {speaker_id: count for speaker_id, count in count_results}
+
         # Add profile information to speakers
         result = []
         for speaker in speakers:
@@ -398,6 +412,8 @@ def list_speakers(
                 "needsCrossMediaCall": speaker.display_name
                 and speaker.display_name.strip()
                 and not speaker.display_name.startswith("SPEAKER_"),
+                # Segment count for merge speakers UI
+                "segment_count": segment_counts.get(speaker.id, 0),
                 # Pre-computed display flags for frontend
                 "has_llm_suggestion": has_llm_suggestion,
                 "total_suggestions": total_suggestions,
@@ -860,6 +876,20 @@ def _update_opensearch_speaker_merge(source_speaker_id: int, target_speaker_id: 
         logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
 
 
+def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) -> None:
+    """Recalculate analytics for affected media files after speaker merge."""
+    try:
+        from app.services.analytics_service import AnalyticsService
+
+        for media_file_id in affected_media_files:
+            if AnalyticsService.refresh_analytics(db, media_file_id):
+                logger.info(f"Refreshed analytics for media file {media_file_id} after speaker merge")
+            else:
+                logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
+    except Exception as e:
+        logger.error(f"Error refreshing analytics after speaker merge: {e}")
+
+
 def _update_profile_embeddings_after_merge(
     db: Session,
     source_profile_id: int | None,
@@ -937,6 +967,9 @@ def merge_speakers(
     _update_profile_embeddings_after_merge(
         db, source_profile_id, target_profile_id, source_speaker_id
     )
+
+    # Recalculate analytics for affected media files
+    _refresh_analytics_after_merge(db, affected_media_files)
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(target_speaker)

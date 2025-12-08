@@ -10,8 +10,8 @@
   import LLMSettings from '$components/settings/LLMSettings.svelte';
   import PromptSettings from '$components/settings/PromptSettings.svelte';
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
+  import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
-  import GarbageCleanupSettings from '$components/settings/GarbageCleanupSettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -115,6 +115,7 @@
         { id: 'profile' as SettingsSection, label: 'Profile', icon: 'user' },
         { id: 'recording' as SettingsSection, label: 'Recording', icon: 'mic' },
         { id: 'audio-extraction' as SettingsSection, label: 'Audio Extraction', icon: 'file-audio' },
+        { id: 'transcription' as SettingsSection, label: 'Transcription', icon: 'waveform' },
         { id: 'ai-prompts' as SettingsSection, label: 'AI Summarization Prompts', icon: 'message' },
         { id: 'llm-provider' as SettingsSection, label: 'LLM Provider Configuration', icon: 'brain' }
       ]
@@ -937,6 +938,15 @@
             </div>
           {/if}
 
+          <!-- Transcription Settings Section -->
+          {#if activeSection === 'transcription'}
+            <div class="content-section">
+              <h3 class="section-title">Transcription Settings</h3>
+              <p class="section-description">Configure transcription quality, speaker diarization, and garbage segment cleanup preferences.</p>
+              <TranscriptionSettings />
+            </div>
+          {/if}
+
           <!-- AI Prompts Section -->
           {#if activeSection === 'ai-prompts'}
             <div class="content-section">
@@ -1280,11 +1290,6 @@
               <!-- Retry Settings -->
               <div class="settings-subsection">
                 <RetrySettings />
-              </div>
-
-              <!-- Garbage Cleanup Settings -->
-              <div class="settings-subsection">
-                <GarbageCleanupSettings />
               </div>
             </div>
           {/if}

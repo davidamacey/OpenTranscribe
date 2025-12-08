@@ -5,6 +5,7 @@ export type SettingsSection =
   | "profile"
   | "recording"
   | "audio-extraction"
+  | "transcription"
   | "ai-prompts"
   | "llm-provider"
   // System sections (visible to all users)
@@ -27,6 +28,7 @@ const initialState: SettingsModalState = {
     profile: false,
     recording: false,
     "audio-extraction": false,
+    transcription: false,
     "ai-prompts": false,
     "llm-provider": false,
     "system-statistics": false,

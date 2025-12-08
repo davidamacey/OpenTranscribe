@@ -22,6 +22,13 @@
   import { isLLMAvailable } from '$stores/llmStatus';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
+  import {
+    getTranscriptionSettings,
+    getTranscriptionSystemDefaults,
+    type TranscriptionSettings,
+    type TranscriptionSystemDefaults,
+    DEFAULT_TRANSCRIPTION_SETTINGS
+  } from '$lib/api/transcriptionSettings';
 
   // No need for a global commentsForExport variable - we'll fetch when needed
 
@@ -63,9 +70,17 @@
   let speakerNamesChanged = false; // Track if any speaker names have been modified
   let reprocessing = false;
   let showReprocessSettings = false;
+  let reprocessDropdownMode: 'settings' | 'confirmation' = 'settings';
+  let reprocessFadeTimeout: ReturnType<typeof setTimeout> | null = null;
   let reprocessMinSpeakers: number | null = null;
   let reprocessMaxSpeakers: number | null = null;
   let reprocessNumSpeakers: number | null = null;
+  let reprocessContainerRef: HTMLDivElement;
+
+  // User transcription preferences
+  let transcriptionSettings: TranscriptionSettings | null = null;
+  let transcriptionSystemDefaults: TranscriptionSystemDefaults | null = null;
+  let transcriptionPrefsLoaded = false;
   let summaryData: any = null;
   let showSummaryModal = false;
   let showTranscriptModal = false;
@@ -245,6 +260,11 @@
 
         // Update pagination state
         totalSegments = response.data.total_segments || totalSegments;
+
+        // Update transcript store so TranscriptModal gets the new segments
+        if (file?.id && file.transcript_segments && speakerList) {
+          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        }
       }
     } catch (error) {
       console.error('Error loading more segments:', error);
@@ -544,6 +564,32 @@
     // Trigger reactivity by reassigning the speakerList array
     // This ensures the reactive statement detects the change
     speakerList = [...speakerList];
+  }
+
+  // Handle speakers merged event - refresh all related data silently (no loading spinner)
+  async function handleSpeakersMerged() {
+    if (!file?.id) return;
+
+    try {
+      // Silently refresh file data without showing loading state
+      const response = await axiosInstance.get(`/api/files/${file.id}`);
+
+      if (response.data && typeof response.data === 'object') {
+        // Update file data (includes analytics and transcript segments)
+        file = response.data;
+        collections = response.data.collections || [];
+        reactiveFile.set(file);
+
+        // Process transcript data from the refreshed response
+        processTranscriptData();
+      }
+
+      // Reload speakers to get updated list
+      await loadSpeakers();
+    } catch (error) {
+      console.error('Error refreshing data after speaker merge:', error);
+      toastStore.error('Data refresh failed. Please reload the page.');
+    }
   }
 
   // Handle speaker name updates
@@ -1760,11 +1806,125 @@
   // WebSocket subscription for real-time updates
   let wsUnsubscribe: () => void;
 
+  // Load user transcription preferences
+  async function loadTranscriptionPreferences() {
+    try {
+      const [userSettings, systemDefaults] = await Promise.all([
+        getTranscriptionSettings(),
+        getTranscriptionSystemDefaults()
+      ]);
+      transcriptionSettings = userSettings;
+      transcriptionSystemDefaults = systemDefaults;
+    } catch (err) {
+      console.error('Failed to load transcription settings:', err);
+      transcriptionSettings = { ...DEFAULT_TRANSCRIPTION_SETTINGS };
+    } finally {
+      transcriptionPrefsLoaded = true;
+    }
+  }
+
+  // Handle reprocess with user preferences
+  function handleReprocessWithPrefs() {
+    if (!transcriptionSettings) {
+      // Settings not loaded yet, show the settings dropdown
+      reprocessDropdownMode = 'settings';
+      showReprocessSettings = true;
+      return;
+    }
+
+    const behavior = transcriptionSettings.speaker_prompt_behavior;
+
+    if (behavior === 'always_prompt') {
+      // Pre-fill with user's saved values and show settings dropdown
+      reprocessMinSpeakers = transcriptionSettings.min_speakers || null;
+      reprocessMaxSpeakers = transcriptionSettings.max_speakers || null;
+      reprocessDropdownMode = 'settings';
+      showReprocessSettings = !showReprocessSettings;
+    } else {
+      // Show confirmation dropdown with start button
+      reprocessDropdownMode = 'confirmation';
+      showReprocessSettings = true;
+    }
+  }
+
+  // Execute reprocess from confirmation mode
+  function handleReprocessFromConfirmation() {
+    const behavior = transcriptionSettings?.speaker_prompt_behavior;
+    if (behavior === 'use_defaults') {
+      reprocessMinSpeakers = null;
+      reprocessMaxSpeakers = null;
+      reprocessNumSpeakers = null;
+    } else if (behavior === 'use_custom' && transcriptionSettings) {
+      reprocessMinSpeakers = transcriptionSettings.min_speakers;
+      reprocessMaxSpeakers = transcriptionSettings.max_speakers;
+      reprocessNumSpeakers = null;
+    }
+    handleReprocessHeader();
+  }
+
+  // Get reprocess confirmation message
+  function getReprocessConfirmationMessage(): string {
+    if (!transcriptionSettings) return '';
+
+    if (transcriptionSettings.speaker_prompt_behavior === 'use_defaults') {
+      const min = transcriptionSystemDefaults?.min_speakers ?? 1;
+      const max = transcriptionSystemDefaults?.max_speakers ?? 20;
+      return `Using system defaults (${min}-${max} speakers)`;
+    } else if (transcriptionSettings.speaker_prompt_behavior === 'use_custom') {
+      return `Using your settings (${transcriptionSettings.min_speakers}-${transcriptionSettings.max_speakers} speakers)`;
+    }
+    return '';
+  }
+
+  // Handle customize from confirmation mode
+  function handleReprocessCustomize() {
+    if (reprocessFadeTimeout) {
+      clearTimeout(reprocessFadeTimeout);
+      reprocessFadeTimeout = null;
+    }
+
+    // Pre-fill with current effective values
+    if (transcriptionSettings) {
+      if (transcriptionSettings.speaker_prompt_behavior === 'use_custom') {
+        reprocessMinSpeakers = transcriptionSettings.min_speakers || null;
+        reprocessMaxSpeakers = transcriptionSettings.max_speakers || null;
+      } else if (transcriptionSystemDefaults) {
+        reprocessMinSpeakers = transcriptionSystemDefaults.min_speakers;
+        reprocessMaxSpeakers = transcriptionSystemDefaults.max_speakers;
+      }
+    }
+    reprocessDropdownMode = 'settings';
+  }
+
+  // Close reprocess dropdown
+  function closeReprocessDropdown() {
+    showReprocessSettings = false;
+    if (reprocessFadeTimeout) {
+      clearTimeout(reprocessFadeTimeout);
+      reprocessFadeTimeout = null;
+    }
+    reprocessMinSpeakers = null;
+    reprocessMaxSpeakers = null;
+    reprocessNumSpeakers = null;
+  }
+
+  // Click outside handler for reprocess dropdown
+  function handleReprocessClickOutside(event: MouseEvent) {
+    if (showReprocessSettings && reprocessContainerRef && !reprocessContainerRef.contains(event.target as Node)) {
+      closeReprocessDropdown();
+    }
+  }
+
   // Component mount logic
   onMount(() => {
+    // Add click-outside listener for reprocess dropdown
+    document.addEventListener('click', handleReprocessClickOutside);
+
     // Use the correct backend API base URL (port 5174, not frontend port 5173)
     apiBaseUrl = window.location.protocol + '//' + window.location.hostname + ':5174';
 
+    // Load user transcription preferences
+    loadTranscriptionPreferences();
 
     if (id) {
       fileId = id;
@@ -2038,6 +2198,9 @@
       wsUnsubscribe();
     }
 
+    // Clean up click-outside listener for reprocess dropdown
+    document.removeEventListener('click', handleReprocessClickOutside);
+
     // Clear the transcript store when leaving the page
     transcriptStore.clear();
   });
@@ -2161,10 +2324,10 @@
           {/if}
           <!-- Reprocess Button with settings dropdown -->
           {#if file && (file.status === 'error' || file.status === 'completed' || file.status === 'failed')}
-            <div class="reprocess-dropdown-container">
+            <div class="reprocess-dropdown-container" bind:this={reprocessContainerRef}>
               <button
                 class="reprocess-button-header"
-                on:click={() => showReprocessSettings = !showReprocessSettings}
+                on:click={handleReprocessWithPrefs}
                 disabled={reprocessing}
                 title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
               >
@@ -2179,77 +2342,88 @@
 
               {#if showReprocessSettings}
                 <div class="reprocess-settings-dropdown">
-                  <div class="reprocess-settings-header">
-                    <h4>Speaker Diarization Settings</h4>
-                    <p>Configure speaker detection. Leave empty for defaults.</p>
-                  </div>
+                  {#if reprocessDropdownMode === 'confirmation'}
+                    <!-- Confirmation message -->
+                    <div class="reprocess-confirmation-content">
+                      <div class="reprocess-confirmation-info">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="16" x2="12" y2="12"></line>
+                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        <span class="reprocess-confirmation-message">{getReprocessConfirmationMessage()}</span>
+                      </div>
+                      <div class="reprocess-confirmation-actions">
+                        <button class="btn-cancel" on:click={handleReprocessCustomize}>Customize</button>
+                        <button class="btn-confirm" on:click={handleReprocessFromConfirmation}>Start</button>
+                      </div>
+                    </div>
+                  {:else}
+                    <!-- Settings form -->
+                    <div class="reprocess-settings-header">
+                      <h4>Speaker Diarization Settings</h4>
+                      <p>Leave empty to use defaults.</p>
+                    </div>
 
-                  <div class="reprocess-settings-row">
-                    <div class="reprocess-setting-field">
-                      <label for="header-min-speakers">Min Speakers</label>
-                      <input
-                        id="header-min-speakers"
-                        type="number"
-                        min="1"
-                        placeholder="Default"
-                        bind:value={reprocessMinSpeakers}
-                        disabled={reprocessNumSpeakers !== null}
-                      />
+                    <div class="reprocess-settings-row">
+                      <div class="reprocess-setting-field">
+                        <label for="header-min-speakers">Min Speakers</label>
+                        <input
+                          id="header-min-speakers"
+                          type="number"
+                          min="1"
+                          placeholder="Default"
+                          bind:value={reprocessMinSpeakers}
+                          disabled={reprocessNumSpeakers !== null}
+                        />
+                      </div>
+
+                      <div class="reprocess-setting-field">
+                        <label for="header-max-speakers">Max Speakers</label>
+                        <input
+                          id="header-max-speakers"
+                          type="number"
+                          min="1"
+                          placeholder="Default"
+                          bind:value={reprocessMaxSpeakers}
+                          disabled={reprocessNumSpeakers !== null}
+                        />
+                      </div>
                     </div>
 
                     <div class="reprocess-setting-field">
-                      <label for="header-max-speakers">Max Speakers</label>
+                      <label for="header-num-speakers">
+                        Fixed Count
+                        <span class="setting-hint">(overrides min/max)</span>
+                      </label>
                       <input
-                        id="header-max-speakers"
+                        id="header-num-speakers"
                         type="number"
                         min="1"
-                        placeholder="Default"
-                        bind:value={reprocessMaxSpeakers}
-                        disabled={reprocessNumSpeakers !== null}
+                        placeholder="Auto"
+                        bind:value={reprocessNumSpeakers}
                       />
                     </div>
-                  </div>
 
-                  <div class="reprocess-setting-field">
-                    <label for="header-num-speakers">
-                      Fixed Speaker Count
-                      <span class="setting-hint">Overrides min/max</span>
-                    </label>
-                    <input
-                      id="header-num-speakers"
-                      type="number"
-                      min="1"
-                      placeholder="Default"
-                      bind:value={reprocessNumSpeakers}
-                    />
-                  </div>
+                    {#if !reprocessSettingsValid}
+                      <div class="reprocess-validation-error">
+                        Min must be &le; max
+                      </div>
+                    {/if}
 
-                  {#if !reprocessSettingsValid}
-                    <div class="reprocess-validation-error">
-                      Min speakers must be &le; max speakers
+                    <div class="reprocess-settings-actions">
+                      <button class="btn-cancel" on:click={closeReprocessDropdown}>
+                        Cancel
+                      </button>
+                      <button
+                        class="btn-confirm"
+                        on:click={handleReprocessHeader}
+                        disabled={reprocessing || !reprocessSettingsValid}
+                      >
+                        Start
+                      </button>
                     </div>
                   {/if}
-
-                  <div class="reprocess-settings-actions">
-                    <button
-                      class="btn-cancel"
-                      on:click={() => {
-                        showReprocessSettings = false;
-                        reprocessMinSpeakers = null;
-                        reprocessMaxSpeakers = null;
-                        reprocessNumSpeakers = null;
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      class="btn-confirm"
-                      on:click={handleReprocessHeader}
-                      disabled={reprocessing || !reprocessSettingsValid}
-                    >
-                      Start Reprocessing
-                    </button>
-                  </div>
                 </div>
               {/if}
             </div>
@@ -2344,6 +2518,7 @@
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}
           on:speakerNameChanged={handleSpeakerNameChanged}
+          on:speakersMerged={handleSpeakersMerged}
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
           on:loadMore={loadMoreSegments}
@@ -2473,7 +2648,11 @@
     bind:isOpen={showTranscriptModal}
     fileId={file.id}
     fileName={file?.filename || 'Unknown File'}
+    {totalSegments}
+    {hasMoreSegments}
+    {loadingMoreSegments}
     on:close={() => showTranscriptModal = false}
+    on:loadMore={loadMoreSegments}
   />
 {/if}
 
@@ -2562,7 +2741,9 @@
   .header-buttons {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .view-transcript-btn {
@@ -2642,6 +2823,10 @@
 
   .reprocess-dropdown-container {
     position: relative;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .reprocess-settings-dropdown {
@@ -2655,7 +2840,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 100;
+    z-index: 1001;
     animation: slideDown 0.15s ease;
   }
 
@@ -2668,6 +2853,39 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  /* Confirmation content */
+  .reprocess-confirmation-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .reprocess-confirmation-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background-color: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 6px;
+  }
+
+  .reprocess-confirmation-info svg {
+    color: var(--primary-color, #3b82f6);
+    flex-shrink: 0;
+  }
+
+  .reprocess-confirmation-message {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+  }
+
+  .reprocess-confirmation-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
   }
 
   .reprocess-settings-header {
@@ -2765,39 +2983,62 @@
     margin-top: 0.5rem;
   }
 
-  .reprocess-settings-actions .btn-cancel {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .reprocess-settings-actions .btn-cancel:hover {
-    background: var(--hover-bg);
-    color: var(--text-primary);
-  }
-
-  .reprocess-settings-actions .btn-confirm {
-    padding: 0.5rem 1rem;
-    background: var(--primary-color);
+  .reprocess-settings-actions .btn-cancel,
+  .reprocess-confirmation-actions .btn-cancel {
+    padding: 0.4rem 0.8rem;
+    background: #6b7280;
+    border: 1px solid #6b7280;
+    border-radius: 10px;
     color: white;
-    border: none;
-    border-radius: 6px;
     font-size: 0.85rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
-  .reprocess-settings-actions .btn-confirm:hover:not(:disabled) {
-    background: var(--primary-hover);
+  .reprocess-settings-actions .btn-cancel:hover,
+  .reprocess-confirmation-actions .btn-cancel:hover {
+    background: #4b5563;
+    border-color: #4b5563;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
   }
 
-  .reprocess-settings-actions .btn-confirm:disabled {
+  .reprocess-settings-actions .btn-cancel:active,
+  .reprocess-confirmation-actions .btn-cancel:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
+  }
+
+  .reprocess-settings-actions .btn-confirm,
+  .reprocess-confirmation-actions .btn-confirm {
+    padding: 0.4rem 0.8rem;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .reprocess-settings-actions .btn-confirm:hover:not(:disabled),
+  .reprocess-confirmation-actions .btn-confirm:hover:not(:disabled) {
+    background: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .reprocess-settings-actions .btn-confirm:active:not(:disabled),
+  .reprocess-confirmation-actions .btn-confirm:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .reprocess-settings-actions .btn-confirm:disabled,
+  .reprocess-confirmation-actions .btn-confirm:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

@@ -17,6 +17,9 @@ from .llm_settings import UserLLMSettings
 from .llm_settings import UserLLMSettingsCreate
 from .llm_settings import UserLLMSettingsPublic
 from .llm_settings import UserLLMSettingsUpdate
+from .transcription_settings import TranscriptionSettings
+from .transcription_settings import TranscriptionSettingsUpdate
+from .transcription_settings import TranscriptionSystemDefaults
 from .media import Comment
 from .media import CommentCreate
 from .media import CommentUpdate
@@ -102,4 +105,7 @@ __all__ = [
     "ProviderDefaults",
     "SupportedProvidersResponse",
     "LLMSettingsStatus",
+    "TranscriptionSettings",
+    "TranscriptionSettingsUpdate",
+    "TranscriptionSystemDefaults",
 ]
