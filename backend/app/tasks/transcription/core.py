@@ -36,6 +36,46 @@ from .whisperx_service import WhisperXService
 logger = logging.getLogger(__name__)
 
 
+def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list, int]:
+    """
+    Clean garbage words from transcript segments.
+
+    Garbage words are very long continuous strings (no spaces) that typically result from
+    WhisperX misinterpreting background noise (fans, static, rumbling) as speech.
+
+    Args:
+        segments: List of transcript segments with 'text' field
+        max_word_length: Maximum word length threshold (words longer are replaced)
+
+    Returns:
+        Tuple of (cleaned segments, count of garbage words replaced)
+    """
+    garbage_count = 0
+    cleaned_segments = []
+
+    for segment in segments:
+        text = segment.get("text", "")
+        words = text.split()
+        cleaned_words = []
+
+        for word in words:
+            # Check if word exceeds max length and has no spaces
+            # (spaces would indicate it's not a single garbage word)
+            if len(word) > max_word_length and " " not in word:
+                cleaned_words.append("[background noise]")
+                garbage_count += 1
+                logger.debug(f"Replaced garbage word ({len(word)} chars): {word[:30]}...")
+            else:
+                cleaned_words.append(word)
+
+        # Create a copy of the segment with cleaned text
+        cleaned_segment = segment.copy()
+        cleaned_segment["text"] = " ".join(cleaned_words)
+        cleaned_segments.append(cleaned_segment)
+
+    return cleaned_segments, garbage_count
+
+
 # Import for automatic summarization, speaker identification, and analytics
 def trigger_automatic_summarization(file_id: int, file_uuid: str):
     """Trigger automatic summarization, speaker identification, and analytics after transcription completes"""
@@ -72,12 +112,17 @@ def trigger_automatic_summarization(file_id: int, file_uuid: str):
 
 
 @celery_app.task(bind=True, name="transcribe_audio")
-def transcribe_audio_task(self, file_uuid: str):
+def transcribe_audio_task(
+    self, file_uuid: str, min_speakers: int = None, max_speakers: int = None, num_speakers: int = None
+):
     """
     Process an audio/video file with WhisperX for transcription and Pyannote for diarization.
 
     Args:
         file_uuid: UUID of the MediaFile to transcribe
+        min_speakers: Optional minimum number of speakers for diarization (falls back to settings.MIN_SPEAKERS)
+        max_speakers: Optional maximum number of speakers for diarization (falls back to settings.MAX_SPEAKERS)
+        num_speakers: Optional fixed number of speakers for diarization (falls back to settings.NUM_SPEAKERS)
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
@@ -172,10 +217,14 @@ def transcribe_audio_task(self, file_uuid: str):
                     send_progress_notification(user_id, file_id, progress, message)
 
                 # Run full WhisperX pipeline with progress updates
+                # Use provided parameters or fall back to environment settings
                 result = whisperx_service.process_full_pipeline(
                     audio_file_path,
                     settings.HUGGINGFACE_TOKEN,
                     progress_callback=whisperx_progress_callback,
+                    min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
+                    max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+                    num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
                 )
 
                 # Check if transcription produced any valid content
@@ -258,6 +307,22 @@ def transcribe_audio_task(self, file_uuid: str):
                 processed_segments = process_segments_with_speakers(
                     result["segments"], speaker_mapping
                 )
+
+                # Step 8.5: Clean garbage words from transcription
+                with session_scope() as db:
+                    from app.services import system_settings_service
+
+                    garbage_config = system_settings_service.get_garbage_cleanup_config(db)
+
+                if garbage_config["garbage_cleanup_enabled"]:
+                    processed_segments, garbage_count = clean_garbage_words(
+                        processed_segments, garbage_config["max_word_length"]
+                    )
+                    if garbage_count > 0:
+                        logger.info(
+                            f"Cleaned {garbage_count} garbage word(s) from file {file_id} "
+                            f"(threshold: {garbage_config['max_word_length']} chars)"
+                        )
 
                 with session_scope() as db:
                     update_task_status(db, task_id, "in_progress", progress=0.75)

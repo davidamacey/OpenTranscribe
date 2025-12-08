@@ -502,14 +502,34 @@ def delete_all_user_configurations(
 async def test_llm_connection(
     *,
     test_request: schemas.ConnectionTestRequest,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Test connection to LLM provider without saving settings
+    Test connection to LLM provider without saving settings.
+    If config_id is provided and no api_key, will use the stored API key from that config.
     """
     start_time = time.time()
 
     try:
+        # If no api_key provided but config_id is, look up the stored key
+        effective_api_key = test_request.api_key
+        if not effective_api_key and test_request.config_id:
+            try:
+                config = (
+                    db.query(models.UserLLMSettings)
+                    .filter(
+                        models.UserLLMSettings.uuid == test_request.config_id,
+                        models.UserLLMSettings.user_id == current_user.id,
+                    )
+                    .first()
+                )
+                if config and config.api_key:
+                    # Decrypt the stored API key
+                    effective_api_key = decrypt_api_key(config.api_key)
+            except Exception as e:
+                logger.warning(f"Could not retrieve stored API key for config {test_request.config_id}: {e}")
+
         # Map schema enum to service enum
         service_provider = ServiceLLMProvider(test_request.provider.value)
 
@@ -517,7 +537,7 @@ async def test_llm_connection(
         config = LLMConfig(
             provider=service_provider,
             model=test_request.model_name,
-            api_key=test_request.api_key,
+            api_key=effective_api_key,
             base_url=test_request.base_url,
         )
 
@@ -677,6 +697,35 @@ async def test_specific_configuration(
     return result
 
 
+@router.get("/config/{config_uuid}/api-key")
+async def get_config_api_key(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get the decrypted API key for a specific configuration.
+    Only the owner can access their own API keys.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+
+    if user_config.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this configuration",
+        )
+
+    if not user_config.api_key:
+        return {"api_key": None}
+
+    # Decrypt API key
+    api_key = decrypt_api_key(user_config.api_key)
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+
+    return {"api_key": api_key}
+
+
 @router.get("/ollama/models")
 async def get_ollama_models(
     base_url: str,
@@ -742,6 +791,105 @@ async def get_ollama_models(
         }
     except Exception as e:
         logger.error(f"Error fetching Ollama models from {base_url}: {e}")
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Unexpected error: {str(e)}",
+        }
+
+
+@router.get("/openai-compatible/models")
+async def get_openai_compatible_models(
+    base_url: str,
+    api_key: str | None = None,
+    config_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from an OpenAI-compatible API endpoint
+    Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers
+
+    If config_id is provided and no api_key, will use the stored API key from that config.
+    """
+    import aiohttp
+
+    # If no api_key provided but config_id is, look up the stored key
+    effective_api_key = api_key
+    if not effective_api_key and config_id:
+        try:
+            config_uuid = uuid.UUID(config_id)
+            config = (
+                db.query(models.UserLLMSettings)
+                .filter(
+                    models.UserLLMSettings.uuid == config_uuid,
+                    models.UserLLMSettings.user_id == current_user.id,
+                )
+                .first()
+            )
+            if config and config.api_key:
+                # Decrypt the stored API key
+                effective_api_key = decrypt_api_key(config.api_key)
+        except (ValueError, Exception) as e:
+            logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
+
+    try:
+        # Clean up base URL
+        clean_url = base_url.strip().rstrip("/")
+        if not clean_url.endswith("/v1"):
+            clean_url = f"{clean_url}/v1"
+
+        models_url = f"{clean_url}/models"
+
+        # Prepare headers
+        headers = {}
+        if effective_api_key:
+            headers["Authorization"] = f"Bearer {effective_api_key}"
+
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(models_url, headers=headers) as response,
+        ):
+            if response.status == 200:
+                data = await response.json()
+                models = []
+
+                if "data" in data:
+                    for model in data["data"]:
+                        models.append(
+                            {
+                                "name": model.get("id", ""),
+                                "id": model.get("id", ""),
+                                "owned_by": model.get("owned_by", ""),
+                                "created": model.get("created", 0),
+                            }
+                        )
+
+                return {
+                    "success": True,
+                    "models": models,
+                    "total": len(models),
+                    "message": f"Found {len(models)} models",
+                }
+            else:
+                error_text = await response.text()
+                return {
+                    "success": False,
+                    "models": [],
+                    "total": 0,
+                    "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
+                }
+    except aiohttp.ClientError as e:
+        return {
+            "success": False,
+            "models": [],
+            "total": 0,
+            "message": f"Connection error: {str(e)}",
+        }
+    except Exception as e:
+        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}")
         return {
             "success": False,
             "models": [],

@@ -105,32 +105,32 @@ def update_current_user(
     return current_user
 
 
-@router.get("/{user_id}", response_model=UserSchema)
+@router.get("/{user_uuid}", response_model=UserSchema)
 def get_user(
-    user_id: int,
+    user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Get user by ID (admin only)
+    Get user by UUID (admin only)
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
 
-@router.put("/{user_id}", response_model=UserSchema)
+@router.put("/{user_uuid}", response_model=UserSchema)
 def update_user(
-    user_id: int,
+    user_uuid: str,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Update user by ID (admin only)
+    Update user by UUID (admin only)
     """
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
@@ -141,6 +141,9 @@ def update_user(
     if "password" in update_data:
         update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 
+    # Remove current_password from update_data as it's not a model field
+    update_data.pop("current_password", None)
+
     for field, value in update_data.items():
         setattr(user, field, value)
 
@@ -150,25 +153,25 @@ def update_user(
     return user
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{user_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    user_id: int,
+    user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Delete user by ID (admin only)
+    Delete user by UUID (admin only)
     """
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     # Prevent deleting self
-    if user_id == current_user.id:
+    if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete own user account",
         )
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     db.delete(user)
     db.commit()

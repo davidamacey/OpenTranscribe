@@ -27,6 +27,26 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
+class ReprocessRequest(BaseModel):
+    """Request schema for reprocessing a file with optional speaker diarization settings.
+
+    Attributes:
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
+    """
+
+    min_speakers: Optional[int] = Field(
+        None, description="Minimum number of speakers for diarization (positive integer)"
+    )
+    max_speakers: Optional[int] = Field(
+        None, description="Maximum number of speakers for diarization (positive integer)"
+    )
+    num_speakers: Optional[int] = Field(
+        None, description="Fixed number of speakers for diarization (overrides min/max when set)"
+    )
+
+
 class PrepareUploadRequest(BaseModel):
     """Request schema for preparing a file upload.
 
@@ -38,6 +58,9 @@ class PrepareUploadRequest(BaseModel):
         content_type: MIME type of the file
         file_hash: SHA-256 hash of the file for duplicate detection
         extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
     """
 
     filename: str = Field(..., description="Name of the file to be uploaded")
@@ -48,6 +71,15 @@ class PrepareUploadRequest(BaseModel):
     )
     extracted_from_video: Optional[dict[str, Any]] = Field(
         None, description="Metadata from original video file if audio was extracted client-side"
+    )
+    min_speakers: Optional[int] = Field(
+        None, description="Minimum number of speakers for diarization (positive integer)"
+    )
+    max_speakers: Optional[int] = Field(
+        None, description="Maximum number of speakers for diarization (positive integer)"
+    )
+    num_speakers: Optional[int] = Field(
+        None, description="Fixed number of speakers for diarization (overrides min/max when set)"
     )
 
 

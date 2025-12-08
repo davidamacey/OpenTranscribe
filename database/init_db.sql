@@ -393,6 +393,26 @@ CREATE INDEX IF NOT EXISTS idx_user_llm_settings_active ON user_llm_settings(is_
 CREATE INDEX IF NOT EXISTS idx_summary_prompt_uuid ON summary_prompt(uuid);
 CREATE INDEX IF NOT EXISTS idx_user_llm_settings_uuid ON user_llm_settings(uuid);
 
+-- System settings table for global configuration
+CREATE TABLE IF NOT EXISTS system_settings (
+    id SERIAL PRIMARY KEY,
+    key VARCHAR(100) UNIQUE NOT NULL,
+    value TEXT,
+    description TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index for fast key lookups
+CREATE INDEX IF NOT EXISTS idx_system_settings_key ON system_settings(key);
+
+-- Seed default system settings for retry configuration
+INSERT INTO system_settings (key, value, description) VALUES
+    ('transcription.max_retries', '3', 'Maximum number of retry attempts for failed transcriptions (0 = unlimited)'),
+    ('transcription.retry_limit_enabled', 'true', 'Whether to enforce retry limits on transcription processing'),
+    ('transcription.garbage_cleanup_enabled', 'true', 'Whether to clean up garbage words (very long words with no spaces) during transcription'),
+    ('transcription.max_word_length', '50', 'Maximum word length threshold for garbage detection (words longer than this with no spaces are replaced)')
+ON CONFLICT (key) DO NOTHING;
+
 -- Insert system prompts with comprehensive guidance and properly escaped JSON
 -- Enhanced with Anthropic prompt engineering best practices (Jan 2025)
 INSERT INTO summary_prompt (name, description, prompt_text, is_system_default, content_type, is_active) VALUES

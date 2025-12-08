@@ -5,10 +5,13 @@
   import ReprocessButton from './ReprocessButton.svelte';
   import ScrollbarIndicator from './ScrollbarIndicator.svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
+  import SpeakerMerge from './SpeakerMerge.svelte';
+  import SegmentSpeakerDropdown from './SegmentSpeakerDropdown.svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { downloadStore } from '$stores/downloads';
   import { toastStore } from '$stores/toast';
   import { highlightTextWithMatches, highlightSpeakerName, type SearchMatch } from '$lib/utils/searchHighlight';
+  import { updateSegmentSpeaker } from '$lib/api/transcripts';
   
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -126,6 +129,11 @@
     dispatch('reprocess', event.detail);
   }
 
+  function handleSpeakersMerged() {
+    // Dispatch event to parent to refresh speakers and transcript data
+    dispatch('speakersMerged');
+  }
+
   // Helper function to check if speaker has cross-video matches to display
   function hasCrossVideoMatches(speaker: any): boolean {
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
@@ -156,12 +164,71 @@
     // The scrolling and highlighting is handled by the search component
   }
 
+  // Handle segment speaker change
+  let updatingSegments = new Set<string>();
+
+  async function handleSegmentSpeakerChange(event: CustomEvent) {
+    const { segmentUuid, speakerUuid } = event.detail;
+
+    // Prevent duplicate requests
+    if (updatingSegments.has(segmentUuid)) {
+      return;
+    }
+
+    updatingSegments.add(segmentUuid);
+
+    // Find the segment in our local state
+    const segmentIndex = file.transcript_segments.findIndex(
+      (s: any) => (s.uuid || s.id) === segmentUuid
+    );
+
+    if (segmentIndex === -1) {
+      toastStore.error('Segment not found');
+      updatingSegments.delete(segmentUuid);
+      return;
+    }
+
+    // Store original speaker for rollback
+    const originalSpeaker = file.transcript_segments[segmentIndex].speaker;
+
+    // Optimistic update - find the new speaker from our speaker list
+    const newSpeaker = speakerUuid
+      ? speakerList.find((s: any) => s.uuid === speakerUuid)
+      : null;
+
+    file.transcript_segments[segmentIndex].speaker = newSpeaker;
+    file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+    try {
+      // Make API call
+      const updatedSegment = await updateSegmentSpeaker(segmentUuid, speakerUuid);
+
+      // Update with server response
+      file.transcript_segments[segmentIndex] = updatedSegment;
+      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+      toastStore.success('Speaker assignment updated');
+    } catch (error: any) {
+      console.error('Error updating segment speaker:', error);
+
+      // Rollback on error
+      file.transcript_segments[segmentIndex].speaker = originalSpeaker;
+      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+      toastStore.error(
+        error.response?.data?.detail || 'Failed to update speaker assignment'
+      );
+    } finally {
+      updatingSegments.delete(segmentUuid);
+    }
+  }
+
   async function downloadFile() {
     if (!file || !file.id) {
       toastStore.error('File information not available');
       return;
     }
-    
+
     const fileId = file.id.toString();
     const filename = file.filename;
     
@@ -330,24 +397,25 @@
               </div>
             {:else}
               <div class="segment-row">
-                <button 
-                  class="segment-content" 
+                <button
+                  class="segment-content"
                   on:click={() => handleSegmentClick(segment.start_time)}
                   on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
                   title="Jump to this segment"
                 >
                   <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                   <div
-                    class="segment-speaker"
-                    style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                    class="segment-speaker-wrapper"
+                    role="button"
+                    tabindex="0"
+                    on:click|stopPropagation
+                    on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
                   >
-                    {@html highlightSpeakerName(
-                      segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown',
-                      searchQuery,
-                      file.transcript_segments.indexOf(segment),
-                      searchMatches,
-                      currentMatchIndex
-                    )}
+                    <SegmentSpeakerDropdown
+                      {segment}
+                      speakers={speakerList}
+                      on:change={handleSegmentSpeakerChange}
+                    />
                   </div>
                   <div class="segment-text">
                     {@html highlightTextWithMatches(
@@ -359,9 +427,9 @@
                     )}
                   </div>
                 </button>
-                <button 
-                  class="edit-button" 
-                  on:click|stopPropagation={() => editSegment(segment)} 
+                <button
+                  class="edit-button"
+                  on:click|stopPropagation={() => editSegment(segment)}
                   title="Edit segment"
                 >
                   Edit
@@ -533,7 +601,15 @@
               </div>
             </div>
           </div>
-          
+
+          <!-- Speaker Merge UI -->
+          {#if speakerList && speakerList.length > 1}
+            <SpeakerMerge
+              speakers={speakerList}
+              on:merged={handleSpeakersMerged}
+            />
+          {/if}
+
           {#if speakerList && speakerList.length > 0}
             <div class="speaker-list">
               {#each speakerList as speaker}
@@ -951,6 +1027,7 @@
   .transcript-display {
     max-height: 600px;
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
   }
 
@@ -965,12 +1042,14 @@
   .segment-row {
     display: flex;
     align-items: stretch;
+    min-width: 0; /* Allow flex container to shrink */
+    width: 100%;
   }
 
   .segment-content {
-    flex: 1;
+    flex: 1 1 0; /* Allow shrinking below content size */
     display: grid;
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
     gap: 12px;
     align-items: center;
     padding: 8px 12px;
@@ -981,6 +1060,15 @@
     transition: all 0.2s ease;
     border-radius: 4px;
     margin: 2px 4px;
+    min-width: 0; /* Allow grid to shrink */
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .segment-speaker-wrapper {
+    display: flex;
+    align-items: center;
+    min-width: fit-content;
   }
 
   .segment-content:hover {
@@ -1024,6 +1112,10 @@
     line-height: 1.4;
     position: relative;
     padding-left: 12px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0; /* Allow text to shrink in grid layout */
   }
 
   .segment-text::before {
@@ -1502,7 +1594,7 @@
 
   @media (max-width: 768px) {
     .segment-content {
-      grid-template-columns: auto auto 1fr;
+      grid-template-columns: auto auto minmax(0, 1fr);
       gap: 8px;
       padding: 8px;
     }

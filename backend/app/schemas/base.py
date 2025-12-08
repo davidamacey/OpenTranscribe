@@ -61,6 +61,11 @@ class UUIDBaseSchema(BaseModel):
                 if "uuid" in data_dict:
                     data_dict["id"] = data_dict["uuid"]
 
+                # Include computed properties that aren't in __dict__
+                # has_api_key is a property on UserLLMSettings model
+                if hasattr(data, "has_api_key") and "has_api_key" not in data_dict:
+                    data_dict["has_api_key"] = data.has_api_key
+
                 # Map foreign key UUIDs from related objects
                 # Check if the model has a 'user' relationship and user_id field
                 if hasattr(data, "user") and hasattr(data.user, "uuid"):

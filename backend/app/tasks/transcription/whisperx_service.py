@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+# Note: PyTorch 2.6+ compatibility patch (weights_only=False) is applied in
+# app/core/celery.py at module level, BEFORE any ML libraries are imported
+
 from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
@@ -12,18 +15,6 @@ class WhisperXService:
     """Service for handling WhisperX transcription operations with cross-platform support."""
 
     def __init__(self, model_name: str = None, models_dir: str = None):
-        # Add safe globals for PyTorch 2.6+ compatibility with PyAnnote
-        # PyTorch 2.6+ changed torch.load() default to weights_only=True
-        # PyAnnote models require ListConfig to be whitelisted
-        try:
-            import torch.serialization
-            from omegaconf.listconfig import ListConfig
-
-            torch.serialization.add_safe_globals([ListConfig])
-            logger.debug("Added safe globals for PyTorch 2.6+ compatibility")
-        except Exception as e:
-            logger.warning(f"Could not add safe globals for torch.load: {e}")
-
         # Initialize hardware detection
         self.hardware_config = detect_hardware()
 
@@ -213,7 +204,8 @@ class WhisperXService:
         return aligned_result
 
     def perform_speaker_diarization(
-        self, audio, hf_token: str = None, max_speakers: int = 20, min_speakers: int = 1
+        self, audio, hf_token: str = None, max_speakers: int = 20, min_speakers: int = 1,
+        num_speakers: int = None
     ) -> dict[str, Any]:
         """
         Perform speaker diarization on audio.
@@ -223,6 +215,7 @@ class WhisperXService:
             hf_token: HuggingFace token for accessing models
             max_speakers: Maximum number of speakers (default: 20, can be increased to 50+ for large conferences)
             min_speakers: Minimum number of speakers
+            num_speakers: Exact number of speakers (if known, overrides min/max)
 
         Returns:
             Diarization result
@@ -237,10 +230,14 @@ class WhisperXService:
         except ImportError as e:
             raise ImportError("WhisperX is not installed.") from e
 
-        logger.info("Performing speaker diarization...")
+        logger.info(f"Performing speaker diarization with min_speakers={min_speakers}, max_speakers={max_speakers}, num_speakers={num_speakers}")
 
         try:
             diarize_params = {"max_speakers": max_speakers, "min_speakers": min_speakers}
+            if num_speakers is not None:
+                diarize_params["num_speakers"] = num_speakers
+                logger.info(f"Using exact speaker count: {num_speakers}")
+            logger.info(f"Diarization parameters: {diarize_params}")
 
             # Use PyAnnote-compatible device configuration
             pyannote_config = self.hardware_config.get_pyannote_config()
@@ -344,7 +341,8 @@ class WhisperXService:
         return result
 
     def process_full_pipeline(
-        self, audio_file_path: str, hf_token: str = None, progress_callback=None
+        self, audio_file_path: str, hf_token: str = None, progress_callback=None,
+        min_speakers: int = 1, max_speakers: int = 20, num_speakers: int = None
     ) -> dict[str, Any]:
         """
         Run the complete WhisperX pipeline: transcription, alignment, and diarization.
@@ -353,6 +351,9 @@ class WhisperXService:
             audio_file_path: Path to the audio file
             hf_token: HuggingFace token for speaker diarization
             progress_callback: Optional callback function for progress updates
+            min_speakers: Minimum number of speakers (hint)
+            max_speakers: Maximum number of speakers (hint)
+            num_speakers: Exact number of speakers (if known, overrides min/max)
 
         Returns:
             Complete processing result with speaker assignments
@@ -370,7 +371,10 @@ class WhisperXService:
         # Step 3: Diarize (55% -> 65%)
         if progress_callback:
             progress_callback(0.55, "Analyzing speaker patterns")
-        diarize_segments = self.perform_speaker_diarization(audio, hf_token)
+        diarize_segments = self.perform_speaker_diarization(
+            audio, hf_token, max_speakers=max_speakers, min_speakers=min_speakers,
+            num_speakers=num_speakers
+        )
 
         # Step 4: Assign speakers (65% -> 70%)
         if progress_callback:

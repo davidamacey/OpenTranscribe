@@ -53,6 +53,7 @@ export interface ConnectionTestRequest {
   model_name: string;
   api_key?: string;
   base_url?: string;
+  config_id?: string;  // For edit mode - uses stored API key
 }
 
 export interface ConnectionTestResponse {
@@ -206,6 +207,41 @@ export class LLMSettingsApi {
   }> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/ollama/models`, {
       params: { base_url: baseUrl }
+    });
+    return response.data;
+  }
+
+  /**
+   * Get the decrypted API key for a specific configuration
+   */
+  static async getConfigApiKey(configId: string): Promise<{ api_key: string | null }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${configId}/api-key`);
+    return response.data;
+  }
+
+  /**
+   * Get available models from an OpenAI-compatible API endpoint
+   * @param baseUrl - The base URL of the API
+   * @param apiKey - Optional API key (for new configs)
+   * @param configId - Optional config ID (for edit mode - uses stored key)
+   */
+  static async getOpenAICompatibleModels(baseUrl: string, apiKey?: string, configId?: string): Promise<{
+    success: boolean;
+    models: Array<{
+      name: string;
+      id: string;
+      owned_by: string;
+      created: number;
+    }>;
+    total: number;
+    message: string;
+  }> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/openai-compatible/models`, {
+      params: {
+        base_url: baseUrl,
+        api_key: apiKey,
+        config_id: configId
+      }
     });
     return response.data;
   }
