@@ -24,6 +24,11 @@
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
 
+  // Pagination props
+  export let totalSegments: number = 0;
+  export let hasMoreSegments: boolean = false;
+  export let loadingMoreSegments: boolean = false;
+
   // Reference reprocessing to suppress warning (will be tree-shaken in production)
   $: { reprocessing; }
 
@@ -370,8 +375,27 @@
             {/if}
           </div>
         {/each}
+
+        <!-- Load More button for paginated transcripts -->
+        {#if hasMoreSegments}
+          <div class="load-more-container">
+            <button
+              class="load-more-button"
+              on:click={() => dispatch('loadMore')}
+              disabled={loadingMoreSegments}
+              title="Load more transcript segments"
+            >
+              {#if loadingMoreSegments}
+                <span class="loading-spinner"></span>
+                Loading...
+              {:else}
+                Load More ({file?.transcript_segments?.length || 0} of {totalSegments} segments)
+              {/if}
+            </button>
+          </div>
+        {/if}
         </div>
-        
+
         <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
         {#if scrollbarIndicatorEnabled}
           <ScrollbarIndicator 
@@ -850,6 +874,52 @@
 </section>
 
 <style>
+  /* Load More button styles */
+  .load-more-container {
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--surface-secondary);
+  }
+
+  .load-more-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .load-more-button:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+
+  .load-more-button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .load-more-button .loading-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   .transcript-column {
     flex: 1;
     min-width: 0;
