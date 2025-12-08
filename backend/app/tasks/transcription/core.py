@@ -37,6 +37,47 @@ from .whisperx_service import WhisperXService
 logger = logging.getLogger(__name__)
 
 
+def _get_user_language_settings(db, user_id: int) -> dict:
+    """
+    Retrieve user's language settings from the database.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+
+    Returns:
+        Dict with source_language and translate_to_english keys
+    """
+    from app import models
+    from app.core.constants import DEFAULT_SOURCE_LANGUAGE
+
+    settings = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key.in_(
+                [
+                    "transcription_source_language",
+                    "transcription_translate_to_english",
+                ]
+            ),
+        )
+        .all()
+    )
+
+    settings_map = {s.setting_key: s.setting_value for s in settings}
+
+    return {
+        "source_language": settings_map.get(
+            "transcription_source_language", DEFAULT_SOURCE_LANGUAGE
+        ),
+        "translate_to_english": settings_map.get(
+            "transcription_translate_to_english", "false"
+        ).lower()
+        == "true",
+    }
+
+
 @dataclass
 class TranscriptionContext:
     """Context holder for transcription task state."""
@@ -206,11 +247,31 @@ def _run_whisperx_pipeline(
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
+    source_language: str | None = None,
+    translate_to_english: bool | None = None,
 ) -> dict:
     """Run the WhisperX transcription pipeline."""
+    # Get user language settings if not explicitly provided
+    if source_language is None or translate_to_english is None:
+        with session_scope() as db:
+            user_lang_settings = _get_user_language_settings(db, ctx.user_id)
+            source_language = source_language or user_lang_settings["source_language"]
+            translate_to_english = (
+                translate_to_english
+                if translate_to_english is not None
+                else user_lang_settings["translate_to_english"]
+            )
+
+    logger.info(
+        f"Language settings for file {ctx.file_id}: "
+        f"source_language={source_language}, translate_to_english={translate_to_english}"
+    )
+
     whisperx_service = WhisperXService(
         model_name=os.getenv("WHISPER_MODEL", "large-v2"),
         models_dir=settings.MODEL_BASE_DIR,
+        source_language=source_language,
+        translate_to_english=translate_to_english,
     )
 
     with session_scope() as db:

@@ -532,11 +532,28 @@ class LLMService:
         transcript: str,
         speaker_data: Optional[dict[str, Any]] = None,
         user_id: Optional[int] = None,
+        output_language: str = "en",
     ) -> dict[str, Any]:
-        """Generate structured summary from transcript"""
+        """
+        Generate structured summary from transcript.
+
+        Args:
+            transcript: Full transcript text with speaker labels
+            speaker_data: Optional speaker statistics (talk time, word count, etc.)
+            user_id: Optional user ID for loading custom prompts
+            output_language: ISO 639-1 code for output language (default: "en")
+
+        Returns:
+            Structured summary dict with metadata
+        """
+        from app.core.constants import LLM_OUTPUT_LANGUAGES
         from app.utils.prompt_manager import get_user_active_prompt
 
         prompt_template = get_user_active_prompt(user_id)
+
+        # Get language name for prompt
+        output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")
+        logger.info(f"Generating summary in {output_language_name} ({output_language})")
 
         # Chunk transcript using ONLY user's context window setting
         transcript_chunks = self._chunk_transcript_intelligently(transcript)
@@ -544,14 +561,22 @@ class LLMService:
         if len(transcript_chunks) == 1:
             # Single chunk processing
             logger.info(f"Processing transcript as single section ({len(transcript)} chars)")
-            return self._process_single_chunk(transcript_chunks[0], speaker_data, prompt_template)
+            return self._process_single_chunk(
+                transcript_chunks[0], speaker_data, prompt_template, output_language_name
+            )
         else:
             # Multi-chunk processing
             logger.info(f"Processing transcript in {len(transcript_chunks)} sections")
-            return self._process_multiple_chunks(transcript_chunks, speaker_data, prompt_template)
+            return self._process_multiple_chunks(
+                transcript_chunks, speaker_data, prompt_template, output_language_name
+            )
 
     def _process_single_chunk(
-        self, transcript: str, speaker_data: dict, prompt_template: str
+        self,
+        transcript: str,
+        speaker_data: dict,
+        prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Process single transcript chunk"""
         formatted_prompt = prompt_template.format(
@@ -559,10 +584,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.",
+                "content": f"You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -572,7 +604,11 @@ class LLMService:
         return self._parse_summary_response(response, len(transcript))
 
     def _process_multiple_chunks(
-        self, chunks: list[str], speaker_data: dict, prompt_template: str
+        self,
+        chunks: list[str],
+        speaker_data: dict,
+        prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Process multiple transcript chunks"""
         section_summaries = []
@@ -581,7 +617,7 @@ class LLMService:
             logger.info(f"Processing section {i}/{len(chunks)} ({len(chunk)} chars)")
             try:
                 section_summary = self._summarize_section(
-                    chunk, i, len(chunks), speaker_data, prompt_template
+                    chunk, i, len(chunks), speaker_data, prompt_template, output_language_name
                 )
                 section_summaries.append(section_summary)
                 logger.info(f"Section {i} processing completed successfully")
@@ -599,7 +635,9 @@ class LLMService:
 
         # Combine sections into final summary
         logger.info("Combining section summaries into final comprehensive summary")
-        return self._combine_sections(section_summaries, speaker_data, prompt_template, len(chunks))
+        return self._combine_sections(
+            section_summaries, speaker_data, prompt_template, len(chunks), output_language_name
+        )
 
     def _summarize_section(
         self,
@@ -608,6 +646,7 @@ class LLMService:
         total_sections: int,
         speaker_data: dict,
         prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Summarize a single section"""
         formatted_prompt = prompt_template.format(
@@ -615,10 +654,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.",
+                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -647,7 +693,12 @@ class LLMService:
             }
 
     def _combine_sections(
-        self, sections: list[dict], speaker_data: dict, prompt_template: str, total_sections: int
+        self,
+        sections: list[dict],
+        speaker_data: dict,
+        prompt_template: str,
+        total_sections: int,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Combine multiple section summaries into final summary"""
         combined_content = f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(sections, indent=2)}"
@@ -657,10 +708,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": "You are combining multiple section summaries into a comprehensive BLUF format summary.",
+                "content": f"You are combining multiple section summaries into a comprehensive BLUF format summary.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]

@@ -13,13 +13,23 @@ logger = logging.getLogger(__name__)
 class WhisperXService:
     """Service for handling WhisperX transcription operations with cross-platform support."""
 
-    def __init__(self, model_name: str = None, models_dir: str = None):
+    def __init__(
+        self,
+        model_name: str = None,
+        models_dir: str = None,
+        source_language: str = "auto",
+        translate_to_english: bool = False,
+    ):
         # Initialize hardware detection
         self.hardware_config = detect_hardware()
 
         # Model configuration
         self.model_name = model_name or os.getenv("WHISPER_MODEL", "large-v2")
         self.models_dir = models_dir or Path.cwd() / "models"
+
+        # Language configuration
+        self.source_language = source_language
+        self.translate_to_english = translate_to_english
 
         # Hardware-optimized settings
         whisperx_config = self.hardware_config.get_whisperx_config()
@@ -41,16 +51,17 @@ class WhisperXService:
 
         # Log hardware details
         detected_device = self.hardware_config.device
+        lang_info = f"source_language={self.source_language}, translate_to_english={self.translate_to_english}"
         if detected_device == "mps" and self.device == "cpu":
             logger.info(
                 f"WhisperX initialized: model={self.model_name}, "
                 f"detected_device={detected_device} (using CPU for WhisperX compatibility), "
-                f"compute_type={self.compute_type}, batch_size={self.batch_size}"
+                f"compute_type={self.compute_type}, batch_size={self.batch_size}, {lang_info}"
             )
         else:
             logger.info(
                 f"WhisperX initialized: model={self.model_name}, device={self.device}, "
-                f"compute_type={self.compute_type}, batch_size={self.batch_size}"
+                f"compute_type={self.compute_type}, batch_size={self.batch_size}, {lang_info}"
             )
 
     def _apply_environment_optimizations(self):
@@ -126,14 +137,25 @@ class WhisperXService:
     def _run_transcription(self, model, audio, audio_file_path: str) -> dict[str, Any]:
         """Run transcription on loaded audio and validate results."""
         try:
+            # Determine task: "translate" outputs English, "transcribe" keeps original language
+            task = "translate" if self.translate_to_english else "transcribe"
+            logger.info(
+                f"Running transcription with task='{task}' "
+                f"(translate_to_english={self.translate_to_english})"
+            )
+
             transcription_result = model.transcribe(
                 audio,
                 batch_size=self.batch_size,
-                task="translate",  # Always translate to English
+                task=task,
             )
 
             if not transcription_result or "segments" not in transcription_result:
                 raise ValueError("Transcription failed to produce valid output")
+
+            # Log detected language
+            detected_lang = transcription_result.get("language", "unknown")
+            logger.info(f"Transcription detected language: {detected_lang}")
 
             return transcription_result
 
@@ -167,8 +189,15 @@ class WhisperXService:
             "whisper_arch": self.model_name,
             "device": self.device,
             "compute_type": self.compute_type,
-            "language": "en",
         }
+
+        # Add language hint if specified (helps accuracy even when translating)
+        # "auto" means let Whisper detect the language automatically
+        if self.source_language != "auto":
+            load_options["language"] = self.source_language
+            logger.info(f"Using source language hint: {self.source_language}")
+        else:
+            logger.info("Using automatic language detection")
 
         # Add device-specific options
         if self.device == "cuda":
@@ -407,10 +436,21 @@ class WhisperXService:
             progress_callback(0.42, "Running initial transcription")
         transcription_result, audio = self.transcribe_audio(audio_file_path)
 
-        # Step 2: Align (50% -> 55%)
+        # Step 2: Align (50% -> 55%) - with graceful fallback for unsupported languages
         if progress_callback:
             progress_callback(0.50, "Aligning word-level timestamps")
-        aligned_result = self.align_transcription(transcription_result, audio)
+
+        try:
+            aligned_result = self.align_transcription(transcription_result, audio)
+        except Exception as e:
+            # Alignment model not available for this language - use segment-level timestamps
+            detected_lang = transcription_result.get("language", "unknown")
+            logger.warning(
+                f"Alignment model not available for language '{detected_lang}'. "
+                f"Using segment-level timestamps (word-level timing disabled). Error: {e}"
+            )
+            # Fall back to transcription result without word alignment
+            aligned_result = transcription_result
 
         # Step 3: Diarize (55% -> 65%)
         if progress_callback:

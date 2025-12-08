@@ -28,7 +28,7 @@
   const dispatch = createEventDispatcher();
 
   // Gallery state detection based on location
-  $: isGalleryPage = $page.url.pathname === '/' || $page.url.pathname === '';
+  $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
 
   // Recording control popup state
   let showRecordingControls = false;
@@ -49,7 +49,7 @@
 
   // Reactive statements for active page detection
   $: currentPath = $page.url.pathname;
-  $: isGalleryActive = currentPath === '/' || currentPath === '';
+  $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
   $: isTasksActive = currentPath === '/file-status' || currentPath.startsWith('/file-status');
   $: showGalleryLink = !isGalleryActive && !isTasksActive; // Show gallery link when not on gallery or tasks
 
@@ -139,7 +139,7 @@
    */
   function handleOpenRecordingModal(event: MouseEvent) {
     event.stopPropagation();
-    navigate('/');
+    goto('/');
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('openAddMediaModal', {
         detail: { activeTab: 'record' }

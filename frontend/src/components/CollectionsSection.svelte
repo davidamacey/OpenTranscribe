@@ -5,7 +5,7 @@
 
   export let collections: any[] = [];
   export let isExpanded: boolean = false;
-  export let fileId: number;
+  export let fileId: string;
   export let aiCollectionSuggestions: Array<{name: string, confidence: number, rationale?: string, description?: string}> = [];
 
   const dispatch = createEventDispatcher();
@@ -22,11 +22,11 @@
 </script>
 
 <div class="collections-dropdown-section">
-  <button 
-    class="collections-header" 
-    on:click={toggleExpanded} 
+  <button
+    class="collections-header"
+    on:click={toggleExpanded}
     on:keydown={e => e.key === 'Enter' && toggleExpanded()}
-    title="Show or hide the collections editor to add, remove, or manage collections for this file" 
+    title="Show or hide the collections editor to add, remove, or manage collections for this file"
     aria-expanded={isExpanded}
   >
     <h4 class="section-heading">Collections</h4>
@@ -48,7 +48,7 @@
       </svg>
     </span>
   </button>
-  
+
   {#if isExpanded}
     <div class="collections-content" transition:slide={{ duration: 200 }}>
       {#if fileId}
@@ -144,13 +144,13 @@
     text-align: center;
     padding: 20px;
   }
-  
+
   /* Dark mode support */
   :global(.dark) .collection-chip {
     background: rgba(59, 130, 246, 0.2);
     color: #93bbfc;
   }
-  
+
   :global(.dark) .collection-chip.more {
     background: rgba(255, 255, 255, 0.1);
   }

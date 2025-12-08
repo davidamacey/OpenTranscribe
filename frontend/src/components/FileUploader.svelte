@@ -112,62 +112,77 @@
   $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
   $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
 
+  // Cleanup references for onDestroy
+  let dragDropCleanup: (() => void) | null = null;
+  let handleSetTabEvent: ((event: Event) => void) | null = null;
+  let handleDirectUpload: ((event: Event) => void) | null = null;
+
   // Get token from localStorage on component mount
-  onMount(async () => {
+  onMount(() => {
     token = localStorage.getItem('token') || '';
-    const cleanup = initDragAndDrop();
+    dragDropCleanup = initDragAndDrop();
     loadRecordingSettings();
 
-    // Load audio extraction settings
-    try {
-      audioExtractionSettings = await getAudioExtractionSettings();
-    } catch (err) {
-      console.error('Failed to load audio extraction settings:', err);
-      // Use default settings if loading fails
-      audioExtractionSettings = {
-        auto_extract_enabled: true,
-        extraction_threshold_mb: 100,
-        remember_choice: false,
-        show_modal: true,
-      };
-    }
+    // Load audio extraction settings (async, no return value needed)
+    (async () => {
+      try {
+        audioExtractionSettings = await getAudioExtractionSettings();
+      } catch (err) {
+        console.error('Failed to load audio extraction settings:', err);
+        // Use default settings if loading fails
+        audioExtractionSettings = {
+          auto_extract_enabled: true,
+          extraction_threshold_mb: 100,
+          remember_choice: false,
+          show_modal: true,
+        };
+      }
+    })();
 
     // Load transcription settings (user preferences and system defaults)
-    try {
-      const [userSettings, systemDefaults] = await Promise.all([
-        getTranscriptionSettings(),
-        getTranscriptionSystemDefaults()
-      ]);
-      transcriptionSettings = userSettings;
-      transcriptionSystemDefaults = systemDefaults;
+    (async () => {
+      try {
+        const [userSettings, systemDefaults] = await Promise.all([
+          getTranscriptionSettings(),
+          getTranscriptionSystemDefaults()
+        ]);
+        transcriptionSettings = userSettings;
+        transcriptionSystemDefaults = systemDefaults;
 
-      // Apply initial behavior based on user preference
-      applyTranscriptionPreferences();
-    } catch (err) {
-      console.error('Failed to load transcription settings:', err);
-      // Use client-side defaults if loading fails
-      transcriptionSettings = { ...DEFAULT_TRANSCRIPTION_SETTINGS };
-      transcriptionSystemDefaults = {
-        min_speakers: 1,
-        max_speakers: 20,
-        garbage_cleanup_enabled: true,
-        garbage_cleanup_threshold: 50,
-        valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom']
-      };
-    }
+        // Apply initial behavior based on user preference
+        applyTranscriptionPreferences();
+      } catch (err) {
+        console.error('Failed to load transcription settings:', err);
+        // Use client-side defaults if loading fails
+        transcriptionSettings = { ...DEFAULT_TRANSCRIPTION_SETTINGS };
+        transcriptionSystemDefaults = {
+          min_speakers: 1,
+          max_speakers: 20,
+          garbage_cleanup_enabled: true,
+          garbage_cleanup_threshold: 50,
+          valid_speaker_prompt_behaviors: ['always_prompt', 'use_defaults', 'use_custom'],
+          available_source_languages: { auto: 'Auto-detect', en: 'English' },
+          available_llm_output_languages: { en: 'English' },
+          common_languages: ['auto', 'en'],
+          languages_with_alignment: ['en']
+        };
+      }
+    })();
 
     // Listen for events to set active tab
-    const handleSetTabEvent = (event: CustomEvent) => {
-      if (event.detail?.activeTab) {
-        activeTab = event.detail.activeTab;
+    handleSetTabEvent = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail?.activeTab) {
+        activeTab = customEvent.detail.activeTab;
         // Tab change is handled by reactive updates
       }
     };
 
     // Listen for direct file upload from recording popup
-    const handleDirectUpload = (event: CustomEvent) => {
-      if (event.detail?.file) {
-        file = event.detail.file;
+    handleDirectUpload = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail?.file) {
+        file = customEvent.detail.file;
         activeTab = 'file';
         // Trigger upload immediately
         setTimeout(() => {
@@ -176,20 +191,20 @@
       }
     };
 
-    window.addEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
-    window.addEventListener('directFileUpload', handleDirectUpload as EventListener);
+    window.addEventListener('setFileUploaderTab', handleSetTabEvent);
+    window.addEventListener('directFileUpload', handleDirectUpload);
+  });
 
-    return () => {
-      if (cleanup) cleanup();
-      window.removeEventListener('setFileUploaderTab', handleSetTabEvent as EventListener);
-      window.removeEventListener('directFileUpload', handleDirectUpload as EventListener);
-    };
+  onDestroy(() => {
+    if (dragDropCleanup) dragDropCleanup();
+    if (handleSetTabEvent) window.removeEventListener('setFileUploaderTab', handleSetTabEvent);
+    if (handleDirectUpload) window.removeEventListener('directFileUpload', handleDirectUpload);
   });
 
   // Event dispatcher with proper types
   const dispatch = createEventDispatcher<{
     uploadComplete: {
-      fileId?: number;
+      fileId?: string;  // UUID
       uploadId?: string;
       isDuplicate?: boolean;
       isUrl?: boolean;

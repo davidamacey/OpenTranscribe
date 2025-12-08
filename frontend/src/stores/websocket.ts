@@ -17,7 +17,8 @@ export type NotificationType =
   | "file_upload"
   | "file_created"
   | "file_updated"
-  | "file_deleted";
+  | "file_deleted"
+  | "speaker_updated";
 
 // Notification interface
 export interface Notification {

@@ -525,8 +525,9 @@
 
 <!-- Password Reset Modal -->
 {#if showPasswordResetModal && passwordResetUser}
-  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation">
-    <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
+    <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title" tabindex="0">
       <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label="Close modal" title="Close">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>

@@ -18,17 +18,24 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.endpoints.auth import get_current_active_user
 from app.core.config import settings as app_settings
+from app.core.constants import COMMON_LANGUAGES
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.constants import DEFAULT_RECORDING_AUTO_STOP
 from app.core.constants import DEFAULT_RECORDING_MAX_DURATION
 from app.core.constants import DEFAULT_RECORDING_QUALITY
+from app.core.constants import DEFAULT_SOURCE_LANGUAGE
 from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
+from app.core.constants import DEFAULT_TRANSLATE_TO_ENGLISH
+from app.core.constants import LANGUAGES_WITH_ALIGNMENT
+from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.core.constants import VALID_RECORDING_DURATIONS
 from app.core.constants import VALID_RECORDING_QUALITIES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
+from app.core.constants import WHISPER_LANGUAGES
 from app.db.base import get_db
 from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
@@ -59,6 +66,9 @@ DEFAULT_TRANSCRIPTION_SETTINGS = {
     "speaker_prompt_behavior": DEFAULT_SPEAKER_PROMPT_BEHAVIOR,
     "garbage_cleanup_enabled": DEFAULT_GARBAGE_CLEANUP_ENABLED,
     "garbage_cleanup_threshold": DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
+    "source_language": DEFAULT_SOURCE_LANGUAGE,
+    "translate_to_english": DEFAULT_TRANSLATE_TO_ENGLISH,
+    "llm_output_language": DEFAULT_LLM_OUTPUT_LANGUAGE,
 }
 
 
@@ -451,6 +461,40 @@ def _validate_speaker_prompt_behavior(behavior: str | None) -> None:
         )
 
 
+def _validate_source_language(language: str | None) -> None:
+    """
+    Validate source_language value against supported Whisper languages.
+
+    Args:
+        language: The language code to validate (or None to skip)
+
+    Raises:
+        HTTPException: If language is not in WHISPER_LANGUAGES
+    """
+    if language is not None and language not in WHISPER_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail="source_language must be a valid ISO 639-1 code or 'auto'. See available_source_languages in system defaults.",
+        )
+
+
+def _validate_llm_output_language(language: str | None) -> None:
+    """
+    Validate llm_output_language value against supported LLM output languages.
+
+    Args:
+        language: The language code to validate (or None to skip)
+
+    Raises:
+        HTTPException: If language is not in LLM_OUTPUT_LANGUAGES
+    """
+    if language is not None and language not in LLM_OUTPUT_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"llm_output_language must be one of: {list(LLM_OUTPUT_LANGUAGES.keys())}",
+        )
+
+
 def _upsert_user_setting(
     db: Session,
     user_id: int,
@@ -505,7 +549,8 @@ def get_transcription_settings(
 
     Returns:
         TranscriptionSettings containing min_speakers, max_speakers,
-        speaker_prompt_behavior, garbage_cleanup_enabled, and garbage_cleanup_threshold
+        speaker_prompt_behavior, garbage_cleanup_enabled, garbage_cleanup_threshold,
+        source_language, translate_to_english, and llm_output_language
     """
     # Get all transcription-related settings for the user
     transcription_settings = (
@@ -519,6 +564,9 @@ def get_transcription_settings(
                     "transcription_speaker_prompt_behavior",
                     "transcription_garbage_cleanup_enabled",
                     "transcription_garbage_cleanup_threshold",
+                    "transcription_source_language",
+                    "transcription_translate_to_english",
+                    "transcription_llm_output_language",
                 ]
             ),
         )
@@ -552,6 +600,16 @@ def get_transcription_settings(
                 DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
             )
         ),
+        source_language=settings_map.get(
+            "transcription_source_language",
+            DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
+        ),
+        translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
+        == "true",
+        llm_output_language=settings_map.get(
+            "transcription_llm_output_language",
+            DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
+        ),
     )
 
 
@@ -571,7 +629,8 @@ def update_transcription_settings(
     Args:
         settings_data: TranscriptionSettingsUpdate with optional fields:
             min_speakers, max_speakers, speaker_prompt_behavior,
-            garbage_cleanup_enabled, garbage_cleanup_threshold
+            garbage_cleanup_enabled, garbage_cleanup_threshold,
+            source_language, translate_to_english, llm_output_language
 
     Returns:
         Updated TranscriptionSettings with all current values
@@ -595,6 +654,10 @@ def update_transcription_settings(
     _validate_speaker_range(update_data, current_settings)
     _validate_speaker_prompt_behavior(update_data.get("speaker_prompt_behavior"))
 
+    # Validate language settings
+    _validate_source_language(update_data.get("source_language"))
+    _validate_llm_output_language(update_data.get("llm_output_language"))
+
     # Map frontend keys to database keys
     setting_mappings = {
         "min_speakers": "transcription_min_speakers",
@@ -602,6 +665,9 @@ def update_transcription_settings(
         "speaker_prompt_behavior": "transcription_speaker_prompt_behavior",
         "garbage_cleanup_enabled": "transcription_garbage_cleanup_enabled",
         "garbage_cleanup_threshold": "transcription_garbage_cleanup_threshold",
+        "source_language": "transcription_source_language",
+        "translate_to_english": "transcription_translate_to_english",
+        "llm_output_language": "transcription_llm_output_language",
     }
 
     # Update each setting in the database
@@ -638,6 +704,9 @@ def reset_transcription_settings(
                     "transcription_speaker_prompt_behavior",
                     "transcription_garbage_cleanup_enabled",
                     "transcription_garbage_cleanup_threshold",
+                    "transcription_source_language",
+                    "transcription_translate_to_english",
+                    "transcription_llm_output_language",
                 ]
             ),
         )
@@ -653,6 +722,9 @@ def reset_transcription_settings(
         "speaker_prompt_behavior": DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
         "garbage_cleanup_enabled": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_enabled"],
         "garbage_cleanup_threshold": DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
+        "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
+        "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
+        "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
     }
 
     return {
@@ -676,7 +748,7 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
 
     Returns:
         TranscriptionSystemDefaults containing system min/max speakers,
-        garbage cleanup defaults, and valid behavior options
+        garbage cleanup defaults, valid behavior options, and language options
     """
     return TranscriptionSystemDefaults(
         min_speakers=app_settings.MIN_SPEAKERS,
@@ -684,4 +756,8 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         garbage_cleanup_enabled=DEFAULT_GARBAGE_CLEANUP_ENABLED,
         garbage_cleanup_threshold=DEFAULT_GARBAGE_CLEANUP_THRESHOLD,
         valid_speaker_prompt_behaviors=list(VALID_SPEAKER_PROMPT_BEHAVIORS),
+        available_source_languages=WHISPER_LANGUAGES,
+        available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
+        common_languages=COMMON_LANGUAGES,
+        languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT)),
     )

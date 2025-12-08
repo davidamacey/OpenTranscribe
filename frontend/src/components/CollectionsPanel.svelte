@@ -4,7 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  
+
   // Props
   export let selectedMediaIds: string[] = [];  // UUIDs
   export let onCollectionSelect: (collectionId: string) => void = () => {};  // UUID
@@ -27,7 +27,7 @@
   let deleting = false;
   let selectedCollectionId: string | null = null;  // UUID
   let addingToCollection = false;
-  
+
   // Fetch collections
   async function fetchCollections() {
     loading = true;
@@ -42,7 +42,7 @@
       loading = false;
     }
   }
-  
+
   // Create new collection
   async function createCollection() {
     if (!newCollectionName.trim()) return;
@@ -81,11 +81,11 @@
       creating = false;
     }
   }
-  
+
   // Update collection
   async function updateCollection() {
     if (!collectionToEdit || !editCollectionName.trim()) return;
-    
+
     updating = true;
 
     try {
@@ -93,12 +93,12 @@
         name: editCollectionName.trim(),
         description: editCollectionDescription.trim() || null
       });
-      
+
       // Update local state
-      collections = collections.map(col => 
+      collections = collections.map(col =>
         col.id === collectionToEdit.id ? { ...col, ...response.data } : col
       );
-      
+
       toastStore.success(`Collection "${editCollectionName}" updated successfully`);
       showEditModal = false;
       collectionToEdit = null;
@@ -109,7 +109,7 @@
       updating = false;
     }
   }
-  
+
   // Open edit modal
   function openEditModal(collection: any) {
     collectionToEdit = collection;
@@ -117,13 +117,13 @@
     editCollectionDescription = collection.description || '';
     showEditModal = true;
   }
-  
+
   // Open delete confirmation
   function openDeleteConfirm(collection: any) {
     collectionToDelete = collection;
     showDeleteConfirm = true;
   }
-  
+
   // Delete collection
   async function deleteCollection() {
     if (!collectionToDelete) return;
@@ -159,29 +159,29 @@
     showDeleteConfirm = false;
     collectionToDelete = null;
   }
-  
+
   // Add selected media to collection
-  async function addMediaToCollection(collectionId: number) {
+  async function addMediaToCollection(collectionId: string) {
     if (!selectedMediaIds.length) return;
-    
+
     addingToCollection = true;
 
     try {
       const response = await axiosInstance.post(`/api/collections/${collectionId}/media`, {
         media_file_ids: selectedMediaIds
       });
-      
+
       // Update media count
-      collections = collections.map(col => 
-        col.id === collectionId 
+      collections = collections.map(col =>
+        col.id === collectionId
           ? { ...col, media_count: col.media_count + (response.data.added || 0) }
           : col
       );
-      
+
       // Show success message
       const collection = collections.find(c => c.id === collectionId);
       toastStore.success(`Added ${response.data.added} file(s) to "${collection?.name || 'collection'}"`);
-      
+
       // Trigger callback to close modal and refresh
       onCollectionSelect(collectionId);
     } catch (err: any) {
@@ -191,7 +191,7 @@
       addingToCollection = false;
     }
   }
-  
+
   // Handle collection click
   function handleCollectionClick(collection: any) {
     if (viewMode === 'manage') {
@@ -201,7 +201,7 @@
       addMediaToCollection(collection.id);
     }
   }
-  
+
   onMount(() => {
     fetchCollections();
   });
@@ -210,7 +210,7 @@
 <div class="collections-panel" transition:fade>
   <div class="panel-header">
     <h3>Collections</h3>
-    <button 
+    <button
       class="btn-create"
       on:click={() => {
         showCreateModal = true;
@@ -256,7 +256,7 @@
               {/if}
             </div>
           </div>
-          
+
           {#if viewMode === 'manage'}
             <div class="collection-actions">
               <button
@@ -295,7 +295,7 @@
       {/each}
     </div>
   {/if}
-  
+
   <!-- Create Collection Modal -->
   {#if showCreateModal}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -321,14 +321,14 @@
       >
         <div class="modal-header">
           <h3>Create New Collection</h3>
-          <button 
-            class="close-button" 
+          <button
+            class="close-button"
             on:click={() => showCreateModal = false}
             type="button"
             aria-label="Close modal"
           >×</button>
         </div>
-        
+
         <form on:submit|preventDefault={createCollection} class="config-form">
           <div class="form-group">
             <label for="collection-name">Name *</label>
@@ -342,7 +342,7 @@
               disabled={creating}
             />
           </div>
-          
+
           <div class="form-group">
             <label for="collection-description">Description</label>
             <textarea
@@ -354,7 +354,7 @@
               disabled={creating}
             ></textarea>
           </div>
-          
+
           <div class="form-actions">
             <button
               type="button"
@@ -386,7 +386,7 @@
       </div>
     </div>
   {/if}
-  
+
   <!-- Edit Collection Modal -->
   {#if showEditModal && collectionToEdit}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -412,14 +412,14 @@
       >
         <div class="modal-header">
           <h3>Edit Collection</h3>
-          <button 
-            class="close-button" 
+          <button
+            class="close-button"
             on:click={() => showEditModal = false}
             type="button"
             aria-label="Close modal"
           >×</button>
         </div>
-        
+
         <form on:submit|preventDefault={updateCollection} class="config-form">
           <div class="form-group">
             <label for="edit-collection-name">Name *</label>
@@ -433,7 +433,7 @@
               disabled={updating}
             />
           </div>
-          
+
           <div class="form-group">
             <label for="edit-collection-description">Description</label>
             <textarea
@@ -445,7 +445,7 @@
               disabled={updating}
             ></textarea>
           </div>
-          
+
           <div class="form-actions">
             <button
               type="button"
@@ -477,7 +477,7 @@
       </div>
     </div>
   {/if}
-  
+
 <!-- Delete Confirmation Modal -->
 <ConfirmationModal
   bind:isOpen={showDeleteConfirm}
@@ -503,21 +503,21 @@
     display: flex;
     flex-direction: column;
   }
-  
+
   .panel-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
   }
-  
+
   .panel-header h3 {
     margin: 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
   }
-  
+
   .btn-create {
     display: flex;
     align-items: center;
@@ -534,7 +534,7 @@
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .btn-create:hover:not(:disabled) {
     background-color: #2563eb;
     color: white;
@@ -542,16 +542,16 @@
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
     text-decoration: none;
   }
-  
+
   .btn-create:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .btn-create:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   .icon {
     font-size: 18px;
     line-height: 1;
@@ -567,7 +567,7 @@
     padding: 40px;
     color: var(--text-secondary);
   }
-  
+
   .spinner {
     width: 32px;
     height: 32px;
@@ -577,26 +577,26 @@
     animation: spin 0.8s linear infinite;
     margin-bottom: 12px;
   }
-  
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
-  
+
   .empty-state {
     text-align: center;
     padding: 40px 20px;
     color: var(--text-secondary);
   }
-  
+
   .empty-state p {
     margin: 0 0 8px 0;
   }
-  
+
   .hint {
     font-size: 14px;
     opacity: 0.8;
   }
-  
+
   .collections-list {
     display: flex;
     flex-direction: column;
@@ -606,26 +606,26 @@
     max-height: 400px;
     padding-right: 8px;
   }
-  
+
   /* Custom scrollbar styling */
   .collections-list::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .collections-list::-webkit-scrollbar-track {
     background: var(--surface-color);
     border-radius: 3px;
   }
-  
+
   .collections-list::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 3px;
   }
-  
+
   .collections-list::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
   }
-  
+
   .collection-card {
     background: var(--card-background);
     border: 1px solid var(--border-color);
@@ -638,22 +638,22 @@
     align-items: start;
     gap: 12px;
   }
-  
+
   .collection-card:hover {
     border-color: var(--primary-color);
     background: var(--card-hover);
   }
-  
+
   .collection-card.selected {
     border-color: var(--primary-color);
     background: rgba(59, 130, 246, 0.05);
   }
-  
+
   .collection-info {
     flex: 1;
     min-width: 0;
   }
-  
+
   .collection-info h4 {
     margin: 0 0 4px 0;
     font-size: 16px;
@@ -663,7 +663,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
+
   .description {
     margin: 0 0 8px 0;
     font-size: 14px;
@@ -671,10 +671,11 @@
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  
+
   .meta {
     display: flex;
     align-items: center;
@@ -682,28 +683,28 @@
     font-size: 13px;
     color: var(--text-secondary);
   }
-  
+
   .media-count {
     font-weight: 500;
   }
-  
+
   .badge {
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
   }
-  
+
   .badge.public {
     background: rgba(34, 197, 94, 0.1);
     color: rgb(34, 197, 94);
   }
-  
+
   .collection-actions {
     display: flex;
     gap: 8px;
   }
-  
+
   .edit-button, .delete-config-button {
     display: flex;
     align-items: center;
@@ -740,7 +741,7 @@
     color: white;
     transform: translateY(-1px);
   }
-  
+
   .btn-add {
     padding: 6px 12px;
     background: var(--primary-color);
@@ -753,16 +754,16 @@
     transition: all 0.2s;
     white-space: nowrap;
   }
-  
+
   .btn-add:hover:not(:disabled) {
     background: var(--primary-hover);
   }
-  
+
   .btn-add:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   /* Modal styles - updated to match LLM config modal */
   .modal-overlay {
     position: fixed;
@@ -884,7 +885,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .cancel-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -911,7 +912,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-button:active:not(:disabled) {
     transform: translateY(0);
   }
@@ -934,8 +935,8 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  
-  
+
+
   /* Dark mode adjustments */
   :global(.dark) .modal-overlay {
     background: rgba(0, 0, 0, 0.7);

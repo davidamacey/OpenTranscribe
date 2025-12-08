@@ -147,7 +147,7 @@
     openEditModal(config);
   }
 
-  async function activateConfiguration(configId: number) {
+  async function activateConfiguration(configId: string) {
     if (configId === activeConfigurationId) {
       toastStore.success('Configuration is already active', 3000);
       return;

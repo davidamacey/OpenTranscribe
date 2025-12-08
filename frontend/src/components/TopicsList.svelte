@@ -23,16 +23,16 @@
           <span class="importance-indicator importance-{topic.importance || 'medium'}">{getImportanceIndicator(topic.importance || 'medium')}</span>
           {@html topic.topic}
         </h4>
-        
+
         {#if topic.participants && topic.participants.length > 0}
           <div class="topic-meta">
             <em>Key participants: {@html topic.participants.join(', ')}</em>
           </div>
         {/if}
-        
-        {#if (topic.key_points || topic.keyPoints) && (topic.key_points || topic.keyPoints).length > 0}
+
+        {#if topic.key_points && topic.key_points.length > 0}
           <ul class="topic-points">
-            {#each (topic.key_points || topic.keyPoints) as point}
+            {#each topic.key_points as point}
               <li>{@html point}</li>
             {/each}
           </ul>
@@ -148,7 +148,7 @@
     .topic-item {
       padding-left: 1rem;
     }
-    
+
     .topic-heading {
       font-size: 1rem;
     }

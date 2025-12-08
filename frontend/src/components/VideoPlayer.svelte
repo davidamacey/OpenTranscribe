@@ -50,7 +50,7 @@
 
     try {
       // Find the track element
-      const videoElement = player.media as HTMLVideoElement;
+      const videoElement = (player as any).media as HTMLVideoElement;
       trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
 
       if (!trackElement) {
@@ -95,12 +95,12 @@
         currentLoadHandler = () => {
           textTrack.mode = 'showing';
 
-          if (player.captions) {
-            player.captions.active = true;
+          if ((player as any).captions) {
+            (player as any).captions.active = true;
           }
 
           // Force Plyr to update its caption state
-          if (player.elements?.buttons?.captions && !player.captions.active) {
+          if (player.elements?.buttons?.captions && !(player as any).captions?.active) {
             player.elements.buttons.captions.click();
           }
         };
@@ -113,8 +113,8 @@
           if (textTrack.cues?.length === 0) {
             textTrack.mode = 'showing';
 
-            if (player.captions) {
-              player.captions.active = true;
+            if ((player as any).captions) {
+              (player as any).captions.active = true;
             }
           }
         }, 1000);

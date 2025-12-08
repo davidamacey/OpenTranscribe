@@ -890,7 +890,7 @@
           <p>Unable to connect to the server. Please check your connection and try again.</p>
           <button
             class="retry-button"
-            on:click={fetchFiles}
+            on:click={() => fetchFiles()}
             title="Retry loading your media files"
           >Retry</button>
         </div>
@@ -1754,6 +1754,7 @@
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     line-height: 1.4;
   }

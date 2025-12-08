@@ -39,25 +39,25 @@
     const containerWidth = container?.offsetWidth || 800;
     const devicePixelRatio = window.devicePixelRatio || 1;
     const screenWidth = window.innerWidth;
-    
+
     // Check for low bandwidth connections
     const connection = (navigator as any).connection;
     const isLowBandwidth = connection && (
-      connection.effectiveType === 'slow-2g' || 
+      connection.effectiveType === 'slow-2g' ||
       connection.effectiveType === '2g' ||
       connection.downlink < 1.5  // Less than 1.5 Mbps
     );
-    
+
     const isMobile = screenWidth < 768;
     const isTablet = screenWidth >= 768 && screenWidth < 1024;
     const isHighDPI = devicePixelRatio >= 2;
     const isLargeContainer = containerWidth >= 1200;
-    
+
     // Prioritize bandwidth and device constraints
     if (isLowBandwidth) {
       return 500;  // Always use smallest for poor connections
     }
-    
+
     // Choose resolution based on device and screen characteristics
     if (isMobile || containerWidth < 600) {
       return 500;  // Small: mobile devices, small containers
@@ -89,7 +89,7 @@
 
       if (response.data && Array.isArray(response.data.waveform) && response.data.waveform.length > 0) {
         waveformData = response.data.waveform;
-        
+
         // Use the actual extracted duration from waveform if available
         // This ensures waveform aligns with actual audio content
         if (response.data.duration) {
@@ -98,7 +98,7 @@
             duration = response.data.duration;
           }
         }
-        
+
         // Ensure canvas and context are ready
         if (canvas && container) {
           if (!ctx) {
@@ -128,13 +128,13 @@
 
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
-    
+
     if (canvasWidth === 0 || canvasHeight === 0) {
       return;
     }
-    
+
     const colors = getWaveformColors();
-    
+
     // Clear canvas
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
@@ -155,7 +155,7 @@
     // Draw waveform bars
     waveformData.forEach((sample, index) => {
       const x = index * barWidth;
-      
+
       // Ensure sample value is valid
       const normalizedSample = Math.min(255, Math.max(0, sample));
       const barHeight = Math.max(2, (normalizedSample / 255) * maxBarHeight);
@@ -166,7 +166,7 @@
       const barCenterX = x + (barWidth / 2);
       const isPlayed = barCenterX < progressX;
       ctx.fillStyle = isPlayed ? colors.progress : colors.waveform;
-      
+
       // Draw the bar - use exact positioning to fill width
       ctx.fillRect(x + gapWidth/2, y, actualBarWidth, barHeight);
     });
@@ -224,7 +224,7 @@
   function handleMouseDown(event: MouseEvent) {
     isDragging = true;
     handleInteraction(event);
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (isDragging) {
         handleInteraction(moveEvent);
@@ -275,7 +275,7 @@
   $: if (canvas && ctx && waveformData.length > 0) {
     drawWaveform();
   }
-  
+
   // Redraw when currentTime changes (playhead movement)
   $: if (canvas && ctx && waveformData.length > 0 && currentTime !== undefined) {
     drawWaveform();
@@ -293,11 +293,11 @@
       if (canvas && container) {
         handleResize();
       }
-      
+
       // Load waveform data
       loadWaveformData();
     }, 100);
-      
+
     // Cleanup function
     return () => {
       if (animationFrameId) {
@@ -330,7 +330,7 @@
     aria-valuemax={duration}
     aria-valuetext={`${Math.floor(currentTime / 60)}:${(currentTime % 60).toFixed(0).padStart(2, '0')}`}
   ></canvas>
-  
+
   <!-- Overlay states -->
   {#if isLoadingWaveform}
     <div class="waveform-overlay waveform-loading">
@@ -340,8 +340,8 @@
   {:else if waveformError}
     <div class="waveform-overlay waveform-error">
       <span>{waveformError}</span>
-      <button 
-        class="retry-button" 
+      <button
+        class="retry-button"
         on:click={loadWaveformData}
         type="button"
       >
@@ -372,7 +372,7 @@
     display: block;
     cursor: crosshair;
   }
-  
+
   .waveform-canvas.hidden {
     visibility: hidden;
   }
@@ -401,11 +401,6 @@
     background-color: var(--surface-color);
   }
 
-  .waveform-loading,
-  .waveform-error,
-  .waveform-placeholder {
-    /* Styles handled by waveform-overlay */
-  }
 
   .waveform-error {
     flex-direction: column;
@@ -441,8 +436,8 @@
   }
 
   @keyframes spin {
-    to { 
-      transform: rotate(360deg); 
+    to {
+      transform: rotate(360deg);
     }
   }
 
@@ -466,7 +461,7 @@
     .waveform-container {
       border-radius: 4px;
     }
-    
+
     .waveform-loading,
     .waveform-error,
     .waveform-placeholder {

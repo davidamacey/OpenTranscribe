@@ -7,9 +7,11 @@
     getTranscriptionSystemDefaults,
     getSpeakerBehaviorLabel,
     getSpeakerBehaviorDescription,
+    groupLanguages,
     type TranscriptionSettings,
     type TranscriptionSystemDefaults,
-    type SpeakerPromptBehavior
+    type SpeakerPromptBehavior,
+    type LanguageOption
   } from '$lib/api/transcriptionSettings';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
@@ -22,6 +24,9 @@
   let speakerBehavior: SpeakerPromptBehavior = 'always_prompt';
   let garbageCleanupEnabled = true;
   let garbageCleanupThreshold = 50;
+  let sourceLanguage = 'auto';
+  let translateToEnglish = false;
+  let llmOutputLanguage = 'en';
 
   // Original values for change tracking
   let originalMinSpeakers = 1;
@@ -29,9 +34,17 @@
   let originalSpeakerBehavior: SpeakerPromptBehavior = 'always_prompt';
   let originalGarbageCleanupEnabled = true;
   let originalGarbageCleanupThreshold = 50;
+  let originalSourceLanguage = 'auto';
+  let originalTranslateToEnglish = false;
+  let originalLlmOutputLanguage = 'en';
 
   // System defaults
   let systemDefaults: TranscriptionSystemDefaults | null = null;
+
+  // Grouped languages for dropdowns
+  let sourceLanguageGroups: { common: LanguageOption[]; other: LanguageOption[] } = { common: [], other: [] };
+  let llmLanguageOptions: LanguageOption[] = [];
+  let languagesWithAlignment: Set<string> = new Set();
 
   // Loading states
   let loading = true;
@@ -47,7 +60,10 @@
     maxSpeakers !== originalMaxSpeakers ||
     speakerBehavior !== originalSpeakerBehavior ||
     garbageCleanupEnabled !== originalGarbageCleanupEnabled ||
-    garbageCleanupThreshold !== originalGarbageCleanupThreshold;
+    garbageCleanupThreshold !== originalGarbageCleanupThreshold ||
+    sourceLanguage !== originalSourceLanguage ||
+    translateToEnglish !== originalTranslateToEnglish ||
+    llmOutputLanguage !== originalLlmOutputLanguage;
 
   // Update dirty state in store
   $: {
@@ -97,6 +113,20 @@
   async function loadSystemDefaults() {
     try {
       systemDefaults = await getTranscriptionSystemDefaults();
+
+      // Process language options for dropdowns
+      if (systemDefaults) {
+        sourceLanguageGroups = groupLanguages(
+          systemDefaults.available_source_languages,
+          systemDefaults.common_languages
+        );
+
+        // LLM output languages (flat list, no grouping needed)
+        llmLanguageOptions = Object.entries(systemDefaults.available_llm_output_languages)
+          .map(([code, name]) => ({ code, name }));
+
+        languagesWithAlignment = new Set(systemDefaults.languages_with_alignment);
+      }
     } catch (err) {
       console.error('Failed to load system defaults:', err);
       // Non-critical, don't show error
@@ -109,6 +139,9 @@
     speakerBehavior = settings.speaker_prompt_behavior;
     garbageCleanupEnabled = settings.garbage_cleanup_enabled;
     garbageCleanupThreshold = settings.garbage_cleanup_threshold;
+    sourceLanguage = settings.source_language;
+    translateToEnglish = settings.translate_to_english;
+    llmOutputLanguage = settings.llm_output_language;
   }
 
   function storeOriginalValues(settings: TranscriptionSettings) {
@@ -117,6 +150,9 @@
     originalSpeakerBehavior = settings.speaker_prompt_behavior;
     originalGarbageCleanupEnabled = settings.garbage_cleanup_enabled;
     originalGarbageCleanupThreshold = settings.garbage_cleanup_threshold;
+    originalSourceLanguage = settings.source_language;
+    originalTranslateToEnglish = settings.translate_to_english;
+    originalLlmOutputLanguage = settings.llm_output_language;
   }
 
   async function saveSettings() {
@@ -132,7 +168,10 @@
         max_speakers: maxSpeakers,
         speaker_prompt_behavior: speakerBehavior,
         garbage_cleanup_enabled: garbageCleanupEnabled,
-        garbage_cleanup_threshold: garbageCleanupThreshold
+        garbage_cleanup_threshold: garbageCleanupThreshold,
+        source_language: sourceLanguage,
+        translate_to_english: translateToEnglish,
+        llm_output_language: llmOutputLanguage
       });
 
       storeOriginalValues(updatedSettings);
@@ -297,6 +336,109 @@
             <span class="defaults-value">{systemDefaults.garbage_cleanup_threshold} chars</span>
           </div>
         {/if}
+      </div>
+
+      <!-- Language Settings Section -->
+      <div class="settings-section">
+        <div class="title-row">
+          <h3 class="section-title">Language Settings</h3>
+          <span class="info-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span class="tooltip">Configure language options for transcription and AI summaries. Source language helps improve transcription accuracy. Translation converts foreign audio to English text.</span>
+          </span>
+        </div>
+        <p class="section-desc">Configure language preferences for transcription and AI analysis.</p>
+
+        <!-- Source Language -->
+        <div class="form-group">
+          <label for="source-language" class="form-label">
+            Source Language
+            <span class="inline-info-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span class="inline-tooltip">
+                <strong>Auto-detect:</strong> Let Whisper automatically identify the spoken language.<br><br>
+                <strong>Specific language:</strong> Provide a hint to improve accuracy when you know the audio language.<br><br>
+                Languages with word-level timestamps are marked with a checkmark.
+              </span>
+            </span>
+          </label>
+          <select
+            id="source-language"
+            class="form-select"
+            bind:value={sourceLanguage}
+          >
+            <optgroup label="Common Languages">
+              {#each sourceLanguageGroups.common as lang}
+                <option value={lang.code}>
+                  {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
+                </option>
+              {/each}
+            </optgroup>
+            <optgroup label="All Languages">
+              {#each sourceLanguageGroups.other as lang}
+                <option value={lang.code}>
+                  {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
+                </option>
+              {/each}
+            </optgroup>
+          </select>
+          <p class="input-hint">* = Word-level timestamps available</p>
+        </div>
+
+        <!-- Translate to English -->
+        <div class="form-group">
+          <div class="setting-row">
+            <div class="setting-controls">
+              <label class="toggle-label">
+                <input type="checkbox" bind:checked={translateToEnglish} class="toggle-input" />
+                <span class="toggle-switch"></span>
+                <span class="toggle-text">Translate to English</span>
+              </label>
+            </div>
+          </div>
+          <p class="input-hint">When enabled, foreign language audio will be transcribed and translated to English. When disabled, the transcription stays in the original language.</p>
+        </div>
+
+        <!-- LLM Output Language -->
+        <div class="form-group">
+          <label for="llm-output-language" class="form-label">
+            AI Summary Language
+            <span class="inline-info-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span class="inline-tooltip">
+                Choose the language for AI-generated summaries, action items, and analysis.<br><br>
+                This setting is independent of the transcription language - you can transcribe in Spanish but get summaries in English, or vice versa.
+              </span>
+            </span>
+          </label>
+          <select
+            id="llm-output-language"
+            class="form-select"
+            bind:value={llmOutputLanguage}
+          >
+            {#each llmLanguageOptions as lang}
+              <option value={lang.code}>{lang.name}</option>
+            {/each}
+          </select>
+          <p class="input-hint">Language used for AI summaries and analysis</p>
+        </div>
+
+        <div class="defaults-info">
+          <span class="defaults-label">Defaults:</span>
+          <span class="defaults-value">Source: Auto-detect, Translate: Off, Summary: English</span>
+        </div>
       </div>
 
       <!-- Validation Error -->

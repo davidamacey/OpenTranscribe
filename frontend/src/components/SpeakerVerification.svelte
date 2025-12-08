@@ -38,17 +38,17 @@
   let showConfirmModal = false;
   let newProfileName = '';
   let selectedAction = '';
-  let selectedProfileId: number | null = null;
+  let selectedProfileId: string | null = null;  // UUID
   let confirmMessage = '';
 
   // Props are validated through TypeScript interfaces
-  
+
   function getConfidenceColor(confidence: number): string {
     if (confidence >= 0.75) return 'var(--success-color)';
     if (confidence >= 0.50) return 'var(--warning-color)';
     return 'var(--error-color)';
   }
-  
+
   function getConfidenceBadgeClass(confidenceLevel: string): string {
     switch (confidenceLevel) {
       case 'high': return 'confidence-badge confidence-high';
@@ -57,7 +57,7 @@
       default: return 'confidence-badge confidence-unknown';
     }
   }
-  
+
   function handleAcceptSuggestion(suggestion: typeof suggestions[0]) {
     if (suggestion.create_new) {
       // Handle LLM suggestion to create new profile
@@ -72,13 +72,13 @@
     }
     showConfirmModal = true;
   }
-  
+
   function handleRejectSuggestions() {
     selectedAction = 'reject';
     confirmMessage = 'Reject all speaker identification suggestions?';
     showConfirmModal = true;
   }
-  
+
   function handleCreateNewProfile() {
     if (newProfileName.trim()) {
       selectedAction = 'create_profile';
@@ -86,7 +86,7 @@
       showConfirmModal = true;
     }
   }
-  
+
   function confirmAction() {
     const actionData: {
       action: string;
@@ -97,15 +97,15 @@
       action: selectedAction,
       speaker_id: speaker.id
     };
-    
+
     if (selectedAction === 'accept' && selectedProfileId !== null) {
       actionData.profile_id = selectedProfileId;
     } else if (selectedAction === 'create_profile') {
       actionData.profile_name = newProfileName.trim();
     }
-    
+
     dispatch('verify', actionData);
-    
+
     // Reset state
     showConfirmModal = false;
     showNewProfileModal = false;
@@ -113,7 +113,7 @@
     selectedAction = '';
     selectedProfileId = null;
   }
-  
+
   function showCreateProfileModal() {
     showNewProfileModal = true;
   }
@@ -136,7 +136,7 @@
         Please verify the speaker identification for this audio segment
       </p>
     </div>
-    
+
     {#if speaker.confidence}
       <span class="{getConfidenceBadgeClass('low')}">
         {Math.round(speaker.confidence * 100)}% confidence
@@ -150,7 +150,7 @@
       <h4 class="section-title">
         Suggested Matches
       </h4>
-      
+
       <div class="suggestions-list">
         {#each suggestions as suggestion}
           <div class="suggestion-item">
@@ -218,7 +218,7 @@
                 {/if}
               </div>
             </div>
-            
+
             <div class="suggestion-actions">
               <button
                 on:click={() => handleAcceptSuggestion(suggestion)}
@@ -242,7 +242,7 @@
           {crossMediaOccurrences.length}
         </span>
       </h4>
-      
+
       <div class="occurrences-list">
         {#each crossMediaOccurrences as occurrence}
           <div class="occurrence-item">
@@ -265,12 +265,12 @@
                 </span>
               {/if}
             </div>
-            
+
             <div class="occurrence-meta">
               {#if occurrence.verified}
                 <span class="verified-icon">✓</span>
               {/if}
-              
+
               {#if occurrence.confidence}
                 <span class="confidence-text" style="color: {getConfidenceColor(occurrence.confidence)}">
                   {Math.round(occurrence.confidence * 100)}%
@@ -291,14 +291,14 @@
     >
       + Create New Profile
     </button>
-    
+
     <button
       on:click={handleRejectSuggestions}
       class="secondary-button"
     >
       Keep Unassigned
     </button>
-    
+
     <button
       on:click={() => dispatch('cancel')}
       class="cancel-button-action"
@@ -319,14 +319,16 @@
     on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
     on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}
   >
-    <div class="modal-container" role="document" on:click|stopPropagation>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="modal-container" role="document" on:click|stopPropagation on:keydown={(e) => e.key === 'Escape' && (showNewProfileModal = false, newProfileName = '')}>
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">
             Create New Speaker Profile
           </h3>
-          <button 
-            class="modal-close-button" 
+          <button
+            class="modal-close-button"
+            aria-label="Close modal"
             on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -335,7 +337,7 @@
             </svg>
           </button>
         </div>
-        
+
         <div class="modal-body">
           <label for="profileName" class="input-label">
             Profile Name
@@ -348,7 +350,7 @@
             class="profile-name-input"
           />
         </div>
-        
+
         <div class="modal-footer">
           <button
             on:click={() => { showNewProfileModal = false; newProfileName = ''; }}

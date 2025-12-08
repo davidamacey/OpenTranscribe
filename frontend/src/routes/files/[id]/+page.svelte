@@ -268,7 +268,7 @@
       }
     } catch (error) {
       console.error('Error loading more segments:', error);
-      toastStore.addToast('Failed to load more segments', 'error');
+      toastStore.error('Failed to load more segments');
     } finally {
       loadingMoreSegments = false;
     }
@@ -706,7 +706,7 @@
       // Backend provides pre-sorted speakers
 
     // Update the transcript store FIRST - this will trigger reactive updates in TranscriptModal
-    transcriptStore.updateSpeakerName(speakerId, newName);
+    transcriptStore.updateSpeakerName(String(speakerId), newName);
 
     // Update transcript segment speaker names in file object (for other components)
     const transcriptData = file?.transcript_segments;

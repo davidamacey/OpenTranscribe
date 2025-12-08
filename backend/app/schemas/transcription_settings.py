@@ -13,9 +13,12 @@ from pydantic import Field
 
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.constants import DEFAULT_SOURCE_LANGUAGE
 from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
+from app.core.constants import DEFAULT_TRANSLATE_TO_ENGLISH
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 
 # Type alias for speaker prompt behavior
@@ -55,6 +58,18 @@ class TranscriptionSettings(BaseModel):
         le=100,
         description="Confidence threshold (0-100) below which segments are flagged as garbage",
     )
+    source_language: str = Field(
+        default=DEFAULT_SOURCE_LANGUAGE,
+        description="Source language hint for transcription (ISO 639-1 code or 'auto')",
+    )
+    translate_to_english: bool = Field(
+        default=DEFAULT_TRANSLATE_TO_ENGLISH,
+        description="Whether to translate non-English audio to English",
+    )
+    llm_output_language: str = Field(
+        default=DEFAULT_LLM_OUTPUT_LANGUAGE,
+        description="Language for LLM-generated summaries and analysis (ISO 639-1 code)",
+    )
 
     class Config:
         json_schema_extra = {
@@ -64,6 +79,9 @@ class TranscriptionSettings(BaseModel):
                 "speaker_prompt_behavior": "always_prompt",
                 "garbage_cleanup_enabled": True,
                 "garbage_cleanup_threshold": 50,
+                "source_language": "auto",
+                "translate_to_english": False,
+                "llm_output_language": "en",
             }
         }
 
@@ -101,6 +119,18 @@ class TranscriptionSettingsUpdate(BaseModel):
         le=100,
         description="Confidence threshold (0-100) below which segments are flagged as garbage",
     )
+    source_language: Optional[str] = Field(
+        default=None,
+        description="Source language hint for transcription (ISO 639-1 code or 'auto')",
+    )
+    translate_to_english: Optional[bool] = Field(
+        default=None,
+        description="Whether to translate non-English audio to English",
+    )
+    llm_output_language: Optional[str] = Field(
+        default=None,
+        description="Language for LLM-generated summaries and analysis (ISO 639-1 code)",
+    )
 
     class Config:
         json_schema_extra = {
@@ -110,6 +140,9 @@ class TranscriptionSettingsUpdate(BaseModel):
                 "speaker_prompt_behavior": "use_custom",
                 "garbage_cleanup_enabled": True,
                 "garbage_cleanup_threshold": 40,
+                "source_language": "es",
+                "translate_to_english": False,
+                "llm_output_language": "es",
             }
         }
 
@@ -139,6 +172,18 @@ class TranscriptionSystemDefaults(BaseModel):
         default=list(VALID_SPEAKER_PROMPT_BEHAVIORS),
         description="List of valid speaker prompt behavior options",
     )
+    available_source_languages: dict[str, str] = Field(
+        description="Available source languages for transcription (code -> name)",
+    )
+    available_llm_output_languages: dict[str, str] = Field(
+        description="Available languages for LLM output (code -> name)",
+    )
+    common_languages: list[str] = Field(
+        description="List of common language codes for UI grouping",
+    )
+    languages_with_alignment: list[str] = Field(
+        description="Languages that support word-level alignment timestamps",
+    )
 
     class Config:
         json_schema_extra = {
@@ -152,5 +197,9 @@ class TranscriptionSystemDefaults(BaseModel):
                     "use_defaults",
                     "use_custom",
                 ],
+                "available_source_languages": {"auto": "Auto-detect", "en": "English"},
+                "available_llm_output_languages": {"en": "English", "es": "Spanish"},
+                "common_languages": ["auto", "en", "es", "fr", "de"],
+                "languages_with_alignment": ["en", "es", "fr", "de", "it"],
             }
         }

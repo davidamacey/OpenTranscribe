@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
 
   // Track if we're on the gallery page for styling
-  $: isGalleryPage = $page.url.pathname === '/' || $page.url.pathname === '';
+  $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
 </script>
 
 <main class="content {isGalleryPage ? 'gallery-page' : ''}">

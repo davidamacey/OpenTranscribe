@@ -44,6 +44,7 @@
   let suggestions: any[] = [];
   let crossMediaOccurrences: any[] = [];
   let isLoading = false;
+  let errorMessage: string = '';
 
   onMount(() => {
     if (isVisible) {
@@ -110,7 +111,7 @@
   }>) {
     try {
       const { action, speaker_id, profile_id, profile_name } = event.detail;
-      
+
       const response = await axiosInstance.post(`/api/speakers/${speaker_id}/verify`, {
         action,
         profile_id,
@@ -122,10 +123,10 @@
         await loadData();
         dispatch('speakerVerified', response.data);
       }
-      
+
       showVerification = false;
       selectedSpeaker = null;
-      
+
     } catch (error) {
       console.error('Error verifying speaker:', error);
       errorMessage = 'Failed to verify speaker';
@@ -184,7 +185,7 @@
           {#each speakers as speaker}
             {@const status = getSpeakerStatus(speaker)}
             {#if !speaker.verified || !speaker.profile}
-              <button 
+              <button
                 class="speaker-card {status} clickable"
                 on:click={() => handleSpeakerClick(speaker)}
               >
@@ -205,16 +206,16 @@
                       {/if}
                     </div>
                   </div>
-                  
+
                   <p class="speaker-description">
                     {getStatusText(speaker)}
                   </p>
-                  
+
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
                       <div class="confidence-bar">
-                        <div 
-                          class="confidence-fill" 
+                        <div
+                          class="confidence-fill"
                           style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
@@ -222,7 +223,7 @@
                     </div>
                   {/if}
                 </div>
-                
+
                 <div class="speaker-action">
                   <span class="verify-text">
                     Click to Verify Speaker
@@ -241,16 +242,16 @@
                       ✓
                     </div>
                   </div>
-                  
+
                   <p class="speaker-description">
                     {getStatusText(speaker)}
                   </p>
-                  
+
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
                       <div class="confidence-bar">
-                        <div 
-                          class="confidence-fill" 
+                        <div
+                          class="confidence-fill"
                           style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
@@ -278,7 +279,7 @@
                   <div class="profile-info">
                     <span class="profile-name">{profile.name}</span>
                     <span class="profile-stats">
-                      {profile.instance_count} instance{profile.instance_count !== 1 ? 's' : ''} 
+                      {profile.instance_count} instance{profile.instance_count !== 1 ? 's' : ''}
                       • {profile.media_count} file{profile.media_count !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -294,7 +295,7 @@
 
 {#if showVerification && selectedSpeaker}
   <div class="verification-overlay" transition:fade>
-    <SpeakerVerification 
+    <SpeakerVerification
       speaker={selectedSpeaker}
       {suggestions}
       {crossMediaOccurrences}

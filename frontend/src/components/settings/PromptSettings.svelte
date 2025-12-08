@@ -13,7 +13,7 @@
 
   let allPrompts: SummaryPrompt[] = [];
   let activePrompt: SummaryPrompt | null = null;
-  let selectedPromptId: number | null = null;
+  let selectedPromptId: string | null = null;  // UUID
 
   // Create/Edit prompt form
   let showCreateForm = false;
@@ -106,7 +106,7 @@
     }
   }
 
-  async function setActivePrompt(promptId: number) {
+  async function setActivePrompt(promptId: string) {
     saving = true;
 
     try {
@@ -1184,14 +1184,6 @@
     transform: translate(-50%, 8px);
   }
 
-  /* Disable native browser tooltip completely */
-  .info-tooltip[data-tooltip] {
-    /* Remove any title attribute behavior */
-  }
-
-  .info-tooltip[data-tooltip]:hover {
-    /* Prevent native tooltip from showing */
-  }
 
   .config-provider {
     font-size: 0.8rem;
@@ -1206,6 +1198,7 @@
     max-width: 400px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;

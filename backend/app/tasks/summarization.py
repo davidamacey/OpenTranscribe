@@ -350,6 +350,34 @@ def send_summary_notification(
         return False
 
 
+def _get_user_llm_output_language(db, user_id: int) -> str:
+    """
+    Retrieve user's LLM output language setting from the database.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+
+    Returns:
+        LLM output language code (default: "en")
+    """
+    from app import models
+    from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+
+    setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == "transcription_llm_output_language",
+        )
+        .first()
+    )
+
+    if setting:
+        return setting.setting_value
+    return DEFAULT_LLM_OUTPUT_LANGUAGE
+
+
 def _generate_llm_summary(
     media_file, file_id: int, full_transcript: str, speaker_stats: dict, task_id: str, db
 ) -> dict:
@@ -365,6 +393,12 @@ def _generate_llm_summary(
         f"Starting LLM summary generation: {transcript_length} chars, {speaker_count} speakers"
     )
     logger.info(f"Estimated input tokens: {transcript_length // 3}")
+
+    # Get user's LLM output language preference
+    output_language = "en"
+    if media_file.user_id:
+        output_language = _get_user_llm_output_language(db, media_file.user_id)
+    logger.info(f"LLM output language: {output_language}")
 
     # Create LLM service using user settings or system settings
     if media_file.user_id:
@@ -387,6 +421,7 @@ def _generate_llm_summary(
             transcript=full_transcript,
             speaker_data=speaker_stats,
             user_id=media_file.user_id,
+            output_language=output_language,
         )
     except Exception as e:
         _handle_llm_error(e, media_file, file_id, full_transcript, llm_provider, llm_model, db)
@@ -397,6 +432,7 @@ def _generate_llm_summary(
     if "metadata" not in summary_data:
         summary_data["metadata"] = {}
     summary_data["metadata"]["processing_time_ms"] = processing_time
+    summary_data["metadata"]["output_language"] = output_language
     logger.info(f"LLM summarization completed in {processing_time}ms")
 
     return summary_data
