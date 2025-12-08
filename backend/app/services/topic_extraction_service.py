@@ -16,13 +16,15 @@ Key Features:
 import json
 import logging
 import re
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
 from app.models.topic import TopicSuggestion
 from app.schemas.topic import LLMSuggestionResponse
+from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -371,7 +373,7 @@ IMPORTANT GUIDELINES:
             return None
 
     def _parse_llm_response(
-        self, response_text: str, provider: "LLMProvider"
+        self, response_text: str, provider: LLMProvider
     ) -> Optional[LLMSuggestionResponse]:
         """
         Parse LLM response and extract JSON with provider-specific handling
@@ -383,15 +385,12 @@ IMPORTANT GUIDELINES:
         Returns:
             Parsed response or None
         """
-        from app.services.llm_service import LLMProvider
 
         try:
             json_str = None
 
             # For all providers, try to extract JSON from <answer> tags first
-            json_match = re.search(
-                r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL
-            )
+            json_match = re.search(r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
             else:

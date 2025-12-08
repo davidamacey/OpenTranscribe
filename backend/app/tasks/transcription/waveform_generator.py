@@ -33,8 +33,9 @@ class WaveformGenerator:
     def _check_dependencies(self):
         """Check that required dependencies (FFmpeg) are available."""
         try:
-            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)
-            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)
+            # Using hardcoded ffmpeg/ffprobe commands, not user input
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603, S607
+            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603, S607
         except (
             subprocess.CalledProcessError,
             FileNotFoundError,
@@ -104,7 +105,8 @@ class WaveformGenerator:
                 file_path,
             ]
 
-            result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+            # Using hardcoded ffprobe command with validated file path, not user input
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)  # noqa: S603
             probe_data = json.loads(result.stdout)
 
             # Find audio stream
@@ -159,7 +161,8 @@ class WaveformGenerator:
             )
 
             logger.debug(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=300)
+            # Using hardcoded ffmpeg command with validated file path, not user input
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=300)  # noqa: S603
 
             # Convert bytes to numpy array
             audio_data = np.frombuffer(result.stdout, dtype=np.int16)

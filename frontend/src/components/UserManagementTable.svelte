@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user } from '../stores/auth';
+  import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
 
   /**
@@ -20,12 +21,6 @@
 
   /** @type {boolean} */
   export let loading = false;
-
-  /** @type {string|null} */
-  export let error = null;
-
-  // Reference error to suppress warning (will be tree-shaken in production)
-  $: { error; }
 
   /** @type {Function} */
   export let onRefresh = () => {};
@@ -71,12 +66,6 @@
     currentUserId = null;
   }
 
-  /** @type {string|null} */
-  let successMessage = null;
-
-  /** @type {string|null} */
-  let errorMessage = null;
-
   // Initialize component
   onMount(() => {
     filterUsers();
@@ -103,14 +92,14 @@
    */
   async function createUser() {
     if (!newUsername || !newEmail || !newPassword) {
-      errorMessage = 'Please fill out all required fields';
+      toastStore.error('Please fill out all required fields');
       return;
     }
 
     try {
       // The backend expects full_name as a required field
       // Using username as the full_name since that's what we collect
-      const response = await axiosInstance.post('/api/admin/users', {
+      await axiosInstance.post('/api/admin/users', {
         email: newEmail,
         password: newPassword,
         full_name: newUsername, // Required field
@@ -119,6 +108,9 @@
         is_superuser: newRole === 'admin' // Set superuser based on role
       });
 
+      // Capture name for toast before resetting
+      const createdUserName = newUsername || newEmail;
+
       // Add new user to the list and reset form
       newUsername = '';
       newEmail = '';
@@ -126,13 +118,14 @@
       newRole = 'user';
       showAddUserForm = false;
 
-      successMessage = 'User created successfully';
+      toastStore.success(`User "${createdUserName}" created successfully`);
 
       // Refresh the user list
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to create user';
+      const message = err instanceof Error ? err.message : 'Failed to create user';
+      toastStore.error(message);
     }
   }
 
@@ -187,13 +180,14 @@
   async function executeDeleteUser(userId) {
     try {
       await axiosInstance.delete(`/api/users/${userId}`);
-      successMessage = 'User deleted successfully';
+      toastStore.success('User deleted successfully');
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error deleting user:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
+      const message = err instanceof Error ? err.message : 'Failed to delete user';
+      toastStore.error(message);
     }
   }
 
@@ -205,13 +199,14 @@
   async function updateUserRole(userId, role) {
     try {
       await axiosInstance.put(`/api/users/${userId}`, { role });
-      successMessage = `User role updated to ${role}`;
+      toastStore.success(`User role updated to ${role}`);
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error updating user role:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to update user role';
+      const message = err instanceof Error ? err.message : 'Failed to update user role';
+      toastStore.error(message);
     }
   }
 
@@ -256,14 +251,6 @@
   }
 
   /**
-   * Clear any messages
-   */
-  function clearMessages() {
-    successMessage = null;
-    errorMessage = null;
-  }
-
-  /**
    * Toggle add user form
    */
   function toggleAddUserForm() {
@@ -285,20 +272,6 @@
 </script>
 
 <div class="user-management">
-  {#if errorMessage}
-    <div class="alert alert-error">
-      <p>{errorMessage}</p>
-      <button on:click={clearMessages}>×</button>
-    </div>
-  {/if}
-
-  {#if successMessage}
-    <div class="alert alert-success">
-      <p>{successMessage}</p>
-      <button on:click={clearMessages}>×</button>
-    </div>
-  {/if}
-
   <div class="table-controls">
     <div class="search-container">
       <input
@@ -666,36 +639,6 @@
     font-style: italic;
     color: var(--text-secondary);
     font-size: 0.8125rem;
-  }
-
-  .alert {
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    border-radius: 4px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.8125rem;
-  }
-
-  .alert-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  .alert-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
-
-  .alert button {
-    background: none;
-    border: none;
-    font-size: 1.125rem;
-    cursor: pointer;
-    color: inherit;
   }
 
   .loading-state, .empty-state {

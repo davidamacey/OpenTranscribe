@@ -14,6 +14,11 @@
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
 
+  // Reactive validation for speaker settings - ensure values are >= 1 if set
+  $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
+  $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
+  $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+
   async function handleReprocess() {
     if (!file?.id || reprocessing) return;
 

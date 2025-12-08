@@ -1,7 +1,8 @@
 /**
  * API client for transcript operations
  */
-import axiosInstance from '../axios';
+import axiosInstance from "../axios";
+import type { Segment } from "$lib/types/speaker";
 
 /**
  * Update the speaker assignment for a transcript segment
@@ -11,15 +12,18 @@ import axiosInstance from '../axios';
  */
 export async function updateSegmentSpeaker(
   segmentUuid: string,
-  speakerUuid: string | null
-): Promise<any> {
+  speakerUuid: string | null,
+): Promise<Segment> {
   try {
-    const response = await axiosInstance.put(`/transcripts/segments/${segmentUuid}/speaker`, {
-      speaker_uuid: speakerUuid
-    });
+    const response = await axiosInstance.put(
+      `/transcripts/segments/${segmentUuid}/speaker`,
+      {
+        speaker_uuid: speakerUuid,
+      },
+    );
     return response.data;
-  } catch (error: any) {
-    console.error('Error updating segment speaker:', error);
+  } catch (error: unknown) {
+    console.error("Error updating segment speaker:", error);
     throw error;
   }
 }

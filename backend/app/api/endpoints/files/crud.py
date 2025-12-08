@@ -244,8 +244,8 @@ def get_media_file_detail(
                 analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
         # Get transcript segments with speakers (sorted by start_time for consistent ordering)
-        from sqlalchemy.orm import joinedload
         from sqlalchemy import func
+        from sqlalchemy.orm import joinedload
 
         # First get total count for pagination metadata
         total_segments = (

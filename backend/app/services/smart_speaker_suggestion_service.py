@@ -453,52 +453,49 @@ class SmartSpeakerSuggestionService:
                 if display_name and not display_name.startswith("SPEAKER_"):
                     # Remove the +1.0 offset from script_score
                     score = hit["_score"] - 1.0
-                    if score >= threshold:
-                        if (
-                            display_name not in voice_matches
-                            or score > voice_matches[display_name]["confidence"]
-                        ):
-                            # Get media file info for the title
-                            media_file_id = source.get("media_file_id")
-                            media_file_title = "Unknown"
-                            if media_file_id:
-                                try:
-                                    from app.models.media import MediaFile
+                    if score >= threshold and (
+                        display_name not in voice_matches
+                        or score > voice_matches[display_name]["confidence"]
+                    ):
+                        # Get media file info for the title
+                        media_file_id = source.get("media_file_id")
+                        media_file_title = "Unknown"
+                        if media_file_id:
+                            try:
+                                from app.models.media import MediaFile
 
-                                    media_file = (
-                                        db.query(MediaFile)
-                                        .filter(MediaFile.id == media_file_id)
-                                        .first()
-                                    )
-                                    if media_file:
-                                        media_file_title = (
-                                            media_file.title
-                                            or media_file.filename
-                                            or f"File {media_file_id}"
-                                        )
-                                    else:
-                                        logger.warning(
-                                            f"MediaFile {media_file_id} not found in database - skipping orphaned data"
-                                        )
-                                        # Skip orphaned data - don't include matches for non-existent files
-                                        continue
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Could not fetch media file {media_file_id}: {e}"
-                                    )
-                                    media_file_title = f"File {media_file_id} (error)"
-                            else:
-                                logger.warning(
-                                    f"No media_file_id in OpenSearch document for speaker {source.get('speaker_id')}"
+                                media_file = (
+                                    db.query(MediaFile)
+                                    .filter(MediaFile.id == media_file_id)
+                                    .first()
                                 )
+                                if media_file:
+                                    media_file_title = (
+                                        media_file.title
+                                        or media_file.filename
+                                        or f"File {media_file_id}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"MediaFile {media_file_id} not found in database - skipping orphaned data"
+                                    )
+                                    # Skip orphaned data - don't include matches for non-existent files
+                                    continue
+                            except Exception as e:
+                                logger.warning(f"Could not fetch media file {media_file_id}: {e}")
+                                media_file_title = f"File {media_file_id} (error)"
+                        else:
+                            logger.warning(
+                                f"No media_file_id in OpenSearch document for speaker {source.get('speaker_id')}"
+                            )
 
-                            voice_matches[display_name] = {
-                                "name": display_name,
-                                "confidence": score,
-                                "media_file_id": media_file_id,
-                                "speaker_id": source.get("speaker_id"),
-                                "media_file_title": media_file_title,
-                            }
+                        voice_matches[display_name] = {
+                            "name": display_name,
+                            "confidence": score,
+                            "media_file_id": media_file_id,
+                            "speaker_id": source.get("speaker_id"),
+                            "media_file_title": media_file_title,
+                        }
 
             # Convert to suggestions
             for name, match_data in voice_matches.items():

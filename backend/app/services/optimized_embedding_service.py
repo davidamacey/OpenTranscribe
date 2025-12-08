@@ -232,10 +232,10 @@ class OptimizedEmbeddingService:
             if target_dimension and target_dimension < embeddings_matrix.shape[1]:
                 # Use PyTorch's SVD for GPU-accelerated PCA
                 centered = normalized - normalized.mean(dim=0, keepdim=True)
-                U, S, V = torch.svd(centered.T)
+                _, _, v_matrix = torch.svd(centered.T)
 
                 # Take top components
-                components = V[:, :target_dimension]
+                components = v_matrix[:, :target_dimension]
                 reduced = torch.matmul(normalized, components)
 
                 # Renormalize after reduction

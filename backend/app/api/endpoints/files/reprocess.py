@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services import system_settings_service
 from app.tasks.transcription import transcribe_audio_task
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,10 @@ def start_reprocessing_task(
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
         # Use the same transcription task with speaker parameters - it will handle reprocessing
         transcribe_audio_task.delay(
-            file_uuid, min_speakers=min_speakers, max_speakers=max_speakers, num_speakers=num_speakers
+            file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
         )
     else:
         logger.info("Skipping Celery task in test environment")
@@ -144,11 +148,14 @@ async def process_file_reprocess(
                 detail="File storage path not found. Cannot reprocess.",
             )
 
-        # Check retry limits (unless admin)
-        if not is_admin and media_file.retry_count >= media_file.max_retries:
+        # Check retry limits based on system settings (unless admin)
+        if not is_admin and not system_settings_service.should_retry_file(
+            db, media_file.retry_count
+        ):
+            config = system_settings_service.get_retry_config(db)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
+                detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
         logger.info(

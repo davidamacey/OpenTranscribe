@@ -198,10 +198,12 @@ class LLMService:
 
             # Add response prefilling for JSON output if requested
             # This forces Claude to start response with "{" (bypasses preamble)
-            if kwargs.get("prefill_json", False):
-                # Ensure last message is from user (required for Claude API)
-                if user_messages and user_messages[-1]["role"] == "user":
-                    user_messages.append({"role": "assistant", "content": "{"})
+            if (
+                kwargs.get("prefill_json", False)
+                and user_messages
+                and user_messages[-1]["role"] == "user"
+            ):
+                user_messages.append({"role": "assistant", "content": "{"})
 
             payload = {
                 "model": self.config.model,

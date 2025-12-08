@@ -10,7 +10,6 @@
   let showModal = true;
   let loading = false;
   let saving = false;
-  let error = '';
 
   // Original values for change tracking
   let originalAutoExtractEnabled = true;
@@ -31,7 +30,6 @@
 
   async function loadSettings() {
     loading = true;
-    error = '';
     try {
       const settings = await getAudioExtractionSettings();
       autoExtractEnabled = settings.auto_extract_enabled;
@@ -46,7 +44,7 @@
       originalShowModal = settings.show_modal;
     } catch (err) {
       console.error('Failed to load audio extraction settings:', err);
-      error = 'Failed to load settings. Using defaults.';
+      toastStore.error('Failed to load audio extraction settings. Using defaults.');
     } finally {
       loading = false;
     }
@@ -54,7 +52,6 @@
 
   async function saveSettings() {
     saving = true;
-    error = '';
     try {
       await updateAudioExtractionSettings({
         auto_extract_enabled: autoExtractEnabled,
@@ -72,7 +69,6 @@
       toastStore.success('Audio extraction settings saved successfully');
     } catch (err) {
       console.error('Failed to save audio extraction settings:', err);
-      error = 'Failed to save settings. Please try again.';
       toastStore.error('Failed to save audio extraction settings');
     } finally {
       saving = false;
@@ -175,12 +171,6 @@
               </label>
             </div>
           </div>
-        </div>
-      {/if}
-
-      {#if error}
-        <div class="error-message">
-          {error}
         </div>
       {/if}
 
@@ -399,15 +389,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .error-message {
-    padding: 0.75rem 1rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 6px;
-    color: #ef4444;
-    font-size: 0.8125rem;
   }
 
   .form-actions {

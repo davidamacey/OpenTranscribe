@@ -14,6 +14,7 @@ from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.schemas.user import UserUpdate
+from app.utils.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +115,8 @@ def get_user(
     """
     Get user by UUID (admin only)
     """
-    user = db.query(User).filter(User.uuid == user_uuid).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
+    # Uses helper that validates UUID format and returns 400 for invalid UUIDs
+    return get_user_by_uuid(db, user_uuid)
 
 
 @router.put("/{user_uuid}", response_model=UserSchema)
@@ -130,9 +129,8 @@ def update_user(
     """
     Update user by UUID (admin only)
     """
-    user = db.query(User).filter(User.uuid == user_uuid).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    # Uses helper that validates UUID format and returns 400 for invalid UUIDs
+    user = get_user_by_uuid(db, user_uuid)
 
     # Update fields
     update_data = user_update.model_dump(exclude_unset=True)
@@ -162,9 +160,8 @@ def delete_user(
     """
     Delete user by UUID (admin only)
     """
-    user = db.query(User).filter(User.uuid == user_uuid).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    # Uses helper that validates UUID format and returns 400 for invalid UUIDs
+    user = get_user_by_uuid(db, user_uuid)
 
     # Prevent deleting self
     if user.id == current_user.id:

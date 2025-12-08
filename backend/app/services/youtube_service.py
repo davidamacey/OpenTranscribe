@@ -493,7 +493,8 @@ class YouTubeService:
                             if response.status_code == 200:
                                 thumbnail_url = test_url
                                 break
-                        except:
+                        except requests.exceptions.RequestException as e:
+                            logger.debug(f"Thumbnail URL test failed for {test_url}: {e}")
                             continue
 
             if not thumbnail_url:

@@ -1,7 +1,6 @@
 """Transcript-specific schemas for transcript segment operations."""
 
 from typing import Optional
-from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field

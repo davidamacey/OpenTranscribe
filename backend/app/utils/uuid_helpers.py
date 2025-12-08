@@ -60,7 +60,7 @@ def get_by_uuid(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid UUID format: {uuid}",
-            )
+            ) from None
 
     # Query by UUID
     instance = db.query(model).filter(model.uuid == uuid).first()
@@ -151,7 +151,7 @@ def validate_uuids(uuids: list[str]) -> list[UUID]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid UUID format: {uuid_item}",
-            )
+            ) from None
     return result
 
 

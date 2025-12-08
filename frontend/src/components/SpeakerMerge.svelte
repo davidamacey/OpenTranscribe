@@ -3,15 +3,16 @@
   import { mergeSpeakers } from '$lib/api/speakers';
   import { toastStore } from '$stores/toast';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import type { Speaker } from '$lib/types/speaker';
 
-  export let speakers: any[] = [];
+  export let speakers: Speaker[] = [];
 
   const dispatch = createEventDispatcher();
 
   // Track selected speakers
   let selectedSpeakers = new Set<string>();
   let showTargetDialog = false;
-  let targetSpeaker: any = null;
+  let targetSpeaker: Speaker | null = null;
   let merging = false;
 
   // Reactive: Get list of selected speaker objects
@@ -21,7 +22,7 @@
   $: canMerge = selectedSpeakers.size >= 2;
 
   // Reactive: Get segment count for each speaker
-  function getSegmentCount(speaker: any): number {
+  function getSegmentCount(speaker: Speaker): number {
     return speaker.segment_count || 0;
   }
 
@@ -57,36 +58,55 @@
 
     merging = true;
 
-    try {
-      // Get source speakers (all selected except target)
-      const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== targetSpeaker.uuid);
+    // Get source speakers (all selected except target)
+    const sourceSpeakers = selectedSpeakerList.filter(s => s.uuid !== targetSpeaker.uuid);
 
-      // Merge each source speaker into target
-      for (const sourceSpeaker of sourceSpeakers) {
+    // Track successful and failed merges
+    const successfulMerges: Speaker[] = [];
+    const failedMerges: { speaker: Speaker; error: string }[] = [];
+
+    // Merge each source speaker into target
+    for (const sourceSpeaker of sourceSpeakers) {
+      try {
         await mergeSpeakers(sourceSpeaker.uuid, targetSpeaker.uuid);
+        successfulMerges.push(sourceSpeaker);
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+        failedMerges.push({ speaker: sourceSpeaker, error: errorMessage });
+        console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, error);
       }
-
-      // Show success message
-      const mergeCount = sourceSpeakers.length;
-      toastStore.success(
-        `Successfully merged ${mergeCount} speaker${mergeCount > 1 ? 's' : ''} into ${targetSpeaker.display_name || targetSpeaker.name}`
-      );
-
-      // Reset selection
-      selectedSpeakers.clear();
-      selectedSpeakers = new Set(selectedSpeakers);
-      closeTargetDialog();
-
-      // Dispatch merged event to parent
-      dispatch('merged');
-
-    } catch (error: any) {
-      console.error('Error merging speakers:', error);
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to merge speakers';
-      toastStore.error(`Merge failed: ${errorMessage}`);
-    } finally {
-      merging = false;
     }
+
+    // Show appropriate message based on results
+    if (failedMerges.length === 0) {
+      // All merges succeeded
+      toastStore.success(
+        `Successfully merged ${successfulMerges.length} speaker${successfulMerges.length > 1 ? 's' : ''} into ${targetSpeaker.display_name || targetSpeaker.name}`
+      );
+    } else if (successfulMerges.length === 0) {
+      // All merges failed
+      const failedNames = failedMerges.map(f => f.speaker.display_name || f.speaker.name).join(', ');
+      toastStore.error(`Merge failed for all speakers: ${failedNames}. Error: ${failedMerges[0].error}`);
+    } else {
+      // Partial success - some merged, some failed
+      const successNames = successfulMerges.map(s => s.display_name || s.name).join(', ');
+      const failedNames = failedMerges.map(f => f.speaker.display_name || f.speaker.name).join(', ');
+      toastStore.warning(
+        `Partial merge: Successfully merged ${successNames}. Failed to merge: ${failedNames}.`
+      );
+    }
+
+    // Reset selection
+    selectedSpeakers.clear();
+    selectedSpeakers = new Set(selectedSpeakers);
+    closeTargetDialog();
+
+    // Dispatch merged event to parent if any merges succeeded
+    if (successfulMerges.length > 0) {
+      dispatch('merged');
+    }
+
+    merging = false;
   }
 
   // Clear all selections
@@ -149,9 +169,9 @@
 
   {#if showTargetDialog}
     <div class="modal-overlay" on:click={closeTargetDialog} on:keydown={(e) => e.key === 'Escape' && closeTargetDialog()} role="presentation">
-      <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" aria-labelledby="speaker-merge-modal-title" tabindex="-1">
         <div class="modal-header">
-          <h4>Select Target Speaker</h4>
+          <h4 id="speaker-merge-modal-title">Select Target Speaker</h4>
           <button class="close-button" on:click={closeTargetDialog} title="Close">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>

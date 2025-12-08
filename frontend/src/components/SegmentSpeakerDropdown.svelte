@@ -1,9 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import type { Speaker, Segment } from '$lib/types/speaker';
 
-  export let segment: any;
-  export let speakers: any[] = [];
+  export let segment: Segment;
+  export let speakers: Speaker[] = [];
 
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;

@@ -220,10 +220,9 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
                     status="failed",
                     message=error_msg,
                 )
-        except Exception:
-            # Silently ignore notification errors in cleanup path (intentional)
-            # We don't want notification failures to mask the original error
-            pass
+        except Exception as notify_err:
+            # Log but don't raise - notification failures shouldn't mask the original error
+            logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
 
         return {
             "status": "failed",

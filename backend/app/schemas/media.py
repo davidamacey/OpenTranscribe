@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
+from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
 
@@ -46,6 +48,28 @@ class ReprocessRequest(BaseModel):
         None, description="Fixed number of speakers for diarization (overrides min/max when set)"
     )
 
+    @field_validator("min_speakers", "max_speakers", "num_speakers")
+    @classmethod
+    def validate_speaker_count_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that speaker counts are positive integers (>= 1) if provided."""
+        if v is not None and v < 1:
+            raise ValueError("Speaker count must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def validate_min_max_speakers(self) -> "ReprocessRequest":
+        """Validate that min_speakers <= max_speakers if both are provided."""
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError(
+                f"min_speakers ({self.min_speakers}) must be less than or equal to "
+                f"max_speakers ({self.max_speakers})"
+            )
+        return self
+
 
 class PrepareUploadRequest(BaseModel):
     """Request schema for preparing a file upload.
@@ -81,6 +105,28 @@ class PrepareUploadRequest(BaseModel):
     num_speakers: Optional[int] = Field(
         None, description="Fixed number of speakers for diarization (overrides min/max when set)"
     )
+
+    @field_validator("min_speakers", "max_speakers", "num_speakers")
+    @classmethod
+    def validate_speaker_count_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that speaker counts are positive integers (>= 1) if provided."""
+        if v is not None and v < 1:
+            raise ValueError("Speaker count must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def validate_min_max_speakers(self) -> "PrepareUploadRequest":
+        """Validate that min_speakers <= max_speakers if both are provided."""
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError(
+                f"min_speakers ({self.min_speakers}) must be less than or equal to "
+                f"max_speakers ({self.max_speakers})"
+            )
+        return self
 
 
 class SpeakerBase(BaseModel):

@@ -797,37 +797,12 @@ def update_speaker(
     return speaker
 
 
-@router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
-def merge_speakers(
-    speaker_uuid: str,
-    target_speaker_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """
-    Merge two speakers into one (target absorbs source)
-    """
-    # Get both speakers by UUID
-    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
-    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
-
-    # Verify ownership
-    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-
-    # Store profile IDs for embedding updates
-    source_profile_id = source_speaker.profile_id
-    target_profile_id = target_speaker.profile_id
-
-    # Update all transcript segments from source to target
-    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
-        {"speaker_id": target_speaker.id}
-    )
-
-    # Merge the embedding vectors by averaging them
+def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) -> None:
+    """Merge and average speaker embeddings in OpenSearch."""
     try:
         import numpy as np
 
+        from app.services.opensearch_service import add_speaker_embedding
         from app.services.opensearch_service import get_speaker_embedding
 
         # Get embeddings for both speakers
@@ -835,13 +810,11 @@ def merge_speakers(
         target_embedding = get_speaker_embedding(str(target_speaker.uuid))
 
         if source_embedding and target_embedding:
-            # Average the embeddings using numpy's built-in averaging
+            # Average the embeddings
             embeddings_array = np.array([source_embedding, target_embedding])
             averaged_embedding = np.mean(embeddings_array, axis=0).tolist()
 
             # Store the averaged embedding in OpenSearch
-            from app.services.opensearch_service import add_speaker_embedding
-
             add_speaker_embedding(
                 speaker_id=target_speaker.id,
                 user_id=target_speaker.user_id,
@@ -852,26 +825,15 @@ def merge_speakers(
                 display_name=target_speaker.display_name,
                 segment_count=2,  # Merged from 2 speakers
             )
-            logger.info(
-                f"Updated target speaker {target_speaker.id} with averaged embedding from speakers {source_speaker.id} and {target_speaker.id} (length: {len(averaged_embedding)})"
-            )
+            logger.info(f"Updated target speaker {target_speaker.id} with averaged embedding")
         else:
-            logger.warning(
-                f"Could not retrieve embeddings for speaker merge: source={source_speaker.id}, target={target_speaker.id}"
-            )
+            logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:
         logger.error(f"Error averaging speaker embeddings during merge: {e}")
-        # Continue with merge even if embedding averaging fails
 
-    # Get media file IDs that are affected
-    affected_media_files = {source_speaker.media_file_id, target_speaker.media_file_id}
 
-    # Delete the source speaker
-    db.delete(source_speaker)
-    db.commit()
-    db.refresh(target_speaker)
-
-    # Clear video cache for affected media files since speaker associations changed
+def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
+    """Clear video cache for affected media files after speaker merge."""
     try:
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
@@ -884,42 +846,97 @@ def merge_speakers(
     except Exception as e:
         logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
 
-    # Update the OpenSearch index to merge the speaker embeddings
+
+def _update_opensearch_speaker_merge(source_speaker_id: int, target_speaker_id: int) -> None:
+    """Update OpenSearch index after speaker merge."""
     try:
         from app.services.opensearch_service import merge_speaker_embeddings
 
-        # Merge the embeddings in OpenSearch (this removes source and updates target collections)
-        merge_speaker_embeddings(source_speaker.id, target_speaker.id, [])
+        merge_speaker_embeddings(source_speaker_id, target_speaker_id, [])
         logger.info(
-            f"Merged speaker embeddings in OpenSearch: {source_speaker.id} -> {target_speaker.id}"
+            f"Merged speaker embeddings in OpenSearch: {source_speaker_id} -> {target_speaker_id}"
         )
     except Exception as e:
         logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
 
-    # Update profile embeddings affected by the merge
+
+def _update_profile_embeddings_after_merge(
+    db: Session,
+    source_profile_id: int | None,
+    target_profile_id: int | None,
+    source_speaker_id: int,
+) -> None:
+    """Update profile embeddings affected by speaker merge."""
     try:
         from app.services.profile_embedding_service import ProfileEmbeddingService
 
-        # Update source profile embedding if it exists (removing the merged speaker)
-        if source_profile_id and source_profile_id != target_profile_id:
-            success = ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, source_speaker.id, source_profile_id
+        # Update source profile embedding if it exists
+        if (
+            source_profile_id
+            and source_profile_id != target_profile_id
+            and ProfileEmbeddingService.remove_speaker_from_profile_embedding(
+                db, source_speaker_id, source_profile_id
             )
-            if success:
-                logger.info(
-                    f"Updated source profile {source_profile_id} embedding after speaker merge"
-                )
+        ):
+            logger.info(f"Updated source profile {source_profile_id} embedding after speaker merge")
 
-        # Update target profile embedding if it exists (the target now has additional transcript segments)
-        if target_profile_id:
-            success = ProfileEmbeddingService.update_profile_embedding(db, target_profile_id)
-            if success:
-                logger.info(
-                    f"Updated target profile {target_profile_id} embedding after speaker merge"
-                )
+        # Update target profile embedding if it exists
+        if target_profile_id and ProfileEmbeddingService.update_profile_embedding(
+            db, target_profile_id
+        ):
+            logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
 
     except Exception as e:
         logger.error(f"Error updating profile embeddings after speaker merge: {e}")
+
+
+@router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
+def merge_speakers(
+    speaker_uuid: str,
+    target_speaker_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Merge two speakers into one (target absorbs source)."""
+    # Get both speakers by UUID
+    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
+    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
+
+    # Verify ownership
+    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    # Store profile IDs for embedding updates
+    source_profile_id = source_speaker.profile_id
+    target_profile_id = target_speaker.profile_id
+    source_speaker_id = source_speaker.id
+
+    # Update all transcript segments from source to target
+    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
+        {"speaker_id": target_speaker.id}
+    )
+
+    # Merge the embedding vectors by averaging them
+    _merge_speaker_embeddings(source_speaker, target_speaker)
+
+    # Get media file IDs that are affected
+    affected_media_files = {source_speaker.media_file_id, target_speaker.media_file_id}
+
+    # Delete the source speaker
+    db.delete(source_speaker)
+    db.commit()
+    db.refresh(target_speaker)
+
+    # Clear video cache for affected media files
+    _clear_speaker_video_cache(db, affected_media_files)
+
+    # Update OpenSearch index
+    _update_opensearch_speaker_merge(source_speaker_id, target_speaker.id)
+
+    # Update profile embeddings
+    _update_profile_embeddings_after_merge(
+        db, source_profile_id, target_profile_id, source_speaker_id
+    )
 
     # Add computed status fields
     SpeakerStatusService.add_computed_status(target_speaker)

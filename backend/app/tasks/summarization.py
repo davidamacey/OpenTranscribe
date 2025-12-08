@@ -214,7 +214,7 @@ def summarize_transcript_task(
 
         # Calculate speaker percentages
         total_time = sum(stats["total_time"] for stats in speaker_stats.values())
-        for speaker_name, stats in speaker_stats.items():
+        for _speaker_name, stats in speaker_stats.items():
             stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
 
         # Update task progress

@@ -7,7 +7,6 @@ No hard-coded field requirements - accepts any valid JSON structure.
 
 from datetime import datetime
 from typing import Any
-from typing import Dict
 from typing import Literal
 from typing import Optional
 from typing import Union
@@ -100,14 +99,14 @@ class SummaryData(BaseModel):
     action_items: Optional[list[Any]] = None
     key_decisions: Optional[list[Any]] = None
     follow_up_items: Optional[list[Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 class SummaryResponse(BaseModel):
     """Response containing flexible summary data"""
 
     file_id: UUID
-    summary_data: Dict[str, Any]  # Flexible structure - accepts any JSON
+    summary_data: dict[str, Any]  # Flexible structure - accepts any JSON
     source: Literal["opensearch", "postgresql"]
     document_id: Optional[str] = None
     created_at: Optional[datetime] = None

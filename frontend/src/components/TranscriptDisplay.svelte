@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColorForSegment, getSpeakerColor } from '$lib/utils/speakerColors';
   import ReprocessButton from './ReprocessButton.svelte';
@@ -12,7 +12,7 @@
   import { toastStore } from '$stores/toast';
   import { highlightTextWithMatches, highlightSpeakerName, type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
-  
+
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
   export let editedTranscript: string = '';
@@ -32,11 +32,61 @@
   export let hasMoreSegments: boolean = false;
   export let loadingMoreSegments: boolean = false;
 
+  // Infinite scroll sentinel element
+  let infiniteScrollSentinel: HTMLElement | null = null;
+  let infiniteScrollObserver: IntersectionObserver | null = null;
+
+  // Scroll progress tracking (reading progress bar)
+  let scrollProgress: number = 0;
+  let transcriptDisplayElement: HTMLElement | null = null;
+
+  // Calculate loaded segments info
+  $: loadedSegments = file?.transcript_segments?.length || 0;
+  $: loadedPercent = totalSegments > 0 ? Math.round((loadedSegments / totalSegments) * 100) : 100;
+
+  // Handle scroll to update progress bar
+  function handleTranscriptScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    if (target) {
+      const scrollHeight = target.scrollHeight - target.clientHeight;
+      if (scrollHeight > 0) {
+        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+      }
+    }
+  }
+
+  // Set up infinite scroll observer
+  onMount(() => {
+    if (typeof IntersectionObserver !== 'undefined') {
+      infiniteScrollObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry?.isIntersecting && hasMoreSegments && !loadingMoreSegments) {
+            dispatch('loadMore');
+          }
+        },
+        { rootMargin: '200px' } // Trigger 200px before reaching the sentinel
+      );
+    }
+  });
+
+  onDestroy(() => {
+    if (infiniteScrollObserver) {
+      infiniteScrollObserver.disconnect();
+      infiniteScrollObserver = null;
+    }
+  });
+
+  // Observe the sentinel element when it's available
+  $: if (infiniteScrollSentinel && infiniteScrollObserver) {
+    infiniteScrollObserver.observe(infiniteScrollSentinel);
+  }
+
   // Reference reprocessing to suppress warning (will be tree-shaken in production)
   $: { reprocessing; }
 
   const dispatch = createEventDispatcher();
-  
+
   // Download state management
   let downloadState = $downloadStore;
   $: downloadState = $downloadStore;
@@ -60,19 +110,19 @@
   // Handle scrollbar indicator click to seek to playhead
   function handleSeekToPlayhead(event: CustomEvent) {
     const { currentTime: seekTime, targetSegment } = event.detail;
-    
+
     if (targetSegment) {
       // Scroll to the current segment
       const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.id || `${targetSegment.start_time}-${targetSegment.end_time}`}"]`);
       if (segmentElement) {
-        segmentElement.scrollIntoView({ 
-          behavior: 'smooth', 
+        segmentElement.scrollIntoView({
+          behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
       }
     }
-    
+
     // Also dispatch to parent for potential video seeking
     dispatch('seekToPlayhead', { time: seekTime, segment: targetSegment });
   }
@@ -80,7 +130,7 @@
   // Check if scrollbar indicator should be enabled
   $: {
     scrollbarIndicatorEnabled = !!(
-      transcriptSegments && 
+      transcriptSegments &&
       transcriptSegments.length > 10 && // Only show for transcripts with substantial content
       currentTime >= 0 &&
       !isEditingTranscript // Hide during transcript editing
@@ -159,13 +209,13 @@
 
   function handleNavigateToMatch(event: CustomEvent) {
     const { match, segment, segmentIndex, autoSeek } = event.detail;
-    
+
     // Only seek if explicitly requested (e.g., user clicks on a segment)
     // Don't auto-seek when just navigating through search results
     if (autoSeek && match.type === 'text') {
       handleSegmentClick(segment.start_time);
     }
-    
+
     // The scrolling and highlighting is handled by the search component
   }
 
@@ -236,42 +286,42 @@
 
     const fileId = file.id.toString();
     const filename = file.filename;
-    
+
     // Check if download is already in progress
     if (isDownloading) {
       toastStore.warning(`${filename} is already being processed. Please wait for it to complete.`);
       return;
     }
-    
+
     // Start download tracking
     const canStart = downloadStore.startDownload(fileId, filename);
     if (!canStart) return;
-    
+
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      
+
       if (!token) {
         downloadStore.updateStatus(fileId, 'error', undefined, 'No authentication token found. Please log in again.');
         return;
       }
-      
+
       downloadStore.updateStatus(fileId, 'processing');
-      
+
       // Determine if this is a video with subtitles for enhanced processing
       const isVideo = file.content_type?.startsWith('video/');
       const hasSubtitles = file.status === 'completed' && file.transcript_segments?.length > 0;
-      
+
       // For cached videos, add a small delay to ensure download state is properly initialized
       // before WebSocket 'completed' message arrives
       if (isVideo && hasSubtitles) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
+
       // Build download URL
       let downloadUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}`;
       let downloadFilename = filename;
-      
+
       // For videos with subtitles, include subtitle embedding parameters
       if (isVideo && hasSubtitles) {
         downloadUrl += '&include_speakers=true';
@@ -280,22 +330,22 @@
         const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
         downloadFilename = `${baseName}_with_subtitles${extension}`;
       }
-      
+
       downloadStore.updateStatus(fileId, 'downloading');
-      
+
       // Create download link
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = downloadFilename;
       link.style.display = 'none';
       document.body.appendChild(link);
-      
+
       // Trigger download
       link.click();
-      
+
       // Clean up
       document.body.removeChild(link);
-      
+
       // For non-video files or videos without subtitles, mark as completed quickly
       if (!isVideo || !hasSubtitles) {
         setTimeout(() => {
@@ -308,13 +358,13 @@
         const checkInterval = setInterval(() => {
           checkCount++;
           const currentStatus = downloadStore.getDownloadStatus(fileId);
-          
+
           // If status changed to completed or error, clear the interval
           if (!currentStatus || currentStatus.status === 'completed' || currentStatus.status === 'error') {
             clearInterval(checkInterval);
             return;
           }
-          
+
           // For cached videos, the download starts almost immediately
           // If we're still in processing after 3 seconds, it's likely done
           if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
@@ -322,7 +372,7 @@
             clearInterval(checkInterval);
             return;
           }
-          
+
           // For actual processing, give it more time (up to 60 seconds)
           if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
@@ -330,7 +380,7 @@
           }
         }, 1000); // Check every second
       }
-      
+
     } catch (error) {
       console.error('Download error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Download failed';
@@ -343,7 +393,7 @@
 <section class="transcript-column">
   <div class="transcript-header">
     <!-- Search component moved to header -->
-    <TranscriptSearch 
+    <TranscriptSearch
       {transcriptSegments}
       {speakerList}
       disabled={!file?.transcript_segments?.length}
@@ -351,30 +401,43 @@
       on:navigateToMatch={handleNavigateToMatch}
     />
   </div>
-  
+
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
       <div class="edit-actions">
-        <button 
-          on:click={saveTranscript} 
+        <button
+          on:click={saveTranscript}
           disabled={savingTranscript}
           title="Save all changes to the transcript"
         >
           {savingTranscript ? 'Saving...' : 'Save Transcript'}
         </button>
-        <button 
-          class="cancel-button" 
+        <button
+          class="cancel-button"
           on:click={cancelEditTranscript}
           title="Cancel editing and discard all changes"
         >Cancel</button>
       </div>
     {:else}
       <div bind:this={transcriptContainer} class="transcript-display-container">
-        <div class="transcript-display">
+        <!-- Reading progress bar at top -->
+        {#if totalSegments > 0}
+          <div class="reading-progress-bar">
+            <div
+              class="reading-progress-fill"
+              style="width: {scrollProgress}%"
+            ></div>
+          </div>
+        {/if}
+        <div
+          class="transcript-display"
+          bind:this={transcriptDisplayElement}
+          on:scroll={handleTranscriptScroll}
+        >
         {#each file.transcript_segments as segment}
-          <div 
-            class="transcript-segment" 
+          <div
+            class="transcript-segment"
             data-segment-id="{segment.id || `${segment.start_time}-${segment.end_time}`}"
           >
             {#if editingSegmentId === segment.id}
@@ -384,14 +447,14 @@
                 <div class="segment-edit-input">
                   <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                   <div class="segment-edit-actions">
-                    <button 
-                      class="cancel-button" 
+                    <button
+                      class="cancel-button"
                       on:click={cancelEditSegment}
                       title="Cancel editing this segment and discard changes"
                     >Cancel</button>
-                    <button 
-                      class="save-button" 
-                      on:click={() => saveSegment(segment)} 
+                    <button
+                      class="save-button"
+                      on:click={() => saveSegment(segment)}
                       disabled={savingTranscript}
                       title="Save changes to this segment"
                     >
@@ -444,29 +507,38 @@
           </div>
         {/each}
 
-        <!-- Load More button for paginated transcripts -->
+        <!-- Infinite scroll sentinel and loading indicator -->
         {#if hasMoreSegments}
-          <div class="load-more-container">
-            <button
-              class="load-more-button"
-              on:click={() => dispatch('loadMore')}
-              disabled={loadingMoreSegments}
-              title="Load more transcript segments"
-            >
-              {#if loadingMoreSegments}
+          <div
+            class="infinite-scroll-sentinel"
+            bind:this={infiniteScrollSentinel}
+          >
+            {#if loadingMoreSegments}
+              <div class="loading-more-indicator">
                 <span class="loading-spinner"></span>
-                Loading...
-              {:else}
-                Load More ({file?.transcript_segments?.length || 0} of {totalSegments} segments)
-              {/if}
-            </button>
+                <span>Loading more segments...</span>
+              </div>
+            {/if}
           </div>
         {/if}
         </div>
 
+        <!-- Segments loaded info -->
+        {#if totalSegments > 0 && loadedSegments < totalSegments}
+          <div class="segments-loaded-info">
+            <span class="segments-count">{loadedSegments} of {totalSegments} segments loaded</span>
+            {#if loadingMoreSegments}
+              <span class="loading-indicator">
+                <span class="loading-spinner-small"></span>
+                Loading...
+              </span>
+            {/if}
+          </div>
+        {/if}
+
         <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
         {#if scrollbarIndicatorEnabled}
-          <ScrollbarIndicator 
+          <ScrollbarIndicator
             {currentTime}
             {transcriptSegments}
             containerElement={transcriptContainer?.querySelector('.transcript-display')}
@@ -475,11 +547,11 @@
           />
         {/if}
       </div>
-      
-      
+
+
       <div class="transcript-actions">
         <div class="export-dropdown">
-          <button 
+          <button
             class="export-transcript-button"
             title="Export transcript in various formats including text, JSON, CSV, SRT, and WebVTT"
           >
@@ -497,29 +569,29 @@
             </svg>
           </button>
           <div class="export-dropdown-content">
-            <button 
+            <button
               on:click={() => exportTranscript('txt')}
               title="Export transcript as plain text file"
             >Plain Text (.txt)</button>
-            <button 
+            <button
               on:click={() => exportTranscript('json')}
               title="Export transcript as JSON file with timestamps and speaker information"
             >JSON Format (.json)</button>
-            <button 
+            <button
               on:click={() => exportTranscript('csv')}
               title="Export transcript as CSV file for spreadsheet applications"
             >CSV Format (.csv)</button>
-            <button 
+            <button
               on:click={() => exportTranscript('srt')}
               title="Export transcript as SRT subtitle file for video players"
             >SubRip Subtitles (.srt)</button>
-            <button 
+            <button
               on:click={() => exportTranscript('vtt')}
               title="Export transcript as WebVTT subtitle file for web video players"
             >WebVTT Subtitles (.vtt)</button>
           </div>
         </div>
-        
+
         <button
           class="edit-speakers-button"
           on:click={toggleSpeakerEditor}
@@ -535,16 +607,16 @@
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
         </button>
-        
+
         {#if file && file.download_url}
-          <button 
-            class="action-button download-button" 
+          <button
+            class="action-button download-button"
             class:downloading={isDownloading}
             class:processing={currentDownload?.status === 'processing'}
             disabled={isDownloading}
             on:click={downloadFile}
-            title={isDownloading ? 
-              `Processing video with subtitles (may take 1-2 minutes for large files)...` : 
+            title={isDownloading ?
+              `Processing video with subtitles (may take 1-2 minutes for large files)...` :
               (file.content_type?.startsWith('video/') && file.status === 'completed' ? 'Download video (subtitles will be embedded if transcript exists)' : 'Download media file')}
           >
             {#if isDownloading}
@@ -586,7 +658,7 @@
         {/if}
 
       </div>
-      
+
       {#if isEditingSpeakers}
         <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
           <div class="speaker-editor-header">
@@ -682,7 +754,7 @@
                     <!-- Unified Suggestions Section -->
                     {#if speaker.show_suggestions_section}
                       <div class="suggestions-section">
-                        <button 
+                        <button
                           class="suggestions-toggle"
                           on:click={() => speaker.showSuggestions = !speaker.showSuggestions}
                           title="View available suggestions for speaker identification"
@@ -695,7 +767,7 @@
                             <span class="expand-hint">(click to expand)</span>
                           {/if}
                         </button>
-                        
+
                         {#if speaker.showSuggestions}
                           <div class="suggestions-dropdown" transition:slide={{ duration: 200 }}>
                             <!-- Horizontal chip layout -->
@@ -738,7 +810,7 @@
                                   </button>
                                 </div>
                               {/if}
-                              
+
                               {#if loadingVoiceSuggestions}
                                 <div class="chip-row">
                                   <span class="chip-label">Voice:</span>
@@ -786,7 +858,7 @@
                         {/if}
                       </div>
                     {/if}
-                    
+
                     <!-- Cross-video speaker detection - Below text input -->
                     {#if hasCrossVideoMatches(speaker)}
                       <div class="cross-video-compact">
@@ -802,7 +874,7 @@
                             {/if}
                           </span>
                           <div class="compact-controls">
-                            <button 
+                            <button
                               class="info-btn-consistent"
                               title="Click for details"
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
@@ -813,7 +885,7 @@
                                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
                               </svg>
                             </button>
-                            <button 
+                            <button
                               class="dropdown-arrow"
                               title="Show/hide matches"
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
@@ -824,7 +896,7 @@
                             </button>
                           </div>
                         </div>
-                        
+
                         {#if speaker.showMatches}
                           <div class="compact-dropdown" transition:slide={{ duration: 200 }}>
                             {#if speaker.needsCrossMediaCall}
@@ -832,7 +904,7 @@
                               {@const visibleMatches = speaker.cross_video_matches.slice(0, 3)}
                               {@const remainingMatches = speaker.cross_video_matches.slice(3, 8)}
                               {@const remainingCount = speaker.cross_video_matches.length - 3}
-                              
+
                               <!-- After labeling: Show file list -->
                               <div class="matches-help">
                                 Files where "{speaker.display_name}" appears:
@@ -854,7 +926,7 @@
                                   </div>
                                 {/each}
                               </div>
-                                
+
                                 {#if remainingCount > 0}
                                   <div class="more-matches-compact hover-container">
                                     <span class="more-matches-text">+{remainingCount} more</span>
@@ -950,44 +1022,78 @@
 </section>
 
 <style>
-  /* Load More button styles */
-  .load-more-container {
-    display: flex;
-    justify-content: center;
-    padding: 16px;
-    border-top: 1px solid var(--border-color);
-    background: var(--surface-secondary);
+  /* Reading progress bar - horizontal bar at top showing scroll position */
+  .reading-progress-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border-color);
+    z-index: 10;
+    border-radius: 0;
   }
 
-  .load-more-button {
+  .reading-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.1s ease-out;
+    border-radius: 0;
+  }
+
+  /* Infinite scroll styles */
+  .infinite-scroll-sentinel {
+    min-height: 1px;
+    padding: 8px 0;
+  }
+
+  .loading-more-indicator {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
-    padding: 10px 20px;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 6px;
+    padding: 16px;
+    color: var(--text-muted);
     font-size: 14px;
+  }
+
+  .loading-more-indicator .loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Segments loaded info bar */
+  .segments-loaded-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--surface-secondary);
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .segments-count {
     font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s ease;
   }
 
-  .load-more-button:hover:not(:disabled) {
-    background: var(--primary-hover);
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .load-more-button:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .load-more-button .loading-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid transparent;
-    border-top-color: white;
+  .loading-spinner-small {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -1016,7 +1122,7 @@
     font-weight: 600;
     color: var(--text-primary);
   }
-  
+
 
   .transcript-textarea {
     width: 100%;
@@ -1247,7 +1353,7 @@
     margin-top: 8px;
   }
 
-  .segment-edit-actions .save-button, 
+  .segment-edit-actions .save-button,
   .segment-edit-actions .cancel-button {
     padding: 0.4rem 0.8rem;
     border-radius: 10px;
@@ -1405,31 +1511,31 @@
     border-radius: 8px;
     border: 1px solid var(--border-color);
   }
-  
+
   .speaker-editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
   }
-  
+
   .legend-info-container {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.9rem;
   }
-  
+
   .legend-title {
     font-weight: 600;
     color: var(--text-primary);
   }
-  
+
   .legend-info-wrapper {
     position: relative;
     display: inline-block;
   }
-  
+
   .legend-info-icon {
     background: none;
     border: none;
@@ -1439,15 +1545,15 @@
     border-radius: 50%;
     transition: all 0.2s ease;
   }
-  
+
   .legend-info-icon:hover {
     background-color: var(--surface-hover);
   }
-  
+
   .legend-info-wrapper:hover .legend-tooltip {
     display: block;
   }
-  
+
   .legend-tooltip {
     display: none;
     position: absolute;
@@ -1463,7 +1569,7 @@
     min-width: 200px;
     margin-top: 4px;
   }
-  
+
   .legend-item {
     display: flex;
     align-items: center;
@@ -1472,11 +1578,11 @@
     margin-bottom: 0.5rem;
     font-size: 0.8rem;
   }
-  
+
   .legend-item:last-child {
     margin-bottom: 0;
   }
-  
+
   .legend-color {
     width: 12px;
     height: 12px;
@@ -1613,7 +1719,7 @@
     height: 1rem;
   }
 
-  
+
 
 
   .match-confidence {
@@ -1640,24 +1746,24 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-speakers-button:active {
     transform: translateY(0);
   }
-  
+
   .save-speakers-button:disabled {
     background: #94a3b8;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
-  
+
   .save-speakers-button:disabled:hover {
     background: #94a3b8;
     transform: none;
     box-shadow: none;
   }
-  
+
   .save-speakers-button .spinner {
     margin-right: 0.5rem;
   }
@@ -1707,29 +1813,29 @@
       min-width: auto;
     }
   }
-  
+
   /* Enhanced download button styles */
   .download-button:disabled {
     opacity: 0.7;
     cursor: not-allowed;
   }
-  
+
   .download-button.downloading {
     background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
-  
+
   .download-button.processing {
     background: var(--warning-color, #f59e0b);
     color: white;
     border-color: var(--warning-color, #f59e0b);
   }
-  
+
   .spinner {
     animation: spin 1s linear infinite;
   }
-  
+
   @keyframes spin {
     from {
       transform: rotate(0deg);
@@ -1738,7 +1844,7 @@
       transform: rotate(360deg);
     }
   }
-  
+
   /* Compact cross-video UI styles */
   .cross-video-compact {
     margin-top: 0.3rem;
@@ -1748,7 +1854,7 @@
     border-radius: 4px;
     font-size: 0.75rem;
   }
-  
+
   .compact-header {
     display: flex;
     align-items: center;
@@ -1756,19 +1862,19 @@
     cursor: pointer;
     user-select: none;
   }
-  
+
   .compact-text {
     color: var(--text-color);
     flex: 1;
     font-size: 0.7rem;
   }
-  
+
   .compact-controls {
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
-  
+
   .info-btn-consistent, .dropdown-arrow {
     background: none;
     border: none;
@@ -1781,38 +1887,38 @@
     align-items: center;
     justify-content: center;
   }
-  
+
   .info-btn-consistent:hover, .dropdown-arrow:hover {
     background-color: var(--border-color-soft);
   }
-  
+
   .dropdown-arrow svg {
     transition: transform 0.2s ease;
   }
-  
+
   .dropdown-arrow svg.rotated {
     transform: rotate(180deg);
   }
-  
+
   .compact-dropdown {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     border-top: 1px solid var(--border-color-soft);
   }
-  
+
   .matches-help {
     font-size: 0.65rem;
     color: var(--text-color-secondary);
     margin-bottom: 0.3rem;
     font-style: italic;
   }
-  
+
   .compact-matches {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
   }
-  
+
   .compact-match {
     display: flex;
     align-items: center;
@@ -1825,7 +1931,7 @@
     cursor: help;
     transition: background-color 0.2s ease;
   }
-  
+
   .compact-match:hover {
     background-color: var(--background-main);
     border-color: var(--border-color);
@@ -1835,13 +1941,13 @@
     flex: 1;
     color: var(--text-color);
   }
-  
+
   .match-confidence {
     font-weight: 500;
     font-size: 0.65rem;
     color: var(--success-color);
   }
-  
+
   .more-matches-compact {
     padding: 0.2rem 0.4rem;
     text-align: center;
@@ -1913,7 +2019,7 @@
     color: var(--success-color);
     white-space: nowrap;
   }
-  
+
   /* Scrollable container for large match sets */
   .matches-scroll-container {
     max-height: 200px;
@@ -1922,21 +2028,21 @@
     border-radius: 3px;
     padding: 0.2rem;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-track {
     background: var(--background-alt);
     border-radius: 3px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 3px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-thumb:hover {
     background: var(--text-color-secondary);
   }

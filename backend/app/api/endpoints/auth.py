@@ -56,7 +56,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         try:
             user_uuid = UUID(user_uuid_str)
         except ValueError:
-            raise credentials_exception
+            raise credentials_exception from None
 
         token_data = TokenPayload(sub=user_uuid_str)
     except JWTError as e:

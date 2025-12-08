@@ -52,7 +52,9 @@ def get_setting_int(db: Session, key: str, default: int = 0) -> int:
     try:
         return int(value)
     except (ValueError, TypeError):
-        logger.warning(f"Could not convert setting '{key}' value '{value}' to int, using default {default}")
+        logger.warning(
+            f"Could not convert setting '{key}' value '{value}' to int, using default {default}"
+        )
         return default
 
 
@@ -74,7 +76,9 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
     return value.lower() in ("true", "1", "yes", "on")
 
 
-def set_setting(db: Session, key: str, value: Any, description: Optional[str] = None) -> SystemSettings:
+def set_setting(
+    db: Session, key: str, value: Any, description: Optional[str] = None
+) -> SystemSettings:
     """
     Set a system setting.
 
@@ -137,7 +141,31 @@ def get_retry_config(db: Session) -> dict:
     }
 
 
-def update_retry_config(db: Session, max_retries: Optional[int] = None, retry_limit_enabled: Optional[bool] = None) -> dict:
+def should_retry_file(db: Session, retry_count: int) -> bool:
+    """
+    Check if a file should be retried based on system settings.
+
+    Args:
+        db: Database session
+        retry_count: Current retry count for the file
+
+    Returns:
+        True if the file should be retried, False otherwise
+    """
+    config = get_retry_config(db)
+
+    # If retry limit is disabled, always allow retries
+    if not config["retry_limit_enabled"]:
+        return True
+
+    # Check against the system-wide max retries
+    max_retries = config["max_retries"]
+    return retry_count < max_retries
+
+
+def update_retry_config(
+    db: Session, max_retries: Optional[int] = None, retry_limit_enabled: Optional[bool] = None
+) -> dict:
     """
     Update retry configuration.
 
@@ -178,7 +206,9 @@ def get_garbage_cleanup_config(db: Session) -> dict:
         - max_word_length: int (default: 50)
     """
     return {
-        "garbage_cleanup_enabled": get_setting_bool(db, "transcription.garbage_cleanup_enabled", True),
+        "garbage_cleanup_enabled": get_setting_bool(
+            db, "transcription.garbage_cleanup_enabled", True
+        ),
         "max_word_length": get_setting_int(db, "transcription.max_word_length", 50),
     }
 

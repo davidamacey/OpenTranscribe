@@ -1,21 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AdminSettingsApi, type GarbageCleanupConfig } from '../../lib/api/adminSettings';
+  import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
 
   // State
   let loading = true;
   let saving = false;
-  let config: GarbageCleanupConfig | null = null;
+  let config: RetryConfig | null = null;
 
   // Form state
-  let garbageCleanupEnabled = true;
-  let maxWordLength = 50;
+  let retryLimitEnabled = true;
+  let maxRetries = 3;
   let hasChanges = false;
 
   // Track original values for change detection
-  let originalGarbageCleanupEnabled = true;
-  let originalMaxWordLength = 50;
+  let originalRetryLimitEnabled = true;
+  let originalMaxRetries = 3;
 
   onMount(async () => {
     await loadConfig();
@@ -24,45 +24,45 @@
   async function loadConfig() {
     loading = true;
     try {
-      config = await AdminSettingsApi.getGarbageCleanupConfig();
-      garbageCleanupEnabled = config.garbage_cleanup_enabled;
-      maxWordLength = config.max_word_length;
-      originalGarbageCleanupEnabled = garbageCleanupEnabled;
-      originalMaxWordLength = maxWordLength;
+      config = await AdminSettingsApi.getRetryConfig();
+      retryLimitEnabled = config.retry_limit_enabled;
+      maxRetries = config.max_retries;
+      originalRetryLimitEnabled = retryLimitEnabled;
+      originalMaxRetries = maxRetries;
       hasChanges = false;
     } catch (err: any) {
-      console.error('Error loading garbage cleanup config:', err);
-      toastStore.error('Failed to load garbage cleanup configuration');
+      console.error('Error loading retry config:', err);
+      toastStore.error('Failed to load retry configuration');
     } finally {
       loading = false;
     }
   }
 
   function checkForChanges() {
-    hasChanges = garbageCleanupEnabled !== originalGarbageCleanupEnabled || maxWordLength !== originalMaxWordLength;
+    hasChanges = retryLimitEnabled !== originalRetryLimitEnabled || maxRetries !== originalMaxRetries;
   }
 
   $: {
     // Reactive change detection
-    garbageCleanupEnabled;
-    maxWordLength;
+    retryLimitEnabled;
+    maxRetries;
     checkForChanges();
   }
 
   async function saveConfig() {
     saving = true;
     try {
-      config = await AdminSettingsApi.updateGarbageCleanupConfig({
-        garbage_cleanup_enabled: garbageCleanupEnabled,
-        max_word_length: maxWordLength
+      config = await AdminSettingsApi.updateRetryConfig({
+        retry_limit_enabled: retryLimitEnabled,
+        max_retries: maxRetries
       });
-      originalGarbageCleanupEnabled = config.garbage_cleanup_enabled;
-      originalMaxWordLength = config.max_word_length;
+      originalRetryLimitEnabled = config.retry_limit_enabled;
+      originalMaxRetries = config.max_retries;
       hasChanges = false;
-      toastStore.success('Garbage cleanup configuration saved successfully');
+      toastStore.success('Retry configuration saved successfully');
     } catch (err: any) {
-      console.error('Error saving garbage cleanup config:', err);
-      const errorMsg = err.response?.data?.detail || 'Failed to save garbage cleanup configuration';
+      console.error('Error saving retry config:', err);
+      const errorMsg = err.response?.data?.detail || 'Failed to save retry configuration';
       toastStore.error(errorMsg);
     } finally {
       saving = false;
@@ -70,24 +70,24 @@
   }
 
   function resetToDefaults() {
-    garbageCleanupEnabled = true;
-    maxWordLength = 50;
+    retryLimitEnabled = true;
+    maxRetries = 3;
   }
 </script>
 
-<div class="garbage-cleanup-settings">
+<div class="retry-settings">
   <div class="title-row">
-    <h3 class="section-title">Garbage Word Cleanup</h3>
+    <h3 class="section-title">Failed Task Retries</h3>
     <span class="info-icon">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="16" x2="12" y2="12"></line>
         <line x1="12" y1="8" x2="12.01" y2="8"></line>
       </svg>
-      <span class="tooltip">WhisperX can sometimes misinterpret background noise (fans, static, rumbling) as extremely long "words" with no spaces. This feature detects and replaces these artifacts.</span>
+      <span class="tooltip">When a transcription fails due to temporary issues (GPU memory, network), the system can automatically retry. Limiting retries prevents infinite loops for permanently failing tasks.</span>
     </span>
   </div>
-  <p class="section-desc">Replace long noise artifacts with [background noise].</p>
+  <p class="section-desc">Automatically retry failed transcriptions before marking as failed.</p>
 
   {#if loading}
     <div class="loading-state">
@@ -97,21 +97,20 @@
     <div class="setting-row">
       <div class="setting-controls">
         <label class="toggle-label">
-          <input type="checkbox" bind:checked={garbageCleanupEnabled} class="toggle-input" />
+          <input type="checkbox" bind:checked={retryLimitEnabled} class="toggle-input" />
           <span class="toggle-switch"></span>
-          <span class="toggle-text">Enable cleanup</span>
+          <span class="toggle-text">Limit retries</span>
         </label>
         <div class="inline-input">
-          <span class="input-label">Threshold:</span>
+          <span class="input-label">Max:</span>
           <input
             type="number"
-            bind:value={maxWordLength}
-            min="20"
-            max="200"
+            bind:value={maxRetries}
+            min="1"
+            max="10"
             class="form-input number-input"
-            disabled={!garbageCleanupEnabled}
+            disabled={!retryLimitEnabled}
           />
-          <span class="input-suffix">chars</span>
         </div>
       </div>
       <div class="button-row">
@@ -127,7 +126,7 @@
 </div>
 
 <style>
-  .garbage-cleanup-settings {
+  .retry-settings {
     padding: 0.5rem 0;
   }
 
@@ -282,11 +281,6 @@
     color: var(--text-muted);
   }
 
-  .input-suffix {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
   .form-input {
     padding: 0.375rem 0.5rem;
     border: 1px solid var(--border-color);
@@ -307,7 +301,7 @@
   }
 
   .number-input {
-    width: 60px;
+    width: 55px;
     text-align: center;
   }
 

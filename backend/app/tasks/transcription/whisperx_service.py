@@ -5,7 +5,6 @@ from typing import Any
 
 # Note: PyTorch 2.6+ compatibility patch (weights_only=False) is applied in
 # app/core/celery.py at module level, BEFORE any ML libraries are imported
-
 from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
@@ -204,8 +203,12 @@ class WhisperXService:
         return aligned_result
 
     def perform_speaker_diarization(
-        self, audio, hf_token: str = None, max_speakers: int = 20, min_speakers: int = 1,
-        num_speakers: int = None
+        self,
+        audio,
+        hf_token: str = None,
+        max_speakers: int = 20,
+        min_speakers: int = 1,
+        num_speakers: int = None,
     ) -> dict[str, Any]:
         """
         Perform speaker diarization on audio.
@@ -230,7 +233,9 @@ class WhisperXService:
         except ImportError as e:
             raise ImportError("WhisperX is not installed.") from e
 
-        logger.info(f"Performing speaker diarization with min_speakers={min_speakers}, max_speakers={max_speakers}, num_speakers={num_speakers}")
+        logger.info(
+            f"Performing speaker diarization with min_speakers={min_speakers}, max_speakers={max_speakers}, num_speakers={num_speakers}"
+        )
 
         try:
             diarize_params = {"max_speakers": max_speakers, "min_speakers": min_speakers}
@@ -341,8 +346,13 @@ class WhisperXService:
         return result
 
     def process_full_pipeline(
-        self, audio_file_path: str, hf_token: str = None, progress_callback=None,
-        min_speakers: int = 1, max_speakers: int = 20, num_speakers: int = None
+        self,
+        audio_file_path: str,
+        hf_token: str = None,
+        progress_callback=None,
+        min_speakers: int = 1,
+        max_speakers: int = 20,
+        num_speakers: int = None,
     ) -> dict[str, Any]:
         """
         Run the complete WhisperX pipeline: transcription, alignment, and diarization.
@@ -372,8 +382,11 @@ class WhisperXService:
         if progress_callback:
             progress_callback(0.55, "Analyzing speaker patterns")
         diarize_segments = self.perform_speaker_diarization(
-            audio, hf_token, max_speakers=max_speakers, min_speakers=min_speakers,
-            num_speakers=num_speakers
+            audio,
+            hf_token,
+            max_speakers=max_speakers,
+            min_speakers=min_speakers,
+            num_speakers=num_speakers,
         )
 
         # Step 4: Assign speakers (65% -> 70%)

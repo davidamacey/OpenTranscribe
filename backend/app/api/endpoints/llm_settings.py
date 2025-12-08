@@ -5,6 +5,7 @@ API endpoints for user LLM settings management
 import contextlib
 import logging
 import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter
@@ -528,7 +529,9 @@ async def test_llm_connection(
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(config.api_key)
             except Exception as e:
-                logger.warning(f"Could not retrieve stored API key for config {test_request.config_id}: {e}")
+                logger.warning(
+                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}"
+                )
 
         # Map schema enum to service enum
         service_provider = ServiceLLMProvider(test_request.provider.value)
@@ -799,6 +802,103 @@ async def get_ollama_models(
         }
 
 
+# --- Model Discovery Helper Functions ---
+
+
+def _model_discovery_response(
+    success: bool, model_list: list = None, message: str = ""
+) -> dict[str, Any]:
+    """Create a standardized model discovery response."""
+    return {
+        "success": success,
+        "models": model_list or [],
+        "total": len(model_list) if model_list else 0,
+        "message": message,
+    }
+
+
+def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None:
+    """Retrieve and decrypt stored API key for a config."""
+    try:
+        config_uuid = uuid.UUID(config_id)
+        config = (
+            db.query(models.UserLLMSettings)
+            .filter(
+                models.UserLLMSettings.uuid == config_uuid,
+                models.UserLLMSettings.user_id == user_id,
+            )
+            .first()
+        )
+        if config and config.api_key:
+            return decrypt_api_key(config.api_key)
+    except (ValueError, Exception) as e:
+        logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
+    return None
+
+
+def _extract_raw_models(data: Any) -> tuple[list | None, str | None]:
+    """
+    Extract raw models list from various OpenAI-compatible response formats.
+
+    Returns (raw_models, error_message). If error_message is set, raw_models is None.
+    """
+    # Format 1: OpenAI standard { "data": [...] }
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+        logger.debug("Model discovery: Using OpenAI standard format (data array)")
+        return data["data"], None
+
+    # Format 2: Direct array response [...]
+    if isinstance(data, list):
+        logger.debug("Model discovery: Using direct array format")
+        return data, None
+
+    # Format 3: { "models": [...] } (some providers use this)
+    if isinstance(data, dict) and "models" in data and isinstance(data["models"], list):
+        logger.debug("Model discovery: Using 'models' key format")
+        return data["models"], None
+
+    # Format 4: { "object": "list", "data": [...] } (explicit OpenAI format)
+    if isinstance(data, dict) and data.get("object") == "list" and "data" in data:
+        logger.debug("Model discovery: Using OpenAI list object format")
+        return data["data"], None
+
+    # Unexpected format
+    keys_info = list(data.keys()) if isinstance(data, dict) else type(data).__name__
+    error_msg = (
+        f"Unexpected response format. Expected 'data' or 'models' array. Got keys: {keys_info}"
+    )
+    logger.warning(f"Model discovery: {error_msg}")
+    return None, error_msg
+
+
+def _parse_model_entry(model: Any) -> dict | None:
+    """Parse a single model entry into standardized format."""
+    if isinstance(model, dict):
+        model_id = model.get("id") or model.get("name") or model.get("model") or ""
+        return {
+            "name": model.get("name", model_id),
+            "id": model_id,
+            "owned_by": model.get("owned_by", model.get("owner", "")),
+            "created": model.get("created", model.get("created_at", 0)),
+        }
+    if isinstance(model, str):
+        return {"name": model, "id": model, "owned_by": "", "created": 0}
+    logger.warning(f"Model discovery: Skipping unexpected model format: {type(model)}")
+    return None
+
+
+def _get_http_error_message(status_code: int, models_url: str, error_text: str = "") -> str:
+    """Get user-friendly error message for HTTP error codes."""
+    error_messages = {
+        401: "Authentication failed: Invalid or missing API key",
+        403: "Access forbidden: Check API key permissions",
+        404: f"Models endpoint not found at {models_url}. Check base URL configuration.",
+    }
+    if status_code in error_messages:
+        return error_messages[status_code]
+    return f"Failed to fetch models: HTTP {status_code} - {error_text[:200]}"
+
+
 @router.get("/openai-compatible/models")
 async def get_openai_compatible_models(
     base_url: str,
@@ -808,94 +908,98 @@ async def get_openai_compatible_models(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Get available models from an OpenAI-compatible API endpoint
-    Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers
+    Get available models from an OpenAI-compatible API endpoint.
 
+    Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
     import aiohttp
 
-    # If no api_key provided but config_id is, look up the stored key
+    # Resolve effective API key
     effective_api_key = api_key
     if not effective_api_key and config_id:
-        try:
-            config_uuid = uuid.UUID(config_id)
-            config = (
-                db.query(models.UserLLMSettings)
-                .filter(
-                    models.UserLLMSettings.uuid == config_uuid,
-                    models.UserLLMSettings.user_id == current_user.id,
-                )
-                .first()
-            )
-            if config and config.api_key:
-                # Decrypt the stored API key
-                effective_api_key = decrypt_api_key(config.api_key)
-        except (ValueError, Exception) as e:
-            logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
+        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+
+    # Build models URL
+    clean_url = base_url.strip().rstrip("/")
+    if not clean_url.endswith("/v1"):
+        clean_url = f"{clean_url}/v1"
+    models_url = f"{clean_url}/models"
+
+    # Prepare headers
+    headers = {"Authorization": f"Bearer {effective_api_key}"} if effective_api_key else {}
 
     try:
-        # Clean up base URL
-        clean_url = base_url.strip().rstrip("/")
-        if not clean_url.endswith("/v1"):
-            clean_url = f"{clean_url}/v1"
-
-        models_url = f"{clean_url}/models"
-
-        # Prepare headers
-        headers = {}
-        if effective_api_key:
-            headers["Authorization"] = f"Bearer {effective_api_key}"
-
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(models_url, headers=headers) as response,
-        ):
-            if response.status == 200:
-                data = await response.json()
-                models = []
-
-                if "data" in data:
-                    for model in data["data"]:
-                        models.append(
-                            {
-                                "name": model.get("id", ""),
-                                "id": model.get("id", ""),
-                                "owned_by": model.get("owned_by", ""),
-                                "created": model.get("created", 0),
-                            }
-                        )
-
-                return {
-                    "success": True,
-                    "models": models,
-                    "total": len(models),
-                    "message": f"Found {len(models)} models",
-                }
-            else:
-                error_text = await response.text()
-                return {
-                    "success": False,
-                    "models": [],
-                    "total": 0,
-                    "message": f"Failed to fetch models: HTTP {response.status} - {error_text}",
-                }
+        return await _fetch_and_parse_models(models_url, headers, base_url)
+    except aiohttp.ClientConnectorError:
+        logger.warning(f"Model discovery: Connection failed to {base_url}")
+        return _model_discovery_response(
+            False,
+            message=f"Connection failed: Could not reach {base_url}. Check the URL and ensure the server is running.",
+        )
     except aiohttp.ClientError as e:
-        return {
-            "success": False,
-            "models": [],
-            "total": 0,
-            "message": f"Connection error: {str(e)}",
-        }
+        logger.warning(f"Model discovery: Client error for {base_url}: {e}")
+        return _model_discovery_response(False, message=f"Connection error: {str(e)}")
+    except TimeoutError:
+        logger.warning(f"Model discovery: Timeout connecting to {base_url}")
+        return _model_discovery_response(
+            False,
+            message=f"Connection timeout: Server at {base_url} did not respond within 10 seconds.",
+        )
     except Exception as e:
-        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}")
-        return {
-            "success": False,
-            "models": [],
-            "total": 0,
-            "message": f"Unexpected error: {str(e)}",
-        }
+        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}", exc_info=True)
+        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+
+
+async def _fetch_and_parse_models(models_url: str, headers: dict, base_url: str) -> dict[str, Any]:
+    """Fetch models from URL and parse the response."""
+    import aiohttp
+
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.get(models_url, headers=headers) as response,
+    ):
+        if response.status != 200:
+            error_text = await response.text() if response.status not in (401, 403, 404) else ""
+            if response.status not in (401, 403, 404):
+                logger.warning(
+                    f"Model discovery: HTTP {response.status} from {models_url}: {error_text[:200]}"
+                )
+            return _model_discovery_response(
+                False, message=_get_http_error_message(response.status, models_url, error_text)
+            )
+
+        # Parse JSON response
+        try:
+            data = await response.json()
+        except Exception as json_err:
+            logger.warning(f"Model discovery: Invalid JSON response from {models_url}: {json_err}")
+            return _model_discovery_response(
+                False, message=f"Invalid JSON response from provider: {str(json_err)}"
+            )
+
+        # Extract raw models from various formats
+        raw_models, error_msg = _extract_raw_models(data)
+        if error_msg:
+            return _model_discovery_response(False, message=error_msg)
+
+        # Parse each model entry
+        model_list = [parsed for m in raw_models if (parsed := _parse_model_entry(m))]
+
+        if not model_list and raw_models:
+            logger.warning(
+                f"Model discovery: Found {len(raw_models)} raw models but none could be parsed"
+            )
+            return _model_discovery_response(
+                False,
+                message=f"Found {len(raw_models)} models but could not parse them. Check provider compatibility.",
+            )
+
+        logger.info(
+            f"Model discovery: Successfully found {len(model_list)} models from {models_url}"
+        )
+        return _model_discovery_response(True, model_list, f"Found {len(model_list)} models")
 
 
 @router.get("/encryption-test")

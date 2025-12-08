@@ -92,6 +92,11 @@
   let maxSpeakers: number | null = null;
   let numSpeakers: number | null = null;
 
+  // Reactive validation for speaker settings - ensure values are >= 1 if set
+  $: if (minSpeakers !== null && minSpeakers < 1) minSpeakers = 1;
+  $: if (maxSpeakers !== null && maxSpeakers < 1) maxSpeakers = 1;
+  $: if (numSpeakers !== null && numSpeakers < 1) numSpeakers = 1;
+
   // Get token from localStorage on component mount
   onMount(async () => {
     token = localStorage.getItem('token') || '';
@@ -2425,38 +2430,6 @@
     font-weight: 500;
     text-align: center;
     color: var(--color-primary);
-  }
-
-  .url-processing-status {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 8px;
-    margin-top: 0.75rem;
-  }
-
-  .processing-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid rgba(59, 130, 246, 0.2);
-    border-top: 2px solid #3b82f6;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  .processing-message {
-    margin: 0;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #3b82f6;
   }
 
   .error-message {

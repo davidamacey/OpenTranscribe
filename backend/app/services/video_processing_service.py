@@ -360,7 +360,8 @@ class VideoProcessingService:
                     self._send_download_progress_sync(user_id, file_id, "processing", 50)
 
                 logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
-                result = subprocess.run(
+                # Using validated ffmpeg path with validated file paths, not user input
+                result = subprocess.run(  # noqa: S603
                     ffmpeg_cmd,
                     capture_output=True,
                     text=True,
@@ -517,8 +518,8 @@ class VideoProcessingService:
                 logger.warning("ffmpeg not found in system PATH")
                 return False
 
-            # Use full path for security
-            result = subprocess.run(
+            # Use full path for security - validated path, not user input
+            result = subprocess.run(  # noqa: S603
                 [ffmpeg_path, "-version"],
                 capture_output=True,
                 text=True,

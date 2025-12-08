@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { user as userStore, authStore, fetchUserInfo } from '$stores/auth';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
+  import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
   import { UserSettingsApi, RecordingSettingsHelper, type RecordingSettings } from '$lib/api/userSettings';
 
@@ -28,8 +29,6 @@
   let email = '';
   let profileChanged = false;
   let profileLoading = false;
-  let profileSuccess = '';
-  let profileError = '';
 
   // Password section
   let currentPassword = '';
@@ -37,8 +36,6 @@
   let confirmPassword = '';
   let passwordChanged = false;
   let passwordLoading = false;
-  let passwordSuccess = '';
-  let passwordError = '';
   let showCurrentPassword = false;
   let showNewPassword = false;
   let showConfirmPassword = false;
@@ -49,13 +46,10 @@
   let autoStopEnabled = true;
   let recordingSettingsChanged = false;
   let recordingSettingsLoading = false;
-  let recordingSettingsSuccess = '';
-  let recordingSettingsError = '';
 
   // Admin Users section
   let users: any[] = [];
   let usersLoading = false;
-  let usersError = '';
 
   // Admin Stats section
   let stats: any = {
@@ -88,12 +82,10 @@
     }
   };
   let statsLoading = false;
-  let statsError = '';
 
   // Admin Task Health section
   let taskHealthData: any = null;
   let taskHealthLoading = false;
-  let taskHealthError = '';
   let showConfirmModal = false;
   let confirmModalTitle = '';
   let confirmModalMessage = '';
@@ -252,8 +244,6 @@
       fullName = $authStore.user.full_name || '';
       email = $authStore.user.email || '';
     }
-    profileError = '';
-    profileSuccess = '';
 
     // Reset password
     currentPassword = '';
@@ -262,30 +252,15 @@
     showCurrentPassword = false;
     showNewPassword = false;
     showConfirmPassword = false;
-    passwordError = '';
-    passwordSuccess = '';
 
     // Reset recording settings
     loadRecordingSettings();
-    recordingSettingsError = '';
-    recordingSettingsSuccess = '';
 
     // Clear all dirty states
     settingsModalStore.clearAllDirty();
   }
 
   function switchSection(sectionId: SettingsSection) {
-    // Clear messages when switching
-    profileError = '';
-    profileSuccess = '';
-    passwordError = '';
-    passwordSuccess = '';
-    recordingSettingsError = '';
-    recordingSettingsSuccess = '';
-    usersError = '';
-    statsError = '';
-    taskHealthError = '';
-
     settingsModalStore.setActiveSection(sectionId);
 
     // Load data for specific sections
@@ -301,8 +276,6 @@
   // Profile functions
   async function updateProfile() {
     profileLoading = true;
-    profileError = '';
-    profileSuccess = '';
 
     try {
       const response = await axiosInstance.put('/users/me', {
@@ -312,14 +285,15 @@
       authStore.setUser(response.data);
       localStorage.setItem('user', JSON.stringify(response.data));
 
-      profileSuccess = 'Profile updated successfully';
+      toastStore.success('Profile updated successfully');
       profileChanged = false;
       settingsModalStore.clearDirty('profile');
 
       await fetchUserInfo();
     } catch (err: any) {
       console.error('Error updating profile:', err);
-      profileError = err.response?.data?.detail || 'Failed to update profile';
+      const message = err.response?.data?.detail || 'Failed to update profile';
+      toastStore.error(message);
     } finally {
       profileLoading = false;
     }
@@ -328,24 +302,22 @@
   // Password functions
   async function updatePassword() {
     passwordLoading = true;
-    passwordError = '';
-    passwordSuccess = '';
 
     // Validation
     if (!currentPassword || !newPassword || !confirmPassword) {
-      passwordError = 'Please fill in all password fields';
+      toastStore.error('Please fill in all password fields');
       passwordLoading = false;
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      passwordError = 'New passwords do not match';
+      toastStore.error('New passwords do not match');
       passwordLoading = false;
       return;
     }
 
     if (newPassword.length < 8) {
-      passwordError = 'Password must be at least 8 characters long';
+      toastStore.error('Password must be at least 8 characters long');
       passwordLoading = false;
       return;
     }
@@ -356,7 +328,7 @@
         current_password: currentPassword
       });
 
-      passwordSuccess = 'Password updated successfully';
+      toastStore.success('Password updated successfully');
 
       // Clear password fields
       currentPassword = '';
@@ -369,7 +341,8 @@
       settingsModalStore.clearDirty('password');
     } catch (err: any) {
       console.error('Error updating password:', err);
-      passwordError = err.response?.data?.detail || 'Failed to update password';
+      const message = err.response?.data?.detail || 'Failed to update password';
+      toastStore.error(message);
     } finally {
       passwordLoading = false;
     }
@@ -386,7 +359,8 @@
       recordingSettingsChanged = false;
     } catch (err: any) {
       console.error('Error loading recording settings:', err);
-      recordingSettingsError = err.response?.data?.detail || 'Failed to load recording settings';
+      const message = err.response?.data?.detail || 'Failed to load recording settings';
+      toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
     }
@@ -399,8 +373,6 @@
 
   async function saveRecordingSettings() {
     recordingSettingsLoading = true;
-    recordingSettingsError = '';
-    recordingSettingsSuccess = '';
 
     // Validate settings
     const settingsToValidate: RecordingSettings = {
@@ -411,19 +383,20 @@
 
     const validationErrors = RecordingSettingsHelper.validateSettings(settingsToValidate);
     if (validationErrors.length > 0) {
-      recordingSettingsError = validationErrors[0];
+      toastStore.error(validationErrors[0]);
       recordingSettingsLoading = false;
       return;
     }
 
     try {
       await UserSettingsApi.updateRecordingSettings(settingsToValidate);
-      recordingSettingsSuccess = 'Recording settings saved successfully';
+      toastStore.success('Recording settings saved successfully');
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
     } catch (err: any) {
       console.error('Error saving recording settings:', err);
-      recordingSettingsError = err.response?.data?.detail || 'Failed to save recording settings';
+      const message = err.response?.data?.detail || 'Failed to save recording settings';
+      toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
     }
@@ -431,18 +404,17 @@
 
   async function resetRecordingSettings() {
     recordingSettingsLoading = true;
-    recordingSettingsError = '';
-    recordingSettingsSuccess = '';
 
     try {
       await UserSettingsApi.resetRecordingSettings();
       await loadRecordingSettings();
-      recordingSettingsSuccess = 'Recording settings reset to defaults';
+      toastStore.success('Recording settings reset to defaults');
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
     } catch (err: any) {
       console.error('Error resetting recording settings:', err);
-      recordingSettingsError = err.response?.data?.detail || 'Failed to reset recording settings';
+      const message = err.response?.data?.detail || 'Failed to reset recording settings';
+      toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
     }
@@ -451,14 +423,14 @@
   // Admin functions
   async function loadAdminUsers() {
     usersLoading = true;
-    usersError = '';
 
     try {
       const response = await axiosInstance.get('/admin/users');
       users = response.data;
     } catch (err: any) {
       console.error('Error loading admin users:', err);
-      usersError = err.response?.data?.detail || 'Failed to load users';
+      const message = err.response?.data?.detail || 'Failed to load users';
+      toastStore.error(message);
     } finally {
       usersLoading = false;
     }
@@ -471,23 +443,24 @@
   async function recoverUserFiles(userId: string) {
     try {
       await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
-      // Optionally show success message
+      toastStore.success('User file recovery initiated');
     } catch (err: any) {
       console.error('Error recovering user files:', err);
-      usersError = err.response?.data?.detail || 'Failed to recover user files';
+      const message = err.response?.data?.detail || 'Failed to recover user files';
+      toastStore.error(message);
     }
   }
 
   async function loadAdminStats() {
     statsLoading = true;
-    statsError = '';
 
     try {
       const response = await axiosInstance.get('/admin/stats');
       stats = response.data;
     } catch (err: any) {
       console.error('Error loading admin stats:', err);
-      statsError = err.response?.data?.detail || 'Failed to load statistics';
+      const message = err.response?.data?.detail || 'Failed to load statistics';
+      toastStore.error(message);
     } finally {
       statsLoading = false;
     }
@@ -499,14 +472,14 @@
 
   async function loadTaskHealth() {
     taskHealthLoading = true;
-    taskHealthError = '';
 
     try {
       const response = await axiosInstance.get('/tasks/system/health');
       taskHealthData = response.data;
     } catch (err: any) {
       console.error('Error loading task health:', err);
-      taskHealthError = err.response?.data?.detail || 'Failed to load task health data';
+      const message = err.response?.data?.detail || 'Failed to load task health data';
+      toastStore.error(message);
     } finally {
       taskHealthLoading = false;
     }
@@ -543,10 +516,12 @@
       async () => {
         try {
           await axiosInstance.post('/tasks/recover-stuck-tasks');
+          toastStore.success('Stuck tasks recovery initiated');
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error recovering stuck tasks:', err);
-          taskHealthError = err.response?.data?.detail || 'Failed to recover stuck tasks';
+          const message = err.response?.data?.detail || 'Failed to recover stuck tasks';
+          toastStore.error(message);
         }
       }
     );
@@ -559,10 +534,12 @@
       async () => {
         try {
           await axiosInstance.post('/tasks/fix-inconsistent-files');
+          toastStore.success('Inconsistent files fix initiated');
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error fixing inconsistent files:', err);
-          taskHealthError = err.response?.data?.detail || 'Failed to fix inconsistent files';
+          const message = err.response?.data?.detail || 'Failed to fix inconsistent files';
+          toastStore.error(message);
         }
       }
     );
@@ -575,10 +552,12 @@
       async () => {
         try {
           await axiosInstance.post('/tasks/system/startup-recovery');
+          toastStore.success('Startup recovery initiated');
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error running startup recovery:', err);
-          taskHealthError = err.response?.data?.detail || 'Failed to run startup recovery';
+          const message = err.response?.data?.detail || 'Failed to run startup recovery';
+          toastStore.error(message);
         }
       }
     );
@@ -591,10 +570,12 @@
       async () => {
         try {
           await axiosInstance.post('/tasks/system/recover-all-user-files');
+          toastStore.success('All user files recovery initiated');
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error recovering all user files:', err);
-          taskHealthError = err.response?.data?.detail || 'Failed to recover all user files';
+          const message = err.response?.data?.detail || 'Failed to recover all user files';
+          toastStore.error(message);
         }
       }
     );
@@ -603,28 +584,30 @@
   async function retryTask(taskId: number) {
     try {
       await axiosInstance.post(`/tasks/system/recover-task/${taskId}`);
+      toastStore.success('Task retry initiated');
       await refreshTaskHealth();
     } catch (err: any) {
       console.error('Error retrying task:', err);
-      taskHealthError = err.response?.data?.detail || 'Failed to retry task';
+      const message = err.response?.data?.detail || 'Failed to retry task';
+      toastStore.error(message);
     }
   }
 
   async function retryFile(fileId: number) {
     try {
       await axiosInstance.post(`/tasks/retry-file/${fileId}`);
+      toastStore.success('File retry initiated');
       await refreshTaskHealth();
     } catch (err: any) {
       console.error('Error retrying file:', err);
-      taskHealthError = err.response?.data?.detail || 'Failed to retry file';
+      const message = err.response?.data?.detail || 'Failed to retry file';
+      toastStore.error(message);
     }
   }
 
   // AI settings change handlers
   function onAISettingsChange() {
-    // Clear any existing messages
-    profileSuccess = '';
-    profileError = '';
+    // Handler for AI settings changes - can be extended for additional logic
   }
 
   // Helper function for formatting time
@@ -697,14 +680,6 @@
               <h3 class="section-title">Profile Settings</h3>
               <p class="section-description">Update your personal information</p>
 
-              {#if profileSuccess}
-                <div class="alert alert-success">{profileSuccess}</div>
-              {/if}
-
-              {#if profileError}
-                <div class="alert alert-error">{profileError}</div>
-              {/if}
-
               <form on:submit|preventDefault={updateProfile} class="settings-form">
                 <div class="form-group">
                   <label for="email">Email</label>
@@ -747,14 +722,6 @@
             <div class="content-section">
               <h3 class="section-title">Change Password</h3>
               <p class="section-description">Update your account password</p>
-
-              {#if passwordSuccess}
-                <div class="alert alert-success">{passwordSuccess}</div>
-              {/if}
-
-              {#if passwordError}
-                <div class="alert alert-error">{passwordError}</div>
-              {/if}
 
               <form on:submit|preventDefault={updatePassword} class="settings-form">
                 <div class="form-group">
@@ -885,14 +852,6 @@
               <h3 class="section-title">Recording Settings</h3>
               <p class="section-description">Configure audio recording preferences</p>
 
-              {#if recordingSettingsSuccess}
-                <div class="alert alert-success">{recordingSettingsSuccess}</div>
-              {/if}
-
-              {#if recordingSettingsError}
-                <div class="alert alert-error">{recordingSettingsError}</div>
-              {/if}
-
               <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
                 <div class="form-group">
                   <label for="maxRecordingDuration">Maximum Recording Duration (minutes)</label>
@@ -993,7 +952,6 @@
               <UserManagementTable
                 {users}
                 loading={usersLoading}
-                error={usersError}
                 onRefresh={refreshAdminUsers}
                 onUserRecovery={recoverUserFiles}
               />
@@ -1005,10 +963,6 @@
             <div class="content-section">
               <h3 class="section-title">System Statistics</h3>
               <p class="section-description">View system-wide metrics and performance</p>
-
-              {#if statsError}
-                <div class="alert alert-error">{statsError}</div>
-              {/if}
 
               <div class="stats-actions">
                 <button
@@ -1192,10 +1146,6 @@
             <div class="content-section">
               <h3 class="section-title">Task Health Monitor</h3>
               <p class="section-description">Monitor and recover stuck tasks and inconsistent files</p>
-
-              {#if taskHealthError}
-                <div class="alert alert-error">{taskHealthError}</div>
-              {/if}
 
               <div class="stats-actions">
                 <button
@@ -1692,37 +1642,6 @@
   .btn-small {
     padding: 0.25rem 0.625rem;
     font-size: 0.75rem;
-  }
-
-  .alert {
-    padding: 0.625rem 0.875rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-    font-size: 0.8125rem;
-  }
-
-  .alert-success {
-    background-color: #d1fae5;
-    color: #065f46;
-    border: 1px solid #6ee7b7;
-  }
-
-  .alert-error {
-    background-color: #fee2e2;
-    color: #991b1b;
-    border: 1px solid #fca5a5;
-  }
-
-  :global([data-theme='dark']) .alert-success {
-    background-color: #064e3b;
-    color: #6ee7b7;
-    border-color: #065f46;
-  }
-
-  :global([data-theme='dark']) .alert-error {
-    background-color: #7f1d1d;
-    color: #fca5a5;
-    border-color: #991b1b;
   }
 
   .stats-actions {

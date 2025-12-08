@@ -14,11 +14,14 @@ Tests are written as synchronous functions accordingly.
 """
 
 import contextlib
+import logging
 import time
 
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+
+logger = logging.getLogger(__name__)
 
 
 class TestExternalOllamaConnections:
@@ -103,9 +106,9 @@ class TestExternalOllamaConnections:
                         "connection",
                     ]
                 )
-        except Exception:
+        except Exception as e:
             # Also acceptable - connection error is expected
-            pass
+            logger.debug(f"Expected connection error during test: {e}")
         finally:
             service.close()
 
@@ -177,9 +180,9 @@ class TestExternalVLLMConnections:
             # Should handle API key properly (even if service is down)
             assert isinstance(success, bool)
             assert isinstance(message, str)
-        except Exception:
+        except Exception as e:
             # Connection error is expected if service isn't running
-            pass
+            logger.debug(f"Expected connection error during test: {e}")
         finally:
             service.close()
 
@@ -347,9 +350,9 @@ class TestAPIKeyValidation:
                         "failed",
                     ]
                 )
-            except Exception:
+            except Exception as e:
                 # Also acceptable - may throw auth exception
-                pass
+                logger.debug(f"Expected auth exception during test: {e}")
             finally:
                 service.close()
 
@@ -380,9 +383,9 @@ class TestAPIKeyValidation:
                 # Most malformed keys should be rejected
                 if not success:
                     assert len(message) > 0
-            except Exception:
+            except Exception as e:
                 # Expected for malformed keys
-                pass
+                logger.debug(f"Expected exception for malformed key: {e}")
             finally:
                 service.close()
 

@@ -384,7 +384,6 @@ def process_youtube_playlist_task(self, url: str, user_id: int) -> YouTubePlayli
                 )
 
                 created_media_files = result.get("media_files", [])
-                skipped_videos = result.get("skipped_videos", [])
                 playlist_info = result.get("playlist_info", {})
                 created_count = result.get("created_count", 0)
                 skipped_count = result.get("skipped_count", 0)
