@@ -13,6 +13,7 @@ The service provides intelligent embedding aggregation that:
 
 import logging
 from datetime import datetime
+from typing import Any
 from typing import Optional
 
 import numpy as np
@@ -23,6 +24,207 @@ from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
 
 logger = logging.getLogger(__name__)
+
+
+def _clear_profile_embedding_from_opensearch(profile_id: int) -> None:
+    """Clear a profile embedding from OpenSearch."""
+    try:
+        from app.services.opensearch_service import remove_profile_embedding
+
+        remove_profile_embedding(profile_id)
+    except Exception as e:
+        logger.warning(f"Could not clear profile {profile_id} embedding from OpenSearch: {e}")
+
+
+def _store_profile_embedding_to_opensearch(
+    profile_id: int,
+    profile_uuid: str,
+    profile_name: str,
+    embedding: list[float],
+    speaker_count: int,
+    user_id: int,
+) -> None:
+    """Store a profile embedding to OpenSearch."""
+    try:
+        from app.services.opensearch_service import store_profile_embedding
+
+        store_profile_embedding(
+            profile_id=profile_id,
+            profile_uuid=profile_uuid,
+            profile_name=profile_name,
+            embedding=embedding,
+            speaker_count=speaker_count,
+            user_id=user_id,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}")
+
+
+def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float]]:
+    """Collect embeddings for all speakers, keyed by speaker ID."""
+    speaker_embeddings = {}
+    for speaker in speakers:
+        embedding = get_speaker_embedding(str(speaker.uuid))
+        if embedding:
+            speaker_embeddings[speaker.id] = embedding
+    return speaker_embeddings
+
+
+def _calculate_average_embedding(embeddings: list[list[float]]) -> list[float]:
+    """Calculate the average of multiple embeddings."""
+    embeddings_array = np.array(embeddings)
+    return np.mean(embeddings_array, axis=0).tolist()
+
+
+def _process_profile_with_no_speakers(
+    profile: SpeakerProfile,
+    profile_id: int,
+) -> bool:
+    """Handle case when profile has no speakers assigned."""
+    profile.embedding_count = 0
+    profile.last_embedding_update = datetime.utcnow()
+    _clear_profile_embedding_from_opensearch(profile_id)
+    return True
+
+
+def _process_profile_with_embeddings(
+    profile: SpeakerProfile,
+    profile_id: int,
+    embeddings: list[list[float]],
+) -> bool:
+    """Process a profile that has valid embeddings."""
+    averaged_embedding = _calculate_average_embedding(embeddings)
+
+    profile.embedding_count = len(embeddings)
+    profile.last_embedding_update = datetime.utcnow()
+
+    _store_profile_embedding_to_opensearch(
+        profile_id=profile_id,
+        profile_uuid=str(profile.uuid),
+        profile_name=profile.name,
+        embedding=averaged_embedding,
+        speaker_count=len(embeddings),
+        user_id=profile.user_id,
+    )
+
+    logger.info(f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings")
+    return True
+
+
+def _check_opensearch_profile_prerequisites(
+    user_id: int,
+) -> tuple[Any, Any, bool]:
+    """
+    Check prerequisites for OpenSearch profile similarity search.
+
+    Returns:
+        Tuple of (opensearch_client, settings, should_continue)
+    """
+    from app.services.opensearch_service import opensearch_client
+    from app.services.opensearch_service import settings
+
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return None, None, False
+
+    if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
+        logger.info("Speakers index does not exist yet, skipping profile similarity search")
+        return None, None, False
+
+    return opensearch_client, settings, True
+
+
+def _check_profiles_exist_in_opensearch(
+    opensearch_client: Any,
+    index_name: str,
+    user_id: int,
+) -> bool:
+    """Check if any profile documents exist for the user in OpenSearch."""
+    profile_check_query = {
+        "size": 1,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"document_type": "profile"}},
+                    {"term": {"user_id": user_id}},
+                ]
+            }
+        },
+    }
+
+    try:
+        profile_check = opensearch_client.search(index=index_name, body=profile_check_query)
+        if profile_check["hits"]["total"]["value"] == 0:
+            logger.info(f"No profile documents found for user {user_id}, skipping KNN search")
+            return False
+    except Exception as e:
+        logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
+
+    return True
+
+
+def _execute_knn_search(
+    opensearch_client: Any,
+    index_name: str,
+    embedding: list[float],
+    user_id: int,
+    threshold: float,
+) -> list[dict]:
+    """Execute KNN search and return matches above threshold."""
+    filters = [
+        {"term": {"document_type": "profile"}},
+        {"term": {"user_id": user_id}},
+    ]
+
+    query = {
+        "size": 25,
+        "query": {
+            "knn": {
+                "embedding": {
+                    "vector": embedding,
+                    "k": 25,
+                    "filter": {"bool": {"filter": filters}},
+                }
+            }
+        },
+    }
+
+    try:
+        response = opensearch_client.search(index=index_name, body=query)
+    except Exception as e:
+        logger.error(f"Error in OpenSearch KNN search: {e}")
+        return []
+
+    return _extract_matches_from_response(response, threshold)
+
+
+def _extract_matches_from_response(response: dict, threshold: float) -> list[dict]:
+    """Extract and filter matches from OpenSearch response."""
+    matches = []
+    for hit in response["hits"]["hits"]:
+        score = hit["_score"]
+        if score < threshold:
+            continue
+
+        source = hit["_source"]
+        profile_id = source.get("profile_id")
+        profile_name = source.get("profile_name")
+
+        if not profile_id or not profile_name:
+            continue
+
+        matches.append(
+            {
+                "profile_id": profile_id,
+                "profile_name": profile_name,
+                "similarity": float(score),
+                "embedding_count": source.get("speaker_count", 1),
+                "last_update": source.get("updated_at"),
+                "opensearch_score": score,
+            }
+        )
+
+    return matches
 
 
 class ProfileEmbeddingService:
@@ -217,6 +419,39 @@ class ProfileEmbeddingService:
             return False
 
     @staticmethod
+    def _group_speakers_by_profile(speakers: list[Speaker]) -> dict[int, list[Speaker]]:
+        """Group speakers by their profile ID."""
+        speakers_by_profile: dict[int, list[Speaker]] = {}
+        for speaker in speakers:
+            if speaker.profile_id not in speakers_by_profile:
+                speakers_by_profile[speaker.profile_id] = []
+            speakers_by_profile[speaker.profile_id].append(speaker)
+        return speakers_by_profile
+
+    @staticmethod
+    def _process_single_profile_in_batch(
+        profile: SpeakerProfile,
+        profile_id: int,
+        speakers: list[Speaker],
+        speaker_embeddings: dict[int, list[float]],
+    ) -> bool:
+        """Process a single profile during batch update."""
+        if not speakers:
+            return _process_profile_with_no_speakers(profile, profile_id)
+
+        embeddings = [
+            speaker_embeddings[speaker.id]
+            for speaker in speakers
+            if speaker.id in speaker_embeddings
+        ]
+
+        if not embeddings:
+            logger.warning(f"No valid embeddings found for profile {profile_id}")
+            return False
+
+        return _process_profile_with_embeddings(profile, profile_id, embeddings)
+
+    @staticmethod
     def batch_update_profile_embeddings(db: Session, profile_ids: list[int]) -> dict[int, bool]:
         """
         Update embeddings for multiple profiles in a batch operation.
@@ -233,120 +468,44 @@ class ProfileEmbeddingService:
         Returns:
             Dictionary mapping profile_id to success status (True/False)
         """
-        results = {}
-
         if not profile_ids:
-            return results
+            return {}
+
+        results: dict[int, bool] = {}
 
         try:
-            # Bulk fetch all profiles
+            # Bulk fetch all profiles and speakers
             profiles = db.query(SpeakerProfile).filter(SpeakerProfile.id.in_(profile_ids)).all()
-
             profile_map = {profile.id: profile for profile in profiles}
 
-            # Bulk fetch all speakers for these profiles
             all_speakers = db.query(Speaker).filter(Speaker.profile_id.in_(profile_ids)).all()
-
-            # Group speakers by profile
-            speakers_by_profile = {}
-            for speaker in all_speakers:
-                if speaker.profile_id not in speakers_by_profile:
-                    speakers_by_profile[speaker.profile_id] = []
-                speakers_by_profile[speaker.profile_id].append(speaker)
-
-            # Collect all speaker IDs for batch embedding fetch
-            [speaker.id for speaker in all_speakers]
-
-            # Batch fetch embeddings from OpenSearch using UUIDs
-            speaker_embeddings = {}
-            for speaker in all_speakers:
-                embedding = get_speaker_embedding(str(speaker.uuid))
-                if embedding:
-                    speaker_embeddings[speaker.id] = embedding  # Store by ID for lookup
+            speakers_by_profile = ProfileEmbeddingService._group_speakers_by_profile(all_speakers)
+            speaker_embeddings = _collect_speaker_embeddings(all_speakers)
 
             # Process each profile
             for profile_id in profile_ids:
+                profile = profile_map.get(profile_id)
+                if not profile:
+                    logger.error(f"Profile {profile_id} not found in batch")
+                    results[profile_id] = False
+                    continue
+
                 try:
-                    profile = profile_map.get(profile_id)
-                    if not profile:
-                        logger.error(f"Profile {profile_id} not found in batch")
-                        results[profile_id] = False
-                        continue
-
                     speakers = speakers_by_profile.get(profile_id, [])
-
-                    if not speakers:
-                        # Clear the profile embedding if no speakers
-                        profile.embedding_count = 0
-                        profile.last_embedding_update = datetime.utcnow()
-
-                        try:
-                            from app.services.opensearch_service import remove_profile_embedding
-
-                            remove_profile_embedding(profile_id)
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not clear profile {profile_id} embedding from OpenSearch: {e}"
-                            )
-
-                        results[profile_id] = True
-                        continue
-
-                    # Collect embeddings for this profile
-                    embeddings = []
-                    for speaker in speakers:
-                        if speaker.id in speaker_embeddings:
-                            embeddings.append(speaker_embeddings[speaker.id])
-
-                    if not embeddings:
-                        logger.warning(f"No valid embeddings found for profile {profile_id}")
-                        results[profile_id] = False
-                        continue
-
-                    # Calculate average embedding
-                    embeddings_array = np.array(embeddings)
-                    averaged_embedding = np.mean(embeddings_array, axis=0)
-
-                    # Update profile metadata
-                    profile.embedding_count = len(embeddings)
-                    profile.last_embedding_update = datetime.utcnow()
-
-                    # Sync to OpenSearch
-                    try:
-                        from app.services.opensearch_service import store_profile_embedding
-
-                        store_profile_embedding(
-                            profile_id=profile_id,
-                            profile_uuid=str(profile.uuid),
-                            profile_name=profile.name,
-                            embedding=averaged_embedding.tolist(),
-                            speaker_count=len(embeddings),
-                            user_id=profile.user_id,
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}"
-                        )
-
-                    results[profile_id] = True
-                    logger.info(
-                        f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings"
+                    results[profile_id] = ProfileEmbeddingService._process_single_profile_in_batch(
+                        profile, profile_id, speakers, speaker_embeddings
                     )
-
                 except Exception as e:
                     logger.error(f"Error updating profile {profile_id} in batch: {e}")
                     results[profile_id] = False
 
-            # Commit all changes at once
             db.commit()
-            logger.info(
-                f"Batch updated {len([r for r in results.values() if r])} profiles successfully"
-            )
+            success_count = sum(1 for r in results.values() if r)
+            logger.info(f"Batch updated {success_count} profiles successfully")
 
         except Exception as e:
             logger.error(f"Error in batch profile embedding update: {e}")
             db.rollback()
-            # Mark all as failed
             for profile_id in profile_ids:
                 results[profile_id] = False
 
@@ -402,121 +561,24 @@ class ProfileEmbeddingService:
             List of matching profiles with similarity scores
         """
         try:
-            # Use OpenSearch's native similarity search for profiles
-
-            # Search for similar profile embeddings using OpenSearch
-            # Note: Profiles are stored in the speakers index with id prefix "profile_"
-            # Since profiles are stored in speakers index, we need to do a direct search
-            from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
-
-            if not opensearch_client:
-                logger.warning("OpenSearch client not initialized")
+            opensearch_client, settings, should_continue = _check_opensearch_profile_prerequisites(
+                user_id
+            )
+            if not should_continue:
                 return []
 
-            # First check if there are any profile documents to avoid KNN query on empty sets
-            # This prevents OpenSearch 2.5.0 "failed to create query: Rewrite first" errors
-            profile_check_query = {
-                "size": 1,
-                "query": {
-                    "bool": {
-                        "filter": [
-                            {"term": {"document_type": "profile"}},
-                            {"term": {"user_id": user_id}},
-                        ]
-                    }
-                },
-            }
-
-            try:
-                # First check if the index exists
-                if not opensearch_client.indices.exists(index=settings.OPENSEARCH_SPEAKER_INDEX):
-                    logger.info(
-                        "Speakers index does not exist yet, skipping profile similarity search"
-                    )
-                    return []
-
-                profile_check = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_check_query
-                )
-                if profile_check["hits"]["total"]["value"] == 0:
-                    logger.info(
-                        f"No profile documents found for user {user_id}, skipping KNN search"
-                    )
-                    return []
-            except Exception as e:
-                logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
-
-            # Build query to search only profile documents (those with document_type="profile")
-            # Use OpenSearch 2.5.0 compatible KNN query structure
-            filters = [
-                {"term": {"document_type": "profile"}},  # CRITICAL: Only profile documents
-                {"term": {"user_id": user_id}},  # User's profiles only
-            ]
-
-            query = {
-                "size": 25,
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": embedding,
-                            "k": 25,
-                            "filter": {"bool": {"filter": filters}},
-                        }
-                    }
-                },
-            }
-
-            try:
-                response = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-                )
-                opensearch_matches = []
-
-                for hit in response["hits"]["hits"]:
-                    score = hit["_score"]
-                    if score >= threshold:
-                        source = hit["_source"]
-                        opensearch_matches.append(
-                            {
-                                "profile_id": source.get("profile_id"),
-                                "profile_name": source.get("profile_name"),
-                                "embedding_count": source.get("speaker_count", 1),
-                                "similarity": score,
-                                "opensearch_score": score,
-                                "last_update": source.get("updated_at"),
-                            }
-                        )
-
-                logger.info(
-                    f"Found {len(opensearch_matches)} profile matches above threshold {threshold}"
-                )
-
-            except Exception as e:
-                logger.error(
-                    f"Error in OpenSearch profile similarity search <calculate_profile_similarity - above threshold>: {e}"
-                )
+            if not _check_profiles_exist_in_opensearch(
+                opensearch_client, settings.OPENSEARCH_SPEAKER_INDEX, user_id
+            ):
                 return []
 
-            # Use OpenSearch data directly - no need for additional database queries
-            matches = []
-            for match in opensearch_matches:
-                profile_id = match.get("profile_id")
-                profile_name = match.get("profile_name")
-
-                if not profile_id or not profile_name:
-                    continue
-
-                matches.append(
-                    {
-                        "profile_id": profile_id,
-                        "profile_name": profile_name,
-                        "similarity": float(match["similarity"]),
-                        "embedding_count": match["embedding_count"],
-                        "last_update": match.get("last_update"),
-                        "opensearch_score": match.get("opensearch_score", match["similarity"]),
-                    }
-                )
+            matches = _execute_knn_search(
+                opensearch_client,
+                settings.OPENSEARCH_SPEAKER_INDEX,
+                embedding,
+                user_id,
+                threshold,
+            )
 
             logger.info(
                 f"OpenSearch found {len(matches)} profile matches above threshold {threshold}"
@@ -524,8 +586,5 @@ class ProfileEmbeddingService:
             return matches
 
         except Exception as e:
-            logger.error(
-                f"Error in OpenSearch profile similarity search <calculate_profile_similarity - overall>: {e}"
-            )
-            # Return empty list - no fallbacks for maximum performance
+            logger.error(f"Error in OpenSearch profile similarity search: {e}")
             return []

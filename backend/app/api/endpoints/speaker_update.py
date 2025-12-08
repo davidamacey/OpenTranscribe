@@ -162,13 +162,178 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
         return False
 
 
+def _get_profile_uuid(db: Session, profile_id: int | None) -> str | None:
+    """Get the UUID string for a profile by its ID."""
+    if not profile_id:
+        return None
+    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+    return str(profile.uuid) if profile else None
+
+
+def _sync_speaker_to_opensearch(speaker: Speaker, db: Session) -> None:
+    """Sync a speaker's display name, profile, and verification status to OpenSearch."""
+    try:
+        from app.services.opensearch_service import update_speaker_display_name
+        from app.services.opensearch_service import update_speaker_profile
+
+        update_speaker_display_name(str(speaker.uuid), speaker.display_name)
+        profile_uuid = _get_profile_uuid(db, speaker.profile_id)
+        update_speaker_profile(
+            speaker_uuid=str(speaker.uuid),
+            profile_id=speaker.profile_id,
+            profile_uuid=profile_uuid,
+            verified=speaker.verified,
+        )
+        logger.info(
+            f"Synced speaker {speaker.id} to OpenSearch: "
+            f"display_name='{speaker.display_name}', profile_id={speaker.profile_id}, verified={speaker.verified}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to sync speaker {speaker.id} to OpenSearch: {e}")
+
+
+def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> None:
+    """Update the profile embedding when a speaker is added to a profile."""
+    try:
+        from app.services.profile_embedding_service import ProfileEmbeddingService
+
+        ProfileEmbeddingService.add_speaker_to_profile_embedding(db, speaker_id, profile_id)
+    except Exception as e:
+        logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
+
+
+def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db: Session) -> None:
+    """Apply automatic labeling for high confidence matches (75%+)."""
+    speaker.display_name = updated_speaker.display_name
+    speaker.verified = True
+
+    if updated_speaker.profile_id:
+        speaker.profile_id = updated_speaker.profile_id
+        _update_profile_embedding(db, speaker.id, updated_speaker.profile_id)
+
+    _sync_speaker_to_opensearch(speaker, db)
+    logger.info(
+        f"Auto-applied {updated_speaker.display_name} to {speaker.name} ({speaker.confidence:.1%} confidence)"
+    )
+
+
+def _process_speaker_match(
+    speaker: Speaker,
+    updated_speaker: Speaker,
+    embedding_array: np.ndarray,
+    db: Session,
+) -> tuple[int, int]:
+    """
+    Process a single speaker for potential matching.
+
+    Returns:
+        Tuple of (auto_applied_increment, suggested_increment)
+    """
+    # Skip already verified speakers with different names
+    if (
+        speaker.verified
+        and speaker.display_name
+        and speaker.display_name != updated_speaker.display_name
+    ):
+        logger.info(
+            f"Skipping speaker {speaker.id} ({speaker.name}): already verified as '{speaker.display_name}'"
+        )
+        return (0, 0)
+
+    # Get embedding for this speaker
+    other_embedding = get_speaker_embedding(str(speaker.uuid))
+    if not other_embedding:
+        logger.warning(f"No embedding found for speaker {speaker.uuid} ({speaker.name})")
+        return (0, 0)
+
+    # Calculate similarity
+    similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
+    logger.info(
+        f"Similarity between {updated_speaker.display_name} and {speaker.name}: {similarity:.3f}"
+    )
+
+    if similarity < 0.5:
+        return (0, 0)
+
+    # Update confidence and suggestion in PostgreSQL
+    speaker.confidence = similarity
+    speaker.suggested_name = updated_speaker.display_name
+    store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
+
+    if similarity >= 0.75:
+        _apply_high_confidence_match(speaker, updated_speaker, db)
+        return (1, 0)
+
+    # Medium confidence (50-75%): just suggest
+    logger.info(
+        f"Suggested {updated_speaker.display_name} for {speaker.name} ({similarity:.1%} confidence)"
+    )
+    return (0, 1)
+
+
+def _sync_suggestion_speakers_to_opensearch(updated_speaker: Speaker, db: Session) -> None:
+    """Batch sync all suggestion updates to OpenSearch."""
+    try:
+        suggestion_speakers = (
+            db.query(Speaker)
+            .filter(
+                Speaker.user_id == updated_speaker.user_id,
+                Speaker.suggested_name == updated_speaker.display_name,
+                Speaker.confidence >= 0.5,
+                Speaker.confidence < 0.75,
+                Speaker.verified == False,  # noqa: E712 - SQLAlchemy requires == for SQL generation
+            )
+            .all()
+        )
+
+        for speaker in suggestion_speakers:
+            _sync_speaker_to_opensearch(speaker, db)
+
+        if suggestion_speakers:
+            logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
+    except Exception as e:
+        logger.error(f"Error during batch OpenSearch sync for suggestions: {e}")
+
+
+def _send_bulk_update_notification(
+    updated_speaker: Speaker, auto_applied_count: int, suggested_count: int
+) -> None:
+    """Send WebSocket notification about bulk speaker updates."""
+    if auto_applied_count == 0:
+        return
+
+    try:
+        import asyncio
+
+        from app.api.websockets import publish_notification
+
+        asyncio.create_task(
+            publish_notification(
+                user_id=updated_speaker.user_id,
+                notification_type="speakers_bulk_updated",
+                data={
+                    "trigger_speaker_id": updated_speaker.id,
+                    "display_name": updated_speaker.display_name,
+                    "auto_applied_count": auto_applied_count,
+                    "suggested_count": suggested_count,
+                    "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
+                },
+            )
+        )
+        logger.info(
+            f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
+
+
 def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
     """
     Apply retroactive voice matching when a speaker is labeled.
 
     This function implements intelligent cross-video speaker recognition:
     1. Compares the newly labeled speaker's voice against all other speakers
-    2. Auto-applies labels for high confidence matches (≥75%)
+    2. Auto-applies labels for high confidence matches (>=75%)
     3. Creates suggestions for medium confidence matches (50-74%)
     4. Automatically assigns matched speakers to the same profile
 
@@ -193,7 +358,6 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
             f"Starting retroactive matching for speaker {updated_speaker.id} labeled as '{updated_speaker.display_name}'"
         )
 
-        # Get the embedding for the updated speaker
         embedding = get_speaker_embedding(str(updated_speaker.uuid))
         if not embedding:
             logger.warning(f"No embedding found for speaker {updated_speaker.uuid}")
@@ -201,7 +365,6 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
 
         embedding_array = np.array(embedding)
 
-        # Find ALL speakers (including cross-video matches) for this user
         all_speakers = (
             db.query(Speaker)
             .filter(
@@ -219,203 +382,20 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
         suggested_count = 0
 
         for speaker in all_speakers:
-            # Skip already verified speakers with different names
-            if (
-                speaker.verified
-                and speaker.display_name
-                and speaker.display_name != updated_speaker.display_name
-            ):
-                logger.info(
-                    f"Skipping speaker {speaker.id} ({speaker.name}): already verified as '{speaker.display_name}'"
-                )
-                continue
-
-            # Get embedding for this speaker
-            other_embedding = get_speaker_embedding(str(speaker.uuid))
-            if not other_embedding:
-                logger.warning(f"No embedding found for speaker {speaker.uuid} ({speaker.name})")
-                continue
-
-            # Calculate similarity
-            similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
-
-            logger.info(
-                f"Similarity between {updated_speaker.display_name} and {speaker.name}: {similarity:.3f}"
+            auto_inc, sugg_inc = _process_speaker_match(
+                speaker, updated_speaker, embedding_array, db
             )
+            auto_applied_count += auto_inc
+            suggested_count += sugg_inc
 
-            # Store the suggestion if similarity is above threshold
-            if similarity >= 0.5:
-                # Update confidence and suggestion in PostgreSQL
-                speaker.confidence = similarity
-                speaker.suggested_name = updated_speaker.display_name
-
-                # Auto-apply for high confidence (75%+)
-                if similarity >= 0.75:
-                    speaker.display_name = updated_speaker.display_name
-                    speaker.verified = True
-
-                    # Also assign to the same profile if the updated speaker has one
-                    if updated_speaker.profile_id:
-                        speaker.profile_id = updated_speaker.profile_id
-
-                        # Update profile embedding
-                        try:
-                            from app.services.profile_embedding_service import (
-                                ProfileEmbeddingService,
-                            )
-
-                            ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                                db, speaker.id, updated_speaker.profile_id
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to update profile embedding for auto-applied speaker: {e}"
-                            )
-
-                    # CRITICAL FIX: Sync the updates to OpenSearch immediately
-                    # This ensures PostgreSQL and OpenSearch stay in sync for all speaker changes
-                    try:
-                        from app.services.opensearch_service import update_speaker_display_name
-                        from app.services.opensearch_service import update_speaker_profile
-
-                        # Update display name in OpenSearch
-                        update_speaker_display_name(str(speaker.uuid), speaker.display_name)
-
-                        # Get profile UUID if assigned
-                        profile_uuid = None
-                        if speaker.profile_id:
-                            profile = (
-                                db.query(SpeakerProfile)
-                                .filter(SpeakerProfile.id == speaker.profile_id)
-                                .first()
-                            )
-                            if profile:
-                                profile_uuid = str(profile.uuid)
-
-                        # Update profile assignment and verification status in OpenSearch
-                        update_speaker_profile(
-                            speaker_uuid=str(speaker.uuid),
-                            profile_id=speaker.profile_id,
-                            profile_uuid=profile_uuid,
-                            verified=speaker.verified,
-                        )
-
-                        logger.info(
-                            f"Synced auto-applied speaker {speaker.id} to OpenSearch: "
-                            f"display_name='{speaker.display_name}', profile_id={speaker.profile_id}, verified={speaker.verified}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to sync auto-applied speaker {speaker.id} to OpenSearch: {e}"
-                        )
-
-                    auto_applied_count += 1
-                    logger.info(
-                        f"Auto-applied {updated_speaker.display_name} to {speaker.name} ({similarity:.1%} confidence)"
-                    )
-                else:
-                    # Just suggest for medium confidence (50-75%)
-                    suggested_count += 1
-                    logger.info(
-                        f"Suggested {updated_speaker.display_name} for {speaker.name} ({similarity:.1%} confidence)"
-                    )
-
-                # Store the match in the database
-                store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
-
-        # Commit database changes first
         db.commit()
-
-        # ADDITIONAL FIX: Batch sync all suggestion updates to OpenSearch
-        # This ensures suggestions (confidence + suggested_name) are also synced
-        try:
-            from app.services.opensearch_service import update_speaker_display_name
-            from app.services.opensearch_service import update_speaker_profile
-
-            # Get all speakers that received suggestions in this round
-            suggestion_speakers = (
-                db.query(Speaker)
-                .filter(
-                    Speaker.user_id == updated_speaker.user_id,
-                    Speaker.suggested_name == updated_speaker.display_name,
-                    Speaker.confidence >= 0.5,
-                    Speaker.confidence
-                    < 0.75,  # Only medium confidence (high confidence already synced above)
-                    not Speaker.verified,  # Suggestions are for unverified speakers
-                )
-                .all()
-            )
-
-            for suggestion_speaker in suggestion_speakers:
-                try:
-                    # Sync confidence and suggested_name updates to OpenSearch for suggestions
-                    # Note: These speakers keep their original display_name=None but get updated confidence/suggestion
-                    update_speaker_display_name(
-                        str(suggestion_speaker.uuid), suggestion_speaker.display_name
-                    )
-
-                    # Get profile UUID if assigned
-                    profile_uuid = None
-                    if suggestion_speaker.profile_id:
-                        profile = (
-                            db.query(SpeakerProfile)
-                            .filter(SpeakerProfile.id == suggestion_speaker.profile_id)
-                            .first()
-                        )
-                        if profile:
-                            profile_uuid = str(profile.uuid)
-
-                    update_speaker_profile(
-                        speaker_uuid=str(suggestion_speaker.uuid),
-                        profile_id=suggestion_speaker.profile_id,
-                        profile_uuid=profile_uuid,
-                        verified=suggestion_speaker.verified,
-                    )
-                    logger.debug(
-                        f"Synced suggestion updates for speaker {suggestion_speaker.uuid} to OpenSearch"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to sync suggestion speaker {suggestion_speaker.uuid} to OpenSearch: {e}"
-                    )
-
-            if suggestion_speakers:
-                logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
-
-        except Exception as e:
-            logger.error(f"Error during batch OpenSearch sync for suggestions: {e}")
+        _sync_suggestion_speakers_to_opensearch(updated_speaker, db)
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"
         )
 
-        # Send WebSocket notification about bulk speaker updates
-        if auto_applied_count > 0:
-            try:
-                import asyncio
-
-                from app.api.websockets import publish_notification
-
-                asyncio.create_task(
-                    publish_notification(
-                        user_id=updated_speaker.user_id,
-                        notification_type="speakers_bulk_updated",
-                        data={
-                            "trigger_speaker_id": updated_speaker.id,
-                            "display_name": updated_speaker.display_name,
-                            "auto_applied_count": auto_applied_count,
-                            "suggested_count": suggested_count,
-                            "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
-                        },
-                    )
-                )
-                logger.info(
-                    f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to send WebSocket notification for bulk speaker update: {e}"
-                )
+        _send_bulk_update_notification(updated_speaker, auto_applied_count, suggested_count)
 
     except Exception as e:
         logger.error(f"Error in retroactive matching: {e}")

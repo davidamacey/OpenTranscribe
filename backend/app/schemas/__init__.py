@@ -17,9 +17,6 @@ from .llm_settings import UserLLMSettings
 from .llm_settings import UserLLMSettingsCreate
 from .llm_settings import UserLLMSettingsPublic
 from .llm_settings import UserLLMSettingsUpdate
-from .transcription_settings import TranscriptionSettings
-from .transcription_settings import TranscriptionSettingsUpdate
-from .transcription_settings import TranscriptionSystemDefaults
 from .media import Comment
 from .media import CommentCreate
 from .media import CommentUpdate
@@ -52,6 +49,9 @@ from .summary import SummaryResponse
 from .summary import SummarySearchHit
 from .summary import SummarySearchResponse
 from .summary import SummaryTaskStatus
+from .transcription_settings import TranscriptionSettings
+from .transcription_settings import TranscriptionSettingsUpdate
+from .transcription_settings import TranscriptionSystemDefaults
 from .user import User as UserSchema
 from .user import UserCreate
 from .user import UserUpdate

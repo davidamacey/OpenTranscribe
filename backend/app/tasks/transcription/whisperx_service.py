@@ -61,6 +61,88 @@ class WhisperXService:
                 os.environ[key] = value
                 logger.debug(f"Set environment variable: {key}={value}")
 
+    def _log_model_loading(self) -> None:
+        """Log model loading with device-specific messaging."""
+        detected_device = self.hardware_config.device
+        if detected_device == "mps" and self.device == "cpu":
+            logger.info(
+                f"Loading WhisperX model: {self.model_name} on {self.device} "
+                f"(Apple Silicon detected, using CPU for WhisperX compatibility)"
+            )
+        else:
+            logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
+
+    def _load_and_validate_audio(self, audio_file_path: str):
+        """
+        Load audio file and validate it has content.
+
+        Args:
+            audio_file_path: Path to the audio file
+
+        Returns:
+            Loaded audio data as numpy array
+
+        Raises:
+            ValueError: If audio cannot be loaded or is invalid
+        """
+        import whisperx
+
+        logger.info(f"Transcribing audio file: {audio_file_path}")
+        try:
+            audio = whisperx.load_audio(audio_file_path)
+            self._validate_audio_content(audio)
+            return audio
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load audio from {audio_file_path}: {str(e)}")
+            self._raise_audio_load_error(e)
+
+    def _validate_audio_content(self, audio) -> None:
+        """Validate that audio data has meaningful content."""
+        import numpy as np
+
+        if audio is None or len(audio) == 0:
+            raise ValueError("Audio file appears to be empty or corrupted")
+
+        if isinstance(audio, np.ndarray):
+            # Assume 16kHz sample rate (WhisperX default)
+            duration = len(audio) / 16000
+            if duration < 0.1:  # Less than 100ms
+                raise ValueError("Audio file is too short to contain meaningful content")
+
+    def _raise_audio_load_error(self, original_error: Exception) -> None:
+        """Raise appropriate error message for audio loading failures."""
+        error_msg = str(original_error)
+        if "No module named 'librosa'" in error_msg:
+            # Don't expose internal dependency issues to users
+            raise ValueError(
+                "Audio file could not be processed. The file may be corrupted or in an unsupported format."
+            ) from original_error
+        raise ValueError(
+            f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {error_msg}"
+        ) from original_error
+
+    def _run_transcription(self, model, audio, audio_file_path: str) -> dict[str, Any]:
+        """Run transcription on loaded audio and validate results."""
+        try:
+            transcription_result = model.transcribe(
+                audio,
+                batch_size=self.batch_size,
+                task="translate",  # Always translate to English
+            )
+
+            if not transcription_result or "segments" not in transcription_result:
+                raise ValueError("Transcription failed to produce valid output")
+
+            return transcription_result
+
+        except Exception as e:
+            logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
+            raise ValueError(
+                f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}"
+            ) from e
+
     def transcribe_audio(self, audio_file_path: str) -> dict[str, Any]:
         """
         Transcribe audio using WhisperX.
@@ -79,14 +161,7 @@ class WhisperXService:
             ) from e
 
         # Load model with hardware-specific configuration
-        detected_device = self.hardware_config.device
-        if detected_device == "mps" and self.device == "cpu":
-            logger.info(
-                f"Loading WhisperX model: {self.model_name} on {self.device} "
-                f"(Apple Silicon detected, using CPU for WhisperX compatibility)"
-            )
-        else:
-            logger.info(f"Loading WhisperX model: {self.model_name} on {self.device}")
+        self._log_model_loading()
 
         load_options = {
             "whisper_arch": self.model_name,
@@ -102,52 +177,11 @@ class WhisperXService:
 
         model = whisperx.load_model(**load_options)
 
-        # Load and transcribe audio
-        logger.info(f"Transcribing audio file: {audio_file_path}")
-        try:
-            audio = whisperx.load_audio(audio_file_path)
+        # Load and validate audio
+        audio = self._load_and_validate_audio(audio_file_path)
 
-            # Check if audio was loaded successfully and has content
-            if audio is None or len(audio) == 0:
-                raise ValueError("Audio file appears to be empty or corrupted")
-
-            # Check for audio duration (very short files might be corrupted)
-            # Use simple numpy-based duration calculation (no librosa needed)
-            import numpy as np
-
-            if isinstance(audio, np.ndarray):
-                # Assume 16kHz sample rate (WhisperX default)
-                duration = len(audio) / 16000
-                if duration < 0.1:  # Less than 100ms
-                    raise ValueError("Audio file is too short to contain meaningful content")
-
-        except Exception as e:
-            logger.error(f"Failed to load audio from {audio_file_path}: {str(e)}")
-            if "No module named 'librosa'" in str(e):
-                # Don't expose internal dependency issues to users
-                raise ValueError(
-                    "Audio file could not be processed. The file may be corrupted or in an unsupported format."
-                ) from e
-            raise ValueError(
-                f"Unable to load audio content. The file may be corrupted, in an unsupported format, or contain no audio data: {str(e)}"
-            ) from e
-
-        try:
-            transcription_result = model.transcribe(
-                audio,
-                batch_size=self.batch_size,
-                task="translate",  # Always translate to English
-            )
-
-            # Validate transcription result
-            if not transcription_result or "segments" not in transcription_result:
-                raise ValueError("Transcription failed to produce valid output")
-
-        except Exception as e:
-            logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
-            raise ValueError(
-                f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}"
-            ) from e
+        # Run transcription
+        transcription_result = self._run_transcription(model, audio, audio_file_path)
 
         logger.info(
             f"Initial transcription completed with {len(transcription_result['segments'])} segments"

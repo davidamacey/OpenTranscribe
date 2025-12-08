@@ -21,6 +21,169 @@ from app.services.subtitle_service import SubtitleService
 logger = logging.getLogger(__name__)
 
 
+def _parse_range_header(range_header: str, total_length: int | None) -> tuple[int, int | None]:
+    """
+    Parse HTTP Range header and return start and end bytes.
+
+    Args:
+        range_header: The Range header value (e.g., "bytes=0-1023")
+        total_length: Total file size in bytes, or None if unknown
+
+    Returns:
+        Tuple of (start_byte, end_byte) where end_byte may be None
+    """
+    if not range_header or not range_header.startswith("bytes="):
+        return 0, total_length - 1 if total_length else None
+
+    try:
+        range_value = range_header.replace("bytes=", "")
+        parts = range_value.split("-")
+
+        # Format: bytes=start-end
+        if parts[0] and parts[1]:
+            start_byte = int(parts[0])
+            end_byte = min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
+            return start_byte, end_byte
+
+        # Format: bytes=start-
+        if parts[0]:
+            start_byte = int(parts[0])
+            end_byte = total_length - 1 if total_length else None
+            return start_byte, end_byte
+
+        # Format: bytes=-end (last N bytes)
+        if parts[1]:
+            requested_length = int(parts[1])
+            if total_length:
+                start_byte = max(0, total_length - requested_length)
+                return start_byte, total_length - 1
+            return 0, None
+
+    except Exception as e:
+        logger.error(f"Error parsing range header '{range_header}': {e}")
+
+    # Default fallback
+    return 0, total_length - 1 if total_length else None
+
+
+def _get_video_codecs(output_format: str) -> tuple[str, str, str]:
+    """
+    Get video and subtitle codecs for the given output format.
+
+    Args:
+        output_format: Output video format (mp4, mkv, etc.)
+
+    Returns:
+        Tuple of (video_codec, subtitle_codec, normalized_format)
+    """
+    format_lower = output_format.lower()
+
+    if format_lower == "mp4":
+        return "copy", "mov_text", "mp4"
+    if format_lower == "mkv":
+        return "copy", "srt", "mkv"
+
+    # Default to mp4
+    return "copy", "mov_text", "mp4"
+
+
+def _validate_ffmpeg_paths(original_video_path, subtitle_path) -> str:
+    """
+    Validate paths and return ffmpeg executable path.
+
+    Args:
+        original_video_path: Path to the original video file
+        subtitle_path: Path to the subtitle file
+
+    Returns:
+        Full path to ffmpeg executable
+
+    Raises:
+        Exception: If ffmpeg not found or paths are invalid
+    """
+    import shutil
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise Exception("ffmpeg not found in system PATH")
+
+    original_path_obj = Path(original_video_path)
+    if not original_path_obj.exists():
+        raise Exception(f"Input video file not found: {original_video_path}")
+    if not subtitle_path.exists():
+        raise Exception(f"Subtitle file not found: {subtitle_path}")
+
+    return ffmpeg_path
+
+
+def _build_ffmpeg_command(
+    ffmpeg_path: str,
+    video_path: str,
+    subtitle_path: str,
+    output_path: str,
+    video_codec: str,
+    subtitle_codec: str,
+) -> list[str]:
+    """Build the ffmpeg command for embedding subtitles."""
+    return [
+        ffmpeg_path,
+        "-i",
+        str(video_path),
+        "-i",
+        str(subtitle_path),
+        "-map",
+        "0:v",
+        "-map",
+        "0:a",
+        "-map",
+        "1:0",
+        "-c:v",
+        video_codec,
+        "-c:a",
+        "copy",
+        "-c:s",
+        subtitle_codec,
+        "-disposition:s:0",
+        "default",
+        "-metadata:s:s:0",
+        "language=eng",
+        "-metadata:s:s:0",
+        "title=English (Auto-generated)",
+        "-y",
+        str(output_path),
+    ]
+
+
+def _run_ffmpeg(ffmpeg_cmd: list[str], file_id: int) -> None:
+    """
+    Run ffmpeg command and handle errors.
+
+    Args:
+        ffmpeg_cmd: The ffmpeg command to run
+        file_id: Media file ID for logging
+
+    Raises:
+        Exception: If ffmpeg fails or times out
+    """
+    logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
+
+    result = subprocess.run(  # noqa: S603
+        ffmpeg_cmd,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        logger.error(f"ffmpeg failed with return code {result.returncode}")
+        logger.error(f"ffmpeg stderr: {result.stderr}")
+        logger.error(f"ffmpeg stdout: {result.stdout}")
+        raise Exception(f"Video processing failed: {result.stderr}")
+
+    logger.info(f"ffmpeg completed successfully for file {file_id}")
+
+
 class VideoProcessingService:
     """Service for processing video files, including subtitle embedding."""
 
@@ -124,106 +287,152 @@ class VideoProcessingService:
             logger.error(f"Error getting cached video stream: {e}")
             raise
 
+    def _get_object_size(self, object_name: str) -> int | None:
+        """Get the size of a cached object, or None if unavailable."""
+        try:
+            stats = self.minio_service.stat_object(self.cache_bucket, object_name)
+            logger.info(f"Cached file size for {object_name}: {stats.size} bytes")
+            return stats.size
+        except Exception as e:
+            logger.error(f"Error getting cached object stats: {e}")
+            return None
+
+    def _create_chunk_generator(self, response, max_bytes: int | None):
+        """Create a generator that yields chunks from the MinIO response."""
+        chunk_size = VIDEO_CHUNK_SIZE
+
+        def generate_chunks():
+            try:
+                bytes_read = 0
+                while True:
+                    # Adjust final chunk size if we're at the end of requested range
+                    if max_bytes is not None and bytes_read + chunk_size > max_bytes:
+                        final_chunk_size = max_bytes - bytes_read
+                        if final_chunk_size <= 0:
+                            break
+                        chunk = response.read(final_chunk_size)
+                    else:
+                        chunk = response.read(chunk_size)
+
+                    if not chunk:
+                        break
+
+                    bytes_read += len(chunk)
+                    yield chunk
+            finally:
+                try:
+                    response.close()
+                    response.release_conn()
+                except Exception as e:
+                    logger.error(f"Error closing MinIO response: {e}")
+
+        return generate_chunks()
+
     def _get_cache_file_stream(self, object_name: str, range_header: str = None):
         """Get a file stream from the cache bucket."""
-
-        # Default values
-        start_byte = 0
-        end_byte = None
-        total_length = None
-
         try:
-            # Get object stats first to know the total size
-            try:
-                stats = self.minio_service.stat_object(self.cache_bucket, object_name)
-                total_length = stats.size
-                logger.info(f"Cached file size for {object_name}: {total_length} bytes")
-            except Exception as e:
-                logger.error(f"Error getting cached object stats: {e}")
+            total_length = self._get_object_size(object_name)
+            start_byte, end_byte = _parse_range_header(range_header, total_length)
 
+            # Build MinIO request kwargs
             kwargs = {"bucket_name": self.cache_bucket, "object_name": object_name}
-
-            # Parse range header if present
             if range_header and range_header.startswith("bytes="):
-                try:
-                    # Parse range from format "bytes=start-end"
-                    range_value = range_header.replace("bytes=", "")
-                    parts = range_value.split("-")
+                kwargs["offset"] = start_byte
+                if end_byte is not None:
+                    kwargs["length"] = end_byte - start_byte + 1
 
-                    # Handle different range request formats
-                    if parts[0] and parts[1]:  # Format: bytes=start-end
-                        start_byte = int(parts[0])
-                        end_byte = (
-                            min(int(parts[1]), total_length - 1) if total_length else int(parts[1])
-                        )
-                    elif parts[0]:  # Format: bytes=start-
-                        start_byte = int(parts[0])
-                        end_byte = total_length - 1 if total_length else None
-                    elif parts[1]:  # Format: bytes=-end (last N bytes)
-                        requested_length = int(parts[1])
-                        if total_length:
-                            start_byte = max(0, total_length - requested_length)
-                            end_byte = total_length - 1
+                logger.info(
+                    f"Streaming cached video with range: start={start_byte}, "
+                    f"end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
+                )
 
-                    # Add offset and length parameters for MinIO
-                    kwargs["offset"] = start_byte
-                    if end_byte is not None:
-                        kwargs["length"] = (
-                            end_byte - start_byte + 1
-                        )  # +1 because range is inclusive
-
-                    logger.info(
-                        f"Streaming cached video with range: start={start_byte}, end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
-                    )
-                except Exception as e:
-                    logger.error(f"Error parsing range header '{range_header}': {e}")
-                    # Continue without range if parsing fails
-                    start_byte = 0
-                    end_byte = total_length - 1 if total_length else None
-            elif total_length:  # No range but we know the size
-                end_byte = total_length - 1
-
-            # Get the file from MinIO cache bucket
             response = self.minio_service.client.get_object(**kwargs)
+            chunks = self._create_chunk_generator(response, kwargs.get("length"))
 
-            # Choose optimal chunk size
-            chunk_size = VIDEO_CHUNK_SIZE
-
-            # Function to yield chunks with proper resource cleanup
-            def generate_chunks():
-                try:
-                    bytes_read = 0
-                    max_bytes = kwargs.get("length")
-
-                    while True:
-                        # Adjust final chunk size if we're at the end of requested range
-                        if max_bytes is not None and bytes_read + chunk_size > max_bytes:
-                            final_chunk_size = max_bytes - bytes_read
-                            if final_chunk_size <= 0:
-                                break
-                            chunk = response.read(final_chunk_size)
-                        else:
-                            chunk = response.read(chunk_size)
-
-                        if not chunk:
-                            break
-
-                        bytes_read += len(chunk)
-                        yield chunk
-                finally:
-                    # Ensure resources are properly cleaned up
-                    try:
-                        response.close()
-                        response.release_conn()
-                    except Exception as e:
-                        logger.error(f"Error closing MinIO response: {e}")
-
-            # Return the generator along with range information
-            return generate_chunks(), start_byte, end_byte, total_length
+            return chunks, start_byte, end_byte, total_length
 
         except Exception as e:
             logger.error(f"Error setting up cached file stream for {object_name}: {e}")
             raise Exception(f"Error streaming cached file: {e}") from e
+
+    def _notify_progress(
+        self,
+        user_id: int | None,
+        file_id: int,
+        status: str,
+        progress: int = None,
+        error: str = None,
+    ):
+        """Send progress notification if user_id is provided."""
+        if user_id:
+            self._send_download_progress_sync(user_id, file_id, status, progress, error)
+
+    def _generate_subtitle_file(
+        self, db: Session, file_id: int, subtitle_path: Path, include_speakers: bool
+    ) -> None:
+        """Generate subtitle file from transcript segments."""
+        subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
+        with open(subtitle_path, "w", encoding="utf-8") as f:
+            f.write(subtitle_content)
+
+    def _upload_to_cache(self, output_path: Path, cache_key: str, output_format: str) -> None:
+        """Upload processed video to cache bucket."""
+        logger.info(f"Uploading processed video to cache bucket: {self.cache_bucket}/{cache_key}")
+        self.minio_service.upload_file(
+            file_path=str(output_path),
+            bucket_name=self.cache_bucket,
+            object_name=cache_key,
+            content_type=f"video/{output_format}",
+        )
+        logger.info("Upload complete, video processing finished")
+
+    def _process_video_in_temp_dir(
+        self,
+        db: Session,
+        file_id: int,
+        original_video_path,
+        user_id: int | None,
+        include_speakers: bool,
+        output_format: str,
+        cache_key: str,
+    ) -> str:
+        """Process video with subtitles in temporary directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            subtitle_path = temp_dir_path / "subtitles.srt"
+
+            # Generate subtitle file
+            self._notify_progress(user_id, file_id, "processing", 20)
+            self._generate_subtitle_file(db, file_id, subtitle_path, include_speakers)
+            self._notify_progress(user_id, file_id, "processing", 30)
+
+            # Get codecs and normalize format
+            video_codec, subtitle_codec, normalized_format = _get_video_codecs(output_format)
+            output_path = temp_dir_path / f"output.{normalized_format}"
+
+            # Validate paths and get ffmpeg
+            ffmpeg_path = _validate_ffmpeg_paths(original_video_path, subtitle_path)
+
+            # Build and run ffmpeg command
+            ffmpeg_cmd = _build_ffmpeg_command(
+                ffmpeg_path,
+                original_video_path,
+                subtitle_path,
+                output_path,
+                video_codec,
+                subtitle_codec,
+            )
+
+            self._notify_progress(user_id, file_id, "processing", 50)
+            _run_ffmpeg(ffmpeg_cmd, file_id)
+            logger.info(f"Output file size: {os.path.getsize(output_path)} bytes")
+
+            # Upload to cache
+            self._notify_progress(user_id, file_id, "processing", 80)
+            self._upload_to_cache(output_path, cache_key, normalized_format)
+            self._notify_progress(user_id, file_id, "completed", 100)
+
+            return cache_key
 
     def embed_subtitles_in_video(
         self,
@@ -247,7 +456,6 @@ class VideoProcessingService:
         Returns:
             Path to the processed video file with embedded subtitles
         """
-        # Get the MediaFile to access original filename
         from app.models.media import MediaFile
 
         db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -256,169 +464,32 @@ class VideoProcessingService:
 
         cache_key = self.generate_cache_key(file_id, db_file.filename, include_speakers)
 
-        # Check if cached version exists
+        # Return cached version if available
         if self.is_video_cached(cache_key):
             logger.info(f"Using cached video for file {file_id}")
-            if user_id:
-                self._send_download_progress_sync(user_id, file_id, "completed")
+            self._notify_progress(user_id, file_id, "completed")
             return cache_key
 
-        # Send initial processing status
-        if user_id:
-            self._send_download_progress_sync(user_id, file_id, "processing", 10)
+        self._notify_progress(user_id, file_id, "processing", 10)
 
-        # Create temporary files
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_dir_path = Path(temp_dir)
-
-            # Generate subtitle file
-            subtitle_path = temp_dir_path / "subtitles.srt"
-            try:
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "processing", 20)
-
-                subtitle_content = SubtitleService.generate_srt_content(
-                    db, file_id, include_speakers
-                )
-
-                with open(subtitle_path, "w", encoding="utf-8") as f:
-                    f.write(subtitle_content)
-
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "processing", 30)
-
-            except Exception as e:
-                logger.error(f"Failed to generate subtitles for file {file_id}: {e}")
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "error", error=str(e))
-                raise
-
-            # Output video path
-            output_path = temp_dir_path / f"output.{output_format}"
-
-            # Determine video codec and subtitle codec based on format
-            # Use 'copy' to avoid re-encoding the video stream (preserves quality and reduces processing time)
-            if output_format.lower() == "mp4":
-                video_codec = "copy"  # Don't re-encode video
-                subtitle_codec = "mov_text"
-            elif output_format.lower() == "mkv":
-                video_codec = "copy"  # Don't re-encode video
-                subtitle_codec = "srt"
-            else:
-                # Default to mp4
-                video_codec = "copy"  # Don't re-encode video
-                subtitle_codec = "mov_text"
-                output_format = "mp4"
-                output_path = temp_dir_path / f"output.{output_format}"
-
-            # Get full path to ffmpeg for security
-            import shutil
-
-            ffmpeg_path = shutil.which("ffmpeg")
-            if not ffmpeg_path:
-                raise Exception("ffmpeg not found in system PATH")
-
-            # Validate paths to prevent injection attacks
-            original_path_obj = Path(original_video_path)
-            if not original_path_obj.exists():
-                raise Exception(f"Input video file not found: {original_video_path}")
-            if not subtitle_path.exists():
-                raise Exception(f"Subtitle file not found: {subtitle_path}")
-
-            # Build ffmpeg command with proper subtitle embedding
-            ffmpeg_cmd = [
-                ffmpeg_path,  # Use full path instead of "ffmpeg"
-                "-i",
-                str(original_video_path),  # Input video (validated path)
-                "-i",
-                str(subtitle_path),  # Input subtitles (validated path)
-                "-map",
-                "0:v",  # Map video from first input
-                "-map",
-                "0:a",  # Map audio from first input
-                "-map",
-                "1:0",  # Map subtitles from second input (first stream)
-                "-c:v",
-                video_codec,  # Video codec
-                "-c:a",
-                "copy",  # Copy audio without re-encoding
-                "-c:s",
-                subtitle_codec,  # Subtitle codec
-                "-disposition:s:0",
-                "default",  # Make subtitles default
-                "-metadata:s:s:0",
-                "language=eng",  # Set subtitle language
-                "-metadata:s:s:0",
-                "title=English (Auto-generated)",  # Set subtitle title
-                "-y",  # Overwrite output file
-                str(output_path),
-            ]
-
-            try:
-                # Run ffmpeg command
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "processing", 50)
-
-                logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
-                # Using validated ffmpeg path with validated file paths, not user input
-                result = subprocess.run(  # noqa: S603
-                    ffmpeg_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,  # 5 minute timeout
-                    check=False,  # Don't raise exception on non-zero return code
-                )
-
-                if result.returncode != 0:
-                    logger.error(f"ffmpeg failed with return code {result.returncode}")
-                    logger.error(f"ffmpeg stderr: {result.stderr}")
-                    logger.error(f"ffmpeg stdout: {result.stdout}")
-                    if user_id:
-                        self._send_download_progress_sync(
-                            user_id,
-                            file_id,
-                            "error",
-                            error=f"Video processing failed: {result.stderr}",
-                        )
-                    raise Exception(f"Video processing failed: {result.stderr}")
-
-                logger.info(f"ffmpeg completed successfully for file {file_id}")
-                logger.info(f"Output file size: {os.path.getsize(output_path)} bytes")
-
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "processing", 80)
-
-                # Upload processed video to cache
-                logger.info(
-                    f"Uploading processed video to cache bucket: {self.cache_bucket}/{cache_key}"
-                )
-                self.minio_service.upload_file(
-                    file_path=str(output_path),
-                    bucket_name=self.cache_bucket,
-                    object_name=cache_key,
-                    content_type=f"video/{output_format}",
-                )
-
-                logger.info("Upload complete, video processing finished")
-
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "completed", 100)
-
-                # Return the cache key instead of presigned URL - we'll stream through backend
-                return cache_key
-
-            except subprocess.TimeoutExpired as e:
-                logger.error(f"ffmpeg timeout for file {file_id}")
-                if user_id:
-                    self._send_download_progress_sync(
-                        user_id, file_id, "error", error="Video processing timeout"
-                    )
-                raise Exception("Video processing timeout") from e
-            except Exception as e:
-                logger.error(f"Video processing error for file {file_id}: {e}")
-                if user_id:
-                    self._send_download_progress_sync(user_id, file_id, "error", error=str(e))
-                raise
+        try:
+            return self._process_video_in_temp_dir(
+                db,
+                file_id,
+                original_video_path,
+                user_id,
+                include_speakers,
+                output_format,
+                cache_key,
+            )
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"ffmpeg timeout for file {file_id}")
+            self._notify_progress(user_id, file_id, "error", error="Video processing timeout")
+            raise Exception("Video processing timeout") from e
+        except Exception as e:
+            logger.error(f"Video processing error for file {file_id}: {e}")
+            self._notify_progress(user_id, file_id, "error", error=str(e))
+            raise
 
     def process_video_with_subtitles(
         self,

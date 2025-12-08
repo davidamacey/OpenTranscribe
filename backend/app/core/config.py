@@ -100,7 +100,9 @@ class Settings(BaseSettings):
     MIN_SPEAKERS: int = int(os.getenv("MIN_SPEAKERS", "1"))
     MAX_SPEAKERS: int = int(os.getenv("MAX_SPEAKERS", "20"))
     # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
-    NUM_SPEAKERS: Optional[int] = int(os.getenv("NUM_SPEAKERS")) if os.getenv("NUM_SPEAKERS") else None
+    NUM_SPEAKERS: Optional[int] = (
+        int(os.getenv("NUM_SPEAKERS")) if os.getenv("NUM_SPEAKERS") else None
+    )
 
     # LLM Configuration - Users configure through web UI, stored in database
     # These are system fallbacks for quick access when no user settings exist

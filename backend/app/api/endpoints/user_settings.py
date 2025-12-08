@@ -387,6 +387,110 @@ def get_all_user_settings(
 # =============================================================================
 
 
+def _validate_speaker_range(
+    update_data: dict[str, Any],
+    current_settings: TranscriptionSettings | None,
+) -> None:
+    """
+    Validate that min_speakers <= max_speakers.
+
+    Args:
+        update_data: Dictionary of settings being updated
+        current_settings: Current TranscriptionSettings (None if both min and max in update_data)
+
+    Raises:
+        HTTPException: If min_speakers > max_speakers
+    """
+    min_val = update_data.get("min_speakers")
+    max_val = update_data.get("max_speakers")
+
+    # Both provided in update
+    if min_val is not None and max_val is not None:
+        if min_val > max_val:
+            raise HTTPException(
+                status_code=400,
+                detail="min_speakers cannot be greater than max_speakers",
+            )
+        return
+
+    # Only min_speakers provided - check against current max
+    if min_val is not None and current_settings is not None:
+        if min_val > current_settings.max_speakers:
+            raise HTTPException(
+                status_code=400,
+                detail=f"min_speakers ({min_val}) cannot be greater than current max_speakers ({current_settings.max_speakers})",
+            )
+        return
+
+    # Only max_speakers provided - check against current min
+    if (
+        max_val is not None
+        and current_settings is not None
+        and max_val < current_settings.min_speakers
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_speakers ({max_val}) cannot be less than current min_speakers ({current_settings.min_speakers})",
+        )
+
+
+def _validate_speaker_prompt_behavior(behavior: str | None) -> None:
+    """
+    Validate speaker_prompt_behavior value.
+
+    Args:
+        behavior: The behavior value to validate (or None to skip)
+
+    Raises:
+        HTTPException: If behavior is not in VALID_SPEAKER_PROMPT_BEHAVIORS
+    """
+    if behavior is not None and behavior not in VALID_SPEAKER_PROMPT_BEHAVIORS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"speaker_prompt_behavior must be one of: {VALID_SPEAKER_PROMPT_BEHAVIORS}",
+        )
+
+
+def _upsert_user_setting(
+    db: Session,
+    user_id: int,
+    setting_key: str,
+    setting_value: Any,
+) -> None:
+    """
+    Insert or update a user setting in the database.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+        setting_key: The database key for the setting
+        setting_value: The value to store (will be converted to string)
+    """
+    # Convert value to string for database storage
+    if isinstance(setting_value, bool):
+        db_value = "true" if setting_value else "false"
+    else:
+        db_value = str(setting_value)
+
+    existing_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            models.UserSetting.user_id == user_id,
+            models.UserSetting.setting_key == setting_key,
+        )
+        .first()
+    )
+
+    if existing_setting:
+        existing_setting.setting_value = db_value
+        db.add(existing_setting)
+    else:
+        new_setting = models.UserSetting(
+            user_id=user_id, setting_key=setting_key, setting_value=db_value
+        )
+        db.add(new_setting)
+
+
 @router.get("/transcription", response_model=TranscriptionSettings)
 def get_transcription_settings(
     db: Session = Depends(get_db),
@@ -432,12 +536,8 @@ def get_transcription_settings(
 
     # Build response with user values or defaults
     return TranscriptionSettings(
-        min_speakers=int(
-            settings_map.get("transcription_min_speakers", system_min_speakers)
-        ),
-        max_speakers=int(
-            settings_map.get("transcription_max_speakers", system_max_speakers)
-        ),
+        min_speakers=int(settings_map.get("transcription_min_speakers", system_min_speakers)),
+        max_speakers=int(settings_map.get("transcription_max_speakers", system_max_speakers)),
         speaker_prompt_behavior=settings_map.get(
             "transcription_speaker_prompt_behavior",
             DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
@@ -483,40 +583,17 @@ def update_transcription_settings(
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        # No fields provided, just return current settings
         return get_transcription_settings(db=db, current_user=current_user)
 
-    # Additional validation: min_speakers <= max_speakers
-    if "min_speakers" in update_data and "max_speakers" in update_data:
-        if update_data["min_speakers"] > update_data["max_speakers"]:
-            raise HTTPException(
-                status_code=400,
-                detail="min_speakers cannot be greater than max_speakers",
-            )
-    elif "min_speakers" in update_data:
-        # Check against current max_speakers
-        current = get_transcription_settings(db=db, current_user=current_user)
-        if update_data["min_speakers"] > current.max_speakers:
-            raise HTTPException(
-                status_code=400,
-                detail=f"min_speakers ({update_data['min_speakers']}) cannot be greater than current max_speakers ({current.max_speakers})",
-            )
-    elif "max_speakers" in update_data:
-        # Check against current min_speakers
-        current = get_transcription_settings(db=db, current_user=current_user)
-        if update_data["max_speakers"] < current.min_speakers:
-            raise HTTPException(
-                status_code=400,
-                detail=f"max_speakers ({update_data['max_speakers']}) cannot be less than current min_speakers ({current.min_speakers})",
-            )
+    # Get current settings only if needed for validation
+    needs_current = ("min_speakers" in update_data) != ("max_speakers" in update_data)
+    current_settings = (
+        get_transcription_settings(db=db, current_user=current_user) if needs_current else None
+    )
 
-    # Validate speaker_prompt_behavior if provided
-    if "speaker_prompt_behavior" in update_data:
-        if update_data["speaker_prompt_behavior"] not in VALID_SPEAKER_PROMPT_BEHAVIORS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"speaker_prompt_behavior must be one of: {VALID_SPEAKER_PROMPT_BEHAVIORS}",
-            )
+    # Validate speaker range and prompt behavior
+    _validate_speaker_range(update_data, current_settings)
+    _validate_speaker_prompt_behavior(update_data.get("speaker_prompt_behavior"))
 
     # Map frontend keys to database keys
     setting_mappings = {
@@ -527,37 +604,12 @@ def update_transcription_settings(
         "garbage_cleanup_threshold": "transcription_garbage_cleanup_threshold",
     }
 
+    # Update each setting in the database
     for frontend_key, value in update_data.items():
-        db_key = setting_mappings[frontend_key]
-
-        # Convert value to string for database storage
-        if isinstance(value, bool):
-            db_value = "true" if value else "false"
-        else:
-            db_value = str(value)
-
-        # Check if setting already exists
-        existing_setting = (
-            db.query(models.UserSetting)
-            .filter(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == db_key,
-            )
-            .first()
-        )
-
-        if existing_setting:
-            existing_setting.setting_value = db_value
-            db.add(existing_setting)
-        else:
-            new_setting = models.UserSetting(
-                user_id=current_user.id, setting_key=db_key, setting_value=db_value
-            )
-            db.add(new_setting)
+        _upsert_user_setting(db, current_user.id, setting_mappings[frontend_key], value)
 
     db.commit()
 
-    # Return updated settings
     return get_transcription_settings(db=db, current_user=current_user)
 
 

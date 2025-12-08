@@ -173,6 +173,299 @@ def _get_unique_speakers_for_filter(speakers, db: Session, current_user: User):
     return unique_speakers
 
 
+def _resolve_file_uuid_to_id(
+    file_uuid: Optional[str], current_user: User, db: Session
+) -> Optional[int]:
+    """Convert file UUID to internal ID if provided."""
+    if not file_uuid:
+        return None
+    from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    return media_file.id
+
+
+def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dict[int, int]:
+    """Pre-calculate segment counts for all speakers in one query."""
+    from sqlalchemy import func
+
+    if not speaker_ids:
+        return {}
+
+    count_results = (
+        db.query(TranscriptSegment.speaker_id, func.count(TranscriptSegment.id))
+        .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
+        .group_by(TranscriptSegment.speaker_id)
+        .all()
+    )
+    return {speaker_id: count for speaker_id, count in count_results}
+
+
+def _get_voice_suggestions(raw_cross_video_matches: list[dict]) -> list[dict]:
+    """Extract voice suggestions from cross-video matches."""
+    voice_suggestions = []
+    for match in raw_cross_video_matches:
+        if (
+            float(match.get("confidence", 0)) >= 0.50
+            and match.get("name")
+            and match.get("name").strip()
+            and match.get("suggestion_type")
+        ):
+            voice_suggestions.append(
+                {
+                    "name": match["name"],
+                    "confidence": match["confidence"],
+                    "confidence_percentage": match["confidence_percentage"],
+                    "suggestion_type": match["suggestion_type"],
+                    "reason": match.get("reason", ""),
+                }
+            )
+    return voice_suggestions
+
+
+def _build_cross_video_match(individual_match: dict) -> dict:
+    """Build a single cross-video match entry from an individual match."""
+    return {
+        "media_file_id": individual_match["media_file_id"],
+        "filename": individual_match.get("filename")
+        or individual_match.get("media_file_title", "Unknown File"),
+        "title": individual_match.get("media_file_title")
+        or individual_match.get("filename", "Unknown File"),
+        "media_file_title": individual_match.get("media_file_title")
+        or individual_match.get("filename", "Unknown File"),
+        "speaker_label": individual_match["name"],
+        "confidence": individual_match["confidence"],
+        "verified": True,
+        "same_speaker": False,
+    }
+
+
+def _get_cross_video_matches_for_unlabeled(raw_cross_video_matches: list[dict]) -> list[dict]:
+    """Extract file appearances from individual_matches for unlabeled speakers."""
+    temp_matches = []
+    for match in raw_cross_video_matches:
+        if not match.get("individual_matches"):
+            continue
+        for individual_match in match["individual_matches"]:
+            if float(individual_match.get("confidence", 0)) >= 0.50:
+                temp_matches.append(_build_cross_video_match(individual_match))
+
+    # Sort by confidence (highest first) and limit to top 8 for display
+    return sorted(temp_matches, key=lambda x: x["confidence"], reverse=True)[:8]
+
+
+def _compute_suggested_name(speaker: Speaker, raw_cross_video_matches: list[dict]) -> Optional[str]:
+    """Determine whether to show the suggested name based on cross-video confidence."""
+    suggested_name = speaker.suggested_name
+
+    if not (speaker.suggested_name and speaker.confidence and raw_cross_video_matches):
+        return suggested_name
+
+    # Find highest cross-video match confidence
+    highest_cross_video_confidence = max(match["confidence"] for match in raw_cross_video_matches)
+
+    # Only hide very low confidence suggestions (<50%) when much higher cross-video matches exist (>30% higher)
+    if speaker.confidence < 0.5 and highest_cross_video_confidence > speaker.confidence + 0.3:
+        return None
+
+    return suggested_name
+
+
+def _get_suggestion_source(speaker: Speaker) -> Optional[str]:
+    """Determine suggestion source for frontend display."""
+    if not (speaker.suggested_name and speaker.confidence):
+        return None
+
+    if hasattr(speaker, "_suggestion_source"):
+        return speaker._suggestion_source
+
+    # Default assumption: embedding match
+    return "embedding_match"
+
+
+def _compute_display_flags(
+    speaker: Speaker,
+    suggested_name: Optional[str],
+    suggestion_source: Optional[str],
+    voice_suggestions: list[dict],
+) -> dict:
+    """Pre-compute frontend display flags."""
+    has_llm_suggestion = bool(
+        suggested_name and speaker.confidence and suggestion_source == "llm_analysis"
+    )
+    total_suggestions = (1 if has_llm_suggestion else 0) + len(voice_suggestions)
+    show_suggestions_section = has_llm_suggestion or len(voice_suggestions) > 0
+
+    # Pre-compute input field display logic based on voice embedding confidence
+    voice_confidence = 0.0
+    if voice_suggestions:
+        voice_confidence = max(s["confidence"] for s in voice_suggestions)
+
+    is_high_confidence = bool(
+        voice_confidence >= 0.75 and suggested_name and not speaker.display_name
+    )
+    is_medium_confidence = bool(
+        voice_confidence >= 0.5
+        and voice_confidence < 0.75
+        and suggested_name
+        and not speaker.display_name
+    )
+
+    # Pre-compute placeholder text
+    if is_high_confidence:
+        input_placeholder = suggested_name
+    elif suggested_name:
+        input_placeholder = f"Suggested: {suggested_name}"
+    else:
+        input_placeholder = f"Label {speaker.name}"
+
+    # Pre-compute profile badge visibility
+    show_profile_badge = bool(
+        speaker.profile
+        and speaker.display_name
+        and speaker.display_name.strip()
+        and not speaker.display_name.startswith("SPEAKER_")
+    )
+
+    return {
+        "has_llm_suggestion": has_llm_suggestion,
+        "total_suggestions": total_suggestions,
+        "show_suggestions_section": show_suggestions_section,
+        "is_high_confidence": is_high_confidence,
+        "is_medium_confidence": is_medium_confidence,
+        "input_placeholder": input_placeholder,
+        "show_profile_badge": show_profile_badge,
+    }
+
+
+def _is_labeled_speaker(speaker: Speaker) -> bool:
+    """Check if a speaker is labeled (has a non-SPEAKER_ display name)."""
+    return bool(
+        speaker.display_name
+        and speaker.display_name.strip()
+        and not speaker.display_name.startswith("SPEAKER_")
+    )
+
+
+def _build_speaker_dict(
+    speaker: Speaker,
+    current_user: User,
+    suggested_name: Optional[str],
+    suggestion_source: Optional[str],
+    voice_suggestions: list[dict],
+    cross_video_matches: list[dict],
+    display_flags: dict,
+    segment_count: int,
+) -> dict:
+    """Build the speaker dictionary for API response."""
+    speaker_dict = {
+        "id": str(speaker.uuid),  # Use UUID as id for frontend compatibility
+        "name": speaker.name,
+        "display_name": speaker.display_name or "",  # Handle nulls in backend
+        "suggested_name": suggested_name,
+        "uuid": str(speaker.uuid),  # Also keep uuid field for clarity
+        "verified": speaker.verified,
+        "user_id": str(current_user.uuid),  # Use user UUID
+        "confidence": speaker.confidence,
+        "suggestion_source": suggestion_source,
+        "created_at": speaker.created_at.isoformat(),
+        "media_file_id": str(speaker.media_file.uuid)
+        if speaker.media_file
+        else speaker.media_file_id,
+        "profile": None,
+        "voice_suggestions": voice_suggestions,
+        "cross_video_matches": cross_video_matches,
+        "needsCrossMediaCall": _is_labeled_speaker(speaker),
+        "segment_count": segment_count,
+        # Pre-computed display flags
+        **display_flags,
+    }
+
+    # Add profile information if speaker is assigned to a profile
+    if speaker.profile_id and speaker.profile:
+        speaker_dict["profile"] = {
+            "id": speaker.profile.id,
+            "name": speaker.profile.name,
+            "description": speaker.profile.description,
+            "uuid": str(speaker.profile.uuid) if speaker.profile.uuid else None,
+        }
+
+    return speaker_dict
+
+
+def _process_single_speaker(
+    speaker: Speaker,
+    current_user: User,
+    segment_count: int,
+    db: Session,
+) -> dict:
+    """Process a single speaker and build its response dictionary."""
+    from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
+
+    # Compute status information using SpeakerStatusService
+    status_info = SpeakerStatusService.compute_speaker_status(speaker)
+    speaker.computed_status = status_info["computed_status"]
+    speaker.status_text = status_info["status_text"]
+    speaker.status_color = status_info["status_color"]
+    speaker.resolved_display_name = status_info["resolved_display_name"]
+
+    # Get smart, consolidated speaker suggestions
+    smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
+        speaker_id=speaker.id,
+        user_id=current_user.id,
+        db=db,
+        confidence_threshold=0.5,
+        max_suggestions=5,
+    )
+
+    # Format suggestions for API response
+    raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
+
+    # Get voice suggestions
+    voice_suggestions = _get_voice_suggestions(raw_cross_video_matches)
+
+    # Get cross-video matches based on whether speaker is labeled
+    if _is_labeled_speaker(speaker):
+        cross_video_matches = []  # Will be populated by cross-media API
+    else:
+        cross_video_matches = _get_cross_video_matches_for_unlabeled(raw_cross_video_matches)
+
+    # Compute suggested name
+    suggested_name = _compute_suggested_name(speaker, raw_cross_video_matches)
+
+    # Get suggestion source
+    suggestion_source = _get_suggestion_source(speaker)
+
+    # Compute display flags
+    display_flags = _compute_display_flags(
+        speaker, suggested_name, suggestion_source, voice_suggestions
+    )
+
+    # Build the speaker dictionary
+    return _build_speaker_dict(
+        speaker,
+        current_user,
+        suggested_name,
+        suggestion_source,
+        voice_suggestions,
+        cross_video_matches,
+        display_flags,
+        segment_count,
+    )
+
+
+def _create_no_cache_response(content: list) -> JSONResponse:
+    """Create a JSONResponse with cache-busting headers."""
+    return JSONResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 @router.get("/")
 def list_speakers(
     verified_only: bool = False,
@@ -205,12 +498,7 @@ def list_speakers(
         from sqlalchemy.orm import joinedload
 
         # Convert file_uuid to file_id if provided
-        file_id = None
-        if file_uuid:
-            from app.utils.uuid_helpers import get_file_by_uuid_with_permission
-
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-            file_id = media_file.id
+        file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db)
 
         query = (
             db.query(Speaker)
@@ -225,240 +513,20 @@ def list_speakers(
             return _get_unique_speakers_for_filter(speakers, db, current_user)
 
         # Pre-calculate segment counts for all speakers in one query
-        from sqlalchemy import func
-
         speaker_ids = [s.id for s in speakers]
-        segment_counts = {}
-        if speaker_ids:
-            count_results = (
-                db.query(TranscriptSegment.speaker_id, func.count(TranscriptSegment.id))
-                .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
-                .group_by(TranscriptSegment.speaker_id)
-                .all()
-            )
-            segment_counts = {speaker_id: count for speaker_id, count in count_results}
+        segment_counts = _get_segment_counts_for_speakers(speaker_ids, db)
 
-        # Add profile information to speakers
-        result = []
-        for speaker in speakers:
-            # Compute status information using SpeakerStatusService
-            status_info = SpeakerStatusService.compute_speaker_status(speaker)
+        # Process each speaker and build result
+        result = [
+            _process_single_speaker(speaker, current_user, segment_counts.get(speaker.id, 0), db)
+            for speaker in speakers
+        ]
 
-            # Update speaker with computed status (don't save to DB yet)
-            speaker.computed_status = status_info["computed_status"]
-            speaker.status_text = status_info["status_text"]
-            speaker.status_color = status_info["status_color"]
-            speaker.resolved_display_name = status_info["resolved_display_name"]
+        return _create_no_cache_response(result)
 
-            # Get smart, consolidated speaker suggestions
-            from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
-
-            smart_suggestions = SmartSpeakerSuggestionService.consolidate_suggestions(
-                speaker_id=speaker.id,
-                user_id=current_user.id,
-                db=db,
-                confidence_threshold=0.5,
-                max_suggestions=5,
-            )
-
-            # Format suggestions for API response
-            raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(
-                smart_suggestions
-            )
-
-            # CRITICAL: Voice suggestions must come from ALL speakers using the original raw data
-            # This matches the original frontend logic exactly: voice_suggestions from speaker.cross_video_matches
-            voice_suggestions = []
-            for match in raw_cross_video_matches:
-                if (
-                    float(match.get("confidence", 0)) >= 0.50
-                    and match.get("name")
-                    and match.get("name").strip()
-                    and match.get("suggestion_type")
-                ):
-                    voice_suggestions.append(
-                        {
-                            "name": match["name"],
-                            "confidence": match["confidence"],
-                            "confidence_percentage": match["confidence_percentage"],
-                            "suggestion_type": match["suggestion_type"],
-                            "reason": match.get("reason", ""),
-                        }
-                    )
-
-            # Process cross-video matches for file appearances (SEPARATE from voice suggestions)
-            if (
-                speaker.display_name
-                and speaker.display_name.strip()
-                and not speaker.display_name.startswith("SPEAKER_")
-            ):
-                # For labeled speakers: cross_video_matches will be empty initially (populated by cross-media API)
-                # This matches original frontend logic: cross_video_matches: [] for labeled speakers
-                cross_video_matches = []
-            else:
-                # For unlabeled speakers: extract file appearances from individual_matches
-                # This matches original frontend logic: flatMap individual_matches processing
-                temp_matches = []
-                for match in raw_cross_video_matches:
-                    if match.get("individual_matches"):
-                        for individual_match in match["individual_matches"]:
-                            if float(individual_match.get("confidence", 0)) >= 0.50:
-                                temp_matches.append(
-                                    {
-                                        "media_file_id": individual_match["media_file_id"],
-                                        "filename": individual_match.get("filename")
-                                        or individual_match.get("media_file_title", "Unknown File"),
-                                        "title": individual_match.get("media_file_title")
-                                        or individual_match.get("filename", "Unknown File"),
-                                        "media_file_title": individual_match.get("media_file_title")
-                                        or individual_match.get("filename", "Unknown File"),
-                                        "speaker_label": individual_match["name"],
-                                        "confidence": individual_match["confidence"],
-                                        "verified": True,
-                                        "same_speaker": False,
-                                    }
-                                )
-                # Sort by confidence (highest first) and limit to top 8 for display
-                cross_video_matches = sorted(
-                    temp_matches, key=lambda x: x["confidence"], reverse=True
-                )[:8]
-
-            # Smart suggestion logic: show suggestions but let UI explain the context
-            suggested_name = speaker.suggested_name
-            if speaker.suggested_name and speaker.confidence and raw_cross_video_matches:
-                # Find highest cross-video match confidence
-                highest_cross_video_confidence = max(
-                    match["confidence"] for match in raw_cross_video_matches
-                )
-
-                # Only hide very low confidence suggestions (<50%) when much higher cross-video matches exist (>30% higher)
-                if (
-                    speaker.confidence < 0.5
-                    and highest_cross_video_confidence > speaker.confidence + 0.3
-                ):
-                    suggested_name = None
-
-            # Determine suggestion source for frontend display
-            suggestion_source = None
-            if speaker.suggested_name and speaker.confidence:
-                # Check if this came from LLM analysis (has LLM-style confidence) or embedding match
-                if hasattr(speaker, "_suggestion_source"):
-                    suggestion_source = speaker._suggestion_source
-                else:
-                    # Infer source: LLM suggestions typically come with specific confidence patterns
-                    # Embedding suggestions come from our matching service
-                    suggestion_source = "embedding_match"  # Default assumption
-
-            # Pre-compute frontend display logic
-            has_llm_suggestion = bool(
-                suggested_name and speaker.confidence and suggestion_source == "llm_analysis"
-            )
-            total_suggestions = (1 if has_llm_suggestion else 0) + len(voice_suggestions)
-            show_suggestions_section = has_llm_suggestion or len(voice_suggestions) > 0
-
-            # Pre-compute input field display logic based on voice embedding confidence
-            # Use the highest confidence from voice suggestions instead of speaker.confidence
-            voice_confidence = 0.0
-            if voice_suggestions:
-                voice_confidence = max(s["confidence"] for s in voice_suggestions)
-
-            is_high_confidence = bool(
-                voice_confidence >= 0.75 and suggested_name and not speaker.display_name
-            )
-
-            is_medium_confidence = bool(
-                voice_confidence >= 0.5
-                and voice_confidence < 0.75
-                and suggested_name
-                and not speaker.display_name
-            )
-
-            # Pre-compute placeholder text
-            if is_high_confidence:
-                input_placeholder = suggested_name
-            elif suggested_name:
-                input_placeholder = f"Suggested: {suggested_name}"
-            else:
-                input_placeholder = f"Label {speaker.name}"
-
-            # Cross-media section visibility will be handled by frontend
-            # because it depends on the dynamic cross_video_matches length after API loading
-
-            # Pre-compute profile badge visibility
-            show_profile_badge = bool(
-                speaker.profile
-                and speaker.display_name
-                and speaker.display_name.strip()
-                and not speaker.display_name.startswith("SPEAKER_")
-            )
-
-            speaker_dict = {
-                "id": str(speaker.uuid),  # Use UUID as id for frontend compatibility
-                "name": speaker.name,
-                "display_name": speaker.display_name or "",  # Handle nulls in backend
-                "suggested_name": suggested_name,
-                "uuid": str(speaker.uuid),  # Also keep uuid field for clarity
-                "verified": speaker.verified,
-                "user_id": str(current_user.uuid),  # Use user UUID
-                "confidence": speaker.confidence,
-                "suggestion_source": suggestion_source,
-                "created_at": speaker.created_at.isoformat(),
-                "media_file_id": str(speaker.media_file.uuid)
-                if speaker.media_file
-                else speaker.media_file_id,
-                "profile": None,
-                "voice_suggestions": voice_suggestions,  # Already guaranteed to be list
-                "cross_video_matches": cross_video_matches,  # Already guaranteed to be list
-                "needsCrossMediaCall": speaker.display_name
-                and speaker.display_name.strip()
-                and not speaker.display_name.startswith("SPEAKER_"),
-                # Segment count for merge speakers UI
-                "segment_count": segment_counts.get(speaker.id, 0),
-                # Pre-computed display flags for frontend
-                "has_llm_suggestion": has_llm_suggestion,
-                "total_suggestions": total_suggestions,
-                "show_suggestions_section": show_suggestions_section,
-                # Pre-computed input field logic
-                "is_high_confidence": is_high_confidence,
-                "is_medium_confidence": is_medium_confidence,
-                "input_placeholder": input_placeholder,
-                # Pre-computed visibility flags
-                "show_profile_badge": show_profile_badge,
-            }
-
-            # Add profile information if speaker is assigned to a profile
-            if speaker.profile_id and speaker.profile:
-                speaker_dict["profile"] = {
-                    "id": speaker.profile.id,
-                    "name": speaker.profile.name,
-                    "description": speaker.profile.description,
-                    "uuid": str(speaker.profile.uuid)
-                    if speaker.profile.uuid
-                    else None,  # Convert UUID to string
-                }
-
-            result.append(speaker_dict)
-
-        # Return with cache-busting headers
-        return JSONResponse(
-            content=result,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
     except Exception as e:
         logger.error(f"Error in list_speakers: {e}")
-        # If there's an error or no speakers, return an empty list
-        return JSONResponse(
-            content=[],
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
+        return _create_no_cache_response([])
 
 
 @router.get("/{speaker_uuid}", response_model=SpeakerSchema)
@@ -586,6 +654,181 @@ def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
         logger.error(f"Warning: Failed to clear video cache after speaker update: {e}")
 
 
+def _handle_update_profile_action(
+    profile_id: int, new_name: str, current_user: User, db: Session
+) -> None:
+    """Handle 'update_profile' action - update profile name globally."""
+    profile = (
+        db.query(SpeakerProfile)
+        .filter(SpeakerProfile.id == profile_id, SpeakerProfile.user_id == current_user.id)
+        .first()
+    )
+
+    if not profile:
+        return
+
+    profile.name = new_name
+    logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
+
+    # Update all speakers linked to this profile
+    linked_speakers = (
+        db.query(Speaker)
+        .filter(Speaker.profile_id == profile_id, Speaker.user_id == current_user.id)
+        .all()
+    )
+
+    for linked_speaker in linked_speakers:
+        linked_speaker.display_name = new_name
+        _update_opensearch_speaker_name(str(linked_speaker.uuid), new_name)
+
+    logger.info(f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'")
+
+    # Update the profile embedding in OpenSearch
+    try:
+        from app.services.profile_embedding_service import ProfileEmbeddingService
+
+        success = ProfileEmbeddingService.update_profile_embedding(db, profile_id)
+        if success:
+            logger.info(
+                f"Updated profile {profile_id} embedding in OpenSearch with new name '{new_name}'"
+            )
+        else:
+            logger.warning(f"Failed to update profile {profile_id} embedding in OpenSearch")
+    except Exception as e:
+        logger.error(f"Error updating profile embedding in OpenSearch: {e}")
+
+
+def _handle_create_new_profile_action(
+    speaker: Speaker, new_name: str, current_user: User, db: Session
+) -> None:
+    """Handle 'create_new_profile' action - create new profile and assign speaker."""
+    new_profile = SpeakerProfile(
+        user_id=current_user.id,
+        name=new_name,
+        description=f"Profile for {new_name}",
+        uuid=str(uuid.uuid4()),
+    )
+    db.add(new_profile)
+    db.flush()  # Get the ID
+
+    speaker.profile_id = new_profile.id
+    logger.info(
+        f"Created new profile {new_profile.id} '{new_name}' and assigned speaker {speaker.id}"
+    )
+
+
+def _handle_profile_action(
+    profile_action: Optional[str],
+    speaker_update: SpeakerUpdate,
+    speaker: Speaker,
+    old_profile_id: Optional[int],
+    current_user: User,
+    db: Session,
+) -> None:
+    """Handle profile actions (update_profile or create_new_profile)."""
+    if not (profile_action and speaker_update.display_name):
+        return
+
+    new_name = speaker_update.display_name.strip()
+
+    if profile_action == "update_profile" and old_profile_id:
+        _handle_update_profile_action(old_profile_id, new_name, current_user, db)
+    elif profile_action == "create_new_profile":
+        _handle_create_new_profile_action(speaker, new_name, current_user, db)
+
+
+def _get_profile_uuid(speaker: Speaker, db: Session) -> Optional[str]:
+    """Get profile UUID from speaker, fetching from DB if necessary."""
+    if not speaker.profile_id:
+        return None
+
+    if speaker.profile:
+        return str(speaker.profile.uuid)
+
+    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
+    return str(profile.uuid) if profile else None
+
+
+def _update_opensearch_profile_info(
+    speaker: Speaker, old_profile_id: Optional[int], display_name_changed: bool, db: Session
+) -> None:
+    """Update OpenSearch with profile information changes."""
+    new_profile_id = speaker.profile_id
+
+    if old_profile_id == new_profile_id and not display_name_changed:
+        return
+
+    from app.services.opensearch_service import update_speaker_profile
+
+    profile_uuid = _get_profile_uuid(speaker, db)
+    update_speaker_profile(
+        speaker_uuid=str(speaker.uuid),
+        profile_id=speaker.profile_id,
+        profile_uuid=profile_uuid,
+        verified=speaker.verified,
+    )
+
+
+def _get_media_file_uuid(speaker: Speaker, db: Session) -> Optional[str]:
+    """Get media file UUID from speaker."""
+    if speaker.media_file:
+        return str(speaker.media_file.uuid)
+
+    if speaker.media_file_id:
+        media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
+        if media_file:
+            return str(media_file.uuid)
+
+    return None
+
+
+def _send_websocket_notification(speaker: Speaker, current_user: User, db: Session) -> None:
+    """Send WebSocket notification for speaker update (best-effort)."""
+    try:
+        import asyncio
+
+        from app.api.websockets import publish_notification
+
+        notification_data = {
+            "speaker_id": str(speaker.uuid),
+            "media_file_id": _get_media_file_uuid(speaker, db),
+            "display_name": speaker.display_name,
+            "verified": speaker.verified,
+            "profile_id": _get_profile_uuid(speaker, db),
+        }
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                publish_notification(
+                    user_id=current_user.id,
+                    notification_type="speaker_updated",
+                    data=notification_data,
+                )
+            )
+        except RuntimeError:
+            logger.debug(
+                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
+            )
+    except Exception as e:
+        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
+
+
+def _set_no_cache_headers(response: Response) -> None:
+    """Set cache-busting headers on response."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+
+def _apply_verification_on_display_name(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
+    """Mark speaker as verified when display name is set."""
+    if speaker_update.display_name is not None and speaker_update.display_name.strip():
+        speaker.verified = True
+        speaker.suggested_name = None
+        speaker.confidence = None
+
+
 @router.put("/{speaker_uuid}", response_model=SpeakerSchema)
 def update_speaker(
     speaker_uuid: str,
@@ -603,212 +846,48 @@ def update_speaker(
     if speaker.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-    speaker_id = speaker.id  # Get internal ID for later operations
-
-    # Store state for later processing
+    speaker_id = speaker.id
     old_profile_id = speaker.profile_id
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
 
-    # Update speaker fields (excluding profile_action which is handled separately)
+    # Update speaker fields
     update_data = speaker_update.model_dump(exclude_unset=True)
     profile_action = update_data.pop("profile_action", None)
 
     for field, value in update_data.items():
         setattr(speaker, field, value)
 
-    # Handle profile actions if specified
-    if profile_action and speaker_update.display_name:
-        new_name = speaker_update.display_name.strip()
-
-        if profile_action == "update_profile" and old_profile_id:
-            # Update the profile name globally (affects all speakers linked to this profile)
-            profile = (
-                db.query(SpeakerProfile)
-                .filter(
-                    SpeakerProfile.id == old_profile_id, SpeakerProfile.user_id == current_user.id
-                )
-                .first()
-            )
-
-            if profile:
-                profile.name = new_name
-                logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
-
-                # Also update all speakers linked to this profile
-                linked_speakers = (
-                    db.query(Speaker)
-                    .filter(
-                        Speaker.profile_id == old_profile_id, Speaker.user_id == current_user.id
-                    )
-                    .all()
-                )
-
-                for linked_speaker in linked_speakers:
-                    linked_speaker.display_name = new_name
-                    logger.info(
-                        f"Updated speaker {linked_speaker.id} display_name to '{new_name}' (global profile update)"
-                    )
-
-                logger.info(
-                    f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'"
-                )
-
-                # Update OpenSearch for all linked speakers
-                for linked_speaker in linked_speakers:
-                    _update_opensearch_speaker_name(linked_speaker.id, new_name)
-
-                # CRITICAL: Update the profile embedding in OpenSearch to reflect the new name
-                # This ensures voice_suggestions will show the updated profile name
-                try:
-                    from app.services.profile_embedding_service import ProfileEmbeddingService
-
-                    success = ProfileEmbeddingService.update_profile_embedding(db, old_profile_id)
-                    if success:
-                        logger.info(
-                            f"Updated profile {old_profile_id} embedding in OpenSearch with new name '{new_name}'"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to update profile {old_profile_id} embedding in OpenSearch"
-                        )
-                except Exception as e:
-                    logger.error(f"Error updating profile embedding in OpenSearch: {e}")
-
-        elif profile_action == "create_new_profile":
-            # Create new profile and assign speaker to it
-            new_profile = SpeakerProfile(
-                user_id=current_user.id,
-                name=new_name,
-                description=f"Profile for {new_name}",
-                uuid=str(uuid.uuid4()),
-            )
-            db.add(new_profile)
-            db.flush()  # Get the ID
-
-            # Assign speaker to new profile
-            speaker.profile_id = new_profile.id
-            logger.info(
-                f"Created new profile {new_profile.id} '{new_name}' and assigned speaker {speaker.id}"
-            )
+    # Handle profile actions
+    _handle_profile_action(
+        profile_action, speaker_update, speaker, old_profile_id, current_user, db
+    )
 
     # Handle verification when display name is set
-    if speaker_update.display_name is not None and speaker_update.display_name.strip():
-        speaker.verified = True
-        speaker.suggested_name = None
-        speaker.confidence = None
+    _apply_verification_on_display_name(speaker, speaker_update)
 
     db.commit()
     db.refresh(speaker)
 
-    # Process all side effects
-    new_profile_id = speaker.profile_id
+    # Process side effects
     display_name_changed = speaker_update.display_name is not None
 
-    # Handle profile embedding updates
     _handle_profile_embedding_updates(
-        db, speaker_id, old_profile_id, new_profile_id, was_auto_labeled, display_name_changed
+        db, speaker_id, old_profile_id, speaker.profile_id, was_auto_labeled, display_name_changed
     )
 
-    # Update OpenSearch for any relevant changes
     if speaker_update.display_name is not None:
         _update_opensearch_speaker_name(str(speaker.uuid), speaker.display_name)
 
-    # Update OpenSearch if profile assignment changed
-    if old_profile_id != new_profile_id or speaker_update.display_name is not None:
-        from app.services.opensearch_service import update_speaker_profile
+    _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
 
-        # Get profile UUID if profile is assigned
-        profile_uuid = None
-        if speaker.profile_id:
-            # Fetch profile to get UUID if not already loaded
-            if not speaker.profile:
-                profile = (
-                    db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
-                )
-                if profile:
-                    profile_uuid = str(profile.uuid)
-            else:
-                profile_uuid = str(speaker.profile.uuid)
-
-        update_speaker_profile(
-            speaker_uuid=str(speaker.uuid),
-            profile_id=speaker.profile_id,
-            profile_uuid=profile_uuid,
-            verified=speaker.verified,
-        )
-
-    # Handle speaker labeling workflow
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         _handle_speaker_labeling_workflow(speaker, speaker_update.display_name, db)
 
-    # Clear video cache
     _clear_video_cache_for_speaker(db, speaker.media_file_id)
+    _send_websocket_notification(speaker, current_user, db)
 
-    # Send WebSocket notification for real-time UI updates
-    # Note: WebSocket notifications are best-effort, failures won't affect the operation
-    try:
-        import asyncio
-
-        from app.api.websockets import publish_notification
-
-        # Get media file UUID
-        media_file_uuid = None
-        if speaker.media_file:
-            media_file_uuid = str(speaker.media_file.uuid)
-        elif speaker.media_file_id:
-            from app.models.media import MediaFile
-
-            media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
-            if media_file:
-                media_file_uuid = str(media_file.uuid)
-
-        # Get profile UUID if assigned
-        profile_uuid = None
-        if speaker.profile:
-            profile_uuid = str(speaker.profile.uuid)
-        elif speaker.profile_id:
-            profile = (
-                db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
-            )
-            if profile:
-                profile_uuid = str(profile.uuid)
-
-        # Schedule notification in background (won't block response)
-        # Use asyncio.ensure_future to handle event loop compatibility
-        notification_data = {
-            "speaker_id": str(speaker.uuid),
-            "media_file_id": media_file_uuid,
-            "display_name": speaker.display_name,
-            "verified": speaker.verified,
-            "profile_id": profile_uuid,
-        }
-
-        try:
-            # Try to get running event loop
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                publish_notification(
-                    user_id=current_user.id,
-                    notification_type="speaker_updated",
-                    data=notification_data,
-                )
-            )
-        except RuntimeError:
-            # No event loop running - this is expected in sync context
-            # WebSocket notification will be skipped (not critical)
-            logger.debug(
-                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
-            )
-    except Exception as e:
-        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
-
-    # Add computed status fields
     SpeakerStatusService.add_computed_status(speaker)
-
-    # Prevent caching to ensure frontend gets fresh data
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    _set_no_cache_headers(response)
 
     return speaker
 
@@ -883,7 +962,9 @@ def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) 
 
         for media_file_id in affected_media_files:
             if AnalyticsService.refresh_analytics(db, media_file_id):
-                logger.info(f"Refreshed analytics for media file {media_file_id} after speaker merge")
+                logger.info(
+                    f"Refreshed analytics for media file {media_file_id} after speaker merge"
+                )
             else:
                 logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
     except Exception as e:
@@ -1115,6 +1196,53 @@ def _create_new_speaker_profile(
     }
 
 
+def _resolve_profile_uuid_to_id(
+    profile_uuid: Optional[str], current_user: User, db: Session
+) -> Optional[int]:
+    """Convert profile UUID to internal ID if provided, validating ownership."""
+    if not profile_uuid:
+        return None
+
+    from app.utils.uuid_helpers import get_profile_by_uuid
+
+    profile = get_profile_by_uuid(db, profile_uuid)
+    if profile.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+    return profile.id
+
+
+def _dispatch_verify_action(
+    action: str,
+    speaker: Speaker,
+    speaker_id: int,
+    profile_id: Optional[int],
+    profile_name: Optional[str],
+    current_user: User,
+    db: Session,
+) -> dict[str, Any]:
+    """Dispatch to the appropriate verification action handler."""
+    if action == "accept":
+        if not profile_id:
+            raise HTTPException(status_code=400, detail="profile_id required for accept action")
+        return _accept_speaker_profile_match(speaker, speaker_id, profile_id, current_user, db)
+
+    if action == "reject":
+        return _reject_speaker_suggestion(speaker, speaker_id, db)
+
+    if action == "create_profile":
+        if not profile_name:
+            raise HTTPException(
+                status_code=400,
+                detail="profile_name required for create_profile action",
+            )
+        return _create_new_speaker_profile(speaker, speaker_id, profile_name, current_user, db)
+
+    raise HTTPException(
+        status_code=400,
+        detail="Invalid action. Must be 'accept', 'reject', or 'create_profile'",
+    )
+
+
 @router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
 def verify_speaker_identification(
     speaker_uuid: str,
@@ -1133,45 +1261,15 @@ def verify_speaker_identification(
     - 'create_profile': Create new profile and assign speaker
     """
     try:
-        # Get and validate speaker
         speaker = get_speaker_by_uuid(db, speaker_uuid)
         if speaker.user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        speaker_id = speaker.id  # Get internal ID for helper functions
+        profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
 
-        # Convert profile_uuid to profile_id if provided
-        profile_id = None
-        if profile_uuid:
-            from app.utils.uuid_helpers import get_profile_by_uuid
-
-            profile = get_profile_by_uuid(db, profile_uuid)
-            if profile.user_id != current_user.id:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-            profile_id = profile.id
-
-        # Route to appropriate handler based on action
-        if action == "accept":
-            if not profile_id:
-                raise HTTPException(status_code=400, detail="profile_id required for accept action")
-            return _accept_speaker_profile_match(speaker, speaker_id, profile_id, current_user, db)
-
-        elif action == "reject":
-            return _reject_speaker_suggestion(speaker, speaker_id, db)
-
-        elif action == "create_profile":
-            if not profile_name:
-                raise HTTPException(
-                    status_code=400,
-                    detail="profile_name required for create_profile action",
-                )
-            return _create_new_speaker_profile(speaker, speaker_id, profile_name, current_user, db)
-
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid action. Must be 'accept', 'reject', or 'create_profile'",
-            )
+        return _dispatch_verify_action(
+            action, speaker, speaker.id, profile_id, profile_name, current_user, db
+        )
 
     except HTTPException:
         raise
@@ -1179,6 +1277,89 @@ def verify_speaker_identification(
         logger.error(f"Error verifying speaker: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+def _build_occurrence_dict(
+    media_file: MediaFile,
+    speaker_obj: Speaker,
+    same_speaker: bool,
+) -> dict[str, Any]:
+    """Build occurrence dictionary for a speaker/media file pair."""
+    return {
+        "media_file_id": media_file.id,
+        "filename": media_file.filename,
+        "title": media_file.title or media_file.filename,
+        "media_file_title": media_file.title or media_file.filename,
+        "upload_time": media_file.upload_time.isoformat(),
+        "speaker_label": speaker_obj.name,
+        "confidence": speaker_obj.confidence,
+        "verified": speaker_obj.verified,
+        "same_speaker": same_speaker,
+    }
+
+
+def _get_profile_based_occurrences(
+    speaker: Speaker, current_user: User, db: Session
+) -> list[dict[str, Any]]:
+    """Get cross-media occurrences for a speaker with a profile."""
+    profile_speakers = (
+        db.query(Speaker)
+        .join(MediaFile)
+        .filter(
+            Speaker.profile_id == speaker.profile_id,
+            Speaker.user_id == current_user.id,
+        )
+        .all()
+    )
+
+    result = []
+    for profile_speaker in profile_speakers:
+        if profile_speaker.media_file:
+            result.append(
+                _build_occurrence_dict(
+                    profile_speaker.media_file,
+                    profile_speaker,
+                    same_speaker=(profile_speaker.id == speaker.id),
+                )
+            )
+    return result
+
+
+def _get_display_name_based_occurrences(
+    speaker: Speaker, current_user: User, db: Session
+) -> list[dict[str, Any]]:
+    """Get cross-media occurrences for a speaker without a profile, by display name."""
+    result = []
+
+    # Add this speaker instance first
+    if speaker.media_file:
+        result.append(_build_occurrence_dict(speaker.media_file, speaker, same_speaker=True))
+
+    # Skip if speaker doesn't have a valid display name
+    if not speaker.display_name or speaker.display_name.startswith("SPEAKER_"):
+        return result
+
+    # Find other speakers with the same display name
+    similar_speakers = (
+        db.query(Speaker)
+        .join(MediaFile)
+        .filter(
+            Speaker.display_name == speaker.display_name,
+            Speaker.user_id == current_user.id,
+            Speaker.id != speaker.id,
+        )
+        .all()
+    )
+
+    for similar_speaker in similar_speakers:
+        if similar_speaker.media_file:
+            result.append(
+                _build_occurrence_dict(
+                    similar_speaker.media_file, similar_speaker, same_speaker=False
+                )
+            )
+
+    return result
 
 
 @router.get("/{speaker_uuid}/cross-media", response_model=list[dict[str, Any]])
@@ -1191,95 +1372,16 @@ def get_speaker_cross_media_occurrences(
     Get all media files where this speaker (or their profile) appears.
     """
     try:
-        # Get speaker by UUID
         speaker = get_speaker_by_uuid(db, speaker_uuid)
         if speaker.user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        speaker_id = speaker.id  # Get internal ID for queries
-
-        result = []
-
         if speaker.profile_id:
-            # Speaker has a profile - find all instances of this profile
-            profile_speakers = (
-                db.query(Speaker)
-                .join(MediaFile)  # Ensure media_file relationship is loaded
-                .filter(
-                    Speaker.profile_id == speaker.profile_id,
-                    Speaker.user_id == current_user.id,
-                )
-                .all()
-            )
-
-            for profile_speaker in profile_speakers:
-                media_file = profile_speaker.media_file
-                if media_file:
-                    occurrence = {
-                        "media_file_id": media_file.id,
-                        "filename": media_file.filename,
-                        "title": media_file.title or media_file.filename,
-                        "media_file_title": media_file.title
-                        or media_file.filename,  # Frontend expects this field
-                        "upload_time": media_file.upload_time.isoformat(),
-                        "speaker_label": profile_speaker.name,
-                        "confidence": profile_speaker.confidence,
-                        "verified": profile_speaker.verified,
-                        "same_speaker": profile_speaker.id == speaker_id,
-                    }
-                    result.append(occurrence)
+            result = _get_profile_based_occurrences(speaker, current_user, db)
         else:
-            # Speaker has no profile - try to find similar speakers by name/voice
+            result = _get_display_name_based_occurrences(speaker, current_user, db)
 
-            # First add this speaker instance
-            media_file = speaker.media_file
-            if media_file:
-                result.append(
-                    {
-                        "media_file_id": media_file.id,
-                        "filename": media_file.filename,
-                        "title": media_file.title or media_file.filename,
-                        "media_file_title": media_file.title or media_file.filename,
-                        "upload_time": media_file.upload_time.isoformat(),
-                        "speaker_label": speaker.name,
-                        "confidence": speaker.confidence,
-                        "verified": speaker.verified,
-                        "same_speaker": True,
-                    }
-                )
-
-            # If the speaker has a display name (is labeled), find other speakers with the same name
-            if speaker.display_name and not speaker.display_name.startswith("SPEAKER_"):
-                similar_speakers = (
-                    db.query(Speaker)
-                    .join(MediaFile)
-                    .filter(
-                        Speaker.display_name == speaker.display_name,
-                        Speaker.user_id == current_user.id,
-                        Speaker.id != speaker_id,  # Exclude self
-                    )
-                    .all()
-                )
-
-                for similar_speaker in similar_speakers:
-                    similar_media_file = similar_speaker.media_file
-                    if similar_media_file:
-                        occurrence = {
-                            "media_file_id": similar_media_file.id,
-                            "filename": similar_media_file.filename,
-                            "title": similar_media_file.title or similar_media_file.filename,
-                            "media_file_title": similar_media_file.title
-                            or similar_media_file.filename,
-                            "upload_time": similar_media_file.upload_time.isoformat(),
-                            "speaker_label": similar_speaker.name,
-                            "confidence": similar_speaker.confidence,
-                            "verified": similar_speaker.verified,
-                            "same_speaker": False,
-                        }
-                        result.append(occurrence)
-
-        # Sort by confidence (highest first) for better display, with same_speaker files prioritized
-        # Handle None confidence values by treating them as 0.0
+        # Sort by confidence (highest first), with same_speaker files prioritized
         result.sort(key=lambda x: (x["same_speaker"], x.get("confidence") or 0.0), reverse=True)
 
         return result

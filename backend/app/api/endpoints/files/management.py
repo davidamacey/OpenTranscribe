@@ -149,7 +149,7 @@ async def get_file_status_detail(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting file status detail for {file_id}: {e}")
+        logger.error(f"Error getting file status detail for {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving file status details",
@@ -192,7 +192,7 @@ async def cancel_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling file {file_id}: {e}")
+        logger.error(f"Error cancelling file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error cancelling file processing",
@@ -261,7 +261,7 @@ async def retry_file_processing(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrying file {file_id}: {e}")
+        logger.error(f"Error retrying file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrying file processing",
@@ -300,7 +300,7 @@ async def recover_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error recovering file {file_id}: {e}")
+        logger.error(f"Error recovering file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error recovering file",
@@ -387,6 +387,96 @@ async def get_stuck_files(
         ) from e
 
 
+def _handle_delete_action(
+    db: Session, file_uuid: str, current_user: User, force: bool
+) -> BulkActionResult:
+    """Handle delete action for bulk operations."""
+    delete_media_file(db, file_uuid, current_user, force=force)
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=True,
+        message="File deleted successfully",
+    )
+
+
+def _handle_retry_action(
+    db: Session, file_uuid: str, file_id: int, reset_retry_count: bool
+) -> BulkActionResult:
+    """Handle retry action for bulk operations."""
+    import os
+
+    success = reset_file_for_retry(db, file_id, reset_retry_count)
+    if not success:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="Failed to reset file for retry",
+            error="RESET_FAILED",
+        )
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        task = transcribe_audio_task.delay(file_uuid)
+        message = f"Retry started (task: {task.id})"
+    else:
+        message = "Retry prepared (test mode)"
+
+    return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
+
+
+def _handle_cancel_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+    """Handle cancel action for bulk operations."""
+    success = cancel_active_task(db, file_id)
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=success,
+        message="Task cancelled successfully" if success else "Failed to cancel task",
+        error=None if success else "CANCEL_FAILED",
+    )
+
+
+def _handle_recover_action(db: Session, file_uuid: str, file_id: int) -> BulkActionResult:
+    """Handle recover action for bulk operations."""
+    success = recover_stuck_file(db, file_id)
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=success,
+        message="File recovered successfully" if success else "Failed to recover file",
+        error=None if success else "RECOVERY_FAILED",
+    )
+
+
+def _process_single_file_action(
+    db: Session,
+    file_uuid: str,
+    action: str,
+    current_user: User,
+    is_admin: bool,
+    force: bool,
+    reset_retry_count: bool,
+) -> BulkActionResult:
+    """Process a single file action, returning the result."""
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id
+
+    action_handlers = {
+        "delete": lambda: _handle_delete_action(db, file_uuid, current_user, force),
+        "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count),
+        "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
+        "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
+    }
+
+    handler = action_handlers.get(action)
+    if handler:
+        return handler()
+
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=False,
+        message=f"Unknown action: {action}",
+        error="UNKNOWN_ACTION",
+    )
+
+
 @router.post("/management/bulk-action", response_model=list[BulkActionResult])
 async def bulk_file_action(
     request: BulkActionRequest,
@@ -400,81 +490,16 @@ async def bulk_file_action(
 
         for file_uuid in request.file_uuids:
             try:
-                # Verify user has access to this file
-                db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-                file_id = db_file.id  # Get internal ID for task operations
-
-                if request.action == "delete":
-                    delete_media_file(db, file_uuid, current_user, force=request.force)
-                    results.append(
-                        BulkActionResult(
-                            file_uuid=file_uuid,
-                            success=True,
-                            message="File deleted successfully",
-                        )
-                    )
-
-                elif request.action == "retry":
-                    success = reset_file_for_retry(db, file_id, request.reset_retry_count)
-                    if success:
-                        # Start transcription task
-                        import os
-
-                        if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-                            task = transcribe_audio_task.delay(file_uuid)
-                            message = f"Retry started (task: {task.id})"
-                        else:
-                            message = "Retry prepared (test mode)"
-
-                        results.append(
-                            BulkActionResult(file_uuid=file_uuid, success=True, message=message)
-                        )
-                    else:
-                        results.append(
-                            BulkActionResult(
-                                file_uuid=file_uuid,
-                                success=False,
-                                message="Failed to reset file for retry",
-                                error="RESET_FAILED",
-                            )
-                        )
-
-                elif request.action == "cancel":
-                    success = cancel_active_task(db, file_id)
-                    results.append(
-                        BulkActionResult(
-                            file_uuid=file_uuid,
-                            success=success,
-                            message="Task cancelled successfully"
-                            if success
-                            else "Failed to cancel task",
-                            error=None if success else "CANCEL_FAILED",
-                        )
-                    )
-
-                elif request.action == "recover":
-                    success = recover_stuck_file(db, file_id)
-                    results.append(
-                        BulkActionResult(
-                            file_uuid=file_uuid,
-                            success=success,
-                            message="File recovered successfully"
-                            if success
-                            else "Failed to recover file",
-                            error=None if success else "RECOVERY_FAILED",
-                        )
-                    )
-
-                else:
-                    results.append(
-                        BulkActionResult(
-                            file_uuid=file_uuid,
-                            success=False,
-                            message=f"Unknown action: {request.action}",
-                            error="UNKNOWN_ACTION",
-                        )
-                    )
-
+                result = _process_single_file_action(
+                    db=db,
+                    file_uuid=file_uuid,
+                    action=request.action,
+                    current_user=current_user,
+                    is_admin=is_admin,
+                    force=request.force,
+                    reset_retry_count=request.reset_retry_count,
+                )
+                results.append(result)
             except HTTPException as e:
                 results.append(
                     BulkActionResult(

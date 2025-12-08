@@ -137,9 +137,7 @@ def upgrade():
     op.create_index("idx_media_file_hash", "media_file", ["file_hash"])
     op.create_index("idx_media_file_active_task_id", "media_file", ["active_task_id"])
     op.create_index("idx_media_file_task_last_update", "media_file", ["task_last_update"])
-    op.create_index(
-        "idx_media_file_force_delete_eligible", "media_file", ["force_delete_eligible"]
-    )
+    op.create_index("idx_media_file_force_delete_eligible", "media_file", ["force_delete_eligible"])
     op.create_index("idx_media_file_retry_count", "media_file", ["retry_count"])
     op.create_index("idx_media_file_uuid", "media_file", ["uuid"])
 
@@ -251,9 +249,7 @@ def upgrade():
         sa.Column("resolved_display_name", sa.String(255), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"]),
         sa.ForeignKeyConstraint(["media_file_id"], ["media_file.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["profile_id"], ["speaker_profile.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["profile_id"], ["speaker_profile.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "media_file_id", "name"),
         sa.UniqueConstraint("uuid"),
@@ -313,12 +309,8 @@ def upgrade():
             sa.DateTime(timezone=True),
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.ForeignKeyConstraint(
-            ["collection_id"], ["speaker_collection.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["speaker_profile_id"], ["speaker_profile.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["collection_id"], ["speaker_collection.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["speaker_profile_id"], ["speaker_profile.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("collection_id", "speaker_profile_id"),
         sa.UniqueConstraint("uuid"),
@@ -354,12 +346,8 @@ def upgrade():
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("uuid"),
     )
-    op.create_index(
-        "idx_transcript_segment_media_file_id", "transcript_segment", ["media_file_id"]
-    )
-    op.create_index(
-        "idx_transcript_segment_speaker_id", "transcript_segment", ["speaker_id"]
-    )
+    op.create_index("idx_transcript_segment_media_file_id", "transcript_segment", ["media_file_id"])
+    op.create_index("idx_transcript_segment_speaker_id", "transcript_segment", ["speaker_id"])
 
     # Comments table
     op.create_table(
@@ -490,19 +478,13 @@ def upgrade():
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.ForeignKeyConstraint(["collection_id"], ["collection.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["media_file_id"], ["media_file.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["media_file_id"], ["media_file.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("collection_id", "media_file_id"),
         sa.UniqueConstraint("uuid"),
     )
-    op.create_index(
-        "idx_collection_member_collection_id", "collection_member", ["collection_id"]
-    )
-    op.create_index(
-        "idx_collection_member_media_file_id", "collection_member", ["media_file_id"]
-    )
+    op.create_index("idx_collection_member_collection_id", "collection_member", ["collection_id"])
+    op.create_index("idx_collection_member_media_file_id", "collection_member", ["media_file_id"])
 
     # Speaker match table
     op.create_table(
@@ -574,20 +556,14 @@ def upgrade():
             sa.DateTime(timezone=True),
             server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
-        sa.ForeignKeyConstraint(
-            ["media_file_id"], ["media_file.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["media_file_id"], ["media_file.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("media_file_id"),
         sa.UniqueConstraint("uuid"),
     )
-    op.create_index(
-        "idx_topic_suggestion_user_status", "topic_suggestion", ["user_id", "status"]
-    )
-    op.create_index(
-        "idx_topic_suggestion_media_file", "topic_suggestion", ["media_file_id"]
-    )
+    op.create_index("idx_topic_suggestion_user_status", "topic_suggestion", ["user_id", "status"])
+    op.create_index("idx_topic_suggestion_media_file", "topic_suggestion", ["media_file_id"])
 
     # Summary prompt table
     op.create_table(
@@ -602,9 +578,7 @@ def upgrade():
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("prompt_text", sa.Text(), nullable=False),
-        sa.Column(
-            "is_system_default", sa.Boolean(), nullable=False, server_default="false"
-        ),
+        sa.Column("is_system_default", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("content_type", sa.String(50), nullable=True),
@@ -623,9 +597,7 @@ def upgrade():
         sa.UniqueConstraint("uuid"),
     )
     op.create_index("idx_summary_prompt_user_id", "summary_prompt", ["user_id"])
-    op.create_index(
-        "idx_summary_prompt_is_system_default", "summary_prompt", ["is_system_default"]
-    )
+    op.create_index("idx_summary_prompt_is_system_default", "summary_prompt", ["is_system_default"])
     op.create_index("idx_summary_prompt_content_type", "summary_prompt", ["content_type"])
     op.create_index("idx_summary_prompt_uuid", "summary_prompt", ["uuid"])
 

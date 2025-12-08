@@ -31,6 +31,211 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _validate_media_file_for_waveform(db_file: MediaFile) -> None:
+    """
+    Validate that a media file is suitable for waveform generation.
+
+    Args:
+        db_file: The media file to validate
+
+    Raises:
+        HTTPException: If the file is not suitable for waveform generation
+    """
+    if not db_file.content_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content type unknown",
+        )
+
+    is_audio_video = db_file.content_type.startswith("audio/") or db_file.content_type.startswith(
+        "video/"
+    )
+
+    if not is_audio_video:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be audio or video format for waveform generation",
+        )
+
+    if db_file.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File is not ready for waveform generation (status: {db_file.status})",
+        )
+
+
+def _get_cached_waveform(db_file: MediaFile, cache_key: str) -> dict | None:
+    """
+    Check for valid cached waveform data.
+
+    Args:
+        db_file: The media file to check
+        cache_key: The cache key to look for
+
+    Returns:
+        Cached waveform data with file_id added, or None if not found/outdated
+    """
+    if not db_file.waveform_data or not isinstance(db_file.waveform_data, dict):
+        return None
+
+    cached_data = db_file.waveform_data.get(cache_key)
+    if not cached_data or not isinstance(cached_data, dict) or not cached_data.get("waveform"):
+        return None
+
+    # Check if cached data was generated with old algorithm (missing new fields)
+    if "extracted_samples" not in cached_data or "expected_duration" not in cached_data:
+        logger.info(f"Cached waveform data for file {db_file.id} is outdated, regenerating")
+        return None
+
+    # Return cached data with file_id
+    result = cached_data.copy()
+    result["file_id"] = str(db_file.uuid)
+    result["cached"] = True
+    return result
+
+
+def _download_to_temp_file(storage_path: str, temp_file) -> None:
+    """
+    Download file content from storage to a temporary file.
+
+    Args:
+        storage_path: The path in MinIO storage
+        temp_file: The temporary file to write to
+    """
+    file_content_io, _, _ = download_file(storage_path)
+
+    while True:
+        chunk = file_content_io.read(8192)
+        if not chunk:
+            break
+        temp_file.write(chunk)
+
+
+def _cleanup_temp_file(temp_file_path: str) -> None:
+    """
+    Clean up a temporary file, logging any errors.
+
+    Args:
+        temp_file_path: Path to the temporary file to remove
+    """
+    try:
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+    except Exception as cleanup_error:
+        logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
+
+
+def _convert_waveform_to_peaks(waveform_data: list[int], height: int) -> list[int]:
+    """
+    Convert waveform samples to height-based peaks.
+
+    Args:
+        waveform_data: List of waveform samples (0-255 range)
+        height: Target height in pixels
+
+    Returns:
+        List of peak heights
+    """
+    peaks = []
+    for sample in waveform_data:
+        peak_height = int((sample / 255.0) * height)
+        peaks.append(peak_height)
+    return peaks
+
+
+def _generate_and_cache_waveform(
+    db: Session, db_file: MediaFile, file_id: int, cache_key: str, samples: int
+) -> dict:
+    """
+    Generate waveform data and cache it in the database.
+
+    Args:
+        db: Database session
+        db_file: The media file record
+        file_id: Internal file ID for logging
+        cache_key: Cache key for storing the waveform data
+        samples: Number of samples to extract
+
+    Returns:
+        Waveform data dictionary with file_id and cached flag
+
+    Raises:
+        HTTPException: If waveform generation fails
+    """
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
+            _download_to_temp_file(db_file.storage_path, temp_file)
+            temp_file_path = temp_file.name
+
+        # Extract waveform data using the WaveformGenerator
+        waveform_generator = WaveformGenerator()
+        waveform_data = waveform_generator._extract_single_waveform(temp_file_path, samples)
+
+        if not waveform_data:
+            raise ValueError("Failed to extract waveform data")
+
+        # Cache the waveform data in database
+        if not db_file.waveform_data:
+            db_file.waveform_data = {}
+        db_file.waveform_data[cache_key] = waveform_data.copy()
+        db.commit()
+
+        # Add file ID to response
+        waveform_data["file_id"] = str(db_file.uuid)
+        waveform_data["cached"] = False
+
+        logger.info(
+            f"Generated and cached waveform for file {file_id}: {len(waveform_data['waveform'])} samples"
+        )
+
+        return waveform_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating waveform for file {file_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate waveform: {str(e)}",
+        ) from e
+    finally:
+        if temp_file_path:
+            _cleanup_temp_file(temp_file_path)
+
+
+def _extract_waveform_from_file(storage_path: str, target_samples: int) -> dict:
+    """
+    Download a file and extract waveform data from it.
+
+    Args:
+        storage_path: The path in MinIO storage
+        target_samples: Number of samples to extract
+
+    Returns:
+        Waveform data dictionary
+
+    Raises:
+        ValueError: If waveform extraction fails
+    """
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
+            _download_to_temp_file(storage_path, temp_file)
+            temp_file_path = temp_file.name
+
+        waveform_generator = WaveformGenerator()
+        waveform_data = waveform_generator._extract_single_waveform(temp_file_path, target_samples)
+
+        if not waveform_data:
+            raise ValueError("Failed to extract waveform data")
+
+        return waveform_data
+    finally:
+        if temp_file_path:
+            _cleanup_temp_file(temp_file_path)
+
+
 @router.get("/{file_uuid}/waveform")
 async def get_audio_waveform(
     file_uuid: str,
@@ -51,109 +256,23 @@ async def get_audio_waveform(
     Returns:
         JSON response with waveform data and metadata
     """
-    try:
-        # Get the media file and verify user access
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for operations
+    # Get the media file and verify user access
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id
 
-        # Check if file has audio content
-        if not db_file.content_type:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File content type unknown",
-            )
+    # Validate the file is suitable for waveform generation
+    _validate_media_file_for_waveform(db_file)
 
-        # Check if file is audio or video (both can have audio tracks)
-        is_audio_video = db_file.content_type.startswith(
-            "audio/"
-        ) or db_file.content_type.startswith("video/")
+    # Check for cached waveform data (prioritize cached data)
+    cache_key = f"waveform_{samples}"
+    if not refresh_cache:
+        cached_result = _get_cached_waveform(db_file, cache_key)
+        if cached_result:
+            return cached_result
 
-        if not is_audio_video:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File must be audio or video format for waveform generation",
-            )
-
-        # Check if file processing is complete
-        if db_file.status != "completed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File is not ready for waveform generation (status: {db_file.status})",
-            )
-
-        # Check for cached waveform data (prioritize cached data)
-        cache_key = f"waveform_{samples}"
-        if not refresh_cache and db_file.waveform_data and isinstance(db_file.waveform_data, dict):
-            cached_data = db_file.waveform_data.get(cache_key)
-            if cached_data and isinstance(cached_data, dict) and cached_data.get("waveform"):
-                # Check if cached data was generated with old algorithm (missing new fields)
-                if "extracted_samples" not in cached_data or "expected_duration" not in cached_data:
-                    logger.info(
-                        f"Cached waveform data for file {file_id} is outdated, regenerating"
-                    )
-                    # Continue to regeneration below
-                else:
-                    # Return cached data with file_id
-                    result = cached_data.copy()
-                    result["file_id"] = str(db_file.uuid)  # Use UUID for frontend
-                    result["cached"] = True
-                    return result
-
-        # Generate new waveform data
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            try:
-                # Download file content
-                file_content_io, _, _ = download_file(db_file.storage_path)
-
-                # Write to temporary file
-                while True:
-                    chunk = file_content_io.read(8192)
-                    if not chunk:
-                        break
-                    temp_file.write(chunk)
-
-                temp_file_path = temp_file.name
-
-                # Extract waveform data using the WaveformGenerator
-                waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator._extract_single_waveform(temp_file_path, samples)
-
-                if not waveform_data:
-                    raise ValueError("Failed to extract waveform data")
-
-                # Cache the waveform data in database
-                if not db_file.waveform_data:
-                    db_file.waveform_data = {}
-                db_file.waveform_data[cache_key] = waveform_data.copy()
-                db.commit()
-
-                # Add file ID to response
-                waveform_data["file_id"] = str(db_file.uuid)  # Use UUID for frontend
-                waveform_data["cached"] = False
-
-                logger.info(
-                    f"Generated and cached waveform for file {file_id}: {len(waveform_data['waveform'])} samples"
-                )
-
-                return waveform_data
-
-            finally:
-                # Clean up temporary file
-                try:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating waveform for file {file_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate waveform: {str(e)}",
-        ) from e
+    # Generate new waveform data
+    return _generate_and_cache_waveform(db, db_file, file_id, cache_key, samples)
 
 
 @router.get("/{file_uuid}/waveform/peaks")
@@ -176,92 +295,39 @@ async def get_audio_waveform_peaks(
     Returns:
         JSON response with peaks data optimized for display
     """
+    # Get the media file and verify user access
+    is_admin = current_user.role == "admin"
+    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    file_id = db_file.id
+
+    # Validate the file is suitable for waveform generation
+    _validate_media_file_for_waveform(db_file)
+
+    # Calculate samples based on width (2 samples per pixel for better resolution)
+    target_samples = min(width * 2, 4000)
+
+    # Extract waveform data
     try:
-        # Get the media file and verify user access
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for operations
-
-        # Check file type and status (same as main waveform endpoint)
-        if not db_file.content_type:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File content type unknown",
-            )
-
-        is_audio_video = db_file.content_type.startswith(
-            "audio/"
-        ) or db_file.content_type.startswith("video/")
-
-        if not is_audio_video:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File must be audio or video format",
-            )
-
-        if db_file.status != "completed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File is not ready (status: {db_file.status})",
-            )
-
-        # Calculate samples based on width (2 samples per pixel for better resolution)
-        target_samples = min(width * 2, 4000)
-
-        # Download and process file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            try:
-                file_content_io, _, _ = download_file(db_file.storage_path)
-
-                while True:
-                    chunk = file_content_io.read(8192)
-                    if not chunk:
-                        break
-                    temp_file.write(chunk)
-
-                temp_file_path = temp_file.name
-
-                # Extract waveform data using the WaveformGenerator
-                waveform_generator = WaveformGenerator()
-                waveform_data = waveform_generator._extract_single_waveform(
-                    temp_file_path, target_samples
-                )
-
-                if not waveform_data:
-                    raise ValueError("Failed to extract waveform data")
-
-                # Convert waveform data to height-based peaks
-                peaks = []
-                for sample in waveform_data["waveform"]:
-                    # Convert from 0-255 range to 0-height range
-                    peak_height = int((sample / 255.0) * height)
-                    peaks.append(peak_height)
-
-                return {
-                    "peaks": peaks,
-                    "duration": waveform_data["duration"],
-                    "width": width,
-                    "height": height,
-                    "samples": len(peaks),
-                    "sample_rate": waveform_data["sample_rate"],
-                    "file_id": str(db_file.uuid),  # Use UUID for frontend
-                }
-
-            finally:
-                try:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup temp file {temp_file_path}: {cleanup_error}")
-
-    except HTTPException:
-        raise
+        waveform_data = _extract_waveform_from_file(db_file.storage_path, target_samples)
     except Exception as e:
         logger.error(f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate waveform peaks: {str(e)}",
         ) from e
+
+    # Convert waveform data to height-based peaks
+    peaks = _convert_waveform_to_peaks(waveform_data["waveform"], height)
+
+    return {
+        "peaks": peaks,
+        "duration": waveform_data["duration"],
+        "width": width,
+        "height": height,
+        "samples": len(peaks),
+        "sample_rate": waveform_data["sample_rate"],
+        "file_id": str(db_file.uuid),
+    }
 
 
 @router.post("/{file_uuid}/waveform/generate")
@@ -307,7 +373,7 @@ async def generate_waveform_for_file(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering waveform generation for file {file_id}: {e}")
+        logger.error(f"Error triggering waveform generation for file {file_uuid}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start waveform generation: {str(e)}",

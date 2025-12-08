@@ -18,7 +18,6 @@ from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
 
-
 # Type alias for speaker prompt behavior
 SpeakerPromptBehavior = Literal["always_prompt", "use_defaults", "use_custom"]
 

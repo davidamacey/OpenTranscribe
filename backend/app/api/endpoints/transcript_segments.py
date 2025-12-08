@@ -59,9 +59,7 @@ def update_segment_speaker(
     # Get the media file to verify ownership
     media_file = db.query(MediaFile).filter(MediaFile.id == segment.media_file_id).first()
     if not media_file:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Verify the user owns this file
     if media_file.user_id != current_user.id:
@@ -74,9 +72,7 @@ def update_segment_speaker(
     new_speaker_id: Optional[int] = None
     if update.speaker_uuid is not None:
         # Look up the speaker by UUID
-        speaker = get_by_uuid(
-            db, Speaker, update.speaker_uuid, error_message="Speaker not found"
-        )
+        speaker = get_by_uuid(db, Speaker, update.speaker_uuid, error_message="Speaker not found")
 
         # Verify the speaker belongs to the same media file
         if speaker.media_file_id != segment.media_file_id:
@@ -120,9 +116,7 @@ def update_segment_speaker(
         speaker=segment.speaker,
         formatted_timestamp=format_timestamp(segment.start_time),
         display_timestamp=format_timestamp(segment.start_time),
-        speaker_label=(
-            segment.speaker.name if segment.speaker else None
-        ),  # Original speaker ID
+        speaker_label=(segment.speaker.name if segment.speaker else None),  # Original speaker ID
         resolved_speaker_name=(
             segment.speaker.display_name or segment.speaker.name if segment.speaker else None
         ),

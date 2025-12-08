@@ -43,6 +43,350 @@ YOUTUBE_PLAYLIST_PATTERN = re.compile(
 )
 
 
+def _find_downloaded_file(output_path: str, clean_title: str, ext: str) -> str:
+    """
+    Find the downloaded file in the output directory.
+
+    Args:
+        output_path: Directory where file was downloaded
+        clean_title: Cleaned title for expected filename
+        ext: Expected file extension
+
+    Returns:
+        Path to the downloaded file
+
+    Raises:
+        FileNotFoundError: If no video file is found
+    """
+    expected_filename = f"{clean_title}.{ext}"
+    downloaded_file = os.path.join(output_path, expected_filename)
+
+    if os.path.exists(downloaded_file):
+        return downloaded_file
+
+    # Look for any video file in the directory (yt-dlp might change the name)
+    for file in os.listdir(output_path):
+        if file.endswith((".mp4", ".webm", ".mkv", ".avi")):
+            return os.path.join(output_path, file)
+
+    raise FileNotFoundError("Downloaded file not found")
+
+
+def _resolve_thumbnail_url(youtube_info: dict[str, Any]) -> Optional[str]:
+    """
+    Resolve the best thumbnail URL from YouTube metadata.
+
+    Args:
+        youtube_info: YouTube metadata from yt-dlp
+
+    Returns:
+        Best available thumbnail URL or None
+    """
+    thumbnails = youtube_info.get("thumbnails", [])
+
+    # Fallback to single thumbnail URL if no thumbnails list
+    if not thumbnails:
+        return youtube_info.get("thumbnail")
+
+    # Find the highest quality thumbnail
+    max_width = 0
+    thumbnail_url = None
+    for thumb in thumbnails:
+        width = thumb.get("width", 0)
+        if width > max_width and thumb.get("url"):
+            max_width = width
+            thumbnail_url = thumb["url"]
+
+    if thumbnail_url:
+        return thumbnail_url
+
+    # Fallback to standard YouTube thumbnail URLs
+    return _get_fallback_thumbnail_url(youtube_info.get("id"))
+
+
+def _get_fallback_thumbnail_url(video_id: Optional[str]) -> Optional[str]:
+    """
+    Try standard YouTube thumbnail URLs as fallback.
+
+    Args:
+        video_id: YouTube video ID
+
+    Returns:
+        Working thumbnail URL or None
+    """
+    if not video_id:
+        return None
+
+    potential_urls = [
+        f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+        f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+        f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg",
+    ]
+
+    for test_url in potential_urls:
+        try:
+            response = requests.head(test_url, timeout=10)
+            if response.status_code == 200:
+                return test_url
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"Thumbnail URL test failed for {test_url}: {e}")
+
+    return None
+
+
+def _get_thumbnail_with_fallback(
+    youtube_service: "YouTubeService",
+    youtube_info: dict[str, Any],
+    user_id: int,
+    media_file_id: int,
+    video_path: str,
+) -> Optional[str]:
+    """
+    Get thumbnail from YouTube or generate from video as fallback.
+
+    Args:
+        youtube_service: YouTubeService instance
+        youtube_info: YouTube metadata
+        user_id: User ID
+        media_file_id: Media file ID
+        video_path: Path to downloaded video
+
+    Returns:
+        Thumbnail storage path or None
+    """
+    try:
+        thumbnail_path = youtube_service._download_youtube_thumbnail_sync(youtube_info, user_id)
+        if thumbnail_path:
+            logger.debug(f"Successfully downloaded YouTube thumbnail: {thumbnail_path}")
+            return thumbnail_path
+        logger.warning("Failed to download YouTube thumbnail, will generate from video")
+    except Exception as e:
+        logger.error(f"Error downloading YouTube thumbnail: {e}")
+
+    # Fallback to generating thumbnail from video
+    try:
+        return generate_and_upload_thumbnail_sync(
+            user_id=user_id,
+            media_file_id=media_file_id,
+            video_path=video_path,
+            timestamp=5.0,
+        )
+    except Exception as fallback_error:
+        logger.error(f"Fallback thumbnail generation also failed: {fallback_error}")
+        return None
+
+
+def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> Optional[MediaFile]:
+    """
+    Check if a YouTube video already exists in the user's library.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        video_id: YouTube video ID
+
+    Returns:
+        Existing MediaFile if found, None otherwise
+    """
+    from sqlalchemy import text
+
+    return (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.user_id == user_id,
+            text("metadata_raw->>'youtube_id' = :youtube_id"),
+        )
+        .params(youtube_id=video_id)
+        .first()
+    )
+
+
+def _process_playlist_videos(
+    db: Session,
+    user_id: int,
+    videos: list[dict[str, Any]],
+    playlist_info: dict[str, Any],
+    playlist_url: str,
+    video_count: int,
+    progress_callback: Optional[Callable[[int, str, dict], None]] = None,
+) -> tuple[list[MediaFile], list[dict[str, Any]]]:
+    """
+    Process playlist videos and create placeholders.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        videos: List of video entries from playlist
+        playlist_info: Playlist metadata
+        playlist_url: Original playlist URL
+        video_count: Total video count for progress
+        progress_callback: Optional progress callback
+
+    Returns:
+        Tuple of (created_media_files, skipped_videos)
+    """
+    created_media_files = []
+    skipped_videos = []
+
+    for idx, video_entry in enumerate(videos):
+        video_id = video_entry.get("video_id")
+        video_title = video_entry.get("title", "Unknown")
+
+        # Report progress
+        if progress_callback:
+            progress = int(20 + (idx / video_count) * 70)
+            progress_callback(
+                progress,
+                f"Processing video {idx + 1} of {video_count}: {video_title[:50]}...",
+                {"current_video": idx + 1, "total_videos": video_count, "video_title": video_title},
+            )
+
+        # Check for existing video
+        existing_video = _check_existing_youtube_video(db, user_id, video_id)
+        if existing_video:
+            logger.info(f"Video already exists in library: {video_title} (YouTube ID: {video_id})")
+            skipped_videos.append(
+                {
+                    "video_id": video_id,
+                    "title": video_title,
+                    "reason": "duplicate",
+                    "existing_file_id": existing_video.id,
+                }
+            )
+            continue
+
+        # Create placeholder
+        try:
+            video_entry["playlist_index"] = video_entry.get("playlist_index", idx + 1)
+            media_file = _create_playlist_video_placeholder(
+                db, user_id, video_entry, playlist_info, playlist_url
+            )
+            created_media_files.append(media_file)
+            logger.info(
+                f"Created placeholder MediaFile {media_file.id} for playlist video: {video_title}"
+            )
+        except Exception as e:
+            logger.error(f"Error creating placeholder for video {video_title}: {e}")
+            skipped_videos.append(
+                {
+                    "video_id": video_id,
+                    "title": video_title,
+                    "reason": f"error: {str(e)}",
+                }
+            )
+
+    return created_media_files, skipped_videos
+
+
+def _create_playlist_video_placeholder(
+    db: Session,
+    user_id: int,
+    video_entry: dict[str, Any],
+    playlist_info: dict[str, Any],
+    playlist_url: str,
+) -> MediaFile:
+    """
+    Create a placeholder MediaFile for a playlist video.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        video_entry: Video entry from playlist
+        playlist_info: Playlist metadata
+        playlist_url: Original playlist URL
+
+    Returns:
+        Created MediaFile
+    """
+    video_id = video_entry.get("video_id")
+    video_url = video_entry.get("url")
+    video_title = video_entry.get("title", "Unknown")
+    playlist_index = video_entry.get("playlist_index", 1)
+
+    placeholder_metadata = {
+        "youtube_id": video_id,
+        "youtube_url": video_url,
+        "title": video_title,
+        "processing": True,
+        "from_playlist": True,
+        "playlist_id": playlist_info.get("playlist_id"),
+        "playlist_title": playlist_info.get("playlist_title"),
+        "playlist_url": playlist_url,
+        "playlist_index": playlist_index,
+    }
+
+    media_file = MediaFile(
+        user_id=user_id,
+        filename=video_title[:255],
+        storage_path="",
+        file_size=0,
+        content_type="video/mp4",
+        duration=video_entry.get("duration"),
+        status=FileStatus.PROCESSING,
+        title=video_title,
+        author=video_entry.get("uploader"),
+        source_url=video_url,
+        metadata_raw=placeholder_metadata,
+        metadata_important=placeholder_metadata,
+    )
+
+    db.add(media_file)
+    db.flush()
+
+    return media_file
+
+
+def _update_media_file_with_youtube_data(
+    media_file: MediaFile,
+    youtube_info: dict[str, Any],
+    youtube_metadata: dict[str, Any],
+    technical_metadata: dict[str, Any],
+    storage_path: str,
+    file_size: int,
+    thumbnail_path: Optional[str],
+    original_filename: str,
+    source_url: str,
+) -> None:
+    """
+    Update MediaFile record with YouTube and technical metadata.
+
+    Args:
+        media_file: MediaFile to update
+        youtube_info: YouTube video info from yt-dlp
+        youtube_metadata: Prepared YouTube metadata dict
+        technical_metadata: Technical metadata from file
+        storage_path: Storage path in MinIO
+        file_size: File size in bytes
+        thumbnail_path: Path to thumbnail
+        original_filename: Original filename
+        source_url: Original YouTube URL
+    """
+    media_file.filename = youtube_info.get("title", original_filename)[:255]
+    media_file.storage_path = storage_path
+    media_file.file_size = file_size
+    media_file.content_type = technical_metadata.get("content_type", "video/mp4")
+    media_file.duration = technical_metadata.get("duration") or youtube_info.get("duration")
+    media_file.status = FileStatus.PENDING
+    media_file.thumbnail_path = thumbnail_path
+
+    # YouTube-specific metadata
+    media_file.title = youtube_info.get("title")
+    media_file.author = youtube_info.get("uploader")
+    media_file.description = youtube_info.get("description")
+    media_file.source_url = source_url
+    media_file.metadata_raw = youtube_metadata
+    media_file.metadata_important = youtube_metadata
+
+    # Technical metadata from extraction
+    media_file.media_format = technical_metadata.get("format")
+    media_file.codec = technical_metadata.get("video_codec")
+    media_file.frame_rate = technical_metadata.get("frame_rate")
+    media_file.resolution_width = technical_metadata.get("width")
+    media_file.resolution_height = technical_metadata.get("height")
+    media_file.audio_channels = technical_metadata.get("audio_channels")
+    media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
+
+
 class YouTubeService:
     """Service for processing YouTube videos."""
 
@@ -271,21 +615,8 @@ class YouTubeService:
                 # Find the downloaded file
                 title = info.get("title", "video")
                 ext = info.get("ext", "mp4")
-
-                # Clean title for filename
-                clean_title = re.sub(r"[^\w\-_\.]", "_", title)[:100]  # Limit length
-                expected_filename = f"{clean_title}.{ext}"
-                downloaded_file = os.path.join(output_path, expected_filename)
-
-                # Find actual downloaded file (yt-dlp might change the name)
-                if not os.path.exists(downloaded_file):
-                    # Look for any video file in the directory
-                    for file in os.listdir(output_path):
-                        if file.endswith((".mp4", ".webm", ".mkv", ".avi")):
-                            downloaded_file = os.path.join(output_path, file)
-                            break
-                    else:
-                        raise FileNotFoundError("Downloaded file not found")
+                clean_title = re.sub(r"[^\w\-_\.]", "_", title)[:100]
+                downloaded_file = _find_downloaded_file(output_path, clean_title, ext)
 
                 return {
                     "file_path": downloaded_file,
@@ -459,43 +790,7 @@ class YouTubeService:
             Storage path of uploaded thumbnail or None if failed
         """
         try:
-            # Get the best thumbnail URL from YouTube info
-            thumbnail_url = None
-            thumbnails = youtube_info.get("thumbnails", [])
-
-            if not thumbnails and youtube_info.get("thumbnail"):
-                # Fallback to single thumbnail URL
-                thumbnail_url = youtube_info.get("thumbnail")
-            else:
-                # Find the highest quality thumbnail
-                # YouTube provides multiple thumbnails, we want the highest resolution
-                max_width = 0
-                for thumb in thumbnails:
-                    width = thumb.get("width", 0)
-                    if width > max_width and thumb.get("url"):
-                        max_width = width
-                        thumbnail_url = thumb["url"]
-
-                # Fallback to maxresdefault or hqdefault
-                if not thumbnail_url and youtube_info.get("id"):
-                    video_id = youtube_info["id"]
-                    # Try maxresdefault first (1280x720), then hqdefault (480x360)
-                    potential_urls = [
-                        f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
-                        f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-                        f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg",
-                    ]
-
-                    # Test each URL to see which works
-                    for test_url in potential_urls:
-                        try:
-                            response = requests.head(test_url, timeout=10)
-                            if response.status_code == 200:
-                                thumbnail_url = test_url
-                                break
-                        except requests.exceptions.RequestException as e:
-                            logger.debug(f"Thumbnail URL test failed for {test_url}: {e}")
-                            continue
+            thumbnail_url = _resolve_thumbnail_url(youtube_info)
 
             if not thumbnail_url:
                 logger.warning("No thumbnail URL found in YouTube metadata")
@@ -510,11 +805,10 @@ class YouTubeService:
                 logger.warning("Empty thumbnail data received")
                 return None
 
-            # Generate storage path (consistent with existing pattern)
+            # Generate storage path and upload
             video_id = youtube_info.get("id", "unknown")
             storage_path = f"user_{user_id}/youtube_{video_id}/thumbnail.jpg"
 
-            # Upload to storage
             upload_file(
                 file_content=io.BytesIO(thumbnail_data),
                 file_size=len(thumbnail_data),
@@ -617,65 +911,27 @@ class YouTubeService:
             if progress_callback:
                 progress_callback(85, "Processing thumbnails...")
 
-            # Download and upload YouTube thumbnail
-            thumbnail_path = None
-            try:
-                thumbnail_path = self._download_youtube_thumbnail_sync(youtube_info, user.id)
-                if thumbnail_path:
-                    logger.debug(f"Successfully downloaded YouTube thumbnail: {thumbnail_path}")
-                else:
-                    logger.warning("Failed to download YouTube thumbnail, will generate from video")
-                    # Fallback to generating thumbnail from video
-                    thumbnail_path = generate_and_upload_thumbnail_sync(
-                        user_id=user.id,
-                        media_file_id=media_file.id,
-                        video_path=downloaded_file,
-                        timestamp=5.0,
-                    )
-            except Exception as e:
-                logger.error(f"Error downloading YouTube thumbnail: {e}")
-                # Fallback to generating thumbnail from video
-                try:
-                    thumbnail_path = generate_and_upload_thumbnail_sync(
-                        user_id=user.id,
-                        media_file_id=media_file.id,
-                        video_path=downloaded_file,
-                        timestamp=5.0,
-                    )
-                except Exception as fallback_error:
-                    logger.error(f"Fallback thumbnail generation also failed: {fallback_error}")
+            # Download and upload YouTube thumbnail with fallback
+            thumbnail_path = _get_thumbnail_with_fallback(
+                self, youtube_info, user.id, media_file.id, downloaded_file
+            )
 
             if progress_callback:
                 progress_callback(95, "Finalizing and updating database...")
 
-            # Prepare YouTube metadata
+            # Prepare YouTube metadata and update the MediaFile record
             youtube_metadata = self._prepare_youtube_metadata(url, youtube_info)
-
-            # Update the existing MediaFile record
-            media_file.filename = youtube_info.get("title", original_filename)[:255]  # Limit length
-            media_file.storage_path = storage_path
-            media_file.file_size = file_size
-            media_file.content_type = technical_metadata.get("content_type", "video/mp4")
-            media_file.duration = technical_metadata.get("duration") or youtube_info.get("duration")
-            media_file.status = FileStatus.PENDING
-            media_file.thumbnail_path = thumbnail_path
-
-            # YouTube-specific metadata
-            media_file.title = youtube_info.get("title")
-            media_file.author = youtube_info.get("uploader")
-            media_file.description = youtube_info.get("description")
-            media_file.source_url = url  # Store original YouTube URL
-            media_file.metadata_raw = youtube_metadata
-            media_file.metadata_important = youtube_metadata
-
-            # Technical metadata from extraction
-            media_file.media_format = technical_metadata.get("format")
-            media_file.codec = technical_metadata.get("video_codec")
-            media_file.frame_rate = technical_metadata.get("frame_rate")
-            media_file.resolution_width = technical_metadata.get("width")
-            media_file.resolution_height = technical_metadata.get("height")
-            media_file.audio_channels = technical_metadata.get("audio_channels")
-            media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
+            _update_media_file_with_youtube_data(
+                media_file=media_file,
+                youtube_info=youtube_info,
+                youtube_metadata=youtube_metadata,
+                technical_metadata=technical_metadata,
+                storage_path=storage_path,
+                file_size=file_size,
+                thumbnail_path=thumbnail_path,
+                original_filename=original_filename,
+                source_url=url,
+            )
 
             # Save updated record to database
             db.commit()
@@ -761,108 +1017,13 @@ class YouTubeService:
             )
 
         # Create placeholder MediaFile records for each video
-        created_media_files = []
-        skipped_videos = []
         videos = playlist_info.get("videos", [])
+        created_media_files, skipped_videos = _process_playlist_videos(
+            db, user.id, videos, playlist_info, url, video_count, progress_callback
+        )
 
-        for idx, video_entry in enumerate(videos):
-            try:
-                video_id = video_entry.get("video_id")
-                video_url = video_entry.get("url")
-                video_title = video_entry.get("title", "Unknown")
-                playlist_index = video_entry.get("playlist_index", idx + 1)
-
-                # Calculate progress (20-90% range)
-                progress = int(20 + (idx / video_count) * 70)
-                if progress_callback:
-                    progress_callback(
-                        progress,
-                        f"Processing video {idx + 1} of {video_count}: {video_title[:50]}...",
-                        {
-                            "current_video": idx + 1,
-                            "total_videos": video_count,
-                            "video_title": video_title,
-                        },
-                    )
-
-                # Check for existing video with same YouTube ID
-                from sqlalchemy import text
-
-                existing_video = (
-                    db.query(MediaFile)
-                    .filter(
-                        MediaFile.user_id == user.id,
-                        text("metadata_raw->>'youtube_id' = :youtube_id"),
-                    )
-                    .params(youtube_id=video_id)
-                    .first()
-                )
-
-                if existing_video:
-                    logger.info(
-                        f"Video already exists in library: {video_title} (YouTube ID: {video_id})"
-                    )
-                    skipped_videos.append(
-                        {
-                            "video_id": video_id,
-                            "title": video_title,
-                            "reason": "duplicate",
-                            "existing_file_id": existing_video.id,
-                        }
-                    )
-                    continue
-
-                # Create placeholder MediaFile record
-                placeholder_metadata = {
-                    "youtube_id": video_id,
-                    "youtube_url": video_url,
-                    "title": video_title,
-                    "processing": True,
-                    "from_playlist": True,
-                    "playlist_id": playlist_info.get("playlist_id"),
-                    "playlist_title": playlist_info.get("playlist_title"),
-                    "playlist_url": url,
-                    "playlist_index": playlist_index,
-                }
-
-                media_file = MediaFile(
-                    user_id=user.id,
-                    filename=video_title[:255],
-                    storage_path="",  # Will be set by background task
-                    file_size=0,  # Will be set by background task
-                    content_type="video/mp4",  # Default, will be updated
-                    duration=video_entry.get("duration"),
-                    status=FileStatus.PROCESSING,
-                    title=video_title,
-                    author=video_entry.get("uploader"),
-                    source_url=video_url,
-                    metadata_raw=placeholder_metadata,
-                    metadata_important=placeholder_metadata,
-                )
-
-                db.add(media_file)
-                db.flush()  # Flush to get the ID without committing
-
-                created_media_files.append(media_file)
-                logger.info(
-                    f"Created placeholder MediaFile {media_file.id} for playlist video: {video_title}"
-                )
-
-            except Exception as e:
-                logger.error(f"Error creating placeholder for video {video_title}: {e}")
-                skipped_videos.append(
-                    {
-                        "video_id": video_entry.get("video_id"),
-                        "title": video_entry.get("title", "Unknown"),
-                        "reason": f"error: {str(e)}",
-                    }
-                )
-                continue
-
-        # Commit all placeholder records
+        # Commit and refresh all placeholder records
         db.commit()
-
-        # Refresh all created media files
         for media_file in created_media_files:
             db.refresh(media_file)
 
@@ -870,10 +1031,7 @@ class YouTubeService:
             progress_callback(
                 100,
                 f"Playlist processing complete: {len(created_media_files)} videos queued",
-                {
-                    "created_count": len(created_media_files),
-                    "skipped_count": len(skipped_videos),
-                },
+                {"created_count": len(created_media_files), "skipped_count": len(skipped_videos)},
             )
 
         logger.info(

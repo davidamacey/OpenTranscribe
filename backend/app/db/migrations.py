@@ -8,13 +8,12 @@ Handles both fresh installs and upgrades from previous versions.
 import logging
 from pathlib import Path
 
+from sqlalchemy import create_engine
+from sqlalchemy import inspect
+
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import create_engine
-from sqlalchemy import inspect
-from sqlalchemy import text
-
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
