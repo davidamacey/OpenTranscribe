@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
@@ -511,7 +512,8 @@ def get_admin_users(
     logger.info("Admin users list requested")
 
     try:
-        users = db.query(User).all()
+        # Sort alphabetically by full_name (case-insensitive) for consistent UI ordering
+        users = db.query(User).order_by(func.lower(User.full_name)).all()
         return users
     except Exception as e:
         logger.error(f"Error getting admin users: {e}")

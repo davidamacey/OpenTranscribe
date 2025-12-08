@@ -16,6 +16,7 @@ from .endpoints import search
 from .endpoints import speaker_profiles
 from .endpoints import speakers
 from .endpoints import summarization
+from .endpoints import system
 from .endpoints import tags
 from .endpoints import tasks
 from .endpoints import topics
@@ -83,6 +84,7 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(system.router, prefix="/system", tags=["system"])
 include_router_with_consistency(collections.router, prefix="/collections", tags=["collections"])
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])

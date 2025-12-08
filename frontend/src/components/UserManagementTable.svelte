@@ -47,6 +47,16 @@
   /** @type {(() => void) | null} */
   let confirmCallback = null;
 
+  // Password reset modal state
+  let showPasswordResetModal = false;
+  /** @type {User|null} */
+  let passwordResetUser = null;
+  let resetPassword = '';
+  let confirmResetPassword = '';
+  let passwordResetLoading = false;
+  let showResetPassword = false;
+  let showConfirmResetPassword = false;
+
   /** @type {boolean} */
   let showAddUserForm = false;
 
@@ -222,6 +232,72 @@
   }
 
   /**
+   * Open password reset modal for a user
+   * @param {User} userToReset
+   */
+  function openPasswordResetModal(userToReset) {
+    passwordResetUser = userToReset;
+    resetPassword = '';
+    confirmResetPassword = '';
+    showResetPassword = false;
+    showConfirmResetPassword = false;
+    showPasswordResetModal = true;
+  }
+
+  /**
+   * Close password reset modal
+   */
+  function closePasswordResetModal() {
+    showPasswordResetModal = false;
+    passwordResetUser = null;
+    resetPassword = '';
+    confirmResetPassword = '';
+    showResetPassword = false;
+    showConfirmResetPassword = false;
+  }
+
+  /**
+   * Reset user password
+   */
+  async function executePasswordReset() {
+    if (!passwordResetUser) return;
+
+    // Validation
+    if (!resetPassword || !confirmResetPassword) {
+      toastStore.error('Please fill in both password fields');
+      return;
+    }
+
+    if (resetPassword !== confirmResetPassword) {
+      toastStore.error('Passwords do not match');
+      return;
+    }
+
+    if (resetPassword.length < 8) {
+      toastStore.error('Password must be at least 8 characters long');
+      return;
+    }
+
+    passwordResetLoading = true;
+
+    try {
+      await axiosInstance.put(`/api/users/${passwordResetUser.id}`, {
+        password: resetPassword
+      });
+
+      const userName = passwordResetUser.full_name || passwordResetUser.email;
+      toastStore.success(`Password reset successfully for ${userName}`);
+      closePasswordResetModal();
+    } catch (err) {
+      console.error('Error resetting password:', err);
+      const message = err instanceof Error ? err.message : 'Failed to reset password';
+      toastStore.error(message);
+    } finally {
+      passwordResetLoading = false;
+    }
+  }
+
+  /**
    * Process search input
    * @param {Event} e
    */
@@ -387,18 +463,39 @@
               <div class="table-actions">
                 {#if currentUser.id !== currentUserId}
                   <button
-                    class="recover-button"
+                    class="icon-button reset-password-button"
+                    on:click={() => openPasswordResetModal(currentUser)}
+                    title="Reset password for {currentUser.full_name || currentUser.email}"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="icon-button recover-button"
                     on:click={() => onUserRecovery(currentUser.id)}
                     title="Recover stuck files for {currentUser.full_name || currentUser.email}"
                   >
-                    Recover Files
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                      <path d="M3 3v5h5"/>
+                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                      <path d="M16 16h5v5"/>
+                    </svg>
                   </button>
                   <button
-                    class="delete-button"
+                    class="icon-button delete-button"
                     on:click={() => deleteUser(currentUser.id)}
-                    title="Permanently delete {currentUser.full_name || currentUser.email}'s account"
+                    title="Delete {currentUser.full_name || currentUser.email}'s account"
                   >
-                    Delete
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 6h18"/>
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      <line x1="10" x2="10" y1="11" y2="17"/>
+                      <line x1="14" x2="14" y1="11" y2="17"/>
+                    </svg>
                   </button>
                 {:else}
                   <span class="self-user">Current User</span>
@@ -425,6 +522,122 @@
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
 />
+
+<!-- Password Reset Modal -->
+{#if showPasswordResetModal && passwordResetUser}
+  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation">
+    <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title">
+      <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label="Close modal" title="Close">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <h3 id="password-reset-title" class="modal-title">Reset Password</h3>
+      <p class="modal-description">
+        Set a new password for <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
+      </p>
+
+      <form on:submit|preventDefault={executePasswordReset} class="password-reset-form">
+        <div class="form-group">
+          <div class="password-header">
+            <label for="reset-password">New Password</label>
+            <button
+              type="button"
+              class="toggle-password"
+              on:click={() => showResetPassword = !showResetPassword}
+              tabindex="-1"
+              aria-label={showResetPassword ? 'Hide password' : 'Show password'}
+            >
+              {#if showResetPassword}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 18-.722-3.25"/>
+                  <path d="m2 2 20 20"/>
+                  <path d="m9 9-.637 3.181"/>
+                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                  <path d="m18.147 8.476.853 3.524"/>
+                </svg>
+              {/if}
+            </button>
+          </div>
+          <input
+            type={showResetPassword ? 'text' : 'password'}
+            id="reset-password"
+            class="form-control"
+            bind:value={resetPassword}
+            placeholder="Enter new password"
+            required
+            minlength="8"
+          />
+          <small class="form-text">Minimum 8 characters</small>
+        </div>
+
+        <div class="form-group">
+          <div class="password-header">
+            <label for="confirm-reset-password">Confirm Password</label>
+            <button
+              type="button"
+              class="toggle-password"
+              on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
+              tabindex="-1"
+              aria-label={showConfirmResetPassword ? 'Hide password' : 'Show password'}
+            >
+              {#if showConfirmResetPassword}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 18-.722-3.25"/>
+                  <path d="m2 2 20 20"/>
+                  <path d="m9 9-.637 3.181"/>
+                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                  <path d="m18.147 8.476.853 3.524"/>
+                </svg>
+              {/if}
+            </button>
+          </div>
+          <input
+            type={showConfirmResetPassword ? 'text' : 'password'}
+            id="confirm-reset-password"
+            class="form-control"
+            bind:value={confirmResetPassword}
+            placeholder="Confirm new password"
+            required
+            minlength="8"
+          />
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn-cancel"
+            on:click={closePasswordResetModal}
+            disabled={passwordResetLoading}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn-confirm"
+            disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
+          >
+            {passwordResetLoading ? 'Resetting...' : 'Reset Password'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 <style>
   .user-management {
@@ -564,70 +777,79 @@
 
   .table-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.375rem;
+    align-items: center;
   }
 
+  /* Base icon button styles */
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .icon-button svg {
+    flex-shrink: 0;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Delete button - red */
   .delete-button {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .delete-button:hover:not(:disabled) {
     background-color: #ef4444;
     color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-button:hover:not(:disabled),
-  .delete-button:focus:not(:disabled) {
-    background-color: #d32f2f;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-    text-decoration: none;
+    transform: scale(1.05);
   }
 
   .delete-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(0.95);
   }
 
-  .delete-button:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
-  }
-
+  /* Recover button - green */
   .recover-button {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+
+  .recover-button:hover:not(:disabled) {
     background-color: #10b981;
     color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-    margin-right: 0.5rem;
-  }
-
-  .recover-button:hover:not(:disabled),
-  .recover-button:focus:not(:disabled) {
-    background-color: #059669;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25);
-    text-decoration: none;
+    transform: scale(1.05);
   }
 
   .recover-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(0.95);
   }
 
-  .recover-button:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
+  /* Reset password button - purple/indigo */
+  .reset-password-button {
+    background-color: rgba(99, 102, 241, 0.1);
+    color: #6366f1;
+  }
+
+  .reset-password-button:hover:not(:disabled) {
+    background-color: #6366f1;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .reset-password-button:active:not(:disabled) {
+    transform: scale(0.95);
   }
 
   .current-role {
@@ -692,5 +914,204 @@
     border-color: #2563eb !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  /* Password Reset Modal */
+  .password-reset-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .password-reset-modal {
+    position: relative;
+    width: 90%;
+    max-width: 420px;
+    background-color: var(--surface-color, #fff);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    padding: 1.5rem;
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .modal-close-btn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-close-btn:hover {
+    color: var(--text-color);
+    background: var(--button-hover, var(--background-color));
+  }
+
+  .modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+    padding-right: 2rem;
+  }
+
+  .modal-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0 0 1.25rem 0;
+  }
+
+  .modal-description strong {
+    color: var(--text-color);
+  }
+
+  .password-reset-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .password-reset-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .password-reset-form label {
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.8125rem;
+  }
+
+  .password-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .toggle-password {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+
+  .toggle-password:hover {
+    background-color: var(--background-color);
+    color: var(--text-color);
+  }
+
+  .password-reset-form .form-control {
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .password-reset-form .form-control:focus {
+    outline: none;
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+  }
+
+  .password-reset-form .form-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.125rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .btn-cancel {
+    background-color: var(--card-background, #f3f4f6);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-cancel:hover:not(:disabled) {
+    background-color: #2563eb;
+    color: white;
+    border-color: #2563eb;
+    transform: translateY(-1px);
+  }
+
+  .btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-confirm {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-confirm:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

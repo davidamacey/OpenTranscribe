@@ -93,12 +93,17 @@
 
   // Define sidebar sections
   $: sidebarSections = [
+    {
+      title: 'System',
+      items: [
+        { id: 'system-statistics' as SettingsSection, label: 'Statistics', icon: 'chart' }
+      ]
+    },
     ...(isAdmin ? [
       {
         title: 'Administration',
         items: [
           { id: 'admin-users' as SettingsSection, label: 'Users', icon: 'users' },
-          { id: 'admin-statistics' as SettingsSection, label: 'Statistics', icon: 'chart' },
           { id: 'admin-task-health' as SettingsSection, label: 'Task Health', icon: 'health' },
           { id: 'admin-settings' as SettingsSection, label: 'System Settings', icon: 'settings' }
         ]
@@ -108,7 +113,6 @@
       title: 'User Settings',
       items: [
         { id: 'profile' as SettingsSection, label: 'Profile', icon: 'user' },
-        { id: 'password' as SettingsSection, label: 'Password', icon: 'lock' },
         { id: 'recording' as SettingsSection, label: 'Recording', icon: 'mic' },
         { id: 'audio-extraction' as SettingsSection, label: 'Audio Extraction', icon: 'file-audio' },
         { id: 'ai-prompts' as SettingsSection, label: 'AI Summarization Prompts', icon: 'message' },
@@ -120,13 +124,17 @@
   // Reactive profile change detection
   $: if ($authStore.user) {
     profileChanged = $authStore.user.full_name !== fullName;
-    settingsModalStore.setDirty('profile', profileChanged);
   }
 
   // Reactive password change detection
   $: {
     passwordChanged = !!(currentPassword || newPassword || confirmPassword);
-    settingsModalStore.setDirty('password', passwordChanged);
+  }
+
+  // Combined profile dirty state (profile changes OR password changes)
+  $: {
+    const isDirty = profileChanged || passwordChanged;
+    settingsModalStore.setDirty('profile', isDirty);
   }
 
   // Reactive recording settings change detection
@@ -159,12 +167,15 @@
     // Load recording settings
     loadRecordingSettings();
 
+    // Load statistics for any user
+    if (activeSection === 'system-statistics') {
+      loadStats();
+    }
+
     // Load admin data if admin
     if (isAdmin) {
       if (activeSection === 'admin-users') {
         loadAdminUsers();
-      } else if (activeSection === 'admin-statistics') {
-        loadAdminStats();
       } else if (activeSection === 'admin-task-health') {
         loadTaskHealth();
       }
@@ -190,10 +201,10 @@
       document.body.style.overflow = 'hidden';
 
       // Load data for the active section when modal opens
-      if (activeSection === 'admin-users' && isAdmin) {
+      if (activeSection === 'system-statistics') {
+        loadStats();
+      } else if (activeSection === 'admin-users' && isAdmin) {
         loadAdminUsers();
-      } else if (activeSection === 'admin-statistics' && isAdmin) {
-        loadAdminStats();
       } else if (activeSection === 'admin-task-health' && isAdmin) {
         loadTaskHealth();
       }
@@ -264,10 +275,10 @@
     settingsModalStore.setActiveSection(sectionId);
 
     // Load data for specific sections
-    if (sectionId === 'admin-users') {
+    if (sectionId === 'system-statistics') {
+      loadStats();
+    } else if (sectionId === 'admin-users') {
       loadAdminUsers();
-    } else if (sectionId === 'admin-statistics') {
-      loadAdminStats();
     } else if (sectionId === 'admin-task-health') {
       loadTaskHealth();
     }
@@ -338,7 +349,7 @@
       showNewPassword = false;
       showConfirmPassword = false;
       passwordChanged = false;
-      settingsModalStore.clearDirty('password');
+      // Note: dirty state is managed reactively based on profileChanged || passwordChanged
     } catch (err: any) {
       console.error('Error updating password:', err);
       const message = err.response?.data?.detail || 'Failed to update password';
@@ -421,8 +432,11 @@
   }
 
   // Admin functions
-  async function loadAdminUsers() {
-    usersLoading = true;
+  async function loadAdminUsers(showLoading = true) {
+    // Only show loading spinner on initial load, not on refresh
+    if (showLoading) {
+      usersLoading = true;
+    }
 
     try {
       const response = await axiosInstance.get('/admin/users');
@@ -432,12 +446,15 @@
       const message = err.response?.data?.detail || 'Failed to load users';
       toastStore.error(message);
     } finally {
-      usersLoading = false;
+      if (showLoading) {
+        usersLoading = false;
+      }
     }
   }
 
   async function refreshAdminUsers() {
-    await loadAdminUsers();
+    // Silent refresh - don't show loading spinner to reduce flicker
+    await loadAdminUsers(false);
   }
 
   async function recoverUserFiles(userId: string) {
@@ -451,14 +468,14 @@
     }
   }
 
-  async function loadAdminStats() {
+  async function loadStats() {
     statsLoading = true;
 
     try {
-      const response = await axiosInstance.get('/admin/stats');
+      const response = await axiosInstance.get('/system/stats');
       stats = response.data;
     } catch (err: any) {
-      console.error('Error loading admin stats:', err);
+      console.error('Error loading stats:', err);
       const message = err.response?.data?.detail || 'Failed to load statistics';
       toastStore.error(message);
     } finally {
@@ -466,8 +483,8 @@
     }
   }
 
-  async function refreshAdminStats() {
-    await loadAdminStats();
+  async function refreshStats() {
+    await loadStats();
   }
 
   async function loadTaskHealth() {
@@ -678,7 +695,7 @@
           {#if activeSection === 'profile'}
             <div class="content-section">
               <h3 class="section-title">Profile Settings</h3>
-              <p class="section-description">Update your personal information</p>
+              <p class="section-description">Update your personal information and password</p>
 
               <form on:submit|preventDefault={updateProfile} class="settings-form">
                 <div class="form-group">
@@ -714,14 +731,11 @@
                   </button>
                 </div>
               </form>
-            </div>
-          {/if}
 
-          <!-- Password Section -->
-          {#if activeSection === 'password'}
-            <div class="content-section">
-              <h3 class="section-title">Change Password</h3>
-              <p class="section-description">Update your account password</p>
+              <!-- Password Change Section -->
+              <div class="password-section-divider">
+                <h4 class="subsection-title">Change Password</h4>
+              </div>
 
               <form on:submit|preventDefault={updatePassword} class="settings-form">
                 <div class="form-group">
@@ -756,7 +770,6 @@
                     id="currentPassword"
                     class="form-control"
                     bind:value={currentPassword}
-                    required
                   />
                 </div>
 
@@ -792,7 +805,6 @@
                     id="newPassword"
                     class="form-control"
                     bind:value={newPassword}
-                    required
                   />
                   <small class="form-text">Minimum 8 characters</small>
                 </div>
@@ -829,7 +841,6 @@
                     id="confirmPassword"
                     class="form-control"
                     bind:value={confirmPassword}
-                    required
                   />
                 </div>
 
@@ -958,8 +969,8 @@
             </div>
           {/if}
 
-          <!-- Admin Statistics Section -->
-          {#if activeSection === 'admin-statistics' && isAdmin}
+          <!-- System Statistics Section -->
+          {#if activeSection === 'system-statistics'}
             <div class="content-section">
               <h3 class="section-title">System Statistics</h3>
               <p class="section-description">View system-wide metrics and performance</p>
@@ -968,7 +979,7 @@
                 <button
                   type="button"
                   class="btn btn-secondary"
-                  on:click={refreshAdminStats}
+                  on:click={refreshStats}
                   disabled={statsLoading}
                 >
                   {statsLoading ? 'Loading...' : 'Refresh Statistics'}
@@ -1490,6 +1501,19 @@
     font-size: 0.8125rem;
     color: var(--text-secondary);
     margin: 0 0 1.25rem 0;
+  }
+
+  .password-section-divider {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .subsection-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
   }
 
   .settings-form {
