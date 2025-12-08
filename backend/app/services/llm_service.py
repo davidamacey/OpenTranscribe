@@ -96,22 +96,33 @@ class LLMService:
             return f"{clean_url}/api/chat"
 
         self.endpoints = {
-            LLMProvider.OPENAI: "https://api.openai.com/v1/chat/completions",
+            # Dynamic endpoints - respect custom base_url for OpenAI-compatible servers (vLLM, etc.)
+            LLMProvider.OPENAI: build_endpoint(config.base_url)
+            if config.base_url
+            else "https://api.openai.com/v1/chat/completions",
             LLMProvider.VLLM: build_endpoint(config.base_url) if config.base_url else None,
             LLMProvider.OLLAMA: build_ollama_endpoint(config.base_url)
             if config.base_url
             else "http://localhost:11434/api/chat",
+            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
+            LLMProvider.OPENROUTER: build_endpoint(config.base_url)
+            if config.base_url
+            else "https://openrouter.ai/api/v1/chat/completions",
+            # Fixed endpoints - these providers don't support custom base URLs
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
-            LLMProvider.OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
-            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
         }
 
         if not self.endpoints.get(config.provider):
             raise ValueError(f"Invalid provider configuration for {config.provider}")
 
+        # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
+        resolved_endpoint = self.endpoints.get(config.provider)
         logger.info(
-            f"Initialized LLMService: {config.provider}/{config.model}, context_window={self.user_context_window}"
+            f"Initialized LLMService: {config.provider}/{config.model}, "
+            f"endpoint={resolved_endpoint}, "
+            f"base_url={config.base_url or 'default'}, "
+            f"context_window={self.user_context_window}"
         )
 
     def _get_headers(self) -> dict[str, str]:
@@ -722,7 +733,10 @@ class LLMService:
 
     def validate_connection(self) -> tuple[bool, str]:
         """
-        Validate connection to LLM provider
+        Validate connection to LLM provider.
+
+        Uses the same endpoint resolution as chat_completion() to ensure
+        the test accurately reflects what will happen during actual use.
 
         Returns:
             Tuple of (success, message)
@@ -744,24 +758,35 @@ class LLMService:
                     return False, "Connection established but model returned empty response"
 
             else:
-                # For other providers, test with models endpoint
-                base_url = (
-                    self.config.base_url.strip().rstrip("/") if self.config.base_url else None
-                )
-                if not base_url:
-                    return False, "No base URL configured"
+                # For OpenAI-compatible providers, derive models endpoint from chat completions endpoint
+                # This ensures we test the same server that chat_completion() will use
+                chat_endpoint = self.endpoints.get(self.config.provider)
+                if not chat_endpoint:
+                    return False, f"No endpoint configured for {self.config.provider}"
 
-                if base_url.endswith("/v1"):
-                    models_url = f"{base_url}/models"
+                # Derive models endpoint from chat completions endpoint
+                # e.g., http://host:8000/v1/chat/completions → http://host:8000/v1/models
+                if "/chat/completions" in chat_endpoint:
+                    models_url = chat_endpoint.replace("/chat/completions", "/models")
+                elif "/api/chat" in chat_endpoint:
+                    # Ollama uses /api/chat, models endpoint is /api/tags
+                    models_url = chat_endpoint.replace("/api/chat", "/api/tags")
                 else:
-                    models_url = f"{base_url}/v1/models"
+                    # Fallback: try appending /models to base
+                    models_url = chat_endpoint.rsplit("/", 1)[0] + "/models"
 
+                logger.debug(
+                    f"Testing connection to {self.config.provider}: {models_url} (derived from {chat_endpoint})"
+                )
                 response = self.session.get(models_url, headers=headers, timeout=10)
 
                 if response.status_code == 200:
-                    return True, "Connection successful (models endpoint responded)"
+                    return True, f"Connection successful (tested {models_url})"
                 else:
-                    return False, f"Models endpoint failed with status {response.status_code}"
+                    return (
+                        False,
+                        f"Connection test failed with status {response.status_code} at {models_url}",
+                    )
 
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
@@ -1254,6 +1279,33 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
             if not api_key or not api_key.strip():
                 logger.info("Claude/Anthropic provider configured but no API key set")
                 return None
+        elif provider == LLMProvider.ANTHROPIC:
+            # ANTHROPIC is an alias for CLAUDE
+            model = settings.ANTHROPIC_MODEL_NAME
+            api_key = settings.ANTHROPIC_API_KEY or None
+            base_url = settings.ANTHROPIC_BASE_URL
+            if not model or not model.strip():
+                logger.info("Anthropic provider configured but no model name set")
+                return None
+            if not api_key or not api_key.strip():
+                logger.info("Anthropic provider configured but no API key set")
+                return None
+        elif provider == LLMProvider.OPENROUTER:
+            model = settings.OPENROUTER_MODEL_NAME
+            api_key = settings.OPENROUTER_API_KEY or None
+            base_url = settings.OPENROUTER_BASE_URL
+            # Validate required settings for OpenRouter
+            if not model or not model.strip():
+                logger.info("OpenRouter provider configured but no model name set")
+                return None
+            if not api_key or not api_key.strip():
+                logger.info("OpenRouter provider configured but no API key set")
+                return None
+        elif provider == LLMProvider.CUSTOM:
+            # CUSTOM provider requires user-specific configuration
+            # System settings don't support CUSTOM - users must configure via UI
+            logger.info("Custom provider requires user-specific configuration via UI")
+            return None
         else:
             logger.warning(f"Unsupported LLM provider: {provider}")
             return None
