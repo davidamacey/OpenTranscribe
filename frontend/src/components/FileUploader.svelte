@@ -33,6 +33,9 @@
   // Import network connectivity store
   import { isOnline } from '../stores/network';
 
+  // Import i18n for translations
+  import { t } from '../stores/locale';
+
   // Derived stores for additional recording state
   $: recordedBlob = $recordingStore.recordedBlob;
   $: recordingError = $recordingStore.recordingError;
@@ -429,11 +432,11 @@
       dispatch('uploadComplete', { uploadId, isRecording: true });
 
       // Show success toast
-      toastStore.success('Recording added to upload queue');
+      toastStore.success($t('uploader.recordingAddedToQueue'));
 
     } catch (error) {
       console.error('Error adding recording to upload queue:', error);
-      toastStore.error('Failed to add recording to upload queue');
+      toastStore.error($t('uploader.failedToAddToQueue'));
     }
   }
 
@@ -507,7 +510,7 @@
     );
 
     // Show success message
-    toastStore.success(`Audio extracted successfully! Saved ${extractedAudio.metadata.compressionRatio}% bandwidth`);
+    toastStore.success($t('uploader.audioExtractedSuccess', { ratio: extractedAudio.metadata.compressionRatio }));
   }
 
   function handleAudioExtractionUploadFull() {
@@ -555,9 +558,9 @@
     const extractCount = bulkVideosToExtract.length;
 
     if (regularCount > 0 && extractCount > 0) {
-      toastStore.success(`Added ${regularCount} file(s) to queue, extracting audio from ${extractCount} video(s)`);
+      toastStore.success($t('uploader.addedToQueue', { count: regularCount, extractCount: extractCount }));
     } else if (extractCount > 0) {
-      toastStore.success(`Extracting audio from ${extractCount} video(s)`);
+      toastStore.success($t('uploader.extractingAudioOnly', { count: extractCount }));
     }
 
     // Clear state
@@ -576,7 +579,7 @@
 
     // Close upload modal and show success
     dispatch('uploadComplete', { multiple: true, count: allFiles.length });
-    toastStore.success(`Added ${allFiles.length} file(s) to upload queue`);
+    toastStore.success($t('uploader.addedToQueueOnly', { count: allFiles.length }));
 
     // Clear state
     bulkVideosToExtract = [];
@@ -591,7 +594,7 @@
 
   // Helper function to start bulk extraction
   function startBulkExtraction(videoFiles: File[]) {
-    toastStore.info(`Extracting audio from ${videoFiles.length} large video file(s)...`);
+    toastStore.info($t('uploader.extractingAudioFrom', { count: videoFiles.length }));
 
     videoFiles.forEach(async (videoFile) => {
       try {
@@ -606,7 +609,7 @@
         );
       } catch (error) {
         console.error(`Failed to extract audio from ${videoFile.name}:`, error);
-        toastStore.error(`Failed to extract audio from ${videoFile.name}`);
+        toastStore.error($t('uploader.failedToExtractAudio', { filename: videoFile.name }));
       }
     });
   }
@@ -718,7 +721,7 @@
           lastModified: selectedFile.lastModified
         }) as FileWithSize;
       } else {
-        error = 'File type could not be determined. Please upload a supported audio or video file.';
+        error = $t('uploader.fileTypeError');
         file = null;
         return;
       }
@@ -726,7 +729,7 @@
 
     // Check file type
     if (!allowedTypes.some(type => selectedFile.type.startsWith(type.split('/')[0]))) {
-      error = `File type "${selectedFile.type}" is not supported. Please upload an audio or video file.`;
+      error = $t('uploader.unsupportedTypeError', { type: selectedFile.type });
       return;
     }
 
@@ -734,14 +737,14 @@
     if (selectedFile.size > MAX_FILE_SIZE) {
       const fileSizeFormatted = formatFileSize(selectedFile.size);
       const maxSizeFormatted = formatFileSize(MAX_FILE_SIZE);
-      error = `File too large (${fileSizeFormatted}). Maximum file size is ${maxSizeFormatted}. Please try:\n• Compressing the video/audio file\n• Using a different format with better compression\n• Splitting large files into smaller parts`;
+      error = $t('uploader.fileTooLargeError', { fileSize: fileSizeFormatted, maxSize: maxSizeFormatted });
       return;
     }
 
     // Additional checks for very large files
     if (selectedFile.size > 2 * 1024 * 1024 * 1024) { // > 2GB
       // Warn about potential upload time for very large files
-      error = `Warning: This is a large file (${formatFileSize(selectedFile.size)}). Upload may take a while and requires stable internet connection. Click upload again to proceed.`;
+      error = $t('uploader.largeFileWarning', { fileSize: formatFileSize(selectedFile.size) });
       file = selectedFile;
       return;
     }
@@ -784,7 +787,7 @@
     files.forEach(file => {
       // Check file size
       if (file.size > FILE_SIZE_LIMIT) {
-        invalidFiles.push(`${file.name} (too large: ${formatFileSize(file.size)})`);
+        invalidFiles.push(`${file.name} (${$t('uploader.tooLarge', { size: formatFileSize(file.size) })})`);
         return;
       }
 
@@ -803,7 +806,7 @@
         ];
 
         if (!validExtensions.includes(extension)) {
-          invalidFiles.push(`${file.name} (unsupported format)`);
+          invalidFiles.push(`${file.name} (${$t('uploader.unsupportedFormat')})`);
           return;
         }
       }
@@ -813,7 +816,7 @@
 
     // Show validation results
     if (invalidFiles.length > 0) {
-      toastStore.error(`Skipped ${invalidFiles.length} invalid files:\n${invalidFiles.join('\n')}`);
+      toastStore.error($t('uploader.skippedInvalidFiles', { count: invalidFiles.length, files: invalidFiles.join('\n') }));
     }
 
     if (validFiles.length > 0) {
@@ -873,11 +876,11 @@
       const extractCount = videosToExtract.length;
 
       if (regularCount > 0 && extractCount > 0) {
-        toastStore.success(`Added ${regularCount} file(s) to queue, extracting audio from ${extractCount} video(s)`);
+        toastStore.success($t('uploader.addedToQueue', { count: regularCount, extractCount: extractCount }));
       } else if (regularCount > 0) {
-        toastStore.success(`Added ${regularCount} file(s) to upload queue`);
+        toastStore.success($t('uploader.addedToQueueOnly', { count: regularCount }));
       } else if (extractCount > 0) {
-        toastStore.success(`Extracting audio from ${extractCount} video(s)`);
+        toastStore.success($t('uploader.extractingAudioOnly', { count: extractCount }));
       }
     }
   }
@@ -947,12 +950,12 @@
       dispatch('uploadComplete', { uploadId, isFile: true });
 
       // Show success toast
-      toastStore.success('File added to upload queue');
+      toastStore.success($t('uploader.fileAddedToQueue'));
 
       return;
     } catch (error) {
       console.error('Error adding file to upload queue:', error);
-      toastStore.error('Failed to add file to upload queue');
+      toastStore.error($t('uploader.failedToAddFileToQueue'));
       return;
     }
 
@@ -978,23 +981,23 @@
         return;
       }
 
-      statusMessage = 'Preparing upload...';
+      statusMessage = $t('uploader.preparing');
 
       // Calculate file hash before upload
       let fileHash = null;
       try {
-        statusMessage = 'Calculating file hash with Imohash...';
+        statusMessage = $t('uploader.calculatingHashImohash');
         fileHash = await calculateFileHash(file);
         // Strip the 0x prefix for display and database consistency
         const displayHash = fileHash.startsWith('0x') ? fileHash.substring(2) : fileHash;
-        statusMessage = `Hash calculated: ${displayHash.substring(0, 8)}...`;
+        statusMessage = $t('uploader.hashCalculated', { hash: displayHash.substring(0, 8) });
         // Remove 0x prefix for backend compatibility
         if (fileHash.startsWith('0x')) {
           fileHash = fileHash.substring(2);
         }
       } catch (err) {
         // If hash calculation fails, show a warning but continue with upload
-        statusMessage = "Warning: Could not calculate file hash for duplicate detection. Upload will continue.";
+        statusMessage = $t('uploader.hashWarning');
       }
 
       // First, prepare the upload to get a file ID
@@ -1016,12 +1019,12 @@
         // Check if this is a duplicate file
         if (prepareResponse.data.is_duplicate === 1) {
           duplicateFileId = prepareResponse.data.file_id;
-          statusMessage = `Duplicate file detected. Using existing file (ID: ${duplicateFileId})`;
+          statusMessage = $t('uploader.duplicateUsing', { fileId: duplicateFileId });
           uploading = false;
           isDuplicateFile = true;
 
           // Show notification message that this is a duplicate file
-          error = `Duplicate file detected! This file has already been uploaded and is available in your library. You can use the existing file instead of uploading it again.`;
+          error = $t('uploader.duplicateError');
 
           // Note: We don't dispatch uploadComplete event here anymore
           // We'll wait for user to acknowledge the message
@@ -1029,9 +1032,9 @@
           return;
         }
 
-        statusMessage = `Upload prepared (File ID: ${currentFileId})`;
+        statusMessage = $t('uploader.uploadPrepared', { fileId: currentFileId });
       } catch (err) {
-        error = 'Failed to prepare upload';
+        error = $t('uploader.prepareFailed');
         uploading = false;
         return;
       }
@@ -1082,7 +1085,7 @@
               const totalMB = (progressEvent.total / MB).toFixed(2);
               const { speed, timeRemaining } = calculateUploadStats(progressEvent);
               estimatedTimeRemaining = timeRemaining;
-              statusMessage = `Uploaded ${loadedMB}MB of ${totalMB}MB (${speed} MB/s) • ${timeRemaining} remaining`;
+              statusMessage = $t('uploader.progress', { loaded: loadedMB, total: totalMB, speed, remaining: timeRemaining });
             } else {
               // For smaller files, still calculate time remaining but don't show detailed MB info
               const { timeRemaining } = calculateUploadStats(progressEvent);
@@ -1119,7 +1122,7 @@
 
       // Handle different types of errors
       if (err && typeof err === 'object' && 'code' in err && err.code === 'ECONNABORTED') {
-        error = 'Upload timed out. The server took too long to respond. Please try again.';
+        error = $t('uploader.timeout');
       } else if (err && typeof err === 'object' && 'response' in err && err.response &&
                 typeof err.response === 'object' && err.response !== null) {
         const response = err.response as {
@@ -1131,25 +1134,25 @@
         // Server responded with an error status code
         if (response.status === 413) {
           const fileSizeGB = file ? (file.size / (1024 * 1024 * 1024)).toFixed(1) : 'unknown';
-          error = `File too large (${fileSizeGB}GB). This file exceeds the current server upload limit of 15GB. Please try:\n• Compressing the video/audio file\n• Using a different format with better compression\n• Splitting large files into smaller parts\n• Contacting your administrator to increase limits`;
+          error = $t('uploader.fileTooLarge', { size: fileSizeGB });
         } else if (response.status === 401) {
-          error = 'Session expired. Please log in again.';
+          error = $t('uploader.sessionExpired');
         } else {
           error = response.data?.detail ||
                  response.data?.message ||
-                 `Server error: ${response.status} ${response.statusText || 'Unknown error'}`;
+                 $t('uploader.serverError', { status: response.status, text: response.statusText || $t('common.unknownError') });
         }
       } else if (err && typeof err === 'object' && 'request' in err) {
         // Request was made but no response received
-        error = 'No response from server. Please check your connection and try again.';
+        error = $t('uploader.noResponse');
       } else {
         // Something else went wrong
-        error = (err as Error)?.message || 'An unknown error occurred during upload.';
+        error = (err as Error)?.message || $t('uploader.unknownError');
       }
 
       // If we have a file and it's large, suggest using a different upload method
       if (file && file.size > 2 * 1024 * 1024 * 1024) { // > 2GB
-        error += '\n\nFor large files, consider using a more reliable upload method or splitting the file into smaller parts.';
+        error += '\n\n' + $t('uploader.largeFileTip');
       }
 
       // Dispatch error event
@@ -1280,7 +1283,7 @@
     if (processingUrl) {
       // If actively processing, reset state and notify user
       processingUrl = false;
-      toastStore.info('URL processing cancelled');
+      toastStore.info($t('uploader.urlProcessingCancelled'));
     }
     // Clear the URL field
     resetUrlState();
@@ -1320,7 +1323,7 @@
 
       // Check secure context
       if (!window.isSecureContext) {
-        toastStore.info('Clipboard access requires HTTPS. Use Ctrl+V to paste manually.');
+        toastStore.info($t('uploader.clipboardRequiresHttps'));
         fallbackToKeyboardPaste();
         return;
       }
@@ -1331,9 +1334,9 @@
       if (text && text.trim()) {
         youtubeUrl = text.trim();
         // Validation passed
-        toastStore.success('✓ Pasted from clipboard');
+        toastStore.success($t('uploader.pastedFromClipboard'));
       } else {
-        toastStore.info('Clipboard appears to be empty');
+        toastStore.info($t('uploader.clipboardEmpty'));
         fallbackToKeyboardPaste();
       }
 
@@ -1345,7 +1348,7 @@
         // Don't show error, just provide seamless fallback
         fallbackToKeyboardPaste();
       } else {
-        toastStore.info('Use Ctrl+V (Cmd+V on Mac) to paste');
+        toastStore.info($t('uploader.useCtrlV'));
         fallbackToKeyboardPaste();
       }
     }
@@ -1361,7 +1364,7 @@
       // Brief visual feedback that the button worked and input is ready
       setTimeout(() => {
         if (document.activeElement === input) {
-          toastStore.info('Ready to paste - use Ctrl+V (Cmd+V on Mac)');
+          toastStore.info($t('uploader.readyToPaste'));
         }
       }, 100);
     }
@@ -1370,12 +1373,12 @@
   // Process YouTube URL
   async function processYouTubeUrl() {
     if (!youtubeUrl.trim()) {
-      toastStore.error('Please enter a YouTube URL');
+      toastStore.error($t('uploader.enterYoutubeUrl'));
       return;
     }
 
     if (!isValidYouTubeUrl(youtubeUrl)) {
-      toastStore.error('Please enter a valid YouTube URL (e.g., https://www.youtube.com/watch?v=...)');
+      toastStore.error($t('uploader.validYoutubeUrlRequired'));
       return;
     }
 
@@ -1404,7 +1407,7 @@
         dispatch('uploadComplete', { isUrl: true, multiple: true });
 
         // Show success toast for playlist
-        toastStore.success(responseData.message || 'Playlist processing started. Videos will appear as they are extracted.');
+        toastStore.success(responseData.message || $t('uploader.playlistProcessingStarted'));
       } else {
         // Single video response (MediaFile object)
         const mediaFile = responseData;
@@ -1413,7 +1416,7 @@
         dispatch('uploadComplete', { fileId: mediaFile.id, isUrl: true });
 
         // Show success toast with more descriptive message
-        toastStore.success(`YouTube video "${mediaFile.title || 'video'}" added to processing queue`);
+        toastStore.success($t('uploader.youtubeVideoAdded', { title: mediaFile.title || 'video' }));
       }
 
     } catch (error: unknown) {
@@ -1423,13 +1426,13 @@
       // Handle different types of errors
       if (axiosError.response?.status === 409) {
         // Duplicate video
-        toastStore.warning(axiosError.response.data.detail || 'This YouTube video already exists in your library');
+        toastStore.warning(axiosError.response.data.detail || $t('uploader.duplicateYoutubeVideo'));
       } else if (axiosError.response?.status === 400) {
         // Bad request (invalid URL, etc.)
-        toastStore.error(axiosError.response.data.detail || 'Invalid YouTube URL');
+        toastStore.error(axiosError.response.data.detail || $t('uploader.invalidYoutubeUrl'));
       } else {
         // Other errors
-        toastStore.error('Failed to process YouTube URL. Please try again.');
+        toastStore.error($t('uploader.failedToProcessUrl'));
       }
     } finally {
       processingUrl = false;
@@ -1473,7 +1476,7 @@
       return { speed: speedMBps, timeRemaining };
     }
 
-    return { speed: '0.0', timeRemaining: 'Calculating...' };
+    return { speed: '0.0', timeRemaining: $t('uploader.calculating') };
   }
 
   // Calculate file hash using imohash package
@@ -1576,25 +1579,25 @@
         <polyline points="17 8 12 3 7 8"></polyline>
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
-      Upload File
+      {$t('uploader.uploadFile')}
     </button>
     <button
       class="tab-button {activeTab === 'url' ? 'active' : ''}"
       on:click={() => switchTab('url')}
       disabled={!$isOnline}
-      title={$isOnline ? 'Download video from YouTube URL' : 'Internet connection required for YouTube downloads'}
+      title={$isOnline ? $t('uploader.youtubeUrlTooltipOnline') : $t('uploader.youtubeUrlTooltipOffline')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
       </svg>
-      YouTube URL
+      {$t('uploader.youtubeUrl')}
     </button>
     <button
       class="tab-button {activeTab === 'record' ? 'active' : ''}"
       on:click={() => switchTab('record')}
       disabled={!recordingSupported}
-      title={recordingSupported ? 'Record audio from microphone' : 'Recording not supported in this browser'}
+      title={recordingSupported ? $t('uploader.recordAudioTooltipSupported') : $t('uploader.recordAudioTooltipUnsupported')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
@@ -1602,7 +1605,7 @@
         <line x1="12" y1="19" x2="12" y2="23"></line>
         <line x1="8" y1="23" x2="16" y2="23"></line>
       </svg>
-      Record Audio
+      {$t('uploader.recordAudio')}
     </button>
   </div>
   <!-- Display duplicate notification - made more prominent with !important -->
@@ -1617,11 +1620,11 @@
         </svg>
       </div>
       <div class="message-content">
-        <strong>Duplicate File Detected!</strong>
-        <p>This file has already been uploaded and is available in your library. You can use the existing file instead of uploading it again.</p>
+        <strong>{$t('uploader.duplicateDetected')}</strong>
+        <p>{$t('uploader.duplicateMessage')}</p>
         <div class="message-actions">
           <button class="btn-acknowledge" on:click|stopPropagation={acknowledgeDuplicate}>
-            Use Existing File
+            {$t('uploader.useExistingFile')}
           </button>
         </div>
       </div>
@@ -1643,7 +1646,7 @@
         <div class="message-actions">
           {#if error.includes('Warning:')}
             <button class="btn-continue" on:click|stopPropagation={uploadFile}>
-              Continue Anyway
+              {$t('uploader.continueAnyway')}
             </button>
           {/if}
         </div>
@@ -1662,7 +1665,7 @@
       on:keydown={(e) => e.key === 'Enter' && openFileDialog()}
       role="button"
       tabindex="0"
-      title="Drop your audio or video file here, or click to browse and select a file"
+      title={$t('uploader.dropZoneTooltip')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -1670,9 +1673,9 @@
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
       <div class="upload-text">
-        <span>Drag & drop your audio/video files here</span>
-        <span class="or-text">or click to browse</span>
-        <span class="multi-file-hint">Multiple files supported</span>
+        <span>{$t('uploader.dragDropFiles')}</span>
+        <span class="or-text">{$t('uploader.orClickToBrowse')}</span>
+        <span class="multi-file-hint">{$t('uploader.multipleFilesSupported')}</span>
       </div>
       <input
         type="file"
@@ -1685,7 +1688,7 @@
     </div>
 
     <div class="supported-formats">
-      <p>Supported formats: MP3, WAV, OGG, FLAC, AAC, M4A, MP4, WEBM</p>
+      <p>{$t('uploader.supportedFormats')}</p>
     </div>
     {:else}
       <div class="selected-file">
@@ -1712,8 +1715,8 @@
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
-              <span>Using system defaults{#if transcriptionSystemDefaults} (min: {transcriptionSystemDefaults.min_speakers}, max: {transcriptionSystemDefaults.max_speakers}){/if}</span>
-              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>Customize</button>
+              <span>{$t('uploader.usingSystemDefaults')}{#if transcriptionSystemDefaults} (min: {transcriptionSystemDefaults.min_speakers}, max: {transcriptionSystemDefaults.max_speakers}){/if}</span>
+              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>{$t('uploader.customize')}</button>
             </div>
           {:else if transcriptionSettings.speaker_prompt_behavior === 'use_custom'}
             <div class="settings-info-note">
@@ -1722,8 +1725,8 @@
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
-              <span>Using your saved settings (min: {transcriptionSettings.min_speakers}, max: {transcriptionSettings.max_speakers})</span>
-              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>Customize</button>
+              <span>{$t('uploader.usingSavedSettings')} (min: {transcriptionSettings.min_speakers}, max: {transcriptionSettings.max_speakers})</span>
+              <button type="button" class="settings-override-link" on:click={toggleAdvancedSettings}>{$t('uploader.customize')}</button>
             </div>
           {/if}
         {/if}
@@ -1734,13 +1737,13 @@
             type="button"
             class="advanced-settings-toggle"
             on:click={toggleAdvancedSettings}
-            title="Configure speaker diarization settings"
+            title={$t('uploader.advancedSettingsTooltip')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3"></circle>
               <path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"></path>
             </svg>
-            Advanced Settings
+            {$t('uploader.advancedSettings')}
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron {showAdvancedSettings ? 'open' : ''}">
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
@@ -1750,20 +1753,20 @@
         {#if showAdvancedSettings}
           <div class="advanced-settings-content">
             <div class="settings-help-text">
-              <p>Configure speaker diarization settings for this file. Leave empty to use system defaults.</p>
+              <p>{$t('uploader.settingsHelpText')}</p>
             </div>
 
             <div class="settings-row">
               <div class="setting-field">
                 <label for="min-speakers">
-                  Min Speakers
-                  <span class="setting-hint">Minimum expected speakers</span>
+                  {$t('uploader.minSpeakers')}
+                  <span class="setting-hint">{$t('uploader.minSpeakersHint')}</span>
                 </label>
                 <input
                   id="min-speakers"
                   type="number"
                   min="1"
-                  placeholder={transcriptionSystemDefaults ? `Default: ${transcriptionSystemDefaults.min_speakers}` : 'Uses default'}
+                  placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.min_speakers}` : $t('uploader.usesDefault')}
                   bind:value={minSpeakers}
                   disabled={numSpeakers !== null}
                 />
@@ -1771,14 +1774,14 @@
 
               <div class="setting-field">
                 <label for="max-speakers">
-                  Max Speakers
-                  <span class="setting-hint">Maximum expected speakers</span>
+                  {$t('uploader.maxSpeakers')}
+                  <span class="setting-hint">{$t('uploader.maxSpeakersHint')}</span>
                 </label>
                 <input
                   id="max-speakers"
                   type="number"
                   min="1"
-                  placeholder={transcriptionSystemDefaults ? `Default: ${transcriptionSystemDefaults.max_speakers}` : 'Uses default'}
+                  placeholder={transcriptionSystemDefaults ? `${$t('uploader.default')}: ${transcriptionSystemDefaults.max_speakers}` : $t('uploader.usesDefault')}
                   bind:value={maxSpeakers}
                   disabled={numSpeakers !== null}
                 />
@@ -1787,14 +1790,14 @@
 
             <div class="setting-field">
               <label for="num-speakers">
-                Fixed Speaker Count
-                <span class="setting-hint">Exact number of speakers (overrides min/max)</span>
+                {$t('uploader.fixedSpeakerCount')}
+                <span class="setting-hint">{$t('uploader.fixedSpeakerCountHint')}</span>
               </label>
               <input
                 id="num-speakers"
                 type="number"
                 min="1"
-                placeholder="Uses default"
+                placeholder={$t('uploader.usesDefault')}
                 bind:value={numSpeakers}
               />
             </div>
@@ -1806,7 +1809,7 @@
                   <line x1="12" y1="8" x2="12" y2="12"></line>
                   <line x1="12" y1="16" x2="12.01" y2="16"></line>
                 </svg>
-                Min speakers must be less than or equal to max speakers
+                {$t('uploader.minMaxValidationError')}
               </div>
             {/if}
           </div>
@@ -1819,17 +1822,17 @@
           class="cancel-button"
           on:click={cancelUpload}
           disabled={isCancelling}
-          title={isCancelling ? 'Cancelling...' : 'Cancel selection or upload'}
+          title={isCancelling ? $t('uploader.cancelling') : $t('uploader.cancelTooltip')}
         >
-          {isCancelling ? 'Cancelling...' : 'Cancel'}
+          {isCancelling ? $t('uploader.cancelling') : $t('common.cancel')}
         </button>
         <button
           class="upload-button"
           on:click={uploadFile}
           disabled={uploading || (minSpeakers !== null && maxSpeakers !== null && minSpeakers > maxSpeakers)}
-          title="Upload the selected file for transcription"
+          title={$t('uploader.uploadTooltip')}
         >
-          {uploading ? 'Uploading...' : 'Upload'}
+          {uploading ? $t('uploader.uploading') : $t('uploader.upload')}
         </button>
       </div>
       </div>
@@ -1839,7 +1842,7 @@
           <div class="progress-header">
             <span class="progress-text">{progress}%</span>
             {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
-              <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+              <span class="time-remaining">{estimatedTimeRemaining} {$t('uploader.remaining')}</span>
             {/if}
           </div>
           <div class="progress-bar">
@@ -1865,8 +1868,8 @@
             </svg>
           </div>
           <div class="message-content">
-            <strong>No Internet Connection</strong><br />
-            YouTube downloads require an active internet connection. Please check your connection and try again.
+            <strong>{$t('uploader.noInternet')}</strong><br />
+            {$t('uploader.youtubeNeedsInternet')}
           </div>
         </div>
       {/if}
@@ -1876,13 +1879,13 @@
             <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
             <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
           </svg>
-          YouTube URL
+          {$t('uploader.youtubeUrl')}
         </label>
         <div class="url-input-wrapper">
           <input
             id="youtube-url"
             type="url"
-            placeholder="https://www.youtube.com/watch?v=..."
+            placeholder={$t('uploader.youtubeUrlPlaceholder')}
             class="url-input"
             bind:value={youtubeUrl}
             disabled={processingUrl || !$isOnline}
@@ -1892,7 +1895,7 @@
             class="paste-button"
             on:click={pasteFromClipboard}
             disabled={processingUrl || !$isOnline}
-            title="Paste URL from clipboard (or use Ctrl+V in the input field)"
+            title={$t('uploader.pasteTooltip')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
@@ -1910,28 +1913,27 @@
             class="cancel-url-button"
             on:click={cancelUrlProcessing}
             disabled={isCancelling}
-            title={isCancelling ? 'Cancelling...' : (processingUrl ? 'Cancel processing' : 'Clear URL')}
+            title={isCancelling ? $t('uploader.cancelling') : (processingUrl ? $t('uploader.cancelProcessing') : $t('uploader.clearUrl'))}
           >
-            {isCancelling ? 'Cancelling...' : (processingUrl ? 'Cancel' : 'Clear')}
+            {isCancelling ? $t('uploader.cancelling') : (processingUrl ? $t('common.cancel') : $t('uploader.clear'))}
           </button>
           <button
             class="process-url-button"
             on:click={processYouTubeUrl}
             disabled={processingUrl || !youtubeUrl.trim() || !$isOnline}
-            title={$isOnline ? "Process YouTube video for transcription" : "Internet connection required"}
+            title={$isOnline ? $t('uploader.processYoutubeTooltip') : $t('uploader.internetRequired')}
           >
-            {processingUrl ? 'Processing...' : 'Process Video'}
+            {processingUrl ? $t('uploader.processing') : $t('uploader.processVideo')}
           </button>
         </div>
       </div>
 
       <div class="url-info">
         <p class="url-description">
-          Enter a YouTube video URL to download and transcribe the video automatically.
-          The video will be processed and available in your media library just like uploaded files.
+          {$t('uploader.youtubeDescription')}
         </p>
         <div class="supported-formats">
-          <p>Supported: YouTube videos and playlists</p>
+          <p>{$t('uploader.youtubeSupported')}</p>
         </div>
       </div>
     </div>
@@ -1948,7 +1950,7 @@
             </svg>
           </div>
           <div class="message-content">
-            Recording is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.
+            {$t('uploader.recordingNotSupported')}
           </div>
         </div>
       {:else}
@@ -1962,7 +1964,7 @@
                   <line x1="12" y1="19" x2="12" y2="23"></line>
                   <line x1="8" y1="23" x2="16" y2="23"></line>
                 </svg>
-                Microphone Device
+                {$t('uploader.microphoneDevice')}
               </label>
               <select
                 id="audio-device-select"
@@ -1970,11 +1972,11 @@
                 value={selectedDeviceId}
                 on:change={handleDeviceChange}
                 disabled={$isRecording}
-                title="Select microphone device"
+                title={$t('uploader.selectMicrophoneTooltip')}
               >
                 {#each audioDevices as device}
                   <option value={device.deviceId}>
-                    {device.label || `Microphone ${audioDevices.indexOf(device) + 1}`}
+                    {device.label || `${$t('uploader.microphone')} ${audioDevices.indexOf(device) + 1}`}
                   </option>
                 {/each}
               </select>
@@ -1986,7 +1988,7 @@
               <button
                 class="recording-button primary-button"
                 on:click={startRecording}
-                title="Start audio recording (max {Math.floor(maxRecordingDuration / 60)} minutes)"
+                title={$t('uploader.startRecordingTooltip', { max: Math.floor(maxRecordingDuration / 60) })}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
@@ -1994,7 +1996,7 @@
                   <line x1="12" y1="19" x2="12" y2="23"></line>
                   <line x1="8" y1="23" x2="16" y2="23"></line>
                 </svg>
-                Start Recording
+                {$t('uploader.startRecording')}
               </button>
             {:else if $isRecording}
               <div class="recording-active-compact">
@@ -2002,7 +2004,7 @@
                   <div class="recording-indicator-compact">
                     <div class="recording-dot {isPaused ? 'paused' : 'recording'}"></div>
                     <span class="recording-status-text">
-                      {isPaused ? 'Paused' : 'Recording'}
+                      {isPaused ? $t('uploader.paused') : $t('uploader.recording')}
                     </span>
                     <span class="recording-duration-compact">{formatDuration($recordingDuration)}</span>
                   </div>
@@ -2026,7 +2028,7 @@
                   <button
                     class="control-button-compact pause-button"
                     on:click={togglePauseRecording}
-                    title={isPaused ? 'Resume recording' : 'Pause recording'}
+                    title={isPaused ? $t('uploader.resumeRecording') : $t('uploader.pauseRecording')}
                   >
                     {#if isPaused}
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2043,7 +2045,7 @@
                   <button
                     class="control-button-compact stop-button"
                     on:click={stopRecording}
-                    title="Stop recording and prepare for upload"
+                    title={$t('uploader.stopRecording')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -2055,7 +2057,7 @@
               <div class="recording-complete-compact">
                 <div class="recording-info-compact">
                   <div class="recording-details-compact">
-                    <span class="recording-title-compact">Recording Complete</span>
+                    <span class="recording-title-compact">{$t('uploader.recordingComplete')}</span>
                     <span class="recording-meta-compact">{formatDuration($recordingDuration)} • {(recordedBlob.size / 1024 / 1024).toFixed(1)} MB</span>
                   </div>
                 </div>
@@ -2065,14 +2067,14 @@
                     class="control-button-compact upload-recording-button primary-action"
                     on:click={uploadRecordedAudio}
                     disabled={uploading}
-                    title="Upload recording for AI transcription and processing"
+                    title={$t('uploader.uploadRecordingTooltip')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                       <polyline points="17 8 12 3 7 8"></polyline>
                       <line x1="12" y1="3" x2="12" y2="15"></line>
                     </svg>
-                    {uploading ? 'Uploading...' : 'Upload'}
+                    {uploading ? $t('uploader.uploading') : $t('uploader.upload')}
                   </button>
 
                   <div class="action-separator"></div>
@@ -2080,13 +2082,13 @@
                   <button
                     class="control-button-compact clear-button secondary-action"
                     on:click={clearRecording}
-                    title="Clear recording and start over"
+                    title={$t('uploader.clearRecordingTooltip')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="3 6 5 6 21 6"></polyline>
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                     </svg>
-                    Start Over
+                    {$t('uploader.startOver')}
                   </button>
                 </div>
               </div>
@@ -2097,8 +2099,8 @@
             <div class="progress-container">
               <div class="progress-header">
                 <span class="progress-text">{progress}%</span>
-                {#if estimatedTimeRemaining && estimatedTimeRemaining !== 'Calculating...'}
-                  <span class="time-remaining">{estimatedTimeRemaining} remaining</span>
+                {#if estimatedTimeRemaining && estimatedTimeRemaining !== $t('uploader.calculating')}
+                  <span class="time-remaining">{estimatedTimeRemaining} {$t('uploader.remaining')}</span>
                 {/if}
               </div>
               <div class="progress-bar">
@@ -2114,16 +2116,16 @@
 
         <div class="recording-settings-section">
           <div class="settings-summary-centered">
-            Max: {Math.floor(maxRecordingDuration / 60)}min • Quality: {recordingQuality} • Auto-stop: {autoStopEnabled ? 'On' : 'Off'}
+            {$t('uploader.recordingSettingsSummary', { max: Math.floor(maxRecordingDuration / 60), quality: recordingQuality, autoStop: autoStopEnabled ? $t('uploader.on') : $t('uploader.off') })}
           </div>
           <div class="settings-link-centered">
             <button
               type="button"
               class="change-settings-link"
               on:click={() => settingsModalStore.open('recording')}
-              title="Go to user settings to change recording preferences"
+              title={$t('uploader.changeSettingsTooltip')}
             >
-              Change settings
+              {$t('uploader.changeSettings')}
             </button>
           </div>
         </div>
@@ -2134,10 +2136,10 @@
 
 <!-- Background Recording Indicator -->
 {#if $hasActiveRecording && activeTab !== 'record'}
-  <div class="background-recording-indicator" title="Recording in progress - {Math.floor((Date.now() - ($recordingStartTime || 0)) / 1000)}s">
+  <div class="background-recording-indicator" title={$t('uploader.recordingInProgress', { seconds: Math.floor((Date.now() - ($recordingStartTime || 0)) / 1000) })}>
     <div class="recording-pulse"></div>
-    <span class="recording-indicator-text">Recording...</span>
-    <button class="return-to-recording" on:click={() => switchTab('record')} title="Return to recording">
+    <span class="recording-indicator-text">{$t('uploader.recording')}...</span>
+    <button class="return-to-recording" on:click={() => switchTab('record')} title={$t('uploader.returnToRecording')}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 1a4 4 0 0 0-4 4v7a4 4 0 0 0 8 0V5a4 4 0 0 0-4-4z"></path>
         <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -2151,10 +2153,10 @@
 <!-- Recording Warning Confirmation Modal -->
 <ConfirmationModal
   bind:isOpen={showRecordingWarningModal}
-  title="Recording in Progress"
-  message="You have an active recording in progress. Switching tabs will stop and discard your recording. Are you sure you want to continue?"
-  confirmText="Discard Recording"
-  cancelText="Keep Recording"
+  title={$t('uploader.recordingInProgressTitle')}
+  message={$t('uploader.recordingWarningMessage')}
+  confirmText={$t('uploader.discardRecording')}
+  cancelText={$t('uploader.keepRecording')}
   confirmButtonClass="modal-warning-button"
   cancelButtonClass="modal-primary-button"
   on:confirm={handleRecordingWarningConfirm}

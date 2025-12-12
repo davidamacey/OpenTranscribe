@@ -3,6 +3,7 @@
   import { fade, slide } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
   import ConfirmationModal from './ConfirmationModal.svelte';
 
   // Props
@@ -37,7 +38,7 @@
       collections = response.data;
     } catch (err: any) {
       console.error('Error fetching collections:', err);
-      toastStore.error('Failed to load collections');
+      toastStore.error($t('collectionsPanel.failedToLoad'));
     } finally {
       loading = false;
     }
@@ -69,14 +70,14 @@
         // Trigger callback to refresh filters after adding media
         onCollectionSelect(response.data.id);
       } else {
-        toastStore.success(`Collection "${response.data.name}" created successfully`);
+        toastStore.success($t('collectionsPanel.createdSuccess', { name: response.data.name }));
         // Close the create modal but keep the manage collections modal open
         showCreateModal = false;
         // Don't trigger collection selection callback in manage mode during creation
       }
     } catch (err: any) {
       console.error('Error creating collection:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to create collection');
+      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToCreate'));
     } finally {
       creating = false;
     }
@@ -99,12 +100,12 @@
         col.id === collectionToEdit.id ? { ...col, ...response.data } : col
       );
 
-      toastStore.success(`Collection "${editCollectionName}" updated successfully`);
+      toastStore.success($t('collectionsPanel.updatedSuccess', { name: editCollectionName }));
       showEditModal = false;
       collectionToEdit = null;
     } catch (err: any) {
       console.error('Error updating collection:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to update collection');
+      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToUpdate'));
     } finally {
       updating = false;
     }
@@ -138,12 +139,12 @@
         selectedCollectionId = null;
       }
 
-      toastStore.success(`Collection "${collectionToDelete.name}" deleted successfully`);
+      toastStore.success($t('collectionsPanel.deletedSuccess', { name: collectionToDelete.name }));
       showDeleteConfirm = false;
       collectionToDelete = null;
     } catch (err: any) {
       console.error('Error deleting collection:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to delete collection');
+      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToDelete'));
     } finally {
       deleting = false;
     }
@@ -180,13 +181,13 @@
 
       // Show success message
       const collection = collections.find(c => c.id === collectionId);
-      toastStore.success(`Added ${response.data.added} file(s) to "${collection?.name || 'collection'}"`);
+      toastStore.success($t('collectionsPanel.addedSuccess', { count: response.data.added, name: collection?.name || 'collection' }));
 
       // Trigger callback to close modal and refresh
       onCollectionSelect(collectionId);
     } catch (err: any) {
       console.error('Error adding media to collection:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to add media to collection');
+      toastStore.error(err.response?.data?.detail || $t('collectionsPanel.failedToAddMedia'));
     } finally {
       addingToCollection = false;
     }
@@ -209,7 +210,7 @@
 
 <div class="collections-panel" transition:fade>
   <div class="panel-header">
-    <h3>Collections</h3>
+    <h3>{$t('collectionsPanel.title')}</h3>
     <button
       class="btn-create"
       on:click={() => {
@@ -218,19 +219,19 @@
       disabled={creating}
     >
       <span class="icon">+</span>
-      New Collection
+      {$t('collectionsPanel.newCollection')}
     </button>
   </div>
 
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
-      Loading collections...
+      {$t('collectionsPanel.loading')}
     </div>
   {:else if collections.length === 0}
     <div class="empty-state">
-      <p>No collections yet</p>
-      <p class="hint">Create your first collection to organize your media files</p>
+      <p>{$t('collectionsPanel.noCollectionsYet')}</p>
+      <p class="hint">{$t('collectionsPanel.createFirstHint')}</p>
     </div>
   {:else}
     <div class="collections-list">
@@ -250,9 +251,9 @@
               <p class="description">{collection.description}</p>
             {/if}
             <div class="meta">
-              <span class="media-count">{collection.media_count} file{collection.media_count !== 1 ? 's' : ''}</span>
+              <span class="media-count">{collection.media_count} {collection.media_count !== 1 ? $t('collectionsPanel.files') : $t('collectionsPanel.file')}</span>
               {#if collection.is_public}
-                <span class="badge public">Public</span>
+                <span class="badge public">{$t('collectionsPanel.public')}</span>
               {/if}
             </div>
           </div>
@@ -261,7 +262,7 @@
             <div class="collection-actions">
               <button
                 class="edit-button"
-                title="Edit collection"
+                title={$t('collectionsPanel.editCollection')}
                 on:click|stopPropagation={() => openEditModal(collection)}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -271,7 +272,7 @@
               </button>
               <button
                 class="delete-config-button"
-                title="Delete collection"
+                title={$t('collectionsPanel.deleteCollection')}
                 on:click|stopPropagation={() => openDeleteConfirm(collection)}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -288,7 +289,7 @@
               disabled={addingToCollection}
               on:click|stopPropagation={() => addMediaToCollection(collection.id)}
             >
-              Add {selectedMediaIds.length} file{selectedMediaIds.length !== 1 ? 's' : ''}
+              {selectedMediaIds.length !== 1 ? $t('collectionsPanel.addFiles', { count: selectedMediaIds.length }) : $t('collectionsPanel.addFile', { count: selectedMediaIds.length })}
             </button>
           {/if}
         </div>
@@ -320,36 +321,36 @@
         transition:slide
       >
         <div class="modal-header">
-          <h3>Create New Collection</h3>
+          <h3>{$t('collectionsPanel.createNewCollection')}</h3>
           <button
             class="close-button"
             on:click={() => showCreateModal = false}
             type="button"
-            aria-label="Close modal"
+            aria-label={$t('collectionsPanel.closeModal')}
           >×</button>
         </div>
 
         <form on:submit|preventDefault={createCollection} class="config-form">
           <div class="form-group">
-            <label for="collection-name">Name *</label>
+            <label for="collection-name">{$t('collectionsPanel.name')}</label>
             <input
               id="collection-name"
               type="text"
               bind:value={newCollectionName}
               class="form-control"
-              placeholder="My Collection"
+              placeholder={$t('collectionsPanel.namePlaceholder')}
               required
               disabled={creating}
             />
           </div>
 
           <div class="form-group">
-            <label for="collection-description">Description</label>
+            <label for="collection-description">{$t('collectionsPanel.description')}</label>
             <textarea
               id="collection-description"
               bind:value={newCollectionDescription}
               class="form-control"
-              placeholder="Describe this collection..."
+              placeholder={$t('collectionsPanel.descriptionPlaceholder')}
               rows="3"
               disabled={creating}
             ></textarea>
@@ -362,7 +363,7 @@
               on:click={() => showCreateModal = false}
               disabled={creating}
             >
-              Cancel
+              {$t('collectionsPanel.cancel')}
             </button>
             <button
               type="submit"
@@ -371,14 +372,14 @@
             >
               {#if creating}
                 <div class="spinner-mini"></div>
-                Creating...
+                {$t('collectionsPanel.creating')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                   <polyline points="17,21 17,13 7,13 7,21"/>
                   <polyline points="7,3 7,8 15,8"/>
                 </svg>
-                Create Collection
+                {$t('collectionsPanel.createCollection')}
               {/if}
             </button>
           </div>
@@ -411,36 +412,36 @@
         transition:slide
       >
         <div class="modal-header">
-          <h3>Edit Collection</h3>
+          <h3>{$t('collectionsPanel.editCollectionTitle')}</h3>
           <button
             class="close-button"
             on:click={() => showEditModal = false}
             type="button"
-            aria-label="Close modal"
+            aria-label={$t('collectionsPanel.closeModal')}
           >×</button>
         </div>
 
         <form on:submit|preventDefault={updateCollection} class="config-form">
           <div class="form-group">
-            <label for="edit-collection-name">Name *</label>
+            <label for="edit-collection-name">{$t('collectionsPanel.name')}</label>
             <input
               id="edit-collection-name"
               type="text"
               bind:value={editCollectionName}
               class="form-control"
-              placeholder="Collection Name"
+              placeholder={$t('collectionsPanel.collectionName')}
               required
               disabled={updating}
             />
           </div>
 
           <div class="form-group">
-            <label for="edit-collection-description">Description</label>
+            <label for="edit-collection-description">{$t('collectionsPanel.description')}</label>
             <textarea
               id="edit-collection-description"
               bind:value={editCollectionDescription}
               class="form-control"
-              placeholder="Describe this collection..."
+              placeholder={$t('collectionsPanel.descriptionPlaceholder')}
               rows="3"
               disabled={updating}
             ></textarea>
@@ -453,7 +454,7 @@
               on:click={() => showEditModal = false}
               disabled={updating}
             >
-              Cancel
+              {$t('collectionsPanel.cancel')}
             </button>
             <button
               type="submit"
@@ -462,14 +463,14 @@
             >
               {#if updating}
                 <div class="spinner-mini"></div>
-                Updating...
+                {$t('collectionsPanel.updating')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                   <polyline points="17,21 17,13 7,13 7,21"/>
                   <polyline points="7,3 7,8 15,8"/>
                 </svg>
-                Update Collection
+                {$t('collectionsPanel.updateCollection')}
               {/if}
             </button>
           </div>
@@ -481,10 +482,10 @@
 <!-- Delete Confirmation Modal -->
 <ConfirmationModal
   bind:isOpen={showDeleteConfirm}
-  title="Delete Collection"
-  message={collectionToDelete ? `Are you sure you want to delete the collection "${collectionToDelete.name}"? This action cannot be undone. The media files will not be deleted, only removed from this collection.` : ''}
-  confirmText={deleting ? 'Deleting...' : 'Delete Collection'}
-  cancelText="Cancel"
+  title={$t('collectionsPanel.deleteCollectionTitle')}
+  message={collectionToDelete ? $t('collectionsPanel.deleteConfirmMessage', { name: collectionToDelete.name }) : ''}
+  confirmText={deleting ? $t('collectionsPanel.deleting') : $t('collectionsPanel.deleteCollectionButton')}
+  cancelText={$t('collectionsPanel.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={handleConfirmModalConfirm}

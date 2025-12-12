@@ -3,6 +3,7 @@ import { writable } from "svelte/store";
 export type SettingsSection =
   // User sections
   | "profile"
+  | "language"
   | "recording"
   | "audio-extraction"
   | "transcription"
@@ -26,6 +27,7 @@ const initialState: SettingsModalState = {
   activeSection: "profile",
   dirtyState: {
     profile: false,
+    language: false,
     recording: false,
     "audio-extraction": false,
     transcription: false,

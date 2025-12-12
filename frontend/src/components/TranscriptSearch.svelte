@@ -2,6 +2,8 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let transcriptSegments: TranscriptSegment[] = [];
   export let speakerList: any[] = [];
@@ -92,7 +94,7 @@
     // Create speaker name mapping for consistent search
     const speakerMapping = new Map();
     speakerList.forEach((speaker: any) => {
-      speakerMapping.set(speaker.name, speaker.display_name || speaker.name);
+      speakerMapping.set(speaker.name, translateSpeakerLabel(speaker.display_name || speaker.name));
     });
 
     transcriptSegments.forEach((segment, segmentIndex) => {
@@ -289,24 +291,24 @@
         bind:value={searchQuery}
         on:input={handleSearchInput}
         type="text"
-        placeholder="Search transcript and speakers... (Ctrl+F)"
+        placeholder={$t('transcriptSearch.placeholder')}
         class="search-input"
         {disabled}
-        aria-label="Search transcript and speaker names"
+        aria-label={$t('transcriptSearch.ariaLabel')}
         aria-describedby={totalMatches > 0 ? "search-results-info" : undefined}
       />
 
       {#if isSearching && previouslyHadResults}
         <!-- Maintain navigation controls layout during search to prevent flicker -->
         <div class="search-results-info" id="search-results-info">
-          <span class="results-count searching">Searching...</span>
+          <span class="results-count searching">{$t('transcriptSearch.searching')}</span>
           <div class="navigation-controls">
             <div class="navigation-buttons">
               <button
                 class="nav-button"
                 disabled={true}
-                title="Previous match (Shift+Enter)"
-                aria-label="Go to previous search match"
+                title={$t('transcriptSearch.previousMatchTitle')}
+                aria-label={$t('transcriptSearch.previousMatchAriaLabel')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="15,18 9,12 15,6"></polyline>
@@ -315,8 +317,8 @@
               <button
                 class="nav-button"
                 disabled={true}
-                title="Next match (Enter)"
-                aria-label="Go to next search match"
+                title={$t('transcriptSearch.nextMatchTitle')}
+                aria-label={$t('transcriptSearch.nextMatchAriaLabel')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="9,6 15,12 9,18"></polyline>
@@ -326,8 +328,8 @@
             <button
               class="jump-button"
               disabled={true}
-              title="Jump to current match in video"
-              aria-label="Jump to current match timestamp in video"
+              title={$t('transcriptSearch.jumpToMatchTitle')}
+              aria-label={$t('transcriptSearch.jumpToMatchAriaLabel')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -338,19 +340,19 @@
       {:else if isSearching}
         <!-- Simple searching state for first search -->
         <div class="search-results-info" id="search-results-info">
-          <span class="results-count searching">Searching...</span>
+          <span class="results-count searching">{$t('transcriptSearch.searching')}</span>
         </div>
       {:else if totalMatches > 0}
         <div class="search-results-info" id="search-results-info">
-          <span class="results-count" aria-live="polite">{currentMatch} of {totalMatches}</span>
+          <span class="results-count" aria-live="polite">{$t('transcriptSearch.matchCounter', { current: currentMatch, total: totalMatches })}</span>
           <div class="navigation-controls">
             <div class="navigation-buttons">
               <button
                 class="nav-button"
                 on:click={navigateToPrevious}
                 disabled={totalMatches === 0}
-                title="Previous match (Shift+Enter)"
-                aria-label="Go to previous search match"
+                title={$t('transcriptSearch.previousMatchTitle')}
+                aria-label={$t('transcriptSearch.previousMatchAriaLabel')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="15,18 9,12 15,6"></polyline>
@@ -360,8 +362,8 @@
                 class="nav-button"
                 on:click={navigateToNext}
                 disabled={totalMatches === 0}
-                title="Next match (Enter)"
-                aria-label="Go to next search match"
+                title={$t('transcriptSearch.nextMatchTitle')}
+                aria-label={$t('transcriptSearch.nextMatchAriaLabel')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="9,6 15,12 9,18"></polyline>
@@ -372,8 +374,8 @@
               class="jump-button"
               on:click={seekToCurrentMatch}
               disabled={totalMatches === 0}
-              title="Jump to current match in video"
-              aria-label="Jump to current match timestamp in video"
+              title={$t('transcriptSearch.jumpToMatchTitle')}
+              aria-label={$t('transcriptSearch.jumpToMatchAriaLabel')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -383,14 +385,14 @@
         </div>
       {:else if searchQuery.trim() && !isSearching}
         <div class="search-results-info">
-          <span class="results-count no-results">No matches</span>
+          <span class="results-count no-results">{$t('transcriptSearch.noMatches')}</span>
         </div>
       {/if}
 
       <button
         class="close-button"
         on:click={closeSearch}
-        title="Close search (Escape)"
+        title={$t('transcriptSearch.closeSearchTitle')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 6L6 18M6 6l12 12"/>
@@ -403,14 +405,14 @@
     <button
       class="search-trigger-button"
       on:click={openSearch}
-      title="Search transcript (Ctrl+F)"
+      title={$t('transcriptSearch.searchButtonTitle')}
       {disabled}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"></circle>
         <path d="M21 21l-4.35-4.35"></path>
       </svg>
-      Search
+      {$t('transcriptSearch.searchButtonLabel')}
     </button>
   </div>
 {/if}

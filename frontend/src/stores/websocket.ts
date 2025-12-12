@@ -1,6 +1,7 @@
-import { writable, derived, type Writable } from "svelte/store";
+import { writable, derived, get, type Writable } from "svelte/store";
 import * as authStore from "./auth";
 import { downloadStore } from "./downloads";
+import { t } from "$stores/locale";
 
 // Define notification types
 export type NotificationType =
@@ -478,33 +479,34 @@ function createWebSocketStore() {
 
   // Get a suitable title based on notification type
   const getNotificationTitle = (type: string): string => {
+    const translate = get(t);
     switch (type) {
       case "transcription_status":
-        return "Transcription Update";
+        return translate("notifications.transcriptionUpdate");
       case "summarization_status":
-        return "Summarization Update";
+        return translate("notifications.summarizationUpdate");
       case "topic_extraction_status":
-        return "Topic Extraction";
+        return translate("notifications.topicExtraction");
       case "youtube_processing_status":
-        return "YouTube Processing";
+        return translate("notifications.youtubeProcessing");
       case "playlist_processing_status":
-        return "Playlist Processing";
+        return translate("notifications.playlistProcessing");
       case "analytics_status":
-        return "Analytics Update";
+        return translate("notifications.analyticsUpdate");
       case "download_progress":
-        return "Download Progress";
+        return translate("notifications.downloadProgress");
       case "audio_extraction_status":
-        return "Audio Extraction";
+        return translate("notifications.audioExtraction");
       case "file_upload":
-        return "File Upload";
+        return translate("notifications.fileUpload");
       case "file_created":
-        return "File Created";
+        return translate("notifications.fileCreated");
       case "file_updated":
-        return "File Updated";
+        return translate("notifications.fileUpdated");
       case "file_deleted":
-        return "File Deleted";
+        return translate("notifications.fileDeleted");
       default:
-        return "Notification";
+        return translate("notifications.notification");
     }
   };
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import axios from 'axios';
+  import { t } from '$stores/locale';
 
   export let fileId: number | null = null;
 
@@ -52,7 +53,7 @@
         };
       } else {
         error = {
-          message: 'Unknown error occurred',
+          message: $t('apiDebugger.unknownError'),
           status: undefined,
           data: undefined
         };
@@ -64,41 +65,41 @@
 </script>
 
 <div class="debug-panel">
-  <h3>API Endpoint Debugger</h3>
+  <h3>{$t('apiDebugger.title')}</h3>
 
   <div class="form-group">
-    <label for="file-id-input">File ID:</label>
+    <label for="file-id-input">{$t('apiDebugger.fileIdLabel')}</label>
     <input id="file-id-input" type="number" bind:value={fileId} disabled={fileId !== null} />
   </div>
 
   <div class="form-group">
-    <label for="endpoint-type">Endpoint Type:</label>
+    <label for="endpoint-type">{$t('apiDebugger.endpointTypeLabel')}</label>
     <select id="endpoint-type" bind:value={endpointType}>
-      <option value="comments">/comments/files/{fileId}/comments</option>
-      <option value="files">/files/{fileId}/comments</option>
-      <option value="comments-direct">/api/comments/files/{fileId}/comments (direct)</option>
+      <option value="comments">{$t('apiDebugger.endpointComments')}</option>
+      <option value="files">{$t('apiDebugger.endpointFiles')}</option>
+      <option value="comments-direct">{$t('apiDebugger.endpointCommentsDirect')}</option>
     </select>
   </div>
 
   <div class="form-group">
-    <label for="request-url-display">Request URL:</label>
+    <label for="request-url-display">{$t('apiDebugger.requestUrlLabel')}</label>
     <code id="request-url-display">{requestUrl}</code>
   </div>
 
   <button on:click={testEndpoint} disabled={loading}>
-    {#if loading}Testing...{:else}Test Endpoint{/if}
+    {#if loading}{$t('apiDebugger.testing')}{:else}{$t('apiDebugger.testEndpoint')}{/if}
   </button>
 
   {#if response}
     <div class="response success">
-      <h4>Response (Status: {response.status})</h4>
+      <h4>{$t('apiDebugger.responseStatus', { status: response.status })}</h4>
       <pre>{JSON.stringify(response.data, null, 2)}</pre>
     </div>
   {/if}
 
   {#if error}
     <div class="response error">
-      <h4>Error ({error.status || 'Connection Error'})</h4>
+      <h4>{$t('apiDebugger.errorStatus', { status: error.status || $t('apiDebugger.connectionError') })}</h4>
       <pre>{JSON.stringify(error, null, 2)}</pre>
     </div>
   {/if}

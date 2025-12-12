@@ -2,15 +2,24 @@
  * API client for LLM settings management
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from "../axios";
+import { get } from "svelte/store";
+import { t } from "$stores/locale";
 
-export type LLMProvider = 'openai' | 'vllm' | 'ollama' | 'claude' | 'anthropic' | 'openrouter' | 'custom';
+export type LLMProvider =
+  | "openai"
+  | "vllm"
+  | "ollama"
+  | "claude"
+  | "anthropic"
+  | "openrouter"
+  | "custom";
 
-export type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
+export type ConnectionStatus = "success" | "failed" | "pending" | "untested";
 
 export interface UserLLMSettings {
-  id: string;  // UUID
-  user_id: string;  // UUID
+  id: string; // UUID
+  user_id: string; // UUID
   name: string;
   provider: LLMProvider;
   model_name: string;
@@ -53,7 +62,7 @@ export interface ConnectionTestRequest {
   model_name: string;
   api_key?: string;
   base_url?: string;
-  config_id?: string;  // For edit mode - uses stored API key
+  config_id?: string; // For edit mode - uses stored API key
 }
 
 export interface ConnectionTestResponse {
@@ -80,12 +89,12 @@ export interface SupportedProvidersResponse {
 
 export interface UserLLMConfigurationsList {
   configurations: UserLLMSettings[];
-  active_configuration_id?: string;  // UUID
+  active_configuration_id?: string; // UUID
   total: number;
 }
 
 export interface SetActiveConfigRequest {
-  configuration_id: string;  // UUID
+  configuration_id: string; // UUID
 }
 
 export interface LLMSettingsStatus {
@@ -96,7 +105,7 @@ export interface LLMSettingsStatus {
 }
 
 export class LLMSettingsApi {
-  private static readonly BASE_PATH = '/llm-settings';
+  private static readonly BASE_PATH = "/llm-settings";
 
   /**
    * Get supported LLM providers with their default configurations
@@ -122,11 +131,12 @@ export class LLMSettingsApi {
     return response.data;
   }
 
-
   /**
    * Create new LLM configuration for the current user
    */
-  static async createSettings(settings: UserLLMSettingsCreate): Promise<UserLLMSettings> {
+  static async createSettings(
+    settings: UserLLMSettingsCreate,
+  ): Promise<UserLLMSettings> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/`, settings);
     return response.data;
   }
@@ -134,16 +144,26 @@ export class LLMSettingsApi {
   /**
    * Update an existing LLM configuration
    */
-  static async updateSettings(configId: string, settings: UserLLMSettingsUpdate): Promise<UserLLMSettings> {
-    const response = await axiosInstance.put(`${this.BASE_PATH}/config/${configId}`, settings);
+  static async updateSettings(
+    configId: string,
+    settings: UserLLMSettingsUpdate,
+  ): Promise<UserLLMSettings> {
+    const response = await axiosInstance.put(
+      `${this.BASE_PATH}/config/${configId}`,
+      settings,
+    );
     return response.data;
   }
 
   /**
    * Delete a specific LLM configuration
    */
-  static async deleteConfiguration(configId: string): Promise<{ detail: string }> {
-    const response = await axiosInstance.delete(`${this.BASE_PATH}/config/${configId}`);
+  static async deleteConfiguration(
+    configId: string,
+  ): Promise<{ detail: string }> {
+    const response = await axiosInstance.delete(
+      `${this.BASE_PATH}/config/${configId}`,
+    );
     return response.data;
   }
 
@@ -158,9 +178,11 @@ export class LLMSettingsApi {
   /**
    * Set active LLM configuration
    */
-  static async setActiveConfiguration(configId: string): Promise<UserLLMSettings> {
+  static async setActiveConfiguration(
+    configId: string,
+  ): Promise<UserLLMSettings> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/set-active`, {
-      configuration_id: configId
+      configuration_id: configId,
     });
     return response.data;
   }
@@ -168,8 +190,13 @@ export class LLMSettingsApi {
   /**
    * Test connection to LLM provider without saving settings
    */
-  static async testConnection(testRequest: ConnectionTestRequest): Promise<ConnectionTestResponse> {
-    const response = await axiosInstance.post(`${this.BASE_PATH}/test`, testRequest);
+  static async testConnection(
+    testRequest: ConnectionTestRequest,
+  ): Promise<ConnectionTestResponse> {
+    const response = await axiosInstance.post(
+      `${this.BASE_PATH}/test`,
+      testRequest,
+    );
     return response.data;
   }
 
@@ -184,8 +211,12 @@ export class LLMSettingsApi {
   /**
    * Test connection using a specific configuration
    */
-  static async testConfiguration(configId: string): Promise<ConnectionTestResponse> {
-    const response = await axiosInstance.post(`${this.BASE_PATH}/test-config/${configId}`);
+  static async testConfiguration(
+    configId: string,
+  ): Promise<ConnectionTestResponse> {
+    const response = await axiosInstance.post(
+      `${this.BASE_PATH}/test-config/${configId}`,
+    );
     return response.data;
   }
 
@@ -205,17 +236,24 @@ export class LLMSettingsApi {
     total: number;
     message: string;
   }> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/ollama/models`, {
-      params: { base_url: baseUrl }
-    });
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/ollama/models`,
+      {
+        params: { base_url: baseUrl },
+      },
+    );
     return response.data;
   }
 
   /**
    * Get the decrypted API key for a specific configuration
    */
-  static async getConfigApiKey(configId: string): Promise<{ api_key: string | null }> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${configId}/api-key`);
+  static async getConfigApiKey(
+    configId: string,
+  ): Promise<{ api_key: string | null }> {
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/config/${configId}/api-key`,
+    );
     return response.data;
   }
 
@@ -225,7 +263,11 @@ export class LLMSettingsApi {
    * @param apiKey - Optional API key (for new configs)
    * @param configId - Optional config ID (for edit mode - uses stored key)
    */
-  static async getOpenAICompatibleModels(baseUrl: string, apiKey?: string, configId?: string): Promise<{
+  static async getOpenAICompatibleModels(
+    baseUrl: string,
+    apiKey?: string,
+    configId?: string,
+  ): Promise<{
     success: boolean;
     models: Array<{
       name: string;
@@ -236,13 +278,16 @@ export class LLMSettingsApi {
     total: number;
     message: string;
   }> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/openai-compatible/models`, {
-      params: {
-        base_url: baseUrl,
-        api_key: apiKey,
-        config_id: configId
-      }
-    });
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/openai-compatible/models`,
+      {
+        params: {
+          base_url: baseUrl,
+          api_key: apiKey,
+          config_id: configId,
+        },
+      },
+    );
     return response.data;
   }
 
@@ -250,64 +295,71 @@ export class LLMSettingsApi {
    * Test the encryption system
    */
   static async testEncryption(): Promise<{ status: string; message: string }> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/encryption-test`);
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/encryption-test`,
+    );
     return response.data;
   }
 
   /**
    * Get provider-specific default configuration
    */
-  static getProviderDefaults(provider: LLMProvider): Partial<UserLLMSettingsCreate> {
-    const providerDefaults: Record<LLMProvider, Partial<UserLLMSettingsCreate>> = {
+  static getProviderDefaults(
+    provider: LLMProvider,
+  ): Partial<UserLLMSettingsCreate> {
+    const providerDefaults: Record<
+      LLMProvider,
+      Partial<UserLLMSettingsCreate>
+    > = {
       openai: {
-        provider: 'openai',
-        model_name: 'gpt-4o-mini',
-        base_url: 'https://api.openai.com/v1',
-        max_tokens: 16000,  // Context window for GPT-4o-mini
-        temperature: '0.3'
+        provider: "openai",
+        model_name: "gpt-4o-mini",
+        base_url: "https://api.openai.com/v1",
+        max_tokens: 16000, // Context window for GPT-4o-mini
+        temperature: "0.3",
       },
       vllm: {
-        provider: 'vllm',
-        model_name: 'gpt-oss',
-        base_url: 'http://localhost:8012/v1',
-        max_tokens: 32768,  // Typical context window for vLLM models
-        temperature: '0.3'
+        provider: "vllm",
+        model_name: "gpt-oss",
+        base_url: "http://localhost:8012/v1",
+        max_tokens: 32768, // Typical context window for vLLM models
+        temperature: "0.3",
       },
       ollama: {
-        provider: 'ollama',
-        model_name: 'llama2:7b-chat',
-        base_url: 'http://localhost:11434/v1',
-        max_tokens: 8192,  // Conservative context window
-        temperature: '0.3'
+        provider: "ollama",
+        model_name: "llama2:7b-chat",
+        base_url: "http://localhost:11434/v1",
+        max_tokens: 8192, // Conservative context window
+        temperature: "0.3",
       },
       claude: {
-        provider: 'claude',
-        model_name: 'claude-3-haiku-20240307',
-        base_url: 'https://api.anthropic.com/v1',
-        max_tokens: 200000,  // Claude's large context window
-        temperature: '0.3'
+        provider: "claude",
+        model_name: "claude-3-haiku-20240307",
+        base_url: "https://api.anthropic.com/v1",
+        max_tokens: 200000, // Claude's large context window
+        temperature: "0.3",
       },
       anthropic: {
-        provider: 'anthropic',
-        model_name: 'claude-3-haiku-20240307',
-        base_url: 'https://api.anthropic.com/v1',
-        max_tokens: 200000,  // Anthropic Claude context window
-        temperature: '0.3'
+        provider: "anthropic",
+        model_name: "claude-3-haiku-20240307",
+        base_url: "https://api.anthropic.com/v1",
+        max_tokens: 200000, // Anthropic Claude context window
+        temperature: "0.3",
       },
       openrouter: {
-        provider: 'openrouter',
-        model_name: 'anthropic/claude-3-haiku',
-        base_url: 'https://openrouter.ai/api/v1',
-        max_tokens: 128000,  // OpenRouter typical context window
-        temperature: '0.3'
+        provider: "openrouter",
+        model_name: "anthropic/claude-3-haiku",
+        base_url: "https://openrouter.ai/api/v1",
+        max_tokens: 128000, // OpenRouter typical context window
+        temperature: "0.3",
       },
       custom: {
-        provider: 'custom',
-        model_name: '',
-        base_url: '',
-        max_tokens: 8192,  // Default context window for custom providers
-        temperature: '0.3'
-      }
+        provider: "custom",
+        model_name: "",
+        base_url: "",
+        max_tokens: 8192, // Default context window for custom providers
+        temperature: "0.3",
+      },
     };
 
     return providerDefaults[provider] || {};
@@ -318,13 +370,13 @@ export class LLMSettingsApi {
    */
   static getProviderDisplayName(provider: LLMProvider): string {
     const displayNames: Record<LLMProvider, string> = {
-      openai: 'OpenAI',
-      vllm: 'vLLM',
-      ollama: 'Ollama',
-      claude: 'Claude (Anthropic)',
-      anthropic: 'Anthropic Claude',
-      openrouter: 'OpenRouter',
-      custom: 'Custom Provider'
+      openai: "OpenAI",
+      vllm: "vLLM",
+      ollama: "Ollama",
+      claude: "Claude (Anthropic)",
+      anthropic: "Anthropic Claude",
+      openrouter: "OpenRouter",
+      custom: "Custom Provider",
     };
 
     return displayNames[provider] || provider;
@@ -333,17 +385,34 @@ export class LLMSettingsApi {
   /**
    * Get connection status display information
    */
-  static getStatusDisplay(status?: ConnectionStatus): { text: string; class: string; icon: string } {
+  static getStatusDisplay(status?: ConnectionStatus): {
+    text: string;
+    class: string;
+    icon: string;
+  } {
+    const tFunc = get(t);
     switch (status) {
-      case 'success':
-        return { text: 'Connected', class: 'success', icon: '✓' };
-      case 'failed':
-        return { text: 'Failed', class: 'error', icon: '✗' };
-      case 'pending':
-        return { text: 'Testing...', class: 'pending', icon: '...' };
-      case 'untested':
+      case "success":
+        return {
+          text: tFunc("llm.status.connected"),
+          class: "success",
+          icon: "✓",
+        };
+      case "failed":
+        return { text: tFunc("llm.status.failed"), class: "error", icon: "✗" };
+      case "pending":
+        return {
+          text: tFunc("llm.status.testing"),
+          class: "pending",
+          icon: "...",
+        };
+      case "untested":
       default:
-        return { text: 'Untested', class: 'neutral', icon: '?' };
+        return {
+          text: tFunc("llm.status.untested"),
+          class: "neutral",
+          icon: "?",
+        };
     }
   }
 }

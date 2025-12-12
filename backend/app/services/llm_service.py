@@ -19,6 +19,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.core.config import settings
+from app.core.constants import LLM_OUTPUT_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -1011,7 +1012,11 @@ class LLMService:
         }
 
     def identify_speakers(
-        self, transcript: str, speaker_segments: list, known_speakers: list
+        self,
+        transcript: str,
+        speaker_segments: list,
+        known_speakers: list,
+        output_language: str = "en",
     ) -> dict:
         """
         Use LLM to suggest speaker identifications based on contextual analysis of speech patterns,
@@ -1021,12 +1026,24 @@ class LLMService:
             transcript: Full transcript text with speaker labels
             speaker_segments: List of speaker segments with metadata including timestamps and text
             known_speakers: List of known speaker profiles with names and descriptions
+            output_language: Language code for output reasoning (default: "en")
 
         Returns:
             Dictionary containing speaker predictions with confidence scores and reasoning
         """
         try:
-            system_prompt = """You are an expert linguist and conversation analyst specializing in speaker identification. Your task is to analyze transcripts and identify speakers based on multiple contextual clues.
+            # Build language instruction for non-English output
+            output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")
+            if output_language_name != "English":
+                language_instruction = (
+                    f"\n\nIMPORTANT: Generate all reasoning, analysis_notes, and explanations "
+                    f"in {output_language_name}. Speaker names should remain as identified "
+                    f"(names are language-agnostic), but all descriptive text must be in {output_language_name}."
+                )
+            else:
+                language_instruction = ""
+
+            system_prompt = f"""You are an expert linguist and conversation analyst specializing in speaker identification. Your task is to analyze transcripts and identify speakers based on multiple contextual clues.{language_instruction}
 
 ANALYSIS METHODOLOGY:
 1. Speech Patterns & Style:

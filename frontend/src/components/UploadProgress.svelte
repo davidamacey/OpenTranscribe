@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { UploadItem } from '../lib/services/uploadService';
   import { uploadsStore } from '../stores/uploads';
+  import { t } from '$stores/locale';
 
   export let upload: UploadItem;
 
   // Format file size
   function formatFileSize(bytes?: number): string {
     if (!bytes) return '';
-    
+
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
@@ -69,36 +70,36 @@
             <span class="upload-size">{formatFileSize(upload.size)}</span>
           {/if}
           {#if upload.estimatedTime}
-            <span class="upload-time">{upload.estimatedTime} remaining</span>
+            <span class="upload-time">{upload.estimatedTime} {$t('upload.remaining')}</span>
           {/if}
         </div>
       </div>
     </div>
-    
+
     <div class="upload-actions">
       {#if upload.status === 'failed'}
-        <button 
-          class="action-btn retry-btn" 
+        <button
+          class="action-btn retry-btn"
           on:click={handleRetry}
-          title="Retry upload"
+          title={$t('upload.retryUpload')}
         >
           ↻
         </button>
       {/if}
-      
+
       {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
-        <button 
-          class="action-btn cancel-btn" 
+        <button
+          class="action-btn cancel-btn"
           on:click={handleCancel}
-          title="Cancel upload"
+          title={$t('upload.cancelUpload')}
         >
           ✗
         </button>
       {:else}
-        <button 
-          class="action-btn remove-btn" 
+        <button
+          class="action-btn remove-btn"
           on:click={handleRemove}
-          title="Remove from list"
+          title={$t('upload.removeFromList')}
         >
           ✗
         </button>
@@ -109,8 +110,8 @@
   {#if upload.status === 'uploading' || upload.status === 'processing' || upload.status === 'preparing'}
     <div class="progress-container">
       <div class="progress-bar">
-        <div 
-          class="progress-fill" 
+        <div
+          class="progress-fill"
           style="width: {upload.progress}%; background-color: {getStatusColor(upload.status)}"
         ></div>
       </div>

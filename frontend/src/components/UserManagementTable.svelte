@@ -4,6 +4,7 @@
   import { user } from '../stores/auth';
   import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { t } from '$stores/locale';
 
   /**
    * @typedef {Object} User
@@ -102,7 +103,7 @@
    */
   async function createUser() {
     if (!newUsername || !newEmail || !newPassword) {
-      toastStore.error('Please fill out all required fields');
+      toastStore.error($t('userManagement.fillAllFields'));
       return;
     }
 
@@ -128,13 +129,13 @@
       newRole = 'user';
       showAddUserForm = false;
 
-      toastStore.success(`User "${createdUserName}" created successfully`);
+      toastStore.success($t('userManagement.userCreatedSuccess', { name: createdUserName }));
 
       // Refresh the user list
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      const message = err instanceof Error ? err.message : 'Failed to create user';
+      const message = err instanceof Error ? err.message : $t('userManagement.createUserFailed');
       toastStore.error(message);
     }
   }
@@ -177,8 +178,8 @@
    */
   async function deleteUser(userId) {
     showConfirmation(
-      'Delete User',
-      'Are you sure you want to delete this user? This action cannot be undone.',
+      $t('userManagement.deleteUser'),
+      $t('userManagement.deleteUserConfirm'),
       () => executeDeleteUser(userId)
     );
   }
@@ -190,13 +191,13 @@
   async function executeDeleteUser(userId) {
     try {
       await axiosInstance.delete(`/api/users/${userId}`);
-      toastStore.success('User deleted successfully');
+      toastStore.success($t('userManagement.userDeletedSuccess'));
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error deleting user:', err);
-      const message = err instanceof Error ? err.message : 'Failed to delete user';
+      const message = err instanceof Error ? err.message : $t('userManagement.deleteUserFailed');
       toastStore.error(message);
     }
   }
@@ -209,13 +210,13 @@
   async function updateUserRole(userId, role) {
     try {
       await axiosInstance.put(`/api/users/${userId}`, { role });
-      toastStore.success(`User role updated to ${role}`);
+      toastStore.success($t('userManagement.userRoleUpdated', { role }));
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error updating user role:', err);
-      const message = err instanceof Error ? err.message : 'Failed to update user role';
+      const message = err instanceof Error ? err.message : $t('userManagement.updateRoleFailed');
       toastStore.error(message);
     }
   }
@@ -264,17 +265,17 @@
 
     // Validation
     if (!resetPassword || !confirmResetPassword) {
-      toastStore.error('Please fill in both password fields');
+      toastStore.error($t('userManagement.fillBothPasswordFields'));
       return;
     }
 
     if (resetPassword !== confirmResetPassword) {
-      toastStore.error('Passwords do not match');
+      toastStore.error($t('userManagement.passwordsDoNotMatch'));
       return;
     }
 
     if (resetPassword.length < 8) {
-      toastStore.error('Password must be at least 8 characters long');
+      toastStore.error($t('userManagement.passwordMinLength'));
       return;
     }
 
@@ -286,11 +287,11 @@
       });
 
       const userName = passwordResetUser.full_name || passwordResetUser.email;
-      toastStore.success(`Password reset successfully for ${userName}`);
+      toastStore.success($t('userManagement.passwordResetSuccess', { userName }));
       closePasswordResetModal();
     } catch (err) {
       console.error('Error resetting password:', err);
-      const message = err instanceof Error ? err.message : 'Failed to reset password';
+      const message = err instanceof Error ? err.message : $t('userManagement.passwordResetFailed');
       toastStore.error(message);
     } finally {
       passwordResetLoading = false;
@@ -314,7 +315,7 @@
    * @returns {string}
    */
   function formatDate(dateString) {
-    if (!dateString) return 'N/A';
+    if (!dateString) return $t('userManagement.notAvailable');
 
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -352,107 +353,107 @@
     <div class="search-container">
       <input
         type="text"
-        placeholder="Search users by name or email..."
+        placeholder={$t('userManagement.searchPlaceholder')}
         on:input={handleSearchInput}
         value={searchTerm}
-        title="Search users by name or email"
+        title={$t('userManagement.searchTitle')}
       />
     </div>
 
     <button
       on:click={toggleAddUserForm}
       class="add-button"
-      title="{showAddUserForm ? 'Cancel adding a new user' : 'Create a new user account'}"
+      title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
     >
-      {showAddUserForm ? 'Cancel' : 'Add User'}
+      {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
     </button>
   </div>
 
   {#if showAddUserForm}
     <div class="add-user-form">
-      <h3>Add New User</h3>
+      <h3>{$t('userManagement.addNewUser')}</h3>
       <div class="form-group">
-        <label for="username">Full Name</label>
+        <label for="username">{$t('userManagement.fullName')}</label>
         <input
           type="text"
           id="username"
           bind:value={newUsername}
-          placeholder="Full Name"
+          placeholder={$t('userManagement.fullName')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="email">Email</label>
+        <label for="email">{$t('userManagement.email')}</label>
         <input
           type="email"
           id="email"
           bind:value={newEmail}
-          placeholder="Email"
+          placeholder={$t('userManagement.email')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password">{$t('userManagement.password')}</label>
         <input
           type="password"
           id="password"
           bind:value={newPassword}
-          placeholder="Password"
+          placeholder={$t('userManagement.password')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="role">Role</label>
+        <label for="role">{$t('userManagement.role')}</label>
         <select id="role" bind:value={newRole}>
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">{$t('userManagement.roleUser')}</option>
+          <option value="admin">{$t('userManagement.roleAdmin')}</option>
         </select>
       </div>
 
       <button
         on:click={createUser}
         class="create-button"
-        title="Create the new user account with the provided information"
-      >Create User</button>
+        title={$t('userManagement.createUserTitle')}
+      >{$t('userManagement.createUser')}</button>
     </div>
   {/if}
 
   {#if loading}
     <div class="loading-state">
-      <p>Loading users...</p>
+      <p>{$t('userManagement.loadingUsers')}</p>
     </div>
   {:else if !users || users.length === 0}
     <div class="empty-state">
-      <p>No users found.</p>
+      <p>{$t('userManagement.noUsersFound')}</p>
     </div>
   {:else}
     <table class="users-table user-management-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Created</th>
-          <th>Actions</th>
+          <th>{$t('userManagement.name')}</th>
+          <th>{$t('userManagement.email')}</th>
+          <th>{$t('userManagement.role')}</th>
+          <th>{$t('userManagement.created')}</th>
+          <th>{$t('userManagement.actions')}</th>
         </tr>
       </thead>
       <tbody>
         {#each filteredUsers as currentUser (currentUser.id)}
           <tr>
-            <td>{currentUser.full_name || 'N/A'}</td>
+            <td>{currentUser.full_name || $t('userManagement.notAvailable')}</td>
             <td>{currentUser.email}</td>
             <td>
               {#if currentUser.id !== currentUserId}
                 <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.id, e)}
-                  title="Change the role for {currentUser.full_name || currentUser.email}"
+                  title={$t('userManagement.changeRoleFor', { name: currentUser.full_name || currentUser.email })}
                 >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  <option value="user">{$t('userManagement.roleUser')}</option>
+                  <option value="admin">{$t('userManagement.roleAdmin')}</option>
                 </select>
               {:else}
                 <span class="current-role">{currentUser.role}</span>
@@ -465,7 +466,7 @@
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
-                    title="Reset password for {currentUser.full_name || currentUser.email}"
+                    title={$t('userManagement.resetPasswordFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
@@ -475,7 +476,7 @@
                   <button
                     class="icon-button recover-button"
                     on:click={() => onUserRecovery(currentUser.id)}
-                    title="Recover stuck files for {currentUser.full_name || currentUser.email}"
+                    title={$t('userManagement.recoverFilesFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -487,7 +488,7 @@
                   <button
                     class="icon-button delete-button"
                     on:click={() => deleteUser(currentUser.id)}
-                    title="Delete {currentUser.full_name || currentUser.email}'s account"
+                    title={$t('userManagement.deleteAccount', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 6h18"/>
@@ -498,7 +499,7 @@
                     </svg>
                   </button>
                 {:else}
-                  <span class="self-user">Current User</span>
+                  <span class="self-user">{$t('userManagement.currentUser')}</span>
                 {/if}
               </div>
             </td>
@@ -514,8 +515,8 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText="Delete"
-  cancelText="Cancel"
+  confirmText={$t('common.delete')}
+  cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={handleConfirmModalConfirm}
@@ -528,28 +529,28 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
     <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title" tabindex="0">
-      <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label="Close modal" title="Close">
+      <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label={$t('common.close')} title={$t('common.close')}>
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
 
-      <h3 id="password-reset-title" class="modal-title">Reset Password</h3>
+      <h3 id="password-reset-title" class="modal-title">{$t('userManagement.resetPassword')}</h3>
       <p class="modal-description">
-        Set a new password for <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
+        {$t('userManagement.setNewPasswordFor', { name: passwordResetUser.full_name || passwordResetUser.email })}
       </p>
 
       <form on:submit|preventDefault={executePasswordReset} class="password-reset-form">
         <div class="form-group">
           <div class="password-header">
-            <label for="reset-password">New Password</label>
+            <label for="reset-password">{$t('userManagement.newPassword')}</label>
             <button
               type="button"
               class="toggle-password"
               on:click={() => showResetPassword = !showResetPassword}
               tabindex="-1"
-              aria-label={showResetPassword ? 'Hide password' : 'Show password'}
+              aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
             >
               {#if showResetPassword}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -573,22 +574,22 @@
             id="reset-password"
             class="form-control"
             bind:value={resetPassword}
-            placeholder="Enter new password"
+            placeholder={$t('userManagement.enterNewPassword')}
             required
             minlength="8"
           />
-          <small class="form-text">Minimum 8 characters</small>
+          <small class="form-text">{$t('userManagement.minimumCharacters')}</small>
         </div>
 
         <div class="form-group">
           <div class="password-header">
-            <label for="confirm-reset-password">Confirm Password</label>
+            <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
             <button
               type="button"
               class="toggle-password"
               on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
               tabindex="-1"
-              aria-label={showConfirmResetPassword ? 'Hide password' : 'Show password'}
+              aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
             >
               {#if showConfirmResetPassword}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -612,7 +613,7 @@
             id="confirm-reset-password"
             class="form-control"
             bind:value={confirmResetPassword}
-            placeholder="Confirm new password"
+            placeholder={$t('userManagement.confirmNewPassword')}
             required
             minlength="8"
           />
@@ -625,14 +626,14 @@
             on:click={closePasswordResetModal}
             disabled={passwordResetLoading}
           >
-            Cancel
+            {$t('common.cancel')}
           </button>
           <button
             type="submit"
             class="btn-confirm"
             disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
           >
-            {passwordResetLoading ? 'Resetting...' : 'Reset Password'}
+            {passwordResetLoading ? $t('userManagement.resetting') : $t('userManagement.resetPasswordButton')}
           </button>
         </div>
       </form>

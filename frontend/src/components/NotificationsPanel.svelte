@@ -5,6 +5,7 @@
   import { token } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
+  import { t } from '$stores/locale';
 
 
   // Subscribe to the showNotificationsPanel store
@@ -23,26 +24,26 @@
       }
     }
   }
-  
+
   /** @type {Date} */
   let lastRead = new Date();
-  
+
   // Derived store for unread count (excluding silent notifications)
   const wsUnreadCount = derived(websocketStore, ($store) => {
     return $store.notifications ? $store.notifications.filter(n => !n.read && !n.silent).length : 0;
   });
-  
+
   // Toggle notification panel
   function togglePanel() {
     showNotificationsPanel.update(value => !value);
   }
-  
+
   // Close the notifications panel
   function closePanel() {
     showNotificationsPanel.set(false);
     // Don't automatically mark as read - let user do it manually
   }
-  
+
   /**
    * Close panel when clicking outside
    * @param {MouseEvent} event - The click event
@@ -51,12 +52,12 @@
     const panel = document.querySelector('.notifications-panel');
     const button = document.querySelector('.notifications-button');
     const target = event.target;
-    
+
     if (panel && button && target instanceof Node && !panel.contains(target) && !button.contains(target)) {
       showPanel = false;
     }
   }
-  
+
   /**
    * Remove a notification
    * @param {string} id - The notification ID
@@ -70,7 +71,7 @@
       websocketStore.markAsRead(id);
     }
   }
-  
+
   // Clear all notifications
   function clearAllNotifications() {
     websocketStore.clearAll();
@@ -82,7 +83,7 @@
       websocketStore.markAllAsRead();
     }
   }
-  
+
   /**
    * Get appropriate icon for notification type
    * @param {string} type - The notification type
@@ -104,7 +105,7 @@
         return 'bell';
     }
   }
-  
+
   /**
    * Format timestamp to relative time (e.g. "5 minutes ago")
    * @param {Date} date - The date to format
@@ -113,21 +114,21 @@
   function formatTimestamp(date: Date) {
     const now = new Date();
     const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
+
     if (diff < 60) {
-      return 'Just now';
+      return $t('notifications.justNow');
     } else if (diff < 3600) {
       const minutes = Math.floor(diff / 60);
-      return `${minutes}m ago`;
+      return $t('notifications.minutesAgo', { count: minutes });
     } else if (diff < 86400) {
       const hours = Math.floor(diff / 3600);
-      return `${hours}h ago`;
+      return $t('notifications.hoursAgo', { count: hours });
     } else {
       const days = Math.floor(diff / 86400);
-      return `${days}d ago`;
+      return $t('notifications.daysAgo', { count: days });
     }
   }
-  
+
   /**
    * Get file link based on notification data
    * @param {Object} notification - The notification object
@@ -149,8 +150,8 @@
    */
   function getFileLinkText(notification: any): string {
     const fileId = notification.data?.file_id;
-    if (!fileId) return 'View File →';
-    
+    if (!fileId) return $t('common.viewFile');
+
     // If we have filename in the notification data, use it
     if (notification.data?.filename) {
       const filename = notification.data.filename;
@@ -162,14 +163,14 @@
         const maxNameLength = 35; // Leave room for extension and arrow
         if (nameWithoutExt.length > maxNameLength) {
           const truncated = nameWithoutExt.substring(0, maxNameLength) + '...';
-          return `${truncated}.${extension} →`;
+          return `${truncated}.${extension}`;
         }
       }
-      return `${filename} →`;
+      return `${filename}`;
     }
-    
+
     // Fallback: show file ID in a user-friendly way
-    return `File ${fileId} →`;
+    return $t('common.viewFile');
   }
 
   /**
@@ -198,17 +199,17 @@
     }
     return 'default';
   }
-  
+
   onMount(() => {
     // Add event listener for clicks outside the panel
     document.addEventListener('click', handleClickOutside);
   });
-  
+
   onDestroy(() => {
     // Remove event listener when component is destroyed
     document.removeEventListener('click', handleClickOutside);
     unsubscribePanel();
-    
+
     // Restore body scroll when component is destroyed
     if (typeof document !== 'undefined') {
       document.body.style.overflow = 'auto';
@@ -218,24 +219,24 @@
 
 {#if showPanel}
   <!-- Backdrop for mobile/tablet -->
-  <div class="notifications-backdrop" on:click={closePanel} on:keydown={closePanel} role="button" tabindex="0" aria-label="Close notifications panel"></div>
-  
+  <div class="notifications-backdrop" on:click={closePanel} on:keydown={closePanel} role="button" tabindex="0" aria-label={$t('notifications.closePanel')}></div>
+
   <div class="notifications-panel">
     <!-- Header -->
     <div class="notifications-header">
       <div class="header-left">
-        <h3 class="header-title">Notifications</h3>
+        <h3 class="header-title">{$t('notifications.title')}</h3>
         {#if $wsUnreadCount > 0}
           <span class="unread-badge">{$wsUnreadCount}</span>
         {/if}
       </div>
       <div class="header-actions">
         {#if $wsUnreadCount > 0}
-          <button 
-            class="icon-btn mark-read-btn" 
+          <button
+            class="icon-btn mark-read-btn"
             on:click={markAllWebSocketNotificationsAsRead}
-            title="Mark all notifications as read"
-            aria-label="Mark all notifications as read"
+            title={$t('notifications.markAllRead')}
+            aria-label={$t('notifications.markAllRead')}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
@@ -243,11 +244,11 @@
           </button>
         {/if}
         {#if $websocketStore.notifications.filter(n => !n.silent).length > 0}
-          <button 
-            class="icon-btn clear-btn" 
+          <button
+            class="icon-btn clear-btn"
             on:click={clearAllNotifications}
-            title="Clear all notifications"
-            aria-label="Clear all notifications"
+            title={$t('notifications.clearAll')}
+            aria-label={$t('notifications.clearAll')}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -255,11 +256,11 @@
             </svg>
           </button>
         {/if}
-        <button 
-          class="icon-btn close-btn" 
+        <button
+          class="icon-btn close-btn"
           on:click={closePanel}
-          title="Close notifications panel"
-          aria-label="Close notifications panel"
+          title={$t('notifications.closePanel')}
+          aria-label={$t('notifications.closePanel')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -268,7 +269,7 @@
         </button>
       </div>
     </div>
-    
+
     <!-- Notifications List -->
     <div class="notifications-content">
       {#if $websocketStore.notifications.filter(n => !n.silent).length === 0}
@@ -279,8 +280,8 @@
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
           </div>
-          <p class="empty-title">No notifications</p>
-          <p class="empty-subtitle">You're all caught up!</p>
+          <p class="empty-title">{$t('notifications.empty')}</p>
+          <p class="empty-subtitle">{$t('notifications.allCaughtUp')}</p>
         </div>
       {:else}
         <div class="notifications-list">
@@ -288,7 +289,7 @@
             <div class="notification-item {notification.read ? 'read' : 'unread'} status-{getNotificationStatus(notification)} {notification.status === 'processing' ? 'processing' : ''}">
               <!-- Status indicator -->
               <div class="notification-indicator"></div>
-              
+
               <!-- Icon -->
               <div class="notification-icon">
                 {#if getNotificationIcon(notification.type) === 'file-text'}
@@ -311,13 +312,13 @@
                   </svg>
                 {/if}
               </div>
-              
+
               <!-- Content -->
               <div class="notification-content">
                 <div class="notification-main">
                   <h4 class="notification-title">{notification.title}</h4>
                   <p class="notification-message">{notification.message}</p>
-                  
+
                   <!-- Progressive notification progress bar -->
                   {#if notification.progress && notification.status === 'processing'}
                     <div class="progress-container">
@@ -327,7 +328,7 @@
                       <span class="progress-text">{notification.progress.percentage}%</span>
                     </div>
                   {/if}
-                  
+
                   <!-- Action link if available -->
                   {#if getFileLink(notification) !== null}
                     <a
@@ -347,17 +348,17 @@
                     </a>
                   {/if}
                 </div>
-                
+
                 <div class="notification-meta">
                   <span class="notification-time">{formatTimestamp(notification.timestamp)}</span>
                 </div>
               </div>
-              
+
               <!-- Dismiss button -->
-              <button 
-                class="notification-dismiss {!notification.dismissible ? 'non-dismissible' : ''}" 
+              <button
+                class="notification-dismiss {!notification.dismissible ? 'non-dismissible' : ''}"
                 on:click={() => removeNotification(notification.id)}
-                title={notification.dismissible ? 'Dismiss notification' : 'Processing notifications cannot be dismissed'}
+                title={notification.dismissible ? $t('notifications.dismiss') : $t('notifications.processingCannotDismiss')}
                 disabled={!notification.dismissible}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -383,7 +384,7 @@
     background: transparent;
     z-index: 999;
   }
-  
+
   .notifications-panel {
     position: fixed;
     top: 70px;
@@ -394,7 +395,7 @@
     background: var(--surface-color);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    box-shadow: 
+    box-shadow:
       0 20px 25px -5px rgba(0, 0, 0, 0.1),
       0 10px 10px -5px rgba(0, 0, 0, 0.04),
       0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -403,14 +404,14 @@
     flex-direction: column;
     overflow: hidden;
   }
-  
+
   :global(.dark) .notifications-panel {
-    box-shadow: 
+    box-shadow:
       0 20px 25px -5px rgba(0, 0, 0, 0.4),
       0 10px 10px -5px rgba(0, 0, 0, 0.2),
       0 0 0 1px rgba(255, 255, 255, 0.05);
   }
-  
+
   /* Header */
   .notifications-header {
     display: flex;
@@ -421,20 +422,20 @@
     background: var(--surface-color);
     border-radius: 12px 12px 0 0;
   }
-  
+
   .header-left {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  
+
   .header-title {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
     color: var(--text-color);
   }
-  
+
   .unread-badge {
     background: var(--primary-color);
     color: white;
@@ -448,13 +449,13 @@
     align-items: center;
     justify-content: center;
   }
-  
+
   .header-actions {
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  
+
   .icon-btn {
     display: flex;
     align-items: center;
@@ -468,13 +469,13 @@
     border: 1px solid;
     box-sizing: border-box;
   }
-  
+
   .mark-read-btn {
     background-color: transparent;
     border-color: var(--success-color);
     color: var(--success-color);
   }
-  
+
   .mark-read-btn:hover {
     background-color: var(--success-color);
     color: white;
@@ -485,12 +486,12 @@
     border-color: var(--error-color);
     color: var(--error-color);
   }
-  
+
   .clear-btn:hover {
     background-color: var(--error-color);
     color: white;
   }
-  
+
   .close-btn {
     background-color: transparent;
     border-color: var(--border-color);
@@ -502,19 +503,19 @@
     border-color: #3b82f6;
     color: white;
   }
-  
+
   /* Content */
   .notifications-content {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
   }
-  
+
   .notifications-list {
     display: flex;
     flex-direction: column;
   }
-  
+
   /* Empty State */
   .empty-state {
     display: flex;
@@ -524,26 +525,26 @@
     padding: 48px 24px;
     text-align: center;
   }
-  
+
   .empty-icon {
     margin-bottom: 16px;
     color: var(--text-secondary);
     opacity: 0.6;
   }
-  
+
   .empty-title {
     margin: 0 0 4px 0;
     font-size: 15px;
     font-weight: 600;
     color: var(--text-color);
   }
-  
+
   .empty-subtitle {
     margin: 0;
     font-size: 13px;
     color: var(--text-secondary);
   }
-  
+
   /* Notification Items */
   .notification-item {
     position: relative;
@@ -555,23 +556,23 @@
     transition: all 0.2s ease;
     background: var(--background-color);
   }
-  
+
   .notification-item:last-child {
     border-bottom: none;
   }
-  
+
   .notification-item:hover {
     background: var(--hover-color, rgba(0, 0, 0, 0.025));
   }
-  
+
   .notification-item.unread {
     background: rgba(59, 130, 246, 0.04);
   }
-  
+
   :global(.dark) .notification-item.unread {
     background: rgba(59, 130, 246, 0.08);
   }
-  
+
   /* Status indicators */
   .notification-indicator {
     position: absolute;
@@ -581,15 +582,15 @@
     width: 3px;
     background: transparent;
   }
-  
+
   .notification-item.status-success .notification-indicator {
     background: var(--success-color);
   }
-  
+
   .notification-item.status-error .notification-indicator {
     background: var(--error-color);
   }
-  
+
   .notification-item.status-info .notification-indicator {
     background: var(--primary-color);
   }
@@ -601,12 +602,12 @@
   .notification-item.unread .notification-indicator {
     background: var(--primary-color);
   }
-  
+
   .notification-item.processing .notification-indicator {
     background: var(--primary-color);
     animation: pulse 1.5s infinite;
   }
-  
+
   @keyframes pulse {
     0%, 100% {
       opacity: 1;
@@ -615,7 +616,7 @@
       opacity: 0.5;
     }
   }
-  
+
   /* Icon */
   .notification-icon {
     flex-shrink: 0;
@@ -630,19 +631,19 @@
     color: var(--text-secondary);
     margin-top: 2px;
   }
-  
+
   .notification-item.status-success .notification-icon {
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.2);
     color: var(--success-color);
   }
-  
+
   .notification-item.status-error .notification-icon {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.2);
     color: var(--error-color);
   }
-  
+
   .notification-item.status-info .notification-icon {
     background: rgba(59, 130, 246, 0.1);
     border-color: rgba(59, 130, 246, 0.2);
@@ -660,11 +661,11 @@
     flex: 1;
     min-width: 0;
   }
-  
+
   .notification-main {
     margin-bottom: 8px;
   }
-  
+
   .notification-title {
     margin: 0 0 4px 0;
     font-size: 14px;
@@ -672,7 +673,7 @@
     color: var(--text-color);
     line-height: 1.4;
   }
-  
+
   .notification-message {
     margin: 0 0 8px 0;
     font-size: 13px;
@@ -680,7 +681,7 @@
     line-height: 1.4;
     word-wrap: break-word;
   }
-  
+
   .notification-action {
     display: inline-block;
     font-size: 12px;
@@ -694,25 +695,25 @@
     max-width: 160px;
     line-height: 1.2;
   }
-  
+
   .notification-action:hover {
     color: var(--primary-color-dark, #2563eb);
     text-decoration: none;
   }
-  
+
   .notification-meta {
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
-  
+
   .notification-time {
     font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
     opacity: 0.8;
   }
-  
+
   /* Dismiss Button */
   .notification-dismiss {
     flex-shrink: 0;
@@ -729,24 +730,24 @@
     transition: all 0.2s ease;
     opacity: 0.6;
   }
-  
+
   .notification-dismiss:hover {
     background: var(--error-background, rgba(239, 68, 68, 0.1));
     color: var(--error-color);
     opacity: 1;
   }
-  
+
   .notification-dismiss.non-dismissible {
     opacity: 0.3;
     cursor: not-allowed;
   }
-  
+
   .notification-dismiss.non-dismissible:hover {
     background: none;
     color: var(--text-secondary);
     opacity: 0.3;
   }
-  
+
   /* Progress Bar Styles */
   .progress-container {
     display: flex;
@@ -754,7 +755,7 @@
     gap: 8px;
     margin-top: 8px;
   }
-  
+
   .progress-bar-bg {
     flex: 1;
     height: 4px;
@@ -762,7 +763,7 @@
     border-radius: 2px;
     overflow: hidden;
   }
-  
+
   .progress-bar-fill {
     height: 100%;
     background: var(--primary-color);
@@ -770,7 +771,7 @@
     transition: width 0.3s ease;
     animation: progress-shimmer 1.5s infinite;
   }
-  
+
   @keyframes progress-shimmer {
     0% {
       background-position: -200px 0;
@@ -779,7 +780,7 @@
       background-position: calc(200px + 100%) 0;
     }
   }
-  
+
   .progress-bar-fill {
     background: linear-gradient(
       90deg,
@@ -790,7 +791,7 @@
     background-size: 200px 100%;
     animation: progress-shimmer 1.5s infinite linear;
   }
-  
+
   .progress-text {
     font-size: 11px;
     font-weight: 600;
@@ -798,25 +799,25 @@
     min-width: 32px;
     text-align: right;
   }
-  
+
   /* Scrollbar Styling */
   .notifications-content::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .notifications-content::-webkit-scrollbar-track {
     background: transparent;
   }
-  
+
   .notifications-content::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 3px;
   }
-  
+
   .notifications-content::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
   }
-  
+
   /* Responsive Design */
   @media (max-width: 480px) {
     .notifications-panel {
@@ -825,21 +826,21 @@
       width: auto;
       max-width: none;
     }
-    
+
     .notifications-header {
       padding: 14px 16px;
     }
-    
+
     .notification-item {
       padding: 14px 16px;
       gap: 10px;
     }
-    
+
     .notification-icon {
       width: 28px;
       height: 28px;
     }
-    
+
     .header-title {
       font-size: 15px;
     }
@@ -853,7 +854,7 @@
       gap: 6px;
     }
   }
-  
+
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
     .notification-item,
@@ -871,17 +872,17 @@
       transform: none;
     }
   }
-  
+
   /* High contrast mode support */
   @media (prefers-contrast: high) {
     .notifications-panel {
       border-width: 2px;
     }
-    
+
     .notification-item {
       border-bottom-width: 2px;
     }
-    
+
     .notification-indicator {
       width: 4px;
     }

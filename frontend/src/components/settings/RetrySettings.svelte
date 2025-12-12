@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
 
   // State
   let loading = true;
@@ -32,7 +33,7 @@
       hasChanges = false;
     } catch (err: any) {
       console.error('Error loading retry config:', err);
-      toastStore.error('Failed to load retry configuration');
+      toastStore.error($t('settings.retry.loadFailed'));
     } finally {
       loading = false;
     }
@@ -59,10 +60,10 @@
       originalRetryLimitEnabled = config.retry_limit_enabled;
       originalMaxRetries = config.max_retries;
       hasChanges = false;
-      toastStore.success('Retry configuration saved successfully');
+      toastStore.success($t('settings.retry.saved'));
     } catch (err: any) {
       console.error('Error saving retry config:', err);
-      const errorMsg = err.response?.data?.detail || 'Failed to save retry configuration';
+      const errorMsg = err.response?.data?.detail || $t('settings.retry.saveFailed');
       toastStore.error(errorMsg);
     } finally {
       saving = false;
@@ -77,17 +78,17 @@
 
 <div class="retry-settings">
   <div class="title-row">
-    <h3 class="section-title">Failed Task Retries</h3>
+    <h3 class="section-title">{$t('settings.retry.title')}</h3>
     <span class="info-icon">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="16" x2="12" y2="12"></line>
         <line x1="12" y1="8" x2="12.01" y2="8"></line>
       </svg>
-      <span class="tooltip">When a transcription fails due to temporary issues (GPU memory, network), the system can automatically retry. Limiting retries prevents infinite loops for permanently failing tasks.</span>
+      <span class="tooltip">{$t('settings.retry.tooltip')}</span>
     </span>
   </div>
-  <p class="section-desc">Automatically retry failed transcriptions before marking as failed.</p>
+  <p class="section-desc">{$t('settings.retry.desc')}</p>
 
   {#if loading}
     <div class="loading-state">
@@ -99,10 +100,10 @@
         <label class="toggle-label">
           <input type="checkbox" bind:checked={retryLimitEnabled} class="toggle-input" />
           <span class="toggle-switch"></span>
-          <span class="toggle-text">Limit retries</span>
+          <span class="toggle-text">{$t('settings.retry.limitRetries')}</span>
         </label>
         <div class="inline-input">
-          <span class="input-label">Max:</span>
+          <span class="input-label">{$t('settings.retry.max')}</span>
           <input
             type="number"
             bind:value={maxRetries}
@@ -115,10 +116,10 @@
       </div>
       <div class="button-row">
         <button type="button" class="btn btn-secondary" on:click={resetToDefaults} disabled={saving}>
-          Reset
+          {$t('settings.retry.reset')}
         </button>
         <button type="button" class="btn btn-primary" on:click={saveConfig} disabled={saving || !hasChanges}>
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? $t('settings.retry.saving') : $t('settings.retry.save')}
         </button>
       </div>
     </div>

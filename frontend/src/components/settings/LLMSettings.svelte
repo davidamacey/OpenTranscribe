@@ -5,6 +5,7 @@
   import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '../../stores/toast';
   import { llmStatusStore } from '../../stores/llmStatus';
+  import { t } from '$stores/locale';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -84,7 +85,7 @@
       console.error('Error loading LLM providers:', err);
       // Only show error if it's not related to missing user configurations
       if (!err.message?.includes('LLM') && !err.response?.data?.detail?.includes('configuration')) {
-        const errorMsg = err.response?.data?.detail || 'Failed to load LLM providers';
+        const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.loadProvidersError');
         toastStore.error(errorMsg, 5000);
       }
     } finally {
@@ -121,7 +122,7 @@
       }
     } catch (err: any) {
       connectionStatus = 'disconnected';
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.testFailed');
       statusMessage = errorMsg;
       statusLastChecked = new Date();
 
@@ -149,7 +150,7 @@
 
   async function activateConfiguration(configId: string) {
     if (configId === activeConfigurationId) {
-      toastStore.success('Configuration is already active', 3000);
+      toastStore.success($t('settings.llmProvider.configAlreadyActive'), 3000);
       return;
     }
 
@@ -166,14 +167,14 @@
       // Check status of newly activated configuration
       await checkCurrentStatus();
 
-      toastStore.success('Configuration activated successfully', 5000);
+      toastStore.success($t('settings.llmProvider.configActivated'), 5000);
 
       // Trigger parent component update
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Failed to activate configuration';
+      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.activateFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -192,7 +193,7 @@
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.testFailed');
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       testing = false;
@@ -225,7 +226,7 @@
         llmStatusStore.reset();
       }
 
-      toastStore.success(`Configuration "${configToDelete.name}" deleted successfully`, 5000);
+      toastStore.success($t('settings.llmProvider.configDeleted', { name: configToDelete.name }), 5000);
 
       configToDelete = null;
       showDeleteConfigModal = false;
@@ -235,7 +236,7 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Failed to delete configuration';
+      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.deleteFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -248,7 +249,7 @@
 
   async function deleteAllSettings() {
     if (!hasSettings) {
-      toastStore.error('No settings to delete');
+      toastStore.error($t('settings.llmProvider.noSettingsToDelete'));
       return;
     }
 
@@ -269,7 +270,7 @@
       // Reset global LLM status store
       llmStatusStore.reset();
 
-      toastStore.success('All LLM configurations deleted successfully', 5000);
+      toastStore.success($t('settings.llmProvider.allDeleted'), 5000);
 
       showDeleteAllModal = false;
 
@@ -278,7 +279,7 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Failed to delete LLM settings';
+      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.deleteAllFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -312,13 +313,13 @@
 
   function getProviderDisplayName(provider: string): string {
     const displayNames: Record<string, string> = {
-      openai: 'OpenAI',
-      vllm: 'vLLM',
-      ollama: 'Ollama',
-      claude: 'Claude (Anthropic)',
-      anthropic: 'Anthropic Claude',
-      openrouter: 'OpenRouter',
-      custom: 'Custom Provider'
+      openai: $t('llm.provider.openai'),
+      vllm: $t('llm.provider.vllm'),
+      ollama: $t('llm.provider.ollama'),
+      claude: $t('llm.provider.claude'),
+      anthropic: $t('llm.provider.anthropic'),
+      openrouter: $t('llm.provider.openrouter'),
+      custom: $t('llm.provider.custom')
     };
     return displayNames[provider] || provider;
   }
@@ -356,7 +357,7 @@
 
 <div class="llm-settings">
   {#if loading}
-    <div class="loading">Loading LLM settings...</div>
+    <div class="loading">{$t('settings.llmProvider.loading')}</div>
   {:else}
     <!-- Saved Configurations -->
     <div class="saved-configs-section">
@@ -365,15 +366,15 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
           </svg>
-          Saved Configurations
+          {$t('settings.llmProvider.savedConfigs')}
         </h4>
         {#if savedConfigurations.length > 0}
-          <button class="create-config-button" on:click={openCreateModal} title="Create new LLM configuration">
+          <button class="create-config-button" on:click={openCreateModal} title={$t('settings.llmProvider.createConfigTooltip')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Create Configuration
+            {$t('settings.llmProvider.createConfig')}
           </button>
         {/if}
       </div>
@@ -398,14 +399,14 @@
                         <polyline points="20,6 9,17 4,12"/>
                       </svg>
                     </div>
-                    <span class="status-text">Currently Active</span>
+                    <span class="status-text">{$t('settings.llmProvider.currentlyActive')}</span>
                   </div>
                 {:else}
                   <button
                     class="activate-button"
                     on:click={() => activateConfiguration(config.id)}
                     disabled={saving}
-                    title="Make this configuration active"
+                    title={$t('settings.llmProvider.activateTooltip')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="3"/>
@@ -418,7 +419,7 @@
                       <circle cx="4.22" cy="19.78" r="1"/>
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
-                    Activate
+                    {$t('settings.llmProvider.activate')}
                   </button>
                 {/if}
 
@@ -426,7 +427,7 @@
                   class="test-connection-button"
                   on:click={() => testSavedConfiguration(config)}
                   disabled={testing}
-                  title={`Test connection for ${config.name}`}
+                  title={$t('settings.llmProvider.testConnection') + ' ' + config.name}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="1 4 1 10 7 10"/>
@@ -439,7 +440,7 @@
                   class="edit-button"
                   on:click={() => editConfiguration(config)}
                   disabled={saving}
-                  title="Edit this configuration"
+                  title={$t('settings.llmProvider.editConfig')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -451,7 +452,7 @@
                   class="delete-config-button"
                   on:click={() => confirmDeleteConfiguration(config)}
                   disabled={saving}
-                  title={`Delete configuration: ${config.name}`}
+                  title={$t('settings.llmProvider.deleteConfig') + ' ' + config.name}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3,6 5,6 21,6"/>
@@ -472,7 +473,7 @@
               class="delete-all-button"
               on:click={confirmDeleteAll}
               disabled={saving}
-              title="Delete all saved configurations (LLM features will be disabled)"
+              title={$t('settings.llmProvider.deleteAllTooltip')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3,6 5,6 21,6"/>
@@ -480,7 +481,7 @@
                 <line x1="10" y1="11" x2="10" y2="17"/>
                 <line x1="14" y1="11" x2="14" y2="17"/>
               </svg>
-              Delete All Configurations
+              {$t('settings.llmProvider.deleteAllConfigs')}
             </button>
           </div>
         {/if}
@@ -491,14 +492,14 @@
               <path d="M14.828 14.828a4 4 0 0 1-5.656 0M9 10h.01M15 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 0 1-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
             </svg>
           </div>
-          <h4>No LLM Configurations</h4>
-          <p>Create your first LLM configuration to enable AI summarization and speaker identification.</p>
+          <h4>{$t('settings.llmProvider.noConfigs')}</h4>
+          <p>{$t('settings.llmProvider.noConfigsDesc')}</p>
           <button class="create-first-config-btn" on:click={openCreateModal}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Create First Configuration
+            {$t('settings.llmProvider.createFirstConfig')}
           </button>
         </div>
       {/if}
@@ -521,10 +522,10 @@
 <!-- Confirmation Modals -->
 <ConfirmationModal
   bind:isOpen={showDeleteConfigModal}
-  title="Delete Configuration"
-  message={configToDelete ? `Are you sure you want to delete the configuration "${configToDelete.name}"? This action cannot be undone.` : ''}
-  confirmText="Delete"
-  cancelText="Cancel"
+  title={$t('settings.llmProvider.deleteConfigConfirmTitle')}
+  message={configToDelete ? $t('settings.llmProvider.deleteConfigConfirmMessage', { name: configToDelete.name }) : ''}
+  confirmText={$t('common.delete')}
+  cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={deleteConfiguration}
@@ -534,10 +535,10 @@
 
 <ConfirmationModal
   bind:isOpen={showDeleteAllModal}
-  title="Delete All Configurations"
-  message="Are you sure you want to delete all LLM configurations? This will disable AI features (summarization and speaker identification) until you create a new configuration. This action cannot be undone."
-  confirmText="Delete All"
-  cancelText="Cancel"
+  title={$t('settings.llmProvider.deleteAllConfirmTitle')}
+  message={$t('settings.llmProvider.deleteAllConfirmMessage')}
+  confirmText={$t('settings.llmProvider.deleteAll')}
+  cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={deleteAllSettings}

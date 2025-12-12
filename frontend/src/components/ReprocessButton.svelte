@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '../stores/toast';
+  import { t } from '$stores/locale';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
@@ -174,7 +175,7 @@
       dispatch('reprocess', { fileId: file.id });
     } catch (error) {
       console.error('Error reprocessing file:', error);
-      toastStore.error('Failed to start reprocessing');
+      toastStore.error($t('reprocess.startFailed'));
       reprocessing = false;
     }
   }
@@ -185,9 +186,12 @@
     if (transcriptionSettings.speaker_prompt_behavior === 'use_defaults') {
       const min = transcriptionSystemDefaults?.min_speakers ?? 1;
       const max = transcriptionSystemDefaults?.max_speakers ?? 20;
-      return `Using system defaults (${min}-${max} speakers)`;
+      return $t('reprocess.confirmationUseDefaults', { min, max });
     } else if (transcriptionSettings.speaker_prompt_behavior === 'use_custom') {
-      return `Using your settings (${transcriptionSettings.min_speakers}-${transcriptionSettings.max_speakers} speakers)`;
+      return $t('reprocess.confirmationUseCustom', {
+        min: transcriptionSettings.min_speakers,
+        max: transcriptionSettings.max_speakers
+      });
     }
     return '';
   }
@@ -199,13 +203,13 @@
       class="reprocess-button"
       on:click={handleReprocessClick}
       disabled={reprocessing}
-      title="Reprocess this file with the transcription AI"
+      title={$t('reprocess.buttonTooltip')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6"></path>
         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
       </svg>
-      {reprocessing ? 'Reprocessing...' : 'Reprocess'}
+      {reprocessing ? $t('reprocess.buttonLabelProcessing') : $t('reprocess.buttonLabel')}
     </button>
 
     {#if showDropdown}
@@ -222,37 +226,37 @@
               <span class="confirmation-message">{getConfirmationMessage()}</span>
             </div>
             <div class="confirmation-actions">
-              <button class="btn-customize" on:click={handleCustomize}>Customize</button>
-              <button class="btn-start" on:click={executeReprocess}>Start</button>
+              <button class="btn-customize" on:click={handleCustomize}>{$t('reprocess.customize')}</button>
+              <button class="btn-start" on:click={executeReprocess}>{$t('reprocess.start')}</button>
             </div>
           </div>
         {:else}
           <!-- Speaker settings form -->
           <div class="settings-header">
-            <h4>Speaker Diarization Settings</h4>
-            <p>Leave empty to use defaults.</p>
+            <h4>{$t('reprocess.settingsTitle')}</h4>
+            <p>{$t('reprocess.settingsHint')}</p>
           </div>
 
           <div class="settings-row">
             <div class="setting-field">
-              <label for="reprocess-min-speakers">Min Speakers</label>
+              <label for="reprocess-min-speakers">{$t('reprocess.minSpeakers')}</label>
               <input
                 id="reprocess-min-speakers"
                 type="number"
                 min="1"
-                placeholder="Default"
+                placeholder={$t('reprocess.defaultPlaceholder')}
                 bind:value={minSpeakers}
                 disabled={numSpeakers !== null}
               />
             </div>
 
             <div class="setting-field">
-              <label for="reprocess-max-speakers">Max Speakers</label>
+              <label for="reprocess-max-speakers">{$t('reprocess.maxSpeakers')}</label>
               <input
                 id="reprocess-max-speakers"
                 type="number"
                 min="1"
-                placeholder="Default"
+                placeholder={$t('reprocess.defaultPlaceholder')}
                 bind:value={maxSpeakers}
                 disabled={numSpeakers !== null}
               />
@@ -261,28 +265,28 @@
 
           <div class="setting-field">
             <label for="reprocess-num-speakers">
-              Fixed Count
-              <span class="hint">(overrides min/max)</span>
+              {$t('reprocess.fixedCount')}
+              <span class="hint">{$t('reprocess.fixedCountHint')}</span>
             </label>
             <input
               id="reprocess-num-speakers"
               type="number"
               min="1"
-              placeholder="Auto"
+              placeholder={$t('reprocess.autoPlaceholder')}
               bind:value={numSpeakers}
             />
           </div>
 
           {#if !isValid}
             <div class="validation-error">
-              Min must be ≤ max
+              {$t('reprocess.validationError')}
             </div>
           {/if}
 
           <div class="settings-actions">
-            <button class="btn-cancel" on:click={closeDropdown}>Cancel</button>
+            <button class="btn-cancel" on:click={closeDropdown}>{$t('reprocess.cancel')}</button>
             <button class="btn-start" on:click={executeReprocess} disabled={!isValid}>
-              Start
+              {$t('reprocess.start')}
             </button>
           </div>
         {/if}

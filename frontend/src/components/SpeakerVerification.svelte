@@ -3,6 +3,8 @@
   import { fade, slide } from 'svelte/transition';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let speaker: {
     id: string;  // UUID
@@ -63,26 +65,26 @@
       // Handle LLM suggestion to create new profile
       selectedAction = 'create_profile';
       newProfileName = suggestion.profile_name;
-      confirmMessage = `Create new profile "${suggestion.profile_name}" and assign this speaker?`;
+      confirmMessage = $t('speakerVerification.createProfileAndAssign', { name: suggestion.profile_name });
     } else {
       // Handle existing profile assignment
       selectedAction = 'accept';
       selectedProfileId = suggestion.profile_id || null;
-      confirmMessage = `Assign this speaker to "${suggestion.profile_name}"?`;
+      confirmMessage = $t('speakerVerification.assignToProfile', { name: suggestion.profile_name });
     }
     showConfirmModal = true;
   }
 
   function handleRejectSuggestions() {
     selectedAction = 'reject';
-    confirmMessage = 'Reject all speaker identification suggestions?';
+    confirmMessage = $t('speakerVerification.rejectAllSuggestions');
     showConfirmModal = true;
   }
 
   function handleCreateNewProfile() {
     if (newProfileName.trim()) {
       selectedAction = 'create_profile';
-      confirmMessage = `Create new profile "${newProfileName}" and assign this speaker?`;
+      confirmMessage = $t('speakerVerification.createProfileAndAssign', { name: newProfileName });
       showConfirmModal = true;
     }
   }
@@ -124,22 +126,22 @@
   <div class="verification-header">
     <div class="header-content">
       <h3 class="verification-title">
-        Speaker Verification:
+        {$t('speakerVerification.title')}
         <span
           class="speaker-chip"
           style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; color: var(--text-color, {getSpeakerColor(speaker.name).textLight});"
         >
-          {speaker.name}
+          {translateSpeakerLabel(speaker.name)}
         </span>
       </h3>
       <p class="verification-subtitle">
-        Please verify the speaker identification for this audio segment
+        {$t('speakerVerification.subtitle')}
       </p>
     </div>
 
     {#if speaker.confidence}
       <span class="{getConfidenceBadgeClass('low')}">
-        {Math.round(speaker.confidence * 100)}% confidence
+        {$t('speakerVerification.confidence', { percent: Math.round(speaker.confidence * 100) })}
       </span>
     {/if}
   </div>
@@ -148,7 +150,7 @@
   {#if suggestions && suggestions.length > 0}
     <div class="suggestions-section" transition:slide>
       <h4 class="section-title">
-        Suggested Matches
+        {$t('speakerVerification.suggestedMatches')}
       </h4>
 
       <div class="suggestions-list">
@@ -173,14 +175,14 @@
                       <line x1="12" x2="12" y1="19" y2="22"/>
                       <line x1="8" x2="16" y1="22" y2="22"/>
                     </svg>
-                    Voice Match
+                    {$t('speakerVerification.voiceMatch')}
                   </span>
                 {:else if suggestion.source === 'llm_analysis'}
                   <span class="source-badge llm-analysis">
                     <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M9.663 17h4.673M12 3v1m6.364 1.636-.707.707M21 12h-1M4 12H3m3.343-5.657-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
                     </svg>
-                    AI Analysis
+                    {$t('speakerVerification.aiAnalysis')}
                   </span>
                 {:else if suggestion.source === 'profile_embedding'}
                   <span class="source-badge profile-embedding">
@@ -190,30 +192,30 @@
                       <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
                       <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                     </svg>
-                    Profile Match
+                    {$t('speakerVerification.profileMatch')}
                   </span>
                 {/if}
 
                 {#if suggestion.auto_accept}
                   <span class="auto-accept-badge">
-                    Auto-Accept
+                    {$t('speakerVerification.autoAccept')}
                   </span>
                 {/if}
               </div>
 
               <div class="suggestion-details">
                 <p class="suggestion-reason">
-                  {suggestion.reason || 'Based on voice characteristics'}
+                  {suggestion.reason || $t('speakerVerification.basedOnVoiceCharacteristics')}
                 </p>
 
                 <!-- Additional metadata for different suggestion types -->
                 {#if suggestion.source === 'voice_embedding'}
                   <p class="suggestion-metadata">
-                    Based on voice characteristics analysis
+                    {$t('speakerVerification.basedOnVoiceAnalysis')}
                   </p>
                 {:else if suggestion.source === 'llm_analysis'}
                   <p class="suggestion-metadata">
-                    AI identified speaker from context
+                    {$t('speakerVerification.aiIdentifiedFromContext')}
                   </p>
                 {/if}
               </div>
@@ -224,7 +226,7 @@
                 on:click={() => handleAcceptSuggestion(suggestion)}
                 class="accept-button"
               >
-                ✓ Accept
+                ✓ {$t('speakerVerification.accept')}
               </button>
             </div>
           </div>
@@ -237,7 +239,7 @@
   {#if crossMediaOccurrences && crossMediaOccurrences.length > 0}
     <div class="cross-media-section" transition:slide>
       <h4 class="section-title">
-        This Speaker Appears In
+        {$t('speakerVerification.thisAppearIn')}
         <span class="occurrence-count">
           {crossMediaOccurrences.length}
         </span>
@@ -251,17 +253,17 @@
                 {occurrence.title}
               </span>
               <span class="occurrence-label">
-                as
+                {$t('speakerVerification.as')}
                 <span
                   class="speaker-chip speaker-chip-small"
                   style="background-color: {getSpeakerColor(occurrence.speaker_label).bg}; border-color: {getSpeakerColor(occurrence.speaker_label).border}; color: var(--text-color, {getSpeakerColor(occurrence.speaker_label).textLight});"
                 >
-                  {occurrence.speaker_label}
+                  {translateSpeakerLabel(occurrence.speaker_label)}
                 </span>
               </span>
               {#if occurrence.same_speaker}
                 <span class="current-badge">
-                  Current
+                  {$t('speakerVerification.current')}
                 </span>
               {/if}
             </div>
@@ -289,21 +291,21 @@
       on:click={showCreateProfileModal}
       class="primary-button"
     >
-      + Create New Profile
+      + {$t('speakerVerification.createNewProfile')}
     </button>
 
     <button
       on:click={handleRejectSuggestions}
       class="secondary-button"
     >
-      Keep Unassigned
+      {$t('speakerVerification.keepUnassigned')}
     </button>
 
     <button
       on:click={() => dispatch('cancel')}
       class="cancel-button-action"
     >
-      Cancel
+      {$t('speakerVerification.cancel')}
     </button>
   </div>
 </div>
@@ -324,11 +326,11 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3 class="modal-title">
-            Create New Speaker Profile
+            {$t('speakerVerification.createNewSpeakerProfile')}
           </h3>
           <button
             class="modal-close-button"
-            aria-label="Close modal"
+            aria-label="{$t('speakerVerification.closeModal')}"
             on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -340,13 +342,13 @@
 
         <div class="modal-body">
           <label for="profileName" class="input-label">
-            Profile Name
+            {$t('speakerVerification.profileName')}
           </label>
           <input
             id="profileName"
             type="text"
             bind:value={newProfileName}
-            placeholder="Enter speaker name..."
+            placeholder="{$t('speakerVerification.enterSpeakerName')}"
             class="profile-name-input"
           />
         </div>
@@ -356,14 +358,14 @@
             on:click={() => { showNewProfileModal = false; newProfileName = ''; }}
             class="modal-button cancel-button"
           >
-            Cancel
+            {$t('speakerVerification.cancel')}
           </button>
           <button
             on:click={handleCreateNewProfile}
             disabled={!newProfileName.trim()}
             class="modal-button confirm-button"
           >
-            Create Profile
+            {$t('speakerVerification.createProfile')}
           </button>
         </div>
       </div>
@@ -375,10 +377,10 @@
 {#if showConfirmModal}
   <ConfirmationModal
     isOpen={showConfirmModal}
-    title="Confirm Action"
+    title={$t('speakerVerification.confirmAction')}
     message={confirmMessage}
-    confirmText="Confirm"
-    cancelText="Cancel"
+    confirmText={$t('speakerVerification.confirm')}
+    cancelText={$t('speakerVerification.cancel')}
     on:confirm={confirmAction}
     on:cancel={() => { showConfirmModal = false; }}
   />

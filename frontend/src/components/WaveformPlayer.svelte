@@ -2,6 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { theme } from '../stores/theme.js';
+  import { t } from '$stores/locale';
 
   // Props
   export let fileId: string | number;
@@ -108,11 +109,11 @@
           drawWaveform();
         }
       } else {
-        throw new Error('No waveform data available');
+        throw new Error($t('waveform.noData'));
       }
     } catch (error: any) {
       console.error('Error loading waveform:', error);
-      waveformError = error.response?.data?.detail || 'Failed to load waveform visualization';
+      waveformError = error.response?.data?.detail || $t('waveform.loadFailed');
     } finally {
       isLoadingWaveform = false;
     }
@@ -324,7 +325,7 @@
     on:keydown={handleKeyDown}
     tabindex="0"
     role="slider"
-    aria-label="Audio waveform scrubber"
+    aria-label={$t('waveform.ariaLabel')}
     aria-valuenow={currentTime}
     aria-valuemin="0"
     aria-valuemax={duration}
@@ -335,7 +336,7 @@
   {#if isLoadingWaveform}
     <div class="waveform-overlay waveform-loading">
       <div class="loading-spinner"></div>
-      <span>Loading waveform...</span>
+      <span>{$t('waveform.loading')}</span>
     </div>
   {:else if waveformError}
     <div class="waveform-overlay waveform-error">
@@ -345,12 +346,12 @@
         on:click={loadWaveformData}
         type="button"
       >
-        Retry
+        {$t('waveform.retry')}
       </button>
     </div>
   {:else if waveformData.length === 0}
     <div class="waveform-overlay waveform-placeholder">
-      <span>Waveform visualization not available</span>
+      <span>{$t('waveform.notAvailable')}</span>
     </div>
   {/if}
 </div>

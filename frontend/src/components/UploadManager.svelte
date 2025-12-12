@@ -1,15 +1,16 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { 
-    uploadsStore, 
-    activeUploadCount, 
-    uploadCount, 
+  import {
+    uploadsStore,
+    activeUploadCount,
+    uploadCount,
     totalProgress,
     hasActiveUploads,
     isExpanded,
     hasNewActivity,
     uploadStats
   } from '../stores/uploads';
+  import { t } from '../stores/locale';
   import UploadProgress from './UploadProgress.svelte';
 
   // Component state
@@ -60,7 +61,7 @@
   // Handle drag move
   function handleDragMove(event: MouseEvent) {
     if (!isDragging) return;
-    
+
     dragOffset = {
       x: event.clientX - startPosition.x,
       y: event.clientY - startPosition.y
@@ -70,18 +71,18 @@
   // Handle drag end
   function handleDragEnd() {
     if (!isDragging) return;
-    
+
     isDragging = false;
-    
+
     // Update position
     position = {
       x: Math.max(20, Math.min(window.innerWidth - 320, position.x + dragOffset.x)),
       y: Math.max(20, Math.min(window.innerHeight - 200, position.y + dragOffset.y))
     };
-    
+
     savePosition();
     dragOffset = { x: 0, y: 0 };
-    
+
     document.removeEventListener('mousemove', handleDragMove);
     document.removeEventListener('mouseup', handleDragEnd);
   }
@@ -117,19 +118,19 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if showManager}
-  <div 
+  <div
     class="upload-manager"
     class:expanded={$isExpanded}
     class:dragging={isDragging}
     style="
-      right: {position.x}px; 
+      right: {position.x}px;
       bottom: {position.y}px;
       transform: translate({dragOffset.x}px, {dragOffset.y}px);
     "
   >
     <!-- Minimized State -->
     {#if !$isExpanded}
-      <div 
+      <div
         class="upload-badge"
         class:has-activity={$hasNewActivity}
         on:mousedown={handleDragStart}
@@ -157,14 +158,14 @@
               </svg>
             {/if}
           </div>
-          
+
           <div class="badge-text">
             {#if $activeUploadCount > 0}
-              {$activeUploadCount} uploading
+              {$activeUploadCount} {$t('upload.uploading')}
             {:else if completedCount > 0}
-              {completedCount} completed
+              {completedCount} {$t('upload.completed')}
             {:else}
-              {$uploadCount} uploads
+              {$uploadCount} {$t('upload.uploads')}
             {/if}
           </div>
 
@@ -182,35 +183,35 @@
         <!-- Header -->
         <div class="panel-header" role="button" tabindex="0" on:mousedown={handleDragStart} on:keydown={handleHeaderKeydown}>
           <div class="header-content">
-            <h3>Uploads</h3>
+            <h3>{$t('upload.uploads')}</h3>
             <div class="header-stats">
               {#if $activeUploadCount > 0}
-                <span class="stat-active">{$activeUploadCount} active</span>
+                <span class="stat-active">{$activeUploadCount} {$t('upload.active')}</span>
               {/if}
               {#if $uploadStats.queued > 0}
-                <span class="stat-queued">{$uploadStats.queued} queued</span>
+                <span class="stat-queued">{$uploadStats.queued} {$t('upload.queued')}</span>
               {/if}
               {#if completedCount > 0}
-                <span class="stat-completed">{completedCount} completed</span>
+                <span class="stat-completed">{completedCount} {$t('upload.completed')}</span>
               {/if}
             </div>
           </div>
-          
+
           <div class="header-actions">
             {#if completedCount > 0}
-              <button 
+              <button
                 class="clear-btn"
                 on:click={handleClearCompleted}
-                title="Clear completed uploads"
+                title={$t('upload.clearCompletedTooltip')}
               >
-                Clear
+                {$t('upload.clear')}
               </button>
             {/if}
-            
-            <button 
+
+            <button
               class="collapse-btn"
               on:click={handleToggle}
-              title="Minimize"
+              title={$t('upload.minimize')}
             >
               ▼
             </button>
@@ -221,12 +222,12 @@
         {#if $hasActiveUploads}
           <div class="overall-progress">
             <div class="progress-info">
-              <span class="progress-label">Overall Progress</span>
+              <span class="progress-label">{$t('upload.overallProgress')}</span>
               <span class="progress-percent">{$totalProgress}%</span>
             </div>
             <div class="progress-bar">
-              <div 
-                class="progress-fill" 
+              <div
+                class="progress-fill"
                 style="width: {$totalProgress}%"
               ></div>
             </div>
@@ -247,7 +248,7 @@
               <polyline points="17 8 12 3 7 8"></polyline>
               <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
-            <p>No uploads</p>
+            <p>{$t('upload.noUploads')}</p>
           </div>
         {/if}
       </div>
@@ -483,11 +484,11 @@
   }
 
   @keyframes pulse-activity {
-    0%, 100% { 
+    0%, 100% {
       transform: scale(1);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
-    50% { 
+    50% {
       transform: scale(1.02);
       box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
     }
@@ -526,7 +527,7 @@
       width: calc(100vw - 40px);
       max-width: 350px;
     }
-    
+
     .upload-manager {
       right: 20px !important;
       left: 20px !important;

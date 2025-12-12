@@ -7,6 +7,7 @@
   import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import { toastStore } from '../stores/toast';
+  import { t } from '../stores/locale';
 
   // The Svelte component is exported by default automatically
 
@@ -27,34 +28,34 @@
   let editingCommentId = null;
   /** @type {string} */
   let editingCommentText = '';
-  
+
   // Confirmation modal state
   let showConfirmModal = false;
   let confirmModalTitle = '';
   let confirmModalMessage = '';
   /** @type {(() => void) | null} */
   let confirmCallback = null;
-  
+
   // Event dispatcher
   const dispatch = createEventDispatcher();
-  
+
   // Event listener for getComments events from parent components
   function handleGetCommentsEvent() {
     // Send comments data back through the event
     dispatch('getComments', { comments: comments });
   }
-  
+
   // Add event listener when component is mounted
   onMount(() => {
     fetchComments();
-    
+
     // Listen for getComments events
     const commentsWrapper = document.querySelector('.comments-section-wrapper');
     if (commentsWrapper) {
       commentsWrapper.addEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
     }
   });
-  
+
   // Remove event listener when component is destroyed
   onDestroy(() => {
     const commentsWrapper = document.querySelector('.comments-section-wrapper');
@@ -62,7 +63,7 @@
       commentsWrapper.removeEventListener('getComments', /** @type {EventListener} */ (handleGetCommentsEvent));
     }
   });
-  
+
   async function fetchComments() {
     loading = true;
     try {
@@ -72,38 +73,38 @@
       // Validate fileId
       if (!fileId) {
         console.error('Invalid file ID:', fileId);
-        toastStore.error('Invalid file ID provided');
+        toastStore.error($t('comments.invalidFileId'));
         loading = false;
         return;
       }
 
       if (!token) {
         console.error('No auth token found in localStorage');
-        toastStore.error('You need to be logged in to view comments');
+        toastStore.error($t('comments.loginRequired'));
         loading = false;
         return;
       }
-      
+
       // Create custom headers with authentication token
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
-      
+
       let response;
       try {
         const endpoint = `/comments/files/${fileId}/comments`;
         response = await axiosInstance.get(endpoint, { headers });
       } catch (/** @type {any} */ error) {
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
-        
+
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          toastStore.error('You need to be logged in to view comments');
+          toastStore.error($t('comments.loginRequired'));
           loading = false;
           return;
         }
-        
+
         // Try alternate endpoints as fallback
         if (error.response?.status === 404) {
           try {
@@ -118,18 +119,18 @@
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
-              toastStore.error(`Failed to load comments: ${lastError.message}`);
+              toastStore.error($t('comments.loadFailed', { error: lastError.message }));
               return;
             }
           }
         } else {
-          toastStore.error(`Failed to load comments: ${error.message}`);
+          toastStore.error($t('comments.loadFailed', { error: error.message }));
           return;
         }
       }
-      
+
       // Comments response received
-      
+
       // Process comments to ensure they have user information
       // Processing comments
       comments = response.data.map(/** @param {any} comment */ (comment) => {
@@ -147,13 +148,13 @@
         }
         return comment;
       });
-      
+
       if (!Array.isArray(comments) || comments.length === 0) {
         // No comments found for this file
       } else {
         // Successfully processed comments
       }
-      
+
       // Sort by timestamp
       comments.sort((/** @type {{timestamp: number}} */ a, /** @type {{timestamp: number}} */ b) => a.timestamp - b.timestamp);
     } catch (/** @type {any} */ err) { // Handle error with proper type
@@ -164,20 +165,20 @@
         status: err.response?.status,
         data: err.response?.data
       });
-      
+
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        toastStore.error('You need to be logged in to view comments.');
+        toastStore.error($t('comments.loginRequired'));
       } else if (err.code === 'ERR_NETWORK') {
-        toastStore.error('Network error: Cannot connect to server.');
+        toastStore.error($t('comments.networkError'));
       } else {
-        toastStore.error(`Failed to load comments: ${err.message}`);
+        toastStore.error($t('comments.loadFailed', { error: err.message }));
       }
     } finally {
       loading = false;
     }
   }
-  
+
   // Add a new comment
   /** @param {Event=} event - Optional event parameter */
   async function addComment(event) {
@@ -186,23 +187,23 @@
       event.preventDefault();
       event.stopPropagation();
     }
-    
+
     if (!newComment.trim()) return;
-    
+
     // Use the timestamp input if it was explicitly set, otherwise use null
     const timestamp = timestampInput !== null ? timestampInput : null;
-    
+
     // Store locally for optimistic UI updates
     try {
       // Get user data from localStorage
       const userData = JSON.parse(localStorage.getItem('user') || '{}');
-      
+
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
 
       if (!token) {
         console.error('No auth token found in localStorage');
-        toastStore.error('You need to be logged in to add comments');
+        toastStore.error($t('comments.loginRequiredToAdd'));
         return;
       }
 
@@ -225,22 +226,22 @@
           timestamp: timestamp,
           media_file_id: fileId // Required by the CommentCreate schema
         };
-        
+
         // Ensure token is included in the headers
         response = await axiosInstance.post(endpoint, commentPayload, { headers });
-        
+
         // Successfully added comment
       } catch (/** @type {any} */ error) {
         // Log detailed error information for debugging
         console.error('[CommentSection] Error adding comment:', error);
-        console.error('[CommentSection] Error response:', 
-          error.response?.status, 
+        console.error('[CommentSection] Error response:',
+          error.response?.status,
           error.response?.data
         );
-        
+
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
-          toastStore.error('You need to be logged in to add comments');
+          toastStore.error($t('comments.loginRequiredToAdd'));
           return;
         }
 
@@ -268,18 +269,18 @@
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
-              toastStore.error(`Failed to add comment: ${lastError.message}`);
+              toastStore.error($t('comments.addFailed', { error: lastError.message }));
               return;
             }
           }
         } else {
-          toastStore.error(`Failed to add comment: ${error.message}`);
+          toastStore.error($t('comments.addFailed', { error: error.message }));
           return;
         }
       }
-      
+
       // Comment added successfully
-      
+
       // Ensure the comment has a user object with username
       const commentWithUser = {
         ...response.data,
@@ -290,7 +291,7 @@
           full_name: userData.full_name || userData.email || 'User ' + response.data.user_id
         }
       };
-      
+
       comments = [...comments, commentWithUser];
       comments.sort((a, b) => a.timestamp - b.timestamp);
       newComment = '';
@@ -304,18 +305,18 @@
         status: err.response?.status,
         data: err.response?.data
       });
-      
+
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        toastStore.error('You need to be logged in to add comments.');
+        toastStore.error($t('comments.loginRequiredToAdd'));
       } else if (err.code === 'ERR_NETWORK') {
-        toastStore.error('Network error: Cannot connect to server.');
+        toastStore.error($t('comments.networkError'));
       } else {
-        toastStore.error(`Failed to add comment: ${err.message}`);
+        toastStore.error($t('comments.addFailed', { error: err.message }));
       }
     }
   }
-  
+
   // Edit a comment
   /**
    * Edit an existing comment
@@ -324,53 +325,53 @@
    */
   async function editComment(commentId, newText) {
     if (!newText || !newText.trim()) {
-      toastStore.error('Comment text cannot be empty');
+      toastStore.error($t('comments.textCannotBeEmpty'));
       return;
     }
 
     try {
       // Editing comment
-      
+
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
 
       if (!token) {
-        toastStore.error('You need to be logged in to edit comments');
+        toastStore.error($t('comments.loginRequiredToEdit'));
         return;
       }
-      
+
       // Create custom headers with authentication token
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
-      
+
       // Use PUT as the backend expects PUT for updates
       // The backend route is /comments/{comment_id} - need to include the full path
       // Adding detailed debug logging to track the request
       // Editing comment with new text
-      
+
       // Log detailed request info
       const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       if (isDevMode) {
         // Request details for editing comment
       }
-      
+
       await axiosInstance.put(`comments/${commentId}`, {
         text: newText
       }, { headers });
-      
+
       // Comment edited successfully
-      
+
       // Update the comment in the list
       comments = comments.map(c => c.id === commentId ? { ...c, text: newText } : c);
-      
+
       // Reset editing state if we were editing this comment
       if (editingCommentId === commentId) {
         editingCommentId = null;
         editingCommentText = '';
       }
-      
+
     } catch (/** @type {any} */ err) {
       console.error('[CommentSection] Error editing comment:', err);
       console.error('[CommentSection] Error details:', {
@@ -379,16 +380,16 @@
         status: err.response?.status,
         data: err.response?.data
       });
-      
+
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        toastStore.error('You need to be logged in to edit comments.');
+        toastStore.error($t('comments.loginRequiredToEdit'));
       } else {
-        toastStore.error(`Failed to edit comment: ${err.message}`);
+        toastStore.error($t('comments.editFailed', { error: err.message }));
       }
     }
   }
-  
+
   /**
    * Show confirmation modal
    * @param {string} title - The modal title
@@ -427,8 +428,8 @@
    */
   async function deleteComment(commentId) {
     showConfirmation(
-      'Delete Comment',
-      'Are you sure you want to delete this comment?',
+      $t('comments.deleteTitle'),
+      $t('comments.deleteConfirmMessage'),
       () => executeDeleteComment(commentId)
     );
   }
@@ -444,28 +445,28 @@
       // Deleting comment
 
       if (!token) {
-        toastStore.error('You need to be logged in to delete comments');
+        toastStore.error($t('comments.loginRequiredToDelete'));
         return;
       }
-      
+
       // Create custom headers with authentication token
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
-      
+
       // The correct endpoint is under the comments router without leading slash
       // Deleting comment with ID
-      
+
       // Log detailed request info
       const isDevMode = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       if (isDevMode) {
         // Delete request details
       }
-      
+
       await axiosInstance.delete(`comments/${commentId}`, { headers });
       // Comment deleted successfully
-      
+
       comments = comments.filter(c => c.id !== commentId);
     } catch (/** @type {any} */ err) { // Handle error with proper type
       console.error('[CommentSection] Error deleting comment:', err);
@@ -475,16 +476,16 @@
         status: err.response?.status,
         data: err.response?.data
       });
-      
+
       // Provide a more user-friendly error message
       if (err.response && err.response.status === 401) {
-        toastStore.error('You need to be logged in to delete comments.');
+        toastStore.error($t('comments.loginRequiredToDelete'));
       } else {
-        toastStore.error(`Failed to delete comment: ${err.message}`);
+        toastStore.error($t('comments.deleteFailed', { error: err.message }));
       }
     }
   }
-  
+
   // Format timestamp as MM:SS
   /**
    * Format timestamp as MM:SS
@@ -496,7 +497,7 @@
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  
+
   // Use the current playback time
   /** @param {Event} event */
   function useCurrentTime(event) {
@@ -504,13 +505,13 @@
     if (event && event.preventDefault) {
       event.preventDefault();
     }
-    
+
     // Get the current time directly from the player
     // This ensures we get the exact current time from the player
     timestampInput = currentTime;
     // Set timestamp to current time
   }
-  
+
   // Check if the current user is the author of a comment
   /**
    * Check if the current user is the author of a comment
@@ -528,12 +529,12 @@
 <!-- Main wrapper with fixed header and scrollable comments -->
 <div class="comments-wrapper">
   <div class="comments-header-internal">
-    <h4 class="section-heading">Comments & Notes</h4>
+    <h4 class="section-heading">{$t('comments.title')}</h4>
     <div class="comments-preview">
       {#if comments && comments.length > 0}
-        <span class="tag-chip">{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>
+        <span class="tag-chip">{comments.length} {comments.length !== 1 ? $t('comments.comments') : $t('comments.comment')}</span>
       {:else}
-        <span class="no-comments">No comments</span>
+        <span class="no-comments">{$t('comments.noComments')}</span>
       {/if}
     </div>
   </div>
@@ -543,9 +544,9 @@
     <form class="comment-form" on:submit={addComment}>
       <textarea
         bind:value={newComment}
-        placeholder="Type your comment or note here..."
+        placeholder={$t('comments.placeholder')}
         rows="2"
-        title="Enter your comment or note. You must mark a timestamp and add text before you can submit."
+        title={$t('comments.enterCommentHint')}
       ></textarea>
       <div class="form-actions">
         <div class="timestamp-actions">
@@ -554,7 +555,7 @@
               type="button"
               class="timestamp-button"
               on:click={useCurrentTime}
-              title="Click to mark the current video time - required before you can add your comment"
+              title={$t('comments.markTimeHint')}
             >
               <span class="button-icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -562,16 +563,16 @@
                   <polyline points="12,6 12,12 16,14"/>
                 </svg>
               </span>
-              <span>Mark Current Time</span>
+              <span>{$t('comments.markCurrentTime')}</span>
             </button>
           {:else}
             <div class="current-timestamp">
-              <span class="timestamp-value">Marked {formatTimestamp(timestampInput)}</span>
+              <span class="timestamp-value">{$t('comments.markedTime', { time: formatTimestamp(timestampInput) })}</span>
               <button
                 type="button"
                 class="clear-button"
                 on:click|stopPropagation={() => timestampInput = null}
-                title="Clear the marked timestamp (you'll need to mark time again to submit)"
+                title={$t('comments.clearTimestampHint')}
               >
                 ✖
               </button>
@@ -582,32 +583,32 @@
           type="submit"
           class="submit-button"
           disabled={!newComment.trim() || timestampInput === null}
-          title={!newComment.trim() || timestampInput === null 
-            ? 'You must add text and mark a timestamp before submitting' 
-            : `Add your comment at ${formatTimestamp(timestampInput)}`}
+          title={!newComment.trim() || timestampInput === null
+            ? $t('comments.mustAddTextAndTime')
+            : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
         >
-          Add Comment
+          {$t('comments.addComment')}
         </button>
       </div>
     </form>
   </div>
-  
+
   <!-- Scrollable comments list container -->
   <div class="comments-list-container">
     {#if loading && comments.length === 0}
       <div class="loading-state">
-        <p>Loading comments...</p>
+        <p>{$t('comments.loading')}</p>
       </div>
     {:else if comments.length === 0}
       <div class="empty-state">
-        <p>No comments yet. Be the first to add one!</p>
+        <p>{$t('comments.noCommentsYet')}</p>
       </div>
     {:else}
       {#each comments as comment (comment.id)}
         <div class="comment-item" transition:slide={{duration: 300}}>
           <div class="comment-header">
             <div class="comment-user">
-              {comment.user ? (comment.user.full_name || comment.user.email || `User ${comment.user.id}`) : 'Anonymous'}
+              {comment.user ? (comment.user.full_name || comment.user.email || `User ${comment.user.id}`) : $t('comments.anonymous')}
             </div>
             <div class="comment-timestamp">
               {#if comment.timestamp !== null}
@@ -616,8 +617,8 @@
                   class="timestamp-link"
                   on:click={() => dispatch('seekTo', { time: comment.timestamp })}
                   on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', { time: comment.timestamp })}
-                  aria-label="Jump to timestamp {formatTimestamp(comment.timestamp)}"
-                  title="Jump to {formatTimestamp(comment.timestamp)} in the video"
+                  aria-label={$t('comments.jumpToTimestamp', { time: formatTimestamp(comment.timestamp) })}
+                  title={$t('comments.jumpToTime', { time: formatTimestamp(comment.timestamp) })}
                 >
                   {formatTimestamp(comment.timestamp)}
                 </button>
@@ -625,7 +626,7 @@
               <span>{new Date(comment.created_at).toLocaleDateString()}</span>
             </div>
           </div>
-          
+
           {#if editingCommentId === comment.id}
             <form class="edit-comment-form" on:submit|preventDefault={() => editComment(comment.id, editingCommentText)}>
               <textarea
@@ -633,20 +634,20 @@
                 rows="2"
               ></textarea>
               <div class="edit-buttons">
-                <button 
-                  type="button" 
-                  class="cancel-button" 
+                <button
+                  type="button"
+                  class="cancel-button"
                   on:click={() => editingCommentId = null}
-                  title="Cancel editing this comment and discard changes"
+                  title={$t('comments.cancelEditHint')}
                 >
-                  Cancel
+                  {$t('comments.cancel')}
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   class="save-button"
-                  title="Save the changes to this comment"
+                  title={$t('comments.saveChangesHint')}
                 >
-                  Save
+                  {$t('comments.save')}
                 </button>
               </div>
             </form>
@@ -654,28 +655,28 @@
             <div class="comment-body">
               <TruncatedText text={comment.text} maxLength={150} />
             </div>
-            
+
             <!-- Only show edit/delete for comment author -->
             {#if isCommentAuthor(comment.user.id)}
               <div class="comment-actions">
-                <button 
+                <button
                   type="button"
-                  class="edit-button" 
+                  class="edit-button"
                   on:click={() => {
                     editingCommentId = comment.id;
                     editingCommentText = comment.text;
                   }}
-                  title="Edit this comment"
+                  title={$t('comments.editHint')}
                 >
-                  Edit
+                  {$t('comments.edit')}
                 </button>
-                <button 
+                <button
                   type="button"
                   class="delete-button"
                   on:click={() => deleteComment(comment.id)}
-                  title="Delete this comment permanently"
+                  title={$t('comments.deleteHint')}
                 >
-                  Delete
+                  {$t('comments.delete')}
                 </button>
               </div>
             {/if}
@@ -691,8 +692,8 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText="Delete"
-  cancelText="Cancel"
+  confirmText={$t('comments.delete')}
+  cancelText={$t('comments.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={handleConfirmModalConfirm}
@@ -753,7 +754,7 @@
     border-radius: 8px;
     overflow: hidden;
   }
-  
+
   /* Fixed comment form container at the top */
   .comment-form-container {
     position: sticky;
@@ -762,7 +763,7 @@
     padding: 1rem 0.5rem;
     border-bottom: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
   }
-  
+
   /* Scrollable comments list container */
   .comment-form {
     display: flex;
@@ -770,7 +771,7 @@
     gap: 0.5rem;
     width: 100%;
   }
-  
+
   .comments-list-container {
     flex: 1;
     overflow-y: auto;
@@ -780,7 +781,7 @@
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .comment-form {
     display: flex;
     flex-direction: column;
@@ -804,7 +805,7 @@
     color: var(--text-color);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
-  
+
   textarea:focus {
     outline: none;
     border-color: var(--primary-color);
@@ -820,7 +821,7 @@
     flex-wrap: wrap;
     gap: 0.75rem;
   }
-  
+
   .timestamp-actions {
     display: flex;
     align-items: center;
@@ -829,7 +830,7 @@
     max-width: 100%;
     min-height: 2.5rem;
   }
-  
+
   .timestamp-button {
     display: inline-flex;
     align-items: center;
@@ -846,18 +847,18 @@
     transition: all 0.2s ease;
     white-space: nowrap;
   }
-  
+
   .timestamp-button:hover {
     background-color: var(--button-secondary-bg-hover, rgba(59, 130, 246, 0.2));
     border-color: var(--primary-color);
   }
-  
+
   .button-icon {
     font-size: 1.1rem;
     display: flex;
     align-items: center;
   }
-  
+
   .timestamp-link {
     background: none;
     border: 1px solid rgba(59, 130, 246, 0.2);
@@ -873,7 +874,7 @@
     justify-content: center;
     white-space: nowrap;
   }
-  
+
   .current-timestamp {
     display: inline-flex;
     align-items: center;
@@ -888,12 +889,12 @@
     font-weight: 500;
     white-space: nowrap;
   }
-  
+
   .timestamp-value {
     font-weight: 500;
     color: var(--primary-color);
   }
-  
+
   .clear-button {
     background: none;
     border: none;
@@ -917,7 +918,7 @@
     opacity: 1;
     transform: scale(1.1);
   }
-  
+
   button {
     padding: 0.35rem 0.75rem;
     border: none;
@@ -935,12 +936,12 @@
   button:hover {
     background-color: var(--primary-color-dark);
   }
-  
+
   button:disabled {
     background-color: var(--disabled-color, #a0aec0);
     cursor: not-allowed;
   }
-  
+
   .submit-button {
     background-color: #3b82f6;
     color: white;
@@ -953,23 +954,23 @@
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .submit-button:hover:not(:disabled) {
     background-color: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .submit-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .submit-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
-  
+
+
   .comment-item {
     padding: 0.75rem;
     border: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
@@ -979,11 +980,11 @@
     width: 100%;
     box-sizing: border-box;
   }
-  
+
   .comment-item:hover {
     border-color: var(--border-color-hover, rgba(120, 120, 120, 0.3));
   }
-  
+
   .comment-header {
     display: flex;
     justify-content: space-between;
@@ -991,7 +992,7 @@
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
   }
-  
+
   .comment-timestamp {
     display: flex;
     align-items: center;
@@ -999,46 +1000,46 @@
     color: var(--text-light);
     font-size: 0.8rem;
   }
-  
+
   .timestamp-link {
     color: var(--primary-color);
     cursor: pointer;
   }
-  
+
   .timestamp-link:hover {
     text-decoration: none;
     background-color: rgba(59, 130, 246, 0.1);
     color: var(--primary-color-dark);
     border-color: var(--primary-color);
   }
-  
+
   .comment-body {
     font-size: 0.9rem;
     line-height: 1.5;
     margin-bottom: 0.5rem;
   }
-  
+
   .comment-actions {
     display: flex;
     justify-content: flex-end;
   }
-  
+
   .edit-comment-form {
     width: 100%;
     margin-top: 0.5rem;
   }
-  
+
   .edit-comment-form textarea {
     width: 100%;
     margin-bottom: 0.5rem;
   }
-  
+
   .edit-buttons {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
   }
-  
+
   .save-button, .cancel-button {
     padding: 0.4rem 0.8rem;
     border-radius: 10px;
@@ -1052,23 +1053,23 @@
     align-items: center;
     justify-content: center;
   }
-  
+
   .save-button {
     background: #3b82f6;
     color: white;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .save-button:hover {
     background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-button:active {
     transform: translateY(0);
   }
-  
+
   .cancel-button {
     background: #6b7280;
     color: white;
@@ -1088,7 +1089,7 @@
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
-  
+
   .edit-button {
     background: none;
     border: none;
@@ -1098,7 +1099,7 @@
     padding: 0;
     margin-right: 0.5rem;
   }
-  
+
   .delete-button {
     background: none;
     border: none;
@@ -1107,7 +1108,7 @@
     cursor: pointer;
     padding: 0;
   }
-  
+
   .loading-state, .empty-state {
     padding: 1rem;
     text-align: center;

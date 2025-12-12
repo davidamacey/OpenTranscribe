@@ -4,6 +4,26 @@
   import { user } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
+  import { t } from '../stores/locale';
+
+  // Helper function to translate status values
+  function translateStatus(status: string): string {
+    const statusMap: Record<string, string> = {
+      'completed': $t('common.completed'),
+      'processing': $t('common.processing'),
+      'pending': $t('common.pending'),
+      'error': $t('common.error'),
+      'failed': $t('fileStatus.failed'),
+      'in_progress': $t('fileStatus.inProgress'),
+      'Completed': $t('common.completed'),
+      'Processing': $t('common.processing'),
+      'Pending': $t('common.pending'),
+      'Error': $t('common.error'),
+      'Failed': $t('fileStatus.failed'),
+      'In Progress': $t('fileStatus.inProgress'),
+    };
+    return statusMap[status] || status;
+  }
 
   // Component state
   let loading = false;
@@ -41,7 +61,7 @@
   // WebSocket subscription
   let unsubscribeWebSocket: any = null;
   let lastProcessedNotificationId = '';
-  
+
   onMount(() => {
     fetchFileStatus();
     setupWebSocketUpdates();
@@ -57,20 +77,20 @@
   $: if (showTasksSection && (taskFilter || taskTypeFilter || taskAgeFilter || taskDateFrom || taskDateTo)) {
     fetchTasks(true); // Silent reload when filters change
   }
-  
+
   async function fetchFileStatus(silent = false) {
     if (!silent) {
       loading = true;
     }
     error = null;
-    
+
     try {
       const response = await axiosInstance.get('/my-files/status');
       fileStatus = response.data;
     } catch (err: any) {
       console.error('Error fetching file status:', err);
       if (!silent) {
-        error = err.response?.data?.detail || 'Failed to load file status';
+        error = err.response?.data?.detail || $t('fileStatus.loadFailed');
       }
     } finally {
       if (!silent) {
@@ -78,7 +98,7 @@
       }
     }
   }
-  
+
   async function fetchTasks(silent = false) {
     if (!silent) {
       tasksLoading = true;
@@ -114,7 +134,7 @@
     } catch (err: any) {
       console.error('Error fetching tasks:', err);
       if (!silent) {
-        tasksError = err.response?.data?.detail || 'Failed to load tasks';
+        tasksError = err.response?.data?.detail || $t('fileStatus.tasksLoadFailed');
       }
     } finally {
       if (!silent) {
@@ -122,31 +142,31 @@
       }
     }
   }
-  
+
   function toggleTasksSection() {
     showTasksSection = !showTasksSection;
-    
+
     // Save state to session storage
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('showTasksSection', showTasksSection.toString());
     }
-    
+
     if (showTasksSection && tasks.length === 0) {
       fetchTasks();
     }
   }
-  
+
   function openFlowerDashboard() {
     const protocol = window.location.protocol;
     const host = window.location.hostname;
     const port = import.meta.env.VITE_FLOWER_PORT || '5175';
     const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-    const url = urlPrefix 
-      ? `${protocol}//${host}:${port}/${urlPrefix}/` 
+    const url = urlPrefix
+      ? `${protocol}//${host}:${port}/${urlPrefix}/`
       : `${protocol}//${host}:${port}/`;
     window.open(url, '_blank');
   }
-  
+
   async function fetchDetailedStatus(fileId: any) {
     try {
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
@@ -156,7 +176,7 @@
       document.body.style.overflow = 'hidden';
     } catch (err: any) {
       console.error('Error fetching detailed status:', err);
-      error = err.response?.data?.detail || 'Failed to load file details';
+      error = err.response?.data?.detail || $t('fileStatus.detailsLoadFailed');
     }
   }
 
@@ -166,42 +186,42 @@
     // Re-enable body scrolling when modal closes
     document.body.style.overflow = '';
   }
-  
+
   async function retryFile(fileId: any) {
     if (retryingFiles.has(fileId)) return;
-    
+
     retryingFiles.add(fileId);
     retryingFiles = retryingFiles; // Trigger reactivity
-    
+
     try {
       await axiosInstance.post(`/my-files/${fileId}/retry`);
-      
+
       // Refresh status after retry
       await fetchFileStatus(true); // Silent refresh
       if (selectedFile === fileId) {
         await fetchDetailedStatus(fileId);
       }
-      
+
       // Show success message
-      showMessage('File retry initiated successfully', 'success');
+      showMessage($t('fileStatus.retryInitiated'), 'success');
 
     } catch (err: any) {
       console.error('Error retrying file:', err);
-      const errorMsg = err.response?.data?.detail || 'Failed to retry file';
+      const errorMsg = err.response?.data?.detail || $t('fileStatus.retryFailed');
       showMessage(errorMsg, 'error');
     } finally {
       retryingFiles.delete(fileId);
       retryingFiles = retryingFiles; // Trigger reactivity
     }
   }
-  
+
   async function requestRecovery() {
     loading = true;
-    
+
     try {
       await axiosInstance.post('/my-files/request-recovery');
-      showMessage('Recovery process started for your files', 'success');
-      
+      showMessage($t('fileStatus.recoveryInitiated'), 'success');
+
       // Refresh status after a delay
       setTimeout(() => {
         fetchFileStatus(true); // Silent refresh
@@ -209,13 +229,13 @@
 
     } catch (err: any) {
       console.error('Error requesting recovery:', err);
-      const errorMsg = err.response?.data?.detail || 'Failed to request recovery';
+      const errorMsg = err.response?.data?.detail || $t('fileStatus.recoveryFailed');
       showMessage(errorMsg, 'error');
     } finally {
       loading = false;
     }
   }
-  
+
   function startAutoRefresh() {
     refreshInterval = setInterval(() => {
       fetchFileStatus(true); // Silent refresh
@@ -224,7 +244,7 @@
       }
     }, 30000); // Refresh every 30 seconds
   }
-  
+
   function showMessage(message: any, type: any) {
     if (type === 'success') {
       toastStore.success(message);
@@ -232,12 +252,12 @@
       toastStore.error(message);
     }
   }
-  
+
   // Note: formatFileAge is now handled by the backend - use formatted_file_age field
-  
+
   function formatDate(dateString: any) {
     if (!dateString) return 'N/A';
-    
+
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
@@ -247,31 +267,31 @@
       minute: '2-digit'
     }).format(date);
   }
-  
+
   // Note: formatDuration is now handled by the backend - use formatted_duration field
-  
+
   // Note: formatFileSize is now handled by the backend - use formatted_file_size field
-  
+
   // Note: getStatusBadgeClass is now handled by the backend - use status_badge_class field
-  
+
   // Filtering is now handled by the backend
-  
+
   // Setup WebSocket updates for real-time file status changes
   function setupWebSocketUpdates() {
     unsubscribeWebSocket = websocketStore.subscribe(($ws) => {
       if ($ws.notifications.length > 0) {
         const latestNotification = $ws.notifications[0];
-        
+
         // Only process if this is a new notification we haven't handled
         if (latestNotification.id !== lastProcessedNotificationId) {
           lastProcessedNotificationId = latestNotification.id;
-          
+
           // Check if this notification is for transcription status
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
-            
+
             // Refresh file status when we get updates
             fetchFileStatus(true); // Silent refresh
-            
+
             // Also refresh tasks if tasks section is open
             if (showTasksSection) {
               fetchTasks(true); // Silent refresh
@@ -281,7 +301,7 @@
       }
     });
   }
-  
+
   // Cleanup on component destroy
   onDestroy(() => {
     if (refreshInterval) {
@@ -299,92 +319,92 @@
 
 <div class="file-status-container">
   <div class="header">
-    <h2>My Files Status</h2>
+    <h2>{$t('fileStatus.title')}</h2>
     <div class="controls">
-      <button 
-        class="flower-btn" 
+      <button
+        class="flower-btn"
         on:click={openFlowerDashboard}
-        title="Open Flower monitoring dashboard to view detailed task queue status and worker performance"
+        title={$t('fileStatus.flowerTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
         </svg>
-        Flower Dashboard
+        {$t('nav.flowerDashboard')}
       </button>
-      
-      <button 
-        class="tasks-toggle-btn" 
+
+      <button
+        class="tasks-toggle-btn"
         on:click={toggleTasksSection}
-        title="Show/hide detailed tasks view"
+        title={$t('fileStatus.tasksToggleTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 11l3 3L22 4"></path>
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
         </svg>
-        {showTasksSection ? 'Hide Tasks' : 'Show All Tasks'}
+        {showTasksSection ? $t('fileStatus.hideTasks') : $t('fileStatus.showAllTasks')}
       </button>
-      
+
       <div class="auto-refresh-info">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 16v-4"/>
           <path d="M12 8h.01"/>
         </svg>
-        Auto-refreshes every 30s
+        {$t('fileStatus.autoRefresh')}
       </div>
     </div>
   </div>
-  
+
   {#if error}
     <div class="error-message">
       {error}
     </div>
   {/if}
-  
+
   {#if loading && !fileStatus}
-    <div class="loading">Loading file status...</div>
+    <div class="loading">{$t('fileStatus.loading')}</div>
   {:else if fileStatus}
     <div class="status-overview">
       <div class="status-cards">
         <div class="status-card">
           <div class="status-number">{fileStatus.status_counts.total}</div>
-          <div class="status-label">Total Files</div>
+          <div class="status-label">{$t('fileStatus.totalFiles')}</div>
         </div>
-        
+
         <div class="status-card">
           <div class="status-number">{fileStatus.status_counts.completed}</div>
-          <div class="status-label">Completed</div>
+          <div class="status-label">{$t('common.completed')}</div>
         </div>
-        
+
         <div class="status-card">
           <div class="status-number">{fileStatus.status_counts.processing}</div>
-          <div class="status-label">Processing</div>
+          <div class="status-label">{$t('common.processing')}</div>
         </div>
-        
+
         <div class="status-card">
           <div class="status-number">{fileStatus.status_counts.pending}</div>
-          <div class="status-label">Pending</div>
+          <div class="status-label">{$t('common.pending')}</div>
         </div>
-        
+
         <div class="status-card error">
           <div class="status-number">{fileStatus.status_counts.error}</div>
-          <div class="status-label">Errors</div>
+          <div class="status-label">{$t('fileStatus.errors')}</div>
         </div>
       </div>
-      
+
       {#if fileStatus.has_problems}
         <div class="problems-section">
           <div class="problems-header">
-            <h3>Files That Need Attention</h3>
-            <button 
-              class="recovery-btn" 
+            <h3>{$t('fileStatus.filesNeedAttention')}</h3>
+            <button
+              class="recovery-btn"
               on:click={requestRecovery}
               disabled={loading}
             >
-              Request Recovery for All
+              {$t('fileStatus.requestRecoveryAll')}
             </button>
           </div>
-          
+
           <div class="problem-files">
             {#each fileStatus.problem_files.files as file}
               <div class="problem-file">
@@ -392,17 +412,17 @@
                   <div class="filename">{file.filename}</div>
                   <div class="file-meta">
                     <span class="status-badge {file.status_badge_class || 'status-unknown'}">
-                      {file.display_status || file.status}
+                      {translateStatus(file.display_status || file.status)}
                     </span>
-                    <span class="file-age">{file.formatted_file_age || 'Unknown'}</span>
+                    <span class="file-age">{file.formatted_file_age || $t('common.unknown')}</span>
                   </div>
                 </div>
-                
+
                 <div class="file-actions">
-                  <button 
+                  <button
                     class="info-button"
                     on:click={() => fetchDetailedStatus(file.id)}
-                    title="View detailed file metadata and task information"
+                    title={$t('fileStatus.viewDetailsTooltip')}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
@@ -410,21 +430,21 @@
                       <line x1="12" y1="8" x2="12.01" y2="8"></line>
                     </svg>
                   </button>
-                  
-                  <button 
+
+                  <button
                     class="details-btn"
                     on:click={() => fetchDetailedStatus(file.id)}
                   >
-                    Details
+                    {$t('fileStatus.details')}
                   </button>
-                  
+
                   {#if file.can_retry}
-                    <button 
+                    <button
                       class="retry-btn"
                       on:click={() => retryFile(file.id)}
                       disabled={retryingFiles.has(file.id)}
                     >
-                      {retryingFiles.has(file.id) ? 'Retrying...' : 'Retry'}
+                      {retryingFiles.has(file.id) ? $t('fileStatus.retrying') : $t('fileStatus.retry')}
                     </button>
                   {/if}
                 </div>
@@ -434,13 +454,13 @@
         </div>
       {:else}
         <div class="no-problems">
-          <p>✓ All your files are processing normally!</p>
+          <p>{$t('fileStatus.allFilesNormal')}</p>
         </div>
       {/if}
-      
+
       {#if fileStatus.recent_files.count > 0}
         <div class="recent-files">
-          <h3>Recent Files (Last 24 Hours)</h3>
+          <h3>{$t('fileStatus.recentFiles')}</h3>
           <div class="recent-files-grid">
             {#each fileStatus.recent_files.files as file}
               <div class="recent-file-card">
@@ -448,14 +468,14 @@
                 <div class="file-status-row">
                   <div class="status-info">
                     <span class="status-badge {file.status_badge_class || 'status-unknown'}">
-                      {file.display_status || file.status}
+                      {translateStatus(file.display_status || file.status)}
                     </span>
-                    <span class="file-age">{file.formatted_file_age || 'Unknown'}</span>
+                    <span class="file-age">{file.formatted_file_age || $t('common.unknown')}</span>
                   </div>
-                  <button 
+                  <button
                     class="info-button small"
                     on:click={() => fetchDetailedStatus(file.id)}
-                    title="View detailed file metadata and task information"
+                    title={$t('fileStatus.viewDetailsTooltip')}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
@@ -471,55 +491,55 @@
       {/if}
     </div>
   {/if}
-  
+
   <!-- Tasks Section -->
   {#if showTasksSection}
     <div class="tasks-section">
       <div class="tasks-header">
-        <h3>All Tasks</h3>
+        <h3>{$t('fileStatus.allTasks')}</h3>
       </div>
-      
+
       <div class="compact-filters">
         <select bind:value={taskFilter} class="compact-filter-select">
-          <option value="all">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="in_progress">In Progress</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
+          <option value="all">{$t('fileStatus.allStatuses')}</option>
+          <option value="pending">{$t('common.pending')}</option>
+          <option value="in_progress">{$t('fileStatus.inProgress')}</option>
+          <option value="completed">{$t('common.completed')}</option>
+          <option value="failed">{$t('fileStatus.failed')}</option>
         </select>
-        
+
         <select bind:value={taskTypeFilter} class="compact-filter-select">
-          <option value="all">All Types</option>
-          <option value="transcription">Transcription</option>
-          <option value="summarization">Summarization</option>
+          <option value="all">{$t('fileStatus.allTypes')}</option>
+          <option value="transcription">{$t('fileStatus.transcription')}</option>
+          <option value="summarization">{$t('fileStatus.summarization')}</option>
         </select>
-        
+
         <select bind:value={taskAgeFilter} class="compact-filter-select">
-          <option value="all">All Ages</option>
-          <option value="today">Last 24h</option>
-          <option value="week">Last Week</option>
-          <option value="month">Last Month</option>
-          <option value="older">Older</option>
+          <option value="all">{$t('fileStatus.allAges')}</option>
+          <option value="today">{$t('fileStatus.last24h')}</option>
+          <option value="week">{$t('fileStatus.lastWeek')}</option>
+          <option value="month">{$t('fileStatus.lastMonth')}</option>
+          <option value="older">{$t('fileStatus.older')}</option>
         </select>
-        
-        <input 
-          type="date" 
-          bind:value={taskDateFrom} 
+
+        <input
+          type="date"
+          bind:value={taskDateFrom}
           class="compact-date-input"
-          placeholder="From date"
-          title="Filter from this date"
+          placeholder={$t('fileStatus.fromDate')}
+          title={$t('fileStatus.fromDateTooltip')}
         />
-        
-        <input 
-          type="date" 
-          bind:value={taskDateTo} 
+
+        <input
+          type="date"
+          bind:value={taskDateTo}
           class="compact-date-input"
-          placeholder="To date"
-          title="Filter to this date"
+          placeholder={$t('fileStatus.toDate')}
+          title={$t('fileStatus.toDateTooltip')}
         />
-        
+
         {#if taskFilter !== 'all' || taskTypeFilter !== 'all' || taskAgeFilter !== 'all' || taskDateFrom || taskDateTo}
-          <button 
+          <button
             class="compact-clear-btn"
             on:click={() => {
               taskFilter = 'all';
@@ -528,7 +548,7 @@
               taskDateFrom = '';
               taskDateTo = '';
             }}
-            title="Clear all filters"
+            title={$t('fileStatus.clearFilters')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -537,14 +557,14 @@
           </button>
         {/if}
       </div>
-      
+
       {#if tasksLoading && tasks.length === 0}
-        <div class="loading">Loading tasks...</div>
+        <div class="loading">{$t('fileStatus.loadingTasks')}</div>
       {:else if tasksError}
         <div class="error-message">{tasksError}</div>
       {:else if filteredTasks.length === 0}
         <div class="no-tasks">
-          <p>No tasks found{taskFilter !== 'all' || taskTypeFilter !== 'all' ? ' matching the selected filters' : ''}.</p>
+          <p>{taskFilter !== 'all' || taskTypeFilter !== 'all' ? $t('fileStatus.noTasksFilters') : $t('fileStatus.noTasks')}</p>
         </div>
       {:else}
         <div class="tasks-grid">
@@ -559,7 +579,7 @@
                       <line x1="12" y1="19" x2="12" y2="23"></line>
                       <line x1="8" y1="23" x2="16" y2="23"></line>
                     </svg>
-                    Transcription
+                    {$t('fileStatus.transcription')}
                   {:else}
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <line x1="8" y1="6" x2="21" y2="6"></line>
@@ -567,7 +587,7 @@
                       <line x1="8" y1="18" x2="21" y2="18"></line>
                       <line x1="3" y1="6" x2="3.01" y2="6"></line>
                     </svg>
-                    Summarization
+                    {$t('fileStatus.summarization')}
                   {/if}
                 </div>
                 <div class="task-status {task.status_badge_class || 'status-unknown'}">
@@ -582,34 +602,34 @@
                       <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
                       <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
                     </svg>
-                    Pending
+                    {$t('common.pending')}
                   {:else if task.status === 'in_progress'}
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
                       <polyline points="12 6 12 12 16 14"></polyline>
                     </svg>
-                    In Progress
+                    {$t('fileStatus.inProgress')}
                     <span class="task-progress">{Math.round(task.progress * 100)}%</span>
                   {:else if task.status === 'completed'}
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                       <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
-                    Completed
+                    {$t('common.completed')}
                   {:else if task.status === 'failed'}
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
                       <line x1="15" y1="9" x2="9" y2="15"></line>
                       <line x1="9" y1="9" x2="15" y2="15"></line>
                     </svg>
-                    Failed
+                    {$t('fileStatus.failed')}
                   {/if}
-                  
+
                   {#if task.media_file}
-                    <button 
+                    <button
                       class="info-button small"
                       on:click={() => fetchDetailedStatus(task.media_file.id)}
-                      title="View detailed file metadata and task information"
+                      title={$t('fileStatus.viewDetailsTooltip')}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -620,15 +640,15 @@
                   {/if}
                 </div>
               </div>
-              
+
               <div class="task-info">
                 {#if task.media_file}
                   <div class="task-file">{task.media_file.filename}</div>
                 {/if}
-                
+
                 {#if task.error_message}
                   <div class="error-details">
-                    <span class="info-label">Error:</span>
+                    <span class="info-label">{$t('fileStatus.error')}</span>
                     <div class="error-message">{task.error_message}</div>
                   </div>
                 {/if}
@@ -645,7 +665,7 @@
       {/if}
     </div>
   {/if}
-  
+
   {#if detailedStatus && selectedFile}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -667,53 +687,53 @@
         on:keydown|stopPropagation
       >
         <div class="modal-header">
-          <h3>File Details: {detailedStatus.file.filename}</h3>
+          <h3>{$t('fileStatus.fileDetails')}: {detailedStatus.file.filename}</h3>
           <button class="close-btn" on:click={closeModal}>×</button>
         </div>
-        
+
         <div class="modal-body">
           <!-- File Details Grid -->
           <div class="file-details">
-            <h4>File Information</h4>
+            <h4>{$t('fileStatus.fileInformation')}</h4>
             <div class="metadata-grid">
               <div class="metadata-item">
-                <span class="metadata-label">File Name:</span>
+                <span class="metadata-label">{$t('fileStatus.fileName')}:</span>
                 <span class="metadata-value">{detailedStatus.file.filename}</span>
               </div>
               <div class="metadata-item">
-                <span class="metadata-label">Status:</span>
+                <span class="metadata-label">{$t('common.status')}:</span>
                 <span class="status-badge {detailedStatus.file.status_badge_class || 'status-unknown'}">
-                  {detailedStatus.file.display_status || detailedStatus.file.status}
+                  {translateStatus(detailedStatus.file.display_status || detailedStatus.file.status)}
                 </span>
               </div>
               <div class="metadata-item">
-                <span class="metadata-label">File Size:</span>
-                <span class="metadata-value">{detailedStatus.file.formatted_file_size || 'Unknown'}</span>
+                <span class="metadata-label">{$t('fileStatus.fileSize')}:</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_file_size || $t('fileStatus.unknown')}</span>
               </div>
               <div class="metadata-item">
-                <span class="metadata-label">Duration:</span>
-                <span class="metadata-value">{detailedStatus.file.formatted_duration || 'Unknown'}</span>
+                <span class="metadata-label">{$t('common.duration')}:</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_duration || $t('fileStatus.unknown')}</span>
               </div>
               <div class="metadata-item">
-                <span class="metadata-label">Language:</span>
-                <span class="metadata-value">{detailedStatus.file.language || 'Auto-detected'}</span>
+                <span class="metadata-label">{$t('fileStatus.language')}:</span>
+                <span class="metadata-value">{detailedStatus.file.language || $t('fileStatus.autoDetected')}</span>
               </div>
               <div class="metadata-item">
-                <span class="metadata-label">Upload Time:</span>
+                <span class="metadata-label">{$t('fileStatus.uploadTime')}:</span>
                 <span class="metadata-value">{formatDate(detailedStatus.file.upload_time)}</span>
               </div>
               {#if detailedStatus.file.completed_at}
                 <div class="metadata-item">
-                  <span class="metadata-label">Completed At:</span>
+                  <span class="metadata-label">{$t('fileStatus.completedAt')}:</span>
                   <span class="metadata-value">{formatDate(detailedStatus.file.completed_at)}</span>
                 </div>
               {/if}
               <div class="metadata-item">
-                <span class="metadata-label">File Age:</span>
-                <span class="metadata-value">{detailedStatus.file.formatted_file_age || 'Unknown'}</span>
+                <span class="metadata-label">{$t('fileStatus.fileAge')}:</span>
+                <span class="metadata-value">{detailedStatus.file.formatted_file_age || $t('fileStatus.unknown')}</span>
               </div>
             </div>
-            
+
             {#if detailedStatus.is_stuck}
               <div class="warning">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline; margin-right: 4px;">
@@ -721,64 +741,64 @@
                   <path d="M12 9v4"/>
                   <path d="m12 17 .01 0"/>
                 </svg>
-                This file appears to be stuck in processing
+                {$t('fileStatus.fileStuck')}
               </div>
             {/if}
-            
+
             {#if detailedStatus.can_retry}
               <div class="retry-section">
-                <button 
+                <button
                   class="retry-btn large"
                   on:click={() => retryFile(selectedFile)}
                   disabled={retryingFiles.has(selectedFile)}
                 >
-                  {retryingFiles.has(selectedFile) ? 'Retrying...' : 'Retry Processing'}
+                  {retryingFiles.has(selectedFile) ? $t('fileStatus.retrying') : $t('fileStatus.retryProcessing')}
                 </button>
               </div>
             {/if}
           </div>
-          
+
           {#if detailedStatus.task_details.length > 0}
             <div class="task-details">
-              <h4>Task Details:</h4>
+              <h4>{$t('fileStatus.taskDetailsTitle')}</h4>
               <div class="task-metadata-grid">
                 {#each detailedStatus.task_details as task}
                   <div class="task-metadata-card">
                     <div class="task-card-header">
                       <span class="task-type-label">{task.task_type}</span>
-                      <span class="status-badge {task.status_badge_class || 'status-unknown'}">{task.status}</span>
+                      <span class="status-badge {task.status_badge_class || 'status-unknown'}">{translateStatus(task.status)}</span>
                     </div>
                     <div class="task-metadata-items">
                       <div class="metadata-item">
-                        <span class="metadata-label">Task Created:</span>
+                        <span class="metadata-label">{$t('fileStatus.taskCreated')}</span>
                         <span class="metadata-value">{formatDate(task.created_at)}</span>
                       </div>
                       {#if task.updated_at}
                         <div class="metadata-item">
-                          <span class="metadata-label">Last Updated:</span>
+                          <span class="metadata-label">{$t('fileStatus.lastUpdated')}</span>
                           <span class="metadata-value">{formatDate(task.updated_at)}</span>
                         </div>
                       {/if}
                       {#if task.completed_at}
                         <div class="metadata-item">
-                          <span class="metadata-label">Task Completed:</span>
+                          <span class="metadata-label">{$t('fileStatus.taskCompleted')}</span>
                           <span class="metadata-value">{formatDate(task.completed_at)}</span>
                         </div>
                         <div class="metadata-item">
-                          <span class="metadata-label">Processing Time:</span>
-                          <span class="metadata-value">{task.formatted_processing_time || 'Unknown'}</span>
+                          <span class="metadata-label">{$t('fileStatus.processingTime')}</span>
+                          <span class="metadata-value">{task.formatted_processing_time || $t('common.unknown')}</span>
                         </div>
                       {/if}
                       {#if task.progress !== undefined && task.status === 'in_progress'}
                         <div class="metadata-item">
-                          <span class="metadata-label">Progress:</span>
+                          <span class="metadata-label">{$t('fileStatus.progress')}</span>
                           <span class="metadata-value">{Math.round(task.progress * 100)}%</span>
                         </div>
                       {/if}
                     </div>
                     {#if task.error_message}
                       <div class="task-error-details">
-                        <span class="metadata-label">Error:</span>
+                        <span class="metadata-label">{$t('fileStatus.errorLabel')}</span>
                         <div class="task-error">{task.error_message}</div>
                       </div>
                     {/if}
@@ -800,25 +820,25 @@
     padding: 1rem;
     color: var(--text-color);
   }
-  
+
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
   }
-  
+
   .header h2 {
     margin: 0;
     color: var(--text-color);
   }
-  
+
   .controls {
     display: flex;
     gap: 1rem;
     align-items: center;
   }
-  
+
   .recovery-btn, .flower-btn, .tasks-toggle-btn {
     padding: 0.6rem 1.2rem;
     background: #3b82f6;
@@ -834,28 +854,28 @@
     font-size: 0.95rem;
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
   }
-  
+
   .flower-btn {
     background: var(--surface-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
   }
-  
+
   .recovery-btn:hover, .tasks-toggle-btn:hover {
     background: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .recovery-btn:active, .tasks-toggle-btn:active {
     transform: translateY(0);
   }
-  
+
   .flower-btn:hover {
     background: var(--button-hover);
     border-color: var(--border-hover);
   }
-  
+
   .recovery-btn:disabled, .tasks-toggle-btn:disabled {
     background: var(--text-light);
     cursor: not-allowed;
@@ -875,7 +895,7 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  
+
   .auto-refresh-info {
     display: flex;
     align-items: center;
@@ -888,11 +908,11 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
   }
-  
+
   .auto-refresh-info svg {
     opacity: 0.7;
   }
-  
+
   .status-cards {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -900,7 +920,7 @@
     margin: 0 auto 1.5rem auto;
     max-width: 700px;
   }
-  
+
   .status-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -910,38 +930,38 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
   }
-  
+
   .status-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
-  
+
   .status-card.error {
     border-color: var(--error-color);
     background: var(--error-background);
   }
-  
+
   :global(.dark) .status-card {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
-  
+
   :global(.dark) .status-card:hover {
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   }
-  
+
   .status-number {
     font-size: 1.5rem;
     font-weight: bold;
     color: var(--text-color);
     margin-bottom: 0.25rem;
   }
-  
+
   .status-label {
     color: var(--text-light);
     font-size: 0.8rem;
     font-weight: 500;
   }
-  
+
   .problems-section {
     background: var(--warning-background);
     border: 1px solid var(--warning-border);
@@ -949,30 +969,30 @@
     padding: 1.5rem;
     margin-bottom: 2rem;
   }
-  
+
   :global(.dark) .problems-section {
     background: rgba(245, 158, 11, 0.1);
     border-color: rgba(245, 158, 11, 0.3);
   }
-  
+
   .problems-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
   }
-  
+
   .problems-header h3 {
     margin: 0;
     color: var(--text-color);
   }
-  
+
   .problem-files {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .problem-file {
     display: flex;
     justify-content: space-between;
@@ -983,39 +1003,39 @@
     border: 1px solid var(--border-color);
     transition: all 0.2s ease;
   }
-  
+
   .problem-file:hover {
     border-color: var(--border-hover);
     transform: translateY(-1px);
   }
-  
+
   .file-info {
     flex: 1;
   }
-  
+
   .filename {
     font-weight: 500;
     margin-bottom: 0.25rem;
     color: var(--text-color);
   }
-  
+
   .file-meta {
     display: flex;
     gap: 1rem;
     align-items: center;
   }
-  
+
   .file-age {
     color: var(--text-light);
     font-size: 0.875rem;
   }
-  
+
   .file-actions {
     display: flex;
     gap: 0.5rem;
     align-items: center;
   }
-  
+
   .details-btn, .retry-btn {
     padding: 0.25rem 0.75rem;
     font-size: 0.875rem;
@@ -1024,37 +1044,37 @@
     cursor: pointer;
     transition: all 0.2s;
   }
-  
+
   .details-btn {
     background: var(--background-color);
     color: var(--text-color);
     border-color: var(--border-color);
   }
-  
+
   .details-btn:hover {
     background: var(--surface-color);
     border-color: var(--border-hover);
   }
-  
+
   .retry-btn {
     background: var(--success-color);
     color: white;
     border-color: var(--success-color);
   }
-  
+
   .retry-btn:hover {
     background: var(--success-hover);
     border-color: var(--success-hover);
     transform: translateY(-1px);
   }
-  
+
   .retry-btn:disabled {
     background: var(--text-light);
     border-color: var(--text-light);
     cursor: not-allowed;
     transform: none;
   }
-  
+
   .status-badge {
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -1062,22 +1082,22 @@
     font-weight: 500;
     text-transform: uppercase;
   }
-  
+
   .status-completed {
     background: rgba(16, 185, 129, 0.1);
     color: #10b981;
   }
-  
+
   .status-processing {
     background: rgba(59, 130, 246, 0.1);
     color: #3b82f6;
   }
-  
+
   .status-pending {
     background: rgba(245, 158, 11, 0.1);
     color: #f59e0b;
   }
-  
+
   .status-error {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
@@ -1087,27 +1107,27 @@
     background: rgba(156, 163, 175, 0.1);
     color: #6b7280;
   }
-  
+
   :global(.dark) .status-completed {
     background: rgba(16, 185, 129, 0.2);
     color: #34d399;
   }
-  
+
   :global(.dark) .status-processing {
     background: rgba(59, 130, 246, 0.2);
     color: #60a5fa;
   }
-  
+
   :global(.dark) .status-pending {
     background: rgba(245, 158, 11, 0.2);
     color: #fbbf24;
   }
-  
+
   :global(.dark) .status-error {
     background: rgba(239, 68, 68, 0.2);
     color: #f87171;
   }
-  
+
   .no-problems {
     text-align: center;
     padding: 2rem;
@@ -1116,28 +1136,28 @@
     border-radius: 8px;
     color: var(--success-color);
   }
-  
+
   :global(.dark) .no-problems {
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.3);
     color: #34d399;
   }
-  
+
   .recent-files {
     margin-top: 2rem;
   }
-  
+
   .recent-files h3 {
     color: var(--text-color);
     margin-bottom: 1rem;
   }
-  
+
   .recent-files-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 0.75rem;
   }
-  
+
   .recent-file-card {
     background: var(--surface-color);
     border: 1px solid var(--border-color);
@@ -1145,13 +1165,13 @@
     padding: 0.75rem;
     transition: all 0.2s ease;
   }
-  
+
   .recent-file-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
   }
-  
+
   .recent-file-card .filename {
     margin-bottom: 0.5rem;
     font-weight: 500;
@@ -1161,21 +1181,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
+
   .file-status-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .status-info {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
     flex: 1;
   }
-  
+
   .info-button {
     background: none;
     border: none;
@@ -1189,21 +1209,21 @@
     transition: all 0.2s ease;
     flex-shrink: 0;
   }
-  
+
   .info-button:hover {
     background-color: rgba(0, 0, 0, 0.05);
     color: var(--primary-color);
     transform: scale(1.1);
   }
-  
+
   :global(.dark) .info-button:hover {
     background-color: rgba(255, 255, 255, 0.1);
   }
-  
+
   .info-button.small {
     padding: 4px;
   }
-  
+
   /* Tasks Section Styles */
   .tasks-section {
     margin-top: 2rem;
@@ -1212,16 +1232,16 @@
     border-radius: 8px;
     padding: 1.5rem;
   }
-  
+
   .tasks-header {
     margin-bottom: 1rem;
   }
-  
+
   .tasks-header h3 {
     margin: 0;
     color: var(--text-color);
   }
-  
+
   .compact-filters {
     display: flex;
     gap: 0.5rem;
@@ -1234,7 +1254,7 @@
     margin-bottom: 1.5rem;
     width: fit-content;
   }
-  
+
   .compact-filter-select {
     padding: 0.35rem 0.5rem;
     border: 1px solid var(--border-color);
@@ -1246,12 +1266,12 @@
     width: auto;
     min-width: 0;
   }
-  
+
   .compact-filter-select:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
-  
+
   .compact-date-input {
     padding: 0.35rem 0.5rem;
     border: 1px solid var(--border-color);
@@ -1262,12 +1282,12 @@
     font-family: inherit;
     width: 115px;
   }
-  
+
   .compact-date-input:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
-  
+
   .compact-clear-btn {
     padding: 0.35rem;
     background: var(--error-color);
@@ -1282,19 +1302,19 @@
     width: 28px;
     height: 28px;
   }
-  
+
   .compact-clear-btn:hover {
     background: var(--error-hover);
     transform: scale(1.1);
   }
-  
-  
+
+
   .tasks-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 1rem;
   }
-  
+
   .task-card {
     background: var(--background-color);
     border: 1px solid var(--border-color);
@@ -1302,13 +1322,13 @@
     padding: 1rem;
     transition: all 0.2s ease;
   }
-  
+
   .task-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border-color: var(--border-hover);
   }
-  
+
   .task-card .task-header {
     display: flex;
     justify-content: space-between;
@@ -1317,7 +1337,7 @@
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .task-card .task-type {
     display: flex;
     align-items: center;
@@ -1325,7 +1345,7 @@
     font-weight: 600;
     color: var(--text-color);
   }
-  
+
   .task-card .task-status {
     padding: 0.25rem 0.75rem;
     border-radius: 100px;
@@ -1335,7 +1355,7 @@
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .task-file {
     font-weight: 500;
     color: var(--text-color);
@@ -1344,18 +1364,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  
+
   .task-progress {
     font-weight: 600;
     margin-left: 0.5rem;
   }
-  
+
   .no-tasks {
     text-align: center;
     padding: 2rem;
     color: var(--text-secondary-color);
   }
-  
+
   .detailed-status-modal {
     position: fixed;
     top: 0;
@@ -1368,11 +1388,11 @@
     justify-content: center;
     z-index: 1000;
   }
-  
+
   :global(.dark) .detailed-status-modal {
     background: rgba(0, 0, 0, 0.7);
   }
-  
+
   .modal-content {
     background: var(--background-color);
     border: 1px solid var(--border-color);
@@ -1383,11 +1403,11 @@
     overflow-y: auto;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   }
-  
+
   :global(.dark) .modal-content {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
   }
-  
+
   .modal-header {
     display: flex;
     justify-content: space-between;
@@ -1395,12 +1415,12 @@
     padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .modal-header h3 {
     margin: 0;
     color: var(--text-color);
   }
-  
+
   .close-btn {
     background: none;
     border: none;
@@ -1409,34 +1429,34 @@
     color: var(--text-light);
     transition: color 0.2s ease;
   }
-  
+
   .close-btn:hover {
     color: var(--text-color);
   }
-  
+
   .modal-body {
     padding: 1.5rem;
   }
-  
+
   .file-details h4 {
     margin: 0 0 1rem 0;
     color: var(--text-color);
     font-weight: 600;
   }
-  
+
   .metadata-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.5rem;
   }
-  
+
   .metadata-item {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
-  
+
   .metadata-label {
     font-size: 0.8rem;
     font-weight: 600;
@@ -1444,27 +1464,27 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
-  
+
   .metadata-value {
     font-size: 0.9rem;
     font-weight: 500;
     color: var(--text-color);
     word-break: break-word;
   }
-  
+
   .task-metadata-grid {
     display: flex;
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .task-metadata-card {
     background: var(--background-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 1rem;
   }
-  
+
   .task-card-header {
     display: flex;
     justify-content: space-between;
@@ -1473,19 +1493,19 @@
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .task-type-label {
     font-weight: 600;
     color: var(--text-color);
     text-transform: capitalize;
   }
-  
+
   .task-metadata-items {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 0.75rem;
   }
-  
+
   .task-error-details {
     margin-top: 1rem;
     padding: 0.75rem;
@@ -1493,11 +1513,11 @@
     border-radius: 4px;
     border: 1px solid rgba(var(--error-color-rgb, 239, 68, 68), 0.2);
   }
-  
+
   .task-error-details .metadata-label {
     color: var(--error-color);
   }
-  
+
   .task-error-details .task-error {
     margin-top: 0.5rem;
     font-family: monospace;
@@ -1505,7 +1525,7 @@
     font-size: 0.85rem;
     color: var(--error-color);
   }
-  
+
   .detail-row {
     display: flex;
     justify-content: space-between;
@@ -1513,12 +1533,12 @@
     padding: 0.5rem 0;
     border-bottom: 1px solid var(--border-color);
   }
-  
+
   .label {
     font-weight: 500;
     color: var(--text-color);
   }
-  
+
   .warning {
     background: var(--warning-background);
     color: var(--warning-text);
@@ -1537,34 +1557,34 @@
   .suggestions {
     margin: 1rem 0;
   }
-  
+
   .retry-section {
     text-align: center;
     margin: 1rem 0;
   }
-  
+
   .retry-btn.large {
     padding: 0.75rem 1.5rem;
     font-size: 1rem;
   }
-  
+
   .task-details {
     margin-top: 1.5rem;
     border-top: 1px solid var(--border-color);
     padding-top: 1.5rem;
   }
-  
+
   .task-details h4 {
     color: var(--text-color);
     margin: 0 0 1rem 0;
   }
-  
+
   .tasks-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .task-item {
     display: flex;
     justify-content: space-between;
@@ -1574,24 +1594,24 @@
     border-radius: 4px;
     border: 1px solid var(--border-color);
   }
-  
+
   .task-type {
     color: var(--text-color);
     font-weight: 500;
   }
-  
+
   .task-error {
     color: var(--error-color);
     font-size: 0.875rem;
     margin-top: 0.25rem;
   }
-  
+
   .loading {
     text-align: center;
     padding: 2rem;
     color: var(--text-light);
   }
-  
+
   .error-message {
     background: var(--error-background);
     color: var(--error-color);
@@ -1600,72 +1620,72 @@
     margin-bottom: 1rem;
     border: 1px solid var(--error-border);
   }
-  
+
   :global(.dark) .error-message {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.3);
   }
-  
+
   @media (max-width: 768px) {
     .header {
       flex-direction: column;
       align-items: flex-start;
       gap: 1rem;
     }
-    
+
     .controls {
       width: 100%;
       flex-wrap: wrap;
       gap: 0.5rem;
     }
-    
+
     .compact-filters {
       padding: 0.6rem;
       gap: 0.4rem;
       width: 100%;
     }
-    
+
     .compact-filter-select {
       font-size: 0.75rem;
       padding: 0.3rem 0.4rem;
     }
-    
+
     .compact-date-input {
       width: 100px;
       font-size: 0.75rem;
       padding: 0.3rem 0.4rem;
     }
-    
+
     .compact-clear-btn {
       width: 24px;
       height: 24px;
       padding: 0.3rem;
     }
-    
+
     .problem-file {
       flex-direction: column;
       align-items: flex-start;
       gap: 1rem;
     }
-    
+
     .file-actions {
       align-self: stretch;
       justify-content: flex-end;
     }
-    
+
     .status-cards {
       grid-template-columns: repeat(5, 1fr);
       gap: 0.5rem;
     }
-    
+
     .status-card {
       padding: 0.75rem;
     }
-    
+
     .status-number {
       font-size: 1.25rem;
     }
-    
+
     .status-label {
       font-size: 0.7rem;
     }

@@ -24,6 +24,9 @@
   // Import settings modal store
   import { settingsModalStore } from '../stores/settingsModalStore';
 
+  // Import i18n
+  import { t } from '../stores/locale';
+
   // Create event dispatcher for gallery actions
   const dispatch = createEventDispatcher();
 
@@ -161,7 +164,7 @@
       uploadsStore.addRecording(recordedBlob, filename);
 
       // Show success toast
-      toastStore.success(`Upload started: ${filename}`);
+      toastStore.success($t('nav.uploadStarted', { filename }));
 
       // Clear recording after queuing upload
       recordingManager.clearRecording();
@@ -241,13 +244,13 @@
    */
   function getRecordingStatusTitle() {
     if (isRecording && !isPaused) {
-      return 'RECORDING LIVE';
+      return $t('nav.recordingLive');
     } else if (isRecording && isPaused) {
-      return 'RECORDING PAUSED';
+      return $t('nav.recordingPaused');
     } else if (recordedBlob) {
-      return 'RECORDING COMPLETE';
+      return $t('nav.recordingComplete');
     } else {
-      return 'RECORDING STANDBY';
+      return $t('nav.recordingStandby');
     }
   }
 
@@ -292,9 +295,9 @@
       <button
         class="logo-link"
         on:click={() => showAboutModal = true}
-        title="Learn more about OpenTranscribe"
+        title={$t('nav.logoTooltip')}
       >
-        <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
+        <img src={logoBanner} alt={$t('nav.logoAlt')} class="logo-banner" />
       </button>
     </div>
 
@@ -310,7 +313,7 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          Gallery
+          {$t('nav.gallery')}
         </button>
         <button
           class="tab-button {$galleryState.activeTab === 'status' ? 'active' : ''}"
@@ -323,7 +326,7 @@
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          File Status
+          {$t('nav.fileStatus')}
         </button>
       </div>
     {/if}
@@ -333,16 +336,16 @@
       <div class="gallery-actions">
         {#if $galleryState.isSelecting}
           <button class="nav-btn select-all-btn" on:click={handleSelectAllFiles}>
-            {$allFilesSelected ? 'Deselect all' : 'Select all'}
+            {$allFilesSelected ? $t('nav.deselectAll') : $t('nav.selectAll')}
           </button>
           <button class="nav-btn add-to-collection-btn" on:click={handleAddToCollection}>
-            Add to Collection
+            {$t('nav.addToCollection')}
           </button>
           <button class="nav-btn delete-selected-btn" on:click={handleDeleteSelected}>
-            Delete {$selectedCount} selected
+            {$t('nav.deleteSelected', { count: $selectedCount })}
           </button>
           <button class="nav-btn cancel-selection-btn" on:click={handleCancelSelection}>
-            Cancel Selection
+            {$t('nav.cancelSelection')}
           </button>
         {:else}
           <button class="nav-btn upload-btn" on:click={handleUploadClick}>
@@ -351,13 +354,13 @@
               <polyline points="17 8 12 3 7 8"></polyline>
               <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
-            Add Media
+            {$t('nav.addMedia')}
           </button>
           <button class="nav-btn collections-btn" on:click={handleCollectionsClick}>
-            Collections
+            {$t('nav.collections')}
           </button>
           <button class="nav-btn select-files-btn" on:click={handleSelectFilesClick}>
-            Select Files
+            {$t('nav.selectFiles')}
           </button>
         {/if}
       </div>
@@ -371,7 +374,7 @@
       {#if showGalleryLink}
         <a
           href="/"
-          title="Go back to your media library and files"
+          title={$t('nav.backToGallery')}
           class="nav-link"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -379,7 +382,7 @@
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
-          Back to Gallery
+          {$t('nav.backToGallery')}
         </a>
       {/if}
 
@@ -387,7 +390,7 @@
       <button
         class="notifications-btn"
         on:click={handleToggleNotifications}
-        title="View notifications and alerts{$unreadCount > 0 ? ` (${$unreadCount} unread)` : ''}"
+        title={$unreadCount > 0 ? $t('nav.notificationsWithUnread', { count: $unreadCount }) : $t('nav.notificationsTooltip')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -404,7 +407,7 @@
           <button
             class="recording-indicator {recordingStatusClass}"
             on:click={toggleRecordingControls}
-            title="{getRecordingStatusTitle()} - Click for controls ({formatDuration(recordingDuration)})"
+            title={$t('nav.recordingTooltip', { status: getRecordingStatusTitle(), duration: formatDuration(recordingDuration) })}
           >
             <div class="recording-pulse {recordingStatusClass}"></div>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mic-icon">
@@ -422,15 +425,15 @@
                 <div class="recording-status">
                   {#if isRecording}
                     <div class="status-dot {isPaused ? 'paused' : 'recording'}"></div>
-                    <span>{isPaused ? 'Paused' : 'Recording'}</span>
+                    <span>{isPaused ? $t('nav.paused') : $t('nav.recording')}</span>
                     <span class="duration">{formatDuration(recordingDuration)}</span>
                   {:else if recordedBlob}
                     <div class="status-dot completed"></div>
-                    <span>Recording Complete</span>
+                    <span>{$t('nav.recordingCompleteStatus')}</span>
                     <span class="duration">{formatDuration(recordingDuration)}</span>
                   {:else}
                     <div class="status-dot idle"></div>
-                    <span>Ready to Record</span>
+                    <span>{$t('nav.readyToRecord')}</span>
                   {/if}
                 </div>
               </div>
@@ -441,7 +444,7 @@
                   <button
                     class="control-btn pause-btn"
                     on:click={handleTogglePause}
-                    title={isPaused ? 'Resume recording' : 'Pause recording'}
+                    title={isPaused ? $t('nav.resumeRecording') : $t('nav.pauseRecording')}
                   >
                     {#if isPaused}
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -458,7 +461,7 @@
                   <button
                     class="control-btn stop-btn"
                     on:click={handleStopRecording}
-                    title="Stop recording"
+                    title={$t('nav.stopRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <rect x="3" y="3" width="18" height="18"></rect>
@@ -469,7 +472,7 @@
                   <button
                     class="control-btn delete-btn"
                     on:click={handleDeleteRecording}
-                    title="Delete recording"
+                    title={$t('nav.deleteRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3 6 5 6 21 6"></polyline>
@@ -482,7 +485,7 @@
                   <button
                     class="control-btn upload-btn"
                     on:click={handleUploadRecording}
-                    title="Upload recording"
+                    title={$t('nav.uploadRecording')}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -496,7 +499,7 @@
                 <button
                   class="control-btn modal-btn"
                   on:click={handleOpenRecordingModal}
-                  title="Open full recording interface"
+                  title={$t('nav.openFullRecording')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="15 3 21 3 21 9"></polyline>
@@ -521,7 +524,7 @@
         <button
           class="user-button"
           on:click={toggleDropdown}
-          title="Open user menu for settings, admin access, and logout"
+          title={$t('nav.userMenuTooltip')}
         >
           <div class="user-avatar">
             <!-- First letter of full name as avatar -->
@@ -531,7 +534,7 @@
               U
             {/if}
           </div>
-          <span class="username">{$user ? $user.full_name : 'User'}</span>
+          <span class="username">{$user ? $user.full_name : $t('nav.user')}</span>
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-icon">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
@@ -540,8 +543,8 @@
         {#if showDropdown}
           <div class="dropdown-menu">
             <div class="dropdown-header">
-              <span>Signed in as</span>
-              <strong>{$user ? $user.email : 'User'}</strong>
+              <span>{$t('nav.signedInAs')}</span>
+              <strong>{$user ? $user.email : $t('nav.user')}</strong>
             </div>
             <div class="dropdown-divider"></div>
             <button
@@ -552,13 +555,13 @@
                 const defaultSection = $user?.role === "admin" ? 'admin-users' : 'profile';
                 settingsModalStore.open(defaultSection);
               }}
-              title="Manage your account settings and preferences"
+              title={$t('nav.settings')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
-              <span>Settings</span>
+              <span>{$t('nav.settings')}</span>
             </button>
 
             <button
@@ -579,26 +582,26 @@
                 window.open(url, '_blank');
                 showDropdown = false;
               }}
-              aria-label="Open Flower Dashboard"
-              title="Open Flower dashboard to monitor task queues and worker status"
+              aria-label={$t('nav.flowerDashboard')}
+              title={$t('nav.flowerDashboard')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
               </svg>
-              <span>Flower Dashboard</span>
+              <span>{$t('nav.flowerDashboard')}</span>
             </button>
             <div class="dropdown-divider"></div>
             <button
               class="dropdown-item logout"
               on:click={handleLogout}
-              title="Sign out of your account"
+              title={$t('nav.logout')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
                 <line x1="21" y1="12" x2="9" y2="12"></line>
               </svg>
-              Logout
+              {$t('nav.logout')}
             </button>
           </div>
         {/if}
@@ -607,7 +610,7 @@
 
     <div class="mobile-toggle">
       <button>
-        <span class="sr-only">Menu</span>
+        <span class="sr-only">{$t('nav.menu')}</span>
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="3" y1="12" x2="21" y2="12"></line>
           <line x1="3" y1="6" x2="21" y2="6"></line>

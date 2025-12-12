@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { MajorTopic } from '$lib/types/summary';
+  import { t } from '$stores/locale';
 
   export let topics: MajorTopic[];
   // searchQuery prop removed - not used internally
@@ -15,7 +16,7 @@
 </script>
 
 <section class="topics-section">
-  <h3 class="section-title">Major Topics Discussed</h3>
+  <h3 class="section-title">{$t('topics.majorTopics')}</h3>
   <div class="topics-list">
     {#each topics as topic}
       <div class="topic-item">
@@ -26,7 +27,7 @@
 
         {#if topic.participants && topic.participants.length > 0}
           <div class="topic-meta">
-            <em>Key participants: {@html topic.participants.join(', ')}</em>
+            <em>{$t('topics.keyParticipants')} {@html topic.participants.join(', ')}</em>
           </div>
         {/if}
 

@@ -2,6 +2,8 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker, Segment } from '$lib/types/speaker';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let segment: Segment;
   export let speakers: Speaker[] = [];
@@ -106,11 +108,11 @@
     // Build menu HTML
     let menuHtml = `
       <div class="dropdown-menu" style="top: ${pos.top}px; left: ${pos.left}px;">
-        <div class="dropdown-header">ASSIGN SPEAKER:</div>
+        <div class="dropdown-header">${$t('speaker.assignSpeaker')}</div>
         <button class="dropdown-item ${!segment.speaker ? 'selected' : ''}" data-speaker-uuid="">
           <div class="speaker-option">
             <div class="speaker-color-indicator no-speaker"></div>
-            <span>No Speaker</span>
+            <span>${$t('speaker.noSpeaker')}</span>
           </div>
           ${!segment.speaker ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
         </button>
@@ -124,7 +126,7 @@
         <button class="dropdown-item ${isSelected ? 'selected' : ''}" data-speaker-uuid="${speaker.uuid}">
           <div class="speaker-option">
             <div class="speaker-color-indicator" style="background-color: ${color.bg}; border-color: ${color.border};"></div>
-            <span>${speaker.display_name || speaker.name}</span>
+            <span>${translateSpeakerLabel(speaker.display_name || speaker.name)}</span>
           </div>
           ${isSelected ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
         </button>
@@ -248,13 +250,13 @@
     class="speaker-trigger"
     bind:this={triggerButton}
     on:click={toggleDropdown}
-    title="Click to change speaker"
+    title={$t('speaker.clickToChangeSpeaker')}
   >
     <div
       class="segment-speaker"
       style="background-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').bg}; border-color: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').border}; --speaker-light: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textLight}; --speaker-dark: {getSpeakerColor(segment.speaker?.name || segment.speaker_label || 'Unknown').textDark};"
     >
-      {segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}
+      {translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('common.unknown'))}
     </div>
     <svg
       class="dropdown-arrow"

@@ -550,16 +550,16 @@ def create_admin_user(
         ) from e
 
 
-@router.delete("/users/{user_id}", response_model=dict[str, str])
+@router.delete("/users/{user_uuid}", response_model=dict[str, str])
 def delete_admin_user(
-    user_id: int,
+    user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Delete a user and all their data (admin only).
 
     Args:
-        user_id: ID of the user to delete
+        user_uuid: UUID of the user to delete
         db: Database session
         current_user: Current admin user
 
@@ -569,13 +569,13 @@ def delete_admin_user(
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
-    logger.info(f"Admin deleting user with ID: {user_id}")
+    from app.utils.uuid_helpers import get_user_by_uuid
+
+    logger.info(f"Admin deleting user with UUID: {user_uuid}")
 
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        user = get_user_by_uuid(db, user_uuid)
+        user_id = user.id  # Get internal ID for cascade operations
 
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)

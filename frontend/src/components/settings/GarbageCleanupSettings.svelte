@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { AdminSettingsApi, type GarbageCleanupConfig } from '../../lib/api/adminSettings';
   import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
 
   // State
   let loading = true;
@@ -32,7 +33,7 @@
       hasChanges = false;
     } catch (err: any) {
       console.error('Error loading garbage cleanup config:', err);
-      toastStore.error('Failed to load garbage cleanup configuration');
+      toastStore.error($t('settings.garbageCleanup.loadFailed'));
     } finally {
       loading = false;
     }
@@ -59,10 +60,10 @@
       originalGarbageCleanupEnabled = config.garbage_cleanup_enabled;
       originalMaxWordLength = config.max_word_length;
       hasChanges = false;
-      toastStore.success('Garbage cleanup configuration saved successfully');
+      toastStore.success($t('settings.garbageCleanup.saved'));
     } catch (err: any) {
       console.error('Error saving garbage cleanup config:', err);
-      const errorMsg = err.response?.data?.detail || 'Failed to save garbage cleanup configuration';
+      const errorMsg = err.response?.data?.detail || $t('settings.garbageCleanup.saveFailed');
       toastStore.error(errorMsg);
     } finally {
       saving = false;
@@ -77,17 +78,17 @@
 
 <div class="garbage-cleanup-settings">
   <div class="title-row">
-    <h3 class="section-title">Garbage Word Cleanup</h3>
+    <h3 class="section-title">{$t('settings.garbageCleanup.title')}</h3>
     <span class="info-icon">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="16" x2="12" y2="12"></line>
         <line x1="12" y1="8" x2="12.01" y2="8"></line>
       </svg>
-      <span class="tooltip">WhisperX can sometimes misinterpret background noise (fans, static, rumbling) as extremely long "words" with no spaces. This feature detects and replaces these artifacts.</span>
+      <span class="tooltip">{$t('settings.garbageCleanup.tooltip')}</span>
     </span>
   </div>
-  <p class="section-desc">Replace long noise artifacts with [background noise].</p>
+  <p class="section-desc">{$t('settings.garbageCleanup.desc')}</p>
 
   {#if loading}
     <div class="loading-state">
@@ -99,10 +100,10 @@
         <label class="toggle-label">
           <input type="checkbox" bind:checked={garbageCleanupEnabled} class="toggle-input" />
           <span class="toggle-switch"></span>
-          <span class="toggle-text">Enable cleanup</span>
+          <span class="toggle-text">{$t('settings.garbageCleanup.enableCleanup')}</span>
         </label>
         <div class="inline-input">
-          <span class="input-label">Threshold:</span>
+          <span class="input-label">{$t('settings.garbageCleanup.threshold')}</span>
           <input
             type="number"
             bind:value={maxWordLength}
@@ -111,15 +112,15 @@
             class="form-input number-input"
             disabled={!garbageCleanupEnabled}
           />
-          <span class="input-suffix">chars</span>
+          <span class="input-suffix">{$t('settings.garbageCleanup.chars')}</span>
         </div>
       </div>
       <div class="button-row">
         <button type="button" class="btn btn-secondary" on:click={resetToDefaults} disabled={saving}>
-          Reset
+          {$t('settings.garbageCleanup.reset')}
         </button>
         <button type="button" class="btn btn-primary" on:click={saveConfig} disabled={saving || !hasChanges}>
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? $t('settings.garbageCleanup.saving') : $t('settings.garbageCleanup.save')}
         </button>
       </div>
     </div>

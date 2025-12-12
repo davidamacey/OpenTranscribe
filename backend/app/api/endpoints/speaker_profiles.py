@@ -230,8 +230,8 @@ def assign_speaker_to_profile(
         db.commit()
 
         return {
-            "speaker_id": speaker_id,
-            "profile_id": profile_id,
+            "speaker_id": str(speaker.uuid),
+            "profile_id": str(profile.uuid),
             "profile_name": profile.name,
             "confidence": confidence,
             "verified": updated_speaker.verified,
@@ -328,7 +328,7 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
             # Add LLM suggestion for existing profile
             suggestions.append(
                 {
-                    "profile_id": suggested_profile.id,
+                    "profile_id": str(suggested_profile.uuid),
                     "profile_name": suggested_profile.name,
                     "confidence": speaker.confidence,
                     "confidence_level": confidence_level,

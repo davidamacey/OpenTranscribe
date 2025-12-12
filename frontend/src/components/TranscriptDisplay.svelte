@@ -12,6 +12,28 @@
   import { toastStore } from '$stores/toast';
   import { highlightTextWithMatches, highlightSpeakerName, type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
+
+  // Helper function to translate speaker input placeholder
+  function translatePlaceholder(placeholder: string | undefined, speakerName: string): string {
+    if (!placeholder) return translateSpeakerLabel(speakerName);
+
+    // Handle "Label SPEAKER_XX" pattern
+    if (placeholder.startsWith('Label ')) {
+      const label = placeholder.substring(6); // Remove "Label " prefix
+      return $t('transcript.labelPlaceholder', { speaker: translateSpeakerLabel(label) });
+    }
+
+    // Handle "Suggested: Name" pattern
+    if (placeholder.startsWith('Suggested: ')) {
+      const name = placeholder.substring(11); // Remove "Suggested: " prefix
+      return $t('transcript.suggestedPlaceholder', { name });
+    }
+
+    // Return as-is if it's a direct name suggestion
+    return placeholder;
+  }
 
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
@@ -238,7 +260,7 @@
     );
 
     if (segmentIndex === -1) {
-      toastStore.error('Segment not found');
+      toastStore.error($t('transcript.segmentNotFound'));
       updatingSegments.delete(segmentUuid);
       return;
     }
@@ -262,7 +284,7 @@
       file.transcript_segments[segmentIndex] = updatedSegment;
       file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
 
-      toastStore.success('Speaker assignment updated');
+      toastStore.success($t('transcript.speakerAssignmentUpdated'));
     } catch (error: any) {
       console.error('Error updating segment speaker:', error);
 
@@ -271,7 +293,7 @@
       file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
 
       toastStore.error(
-        error.response?.data?.detail || 'Failed to update speaker assignment'
+        error.response?.data?.detail || $t('transcript.failedToUpdateSpeaker')
       );
     } finally {
       updatingSegments.delete(segmentUuid);
@@ -280,7 +302,7 @@
 
   async function downloadFile() {
     if (!file || !file.id) {
-      toastStore.error('File information not available');
+      toastStore.error($t('transcript.fileNotAvailable'));
       return;
     }
 
@@ -289,7 +311,7 @@
 
     // Check if download is already in progress
     if (isDownloading) {
-      toastStore.warning(`${filename} is already being processed. Please wait for it to complete.`);
+      toastStore.warning($t('transcript.downloadAlreadyProcessing', { filename }));
       return;
     }
 
@@ -383,7 +405,7 @@
 
     } catch (error) {
       console.error('Download error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Download failed';
+      const errorMessage = error instanceof Error ? error.message : $t('transcript.downloadFailed');
       downloadStore.updateStatus(fileId, 'error', undefined, errorMessage);
     }
   }
@@ -409,15 +431,15 @@
         <button
           on:click={saveTranscript}
           disabled={savingTranscript}
-          title="Save all changes to the transcript"
+          title={$t('transcript.saveChangesTitle')}
         >
-          {savingTranscript ? 'Saving...' : 'Save Transcript'}
+          {savingTranscript ? $t('common.saving') : $t('transcript.saveTranscript')}
         </button>
         <button
           class="cancel-button"
           on:click={cancelEditTranscript}
-          title="Cancel editing and discard all changes"
-        >Cancel</button>
+          title={$t('transcript.cancelEditingTitle')}
+        >{$t('common.cancel')}</button>
       </div>
     {:else}
       <div bind:this={transcriptContainer} class="transcript-display-container">
@@ -443,22 +465,22 @@
             {#if editingSegmentId === segment.id}
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
-                <div class="segment-speaker">{segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}</div>
+                <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
                 <div class="segment-edit-input">
                   <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                   <div class="segment-edit-actions">
                     <button
                       class="cancel-button"
                       on:click={cancelEditSegment}
-                      title="Cancel editing this segment and discard changes"
-                    >Cancel</button>
+                      title={$t('transcript.cancelSegmentTitle')}
+                    >{$t('common.cancel')}</button>
                     <button
                       class="save-button"
                       on:click={() => saveSegment(segment)}
                       disabled={savingTranscript}
-                      title="Save changes to this segment"
+                      title={$t('transcript.saveSegmentTitle')}
                     >
-                      {savingTranscript ? 'Saving...' : 'Save'}
+                      {savingTranscript ? $t('common.saving') : $t('common.save')}
                     </button>
                   </div>
                 </div>
@@ -469,7 +491,7 @@
                   class="segment-content"
                   on:click={() => handleSegmentClick(segment.start_time)}
                   on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
-                  title="Jump to this segment"
+                  title={$t('transcript.jumpToSegment')}
                 >
                   <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                   <div
@@ -498,9 +520,9 @@
                 <button
                   class="edit-button"
                   on:click|stopPropagation={() => editSegment(segment)}
-                  title="Edit segment"
+                  title={$t('transcript.editSegment')}
                 >
-                  Edit
+                  {$t('common.edit')}
                 </button>
               </div>
             {/if}
@@ -516,7 +538,7 @@
             {#if loadingMoreSegments}
               <div class="loading-more-indicator">
                 <span class="loading-spinner"></span>
-                <span>Loading more segments...</span>
+                <span>{$t('transcript.loadingMoreSegments')}</span>
               </div>
             {/if}
           </div>
@@ -526,11 +548,11 @@
         <!-- Segments loaded info -->
         {#if totalSegments > 0 && loadedSegments < totalSegments}
           <div class="segments-loaded-info">
-            <span class="segments-count">{loadedSegments} of {totalSegments} segments loaded</span>
+            <span class="segments-count">{$t('transcript.segmentsLoaded', { loaded: loadedSegments, total: totalSegments })}</span>
             {#if loadingMoreSegments}
               <span class="loading-indicator">
                 <span class="loading-spinner-small"></span>
-                Loading...
+                {$t('common.loading')}
               </span>
             {/if}
           </div>
@@ -553,14 +575,14 @@
         <div class="export-dropdown">
           <button
             class="export-transcript-button"
-            title="Export transcript in various formats including text, JSON, CSV, SRT, and WebVTT"
+            title={$t('transcript.exportTitle')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Export
+            {$t('transcript.export')}
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
               <line x1="9" y1="9" x2="15" y2="9"></line>
@@ -571,37 +593,37 @@
           <div class="export-dropdown-content">
             <button
               on:click={() => exportTranscript('txt')}
-              title="Export transcript as plain text file"
-            >Plain Text (.txt)</button>
+              title={$t('transcript.exportTextTitle')}
+            >{$t('transcript.exportText')}</button>
             <button
               on:click={() => exportTranscript('json')}
-              title="Export transcript as JSON file with timestamps and speaker information"
-            >JSON Format (.json)</button>
+              title={$t('transcript.exportJsonTitle')}
+            >{$t('transcript.exportJson')}</button>
             <button
               on:click={() => exportTranscript('csv')}
-              title="Export transcript as CSV file for spreadsheet applications"
-            >CSV Format (.csv)</button>
+              title={$t('transcript.exportCsvTitle')}
+            >{$t('transcript.exportCsv')}</button>
             <button
               on:click={() => exportTranscript('srt')}
-              title="Export transcript as SRT subtitle file for video players"
-            >SubRip Subtitles (.srt)</button>
+              title={$t('transcript.exportSrtTitle')}
+            >{$t('transcript.exportSrt')}</button>
             <button
               on:click={() => exportTranscript('vtt')}
-              title="Export transcript as WebVTT subtitle file for web video players"
-            >WebVTT Subtitles (.vtt)</button>
+              title={$t('transcript.exportVttTitle')}
+            >{$t('transcript.exportVtt')}</button>
           </div>
         </div>
 
         <button
           class="edit-speakers-button"
           on:click={toggleSpeakerEditor}
-          title="Edit speaker names to replace generic labels (SPEAKER_01, etc.) with actual names"
+          title={$t('transcript.editSpeakersTitle')}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
-          {isEditingSpeakers ? 'Hide Speaker Editor' : 'Edit Speakers'}
+          {isEditingSpeakers ? $t('transcript.hideSpeakerEditor') : $t('transcript.editSpeakers')}
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
@@ -616,25 +638,25 @@
             disabled={isDownloading}
             on:click={downloadFile}
             title={isDownloading ?
-              `Processing video with subtitles (may take 1-2 minutes for large files)...` :
-              (file.content_type?.startsWith('video/') && file.status === 'completed' ? 'Download video (subtitles will be embedded if transcript exists)' : 'Download media file')}
+              $t('transcript.processingVideoWithSubtitles') :
+              (file.content_type?.startsWith('video/') && file.status === 'completed' ? $t('transcript.downloadVideoWithSubtitles') : $t('transcript.downloadMediaFile'))}
           >
             {#if isDownloading}
               {#if currentDownload?.status === 'preparing'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Preparing...
+                {$t('transcript.preparing')}
               {:else if currentDownload?.status === 'processing'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Processing...
+                {$t('transcript.processing')}
               {:else if currentDownload?.status === 'downloading'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Processing...
+                {$t('transcript.processing')}
               {/if}
             {:else}
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -642,7 +664,7 @@
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              Download
+              {$t('transcript.download')}
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
                 <line x1="7" y1="2" x2="7" y2="22"></line>
@@ -663,17 +685,17 @@
         <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
           <div class="speaker-editor-header">
             <h4>
-              Edit Speaker Names
+              {$t('transcript.editSpeakerNames')}
               {#if speakerNamesChanged}
-                <span class="unsaved-indicator" title="You have unsaved speaker name changes">•</span>
+                <span class="unsaved-indicator" title={$t('transcript.unsavedChanges')}>•</span>
               {/if}
             </h4>
 
             <!-- Confidence Legend - Compact Info Icon -->
             <div class="legend-info-container">
-              <span class="legend-title">Color Legend</span>
+              <span class="legend-title">{$t('transcript.colorLegend')}</span>
               <div class="legend-info-wrapper">
-                <button class="legend-info-icon" title="Click to see confidence color coding">
+                <button class="legend-info-icon" title={$t('transcript.clickToSeeConfidenceColors')}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -683,15 +705,15 @@
                 <div class="legend-tooltip">
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--success-color);"></span>
-                    ≥75% High (auto-suggested)
+                    {$t('transcript.highConfidence')}
                   </div>
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--warning-color);"></span>
-                    50-74% Medium (verify)
+                    {$t('transcript.mediumConfidence')}
                   </div>
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--error-color);"></span>
-                    &lt;50% Low (manual)
+                    {$t('transcript.lowConfidence')}
                   </div>
                 </div>
               </div>
@@ -716,14 +738,14 @@
                       class="speaker-original"
                       style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
                     >
-                      {speaker.name}
+                      {translateSpeakerLabel(speaker.name)}
                     </span>
                     <div class="speaker-input-wrapper">
                     <input
                       type="text"
                       bind:value={speaker.display_name}
-                      placeholder={speaker.input_placeholder}
-                      title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
+                      placeholder={translatePlaceholder(speaker.input_placeholder, speaker.name)}
+                      title={$t('transcript.enterSpeakerName', { speaker: translateSpeakerLabel(speaker.name) })}
                       class:suggested-high={speaker.is_high_confidence}
                       class:suggested-medium={speaker.is_medium_confidence}
                       data-speaker-id={speaker.id}
@@ -740,12 +762,12 @@
                       }}
                     />
                     {#if speaker.show_profile_badge}
-                      <div class="speaker-profile-badge" title="This speaker has a verified profile (appears in multiple videos)">
+                      <div class="speaker-profile-badge" title={$t('transcript.speakerHasProfile')}>
                         <svg class="profile-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                           <circle cx="12" cy="7" r="4"></circle>
                         </svg>
-                        <span class="profile-text">Profile</span>
+                        <span class="profile-text">{$t('transcript.profile')}</span>
                       </div>
                     {/if}
                     </div>
@@ -758,14 +780,14 @@
                         <button
                           class="suggestions-toggle"
                           on:click={() => speaker.showSuggestions = !speaker.showSuggestions}
-                          title="View available suggestions for speaker identification"
+                          title={$t('transcript.viewAvailableSuggestions')}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showSuggestions}>
                             <polyline points="6 9 12 15 18 9"></polyline>
                           </svg>
-                          {speaker.total_suggestions} suggestion{speaker.total_suggestions !== 1 ? 's' : ''} available
+                          {speaker.total_suggestions !== 1 ? $t('transcript.suggestionsCountPlural', { count: speaker.total_suggestions }) : $t('transcript.suggestionsCount', { count: speaker.total_suggestions })}
                           {#if !speaker.display_name}
-                            <span class="expand-hint">(click to expand)</span>
+                            <span class="expand-hint">{$t('transcript.clickToExpand')}</span>
                           {/if}
                         </button>
 
@@ -775,14 +797,14 @@
                             <div class="suggestion-chips-container">
                               {#if speaker.has_llm_suggestion}
                                 <div class="chip-row">
-                                  <span class="chip-label">AI:</span>
+                                  <span class="chip-label">{$t('transcript.aiSuggestion')}</span>
                                   <button
                                     class="suggestion-chip llm-chip"
                                     class:high-confidence={speaker.confidence >= 0.75}
                                     class:medium-confidence={speaker.confidence >= 0.5 && speaker.confidence < 0.75}
                                     class:low-confidence={speaker.confidence < 0.5}
                                     on:click={() => { speaker.display_name = speaker.suggested_name; }}
-                                    title="AI suggested based on {speaker.suggestion_source === 'llm_analysis' ? 'conversation content analysis' : speaker.suggestion_source === 'profile_embedding' ? 'voice profile match' : 'voice similarity'}"
+                                    title={speaker.suggestion_source === 'llm_analysis' ? $t('transcript.aiSuggestedBasedOnContent') : speaker.suggestion_source === 'profile_embedding' ? $t('transcript.aiSuggestedBasedOnProfile') : $t('transcript.aiSuggestedBasedOnSimilarity')}
                                   >
                                     {#if speaker.suggestion_source === 'llm_analysis'}
                                       <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -814,19 +836,19 @@
 
                               {#if loadingVoiceSuggestions}
                                 <div class="chip-row">
-                                  <span class="chip-label">Voice:</span>
+                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
                                   <div class="chips-wrap loading-suggestions">
                                     <div class="suggestion-spinner">
                                       <svg class="spinner" viewBox="0 0 50 50">
                                         <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
                                       </svg>
-                                      <span class="loading-text">Updating suggestions...</span>
+                                      <span class="loading-text">{$t('transcript.updatingSuggestions')}</span>
                                     </div>
                                   </div>
                                 </div>
                               {:else if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
                                 <div class="chip-row">
-                                  <span class="chip-label">Voice:</span>
+                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
                                   <div class="chips-wrap">
                                     {#each speaker.voice_suggestions.slice(0, 6) as suggestion}
                                       <button
@@ -849,7 +871,7 @@
                                       </button>
                                     {/each}
                                     {#if speaker.voice_suggestions.length > 6}
-                                      <span class="more-chips">+{speaker.voice_suggestions.length - 6}</span>
+                                      <span class="more-chips">{$t('transcript.moreChips', { count: speaker.voice_suggestions.length - 6 })}</span>
                                     {/if}
                                   </div>
                                 </div>
@@ -868,16 +890,16 @@
                             {#if speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')}
                               <!-- For labeled speakers, cross_video_matches contains direct file objects -->
                               {@const totalVideoCount = speaker.cross_video_matches.length}
-                              "{speaker.display_name}" appears in {totalVideoCount} video{totalVideoCount !== 1 ? 's' : ''}
+                              {totalVideoCount !== 1 ? $t('transcript.speakerAppearsInVideosPlural', { name: speaker.display_name, count: totalVideoCount }) : $t('transcript.speakerAppearsInVideos', { name: speaker.display_name, count: totalVideoCount })}
                             {:else}
                               <!-- For unlabeled speakers, cross_video_matches contains file objects from individual_matches -->
-                              {speaker.name} matches {speaker.cross_video_matches.length} other speaker{speaker.cross_video_matches.length > 1 ? 's' : ''}
+                              {speaker.cross_video_matches.length > 1 ? $t('transcript.speakerMatchesOthersPlural', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length }) : $t('transcript.speakerMatchesOthers', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length })}
                             {/if}
                           </span>
                           <div class="compact-controls">
                             <button
                               class="info-btn-consistent"
-                              title="Click for details"
+                              title={$t('transcript.clickForDetails')}
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -888,7 +910,7 @@
                             </button>
                             <button
                               class="dropdown-arrow"
-                              title="Show/hide matches"
+                              title={$t('transcript.showHideMatches')}
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
                             >
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showMatches}>
@@ -908,20 +930,20 @@
 
                               <!-- After labeling: Show file list -->
                               <div class="matches-help">
-                                Files where "{speaker.display_name}" appears:
+                                {$t('transcript.filesWhereAppears', { name: speaker.display_name })}
                               </div>
                               <div class="compact-matches">
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
-                                  <div class="compact-match" title={match.title || match.media_file_title || 'Unknown video'}>
-                                    <span class="match-text">{((match.title || match.media_file_title || 'Unknown video').length > 35 ? (match.title || match.media_file_title || 'Unknown video').substring(0, 35) + '...' : (match.title || match.media_file_title || 'Unknown video'))}</span>
+                                  <div class="compact-match" title={match.title || match.media_file_title || $t('transcript.unknownVideo')}>
+                                    <span class="match-text">{((match.title || match.media_file_title || $t('transcript.unknownVideo')).length > 35 ? (match.title || match.media_file_title || $t('transcript.unknownVideo')).substring(0, 35) + '...' : (match.title || match.media_file_title || $t('transcript.unknownVideo')))}</span>
                                     <span class="match-confidence">
                                       {#if match.same_speaker}
-                                        ✓ Current
+                                        {$t('transcript.currentVideo')}
                                       {:else if match.confidence}
                                         ✓ {Math.round(match.confidence * 100)}%
                                       {:else}
-                                        ✓ Profile Match
+                                        {$t('transcript.profileMatch')}
                                       {/if}
                                     </span>
                                   </div>
@@ -930,18 +952,18 @@
 
                                 {#if remainingCount > 0}
                                   <div class="more-matches-compact hover-container">
-                                    <span class="more-matches-text">+{remainingCount} more</span>
+                                    <span class="more-matches-text">{$t('transcript.moreMatches', { count: remainingCount })}</span>
                                     <div class="hover-popup">
                                       {#each remainingMatches as match}
                                         <div class="popup-match">
-                                          <span class="popup-match-text">{match.title || match.media_file_title || 'Unknown video'}</span>
+                                          <span class="popup-match-text">{match.title || match.media_file_title || $t('transcript.unknownVideo')}</span>
                                           <span class="popup-match-confidence">
                                             {#if match.same_speaker}
-                                              ✓ Current
+                                              {$t('transcript.currentVideo')}
                                             {:else if match.confidence}
                                               ✓ {Math.round(match.confidence * 100)}%
                                             {:else}
-                                              ✓ Profile Match
+                                              {$t('transcript.profileMatch')}
                                             {/if}
                                           </span>
                                         </div>
@@ -957,13 +979,13 @@
 
                               <!-- For unlabeled speakers: Show video matches -->
                               <div class="matches-help">
-                                Potential voice matches found:
+                                {$t('transcript.potentialVoiceMatches')}
                               </div>
                               <div class="compact-matches">
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
-                                  <div class="compact-match" title={match.media_file_title || 'Unknown video'}>
-                                    <span class="match-text">{(match.media_file_title || 'Unknown video').length > 20 ? (match.media_file_title || 'Unknown video').substring(0, 20) + '...' : (match.media_file_title || 'Unknown video')}</span>
+                                  <div class="compact-match" title={match.media_file_title || $t('transcript.unknownVideo')}>
+                                    <span class="match-text">{(match.media_file_title || $t('transcript.unknownVideo')).length > 20 ? (match.media_file_title || $t('transcript.unknownVideo')).substring(0, 20) + '...' : (match.media_file_title || $t('transcript.unknownVideo'))}</span>
                                     <span class="match-confidence">
                                       {Math.round(match.confidence * 100)}%
                                     </span>
@@ -974,11 +996,11 @@
                                 {#if remainingCount > 0}
                                   <div class="more-matches-compact">
                                     {#if remainingCount < 10}
-                                      +{remainingCount} more voice matches
+                                      {$t('transcript.moreVoiceMatches', { count: remainingCount })}
                                     {:else if remainingCount < 50}
-                                      +{remainingCount} more matches (showing top by confidence)
+                                      {$t('transcript.moreMatchesTopConfidence', { count: remainingCount })}
                                     {:else}
-                                      +{remainingCount} more matches (showing most relevant)
+                                      {$t('transcript.moreMatchesMostRelevant', { count: remainingCount })}
                                     {/if}
                                   </div>
                                 {/if}
@@ -995,30 +1017,30 @@
                 class="save-speakers-button"
                 on:click={saveSpeakerNames}
                 disabled={savingSpeakers || !speakerNamesChanged}
-                title={speakerNamesChanged ? "Save all speaker name changes and update the transcript" : "No changes to save"}
+                title={speakerNamesChanged ? $t('transcript.saveSpeakerNamesTitle') : $t('transcript.noChangesToSave')}
               >
                 {#if savingSpeakers}
                   <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 12a9 9 0 11-6.219-8.56"/>
                   </svg>
-                  Saving...
+                  {$t('common.saving')}
                 {:else}
-                  Save Speaker Names
+                  {$t('transcript.saveSpeakerNames')}
                 {/if}
               </button>
             </div>
           {:else}
-            <p>No speakers found in this transcript.</p>
+            <p>{$t('transcript.noSpeakersFound')}</p>
           {/if}
         </div>
       {/if}
     {/if}
   {:else if file.status === 'completed'}
-    <p>No transcript available for this file.</p>
+    <p>{$t('transcript.noTranscriptAvailable')}</p>
   {:else if file.status === 'processing'}
-    <p>Transcript is being generated...</p>
+    <p>{$t('transcript.transcriptGenerating')}</p>
   {:else}
-    <p>Transcript not available.</p>
+    <p>{$t('transcript.transcriptNotAvailable')}</p>
   {/if}
 </section>
 

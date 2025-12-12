@@ -3,6 +3,7 @@
   import { login, authStore, isAuthenticated } from "$stores/auth";
   import { onMount } from 'svelte';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -51,19 +52,19 @@
 
     // Validate required fields first
     if (!email.trim()) {
-      toastStore.error("Email address is required.");
+      toastStore.error($t('auth.emailRequired'));
       document.getElementById('email')?.focus();
       return;
     }
 
     if (!validateEmail(email.trim())) {
-      toastStore.error("Please enter a valid email address.");
+      toastStore.error($t('auth.validEmailRequired'));
       document.getElementById('email')?.focus();
       return;
     }
 
     if (!password.trim()) {
-      toastStore.error("Password is required.");
+      toastStore.error($t('auth.passwordRequired'));
       document.getElementById('password')?.focus();
       return;
     }
@@ -79,8 +80,8 @@
       const result = await login(email.trim(), password);
 
       if (result.success) {
-        successMessage = "Login successful! Redirecting...";
-        toastStore.success("Login successful! Redirecting...");
+        successMessage = $t('auth.loginSuccess');
+        toastStore.success($t('auth.loginSuccess'));
 
         // Add a small delay before redirecting for better UX
         setTimeout(() => {
@@ -89,7 +90,7 @@
         }, 1000);
       } else {
         console.error('Login.svelte: Login failed:', result.message);
-        toastStore.error(result.message || "Login failed. Please check your credentials and try again.");
+        toastStore.error(result.message || $t('auth.loginFailed'));
 
         // Focus appropriate field based on error type
         if (result.message && result.message.toLowerCase().includes('email')) {
@@ -102,7 +103,7 @@
       }
     } catch (err) {
       console.error("Login.svelte: Login error:", err);
-      toastStore.error("An unexpected error occurred. Please try again later.");
+      toastStore.error($t('auth.unexpectedError'));
     } finally {
       loading = false;
     }
@@ -120,8 +121,8 @@
       <div class="auth-logo">
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
-      <h1>Login</h1>
-      <p>Sign in to your account</p>
+      <h1>{$t('auth.login')}</h1>
+      <p>{$t('auth.signInToAccount')}</p>
     </div>
 
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -135,31 +136,30 @@
       {/if}
 
       <div class="form-group {!emailValid && formSubmitted ? 'has-error' : ''}">
-        <label for="email">Email</label>
+        <label for="email">{$t('auth.email')}</label>
         <input
           type="email"
           id="email"
           bind:value={email}
-          placeholder="Enter your email"
+          placeholder={$t('auth.emailPlaceholder')}
           aria-invalid={!emailValid && formSubmitted}
           autocomplete="email"
-          title="Enter the email address associated with your account"
         />
         {#if !emailValid && formSubmitted}
-          <div class="field-error">Please enter a valid email address</div>
+          <div class="field-error">{$t('auth.validEmailRequired')}</div>
         {/if}
       </div>
 
       <div class="form-group {!passwordValid && formSubmitted ? 'has-error' : ''}">
         <div class="password-header">
-          <label for="password">Password</label>
+          <label for="password">{$t('auth.password')}</label>
           <button
             type="button"
             class="toggle-password"
             on:click={togglePasswordVisibility}
             tabindex="-1"
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-            title={showPassword ? 'Hide password text' : 'Show password text'}
+            aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
           >
             {#if showPassword}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -183,24 +183,22 @@
             type="text"
             id="password"
             bind:value={password}
-            placeholder="Enter your password"
+            placeholder={$t('auth.passwordPlaceholder')}
             aria-invalid={!passwordValid && formSubmitted}
             autocomplete="current-password"
-            title="Enter your account password"
           />
         {:else}
           <input
             type="password"
             id="password"
             bind:value={password}
-            placeholder="Enter your password"
+            placeholder={$t('auth.passwordPlaceholder')}
             aria-invalid={!passwordValid && formSubmitted}
             autocomplete="current-password"
-            title="Enter your account password"
           />
         {/if}
         {#if !passwordValid && formSubmitted}
-          <div class="field-error">Password is required</div>
+          <div class="field-error">{$t('auth.passwordRequired')}</div>
         {/if}
       </div>
 
@@ -208,12 +206,11 @@
         type="submit"
         class="auth-button"
         disabled={loading}
-        title="Sign in to your OpenTranscribe account"
       >
         {#if loading}
-          <span class="spinner"></span> Signing In...
+          <span class="spinner"></span> {$t('auth.signingIn')}
         {:else}
-          Sign In
+          {$t('auth.signIn')}
         {/if}
       </button>
     </form>
@@ -222,8 +219,7 @@
       <a
         href="/register"
         class="auth-link"
-        title="Create a new OpenTranscribe account"
-      >Need an account? Register</a>
+      >{$t('auth.needAccount')}</a>
     </div>
   </div>
 </div>

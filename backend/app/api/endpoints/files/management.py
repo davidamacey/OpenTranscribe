@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 class FileStatusDetail(BaseModel):
     """Detailed file status information."""
 
-    file_id: int
+    file_uuid: str
     filename: str
     status: str
     can_delete: bool
@@ -121,7 +121,7 @@ async def get_file_status_detail(
             recommendations.append("Auto-recovery may help resolve stuck processing.")
 
         return FileStatusDetail(
-            file_id=db_file.id,
+            file_uuid=str(db_file.uuid),
             filename=db_file.filename,
             status=db_file.status,
             can_delete=is_safe,

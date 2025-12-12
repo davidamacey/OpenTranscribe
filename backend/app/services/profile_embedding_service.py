@@ -208,6 +208,7 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
 
         source = hit["_source"]
         profile_id = source.get("profile_id")
+        profile_uuid = source.get("profile_uuid")
         profile_name = source.get("profile_name")
 
         if not profile_id or not profile_name:
@@ -215,7 +216,7 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
 
         matches.append(
             {
-                "profile_id": profile_id,
+                "profile_id": profile_uuid or str(profile_id),  # Use UUID for external API
                 "profile_name": profile_name,
                 "similarity": float(score),
                 "embedding_count": source.get("speaker_count", 1),

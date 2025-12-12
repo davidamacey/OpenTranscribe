@@ -8,10 +8,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
+from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.db.base import SessionLocal
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.models.prompt import UserSetting
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,31 @@ def _get_known_speakers(db: Session, user_id: int) -> list[dict[str, Any]]:
     ]
 
 
+def _get_user_llm_output_language(db: Session, user_id: int) -> str:
+    """
+    Retrieve user's LLM output language setting from the database.
+
+    Args:
+        db: Database session
+        user_id: ID of the user
+
+    Returns:
+        LLM output language code (default: "en")
+    """
+    setting = (
+        db.query(UserSetting)
+        .filter(
+            UserSetting.user_id == user_id,
+            UserSetting.setting_key == "transcription_llm_output_language",
+        )
+        .first()
+    )
+
+    if setting:
+        return setting.setting_value
+    return DEFAULT_LLM_OUTPUT_LANGUAGE
+
+
 def _create_llm_service(user_id: int | None) -> LLMService:
     """Create LLM service based on user settings or system defaults."""
     if user_id:
@@ -70,6 +97,7 @@ def _run_llm_identification(
     full_transcript: str,
     speaker_segments: list[dict[str, Any]],
     known_speakers: list[dict[str, Any]],
+    output_language: str = "en",
 ) -> dict[str, Any]:
     """Run LLM speaker identification and return predictions."""
     try:
@@ -78,6 +106,7 @@ def _run_llm_identification(
                 transcript=full_transcript,
                 speaker_segments=speaker_segments,
                 known_speakers=known_speakers,
+                output_language=output_language,
             )
         logger.warning("Speaker identification not implemented - skipping")
         return {"speaker_predictions": [], "error": "Feature not implemented"}
@@ -194,9 +223,15 @@ def _generate_predictions(
     try:
         logger.info(f"Starting LLM speaker identification for file {file_id}")
 
+        # Get user's language preference for LLM output
+        output_language = (
+            _get_user_llm_output_language(db, user_id) if user_id else DEFAULT_LLM_OUTPUT_LANGUAGE
+        )
+        logger.info(f"Using LLM output language: {output_language}")
+
         llm_service = _create_llm_service(user_id)
         predictions = _run_llm_identification(
-            llm_service, full_transcript, speaker_segments, known_speakers
+            llm_service, full_transcript, speaker_segments, known_speakers, output_language
         )
 
         _store_speaker_predictions(db, file_id, predictions)

@@ -5,6 +5,8 @@
   import { toastStore } from '$stores/toast';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import type { Speaker } from '$lib/types/speaker';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let speakers: Speaker[] = [];
   export let transcriptSegments: any[] = []; // Transcript segments for live segment counting
@@ -77,7 +79,7 @@
   // Perform the merge operation
   async function performMerge() {
     if (!targetSpeaker || selectedSpeakers.size < 2) {
-      toastStore.error('Please select a target speaker');
+      toastStore.error($t('speaker.pleaseSelectTarget'));
       return;
     }
 
@@ -96,7 +98,7 @@
         await mergeSpeakers(sourceSpeaker.uuid, targetSpeaker.uuid);
         successfulMerges.push(sourceSpeaker);
       } catch (error: any) {
-        const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+        const errorMessage = error.response?.data?.detail || error.message || $t('common.unknownError');
         failedMerges.push({ speaker: sourceSpeaker, error: errorMessage });
         console.error(`Error merging speaker ${sourceSpeaker.display_name || sourceSpeaker.name}:`, error);
       }
@@ -105,19 +107,21 @@
     // Show appropriate message based on results
     if (failedMerges.length === 0) {
       // All merges succeeded
+      const speakerWord = successfulMerges.length > 1 ? $t('speaker.speakers') : $t('speaker.speaker');
+      const targetName = targetSpeaker.display_name || targetSpeaker.name;
       toastStore.success(
-        `Successfully merged ${successfulMerges.length} speaker${successfulMerges.length > 1 ? 's' : ''} into ${targetSpeaker.display_name || targetSpeaker.name}`
+        $t('speaker.mergeSuccessAll', { count: successfulMerges.length, speakerWord, target: targetName })
       );
     } else if (successfulMerges.length === 0) {
       // All merges failed
       const failedNames = failedMerges.map(f => f.speaker.display_name || f.speaker.name).join(', ');
-      toastStore.error(`Merge failed for all speakers: ${failedNames}. Error: ${failedMerges[0].error}`);
+      toastStore.error($t('speaker.mergeFailedAll', { names: failedNames, error: failedMerges[0].error }));
     } else {
       // Partial success - some merged, some failed
       const successNames = successfulMerges.map(s => s.display_name || s.name).join(', ');
       const failedNames = failedMerges.map(f => f.speaker.display_name || f.speaker.name).join(', ');
       toastStore.warning(
-        `Partial merge: Successfully merged ${successNames}. Failed to merge: ${failedNames}.`
+        $t('speaker.mergePartial', { successNames, failedNames })
       );
     }
 
@@ -149,8 +153,8 @@
     aria-controls="merge-content"
   >
     <div class="merge-header-left">
-      <h5>Merge Speakers</h5>
-      <span class="merge-header-hint">Combine multiple speakers into one</span>
+      <h5>{$t('speaker.mergeSpeakers')}</h5>
+      <span class="merge-header-hint">{$t('speaker.mergeSpeakersHint')}</span>
     </div>
     <svg
       class="chevron-icon"
@@ -171,7 +175,7 @@
 
   {#if !isCollapsed}
     <div id="merge-content" class="merge-content" transition:slide={{ duration: 200 }}>
-      <p class="help-text">Select 2 or more speakers to merge into one. All segments will be reassigned to the target speaker.</p>
+      <p class="help-text">{$t('speaker.helpText')}</p>
 
       <div class="speaker-grid">
         {#each speakers as speaker}
@@ -186,9 +190,11 @@
                 class="speaker-badge"
                 style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
               >
-                {speaker.display_name || speaker.name}
+                {translateSpeakerLabel(speaker.display_name || speaker.name)}
               </span>
-              <span class="segment-count">{getSegmentCount(speaker)} segment{getSegmentCount(speaker) !== 1 ? 's' : ''}</span>
+              <span class="segment-count">
+                {getSegmentCount(speaker)} {getSegmentCount(speaker) !== 1 ? $t('speaker.segments') : $t('speaker.segment')}
+              </span>
             </div>
           </label>
         {/each}
@@ -200,20 +206,20 @@
           on:click={clearSelection}
           disabled={selectedSpeakers.size === 0}
         >
-          Clear Selection
+          {$t('speaker.clearSelection')}
         </button>
         <button
           class="btn-primary"
           on:click={openTargetDialog}
           disabled={!canMerge}
-          title={canMerge ? 'Select target speaker and merge' : 'Select at least 2 speakers to merge'}
+          title={canMerge ? $t('speaker.selectTargetAndMerge') : $t('speaker.selectAtLeastTwo')}
         >
           {#if selectedSpeakers.size === 0}
-            Merge Selected (0)
+            {$t('speaker.mergeSelected', { count: 0 })}
           {:else if selectedSpeakers.size === 1}
-            Merge Selected (1) - Need 1 more
+            {$t('speaker.mergeSelectedNeedMore', { count: 1 })}
           {:else}
-            Merge Selected ({selectedSpeakers.size})
+            {$t('speaker.mergeSelected', { count: selectedSpeakers.size })}
           {/if}
         </button>
       </div>
@@ -224,8 +230,8 @@
     <div class="modal-overlay" on:click={closeTargetDialog} on:keydown={(e) => e.key === 'Escape' && closeTargetDialog()} role="presentation">
       <div class="modal-content" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" aria-labelledby="speaker-merge-modal-title" tabindex="-1">
         <div class="modal-header">
-          <h4 id="speaker-merge-modal-title">Select Target Speaker</h4>
-          <button class="close-button" on:click={closeTargetDialog} title="Close">
+          <h4 id="speaker-merge-modal-title">{$t('speaker.selectTargetSpeaker')}</h4>
+          <button class="close-button" on:click={closeTargetDialog} title={$t('common.close')}>
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -235,7 +241,10 @@
 
         <div class="modal-body">
           <p class="modal-description">
-            Choose which speaker should be kept. All segments from the other {selectedSpeakers.size - 1} speaker{selectedSpeakers.size - 1 !== 1 ? 's' : ''} will be reassigned to this target speaker.
+            {$t('speaker.modalDescription', {
+              count: selectedSpeakers.size - 1,
+              speakerWord: selectedSpeakers.size - 1 !== 1 ? $t('speaker.speakers') : $t('speaker.speaker')
+            })}
           </p>
 
           <div class="target-list">
@@ -252,9 +261,9 @@
                     class="speaker-badge"
                     style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
                   >
-                    {speaker.display_name || speaker.name}
+                    {translateSpeakerLabel(speaker.display_name || speaker.name)}
                   </span>
-                  <span class="segment-count">{getSegmentCount(speaker)} segments</span>
+                  <span class="segment-count">{getSegmentCount(speaker)} {$t('speaker.segments')}</span>
                 </div>
               </label>
             {/each}
@@ -263,7 +272,7 @@
 
         <div class="modal-footer">
           <button class="btn-secondary" on:click={closeTargetDialog} disabled={merging}>
-            Cancel
+            {$t('common.cancel')}
           </button>
           <button
             class="btn-primary"
@@ -274,11 +283,11 @@
               <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 11-6.219-8.56"/>
               </svg>
-              Merging...
+              {$t('speaker.merging')}
             {:else if targetSpeaker}
-              Confirm Merge into {targetSpeaker.display_name || targetSpeaker.name}
+              {$t('speaker.confirmMerge', { name: targetSpeaker.display_name || targetSpeaker.name })}
             {:else}
-              Select a Target Speaker
+              {$t('speaker.selectTargetSpeaker')}
             {/if}
           </button>
         </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, afterUpdate } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { writable, get } from 'svelte/store';
   import axiosInstance from '$lib/axios';
   import { websocketStore } from '$stores/websocket';
 
@@ -16,6 +16,7 @@
   import CollectionsSection from '$components/CollectionsSection.svelte';
   import ReprocessButton from '$components/ReprocessButton.svelte';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import SummaryModal from '$components/SummaryModal.svelte';
   import TranscriptModal from '$components/TranscriptModal.svelte';
@@ -190,7 +191,7 @@
 
     if (!targetFileId) {
       console.error('FileDetail: No file ID provided to fetchFileDetails');
-      errorMessage = 'No file ID provided';
+      errorMessage = $t('fileDetail.noFileIdProvided');
       isLoading = false;
       return;
     }
@@ -226,7 +227,7 @@
       }
     } catch (error) {
       console.error('Error fetching file details:', error);
-      errorMessage = 'Failed to load file details. Please try again.';
+      errorMessage = $t('fileDetail.failedToLoadFile');
       isLoading = false;
     }
   }
@@ -268,7 +269,7 @@
       }
     } catch (error) {
       console.error('Error loading more segments:', error);
-      toastStore.error('Failed to load more segments');
+      toastStore.error($t('fileDetail.failedToLoadMoreSegments'));
     } finally {
       loadingMoreSegments = false;
     }
@@ -411,7 +412,7 @@
         if (transcriptData) {
           const speakers = new Map();
           transcriptData.forEach((segment: any) => {
-            const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
+            const speakerLabel = segment.speaker_label || segment.speaker?.name || $t('fileDetail.unknownSpeaker');
             if (!speakers.has(speakerLabel)) {
               speakers.set(speakerLabel, {
                 name: speakerLabel,
@@ -435,7 +436,7 @@
       if (transcriptData) {
         const speakers = new Map();
         transcriptData.forEach((segment: any) => {
-          const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
+          const speakerLabel = segment.speaker_label || segment.speaker?.name || get(t)('fileDetail.unknownSpeaker');
           if (!speakers.has(speakerLabel)) {
             speakers.set(speakerLabel, {
               name: speakerLabel,
@@ -535,16 +536,16 @@
   // Validate speaker name
   function validateSpeakerName(name: string, speakerId: string | number): { isValid: boolean; error?: string } {
     if (!name || typeof name !== 'string') {
-      return { isValid: false, error: 'Speaker name is required' };
+      return { isValid: false, error: $t('speakerValidation.nameRequired') };
     }
 
     const trimmedName = name.trim();
     if (trimmedName.length === 0) {
-      return { isValid: false, error: 'Speaker name cannot be empty' };
+      return { isValid: false, error: $t('speakerValidation.nameEmpty') };
     }
 
     if (trimmedName.length > 100) {
-      return { isValid: false, error: 'Speaker name must be 100 characters or less' };
+      return { isValid: false, error: $t('speakerValidation.nameTooLong') };
     }
 
     // Check for duplicate names (excluding the current speaker)
@@ -553,7 +554,7 @@
       .map(s => (s.display_name || s.name).toLowerCase());
 
     if (existingNames.includes(trimmedName.toLowerCase())) {
-      return { isValid: false, error: 'This speaker name is already in use' };
+      return { isValid: false, error: $t('speakerValidation.nameDuplicate') };
     }
 
     return { isValid: true };
@@ -588,7 +589,7 @@
       await loadSpeakers();
     } catch (error) {
       console.error('Error refreshing data after speaker merge:', error);
-      toastStore.error('Data refresh failed. Please reload the page.');
+      toastStore.error($t('fileDetail.dataRefreshFailed'));
     }
   }
 
@@ -610,8 +611,11 @@
     if (speaker && speaker.profile && speaker.profile.name !== newName) {
       // Show confirmation modal for profile update decision
       pendingSpeakerUpdate = { speakerId, newName, speaker };
-      profileUpdateTitle = 'Update Speaker Profile';
-      profileUpdateMessage = `"${speaker.display_name || speaker.name}" is currently linked to the profile "${speaker.profile.name}". What would you like to do?`;
+      profileUpdateTitle = $t('speakerProfile.updateTitle');
+      profileUpdateMessage = $t('speakerProfile.linkedMessage', {
+        speakerName: speaker.display_name || speaker.name,
+        profileName: speaker.profile.name
+      });
       showSpeakerProfileConfirmation = true;
       return;
     }
@@ -686,8 +690,8 @@
         newName: speaker.display_name,
         speaker
       };
-      profileUpdateTitle = `Update Speaker Profile (${currentConfirmationIndex + 1} of ${speakerConfirmationQueue.length})`;
-      profileUpdateMessage = `"${speaker.display_name || speaker.name}" is currently linked to the profile "${speaker.profile.name}". What would you like to do?`;
+      profileUpdateTitle = $t('fileDetail.updateSpeakerProfileCounter', { current: currentConfirmationIndex + 1, total: speakerConfirmationQueue.length });
+      profileUpdateMessage = $t('fileDetail.profileLinkedMessage', { displayName: speaker.display_name || speaker.name, profileName: speaker.profile.name });
       showSpeakerProfileConfirmation = true;
     }
   }
@@ -761,10 +765,10 @@
 
         // Show success feedback with appropriate message
         const successMessage = action === 'update_profile'
-          ? `Profile "${newName}" updated globally`
+          ? $t('speakerProfile.updatedGlobally', { name: newName })
           : action === 'create_new_profile'
-          ? `New profile "${newName}" created`
-          : `Speaker renamed to "${newName}"`;
+          ? $t('speakerProfile.newCreated', { name: newName })
+          : $t('speakerProfile.renamed', { name: newName });
 
         toastStore.success(successMessage);
       }
@@ -773,12 +777,12 @@
 
       // Show user-friendly error with option to retry
       const errorMessage = error.response?.status === 404
-        ? 'Speaker not found in database'
+        ? $t('speakerProfile.notFound')
         : error.response?.status === 403
-        ? 'Permission denied to update speaker'
-        : 'Failed to save speaker name to database';
+        ? $t('speakerProfile.permissionDenied')
+        : $t('speakerProfile.saveFailed');
 
-      toastStore.error(`${errorMessage}. Changes are saved locally only.`);
+      toastStore.error($t('speakerProfile.errorWithLocal', { error: errorMessage }));
 
       // Note: We don't revert frontend changes as they're useful even without backend persistence
     }
@@ -895,13 +899,13 @@
 
       // Show error as toast notification for consistency
       if (error.response?.status === 405) {
-        toastStore.error('Transcript editing is not supported by the server');
+        toastStore.error($t('fileDetail.transcriptEditingNotSupported'));
       } else if (error.response?.status === 404) {
-        toastStore.error('Transcript segment not found');
+        toastStore.error($t('fileDetail.transcriptSegmentNotFound'));
       } else if (error.response?.status === 422) {
-        toastStore.error('Invalid segment data. Please check your input.');
+        toastStore.error($t('fileDetail.invalidSegmentData'));
       } else {
-        toastStore.error('Failed to save segment changes');
+        toastStore.error($t('fileDetail.failedToSaveSegment'));
       }
     } finally {
       savingTranscript = false;
@@ -933,7 +937,7 @@
       }
     } catch (error) {
       console.error('Error saving transcript:', error);
-      toastStore.error('Failed to save transcript');
+      toastStore.error($t('fileDetail.failedToSaveTranscript'));
     } finally {
       savingTranscript = false;
     }
@@ -1011,7 +1015,7 @@
               // For other users' comments that have no user object,
               // create a placeholder to avoid 'Anonymous'
               comment.user = {
-                full_name: 'Admin User', // Default from browser info
+                full_name: $t('fileDetail.adminUser'), // Default from browser info
                 username: 'admin',
                 email: 'admin@example.com'
               };
@@ -1040,7 +1044,7 @@
 
       // Helper function to get speaker display name
       const getSpeakerDisplayName = (segment: any) => {
-        const speakerName = segment.speaker_label || segment.speaker?.name || 'Speaker';
+        const speakerName = segment.speaker_label || segment.speaker?.name || $t('fileDetail.speakerDefault');
         return speakerMapping.get(speakerName) || segment.speaker?.display_name || speakerName;
       };
 
@@ -1090,7 +1094,7 @@
           content = JSON.stringify(jsonData, null, 2);
           break;
         case 'csv':
-          let csvHeader = 'Start Time,End Time,Speaker,Text';
+          let csvHeader = $t('fileDetail.csvHeaderDefault');
           let csvRows = transcriptData.map((seg: any) => {
             const start = seg.start_time || seg.start || 0;
             const end = seg.end_time || seg.end || 0;
@@ -1103,7 +1107,7 @@
           // Add comments to CSV if requested
           if (includeComments && fileComments.length > 0) {
             // Add comment column to header if comments are included
-            csvHeader = 'Start Time,End Time,Speaker,Text,Comment Type';
+            csvHeader = $t('fileDetail.csvHeaderWithComments');
 
             // Add comments as separate rows
             const commentRows = fileComments.map((comment: any) => {
@@ -1111,7 +1115,7 @@
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
               const escapedText = `"${comment.text.replace(/"/g, '""')}"`;
               // Add comment rows with user info in the Speaker column and 'COMMENT' in Comment Type
-              return `${timestamp},${timestamp},"USER COMMENT: ${userName}",${escapedText},"COMMENT"`;
+              return `${timestamp},${timestamp},"${$t('fileDetail.userComment')}: ${userName}",${escapedText},"${$t('fileDetail.commentType')}"`;
             });
 
             // Combine segment rows (with empty Comment Type) with comment rows
@@ -1158,7 +1162,7 @@
               const timestamp = comment.timestamp;
               const formattedTime = formatSrtTimestamp(timestamp);
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `USER COMMENT: ${userName}: ${comment.text}`;
+              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
 
               srtItems.push({
                 index: counter++,
@@ -1217,7 +1221,7 @@
               const timestamp = comment.timestamp;
               const formattedTime = formatVttTimestamp(timestamp);
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
-              const text = `USER COMMENT: ${userName}: ${comment.text}`;
+              const text = `${$t('fileDetail.userComment')}: ${userName}: ${comment.text}`;
 
               vttItems.push({
                 startTime: timestamp,
@@ -1393,7 +1397,7 @@
 
     } catch (error) {
       console.error('Error saving speaker names:', error);
-      toastStore.error('Failed to save speaker names. Please try again.');
+      toastStore.error($t('speakerProfile.saveAllFailed'));
       savingSpeakers = false;
     }
   }
@@ -1418,7 +1422,7 @@
 
     } catch (error) {
       console.error('Error in bulk save with decisions:', error);
-      toastStore.error('Failed to save speaker names. Please try again.');
+      toastStore.error($t('speakerProfile.saveAllFailed'));
       savingSpeakers = false;
 
       // Reset bulk save state
@@ -1486,7 +1490,7 @@
     // STEP 4: PostgreSQL updates complete - stop save button spinner immediately!
     savingSpeakers = false;
     isEditingSpeakers = false;
-    toastStore.success('Speaker names saved successfully!');
+    toastStore.success($t('speakerProfile.savedSuccess'));
 
     // Reset original names to current values (no changes after save)
     originalSpeakerNames = new Map(
@@ -1667,7 +1671,7 @@
 
     } catch (error) {
       console.error('❌ Error starting reprocess:', error);
-      toastStore.error('Failed to start reprocessing. Please try again.');
+      toastStore.error($t('reprocess.startFailed'));
 
       // Revert optimistic update on error
       if (file) {
@@ -1724,11 +1728,11 @@
       reprocessNumSpeakers = null;
 
       // Don't immediately fetch - let WebSocket notifications handle updates
-      toastStore.success('Reprocessing started successfully');
+      toastStore.success($t('reprocess.startedSuccess'));
 
     } catch (error) {
       console.error('❌ Error starting reprocess (header):', error);
-      toastStore.error('Failed to start reprocessing. Please try again.');
+      toastStore.error($t('reprocess.startFailed'));
 
       // Revert optimistic update on error
       await fetchFileDetails(file.id);
@@ -1763,7 +1767,7 @@
       // The WebSocket will update summaryGenerating = true when processing starts
     } catch (error: any) {
       console.error('Error generating summary:', error);
-      const errorMessage = error.response?.data?.detail || 'Failed to generate summary. Please try again.';
+      const errorMessage = error.response?.data?.detail || $t('fileDetail.failedToGenerateSummary');
 
       toastStore.error(errorMessage, 5000);
     } finally {
@@ -1783,7 +1787,7 @@
     } catch (error: any) {
       console.error('Error loading summary:', error);
       if (error.response?.status !== 404) {
-        toastStore.error('Failed to load summary.', 5000);
+        toastStore.error($t('fileDetail.failedToLoadSummary'), 5000);
       }
     }
   }
@@ -1869,9 +1873,9 @@
     if (transcriptionSettings.speaker_prompt_behavior === 'use_defaults') {
       const min = transcriptionSystemDefaults?.min_speakers ?? 1;
       const max = transcriptionSystemDefaults?.max_speakers ?? 20;
-      return `Using system defaults (${min}-${max} speakers)`;
+      return $t('fileDetail.usingSystemDefaults', { min, max });
     } else if (transcriptionSettings.speaker_prompt_behavior === 'use_custom') {
-      return `Using your settings (${transcriptionSettings.min_speakers}-${transcriptionSettings.max_speakers} speakers)`;
+      return $t('fileDetail.usingYourSettings', { min: transcriptionSettings.min_speakers, max: transcriptionSettings.max_speakers });
     }
     return '';
   }
@@ -1946,7 +1950,7 @@
         console.error('Error loading AI suggestions:', err);
       });
     } else {
-      errorMessage = 'Invalid file ID';
+      errorMessage = $t('fileDetail.invalidFileId');
       isLoading = false;
     }
 
@@ -2013,7 +2017,7 @@
                   file.progress = notificationProgress;
                   file.status = 'processing';
                   // Update the current processing step from the progressive notification
-                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || 'Processing...';
+                  currentProcessingStep = latestNotification.currentStep || latestNotification.message || latestNotification.data?.message || $t('fileDetail.processingDefault');
                   file = { ...file }; // Trigger reactivity
                   reactiveFile.set(file);
 
@@ -2023,7 +2027,7 @@
                 if (file) {
                   file.progress = 100;
                   file.status = 'completed';
-                  currentProcessingStep = 'Processing complete!';
+                  currentProcessingStep = $t('fileDetail.processingComplete');
 
                   // Show AI summary spinner only if LLM is available after transcription completion
                   if (llmAvailable) {
@@ -2125,7 +2129,7 @@
                 generatingSummary = false;
 
                 // Get error message from notification
-                const errorMessage = latestNotification.data?.message || latestNotification.message || 'Failed to generate summary';
+                const errorMessage = latestNotification.data?.message || latestNotification.message || $t('fileDetail.failedToGenerateSummaryGeneric');
                 const isLLMConfigError = errorMessage.toLowerCase().includes('llm service is not available') ||
                                        errorMessage.toLowerCase().includes('configure an llm provider') ||
                                        errorMessage.toLowerCase().includes('llm provider');
@@ -2155,11 +2159,11 @@
 
               if (status === 'processing') {
                 // Update processing step to show what's happening
-                currentProcessingStep = message || 'Analyzing transcript with AI...';
+                currentProcessingStep = message || $t('fileDetail.analyzingTranscript');
 
               } else if (status === 'completed') {
                 // Show completion message briefly before clearing
-                currentProcessingStep = message || 'AI suggestions complete!';
+                currentProcessingStep = message || $t('fileDetail.aiSuggestionsComplete');
 
                 // Reload AI suggestions when extraction completes
                 // This will fetch the newly generated suggestions and update the UI dynamically
@@ -2231,22 +2235,22 @@
 </script>
 
 <svelte:head>
-  <title>{file?.filename || 'Loading File...'}</title>
+  <title>{file?.filename || $t('fileDetail.loadingFile')}</title>
 </svelte:head>
 
 <div class="file-detail-page">
   {#if isLoading}
     <div class="loading-container">
       <div class="spinner"></div>
-      <p>Loading file details...</p>
+      <p>{$t('fileDetail.loading')}</p>
     </div>
   {:else if errorMessage}
     <div class="error-container">
       <p class="error-message">{errorMessage}</p>
       <button
         on:click={() => fetchFileDetails()}
-        title="Retry loading the file details"
-      >Try Again</button>
+        title={$t('fileDetail.retryTooltip')}
+      >{$t('fileDetail.tryAgain')}</button>
     </div>
   {:else if file}
     <div class="file-header">
@@ -2263,7 +2267,7 @@
       <!-- Left column: Video player, tags, analytics, and comments -->
       <section class="video-column">
         <div class="video-header">
-          <h4>{file?.content_type?.startsWith('audio/') ? 'Audio' : 'Video'}</h4>
+          <h4>{file?.content_type?.startsWith('audio/') ? $t('fileDetail.audio') : $t('fileDetail.video')}</h4>
           <!-- Action Buttons - right aligned above video -->
           <div class="header-buttons">
             <!-- View Full Transcript Button - LEFT of AI Summary -->
@@ -2271,13 +2275,13 @@
               <button
                 class="view-transcript-btn"
                 on:click={() => showTranscriptModal = true}
-                title="View full transcript in modal"
+                title={$t('fileDetail.viewTranscript')}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" class="transcript-icon">
                   <path d="M4 2a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H4zm0 1h8a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
                   <path d="M5 5h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
                 </svg>
-                Transcript
+                {$t('fileDetail.transcript')}
               </button>
             {/if}
           <!-- Debug: Summary button state: hasSummary={!!(file?.summary_data || file?.summary_opensearch_id)}, summaryGenerating={summaryGenerating}, generatingSummary={generatingSummary}, fileStatus={file?.status} -->
@@ -2285,40 +2289,40 @@
             <button
               class="view-summary-btn"
               on:click={handleShowSummary}
-              title="View AI-generated summary in BLUF format"
+              title={$t('fileDetail.viewSummaryTooltip')}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
                 <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
               </svg>
-              Summary
+              {$t('fileDetail.summary')}
             </button>
           {:else if summaryGenerating || generatingSummary}
             <!-- Show generating state even when no summary exists yet -->
             <button
               class="generate-summary-btn"
               disabled
-              title="AI summary is being generated..."
+              title={$t('fileDetail.aiSummaryGenerating')}
             >
               <div class="spinner-small"></div>
-              <span>AI Summary</span>
+              <span>{$t('fileDetail.aiSummary')}</span>
             </button>
           {:else if file?.status === 'completed'}
             <button
               class="generate-summary-btn"
               on:click={handleGenerateSummary}
               disabled={generatingSummary || summaryGenerating || !llmAvailable}
-              title={!llmAvailable ? 'AI summary features are not available. Configure an LLM provider in Settings.' :
-                     (generatingSummary || summaryGenerating) ? 'AI summary is being generated...' :
-                     'Generate AI-powered summary with key insights and action items'}
+              title={!llmAvailable ? $t('fileDetail.aiNotAvailable') :
+                     (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
+                     $t('fileDetail.generateSummaryTooltip')}
             >
               {#if generatingSummary || summaryGenerating}
                 <div class="spinner-small"></div>
-                <span>AI Summary</span>
+                <span>{$t('fileDetail.aiSummary')}</span>
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="ai-icon">
                   <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423L16.5 15.75l.394 1.183a2.25 2.25 0 001.423 1.423L19.5 18.75l-1.183.394a2.25 2.25 0 00-1.423 1.423z"/>
                 </svg>
-                Generate AI Summary
+                {$t('fileDetail.generateSummary')}
               {/if}
             </button>
           {/if}
@@ -2329,7 +2333,7 @@
                 class="reprocess-button-header"
                 on:click={handleReprocessWithPrefs}
                 disabled={reprocessing}
-                title={reprocessing ? 'Reprocessing file with transcription AI...' : 'Reprocess this file with transcription AI'}
+                title={reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M23 4v6h-6"></path>
@@ -2354,37 +2358,37 @@
                         <span class="reprocess-confirmation-message">{getReprocessConfirmationMessage()}</span>
                       </div>
                       <div class="reprocess-confirmation-actions">
-                        <button class="btn-cancel" on:click={handleReprocessCustomize}>Customize</button>
-                        <button class="btn-confirm" on:click={handleReprocessFromConfirmation}>Start</button>
+                        <button class="btn-cancel" on:click={handleReprocessCustomize}>{$t('reprocess.customize')}</button>
+                        <button class="btn-confirm" on:click={handleReprocessFromConfirmation}>{$t('reprocess.start')}</button>
                       </div>
                     </div>
                   {:else}
                     <!-- Settings form -->
                     <div class="reprocess-settings-header">
-                      <h4>Speaker Diarization Settings</h4>
-                      <p>Leave empty to use defaults.</p>
+                      <h4>{$t('reprocess.settingsTitle')}</h4>
+                      <p>{$t('reprocess.settingsHint')}</p>
                     </div>
 
                     <div class="reprocess-settings-row">
                       <div class="reprocess-setting-field">
-                        <label for="header-min-speakers">Min Speakers</label>
+                        <label for="header-min-speakers">{$t('reprocess.minSpeakers')}</label>
                         <input
                           id="header-min-speakers"
                           type="number"
                           min="1"
-                          placeholder="Default"
+                          placeholder={$t('reprocess.defaultPlaceholder')}
                           bind:value={reprocessMinSpeakers}
                           disabled={reprocessNumSpeakers !== null}
                         />
                       </div>
 
                       <div class="reprocess-setting-field">
-                        <label for="header-max-speakers">Max Speakers</label>
+                        <label for="header-max-speakers">{$t('reprocess.maxSpeakers')}</label>
                         <input
                           id="header-max-speakers"
                           type="number"
                           min="1"
-                          placeholder="Default"
+                          placeholder={$t('reprocess.defaultPlaceholder')}
                           bind:value={reprocessMaxSpeakers}
                           disabled={reprocessNumSpeakers !== null}
                         />
@@ -2393,34 +2397,34 @@
 
                     <div class="reprocess-setting-field">
                       <label for="header-num-speakers">
-                        Fixed Count
-                        <span class="setting-hint">(overrides min/max)</span>
+                        {$t('reprocess.fixedCount')}
+                        <span class="setting-hint">{$t('reprocess.fixedCountHint')}</span>
                       </label>
                       <input
                         id="header-num-speakers"
                         type="number"
                         min="1"
-                        placeholder="Auto"
+                        placeholder={$t('reprocess.autoPlaceholder')}
                         bind:value={reprocessNumSpeakers}
                       />
                     </div>
 
                     {#if !reprocessSettingsValid}
                       <div class="reprocess-validation-error">
-                        Min must be &le; max
+                        {$t('reprocess.validationError')}
                       </div>
                     {/if}
 
                     <div class="reprocess-settings-actions">
                       <button class="btn-cancel" on:click={closeReprocessDropdown}>
-                        Cancel
+                        {$t('reprocess.cancel')}
                       </button>
                       <button
                         class="btn-confirm"
                         on:click={handleReprocessHeader}
                         disabled={reprocessing || !reprocessSettingsValid}
                       >
-                        Start
+                        {$t('reprocess.start')}
                       </button>
                     </div>
                   {/if}
@@ -2530,11 +2534,11 @@
             {#if file?.status === 'processing' || file?.status === 'pending'}
               <div class="processing-placeholder">
                 <div class="spinner-large"></div>
-                <p>Generating transcript...</p>
-                <small>This may take a few minutes depending on the length of your file.</small>
+                <p>{$t('fileDetail.generatingTranscript')}</p>
+                <small>{$t('fileDetail.generatingTranscriptHint')}</small>
               </div>
             {:else}
-              <p>No transcript available for this file.</p>
+              <p>{$t('fileDetail.noTranscript')}</p>
             {/if}
           </div>
         </section>
@@ -2543,7 +2547,7 @@
 
   {:else}
     <div class="no-file-container">
-      <p>File data could not be loaded or does not exist.</p>
+      <p>{$t('fileDetail.fileNotFound')}</p>
     </div>
   {/if}
 </div>
@@ -2551,10 +2555,10 @@
 <!-- Export Confirmation Modal -->
 <ConfirmationModal
   bind:isOpen={showExportConfirmation}
-  title="Include Comments in Export?"
-  message="Would you like to include user comments in the exported transcript? Comments will be inserted at their respective timestamps."
-  confirmText="Include Comments"
-  cancelText="Export Without Comments"
+  title={$t('exportConfirm.title')}
+  message={$t('exportConfirm.message')}
+  confirmText={$t('exportConfirm.includeComments')}
+  cancelText={$t('exportConfirm.exportWithout')}
   on:confirm={handleExportConfirm}
   on:cancel={handleExportCancel}
   on:close={handleExportModalClose}
@@ -2570,7 +2574,7 @@
           <button
             class="modal-close-btn"
             on:click={handleProfileConfirmationCancel}
-            aria-label="Close dialog"
+            aria-label={$t('modal.closeDialog')}
           >
             ×
           </button>
@@ -2585,19 +2589,19 @@
             class="btn btn-primary"
             on:click={() => handleProfileConfirmation('update_profile')}
           >
-            Update Profile Globally
+            {$t('speakerProfile.updateGlobally')}
           </button>
           <button
             class="btn btn-secondary"
             on:click={() => handleProfileConfirmation('create_new_profile')}
           >
-            Create New Profile
+            {$t('speakerProfile.createNew')}
           </button>
           <button
             class="btn btn-cancel"
             on:click={handleProfileConfirmationCancel}
           >
-            Cancel
+            {$t('common.cancel')}
           </button>
         </div>
       </div>
@@ -2635,7 +2639,7 @@
         // WebSocket will handle the rest of the status updates
       } catch (error) {
         console.error('Failed to start reprocess:', error);
-        toastStore.error('Failed to start summary reprocessing', 5000);
+        toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
         summaryGenerating = false;
       }
     }}

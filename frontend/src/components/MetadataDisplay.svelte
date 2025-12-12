@@ -2,7 +2,8 @@
   import { slide } from 'svelte/transition';
   import { formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
-  
+  import { t } from '$stores/locale';
+
   export let file: any = null;
   export let showMetadata: boolean = false;
 
@@ -15,36 +16,36 @@
 
 <div class="metadata-dropdown-section">
   <button class="section-header" on:click={toggleMetadata} on:keydown={e => e.key === 'Enter' && toggleMetadata()} aria-expanded={showMetadata}>
-    <h4 class="section-heading">File Details</h4>
+    <h4 class="section-heading">{$t('metadata.fileDetails')}</h4>
     <span class="dropdown-toggle" aria-hidden="true">
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showMetadata ? '180deg' : '0deg'})">
         <polyline points="6 9 12 15 18 9"></polyline>
       </svg>
     </span>
   </button>
-  
+
   {#if showMetadata}
   <div class="section-content" transition:slide={{ duration: 200 }}>
     <div class="metadata-panel">
       <div class="metadata-grid four-columns">
         <div class="metadata-item">
-          <span class="metadata-label">Uploaded by:</span>
-          <span class="metadata-value">{$authStore?.user?.email || 'Unknown user'}</span>
+          <span class="metadata-label">{$t('metadata.uploadedBy')}:</span>
+          <span class="metadata-value">{$authStore?.user?.email || $t('metadata.unknownUser')}</span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Upload date:</span>
-          <span class="metadata-value">{file && 'upload_time' in file && file.upload_time ? new Date(file.upload_time).toLocaleDateString() : 'Unknown'}</span>
+          <span class="metadata-label">{$t('metadata.uploadDate')}:</span>
+          <span class="metadata-value">{file && 'upload_time' in file && file.upload_time ? new Date(file.upload_time).toLocaleDateString() : $t('metadata.unknown')}</span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Media type:</span>
-          <span class="metadata-value">{file && 'content_type' in file ? file.content_type : 'Unknown'}</span>
+          <span class="metadata-label">{$t('metadata.mediaType')}:</span>
+          <span class="metadata-value">{file && 'content_type' in file ? file.content_type : $t('metadata.unknown')}</span>
         </div>
-        
+
         {#if file && 'source_url' in file && file.source_url}
           <div class="metadata-item">
-            <span class="metadata-label">Source:</span>
+            <span class="metadata-label">{$t('metadata.source')}:</span>
             <span class="metadata-value">
               <a href={file.source_url} target="_blank" rel="noopener noreferrer" class="source-link">
                 {file.source_url.length > 50 ? file.source_url.substring(0, 47) + '...' : file.source_url}
@@ -52,105 +53,105 @@
             </span>
           </div>
         {/if}
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Duration:</span>
+          <span class="metadata-label">{$t('metadata.duration')}:</span>
           <span class="metadata-value">
             {#if file && 'duration' in file && file.duration}
-              {file.formatted_duration || 'N/A'}
+              {file.formatted_duration || $t('metadata.na')}
             {:else}
-              Unknown
+              {$t('metadata.unknown')}
             {/if}
           </span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">File size:</span>
+          <span class="metadata-label">{$t('metadata.fileSize')}:</span>
           <span class="metadata-value">
             {#if file && 'file_size' in file && file.file_size}
-              {file.formatted_file_size || 'N/A'}
+              {file.formatted_file_size || $t('metadata.na')}
             {:else}
-              Unknown
+              {$t('metadata.unknown')}
             {/if}
           </span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Transcript status:</span>
+          <span class="metadata-label">{$t('metadata.transcriptStatus')}:</span>
           <span class="metadata-value">
-            <span class="status-completed">Completed <i class="fas fa-check-circle"></i></span>
+            <span class="status-completed">{$t('metadata.completed')} <i class="fas fa-check-circle"></i></span>
           </span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">AI Summary status:</span>
+          <span class="metadata-label">{$t('metadata.aiSummaryStatus')}:</span>
           <span class="metadata-value">
             {#if file?.summary_status === 'completed' || file?.summary || file?.summary_opensearch_id}
-              <span class="status-completed">Available <i class="fas fa-check-circle"></i></span>
+              <span class="status-completed">{$t('metadata.available')} <i class="fas fa-check-circle"></i></span>
             {:else if file?.summary_status === 'processing'}
-              <span class="status-processing">Processing... <i class="fas fa-spinner fa-spin"></i></span>
+              <span class="status-processing">{$t('metadata.processing')} <i class="fas fa-spinner fa-spin"></i></span>
             {:else if file?.summary_status === 'failed'}
-              <span class="status-error">Failed <i class="fas fa-exclamation-triangle"></i></span>
+              <span class="status-error">{$t('metadata.failed')} <i class="fas fa-exclamation-triangle"></i></span>
             {:else}
-              <span class="status-pending">Pending</span>
+              <span class="status-pending">{$t('metadata.pending')}</span>
             {/if}
           </span>
         </div>
-        
+
         {#if file && 'language' in file && file.language}
           <div class="metadata-item">
-            <span class="metadata-label">Language:</span>
+            <span class="metadata-label">{$t('metadata.language')}:</span>
             <span class="metadata-value">{file.language}</span>
           </div>
         {/if}
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Created date:</span>
-          <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : 'Unknown'}</span>
+          <span class="metadata-label">{$t('metadata.createdDate')}:</span>
+          <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : $t('metadata.unknown')}</span>
         </div>
-        
+
         <!-- Tech Specs -->
         <div class="metadata-item">
-          <span class="metadata-label">Resolution:</span>
+          <span class="metadata-label">{$t('metadata.resolution')}:</span>
           <span class="metadata-value">
             {#if file && 'resolution_width' in file && 'resolution_height' in file && file.resolution_width && file.resolution_height}
               {file.resolution_width}×{file.resolution_height}
             {:else}
-              N/A
+              {$t('metadata.na')}
             {/if}
           </span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Frame rate:</span>
+          <span class="metadata-label">{$t('metadata.frameRate')}:</span>
           <span class="metadata-value">
             {#if file && 'frame_rate' in file && file.frame_rate}
               {typeof file.frame_rate === 'number' ? file.frame_rate.toFixed(0) : file.frame_rate}fps
             {:else}
-              N/A
+              {$t('metadata.na')}
             {/if}
           </span>
         </div>
-        
+
         <!-- Audio Info -->
         <div class="metadata-item">
-          <span class="metadata-label">Audio channels:</span>
+          <span class="metadata-label">{$t('metadata.audioChannels')}:</span>
           <span class="metadata-value">
             {#if file && 'audio_channels' in file && file.audio_channels}
               {file.audio_channels}ch
             {:else}
-              N/A
+              {$t('metadata.na')}
             {/if}
           </span>
         </div>
-        
+
         <div class="metadata-item">
-          <span class="metadata-label">Sample rate:</span>
+          <span class="metadata-label">{$t('metadata.sampleRate')}:</span>
           <span class="metadata-value">
             {#if file && 'audio_sample_rate' in file && file.audio_sample_rate}
               {Math.round(file.audio_sample_rate/1000)}kHz
             {:else}
-              N/A
+              {$t('metadata.na')}
             {/if}
           </span>
         </div>
@@ -241,7 +242,7 @@
     align-items: center;
     gap: 4px;
   }
-  
+
   .status-processing {
     color: var(--warning-color);
     display: flex;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
   import SpeakerStats from './SpeakerStats.svelte';
+  import { t } from '$stores/locale';
 
   interface OverallAnalytics {
     word_count?: number;
@@ -82,17 +83,17 @@
 <div class="analytics-dropdown-section">
   <button
     class="analytics-header"
-    title="Show or hide detailed analytics including speaker statistics, transcript word count, and speaking time breakdown" on:click={toggleAnalytics} on:keydown={e => e.key === 'Enter' && toggleAnalytics()} aria-expanded={isAnalyticsExpanded}>
-    <h4 class="section-heading">Analytics Overview</h4>
+    title={$t('analytics.toggleTooltip')} on:click={toggleAnalytics} on:keydown={e => e.key === 'Enter' && toggleAnalytics()} aria-expanded={isAnalyticsExpanded}>
+    <h4 class="section-heading">{$t('analytics.title')}</h4>
     <div class="analytics-preview">
       {#if analyticsData}
         <span class="analytics-chip">
-          {analyticsData.word_count ? `${analyticsData.word_count} words` : 'Analytics available'}
+          {analyticsData.word_count ? $t('analytics.wordsCount', { count: analyticsData.word_count }) : $t('analytics.available')}
         </span>
       {:else if file && file.status === 'processing'}
-        <span class="analytics-chip processing">Processing...</span>
+        <span class="analytics-chip processing">{$t('analytics.processing')}</span>
       {:else}
-        <span class="no-analytics">No analytics</span>
+        <span class="no-analytics">{$t('analytics.noAnalytics')}</span>
       {/if}
     </div>
     <span class="dropdown-toggle" aria-hidden="true">
@@ -118,9 +119,9 @@
           />
         {/key}
       {:else if file && file.status === 'processing'}
-        <p>Analytics are being processed...</p>
+        <p>{$t('analytics.beingProcessed')}</p>
       {:else if file && file.status === 'completed' && !file?.analytics?.overall_analytics && !file?.overall_analytics}
-        <p>Analytics data is not available for this file.</p>
+        <p>{$t('analytics.notAvailable')}</p>
       {/if}
     </div>
   {/if}

@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
   import ConfirmationModal from '../ConfirmationModal.svelte';
 
   export let show = false;
@@ -65,7 +66,7 @@
 
   // Auto-fade timer for test results
   let testResultTimer: NodeJS.Timeout;
-  
+
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
   let pendingCloseAction: (() => void) | null = null;
@@ -189,7 +190,7 @@
   function positionTooltip(event) {
     const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
     const tooltip = event.target.closest('.info-tooltip');
-    
+
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
   }
@@ -201,7 +202,7 @@
       showUnsavedChangesModal = true;
       return;
     }
-    
+
     executeCloseModal();
   }
 
@@ -211,7 +212,7 @@
     // Reset form state
     resetForm();
   }
-  
+
   function handleUnsavedChangesConfirm() {
     if (pendingCloseAction) {
       pendingCloseAction();
@@ -219,7 +220,7 @@
     }
     showUnsavedChangesModal = false;
   }
-  
+
   function handleUnsavedChangesCancel() {
     showUnsavedChangesModal = false;
     pendingCloseAction = null;
@@ -234,16 +235,16 @@
       let savedConfig;
       if (editingConfig) {
         savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, formData);
-        toastStore.success('Configuration updated successfully', 5000);
+        toastStore.success($t('llm.configUpdated'), 5000);
       } else {
         savedConfig = await LLMSettingsApi.createSettings(formData);
-        toastStore.success('Configuration created successfully', 5000);
+        toastStore.success($t('llm.configCreated'), 5000);
       }
 
       dispatch('saved', savedConfig);
       closeModal(true);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Failed to save configuration';
+      const errorMsg = err.response?.data?.detail || $t('llm.configSaveFailed');
       toastStore.error(errorMsg, 8000);
     } finally {
       saving = false;
@@ -263,28 +264,28 @@
         api_key: formData.api_key || undefined,
         base_url: formData.base_url || undefined
       });
-      
+
       testResult = result;
-      
+
       if (result.success) {
         toastStore.success(result.message, 5000);
       } else {
         toastStore.error(result.message, 8000);
       }
-      
+
       // Auto-fade test result
       clearTimeout(testResultTimer);
       testResultTimer = setTimeout(() => testResult = null, result.success ? 5000 : 8000);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      const errorMsg = err.response?.data?.detail || $t('llm.connectionTestFailed');
       toastStore.error(errorMsg, 8000);
-      
+
       testResult = {
         success: false,
         status: 'failed',
         message: errorMsg
       };
-      
+
       // Auto-fade test result
       clearTimeout(testResultTimer);
       testResultTimer = setTimeout(() => testResult = null, 8000);
@@ -295,7 +296,7 @@
 
   async function loadOllamaModels() {
     if (!formData.base_url) {
-      ollamaModelsError = 'Please enter a base URL first';
+      ollamaModelsError = $t('llm.enterBaseUrlFirst');
       return;
     }
 
@@ -311,7 +312,7 @@
         ollamaModelsError = result.message;
       }
     } catch (err: any) {
-      ollamaModelsError = err.response?.data?.detail || 'Failed to load Ollama models';
+      ollamaModelsError = err.response?.data?.detail || $t('llm.ollamaLoadFailed');
     } finally {
       loadingOllamaModels = false;
     }
@@ -331,14 +332,14 @@
 
   async function loadOpenAICompatibleModels() {
     if (!formData.base_url) {
-      openaiModelsError = 'Please enter a base URL first';
+      openaiModelsError = $t('llm.enterBaseUrlFirst');
       return;
     }
 
     // Check if API key is required for this provider
     const providerConfig = getProviderDefaults(formData.provider);
     if (providerConfig?.requires_api_key && !formData.api_key) {
-      openaiModelsError = 'Please enter an API key first';
+      openaiModelsError = $t('llm.enterApiKeyFirst');
       return;
     }
 
@@ -357,7 +358,7 @@
         openaiModelsError = result.message;
       }
     } catch (err: any) {
-      openaiModelsError = err.response?.data?.detail || 'Failed to load models';
+      openaiModelsError = err.response?.data?.detail || $t('llm.modelsLoadFailed');
     } finally {
       loadingOpenAIModels = false;
     }
@@ -394,13 +395,13 @@
 
   function getProviderDisplayName(provider: string): string {
     const displayNames: Record<string, string> = {
-      openai: 'OpenAI',
-      vllm: 'vLLM',
-      ollama: 'Ollama',
-      claude: 'Claude (Anthropic)',
-      anthropic: 'Anthropic Claude',
-      openrouter: 'OpenRouter',
-      custom: 'Custom Provider'
+      openai: $t('llm.provider.openai'),
+      vllm: $t('llm.provider.vllm'),
+      ollama: $t('llm.provider.ollama'),
+      claude: $t('llm.provider.claude'),
+      anthropic: $t('llm.provider.anthropic'),
+      openrouter: $t('llm.provider.openrouter'),
+      custom: $t('llm.provider.custom')
     };
     return displayNames[provider] || provider;
   }
@@ -428,32 +429,32 @@
     >
       <div class="modal-header">
         <h3>
-          {editingConfig ? 'Edit Configuration' : 'Create LLM Configuration'}
+          {editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}
           {#if isDirty}
-            <span class="unsaved-indicator" title="You have unsaved changes">•</span>
+            <span class="unsaved-indicator" title={$t('llm.unsavedChangesIndicator')}>•</span>
           {/if}
         </h3>
-        <button class="close-button" on:click={() => closeModal()} title={isDirty ? 'Close (unsaved changes will be lost)' : 'Close'}>×</button>
+        <button class="close-button" on:click={() => closeModal()} title={isDirty ? $t('llm.closeUnsavedWarning') : $t('common.close')}>×</button>
       </div>
 
       <form on:submit|preventDefault={saveConfiguration} class="config-form">
         <!-- Configuration Name -->
         <div class="form-group">
-          <label for="config-name">Configuration Name *</label>
+          <label for="config-name">{$t('llm.configName')}</label>
           <input
             type="text"
             id="config-name"
             bind:value={formData.name}
             disabled={saving}
             class="form-control"
-            placeholder="e.g., My Ollama Setup"
+            placeholder={$t('llm.configNamePlaceholder')}
             required
           />
         </div>
 
         <!-- Provider Selection -->
         <div class="form-group">
-          <label for="provider">Provider *</label>
+          <label for="provider">{$t('llm.provider')}</label>
           <select
             id="provider"
             bind:value={formData.provider}
@@ -461,7 +462,7 @@
             class="form-control"
             required
           >
-            <option value="">Select a provider...</option>
+            <option value="">{$t('llm.selectProvider')}</option>
             {#each supportedProviders.sort((a, b) => getProviderDisplayName(a.provider).localeCompare(getProviderDisplayName(b.provider))) as provider}
               <option value={provider.provider}>{getProviderDisplayName(provider.provider)}</option>
             {/each}
@@ -474,12 +475,12 @@
             <div class="form-group">
               <label for="base-url">
                 <span class="label-with-tooltip">
-                  Base URL *
+                  {$t('llm.baseUrl')}
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
                     <span
                       class="info-tooltip"
                       role="tooltip"
-                      data-tooltip="For local installations, use your server's IP address (e.g., http://192.168.1.10:11434). Ensure the port is open and accessible from your network."
+                      data-tooltip={$t('llm.baseUrlTooltipLocal')}
                       on:mouseenter={positionTooltip}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -492,7 +493,7 @@
                     <span
                       class="info-tooltip"
                       role="tooltip"
-                      data-tooltip="OpenRouter is a cloud service. Use the default URL (https://openrouter.ai/api/v1) unless you have a custom endpoint."
+                      data-tooltip={$t('llm.baseUrlTooltipCloud')}
                       on:mouseenter={positionTooltip}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -519,14 +520,14 @@
           <!-- Model Selection -->
           <div class="form-group">
             <label for="model-name">
-              Model Name *
+              {$t('llm.modelName')}
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
                   class="discover-models-btn"
                   on:click={loadOllamaModels}
                   disabled={loadingOllamaModels || saving || !formData.base_url}
-                  title="Discover available models from Ollama instance"
+                  title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOllamaModels}
                     <div class="spinner-mini"></div>
@@ -543,7 +544,7 @@
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
                   {/if}
-                  Discover Models
+                  {$t('llm.discoverModels')}
                 </button>
               {:else if formData.provider === 'openai' || formData.provider === 'vllm' || formData.provider === 'openrouter'}
                 <button
@@ -551,7 +552,7 @@
                   class="discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
                   disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key)}
-                  title="Discover available models from API endpoint"
+                  title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOpenAIModels}
                     <div class="spinner-mini"></div>
@@ -568,7 +569,7 @@
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
                   {/if}
-                  Discover Models
+                  {$t('llm.discoverModels')}
                 </button>
               {/if}
             </label>
@@ -578,14 +579,14 @@
               bind:value={formData.model_name}
               disabled={saving}
               class="form-control"
-              placeholder={getProviderDefaults(formData.provider)?.default_model || 'Enter model name'}
+              placeholder={getProviderDefaults(formData.provider)?.default_model || $t('llm.modelNamePlaceholder')}
               required
             />
 
             <!-- Ollama Model Selector -->
             {#if showModelSelector && ollamaModels.length > 0}
               <div class="model-selector">
-                <h4>Available Models:</h4>
+                <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
                   {#each ollamaModels as model}
                     <button
@@ -601,7 +602,7 @@
                   {/each}
                 </div>
                 <button type="button" class="close-selector" on:click={() => showModelSelector = false}>
-                  Close
+                  {$t('llm.closeSelector')}
                 </button>
               </div>
             {/if}
@@ -613,7 +614,7 @@
             <!-- OpenAI-Compatible Model Selector -->
             {#if showOpenAIModelSelector && openaiCompatibleModels.length > 0}
               <div class="model-selector">
-                <h4>Available Models:</h4>
+                <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
                   {#each openaiCompatibleModels as model}
                     <button
@@ -631,7 +632,7 @@
                   {/each}
                 </div>
                 <button type="button" class="close-selector" on:click={() => showOpenAIModelSelector = false}>
-                  Close
+                  {$t('llm.closeSelector')}
                 </button>
               </div>
             {/if}
@@ -645,7 +646,7 @@
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
             <div class="form-group">
               <label for="api-key">
-                API Key {#if !editingConfig}*{/if}
+                {$t('llm.apiKey')} {#if !editingConfig}*{/if}
               </label>
               <div class="api-key-input">
                 {#if showApiKey}
@@ -655,7 +656,7 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder="Enter your API key"
+                    placeholder={$t('llm.apiKeyPlaceholder')}
                     required={!editingConfig}
                   />
                 {:else}
@@ -665,15 +666,15 @@
                     bind:value={formData.api_key}
                     disabled={saving}
                     class="form-control"
-                    placeholder="Enter your API key"
+                    placeholder={$t('llm.apiKeyPlaceholder')}
                     required={!editingConfig}
                   />
                 {/if}
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   class="toggle-visibility"
                   on:click={() => showApiKey = !showApiKey}
-                  title={showApiKey ? 'Hide API key' : 'Show API key'}
+                  title={showApiKey ? $t('llm.hideApiKey') : $t('llm.showApiKey')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     {#if showApiKey}
@@ -691,11 +692,11 @@
 
           <!-- Advanced Settings -->
           <div class="advanced-settings">
-            <h4>Advanced Settings</h4>
-            
+            <h4>{$t('llm.advancedSettings')}</h4>
+
             <div class="form-row">
               <div class="form-group">
-                <label for="max-tokens">Max Tokens</label>
+                <label for="max-tokens">{$t('llm.maxTokens')}</label>
                 <input
                   type="number"
                   id="max-tokens"
@@ -706,9 +707,9 @@
                   max="200000"
                 />
               </div>
-              
+
               <div class="form-group">
-                <label for="temperature">Temperature</label>
+                <label for="temperature">{$t('llm.temperature')}</label>
                 <input
                   type="text"
                   id="temperature"
@@ -718,7 +719,7 @@
                   placeholder="0.3"
                 />
               </div>
-              
+
             </div>
           </div>
 
@@ -729,19 +730,19 @@
               class="test-connection-btn"
               on:click={testConnection}
               disabled={testing || !isConnectionTestValid}
-              title="Test the connection with current settings"
+              title={$t('llm.testConnectionTooltip')}
             >
               {#if testing}
                 <div class="spinner-mini"></div>
-                Testing...
+                {$t('llm.testing')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
                 </svg>
-                Test Connection
+                {$t('llm.testConnection')}
               {/if}
             </button>
-            
+
             {#if testResult}
               <div class="test-result {testResult.success ? 'success' : 'error'}">
                 {testResult.message}
@@ -756,7 +757,7 @@
         <!-- Form Actions -->
         <div class="form-actions">
           <button type="button" class="cancel-button" on:click={() => closeModal()} disabled={saving}>
-            Cancel
+            {$t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -765,14 +766,14 @@
           >
             {#if saving}
               <div class="spinner-mini"></div>
-              Saving...
+              {$t('llm.saving')}
             {:else}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                 <polyline points="17,21 17,13 7,13 7,21"/>
                 <polyline points="7,3 7,8 15,8"/>
               </svg>
-              {editingConfig ? 'Update Configuration' : 'Save Configuration'}
+              {editingConfig ? $t('llm.updateConfiguration') : $t('llm.saveConfiguration')}
             {/if}
           </button>
         </div>
@@ -784,10 +785,10 @@
 <!-- Unsaved Changes Modal -->
 <ConfirmationModal
   bind:isOpen={showUnsavedChangesModal}
-  title="Unsaved Changes"
-  message="You have unsaved changes that will be lost. Are you sure you want to continue without saving?"
-  confirmText="Discard Changes"
-  cancelText="Keep Editing"
+  title={$t('llm.unsavedChanges')}
+  message={$t('llm.unsavedChangesMessage')}
+  confirmText={$t('llm.discardChanges')}
+  cancelText={$t('llm.keepEditing')}
   confirmButtonClass="modal-warning-button"
   cancelButtonClass="modal-primary-button"
   on:confirm={handleUnsavedChangesConfirm}
@@ -1051,7 +1052,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .test-connection-btn:active:not(:disabled) {
     transform: translateY(0);
   }
@@ -1117,7 +1118,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .cancel-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -1144,7 +1145,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-button:active:not(:disabled) {
     transform: translateY(0);
   }

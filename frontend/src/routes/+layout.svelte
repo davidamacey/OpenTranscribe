@@ -12,6 +12,7 @@
   // Import auth store
   import { authStore, isAuthenticated, initAuth, authReady } from "$stores/auth";
   import { theme } from "../stores/theme";
+  import { locale, t } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
   import { networkStore } from "../stores/network";
 
@@ -27,6 +28,9 @@
   onMount(async () => {
     // Initialize theme
     document.documentElement.setAttribute('data-theme', get(theme));
+
+    // Initialize locale/i18n
+    await locale.initialize();
 
     // Initialize network connectivity monitoring
     networkStore.initialize();
@@ -86,7 +90,7 @@
     {/if}
   </div>
 {:else}
-  <div>Loading application...</div>
+  <div>{$t('app.loadingApplication')}</div>
 {/if}
 
 <style>

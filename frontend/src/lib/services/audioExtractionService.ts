@@ -22,6 +22,8 @@ import {
   calculateCompressionRatio,
 } from "../utils/metadataMapper";
 import { websocketStore } from "../../stores/websocket";
+import { get } from "svelte/store";
+import { t } from "../../stores/locale";
 
 /**
  * Audio Extraction Service Class
@@ -432,7 +434,7 @@ class AudioExtractionService {
         {
           stage: "metadata",
           percentage: 2,
-          message: "Calculating file hash...",
+          message: get(t)("upload.calculatingHash"),
         },
         extractionId,
         fileName,

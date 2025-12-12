@@ -3,6 +3,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   // Use the shared axios instance so auth token is always sent
@@ -45,10 +46,10 @@
   let newTagInput = '';
   /** @type {boolean} */
   let loading = false;
-  
+
   // Event dispatcher
   const dispatch = createEventDispatcher();
-  
+
   // Fetch all available tags
   async function fetchAllTags() {
     try {
@@ -56,14 +57,14 @@
 
       // Use consistent URL format
       const response = await axiosInstance.get('/tags/');
-      
+
       // Ensure all tags have valid IDs before adding them to the allTags array
-      const validTags = (response.data || []).filter(tag => 
-        tag && typeof tag === 'object' && 
-        tag.id !== undefined && tag.id !== null && 
+      const validTags = (response.data || []).filter(tag =>
+        tag && typeof tag === 'object' &&
+        tag.id !== undefined && tag.id !== null &&
         tag.name !== undefined && tag.name !== null
       );
-      
+
       allTags = validTags;
     } catch (err) {
       console.error('[TagsEditor] Error fetching tags:', err);
@@ -75,49 +76,49 @@
       });
 
       if (err.response && err.response.status === 401) {
-        toastStore.error('Unauthorized: Please log in.');
+        toastStore.error($t('tags.unauthorizedLogin'));
       } else if (err.code === 'ERR_NETWORK') {
-        toastStore.error('Network error: Cannot connect to server');
+        toastStore.error($t('tags.networkError'));
       } else {
-        toastStore.error('Failed to load tags');
+        toastStore.error($t('tags.failedToLoad'));
       }
     }
   }
-  
+
   // Add a tag to the file
   async function addTag(tagId) {
     loading = true;
     try {
       const token = localStorage.getItem('token');
       // Adding tag to file
-      
+
       // Get the tag name by ID and send tag_data with name field as required by backend
       const tagToAdd = allTags.find(t => t.id === tagId);
       if (!tagToAdd) {
         console.error(`[TagsEditor] Tag with ID ${tagId} not found in allTags`);
         throw new Error('Tag not found');
       }
-      
+
       // Prepare request payload
       const payload = { name: tagToAdd.name };
-      
+
       // Send the payload as required by the backend API - must match the router configuration
       const addTagUrl = `/tags/files/${fileId}/tags`;
       const response = await axiosInstance.post(addTagUrl, payload);
-      
+
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = response.data;
-      
+
       // Ensure the tag has a valid ID and name
-      if (!finalTag || 
-          typeof finalTag.id === 'undefined' || 
-          finalTag.id === null || 
-          typeof finalTag.name === 'undefined' || 
+      if (!finalTag ||
+          typeof finalTag.id === 'undefined' ||
+          finalTag.id === null ||
+          typeof finalTag.name === 'undefined' ||
           finalTag.name === null) {
         console.error('[TagsEditor] Invalid tag received from server:', finalTag);
         throw new Error('Server returned an invalid tag');
       }
-      
+
       // Only add the tag if it's not already present
       if (!tags.some(t => t.id === finalTag.id)) {
         tags = [...tags, finalTag];
@@ -125,16 +126,16 @@
       }
     } catch (err) {
       if (err.response && err.response.status === 401) {
-        toastStore.error('Unauthorized: Please log in.');
+        toastStore.error($t('tags.unauthorizedLogin'));
       } else {
-        toastStore.error('Failed to add tag');
+        toastStore.error($t('tags.failedToAdd'));
       }
       console.error('[TagsEditor] Error adding tag:', err);
     } finally {
       loading = false;
     }
   }
-  
+
   // Create a new tag and add it to the file
   async function createAndAddTag() {
     if (!newTagInput.trim()) return;
@@ -142,37 +143,37 @@
     try {
       const token = localStorage.getItem('token');
       // Creating tag and adding to file
-      
+
       // Step 1: Create the tag with proper payload format
       const createPayload = { name: newTagInput.trim() };
-      
+
       const createResponse = await axiosInstance.post('/tags/', createPayload);
       const newTag = createResponse.data;
-      
+
       // Ensure the tag has a valid ID and name to prevent 'undefined' key errors
       if (!newTag || typeof newTag.id === 'undefined') {
         console.error('[TagsEditor] Invalid tag received from server:', newTag);
         throw new Error('Server returned an invalid tag');
       }
-      
+
       // Then add the tag to the file, similar to addTag but using the new tag data
       const addTagUrl = `/tags/files/${fileId}/tags`;
       const addPayload = { name: newTag.name };
-      
+
       const addResponse = await axiosInstance.post(addTagUrl, addPayload);
-      
+
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = addResponse.data;
       if (!finalTag || typeof finalTag.id === 'undefined') {
         console.error('[TagsEditor] Invalid tag received after adding to file:', finalTag);
         throw new Error('Server returned an invalid tag after adding to file');
       }
-      
+
       // Add to allTags if it's not already present
       if (!allTags.some(t => t.id === finalTag.id)) {
         allTags = [...allTags, finalTag];
       }
-      
+
       // Add to tags if it's not already present
       if (!tags.some(t => t.id === finalTag.id)) {
         tags = [...tags, finalTag];
@@ -185,58 +186,58 @@
       // Safely check for error properties
       if (err && typeof err === 'object') {
         const errorObj = err;
-        
+
         if (errorObj.response && errorObj.response.status === 401) {
-          toastStore.error('Unauthorized: Please log in.');
+          toastStore.error($t('tags.unauthorizedLogin'));
         } else if (
-          errorObj.response && 
-          typeof errorObj.response === 'object' && 
-          'data' in errorObj.response && 
-          errorObj.response.data && 
-          typeof errorObj.response.data === 'object' && 
+          errorObj.response &&
+          typeof errorObj.response === 'object' &&
+          'data' in errorObj.response &&
+          errorObj.response.data &&
+          typeof errorObj.response.data === 'object' &&
           'detail' in errorObj.response.data
         ) {
-          toastStore.error(`Failed to create tag: ${errorObj.response.data.detail}`);
+          toastStore.error($t('tags.failedToCreateWithDetail', { detail: errorObj.response.data.detail }));
         } else {
-          toastStore.error('Failed to create tag');
+          toastStore.error($t('tags.failedToCreate'));
         }
       } else {
-        toastStore.error('Failed to create tag');
+        toastStore.error($t('tags.failedToCreate'));
       }
       console.error('[TagsEditor] Error creating tag:', err);
     } finally {
       loading = false;
     }
   }
-  
+
   // Remove a tag from the file
   async function removeTag(tagId) {
     loading = true;
     try {
       const token = localStorage.getItem('token');
       // Removing tag from file
-      
+
       // Find the tag by ID to get its name - the backend needs tag name, not ID
       const tagToRemove = tags.find(t => t.id === tagId);
       if (!tagToRemove) {
         console.error(`[TagsEditor] Tag with ID ${tagId} not found in tags list`);
         throw new Error('Tag not found');
       }
-      
+
       // IMPORTANT: The backend expects /tags/files/{file_id}/tags/{tag_name} due to router prefix configuration
       const deleteUrl = `/tags/files/${fileId}/tags/${encodeURIComponent(tagToRemove.name)}`;
       // Deleting tag
-      
+
       // Send the delete request
       const response = await axiosInstance.delete(deleteUrl);
       // Tag deleted successfully
-      
+
       // Update the local tags array
       // Filter out the removed tag using a safe comparison
-      const updatedTags = tags.filter(t => 
+      const updatedTags = tags.filter(t =>
         t.id !== undefined && t.id !== null && t.id !== tagId
       );
-      
+
       // Only update if something actually changed
       if (updatedTags.length !== tags.length) {
         tags = updatedTags;
@@ -250,19 +251,20 @@
         data: err.response?.data,
         config: err.config
       });
-      
+
+
       if (err.response && err.response.status === 401) {
-        toastStore.error('Unauthorized: Please log in.');
+        toastStore.error($t('tags.unauthorizedLogin'));
       } else if (err.code === 'ERR_NETWORK') {
-        error = 'Network error: Cannot connect to server';
+        toastStore.error($t('tags.networkError'));
       } else {
-        toastStore.error('Failed to remove tag');
+        toastStore.error($t('tags.failedToRemove'));
       }
     } finally {
       loading = false;
     }
   }
-  
+
   // Handle keydown event in the input field
   function handleInputKeydown(event) {
     if (event.key === 'Enter' && newTagInput.trim()) {
@@ -270,7 +272,7 @@
       createAndAddTag();
     }
   }
-  
+
   let suggestedTags = [];
   let dropdownTags = []; // All available tags for dropdown
 
@@ -314,7 +316,7 @@
     const { id } = event.detail;
     await addTag(id);
   }
-  
+
   // Handle AI suggestion acceptance
   async function handleAcceptAISuggestion(event) {
     const { suggestion } = event.detail;
@@ -334,38 +336,38 @@
 <div class="tags-editor">
   <div class="tags-list">
     {#if tags.length === 0}
-      <span class="no-tags">No tags yet.</span>
+      <span class="no-tags">{$t('tags.noTagsYet')}</span>
     {/if}
     {#each tags.filter(t => t && t.id !== undefined) as tag (tag.id)}
       <span class="tag">
         {tag.name}
-        <button class="tag-remove" on:click={() => removeTag(tag.id)} title="Remove tag">×</button>
+        <button class="tag-remove" on:click={() => removeTag(tag.id)} title={$t('tags.removeTag')}>×</button>
       </span>
     {/each}
-    
+
     <div class="tag-input-container">
       <input
         type="text"
-        placeholder="Add tag..."
+        placeholder={$t('tags.addTagPlaceholder')}
         bind:value={newTagInput}
         on:keydown={handleInputKeydown}
         class="tag-input"
         disabled={loading}
-        title="Type a new tag name and press Enter or click Add to create and apply it to this file"
+        title={$t('tags.typeNewTagHint')}
       >
       {#if newTagInput.trim()}
-        <button 
+        <button
           class="tag-add-button"
           on:click={createAndAddTag}
           disabled={loading}
-          title="Create and add the tag '{newTagInput.trim()}' to this file"
+          title={$t('tags.createAndAddHint', { tagName: newTagInput.trim() })}
         >
-          Add
+          {$t('tags.add')}
         </button>
       {/if}
     </div>
   </div>
-  
+
   <!-- AI Suggestions Dropdown -->
   <AISuggestionsDropdown
     suggestions={filteredAISuggestions}
@@ -376,13 +378,13 @@
 
   {#if suggestedTags.length > 0}
     <div class="suggested-tags">
-      <span class="suggested-label">Suggested:</span>
+      <span class="suggested-label">{$t('tags.suggested')}</span>
       {#each suggestedTags.filter(t => t && t.id !== undefined) as tag (tag.id)}
         <button
           class="suggested-tag"
           on:click={() => addTag(tag.id)}
           disabled={loading}
-          title="Add the existing tag '{tag.name}' to this file"
+          title={$t('tags.addExistingTagHint', { tagName: tag.name })}
         >
           {tag.name}
         </button>
@@ -392,11 +394,11 @@
 
   {#if dropdownTags.length > 0}
     <div class="dropdown-section">
-      <span class="dropdown-label">Select from all tags:</span>
+      <span class="dropdown-label">{$t('tags.selectFromAllTags')}</span>
       <SearchableMultiSelect
         options={dropdownTags}
         selectedIds={[]}
-        placeholder="Add tags from library..."
+        placeholder={$t('tags.addFromLibraryPlaceholder')}
         showCounts={true}
         on:select={handleTagSelect}
       />
@@ -410,14 +412,14 @@
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .tags-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
   }
-  
+
   .tag {
     background-color: rgba(59, 130, 246, 0.1);
     color: var(--primary-color);
@@ -428,7 +430,7 @@
     align-items: center;
     gap: 0.25rem;
   }
-  
+
   .tag-remove {
     background: none;
     border: none;
@@ -442,16 +444,16 @@
     width: 16px;
     height: 16px;
   }
-  
+
   .tag-remove:hover {
     color: var(--error-color);
   }
-  
+
   .tag-input-container {
     display: flex;
     align-items: center;
   }
-  
+
   .tag-input {
     background: transparent;
     border: none;
@@ -461,12 +463,12 @@
     width: 100px;
     color: var(--text-color);
   }
-  
+
   .tag-input:focus {
     border-bottom-color: var(--primary-color);
     outline: none;
   }
-  
+
   .tag-add-button {
     background-color: var(--primary-color);
     color: white;
@@ -477,12 +479,12 @@
     cursor: pointer;
     margin-left: 0.5rem;
   }
-  
+
   .tag-add-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   .suggested-tags {
     display: flex;
     flex-wrap: wrap;
@@ -490,11 +492,11 @@
     align-items: center;
     font-size: 0.8rem;
   }
-  
+
   .suggested-label {
     color: var(--text-light);
   }
-  
+
   .suggested-tag {
     background: none;
     border: 1px dashed var(--border-color);
@@ -504,13 +506,13 @@
     cursor: pointer;
     color: var(--text-light);
   }
-  
+
   .suggested-tag:hover {
     border-color: var(--primary-color);
     color: var(--primary-color);
     background-color: rgba(59, 130, 246, 0.05);
   }
-  
+
   .suggested-tag:disabled {
     opacity: 0.6;
     cursor: not-allowed;

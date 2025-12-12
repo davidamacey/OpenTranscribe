@@ -2,6 +2,7 @@
   import { slide } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
   import CollectionsEditor from './CollectionsEditor.svelte';
+  import { t } from '$stores/locale';
 
   export let collections: any[] = [];
   export let isExpanded: boolean = false;
@@ -26,20 +27,20 @@
     class="collections-header"
     on:click={toggleExpanded}
     on:keydown={e => e.key === 'Enter' && toggleExpanded()}
-    title="Show or hide the collections editor to add, remove, or manage collections for this file"
+    title={$t('collectionsSection.toggleTooltip')}
     aria-expanded={isExpanded}
   >
-    <h4 class="section-heading">Collections</h4>
+    <h4 class="section-heading">{$t('collectionsSection.title')}</h4>
     <div class="collections-preview">
       {#if collections && collections.length > 0}
         {#each collections.slice(0, 3) as collection}
-          <span class="collection-chip">{collection.name || 'Unnamed'}</span>
+          <span class="collection-chip">{collection.name || $t('collectionsSection.unnamed')}</span>
         {/each}
         {#if collections.length > 3}
-          <span class="collection-chip more">+{collections.length - 3} more</span>
+          <span class="collection-chip more">{$t('collectionsSection.moreCount', { count: collections.length - 3 })}</span>
         {/if}
       {:else}
-        <span class="no-collections">No collections</span>
+        <span class="no-collections">{$t('collectionsSection.noCollections')}</span>
       {/if}
     </div>
     <span class="dropdown-toggle" aria-hidden="true">
@@ -59,7 +60,7 @@
           on:collectionsUpdated={handleCollectionsUpdated}
         />
       {:else}
-        <p>Loading collections...</p>
+        <p>{$t('collectionsSection.loading')}</p>
       {/if}
     </div>
   {/if}

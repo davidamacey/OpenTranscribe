@@ -8,6 +8,7 @@
   import { toastStore } from '$stores/toast';
   import { hasActiveUploads, uploadsStore } from '$stores/uploads';
   import { galleryStore, galleryState, selectedCount } from '$stores/gallery';
+  import { t } from '$stores/locale';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
 
   // Modal state
@@ -203,14 +204,14 @@
       const forceSuccessful = forceResults.filter((r: any) => r.success);
 
       if (forceSuccessful.length > 0) {
-        toastStore.success(`Force deleted ${forceSuccessful.length} processing file(s).`);
+        toastStore.success($t('gallery.forceDeletedSuccess', { count: forceSuccessful.length }));
         // Remove force deleted files smoothly
         const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_uuid);  // Use file_uuid from response
         removeFilesSmooth(forceSuccessfulIds);
       }
     } catch (forceErr) {
       console.error('Error force deleting files:', forceErr);
-      toastStore.error('Failed to force delete some files. They may require admin intervention.');
+      toastStore.error($t('gallery.forceDeleteFailed'));
     }
 
     clearSelection();
@@ -303,7 +304,7 @@
 
     } catch (err) {
       console.error('Error fetching files:', err);
-      error = 'Failed to load media files. Please try again.';
+      error = $t('gallery.loadFilesFailed');
     } finally {
       loading = false;
     }
@@ -478,8 +479,8 @@
     if (selectedFiles.size === 0) return;
 
     showConfirmation(
-      'Delete Selected Files',
-      `Are you sure you want to delete ${selectedFiles.size} selected file(s)? This action cannot be undone.`,
+      $t('gallery.deleteConfirmTitle'),
+      $t('gallery.deleteConfirmMessage', { count: selectedFiles.size }),
       () => executeDeleteSelectedFiles()
     );
   }
@@ -508,10 +509,8 @@
       if (conflicts.length > 0) {
         const conflictFileIds = conflicts.map((c: any) => c.file_uuid);  // Use file_uuid from response
         showConfirmation(
-          'Force Delete Processing Files',
-          `${conflicts.length} file(s) are currently processing and cannot be deleted safely. ` +
-          `Would you like to cancel their processing and delete them? ` +
-          `(This action cannot be undone)`,
+          $t('gallery.forceDeleteTitle'),
+          $t('gallery.forceDeleteMessage', { count: conflicts.length }),
           () => handleForceDelete(conflictFileIds)
         );
         return; // Exit early to wait for user confirmation
@@ -519,21 +518,21 @@
 
       // Report on regular deletion results
       if (successful.length > 0) {
-        toastStore.success(`Successfully deleted ${successful.length} file(s).`);
+        toastStore.success($t('gallery.deleteSuccess', { count: successful.length }));
         // Remove successfully deleted files smoothly
         const successfulIds = successful.map((r: any) => r.file_uuid);  // Use file_uuid from response
         removeFilesSmooth(successfulIds);
       }
 
       if (failed.length > 0) {
-        toastStore.error(`Failed to delete ${failed.length} file(s). Please try again.`);
+        toastStore.error($t('gallery.deleteFailed', { count: failed.length }));
       }
 
       clearSelection();
 
     } catch (err: any) {
       console.error('Error deleting files:', err);
-      const errorMessage = err.response?.data?.detail || 'An error occurred while deleting files. Please try again.';
+      const errorMessage = err.response?.data?.detail || $t('gallery.deleteError');
       toastStore.error(errorMessage);
     } finally {
       // No need to set loading = false since we didn't set it to true
@@ -568,13 +567,15 @@
     if (file.error_category && file.error_suggestions) {
       const suggestions = file.error_suggestions.map(s => `• ${s}`).join('\n');
       toastStore.error(
-        `${file.user_message || `Processing failed for "${file.title || file.filename}"`}\n\n` +
-        `Suggestions:\n${suggestions}`,
+        $t('gallery.processingFailedWithSuggestions', {
+          message: file.user_message || $t('gallery.processingFailed', { filename: file.title || file.filename }),
+          suggestions: suggestions
+        }),
         file.error_category === 'file_quality' ? 10000 : 8000
       );
     } else {
       // Minimal fallback for unexpected cases
-      toastStore.error(`Processing failed for "${file.title || file.filename}". Please try again.`);
+      toastStore.error($t('gallery.processingFailed', { filename: file.title || file.filename }));
     }
   }
 
@@ -626,10 +627,10 @@
                     ...file,
                     status: status,
                     // Update display_status to ensure UI shows correct status immediately
-                    display_status: status === 'processing' ? 'Processing' :
-                                   status === 'completed' ? 'Completed' :
-                                   status === 'pending' ? 'Pending' :
-                                   status === 'error' ? 'Error' : status
+                    display_status: status === 'processing' ? $t('common.processing') :
+                                   status === 'completed' ? $t('common.completed') :
+                                   status === 'pending' ? $t('common.pending') :
+                                   status === 'error' ? $t('common.error') : status
                   };
                   // Update the file map immediately for consistent lookups
                   fileMap.set(fileId, updatedFile);  // Use fileId (UUID) directly
@@ -749,7 +750,7 @@
 
   onMount(() => {
     // Update document title
-    document.title = 'Gallery | OpenTranscribe';
+    document.title = $t('gallery.pageTitle');
 
     // Setup WebSocket subscription for real-time updates
     setupWebSocketUpdates();
@@ -845,13 +846,13 @@
           <button
             class="filter-toggle-btn {showFilters ? 'expanded' : 'collapsed'}"
             on:click={toggleFilters}
-            title="{showFilters ? 'Hide' : 'Show'} filters panel"
+            title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
             </svg>
             {#if showFilters}
-              <span class="filter-toggle-text">Hide Filters</span>
+              <span class="filter-toggle-text">{$t('gallery.hideFilters')}</span>
             {/if}
           </button>
         </div>
@@ -883,21 +884,21 @@
         <div class="scrollable-content">
       {#if loading}
         <div class="loading-state">
-          <p>Loading files...</p>
+          <p>{$t('gallery.loadingFiles')}</p>
         </div>
       {:else if error}
         <div class="error-state">
-          <p>Unable to connect to the server. Please check your connection and try again.</p>
+          <p>{$t('gallery.connectionError')}</p>
           <button
             class="retry-button"
             on:click={() => fetchFiles()}
-            title="Retry loading your media files"
-          >Retry</button>
+            title={$t('gallery.retryTooltip')}
+          >{$t('gallery.retry')}</button>
         </div>
       {:else if files.length === 0}
         <div class="empty-state">
-          <p>{selectedCollectionId ? 'No files in this collection.' : 'Your media library is empty.'}</p>
-          <p>Use the uploader above to add your first media file!</p>
+          <p>{selectedCollectionId ? $t('gallery.noFilesInCollection') : $t('gallery.libraryEmpty')}</p>
+          <p>{$t('gallery.uploadFirstFile')}</p>
         </div>
       {:else}
         <div class="file-grid">
@@ -915,7 +916,7 @@
                       class="file-checkbox"
                       checked={selectedFiles.has(file.id)}
                       on:change={(e) => toggleFileSelection(file.id, e)}
-                      title="Select or deselect this file for batch operations"
+                      title={$t('gallery.selectFileTooltip')}
                     />
                     <span class="checkmark"></span>
                   </label>
@@ -938,7 +939,7 @@
                     <div class="file-thumbnail">
                       <img
                         src={file.thumbnail_url}
-                        alt="Thumbnail for {file.title || file.filename}"
+                        alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
                         loading="lazy"
                         class="thumbnail-image"
                       />
@@ -982,24 +983,24 @@
 
                   <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                     <span class="status-dot"></span>
-                    {#if file.display_status}
-                      <!-- Use backend-provided formatted status only -->
-                      {#if file.status === 'error' && file.last_error_message}
-                        <!-- svelte-ignore a11y-click-events-have-key-events -->
-                        <!-- svelte-ignore a11y-no-static-element-interactions -->
-                        <span
-                          class="error-details-trigger"
-                          on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
-                          title="Click for error details"
-                        >
-                          {file.display_status} - Click for Details
-                        </span>
-                      {:else}
-                        {file.display_status}
-                      {/if}
+                    {#if file.status === 'error' && file.last_error_message}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <!-- svelte-ignore a11y-no-static-element-interactions -->
+                      <span
+                        class="error-details-trigger"
+                        on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
+                        title={$t('gallery.errorClickForDetails')}
+                      >
+                        {$t('common.error')} - {$t('gallery.errorClickDetails')}
+                      </span>
+                    {:else if file.status === 'completed'}
+                      {$t('common.completed')}
+                    {:else if file.status === 'processing'}
+                      {$t('common.processing')}
+                    {:else if file.status === 'pending'}
+                      {$t('common.pending')}
                     {:else}
-                      <!-- Fallback to raw status if backend doesn't provide formatted status -->
-                      {file.status}
+                      {file.display_status || file.status}
                     {/if}
                   </div>
                 </div>
@@ -1046,12 +1047,12 @@
       on:keydown|stopPropagation>
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="upload-modal-title">Add Media</h2>
+          <h2 id="upload-modal-title">{$t('nav.addMedia')}</h2>
           <button
             class="modal-close"
             on:click={toggleUploadModal}
-            aria-label="Close upload dialog"
-            title="Close the upload dialog"
+            aria-label={$t('gallery.closeUploadDialog')}
+            title={$t('gallery.closeUploadDialog')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1090,11 +1091,11 @@
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Manage Collections</h2>
+          <h2>{$t('gallery.manageCollections')}</h2>
           <button
             class="modal-close"
             on:click={() => showCollectionsModal = false}
-            aria-label="Close collections dialog"
+            aria-label={$t('gallery.closeCollectionsDialog')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -1135,8 +1136,8 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText="Confirm"
-  cancelText="Cancel"
+  confirmText={$t('gallery.confirmButton')}
+  cancelText={$t('gallery.cancelButton')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={handleConfirmModalConfirm}

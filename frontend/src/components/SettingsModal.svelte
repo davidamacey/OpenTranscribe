@@ -12,8 +12,12 @@
   import AudioExtractionSettings from '$components/settings/AudioExtractionSettings.svelte';
   import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
+  import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+
+  // Import i18n
+  import { t } from '$stores/locale';
 
   // Modal state
   let modalElement: HTMLElement;
@@ -94,30 +98,31 @@
   // Define sidebar sections
   $: sidebarSections = [
     {
-      title: 'System',
+      title: $t('settings.sections.system'),
       items: [
-        { id: 'system-statistics' as SettingsSection, label: 'Statistics', icon: 'chart' }
+        { id: 'system-statistics' as SettingsSection, label: $t('settings.statistics.title'), icon: 'chart' }
       ]
     },
     ...(isAdmin ? [
       {
-        title: 'Administration',
+        title: $t('settings.sections.administration'),
         items: [
-          { id: 'admin-users' as SettingsSection, label: 'Users', icon: 'users' },
-          { id: 'admin-task-health' as SettingsSection, label: 'Task Health', icon: 'health' },
-          { id: 'admin-settings' as SettingsSection, label: 'System Settings', icon: 'settings' }
+          { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
+          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' }
         ]
       }
     ] : []),
     {
-      title: 'User Settings',
+      title: $t('settings.sections.userSettings'),
       items: [
-        { id: 'profile' as SettingsSection, label: 'Profile', icon: 'user' },
-        { id: 'recording' as SettingsSection, label: 'Recording', icon: 'mic' },
-        { id: 'audio-extraction' as SettingsSection, label: 'Audio Extraction', icon: 'file-audio' },
-        { id: 'transcription' as SettingsSection, label: 'Transcription', icon: 'waveform' },
-        { id: 'ai-prompts' as SettingsSection, label: 'AI Summarization Prompts', icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: 'LLM Provider Configuration', icon: 'brain' }
+        { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
+        { id: 'language' as SettingsSection, label: $t('settings.language.title'), icon: 'globe' },
+        { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
+        { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
+        { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
+        { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
       ]
     }
   ];
@@ -297,14 +302,14 @@
       authStore.setUser(response.data);
       localStorage.setItem('user', JSON.stringify(response.data));
 
-      toastStore.success('Profile updated successfully');
+      toastStore.success($t('settings.toast.profileUpdated'));
       profileChanged = false;
       settingsModalStore.clearDirty('profile');
 
       await fetchUserInfo();
     } catch (err: any) {
       console.error('Error updating profile:', err);
-      const message = err.response?.data?.detail || 'Failed to update profile';
+      const message = err.response?.data?.detail || $t('settings.toast.profileUpdateFailed');
       toastStore.error(message);
     } finally {
       profileLoading = false;
@@ -317,19 +322,19 @@
 
     // Validation
     if (!currentPassword || !newPassword || !confirmPassword) {
-      toastStore.error('Please fill in all password fields');
+      toastStore.error($t('settings.toast.passwordFieldsRequired'));
       passwordLoading = false;
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      toastStore.error('New passwords do not match');
+      toastStore.error($t('settings.toast.passwordsNotMatch'));
       passwordLoading = false;
       return;
     }
 
     if (newPassword.length < 8) {
-      toastStore.error('Password must be at least 8 characters long');
+      toastStore.error($t('settings.toast.passwordTooShort'));
       passwordLoading = false;
       return;
     }
@@ -340,7 +345,7 @@
         current_password: currentPassword
       });
 
-      toastStore.success('Password updated successfully');
+      toastStore.success($t('settings.toast.passwordUpdated'));
 
       // Clear password fields
       currentPassword = '';
@@ -353,7 +358,7 @@
       // Note: dirty state is managed reactively based on profileChanged || passwordChanged
     } catch (err: any) {
       console.error('Error updating password:', err);
-      const message = err.response?.data?.detail || 'Failed to update password';
+      const message = err.response?.data?.detail || $t('settings.toast.passwordUpdateFailed');
       toastStore.error(message);
     } finally {
       passwordLoading = false;
@@ -371,7 +376,7 @@
       recordingSettingsChanged = false;
     } catch (err: any) {
       console.error('Error loading recording settings:', err);
-      const message = err.response?.data?.detail || 'Failed to load recording settings';
+      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsSaveFailed');
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -402,12 +407,12 @@
 
     try {
       await UserSettingsApi.updateRecordingSettings(settingsToValidate);
-      toastStore.success('Recording settings saved successfully');
+      toastStore.success($t('settings.toast.recordingSettingsSaved'));
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
     } catch (err: any) {
       console.error('Error saving recording settings:', err);
-      const message = err.response?.data?.detail || 'Failed to save recording settings';
+      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsSaveFailed');
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -420,12 +425,12 @@
     try {
       await UserSettingsApi.resetRecordingSettings();
       await loadRecordingSettings();
-      toastStore.success('Recording settings reset to defaults');
+      toastStore.success($t('settings.toast.recordingSettingsReset'));
       recordingSettingsChanged = false;
       settingsModalStore.clearDirty('recording');
     } catch (err: any) {
       console.error('Error resetting recording settings:', err);
-      const message = err.response?.data?.detail || 'Failed to reset recording settings';
+      const message = err.response?.data?.detail || $t('settings.toast.recordingSettingsResetFailed');
       toastStore.error(message);
     } finally {
       recordingSettingsLoading = false;
@@ -444,7 +449,7 @@
       users = response.data;
     } catch (err: any) {
       console.error('Error loading admin users:', err);
-      const message = err.response?.data?.detail || 'Failed to load users';
+      const message = err.response?.data?.detail || $t('settings.toast.usersLoadFailed');
       toastStore.error(message);
     } finally {
       if (showLoading) {
@@ -461,10 +466,10 @@
   async function recoverUserFiles(userId: string) {
     try {
       await axiosInstance.post(`/tasks/system/recover-user-files/${userId}`);
-      toastStore.success('User file recovery initiated');
+      toastStore.success($t('settings.toast.userRecoveryInitiated'));
     } catch (err: any) {
       console.error('Error recovering user files:', err);
-      const message = err.response?.data?.detail || 'Failed to recover user files';
+      const message = err.response?.data?.detail || $t('settings.toast.userRecoveryFailed');
       toastStore.error(message);
     }
   }
@@ -477,7 +482,7 @@
       stats = response.data;
     } catch (err: any) {
       console.error('Error loading stats:', err);
-      const message = err.response?.data?.detail || 'Failed to load statistics';
+      const message = err.response?.data?.detail || $t('settings.toast.statisticsLoadFailed');
       toastStore.error(message);
     } finally {
       statsLoading = false;
@@ -496,7 +501,7 @@
       taskHealthData = response.data;
     } catch (err: any) {
       console.error('Error loading task health:', err);
-      const message = err.response?.data?.detail || 'Failed to load task health data';
+      const message = err.response?.data?.detail || $t('settings.toast.taskHealthLoadFailed');
       toastStore.error(message);
     } finally {
       taskHealthLoading = false;
@@ -529,16 +534,16 @@
 
   async function recoverStuckTasks() {
     showConfirmation(
-      'Recover Stuck Tasks',
-      'This will attempt to recover all stuck tasks. Continue?',
+      $t('settings.taskHealth.recoverStuck'),
+      $t('settings.taskHealth.confirmRecoverStuck'),
       async () => {
         try {
           await axiosInstance.post('/tasks/recover-stuck-tasks');
-          toastStore.success('Stuck tasks recovery initiated');
+          toastStore.success($t('settings.toast.stuckTasksRecoveryInitiated'));
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error recovering stuck tasks:', err);
-          const message = err.response?.data?.detail || 'Failed to recover stuck tasks';
+          const message = err.response?.data?.detail || $t('settings.toast.stuckTasksRecoveryFailed');
           toastStore.error(message);
         }
       }
@@ -547,16 +552,16 @@
 
   async function fixInconsistentFiles() {
     showConfirmation(
-      'Fix Inconsistent Files',
-      'This will attempt to fix all files with inconsistent state. Continue?',
+      $t('settings.taskHealth.fixInconsistent'),
+      $t('settings.taskHealth.confirmFixInconsistent'),
       async () => {
         try {
           await axiosInstance.post('/tasks/fix-inconsistent-files');
-          toastStore.success('Inconsistent files fix initiated');
+          toastStore.success($t('settings.toast.inconsistentFilesFixInitiated'));
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error fixing inconsistent files:', err);
-          const message = err.response?.data?.detail || 'Failed to fix inconsistent files';
+          const message = err.response?.data?.detail || $t('settings.toast.inconsistentFilesFixFailed');
           toastStore.error(message);
         }
       }
@@ -565,16 +570,16 @@
 
   async function startupRecovery() {
     showConfirmation(
-      'Startup Recovery',
-      'This will run the startup recovery process. Continue?',
+      $t('settings.taskHealth.startupRecovery'),
+      $t('settings.taskHealth.confirmStartupRecovery'),
       async () => {
         try {
           await axiosInstance.post('/tasks/system/startup-recovery');
-          toastStore.success('Startup recovery initiated');
+          toastStore.success($t('settings.toast.startupRecoveryInitiated'));
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error running startup recovery:', err);
-          const message = err.response?.data?.detail || 'Failed to run startup recovery';
+          const message = err.response?.data?.detail || $t('settings.toast.startupRecoveryFailed');
           toastStore.error(message);
         }
       }
@@ -583,16 +588,16 @@
 
   async function recoverAllUserFiles() {
     showConfirmation(
-      'Recover All User Files',
-      'This will recover files for all users. This may take a while. Continue?',
+      $t('settings.taskHealth.recoverAllUsers'),
+      $t('settings.taskHealth.confirmRecoverAllUsers'),
       async () => {
         try {
           await axiosInstance.post('/tasks/system/recover-all-user-files');
-          toastStore.success('All user files recovery initiated');
+          toastStore.success($t('settings.toast.allUserFilesRecoveryInitiated'));
           await refreshTaskHealth();
         } catch (err: any) {
           console.error('Error recovering all user files:', err);
-          const message = err.response?.data?.detail || 'Failed to recover all user files';
+          const message = err.response?.data?.detail || $t('settings.toast.allUserFilesRecoveryFailed');
           toastStore.error(message);
         }
       }
@@ -602,11 +607,11 @@
   async function retryTask(taskId: number) {
     try {
       await axiosInstance.post(`/tasks/system/recover-task/${taskId}`);
-      toastStore.success('Task retry initiated');
+      toastStore.success($t('settings.toast.taskRetryInitiated'));
       await refreshTaskHealth();
     } catch (err: any) {
       console.error('Error retrying task:', err);
-      const message = err.response?.data?.detail || 'Failed to retry task';
+      const message = err.response?.data?.detail || $t('settings.toast.taskRetryFailed');
       toastStore.error(message);
     }
   }
@@ -614,11 +619,11 @@
   async function retryFile(fileId: number) {
     try {
       await axiosInstance.post(`/tasks/retry-file/${fileId}`);
-      toastStore.success('File retry initiated');
+      toastStore.success($t('settings.toast.fileRetryInitiated'));
       await refreshTaskHealth();
     } catch (err: any) {
       console.error('Error retrying file:', err);
-      const message = err.response?.data?.detail || 'Failed to retry file';
+      const message = err.response?.data?.detail || $t('settings.toast.fileRetryFailed');
       toastStore.error(message);
     }
   }
@@ -643,8 +648,17 @@
 
   // Helper function for formatting status text
   function formatStatus(status: string): string {
-    // Replace underscores with spaces and capitalize
-    return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    // Translate status values
+    const statusMap: Record<string, string> = {
+      'completed': $t('common.completed'),
+      'processing': $t('common.processing'),
+      'pending': $t('common.pending'),
+      'error': $t('common.error'),
+      'failed': $t('fileStatus.failed'),
+      'in_progress': $t('fileStatus.inProgress'),
+      'success': $t('common.success'),
+    };
+    return statusMap[status.toLowerCase()] || status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 </script>
 
@@ -656,7 +670,7 @@
   >
     <div class="settings-modal" bind:this={modalElement} role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <!-- Close button -->
-      <button class="modal-close-button" on:click={attemptClose} aria-label="Close settings" title="Close settings">
+      <button class="modal-close-button" on:click={attemptClose} aria-label={$t('settings.modal.closeSettings')} title={$t('settings.modal.closeSettingsTitle')}>
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -666,7 +680,7 @@
       <div class="settings-modal-container">
         <!-- Sidebar -->
         <aside class="settings-sidebar">
-          <h2 id="settings-modal-title" class="settings-title">Settings</h2>
+          <h2 id="settings-modal-title" class="settings-title">{$t('settings.title')}</h2>
 
           {#each sidebarSections as section}
             <div class="sidebar-section">
@@ -681,7 +695,7 @@
                   >
                     <span class="nav-item-label">{item.label}</span>
                     {#if $settingsModalStore.dirtyState[item.id]}
-                      <span class="dirty-indicator" title="Unsaved changes">●</span>
+                      <span class="dirty-indicator" title={$t('settings.unsavedChanges')}>●</span>
                     {/if}
                   </button>
                 {/each}
@@ -695,12 +709,12 @@
           <!-- Profile Section -->
           {#if activeSection === 'profile'}
             <div class="content-section">
-              <h3 class="section-title">Profile Settings</h3>
-              <p class="section-description">Update your personal information and password</p>
+              <h3 class="section-title">{$t('settings.profile.title')}</h3>
+              <p class="section-description">{$t('settings.profile.description')}</p>
 
               <form on:submit|preventDefault={updateProfile} class="settings-form">
                 <div class="form-group">
-                  <label for="email">Email</label>
+                  <label for="email">{$t('auth.email')}</label>
                   <input
                     type="email"
                     id="email"
@@ -708,11 +722,11 @@
                     value={email}
                     disabled
                   />
-                  <small class="form-text">Email cannot be changed</small>
+                  <small class="form-text">{$t('settings.profile.emailCannotChange')}</small>
                 </div>
 
                 <div class="form-group">
-                  <label for="fullName">Full Name</label>
+                  <label for="fullName">{$t('settings.profile.fullName')}</label>
                   <input
                     type="text"
                     id="fullName"
@@ -728,26 +742,26 @@
                     class="btn btn-primary"
                     disabled={!profileChanged || profileLoading}
                   >
-                    {profileLoading ? 'Saving...' : 'Save Changes'}
+                    {profileLoading ? $t('common.saving') : $t('common.saveChanges')}
                   </button>
                 </div>
               </form>
 
               <!-- Password Change Section -->
               <div class="password-section-divider">
-                <h4 class="subsection-title">Change Password</h4>
+                <h4 class="subsection-title">{$t('settings.profile.changePassword')}</h4>
               </div>
 
               <form on:submit|preventDefault={updatePassword} class="settings-form">
                 <div class="form-group">
                   <div class="password-header">
-                    <label for="currentPassword">Current Password</label>
+                    <label for="currentPassword">{$t('settings.profile.currentPassword')}</label>
                     <button
                       type="button"
                       class="toggle-password"
                       on:click={() => showCurrentPassword = !showCurrentPassword}
                       tabindex="-1"
-                      aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showCurrentPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
                     >
                       {#if showCurrentPassword}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -776,13 +790,13 @@
 
                 <div class="form-group">
                   <div class="password-header">
-                    <label for="newPassword">New Password</label>
+                    <label for="newPassword">{$t('settings.profile.newPassword')}</label>
                     <button
                       type="button"
                       class="toggle-password"
                       on:click={() => showNewPassword = !showNewPassword}
                       tabindex="-1"
-                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showNewPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
                     >
                       {#if showNewPassword}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -807,18 +821,18 @@
                     class="form-control"
                     bind:value={newPassword}
                   />
-                  <small class="form-text">Minimum 8 characters</small>
+                  <small class="form-text">{$t('auth.passwordMinLength')}</small>
                 </div>
 
                 <div class="form-group">
                   <div class="password-header">
-                    <label for="confirmPassword">Confirm New Password</label>
+                    <label for="confirmPassword">{$t('settings.profile.confirmNewPassword')}</label>
                     <button
                       type="button"
                       class="toggle-password"
                       on:click={() => showConfirmPassword = !showConfirmPassword}
                       tabindex="-1"
-                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
                     >
                       {#if showConfirmPassword}
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -851,22 +865,31 @@
                     class="btn btn-primary"
                     disabled={!passwordChanged || passwordLoading}
                   >
-                    {passwordLoading ? 'Updating...' : 'Update Password'}
+                    {passwordLoading ? $t('common.updating') : $t('settings.profile.updatePassword')}
                   </button>
                 </div>
               </form>
             </div>
           {/if}
 
+          <!-- Language Settings Section -->
+          {#if activeSection === 'language'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.language.title')}</h3>
+              <p class="section-description">{$t('settings.language.description')}</p>
+              <LanguageSettings />
+            </div>
+          {/if}
+
           <!-- Recording Settings Section -->
           {#if activeSection === 'recording'}
             <div class="content-section">
-              <h3 class="section-title">Recording Settings</h3>
-              <p class="section-description">Configure audio recording preferences</p>
+              <h3 class="section-title">{$t('settings.recording.title')}</h3>
+              <p class="section-description">{$t('settings.recording.description')}</p>
 
               <form on:submit|preventDefault={saveRecordingSettings} class="settings-form">
                 <div class="form-group">
-                  <label for="maxRecordingDuration">Maximum Recording Duration (minutes)</label>
+                  <label for="maxRecordingDuration">{$t('settings.recording.maxDuration')}</label>
                   <input
                     type="number"
                     id="maxRecordingDuration"
@@ -877,22 +900,22 @@
                     max="480"
                     required
                   />
-                  <small class="form-text">Range: 15-480 minutes (8 hours)</small>
+                  <small class="form-text">{$t('settings.recording.durationRange')}</small>
                 </div>
 
                 <div class="form-group">
-                  <label for="recordingQuality">Recording Quality</label>
+                  <label for="recordingQuality">{$t('settings.recording.quality')}</label>
                   <select
                     id="recordingQuality"
                     class="form-control"
                     bind:value={recordingQuality}
                     on:change={handleRecordingSettingsChange}
                   >
-                    <option value="standard">Standard (16kHz, 64kbps)</option>
-                    <option value="high">High (44.1kHz, 128kbps)</option>
-                    <option value="maximum">Maximum (48kHz, 192kbps)</option>
+                    <option value="standard">{$t('settings.recording.qualityStandard')}</option>
+                    <option value="high">{$t('settings.recording.qualityHigh')}</option>
+                    <option value="maximum">{$t('settings.recording.qualityMaximum')}</option>
                   </select>
-                  <small class="form-text">Higher quality requires more storage</small>
+                  <small class="form-text">{$t('settings.recording.qualityHelp')}</small>
                 </div>
 
                 <div class="form-group">
@@ -902,9 +925,9 @@
                       bind:checked={autoStopEnabled}
                       on:change={handleRecordingSettingsChange}
                     />
-                    <span>Auto-stop at maximum duration</span>
+                    <span>{$t('settings.recording.autoStop')}</span>
                   </label>
-                  <small class="form-text">Automatically stop recording when limit is reached</small>
+                  <small class="form-text">{$t('settings.recording.autoStopHelp')}</small>
                 </div>
 
                 <div class="form-actions">
@@ -913,7 +936,7 @@
                     class="btn btn-primary"
                     disabled={!recordingSettingsChanged || recordingSettingsLoading}
                   >
-                    {recordingSettingsLoading ? 'Saving...' : 'Save Settings'}
+                    {recordingSettingsLoading ? $t('common.saving') : $t('common.saveSettings')}
                   </button>
 
                   <button
@@ -922,7 +945,7 @@
                     on:click={resetRecordingSettings}
                     disabled={recordingSettingsLoading}
                   >
-                    Reset to Defaults
+                    {$t('common.resetToDefaults')}
                   </button>
                 </div>
               </form>
@@ -932,8 +955,8 @@
           <!-- Audio Extraction Settings Section -->
           {#if activeSection === 'audio-extraction'}
             <div class="content-section">
-              <h3 class="section-title">Audio Extraction Settings</h3>
-              <p class="section-description">Configure how OpenTranscribe handles large video files. Audio extraction reduces upload size by 90%+ while preserving transcription quality.</p>
+              <h3 class="section-title">{$t('settings.audioExtraction.title')}</h3>
+              <p class="section-description">{$t('settings.audioExtraction.description')}</p>
               <AudioExtractionSettings />
             </div>
           {/if}
@@ -941,8 +964,8 @@
           <!-- Transcription Settings Section -->
           {#if activeSection === 'transcription'}
             <div class="content-section">
-              <h3 class="section-title">Transcription Settings</h3>
-              <p class="section-description">Configure transcription quality, speaker diarization, and garbage segment cleanup preferences.</p>
+              <h3 class="section-title">{$t('settings.transcription.title')}</h3>
+              <p class="section-description">{$t('settings.transcription.description')}</p>
               <TranscriptionSettings />
             </div>
           {/if}
@@ -950,8 +973,8 @@
           <!-- AI Prompts Section -->
           {#if activeSection === 'ai-prompts'}
             <div class="content-section">
-              <h3 class="section-title">AI Summarization Prompts</h3>
-              <p class="section-description">Manage your AI summarization prompts to customize how transcripts are analyzed and summarized.</p>
+              <h3 class="section-title">{$t('settings.aiPrompts.title')}</h3>
+              <p class="section-description">{$t('settings.aiPrompts.description')}</p>
               <PromptSettings onSettingsChange={onAISettingsChange} />
             </div>
           {/if}
@@ -959,8 +982,8 @@
           <!-- LLM Provider Section -->
           {#if activeSection === 'llm-provider'}
             <div class="content-section">
-              <h3 class="section-title">LLM Provider Configuration</h3>
-              <p class="section-description">Configure your preferred Large Language Model provider for AI summarization and speaker identification.</p>
+              <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
+              <p class="section-description">{$t('settings.llmProvider.description')}</p>
               <LLMSettings onSettingsChange={onAISettingsChange} />
             </div>
           {/if}
@@ -968,8 +991,8 @@
           <!-- Admin Users Section -->
           {#if activeSection === 'admin-users' && isAdmin}
             <div class="content-section">
-              <h3 class="section-title">User Management</h3>
-              <p class="section-description">Create, edit, and delete user accounts. Manage user roles and permissions including admin privileges.</p>
+              <h3 class="section-title">{$t('settings.users.title')}</h3>
+              <p class="section-description">{$t('settings.users.description')}</p>
               <UserManagementTable
                 {users}
                 loading={usersLoading}
@@ -982,8 +1005,8 @@
           <!-- System Statistics Section -->
           {#if activeSection === 'system-statistics'}
             <div class="content-section">
-              <h3 class="section-title">System Statistics</h3>
-              <p class="section-description">View system-wide metrics and performance</p>
+              <h3 class="section-title">{$t('settings.statistics.title')}</h3>
+              <p class="section-description">{$t('settings.statistics.description')}</p>
 
               <div class="stats-actions">
                 <button
@@ -992,76 +1015,76 @@
                   on:click={refreshStats}
                   disabled={statsLoading}
                 >
-                  {statsLoading ? 'Loading...' : 'Refresh Statistics'}
+                  {statsLoading ? $t('settings.statistics.loading') : $t('settings.statistics.refresh')}
                 </button>
               </div>
 
               {#if statsLoading}
                 <div class="loading-state">
                   <div class="spinner"></div>
-                  <p>Loading statistics...</p>
+                  <p>{$t('settings.statistics.loadingMessage')}</p>
                 </div>
               {:else}
                 <div class="stats-grid">
                   <!-- User Stats -->
                   <div class="stat-card">
-                    <h4>Users</h4>
+                    <h4>{$t('settings.statistics.users')}</h4>
                     <div class="stat-value">{stats.users?.total || 0}</div>
-                    <div class="stat-detail">New (7d): {stats.users?.new || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.newUsers')}: {stats.users?.new || 0}</div>
                   </div>
 
                   <!-- Media Stats -->
                   <div class="stat-card">
-                    <h4>Media Files</h4>
+                    <h4>{$t('settings.statistics.mediaFiles')}</h4>
                     <div class="stat-value">{stats.files?.total || 0}</div>
-                    <div class="stat-detail">New: {stats.files?.new || 0}</div>
-                    <div class="stat-detail">Segments: {stats.files?.segments || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.new')}: {stats.files?.new || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.segments')}: {stats.files?.segments || 0}</div>
                   </div>
 
                   <!-- Task Stats -->
                   <div class="stat-card">
-                    <h4>Tasks</h4>
-                    <div class="stat-detail">Pending: {stats.tasks?.pending || 0}</div>
-                    <div class="stat-detail">Running: {stats.tasks?.running || 0}</div>
-                    <div class="stat-detail">Completed: {stats.tasks?.completed || 0}</div>
-                    <div class="stat-detail">Failed: {stats.tasks?.failed || 0}</div>
-                    <div class="stat-detail">Success Rate: {stats.tasks?.success_rate || 0}%</div>
+                    <h4>{$t('settings.statistics.tasks')}</h4>
+                    <div class="stat-detail">{$t('settings.statistics.pending')}: {stats.tasks?.pending || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.running')}: {stats.tasks?.running || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.completed')}: {stats.tasks?.completed || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.failed')}: {stats.tasks?.failed || 0}</div>
+                    <div class="stat-detail">{$t('settings.statistics.successRate')}: {stats.tasks?.success_rate || 0}%</div>
                   </div>
 
                   <!-- Performance Stats -->
                   <div class="stat-card">
-                    <h4>Performance</h4>
-                    <div class="stat-detail">Avg Process Time: {formatTime(stats.tasks?.avg_processing_time || 0)}</div>
-                    <div class="stat-detail">Speakers: {stats.speakers?.total || 0}</div>
+                    <h4>{$t('settings.statistics.performance')}</h4>
+                    <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatTime(stats.tasks?.avg_processing_time || 0)}</div>
+                    <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total || 0}</div>
                   </div>
 
                   <!-- AI Models -->
                   <div class="stat-card model-card">
-                    <h4>AI Models</h4>
+                    <h4>{$t('settings.statistics.aiModels')}</h4>
                     {#if stats.models}
                       <div class="model-info">
                         <div class="model-item">
-                          <span class="model-label">Whisper Model:</span>
+                          <span class="model-label">{$t('settings.statistics.whisperModel')}:</span>
                           <span class="model-value">{stats.models.whisper?.name || 'N/A'}</span>
                         </div>
                         <div class="model-item">
-                          <span class="model-label">Diarization:</span>
+                          <span class="model-label">{$t('settings.statistics.diarization')}:</span>
                           <span class="model-value">{stats.models.diarization?.name || 'N/A'}</span>
                         </div>
                         <div class="model-item">
-                          <span class="model-label">Alignment:</span>
+                          <span class="model-label">{$t('settings.statistics.alignment')}:</span>
                           <span class="model-value">{stats.models.alignment?.name || 'N/A'}</span>
                         </div>
                       </div>
                     {:else}
-                      <div class="stat-detail">Model info not available</div>
+                      <div class="stat-detail">{$t('settings.statistics.modelNotAvailable')}</div>
                     {/if}
                   </div>
 
                   <!-- System Resources: CPU & Memory -->
                   <div class="stat-card stat-card-stacked">
                     <div class="stat-section">
-                      <h4>CPU Usage</h4>
+                      <h4>{$t('settings.statistics.cpuUsage')}</h4>
                       <div class="stat-value">{stats.system?.cpu?.total_percent || '0%'}</div>
                       <div class="progress-bar">
                         <div class="progress-fill" style="width: {parseFloat(stats.system?.cpu?.total_percent) || 0}%"></div>
@@ -1069,10 +1092,10 @@
                     </div>
 
                     <div class="stat-section">
-                      <h4>Memory Usage</h4>
+                      <h4>{$t('settings.statistics.memoryUsage')}</h4>
                       <div class="stat-value">{stats.system?.memory?.percent || '0%'}</div>
                       <div class="stat-detail-compact">
-                        {stats.system?.memory?.used || 'Unknown'} / {stats.system?.memory?.total || 'Unknown'}
+                        {stats.system?.memory?.used || $t('common.unknown')} / {stats.system?.memory?.total || $t('common.unknown')}
                       </div>
                       <div class="progress-bar">
                         <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
@@ -1082,12 +1105,12 @@
 
                   <div class="stat-card stat-card-with-bar">
                     <div class="stat-card-content">
-                      <h4>Disk Usage</h4>
+                      <h4>{$t('settings.statistics.diskUsage')}</h4>
                       <div class="stat-value">{stats.system?.disk?.percent || '0%'}</div>
                       <div class="stat-detail">
-                        <span>Total: {stats.system?.disk?.total || 'Unknown'}</span>
-                        <span>Used: {stats.system?.disk?.used || 'Unknown'}</span>
-                        <span>Free: {stats.system?.disk?.free || 'Unknown'}</span>
+                        <span>{$t('settings.statistics.total')}: {stats.system?.disk?.total || $t('common.unknown')}</span>
+                        <span>{$t('settings.statistics.used')}: {stats.system?.disk?.used || $t('common.unknown')}</span>
+                        <span>{$t('settings.statistics.free')}: {stats.system?.disk?.free || $t('common.unknown')}</span>
                       </div>
                     </div>
                     <div class="progress-bar">
@@ -1099,13 +1122,13 @@
                   <div class="stat-card stat-card-with-bar">
                     {#if stats.system?.gpu?.available}
                       <div class="stat-card-content">
-                        <h4>GPU VRAM</h4>
+                        <h4>{$t('settings.statistics.gpuVram')}</h4>
                         <div class="stat-value">{stats.system.gpu.memory_percent || '0%'}</div>
                         <div class="stat-detail">
-                          <span>GPU: {stats.system.gpu.name || 'Unknown'}</span>
-                          <span>Total: {stats.system.gpu.memory_total || 'Unknown'}</span>
-                          <span>Used: {stats.system.gpu.memory_used || 'Unknown'}</span>
-                          <span>Free: {stats.system.gpu.memory_free || 'Unknown'}</span>
+                          <span>{$t('settings.statistics.gpu')}: {stats.system.gpu.name || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.total')}: {stats.system.gpu.memory_total || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.used')}: {stats.system.gpu.memory_used || $t('common.unknown')}</span>
+                          <span>{$t('settings.statistics.free')}: {stats.system.gpu.memory_free || $t('common.unknown')}</span>
                         </div>
                       </div>
                       <div class="progress-bar">
@@ -1113,9 +1136,9 @@
                       </div>
                     {:else}
                       <div class="stat-card-content">
-                        <h4>GPU VRAM</h4>
+                        <h4>{$t('settings.statistics.gpuVram')}</h4>
                         <div class="stat-value">N/A</div>
-                        <div class="stat-detail">{stats.system?.gpu?.name || 'No GPU Available'}</div>
+                        <div class="stat-detail">{stats.system?.gpu?.name || $t('settings.statistics.noGpu')}</div>
                       </div>
                     {/if}
                   </div>
@@ -1124,16 +1147,16 @@
                 <!-- Recent Tasks Table -->
                 {#if stats.tasks?.recent && stats.tasks.recent.length > 0}
                   <div class="recent-tasks">
-                    <h4>Recent Tasks</h4>
+                    <h4>{$t('settings.statistics.recentTasks')}</h4>
                     <div class="table-container">
                       <table class="data-table">
                         <thead>
                           <tr>
-                            <th>Task ID</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Created</th>
-                            <th>Elapsed</th>
+                            <th>{$t('settings.statistics.taskId')}</th>
+                            <th>{$t('settings.statistics.type')}</th>
+                            <th>{$t('settings.statistics.status')}</th>
+                            <th>{$t('settings.statistics.created')}</th>
+                            <th>{$t('settings.statistics.elapsed')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1154,8 +1177,8 @@
                   </div>
                 {:else}
                   <div class="recent-tasks">
-                    <h4>Recent Tasks</h4>
-                    <p class="empty-state">No recent tasks found</p>
+                    <h4>{$t('settings.statistics.recentTasks')}</h4>
+                    <p class="empty-state">{$t('settings.statistics.noRecentTasks')}</p>
                   </div>
                 {/if}
               {/if}
@@ -1165,8 +1188,8 @@
           <!-- Admin Task Health Section -->
           {#if activeSection === 'admin-task-health' && isAdmin}
             <div class="content-section">
-              <h3 class="section-title">Task Health Monitor</h3>
-              <p class="section-description">Monitor and recover stuck tasks and inconsistent files</p>
+              <h3 class="section-title">{$t('settings.taskHealth.title')}</h3>
+              <p class="section-description">{$t('settings.taskHealth.description')}</p>
 
               <div class="stats-actions">
                 <button
@@ -1175,32 +1198,32 @@
                   on:click={refreshTaskHealth}
                   disabled={taskHealthLoading}
                 >
-                  {taskHealthLoading ? 'Loading...' : 'Refresh Health Data'}
+                  {taskHealthLoading ? $t('settings.taskHealth.loading') : $t('settings.taskHealth.refresh')}
                 </button>
               </div>
 
               {#if taskHealthLoading}
                 <div class="loading-state">
                   <div class="spinner"></div>
-                  <p>Loading task health data...</p>
+                  <p>{$t('settings.taskHealth.loadingMessage')}</p>
                 </div>
               {:else if taskHealthData}
                 <div class="task-health-grid">
                   <!-- Recovery Actions -->
                   <div class="health-card">
-                    <h4>System Recovery Actions</h4>
+                    <h4>{$t('settings.taskHealth.systemRecovery')}</h4>
                     <div class="action-buttons">
                       <button class="btn btn-warning" on:click={recoverStuckTasks}>
-                        Recover Stuck Tasks ({taskHealthData.stuck_tasks?.length || 0})
+                        {$t('settings.taskHealth.recoverStuck')} ({taskHealthData.stuck_tasks?.length || 0})
                       </button>
                       <button class="btn btn-warning" on:click={fixInconsistentFiles}>
-                        Fix Inconsistent Files ({taskHealthData.inconsistent_files?.length || 0})
+                        {$t('settings.taskHealth.fixInconsistent')} ({taskHealthData.inconsistent_files?.length || 0})
                       </button>
                       <button class="btn btn-primary" on:click={startupRecovery}>
-                        Startup Recovery
+                        {$t('settings.taskHealth.startupRecovery')}
                       </button>
                       <button class="btn btn-primary" on:click={recoverAllUserFiles}>
-                        Recover All User Files
+                        {$t('settings.taskHealth.recoverAllUsers')}
                       </button>
                     </div>
                   </div>
@@ -1208,16 +1231,16 @@
                   <!-- Stuck Tasks -->
                   {#if taskHealthData.stuck_tasks && taskHealthData.stuck_tasks.length > 0}
                     <div class="health-card">
-                      <h4>Stuck Tasks</h4>
+                      <h4>{$t('settings.taskHealth.stuckTasks')}</h4>
                       <div class="table-container">
                         <table class="data-table">
                           <thead>
                             <tr>
-                              <th>ID</th>
-                              <th>Type</th>
-                              <th>Status</th>
-                              <th>Created</th>
-                              <th>Actions</th>
+                              <th>{$t('settings.taskHealth.id')}</th>
+                              <th>{$t('settings.statistics.type')}</th>
+                              <th>{$t('settings.statistics.status')}</th>
+                              <th>{$t('settings.statistics.created')}</th>
+                              <th>{$t('settings.taskHealth.actions')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1229,7 +1252,7 @@
                                 <td>{new Date(task.created_at).toLocaleString()}</td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryTask(task.id)}>
-                                    Retry
+                                    {$t('settings.taskHealth.retry')}
                                   </button>
                                 </td>
                               </tr>
@@ -1243,15 +1266,15 @@
                   <!-- Inconsistent Files -->
                   {#if taskHealthData.inconsistent_files && taskHealthData.inconsistent_files.length > 0}
                     <div class="health-card">
-                      <h4>Inconsistent Files</h4>
+                      <h4>{$t('settings.taskHealth.inconsistentFiles')}</h4>
                       <div class="table-container">
                         <table class="data-table">
                           <thead>
                             <tr>
-                              <th>ID</th>
-                              <th>Filename</th>
-                              <th>Status</th>
-                              <th>Actions</th>
+                              <th>{$t('settings.taskHealth.id')}</th>
+                              <th>{$t('settings.taskHealth.filename')}</th>
+                              <th>{$t('settings.statistics.status')}</th>
+                              <th>{$t('settings.taskHealth.actions')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1262,7 +1285,7 @@
                                 <td><span class="status-badge status-{file.status}">{formatStatus(file.status)}</span></td>
                                 <td>
                                   <button class="btn-small btn-primary" on:click={() => retryFile(file.id)}>
-                                    Retry
+                                    {$t('settings.taskHealth.retry')}
                                   </button>
                                 </td>
                               </tr>
@@ -1275,7 +1298,7 @@
                 </div>
               {:else}
                 <div class="placeholder-message">
-                  <p>Click "Refresh Health Data" to load task health information.</p>
+                  <p>{$t('settings.taskHealth.clickRefresh')}</p>
                 </div>
               {/if}
             </div>
@@ -1284,8 +1307,8 @@
           <!-- Admin System Settings Section -->
           {#if activeSection === 'admin-settings' && isAdmin}
             <div class="content-section">
-              <h3 class="section-title">System Settings</h3>
-              <p class="section-description">System-wide configuration options</p>
+              <h3 class="section-title">{$t('settings.systemSettings.title')}</h3>
+              <p class="section-description">{$t('settings.systemSettings.description')}</p>
 
               <!-- Retry Settings -->
               <div class="settings-subsection">
@@ -1302,10 +1325,10 @@
 <!-- Close Confirmation Modal -->
 <ConfirmationModal
   bind:isOpen={showCloseConfirmation}
-  title="Unsaved Changes"
-  message="You have unsaved changes. Are you sure you want to close without saving?"
-  confirmText="Close Without Saving"
-  cancelText="Keep Editing"
+  title={$t('settings.unsavedChanges')}
+  message={$t('settings.unsavedChangesMessage')}
+  confirmText={$t('settings.closeWithoutSaving')}
+  cancelText={$t('settings.keepEditing')}
   confirmButtonClass="btn-danger"
   cancelButtonClass="btn-secondary"
   on:confirm={forceClose}
@@ -1318,8 +1341,8 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText="Confirm"
-  cancelText="Cancel"
+  confirmText={$t('settings.confirm')}
+  cancelText={$t('settings.cancel')}
   confirmButtonClass="btn-primary"
   cancelButtonClass="btn-secondary"
   on:confirm={handleConfirmModalConfirm}

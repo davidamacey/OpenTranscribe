@@ -24,7 +24,7 @@ def send_topic_extraction_notification(
     file_id: int,
     status: str,
     message: str,
-    suggestion_id: int = None,
+    suggestion_id: str = None,
 ) -> bool:
     """
     Send AI suggestion extraction status notification via Redis pub/sub.
@@ -34,7 +34,7 @@ def send_topic_extraction_notification(
         file_id: File ID
         status: Extraction status ('processing', 'completed', 'failed')
         message: Status message
-        suggestion_id: TopicSuggestion ID (when completed)
+        suggestion_id: TopicSuggestion UUID (when completed)
 
     Returns:
         True if notification was sent successfully
@@ -192,7 +192,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             file_id=file_id,
             status="completed",
             message=f"Found {tag_count} tags and {collection_count} collections",
-            suggestion_id=suggestion.id,
+            suggestion_id=str(suggestion.uuid),
         )
 
         logger.info(
@@ -201,7 +201,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
 
         return {
             "status": "completed",
-            "suggestion_id": suggestion.id,
+            "suggestion_id": str(suggestion.uuid),
             "tag_count": tag_count,
             "collection_count": collection_count,
         }

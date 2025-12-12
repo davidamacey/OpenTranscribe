@@ -163,7 +163,7 @@ def _get_unique_speakers_for_filter(speakers, db: Session, current_user: User):
         if representative_speaker:
             unique_speakers.append(
                 {
-                    "id": representative_speaker.id,
+                    "id": str(representative_speaker.uuid),
                     "name": representative_speaker.name,
                     "display_name": display_name,
                     "media_count": media_count,
@@ -384,10 +384,9 @@ def _build_speaker_dict(
     # Add profile information if speaker is assigned to a profile
     if speaker.profile_id and speaker.profile:
         speaker_dict["profile"] = {
-            "id": speaker.profile.id,
+            "id": str(speaker.profile.uuid) if speaker.profile.uuid else None,
             "name": speaker.profile.name,
             "description": speaker.profile.description,
-            "uuid": str(speaker.profile.uuid) if speaker.profile.uuid else None,
         }
 
     return speaker_dict
@@ -1098,8 +1097,8 @@ def _accept_speaker_profile_match(
 
     return {
         "status": "accepted",
-        "speaker_id": speaker_id,
-        "profile_id": profile_id,
+        "speaker_id": str(speaker.uuid),
+        "profile_id": str(profile.uuid),
         "profile_name": profile.name,
         "message": f"Speaker assigned to profile '{profile.name}'",
     }
@@ -1136,7 +1135,7 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
 
     return {
         "status": "rejected",
-        "speaker_id": speaker_id,
+        "speaker_id": str(speaker.uuid),
         "message": "Speaker identification suggestion rejected",
     }
 
@@ -1189,8 +1188,8 @@ def _create_new_speaker_profile(
 
     return {
         "status": "created_and_assigned",
-        "speaker_id": speaker_id,
-        "profile_id": new_profile.id,
+        "speaker_id": str(speaker.uuid),
+        "profile_id": str(new_profile.uuid),
         "profile_name": profile_name,
         "message": f"Created new profile '{profile_name}' and assigned speaker",
     }
@@ -1286,7 +1285,7 @@ def _build_occurrence_dict(
 ) -> dict[str, Any]:
     """Build occurrence dictionary for a speaker/media file pair."""
     return {
-        "media_file_id": media_file.id,
+        "media_file_id": str(media_file.uuid),
         "filename": media_file.filename,
         "title": media_file.title or media_file.filename,
         "media_file_title": media_file.title or media_file.filename,

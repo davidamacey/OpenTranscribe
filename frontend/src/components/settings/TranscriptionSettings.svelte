@@ -15,6 +15,7 @@
   } from '$lib/api/transcriptionSettings';
   import { toastStore } from '$stores/toast';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import { t } from '$stores/locale';
 
   const dispatch = createEventDispatcher();
 
@@ -74,13 +75,13 @@
   // Validate min/max speakers
   $: {
     if (minSpeakers > maxSpeakers) {
-      validationError = 'Minimum speakers cannot be greater than maximum speakers';
+      validationError = $t('settings.transcription.validationMinMax');
     } else if (minSpeakers < 1 || minSpeakers > 50) {
-      validationError = 'Minimum speakers must be between 1 and 50';
+      validationError = $t('settings.transcription.validationMinRange');
     } else if (maxSpeakers < 1 || maxSpeakers > 50) {
-      validationError = 'Maximum speakers must be between 1 and 50';
+      validationError = $t('settings.transcription.validationMaxRange');
     } else if (garbageCleanupThreshold < 20 || garbageCleanupThreshold > 200) {
-      validationError = 'Garbage cleanup threshold must be between 20 and 200';
+      validationError = $t('settings.transcription.validationThresholdRange');
     } else {
       validationError = '';
     }
@@ -104,7 +105,7 @@
       storeOriginalValues(settings);
     } catch (err) {
       console.error('Failed to load transcription settings:', err);
-      toastStore.error('Failed to load transcription settings. Using defaults.');
+      toastStore.error($t('settings.transcription.loadFailed'));
     } finally {
       loading = false;
     }
@@ -176,11 +177,11 @@
 
       storeOriginalValues(updatedSettings);
       settingsModalStore.clearDirty('transcription');
-      toastStore.success('Transcription settings saved successfully');
+      toastStore.success($t('settings.transcription.saved'));
       dispatch('save');
     } catch (err) {
       console.error('Failed to save transcription settings:', err);
-      toastStore.error('Failed to save transcription settings');
+      toastStore.error($t('settings.transcription.saveFailed'));
     } finally {
       saving = false;
     }
@@ -193,11 +194,11 @@
       applySettings(response.default_settings);
       storeOriginalValues(response.default_settings);
       settingsModalStore.clearDirty('transcription');
-      toastStore.success('Transcription settings reset to defaults');
+      toastStore.success($t('settings.transcription.resetSuccess'));
       dispatch('reset');
     } catch (err) {
       console.error('Failed to reset transcription settings:', err);
-      toastStore.error('Failed to reset transcription settings');
+      toastStore.error($t('settings.transcription.resetFailed'));
     } finally {
       resetting = false;
     }
@@ -208,29 +209,29 @@
   {#if loading}
     <div class="loading-state">
       <div class="spinner"></div>
-      <p>Loading settings...</p>
+      <p>{$t('settings.transcription.loading')}</p>
     </div>
   {:else}
     <div class="settings-form">
       <!-- Speaker Settings Section -->
       <div class="settings-section">
         <div class="title-row">
-          <h3 class="section-title">Speaker Detection</h3>
+          <h3 class="section-title">{$t('settings.transcription.speakerDetection')}</h3>
           <span class="info-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span class="tooltip">Configure how many speakers the diarization model should detect. PyAnnote uses clustering with no hard upper limit - values up to 50+ are supported for large events.</span>
+            <span class="tooltip">{$t('settings.transcription.speakerDetectionTooltip')}</span>
           </span>
         </div>
-        <p class="section-desc">Configure speaker diarization behavior for transcriptions.</p>
+        <p class="section-desc">{$t('settings.transcription.speakerDetectionDesc')}</p>
 
         <!-- Speaker Behavior -->
         <div class="form-group">
           <label for="speaker-behavior" class="form-label">
-            Behavior
+            {$t('settings.transcription.behavior')}
             <span class="inline-info-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -238,9 +239,9 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
               <span class="inline-tooltip">
-                <strong>Always ask:</strong> Show speaker settings dialog on every upload or reprocess.<br><br>
-                <strong>Use system defaults:</strong> Skip the dialog and automatically use system-wide defaults (Min: {systemDefaults?.min_speakers ?? 1}, Max: {systemDefaults?.max_speakers ?? 20}).<br><br>
-                <strong>Use my saved settings:</strong> Skip the dialog and use your custom min/max values saved below.
+                <strong>{$t('settings.transcription.behaviorTooltipAlwaysAsk')}</strong> {$t('settings.transcription.behaviorTooltipAlwaysAskDesc')}<br><br>
+                <strong>{$t('settings.transcription.behaviorTooltipUseDefaults')}</strong> {$t('settings.transcription.behaviorTooltipUseDefaultsDesc')} ({$t('settings.transcription.minMaxFormat', { min: systemDefaults?.min_speakers ?? 1, max: systemDefaults?.max_speakers ?? 20 })}).<br><br>
+                <strong>{$t('settings.transcription.behaviorTooltipUseCustom')}</strong> {$t('settings.transcription.behaviorTooltipUseCustomDesc')}
               </span>
             </span>
           </label>
@@ -260,7 +261,7 @@
         {#if speakerBehavior === 'use_custom'}
           <div class="speaker-range-row">
             <div class="form-group compact">
-              <label for="min-speakers" class="form-label">Min Speakers</label>
+              <label for="min-speakers" class="form-label">{$t('settings.transcription.minSpeakers')}</label>
               <input
                 id="min-speakers"
                 type="number"
@@ -271,7 +272,7 @@
               />
             </div>
             <div class="form-group compact">
-              <label for="max-speakers" class="form-label">Max Speakers</label>
+              <label for="max-speakers" class="form-label">{$t('settings.transcription.maxSpeakers')}</label>
               <input
                 id="max-speakers"
                 type="number"
@@ -287,8 +288,8 @@
         <!-- System Defaults Info -->
         {#if systemDefaults}
           <div class="defaults-info">
-            <span class="defaults-label">System defaults:</span>
-            <span class="defaults-value">Min: {systemDefaults.min_speakers}, Max: {systemDefaults.max_speakers}</span>
+            <span class="defaults-label">{$t('settings.transcription.systemDefaults')}</span>
+            <span class="defaults-value">{$t('settings.transcription.minMaxFormat', { min: systemDefaults.min_speakers, max: systemDefaults.max_speakers })}</span>
           </div>
         {/if}
       </div>
@@ -296,27 +297,27 @@
       <!-- Garbage Cleanup Section -->
       <div class="settings-section">
         <div class="title-row">
-          <h3 class="section-title">Garbage Word Cleanup</h3>
+          <h3 class="section-title">{$t('settings.transcription.garbageCleanup')}</h3>
           <span class="info-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span class="tooltip">WhisperX can sometimes misinterpret background noise (fans, static, rumbling) as extremely long "words" with no spaces. This feature detects and replaces these artifacts with [background noise].</span>
+            <span class="tooltip">{$t('settings.transcription.garbageCleanupTooltip')}</span>
           </span>
         </div>
-        <p class="section-desc">Replace long noise artifacts with [background noise].</p>
+        <p class="section-desc">{$t('settings.transcription.garbageCleanupDesc')}</p>
 
         <div class="setting-row">
           <div class="setting-controls">
             <label class="toggle-label">
               <input type="checkbox" bind:checked={garbageCleanupEnabled} class="toggle-input" />
               <span class="toggle-switch"></span>
-              <span class="toggle-text">Enable cleanup</span>
+              <span class="toggle-text">{$t('settings.transcription.enableCleanup')}</span>
             </label>
             <div class="inline-input">
-              <span class="input-label">Threshold:</span>
+              <span class="input-label">{$t('settings.transcription.threshold')}</span>
               <input
                 type="number"
                 bind:value={garbageCleanupThreshold}
@@ -325,15 +326,15 @@
                 class="form-input number-input"
                 disabled={!garbageCleanupEnabled}
               />
-              <span class="input-suffix">chars</span>
+              <span class="input-suffix">{$t('settings.transcription.chars')}</span>
             </div>
           </div>
         </div>
 
         {#if systemDefaults}
           <div class="defaults-info">
-            <span class="defaults-label">System default threshold:</span>
-            <span class="defaults-value">{systemDefaults.garbage_cleanup_threshold} chars</span>
+            <span class="defaults-label">{$t('settings.transcription.systemDefaultThreshold')}</span>
+            <span class="defaults-value">{systemDefaults.garbage_cleanup_threshold} {$t('settings.transcription.chars')}</span>
           </div>
         {/if}
       </div>
@@ -341,22 +342,22 @@
       <!-- Language Settings Section -->
       <div class="settings-section">
         <div class="title-row">
-          <h3 class="section-title">Language Settings</h3>
+          <h3 class="section-title">{$t('settings.transcription.languageSettings')}</h3>
           <span class="info-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span class="tooltip">Configure language options for transcription and AI summaries. Source language helps improve transcription accuracy. Translation converts foreign audio to English text.</span>
+            <span class="tooltip">{$t('settings.transcription.languageSettingsTooltip')}</span>
           </span>
         </div>
-        <p class="section-desc">Configure language preferences for transcription and AI analysis.</p>
+        <p class="section-desc">{$t('settings.transcription.languageSettingsDesc')}</p>
 
         <!-- Source Language -->
         <div class="form-group">
           <label for="source-language" class="form-label">
-            Source Language
+            {$t('settings.transcription.sourceLanguage')}
             <span class="inline-info-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -364,9 +365,9 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
               <span class="inline-tooltip">
-                <strong>Auto-detect:</strong> Let Whisper automatically identify the spoken language.<br><br>
-                <strong>Specific language:</strong> Provide a hint to improve accuracy when you know the audio language.<br><br>
-                Languages with word-level timestamps are marked with a checkmark.
+                <strong>{$t('settings.transcription.sourceLanguageTooltipAuto')}</strong> {$t('settings.transcription.sourceLanguageTooltipAutoDesc')}<br><br>
+                <strong>{$t('settings.transcription.sourceLanguageTooltipSpecific')}</strong> {$t('settings.transcription.sourceLanguageTooltipSpecificDesc')}<br><br>
+                {$t('settings.transcription.sourceLanguageTooltipTimestamps')}
               </span>
             </span>
           </label>
@@ -375,14 +376,14 @@
             class="form-select"
             bind:value={sourceLanguage}
           >
-            <optgroup label="Common Languages">
+            <optgroup label={$t('settings.transcription.commonLanguages')}>
               {#each sourceLanguageGroups.common as lang}
                 <option value={lang.code}>
                   {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
                 </option>
               {/each}
             </optgroup>
-            <optgroup label="All Languages">
+            <optgroup label={$t('settings.transcription.allLanguages')}>
               {#each sourceLanguageGroups.other as lang}
                 <option value={lang.code}>
                   {lang.name}{languagesWithAlignment.has(lang.code) ? ' *' : ''}
@@ -390,7 +391,7 @@
               {/each}
             </optgroup>
           </select>
-          <p class="input-hint">* = Word-level timestamps available</p>
+          <p class="input-hint">{$t('settings.transcription.wordTimestampsAvailable')}</p>
         </div>
 
         <!-- Translate to English -->
@@ -400,17 +401,17 @@
               <label class="toggle-label">
                 <input type="checkbox" bind:checked={translateToEnglish} class="toggle-input" />
                 <span class="toggle-switch"></span>
-                <span class="toggle-text">Translate to English</span>
+                <span class="toggle-text">{$t('settings.transcription.translateToEnglish')}</span>
               </label>
             </div>
           </div>
-          <p class="input-hint">When enabled, foreign language audio will be transcribed and translated to English. When disabled, the transcription stays in the original language.</p>
+          <p class="input-hint">{$t('settings.transcription.translateToEnglishDesc')}</p>
         </div>
 
         <!-- LLM Output Language -->
         <div class="form-group">
           <label for="llm-output-language" class="form-label">
-            AI Summary Language
+            {$t('settings.transcription.aiSummaryLanguage')}
             <span class="inline-info-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -418,8 +419,7 @@
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
               <span class="inline-tooltip">
-                Choose the language for AI-generated summaries, action items, and analysis.<br><br>
-                This setting is independent of the transcription language - you can transcribe in Spanish but get summaries in English, or vice versa.
+                {$t('settings.transcription.aiSummaryLanguageTooltip')}
               </span>
             </span>
           </label>
@@ -432,12 +432,12 @@
               <option value={lang.code}>{lang.name}</option>
             {/each}
           </select>
-          <p class="input-hint">Language used for AI summaries and analysis</p>
+          <p class="input-hint">{$t('settings.transcription.aiSummaryLanguageHint')}</p>
         </div>
 
         <div class="defaults-info">
-          <span class="defaults-label">Defaults:</span>
-          <span class="defaults-value">Source: Auto-detect, Translate: Off, Summary: English</span>
+          <span class="defaults-label">{$t('settings.transcription.defaults')}</span>
+          <span class="defaults-value">{$t('settings.transcription.defaultsValue')}</span>
         </div>
       </div>
 
@@ -461,7 +461,7 @@
           on:click={resetToDefaults}
           disabled={saving || resetting}
         >
-          {resetting ? 'Resetting...' : 'Reset to Defaults'}
+          {resetting ? $t('settings.transcription.resetting') : $t('settings.transcription.resetToDefaults')}
         </button>
         <button
           type="button"
@@ -469,7 +469,7 @@
           on:click={saveSettings}
           disabled={saving || resetting || !settingsChanged || !!validationError}
         >
-          {saving ? 'Saving...' : 'Save Settings'}
+          {saving ? $t('settings.transcription.saving') : $t('settings.transcription.saveSettings')}
         </button>
       </div>
     </div>

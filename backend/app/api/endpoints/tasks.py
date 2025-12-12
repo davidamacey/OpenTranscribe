@@ -285,7 +285,7 @@ async def task_system_health(
                     "id": task.id,
                     "task_type": task.task_type,
                     "status": task.status,
-                    "media_file_id": task.media_file_id,
+                    "media_file_id": str(task.media_file.uuid) if task.media_file else None,
                     "created_at": task.created_at,
                     "updated_at": task.updated_at,
                     "age_seconds": calculate_age_seconds(task.created_at),
@@ -300,7 +300,7 @@ async def task_system_health(
                     "id": str(file.uuid),  # Use UUID for frontend
                     "filename": file.filename,
                     "status": file.status.value,
-                    "user_id": file.user_id,
+                    "user_id": str(file.user.uuid) if file.user else None,
                     "upload_time": file.upload_time,
                     "age_seconds": calculate_age_seconds(file.upload_time),
                 }

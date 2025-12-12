@@ -4,6 +4,7 @@
   import ConfirmationModal from '../ConfirmationModal.svelte';
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
 
   export let onSettingsChange: (() => void) | null = null;
 
@@ -42,13 +43,13 @@
     content_type: 'general'
   };
 
-  const contentTypes = [
-    { value: 'general', label: 'General' },
-    { value: 'meeting', label: 'Meeting' },
-    { value: 'interview', label: 'Interview' },
-    { value: 'podcast', label: 'Podcast' },
-    { value: 'documentary', label: 'Documentary' },
-    { value: 'speaker_identification', label: 'Speaker Identification' }
+  $: contentTypes = [
+    { value: 'general', label: $t('prompts.contentTypeGeneral') },
+    { value: 'meeting', label: $t('prompts.contentTypeMeeting') },
+    { value: 'interview', label: $t('prompts.contentTypeInterview') },
+    { value: 'podcast', label: $t('prompts.contentTypePodcast') },
+    { value: 'documentary', label: $t('prompts.contentTypeDocumentary') },
+    { value: 'speaker_identification', label: $t('prompts.contentTypeSpeakerIdentification') }
   ];
 
   onMount(async () => {
@@ -100,7 +101,7 @@
       }
     } catch (err: any) {
       console.error('Error loading prompts:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to load prompts');
+      toastStore.error(err.response?.data?.detail || $t('prompts.loadFailed'));
     } finally {
       loading = false;
     }
@@ -116,14 +117,14 @@
 
       selectedPromptId = promptId;
       activePrompt = allPrompts.find(p => p.id === promptId) || null;
-      toastStore.success('Active prompt updated successfully');
+      toastStore.success($t('prompts.activePromptUpdated'));
 
       if (onSettingsChange) {
         onSettingsChange();
       }
     } catch (err: any) {
       console.error('Error setting active prompt:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to set active prompt');
+      toastStore.error(err.response?.data?.detail || $t('prompts.setActiveFailed'));
     } finally {
       saving = false;
     }
@@ -143,7 +144,7 @@
 
   function openEditForm(prompt: SummaryPrompt) {
     if (prompt.is_system_default) {
-      toastStore.error('System prompts cannot be edited');
+      toastStore.error($t('prompts.editSystemError'));
       return;
     }
 
@@ -196,7 +197,7 @@
 
   async function savePrompt() {
     if (!formData.name.trim() || !formData.prompt_text.trim()) {
-      toastStore.error('Name and prompt text are required');
+      toastStore.error($t('prompts.nameAndTextRequired'));
       return;
     }
 
@@ -214,13 +215,13 @@
           allPrompts = [...allPrompts]; // Trigger reactivity
         }
 
-        toastStore.success('Prompt updated successfully');
+        toastStore.success($t('prompts.promptUpdated'));
       } else {
         // Create new prompt
         const newPrompt = await PromptsApi.createPrompt(formData);
 
         allPrompts = [...allPrompts, newPrompt];
-        toastStore.success('Prompt created successfully');
+        toastStore.success($t('prompts.promptCreated'));
       }
 
       // Force close after successful save (no dirty check needed)
@@ -231,7 +232,7 @@
       }
     } catch (err: any) {
       console.error('Error saving prompt:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to save prompt');
+      toastStore.error(err.response?.data?.detail || $t('prompts.saveFailed'));
     } finally {
       saving = false;
     }
@@ -239,7 +240,7 @@
 
   function confirmDeletePrompt(prompt: SummaryPrompt) {
     if (prompt.is_system_default) {
-      toastStore.error('System prompts cannot be deleted');
+      toastStore.error($t('prompts.deleteSystemError'));
       return;
     }
 
@@ -273,23 +274,23 @@
           activePrompt = activeResponse.active_prompt;
 
           if (activePrompt && activePrompt.name) {
-            toastStore.success(`Prompt deleted successfully. ${activePrompt.name} is now active and will be used for all future summaries.`);
+            toastStore.success($t('prompts.promptDeletedWithFallback', { name: activePrompt.name }));
           } else {
-            toastStore.success('Prompt deleted successfully. Default system prompt is now active.');
+            toastStore.success($t('prompts.promptDeletedDefaultActive'));
           }
         } catch (activeErr: any) {
           console.error('Error getting fallback active prompt:', activeErr);
           selectedPromptId = null;
           activePrompt = null;
-          toastStore.success('Prompt deleted successfully');
+          toastStore.success($t('prompts.promptDeleted'));
         }
       } else if (wasActivePrompt) {
         // Just clear the selection if it was active but we still have user prompts
         selectedPromptId = null;
         activePrompt = null;
-        toastStore.success('Prompt deleted successfully');
+        toastStore.success($t('prompts.promptDeleted'));
       } else {
-        toastStore.success('Prompt deleted successfully');
+        toastStore.success($t('prompts.promptDeleted'));
       }
 
       if (onSettingsChange) {
@@ -297,7 +298,7 @@
       }
     } catch (err: any) {
       console.error('Error deleting prompt:', err);
-      toastStore.error(err.response?.data?.detail || 'Failed to delete prompt');
+      toastStore.error(err.response?.data?.detail || $t('prompts.deleteFailed'));
     } finally {
       saving = false;
       promptToDelete = null;
@@ -346,6 +347,7 @@
 
   // Copy functionality - matches SummaryModal pattern
   let copyButtonText = 'Copy';
+  let isCopied = false;
 
   function copyPromptText(text: string) {
     if (!text) return;
@@ -353,16 +355,13 @@
     copyToClipboard(
       text,
       () => {
-        copyButtonText = 'Copied!';
+        isCopied = true;
         setTimeout(() => {
-          copyButtonText = 'Copy';
+          isCopied = false;
         }, 2000);
       },
       (error) => {
-        copyButtonText = 'Copy failed';
-        setTimeout(() => {
-          copyButtonText = 'Copy';
-        }, 2000);
+        // Failed - just keep default state
       }
     );
   }
@@ -407,7 +406,7 @@
 
 <div class="prompt-settings">
   {#if loading}
-    <div class="loading">Loading prompts...</div>
+    <div class="loading">{$t('prompts.loading')}</div>
   {:else}
 
     <!-- System Prompts -->
@@ -418,7 +417,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            System Prompts
+            {$t('prompts.systemPrompts')}
           </h4>
         </div>
 
@@ -431,7 +430,7 @@
                   <span
                     class="info-tooltip"
                     role="tooltip"
-                    data-tooltip="This system prompt cannot be deleted or edited. Create custom prompts to suit your specific needs."
+                    data-tooltip={$t('prompts.systemPromptTooltip')}
                     on:mouseenter={removeTitle}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -454,14 +453,14 @@
                         <polyline points="20,6 9,17 4,12"/>
                       </svg>
                     </div>
-                    <span class="status-text">Currently Active</span>
+                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
                   </div>
                 {:else}
                   <button
                     class="activate-button"
                     on:click={() => setActivePrompt(prompt.id)}
                     disabled={saving}
-                    title="Make this prompt active"
+                    title={$t('prompts.makeActive')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="3"/>
@@ -474,14 +473,14 @@
                       <circle cx="4.22" cy="19.78" r="1"/>
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
-                    Activate
+                    {$t('prompts.activate')}
                   </button>
                 {/if}
 
                 <button
                   class="view-button"
                   on:click={() => viewPrompt(prompt)}
-                  title="View prompt text"
+                  title={$t('prompts.viewPrompt')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -506,15 +505,15 @@
             <line x1="16" y1="17" x2="8" y2="17"/>
             <polyline points="10,9 9,9 8,9"/>
           </svg>
-          Your Custom Prompts
+          {$t('prompts.customPrompts')}
         </h4>
         {#if userPrompts.length > 0}
-          <button class="create-config-button" on:click={openCreateForm} title="Create new prompt">
+          <button class="create-config-button" on:click={openCreateForm} title={$t('prompts.createNew')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Create Prompt
+            {$t('prompts.createPrompt')}
           </button>
         {/if}
       </div>
@@ -538,14 +537,14 @@
                         <polyline points="20,6 9,17 4,12"/>
                       </svg>
                     </div>
-                    <span class="status-text">Currently Active</span>
+                    <span class="status-text">{$t('prompts.currentlyActive')}</span>
                   </div>
                 {:else}
                   <button
                     class="activate-button"
                     on:click={() => setActivePrompt(prompt.id)}
                     disabled={saving}
-                    title="Make this prompt active"
+                    title={$t('prompts.makeActive')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <circle cx="12" cy="12" r="3"/>
@@ -558,14 +557,14 @@
                       <circle cx="4.22" cy="19.78" r="1"/>
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
-                    Activate
+                    {$t('prompts.activate')}
                   </button>
                 {/if}
 
                 <button
                   class="view-button"
                   on:click={() => viewPrompt(prompt)}
-                  title="View prompt text"
+                  title={$t('prompts.viewPrompt')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -576,7 +575,7 @@
                   class="edit-button"
                   on:click={() => openEditForm(prompt)}
                   disabled={saving}
-                  title="Edit this prompt"
+                  title={$t('prompts.editPrompt')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -611,14 +610,14 @@
               <polyline points="10,9 9,9 8,9"/>
             </svg>
           </div>
-          <h4>No Custom Prompts</h4>
-          <p>Create your first custom prompt to personalize your AI summarization experience.</p>
+          <h4>{$t('prompts.noCustomPrompts')}</h4>
+          <p>{$t('prompts.noCustomPromptsDesc')}</p>
           <button class="create-first-config-btn" on:click={openCreateForm}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-            Create First Prompt
+            {$t('prompts.createFirstPrompt')}
           </button>
         </div>
       {/if}
@@ -646,30 +645,30 @@
       >
         <div class="modal-header">
           <h3>
-            {editingPrompt ? 'Edit Prompt' : 'Create New Prompt'}
+            {editingPrompt ? $t('prompts.editExisting') : $t('prompts.createNew')}
             {#if isDirty}
-              <span class="unsaved-indicator" title="You have unsaved changes">•</span>
+              <span class="unsaved-indicator" title={$t('prompts.unsavedChangesIndicator')}>•</span>
             {/if}
           </h3>
-          <button class="close-button" on:click={() => closeForm()} title={isDirty ? 'Close (unsaved changes will be lost)' : 'Close'}>×</button>
+          <button class="close-button" on:click={() => closeForm()} title={isDirty ? $t('prompts.closeUnsaved') : $t('common.close')}>×</button>
         </div>
 
         <form on:submit|preventDefault={savePrompt} class="prompt-form">
           <div class="form-group">
-            <label for="name">Prompt Name *</label>
+            <label for="name">{$t('prompts.promptName')}</label>
             <input
               type="text"
               id="name"
               bind:value={formData.name}
               disabled={saving}
               class="form-control"
-              placeholder="e.g., Meeting Summary Pro"
+              placeholder={$t('prompts.promptNamePlaceholder')}
               required
             />
           </div>
 
           <div class="form-group">
-            <label for="content_type">Content Type</label>
+            <label for="content_type">{$t('prompts.contentType')}</label>
             <select
               id="content_type"
               bind:value={formData.content_type}
@@ -683,40 +682,40 @@
           </div>
 
           <div class="form-group">
-            <label for="description">Description</label>
+            <label for="description">{$t('prompts.descriptionLabel')}</label>
             <input
               type="text"
               id="description"
               bind:value={formData.description}
               disabled={saving}
               class="form-control"
-              placeholder="Brief description of this prompt's purpose"
+              placeholder={$t('prompts.descriptionPlaceholder')}
             />
           </div>
 
           <div class="form-group">
             <div class="textarea-header">
-              <label for="prompt_text">Prompt Text *</label>
+              <label for="prompt_text">{$t('prompts.promptText')}</label>
               {#if formData.prompt_text.trim()}
                 <button
                   type="button"
                   class="copy-button-header"
-                  class:copied={copyButtonText === 'Copied!'}
+                  class:copied={isCopied}
                   on:click={() => copyPromptText(formData.prompt_text)}
-                  aria-label="Copy prompt text"
-                  title={copyButtonText === 'Copied!' ? 'Prompt text copied to clipboard!' : 'Copy prompt text'}
+                  aria-label={$t('prompts.copy')}
+                  title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
                 >
-                  {#if copyButtonText === 'Copied!'}
+                  {#if isCopied}
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                       <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                     </svg>
-                    Copied!
+                    {$t('prompts.copied')}
                   {:else}
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                       <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                       <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                     </svg>
-                    Copy
+                    {$t('prompts.copy')}
                   {/if}
                 </button>
               {/if}
@@ -727,11 +726,11 @@
               disabled={saving}
               class="form-control textarea"
               rows="8"
-              placeholder="Enter your custom prompt text here. Use &#123;transcript&#125; and &#123;speaker_data&#125; placeholders where needed."
+              placeholder={$t('prompts.promptTextPlaceholder')}
               required
             ></textarea>
             <small class="form-text">
-              Use <code>&#123;transcript&#125;</code> and <code>&#123;speaker_data&#125;</code> as placeholders for the actual transcript and speaker information.
+              {$t('prompts.promptTextHelp')}
             </small>
             <div class="llm-hint">
               <strong>
@@ -746,8 +745,8 @@
                   <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
                   <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
                 </svg>
-                Tip:
-              </strong> Consider using any LLM to help craft effective prompts for your needs.
+                {$t('prompts.llmTip')}
+              </strong> {$t('prompts.llmTipText')}
             </div>
           </div>
 
@@ -758,7 +757,7 @@
               on:click={() => closeForm()}
               disabled={saving}
             >
-              Cancel
+              {$t('prompts.cancel')}
             </button>
             <button
               type="submit"
@@ -767,9 +766,9 @@
             >
               {#if saving}
                 <div class="spinner"></div>
-                Saving...
+                {$t('prompts.saving')}
               {:else}
-                {editingPrompt ? 'Update Prompt' : 'Create Prompt'}
+                {editingPrompt ? $t('prompts.updatePrompt') : $t('prompts.createPromptBtn')}
               {/if}
             </button>
           </div>
@@ -798,45 +797,45 @@
         on:keydown|stopPropagation
       >
         <div class="modal-header">
-          <h3>View Prompt: {viewingPrompt.name}</h3>
+          <h3>{$t('prompts.viewPromptTitle')}: {viewingPrompt.name}</h3>
           <button class="close-button" on:click={closeViewModal}>×</button>
         </div>
         <div class="modal-body">
           <div class="prompt-details">
             <div class="detail-row">
-              <strong>Type:</strong> {viewingPrompt.content_type || 'General'}
+              <strong>{$t('prompts.type')}</strong> {viewingPrompt.content_type || $t('prompts.contentTypeGeneral')}
             </div>
             {#if viewingPrompt.description}
               <div class="detail-row">
-                <strong>Description:</strong> {viewingPrompt.description}
+                <strong>{$t('prompts.descriptionLabel')}:</strong> {viewingPrompt.description}
               </div>
             {/if}
             <div class="detail-row">
-              <strong>System Prompt:</strong> {viewingPrompt.is_system_default ? 'Yes' : 'No'}
+              <strong>{$t('prompts.systemPrompt')}</strong> {viewingPrompt.is_system_default ? $t('common.yes') : $t('common.no')}
             </div>
           </div>
           <div class="prompt-text-container">
             <div class="prompt-text-header">
-              <strong>Prompt Text:</strong>
+              <strong>{$t('prompts.promptTextLabel')}:</strong>
               <button
                 type="button"
                 class="copy-button-header"
-                class:copied={copyButtonText === 'Copied!'}
+                class:copied={isCopied}
                 on:click={() => copyPromptText(viewingPrompt.prompt_text)}
-                aria-label="Copy prompt text"
-                title={copyButtonText === 'Copied!' ? 'Prompt text copied to clipboard!' : 'Copy prompt text'}
+                aria-label={$t('prompts.copy')}
+                title={isCopied ? $t('prompts.copiedToClipboard') : $t('prompts.copy')}
               >
-                {#if copyButtonText === 'Copied!'}
+                {#if isCopied}
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                   </svg>
-                  Copied!
+                  {$t('prompts.copied')}
                 {:else}
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                     <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                   </svg>
-                  Copy
+                  {$t('prompts.copy')}
                 {/if}
               </button>
             </div>
@@ -850,10 +849,10 @@
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
     bind:isOpen={showDeleteModal}
-    title="Delete Prompt"
-    message={promptToDelete ? `Are you sure you want to delete the prompt "${promptToDelete.name}"? This action cannot be undone.` : ''}
-    confirmText="Delete"
-    cancelText="Cancel"
+    title={$t('prompts.deleteConfirmTitle')}
+    message={promptToDelete ? $t('prompts.deleteConfirmMessage', { name: promptToDelete.name }) : ''}
+    confirmText={$t('prompts.delete')}
+    cancelText={$t('prompts.cancel')}
     confirmButtonClass="modal-delete-button"
     cancelButtonClass="modal-cancel-button"
     on:confirm={deletePrompt}
@@ -864,10 +863,10 @@
   <!-- Unsaved Changes Confirmation Modal -->
   <ConfirmationModal
     bind:isOpen={showUnsavedChangesModal}
-    title="Unsaved Changes"
-    message="You have unsaved changes that will be lost. Are you sure you want to continue without saving?"
-    confirmText="Discard Changes"
-    cancelText="Keep Editing"
+    title={$t('prompts.unsavedChanges')}
+    message={$t('prompts.unsavedChangesMessage')}
+    confirmText={$t('prompts.discardChanges')}
+    cancelText={$t('prompts.keepEditing')}
     confirmButtonClass="modal-warning-button"
     cancelButtonClass="modal-primary-button"
     on:confirm={handleUnsavedChangesConfirm}
