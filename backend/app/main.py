@@ -20,10 +20,21 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """
     FastAPI lifespan context manager for startup and shutdown events.
-    Handles MinIO bucket creation, task recovery on startup and cleanup on shutdown.
+    Handles database migrations, MinIO bucket creation, and task recovery.
     """
     # Startup
-    logger.info("Starting application with MinIO setup and task recovery...")
+    logger.info("Starting application...")
+
+    # Run database migrations
+    try:
+        from app.db.migrations import run_migrations
+
+        run_migrations()
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        # Continue startup - migrations might already be applied
+
+    logger.info("Setting up MinIO and task recovery...")
 
     # Initialize MinIO bucket
     async def setup_minio():
@@ -152,4 +163,5 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Binding to 0.0.0.0 is required for Docker containers
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104

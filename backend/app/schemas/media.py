@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import field_validator
+from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
 
@@ -27,6 +29,48 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
+class ReprocessRequest(BaseModel):
+    """Request schema for reprocessing a file with optional speaker diarization settings.
+
+    Attributes:
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
+    """
+
+    min_speakers: Optional[int] = Field(
+        None, description="Minimum number of speakers for diarization (positive integer)"
+    )
+    max_speakers: Optional[int] = Field(
+        None, description="Maximum number of speakers for diarization (positive integer)"
+    )
+    num_speakers: Optional[int] = Field(
+        None, description="Fixed number of speakers for diarization (overrides min/max when set)"
+    )
+
+    @field_validator("min_speakers", "max_speakers", "num_speakers")
+    @classmethod
+    def validate_speaker_count_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that speaker counts are positive integers (>= 1) if provided."""
+        if v is not None and v < 1:
+            raise ValueError("Speaker count must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def validate_min_max_speakers(self) -> "ReprocessRequest":
+        """Validate that min_speakers <= max_speakers if both are provided."""
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError(
+                f"min_speakers ({self.min_speakers}) must be less than or equal to "
+                f"max_speakers ({self.max_speakers})"
+            )
+        return self
+
+
 class PrepareUploadRequest(BaseModel):
     """Request schema for preparing a file upload.
 
@@ -38,6 +82,9 @@ class PrepareUploadRequest(BaseModel):
         content_type: MIME type of the file
         file_hash: SHA-256 hash of the file for duplicate detection
         extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization (overrides min/max)
     """
 
     filename: str = Field(..., description="Name of the file to be uploaded")
@@ -49,6 +96,37 @@ class PrepareUploadRequest(BaseModel):
     extracted_from_video: Optional[dict[str, Any]] = Field(
         None, description="Metadata from original video file if audio was extracted client-side"
     )
+    min_speakers: Optional[int] = Field(
+        None, description="Minimum number of speakers for diarization (positive integer)"
+    )
+    max_speakers: Optional[int] = Field(
+        None, description="Maximum number of speakers for diarization (positive integer)"
+    )
+    num_speakers: Optional[int] = Field(
+        None, description="Fixed number of speakers for diarization (overrides min/max when set)"
+    )
+
+    @field_validator("min_speakers", "max_speakers", "num_speakers")
+    @classmethod
+    def validate_speaker_count_positive(cls, v: Optional[int]) -> Optional[int]:
+        """Validate that speaker counts are positive integers (>= 1) if provided."""
+        if v is not None and v < 1:
+            raise ValueError("Speaker count must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def validate_min_max_speakers(self) -> "PrepareUploadRequest":
+        """Validate that min_speakers <= max_speakers if both are provided."""
+        if (
+            self.min_speakers is not None
+            and self.max_speakers is not None
+            and self.min_speakers > self.max_speakers
+        ):
+            raise ValueError(
+                f"min_speakers ({self.min_speakers}) must be less than or equal to "
+                f"max_speakers ({self.max_speakers})"
+            )
+        return self
 
 
 class SpeakerBase(BaseModel):
@@ -260,6 +338,11 @@ class MediaFileDetail(MediaFile):
 
     # Additional formatted fields for detail view
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
+
+    # Transcript pagination metadata
+    total_segments: Optional[int] = None  # Total number of transcript segments
+    segment_limit: Optional[int] = None  # Max segments returned (None = all)
+    segment_offset: Optional[int] = None  # Offset for pagination
 
 
 class TagBase(BaseModel):

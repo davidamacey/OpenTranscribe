@@ -1,15 +1,40 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColorForSegment, getSpeakerColor } from '$lib/utils/speakerColors';
   import ReprocessButton from './ReprocessButton.svelte';
   import ScrollbarIndicator from './ScrollbarIndicator.svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
+  import SpeakerMerge from './SpeakerMerge.svelte';
+  import SegmentSpeakerDropdown from './SegmentSpeakerDropdown.svelte';
   import { type TranscriptSegment } from '$lib/utils/scrollbarCalculations';
   import { downloadStore } from '$stores/downloads';
   import { toastStore } from '$stores/toast';
   import { highlightTextWithMatches, highlightSpeakerName, type SearchMatch } from '$lib/utils/searchHighlight';
-  
+  import { updateSegmentSpeaker } from '$lib/api/transcripts';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
+
+  // Helper function to translate speaker input placeholder
+  function translatePlaceholder(placeholder: string | undefined, speakerName: string): string {
+    if (!placeholder) return translateSpeakerLabel(speakerName);
+
+    // Handle "Label SPEAKER_XX" pattern
+    if (placeholder.startsWith('Label ')) {
+      const label = placeholder.substring(6); // Remove "Label " prefix
+      return $t('transcript.labelPlaceholder', { speaker: translateSpeakerLabel(label) });
+    }
+
+    // Handle "Suggested: Name" pattern
+    if (placeholder.startsWith('Suggested: ')) {
+      const name = placeholder.substring(11); // Remove "Suggested: " prefix
+      return $t('transcript.suggestedPlaceholder', { name });
+    }
+
+    // Return as-is if it's a direct name suggestion
+    return placeholder;
+  }
+
   export let file: any = null;
   export let isEditingTranscript: boolean = false;
   export let editedTranscript: string = '';
@@ -24,11 +49,66 @@
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
 
+  // Pagination props
+  export let totalSegments: number = 0;
+  export let hasMoreSegments: boolean = false;
+  export let loadingMoreSegments: boolean = false;
+
+  // Infinite scroll sentinel element
+  let infiniteScrollSentinel: HTMLElement | null = null;
+  let infiniteScrollObserver: IntersectionObserver | null = null;
+
+  // Scroll progress tracking (reading progress bar)
+  let scrollProgress: number = 0;
+  let transcriptDisplayElement: HTMLElement | null = null;
+
+  // Calculate loaded segments info
+  $: loadedSegments = file?.transcript_segments?.length || 0;
+  $: loadedPercent = totalSegments > 0 ? Math.round((loadedSegments / totalSegments) * 100) : 100;
+
+  // Handle scroll to update progress bar
+  function handleTranscriptScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    if (target) {
+      const scrollHeight = target.scrollHeight - target.clientHeight;
+      if (scrollHeight > 0) {
+        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+      }
+    }
+  }
+
+  // Set up infinite scroll observer
+  onMount(() => {
+    if (typeof IntersectionObserver !== 'undefined') {
+      infiniteScrollObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry?.isIntersecting && hasMoreSegments && !loadingMoreSegments) {
+            dispatch('loadMore');
+          }
+        },
+        { rootMargin: '200px' } // Trigger 200px before reaching the sentinel
+      );
+    }
+  });
+
+  onDestroy(() => {
+    if (infiniteScrollObserver) {
+      infiniteScrollObserver.disconnect();
+      infiniteScrollObserver = null;
+    }
+  });
+
+  // Observe the sentinel element when it's available
+  $: if (infiniteScrollSentinel && infiniteScrollObserver) {
+    infiniteScrollObserver.observe(infiniteScrollSentinel);
+  }
+
   // Reference reprocessing to suppress warning (will be tree-shaken in production)
   $: { reprocessing; }
 
   const dispatch = createEventDispatcher();
-  
+
   // Download state management
   let downloadState = $downloadStore;
   $: downloadState = $downloadStore;
@@ -52,19 +132,19 @@
   // Handle scrollbar indicator click to seek to playhead
   function handleSeekToPlayhead(event: CustomEvent) {
     const { currentTime: seekTime, targetSegment } = event.detail;
-    
+
     if (targetSegment) {
       // Scroll to the current segment
       const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.id || `${targetSegment.start_time}-${targetSegment.end_time}`}"]`);
       if (segmentElement) {
-        segmentElement.scrollIntoView({ 
-          behavior: 'smooth', 
+        segmentElement.scrollIntoView({
+          behavior: 'smooth',
           block: 'center',
           inline: 'nearest'
         });
       }
     }
-    
+
     // Also dispatch to parent for potential video seeking
     dispatch('seekToPlayhead', { time: seekTime, segment: targetSegment });
   }
@@ -72,7 +152,7 @@
   // Check if scrollbar indicator should be enabled
   $: {
     scrollbarIndicatorEnabled = !!(
-      transcriptSegments && 
+      transcriptSegments &&
       transcriptSegments.length > 10 && // Only show for transcripts with substantial content
       currentTime >= 0 &&
       !isEditingTranscript // Hide during transcript editing
@@ -126,6 +206,11 @@
     dispatch('reprocess', event.detail);
   }
 
+  function handleSpeakersMerged() {
+    // Dispatch event to parent to refresh speakers and transcript data
+    dispatch('speakersMerged');
+  }
+
   // Helper function to check if speaker has cross-video matches to display
   function hasCrossVideoMatches(speaker: any): boolean {
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
@@ -146,60 +231,119 @@
 
   function handleNavigateToMatch(event: CustomEvent) {
     const { match, segment, segmentIndex, autoSeek } = event.detail;
-    
+
     // Only seek if explicitly requested (e.g., user clicks on a segment)
     // Don't auto-seek when just navigating through search results
     if (autoSeek && match.type === 'text') {
       handleSegmentClick(segment.start_time);
     }
-    
+
     // The scrolling and highlighting is handled by the search component
+  }
+
+  // Handle segment speaker change
+  let updatingSegments = new Set<string>();
+
+  async function handleSegmentSpeakerChange(event: CustomEvent) {
+    const { segmentUuid, speakerUuid } = event.detail;
+
+    // Prevent duplicate requests
+    if (updatingSegments.has(segmentUuid)) {
+      return;
+    }
+
+    updatingSegments.add(segmentUuid);
+
+    // Find the segment in our local state
+    const segmentIndex = file.transcript_segments.findIndex(
+      (s: any) => (s.uuid || s.id) === segmentUuid
+    );
+
+    if (segmentIndex === -1) {
+      toastStore.error($t('transcript.segmentNotFound'));
+      updatingSegments.delete(segmentUuid);
+      return;
+    }
+
+    // Store original speaker for rollback
+    const originalSpeaker = file.transcript_segments[segmentIndex].speaker;
+
+    // Optimistic update - find the new speaker from our speaker list
+    const newSpeaker = speakerUuid
+      ? speakerList.find((s: any) => s.uuid === speakerUuid)
+      : null;
+
+    file.transcript_segments[segmentIndex].speaker = newSpeaker;
+    file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+    try {
+      // Make API call
+      const updatedSegment = await updateSegmentSpeaker(segmentUuid, speakerUuid);
+
+      // Update with server response
+      file.transcript_segments[segmentIndex] = updatedSegment;
+      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+      toastStore.success($t('transcript.speakerAssignmentUpdated'));
+    } catch (error: any) {
+      console.error('Error updating segment speaker:', error);
+
+      // Rollback on error
+      file.transcript_segments[segmentIndex].speaker = originalSpeaker;
+      file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
+
+      toastStore.error(
+        error.response?.data?.detail || $t('transcript.failedToUpdateSpeaker')
+      );
+    } finally {
+      updatingSegments.delete(segmentUuid);
+    }
   }
 
   async function downloadFile() {
     if (!file || !file.id) {
-      toastStore.error('File information not available');
+      toastStore.error($t('transcript.fileNotAvailable'));
       return;
     }
-    
+
     const fileId = file.id.toString();
     const filename = file.filename;
-    
+
     // Check if download is already in progress
     if (isDownloading) {
-      toastStore.warning(`${filename} is already being processed. Please wait for it to complete.`);
+      toastStore.warning($t('transcript.downloadAlreadyProcessing', { filename }));
       return;
     }
-    
+
     // Start download tracking
     const canStart = downloadStore.startDownload(fileId, filename);
     if (!canStart) return;
-    
+
     try {
       // Get auth token from localStorage
       const token = localStorage.getItem('token');
-      
+
       if (!token) {
         downloadStore.updateStatus(fileId, 'error', undefined, 'No authentication token found. Please log in again.');
         return;
       }
-      
+
       downloadStore.updateStatus(fileId, 'processing');
-      
+
       // Determine if this is a video with subtitles for enhanced processing
       const isVideo = file.content_type?.startsWith('video/');
       const hasSubtitles = file.status === 'completed' && file.transcript_segments?.length > 0;
-      
+
       // For cached videos, add a small delay to ensure download state is properly initialized
       // before WebSocket 'completed' message arrives
       if (isVideo && hasSubtitles) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
+
       // Build download URL
       let downloadUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}`;
       let downloadFilename = filename;
-      
+
       // For videos with subtitles, include subtitle embedding parameters
       if (isVideo && hasSubtitles) {
         downloadUrl += '&include_speakers=true';
@@ -208,22 +352,22 @@
         const extension = filename.includes('.') ? filename.substring(filename.lastIndexOf('.')) : '.mp4';
         downloadFilename = `${baseName}_with_subtitles${extension}`;
       }
-      
+
       downloadStore.updateStatus(fileId, 'downloading');
-      
+
       // Create download link
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = downloadFilename;
       link.style.display = 'none';
       document.body.appendChild(link);
-      
+
       // Trigger download
       link.click();
-      
+
       // Clean up
       document.body.removeChild(link);
-      
+
       // For non-video files or videos without subtitles, mark as completed quickly
       if (!isVideo || !hasSubtitles) {
         setTimeout(() => {
@@ -236,13 +380,13 @@
         const checkInterval = setInterval(() => {
           checkCount++;
           const currentStatus = downloadStore.getDownloadStatus(fileId);
-          
+
           // If status changed to completed or error, clear the interval
           if (!currentStatus || currentStatus.status === 'completed' || currentStatus.status === 'error') {
             clearInterval(checkInterval);
             return;
           }
-          
+
           // For cached videos, the download starts almost immediately
           // If we're still in processing after 3 seconds, it's likely done
           if (checkCount >= 3 && ['processing', 'downloading'].includes(currentStatus.status)) {
@@ -250,7 +394,7 @@
             clearInterval(checkInterval);
             return;
           }
-          
+
           // For actual processing, give it more time (up to 60 seconds)
           if (checkCount >= 60 && ['processing', 'downloading'].includes(currentStatus.status)) {
             downloadStore.updateStatus(fileId, 'completed');
@@ -258,10 +402,10 @@
           }
         }, 1000); // Check every second
       }
-      
+
     } catch (error) {
       console.error('Download error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Download failed';
+      const errorMessage = error instanceof Error ? error.message : $t('transcript.downloadFailed');
       downloadStore.updateStatus(fileId, 'error', undefined, errorMessage);
     }
   }
@@ -271,7 +415,7 @@
 <section class="transcript-column">
   <div class="transcript-header">
     <!-- Search component moved to header -->
-    <TranscriptSearch 
+    <TranscriptSearch
       {transcriptSegments}
       {speakerList}
       disabled={!file?.transcript_segments?.length}
@@ -279,75 +423,89 @@
       on:navigateToMatch={handleNavigateToMatch}
     />
   </div>
-  
+
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     {#if isEditingTranscript}
       <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
       <div class="edit-actions">
-        <button 
-          on:click={saveTranscript} 
+        <button
+          on:click={saveTranscript}
           disabled={savingTranscript}
-          title="Save all changes to the transcript"
+          title={$t('transcript.saveChangesTitle')}
         >
-          {savingTranscript ? 'Saving...' : 'Save Transcript'}
+          {savingTranscript ? $t('common.saving') : $t('transcript.saveTranscript')}
         </button>
-        <button 
-          class="cancel-button" 
+        <button
+          class="cancel-button"
           on:click={cancelEditTranscript}
-          title="Cancel editing and discard all changes"
-        >Cancel</button>
+          title={$t('transcript.cancelEditingTitle')}
+        >{$t('common.cancel')}</button>
       </div>
     {:else}
       <div bind:this={transcriptContainer} class="transcript-display-container">
-        <div class="transcript-display">
+        <!-- Reading progress bar at top -->
+        {#if totalSegments > 0}
+          <div class="reading-progress-bar">
+            <div
+              class="reading-progress-fill"
+              style="width: {scrollProgress}%"
+            ></div>
+          </div>
+        {/if}
+        <div
+          class="transcript-display"
+          bind:this={transcriptDisplayElement}
+          on:scroll={handleTranscriptScroll}
+        >
         {#each file.transcript_segments as segment}
-          <div 
-            class="transcript-segment" 
+          <div
+            class="transcript-segment"
             data-segment-id="{segment.id || `${segment.start_time}-${segment.end_time}`}"
           >
             {#if editingSegmentId === segment.id}
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
-                <div class="segment-speaker">{segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown'}</div>
+                <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
                 <div class="segment-edit-input">
                   <textarea bind:value={editingSegmentText} rows="3" class="segment-textarea"></textarea>
                   <div class="segment-edit-actions">
-                    <button 
-                      class="cancel-button" 
+                    <button
+                      class="cancel-button"
                       on:click={cancelEditSegment}
-                      title="Cancel editing this segment and discard changes"
-                    >Cancel</button>
-                    <button 
-                      class="save-button" 
-                      on:click={() => saveSegment(segment)} 
+                      title={$t('transcript.cancelSegmentTitle')}
+                    >{$t('common.cancel')}</button>
+                    <button
+                      class="save-button"
+                      on:click={() => saveSegment(segment)}
                       disabled={savingTranscript}
-                      title="Save changes to this segment"
+                      title={$t('transcript.saveSegmentTitle')}
                     >
-                      {savingTranscript ? 'Saving...' : 'Save'}
+                      {savingTranscript ? $t('common.saving') : $t('common.save')}
                     </button>
                   </div>
                 </div>
               </div>
             {:else}
               <div class="segment-row">
-                <button 
-                  class="segment-content" 
+                <button
+                  class="segment-content"
                   on:click={() => handleSegmentClick(segment.start_time)}
                   on:keydown={(e) => e.key === 'Enter' && handleSegmentClick(segment.start_time)}
-                  title="Jump to this segment"
+                  title={$t('transcript.jumpToSegment')}
                 >
                   <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                   <div
-                    class="segment-speaker"
-                    style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                    class="segment-speaker-wrapper"
+                    role="button"
+                    tabindex="0"
+                    on:click|stopPropagation
+                    on:keydown={(e) => e.key === 'Enter' && e.stopPropagation()}
                   >
-                    {@html highlightSpeakerName(
-                      segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || 'Unknown',
-                      searchQuery,
-                      file.transcript_segments.indexOf(segment),
-                      searchMatches,
-                      currentMatchIndex
-                    )}
+                    <SegmentSpeakerDropdown
+                      {segment}
+                      speakers={speakerList}
+                      on:change={handleSegmentSpeakerChange}
+                    />
                   </div>
                   <div class="segment-text">
                     {@html highlightTextWithMatches(
@@ -359,22 +517,50 @@
                     )}
                   </div>
                 </button>
-                <button 
-                  class="edit-button" 
-                  on:click|stopPropagation={() => editSegment(segment)} 
-                  title="Edit segment"
+                <button
+                  class="edit-button"
+                  on:click|stopPropagation={() => editSegment(segment)}
+                  title={$t('transcript.editSegment')}
                 >
-                  Edit
+                  {$t('common.edit')}
                 </button>
               </div>
             {/if}
           </div>
         {/each}
+
+        <!-- Infinite scroll sentinel and loading indicator -->
+        {#if hasMoreSegments}
+          <div
+            class="infinite-scroll-sentinel"
+            bind:this={infiniteScrollSentinel}
+          >
+            {#if loadingMoreSegments}
+              <div class="loading-more-indicator">
+                <span class="loading-spinner"></span>
+                <span>{$t('transcript.loadingMoreSegments')}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
         </div>
-        
+
+        <!-- Segments loaded info -->
+        {#if totalSegments > 0 && loadedSegments < totalSegments}
+          <div class="segments-loaded-info">
+            <span class="segments-count">{$t('transcript.segmentsLoaded', { loaded: loadedSegments, total: totalSegments })}</span>
+            {#if loadingMoreSegments}
+              <span class="loading-indicator">
+                <span class="loading-spinner-small"></span>
+                {$t('common.loading')}
+              </span>
+            {/if}
+          </div>
+        {/if}
+
         <!-- Scrollbar Position Indicator - Inside transcript-display-container for proper positioning -->
         {#if scrollbarIndicatorEnabled}
-          <ScrollbarIndicator 
+          <ScrollbarIndicator
             {currentTime}
             {transcriptSegments}
             containerElement={transcriptContainer?.querySelector('.transcript-display')}
@@ -383,20 +569,20 @@
           />
         {/if}
       </div>
-      
-      
+
+
       <div class="transcript-actions">
         <div class="export-dropdown">
-          <button 
+          <button
             class="export-transcript-button"
-            title="Export transcript in various formats including text, JSON, CSV, SRT, and WebVTT"
+            title={$t('transcript.exportTitle')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Export
+            {$t('transcript.export')}
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
               <line x1="9" y1="9" x2="15" y2="9"></line>
@@ -405,72 +591,72 @@
             </svg>
           </button>
           <div class="export-dropdown-content">
-            <button 
+            <button
               on:click={() => exportTranscript('txt')}
-              title="Export transcript as plain text file"
-            >Plain Text (.txt)</button>
-            <button 
+              title={$t('transcript.exportTextTitle')}
+            >{$t('transcript.exportText')}</button>
+            <button
               on:click={() => exportTranscript('json')}
-              title="Export transcript as JSON file with timestamps and speaker information"
-            >JSON Format (.json)</button>
-            <button 
+              title={$t('transcript.exportJsonTitle')}
+            >{$t('transcript.exportJson')}</button>
+            <button
               on:click={() => exportTranscript('csv')}
-              title="Export transcript as CSV file for spreadsheet applications"
-            >CSV Format (.csv)</button>
-            <button 
+              title={$t('transcript.exportCsvTitle')}
+            >{$t('transcript.exportCsv')}</button>
+            <button
               on:click={() => exportTranscript('srt')}
-              title="Export transcript as SRT subtitle file for video players"
-            >SubRip Subtitles (.srt)</button>
-            <button 
+              title={$t('transcript.exportSrtTitle')}
+            >{$t('transcript.exportSrt')}</button>
+            <button
               on:click={() => exportTranscript('vtt')}
-              title="Export transcript as WebVTT subtitle file for web video players"
-            >WebVTT Subtitles (.vtt)</button>
+              title={$t('transcript.exportVttTitle')}
+            >{$t('transcript.exportVtt')}</button>
           </div>
         </div>
-        
+
         <button
           class="edit-speakers-button"
           on:click={toggleSpeakerEditor}
-          title="Edit speaker names to replace generic labels (SPEAKER_01, etc.) with actual names"
+          title={$t('transcript.editSpeakersTitle')}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
-          {isEditingSpeakers ? 'Hide Speaker Editor' : 'Edit Speakers'}
+          {isEditingSpeakers ? $t('transcript.hideSpeakerEditor') : $t('transcript.editSpeakers')}
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
         </button>
-        
+
         {#if file && file.download_url}
-          <button 
-            class="action-button download-button" 
+          <button
+            class="action-button download-button"
             class:downloading={isDownloading}
             class:processing={currentDownload?.status === 'processing'}
             disabled={isDownloading}
             on:click={downloadFile}
-            title={isDownloading ? 
-              `Processing video with subtitles (may take 1-2 minutes for large files)...` : 
-              (file.content_type?.startsWith('video/') && file.status === 'completed' ? 'Download video (subtitles will be embedded if transcript exists)' : 'Download media file')}
+            title={isDownloading ?
+              $t('transcript.processingVideoWithSubtitles') :
+              (file.content_type?.startsWith('video/') && file.status === 'completed' ? $t('transcript.downloadVideoWithSubtitles') : $t('transcript.downloadMediaFile'))}
           >
             {#if isDownloading}
               {#if currentDownload?.status === 'preparing'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Preparing...
+                {$t('transcript.preparing')}
               {:else if currentDownload?.status === 'processing'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Processing...
+                {$t('transcript.processing')}
               {:else if currentDownload?.status === 'downloading'}
                 <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 12a9 9 0 11-6.219-8.56"/>
                 </svg>
-                Processing...
+                {$t('transcript.processing')}
               {/if}
             {:else}
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -478,7 +664,7 @@
                 <polyline points="7 10 12 15 17 10"></polyline>
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
-              Download
+              {$t('transcript.download')}
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
                 <line x1="7" y1="2" x2="7" y2="22"></line>
@@ -494,22 +680,22 @@
         {/if}
 
       </div>
-      
+
       {#if isEditingSpeakers}
         <div class="speaker-editor-container" transition:slide={{ duration: 200 }}>
           <div class="speaker-editor-header">
             <h4>
-              Edit Speaker Names
+              {$t('transcript.editSpeakerNames')}
               {#if speakerNamesChanged}
-                <span class="unsaved-indicator" title="You have unsaved speaker name changes">•</span>
+                <span class="unsaved-indicator" title={$t('transcript.unsavedChanges')}>•</span>
               {/if}
             </h4>
 
             <!-- Confidence Legend - Compact Info Icon -->
             <div class="legend-info-container">
-              <span class="legend-title">Color Legend</span>
+              <span class="legend-title">{$t('transcript.colorLegend')}</span>
               <div class="legend-info-wrapper">
-                <button class="legend-info-icon" title="Click to see confidence color coding">
+                <button class="legend-info-icon" title={$t('transcript.clickToSeeConfidenceColors')}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -519,21 +705,30 @@
                 <div class="legend-tooltip">
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--success-color);"></span>
-                    ≥75% High (auto-suggested)
+                    {$t('transcript.highConfidence')}
                   </div>
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--warning-color);"></span>
-                    50-74% Medium (verify)
+                    {$t('transcript.mediumConfidence')}
                   </div>
                   <div class="legend-item">
                     <span class="legend-color" style="background-color: var(--error-color);"></span>
-                    &lt;50% Low (manual)
+                    {$t('transcript.lowConfidence')}
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          
+
+          <!-- Speaker Merge UI -->
+          {#if speakerList && speakerList.length > 1}
+            <SpeakerMerge
+              speakers={speakerList}
+              transcriptSegments={file?.transcript_segments || []}
+              on:merged={handleSpeakersMerged}
+            />
+          {/if}
+
           {#if speakerList && speakerList.length > 0}
             <div class="speaker-list">
               {#each speakerList as speaker}
@@ -543,14 +738,14 @@
                       class="speaker-original"
                       style="background-color: {getSpeakerColor(speaker.name).bg}; border-color: {getSpeakerColor(speaker.name).border}; --speaker-light: {getSpeakerColor(speaker.name).textLight}; --speaker-dark: {getSpeakerColor(speaker.name).textDark};"
                     >
-                      {speaker.name}
+                      {translateSpeakerLabel(speaker.name)}
                     </span>
                     <div class="speaker-input-wrapper">
                     <input
                       type="text"
                       bind:value={speaker.display_name}
-                      placeholder={speaker.input_placeholder}
-                      title="Enter a custom name for {speaker.name} (e.g., 'John Smith', 'Interviewer', etc.)"
+                      placeholder={translatePlaceholder(speaker.input_placeholder, speaker.name)}
+                      title={$t('transcript.enterSpeakerName', { speaker: translateSpeakerLabel(speaker.name) })}
                       class:suggested-high={speaker.is_high_confidence}
                       class:suggested-medium={speaker.is_medium_confidence}
                       data-speaker-id={speaker.id}
@@ -567,12 +762,12 @@
                       }}
                     />
                     {#if speaker.show_profile_badge}
-                      <div class="speaker-profile-badge" title="This speaker has a verified profile (appears in multiple videos)">
+                      <div class="speaker-profile-badge" title={$t('transcript.speakerHasProfile')}>
                         <svg class="profile-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                           <circle cx="12" cy="7" r="4"></circle>
                         </svg>
-                        <span class="profile-text">Profile</span>
+                        <span class="profile-text">{$t('transcript.profile')}</span>
                       </div>
                     {/if}
                     </div>
@@ -582,34 +777,34 @@
                     <!-- Unified Suggestions Section -->
                     {#if speaker.show_suggestions_section}
                       <div class="suggestions-section">
-                        <button 
+                        <button
                           class="suggestions-toggle"
                           on:click={() => speaker.showSuggestions = !speaker.showSuggestions}
-                          title="View available suggestions for speaker identification"
+                          title={$t('transcript.viewAvailableSuggestions')}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showSuggestions}>
                             <polyline points="6 9 12 15 18 9"></polyline>
                           </svg>
-                          {speaker.total_suggestions} suggestion{speaker.total_suggestions !== 1 ? 's' : ''} available
+                          {speaker.total_suggestions !== 1 ? $t('transcript.suggestionsCountPlural', { count: speaker.total_suggestions }) : $t('transcript.suggestionsCount', { count: speaker.total_suggestions })}
                           {#if !speaker.display_name}
-                            <span class="expand-hint">(click to expand)</span>
+                            <span class="expand-hint">{$t('transcript.clickToExpand')}</span>
                           {/if}
                         </button>
-                        
+
                         {#if speaker.showSuggestions}
                           <div class="suggestions-dropdown" transition:slide={{ duration: 200 }}>
                             <!-- Horizontal chip layout -->
                             <div class="suggestion-chips-container">
                               {#if speaker.has_llm_suggestion}
                                 <div class="chip-row">
-                                  <span class="chip-label">AI:</span>
+                                  <span class="chip-label">{$t('transcript.aiSuggestion')}</span>
                                   <button
                                     class="suggestion-chip llm-chip"
                                     class:high-confidence={speaker.confidence >= 0.75}
                                     class:medium-confidence={speaker.confidence >= 0.5 && speaker.confidence < 0.75}
                                     class:low-confidence={speaker.confidence < 0.5}
                                     on:click={() => { speaker.display_name = speaker.suggested_name; }}
-                                    title="AI suggested based on {speaker.suggestion_source === 'llm_analysis' ? 'conversation content analysis' : speaker.suggestion_source === 'profile_embedding' ? 'voice profile match' : 'voice similarity'}"
+                                    title={speaker.suggestion_source === 'llm_analysis' ? $t('transcript.aiSuggestedBasedOnContent') : speaker.suggestion_source === 'profile_embedding' ? $t('transcript.aiSuggestedBasedOnProfile') : $t('transcript.aiSuggestedBasedOnSimilarity')}
                                   >
                                     {#if speaker.suggestion_source === 'llm_analysis'}
                                       <svg class="source-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -638,22 +833,22 @@
                                   </button>
                                 </div>
                               {/if}
-                              
+
                               {#if loadingVoiceSuggestions}
                                 <div class="chip-row">
-                                  <span class="chip-label">Voice:</span>
+                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
                                   <div class="chips-wrap loading-suggestions">
                                     <div class="suggestion-spinner">
                                       <svg class="spinner" viewBox="0 0 50 50">
                                         <circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
                                       </svg>
-                                      <span class="loading-text">Updating suggestions...</span>
+                                      <span class="loading-text">{$t('transcript.updatingSuggestions')}</span>
                                     </div>
                                   </div>
                                 </div>
                               {:else if speaker.voice_suggestions && speaker.voice_suggestions.length > 0}
                                 <div class="chip-row">
-                                  <span class="chip-label">Voice:</span>
+                                  <span class="chip-label">{$t('transcript.voiceSuggestion')}</span>
                                   <div class="chips-wrap">
                                     {#each speaker.voice_suggestions.slice(0, 6) as suggestion}
                                       <button
@@ -676,7 +871,7 @@
                                       </button>
                                     {/each}
                                     {#if speaker.voice_suggestions.length > 6}
-                                      <span class="more-chips">+{speaker.voice_suggestions.length - 6}</span>
+                                      <span class="more-chips">{$t('transcript.moreChips', { count: speaker.voice_suggestions.length - 6 })}</span>
                                     {/if}
                                   </div>
                                 </div>
@@ -686,7 +881,7 @@
                         {/if}
                       </div>
                     {/if}
-                    
+
                     <!-- Cross-video speaker detection - Below text input -->
                     {#if hasCrossVideoMatches(speaker)}
                       <div class="cross-video-compact">
@@ -695,16 +890,16 @@
                             {#if speaker.display_name && speaker.display_name.trim() !== '' && !speaker.display_name.startsWith('SPEAKER_')}
                               <!-- For labeled speakers, cross_video_matches contains direct file objects -->
                               {@const totalVideoCount = speaker.cross_video_matches.length}
-                              "{speaker.display_name}" appears in {totalVideoCount} video{totalVideoCount !== 1 ? 's' : ''}
+                              {totalVideoCount !== 1 ? $t('transcript.speakerAppearsInVideosPlural', { name: speaker.display_name, count: totalVideoCount }) : $t('transcript.speakerAppearsInVideos', { name: speaker.display_name, count: totalVideoCount })}
                             {:else}
                               <!-- For unlabeled speakers, cross_video_matches contains file objects from individual_matches -->
-                              {speaker.name} matches {speaker.cross_video_matches.length} other speaker{speaker.cross_video_matches.length > 1 ? 's' : ''}
+                              {speaker.cross_video_matches.length > 1 ? $t('transcript.speakerMatchesOthersPlural', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length }) : $t('transcript.speakerMatchesOthers', { speaker: translateSpeakerLabel(speaker.name), count: speaker.cross_video_matches.length })}
                             {/if}
                           </span>
                           <div class="compact-controls">
-                            <button 
+                            <button
                               class="info-btn-consistent"
-                              title="Click for details"
+                              title={$t('transcript.clickForDetails')}
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -713,9 +908,9 @@
                                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
                               </svg>
                             </button>
-                            <button 
+                            <button
                               class="dropdown-arrow"
-                              title="Show/hide matches"
+                              title={$t('transcript.showHideMatches')}
                               on:click|stopPropagation={() => speaker.showMatches = !speaker.showMatches}
                             >
                               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class:rotated={speaker.showMatches}>
@@ -724,7 +919,7 @@
                             </button>
                           </div>
                         </div>
-                        
+
                         {#if speaker.showMatches}
                           <div class="compact-dropdown" transition:slide={{ duration: 200 }}>
                             {#if speaker.needsCrossMediaCall}
@@ -732,43 +927,43 @@
                               {@const visibleMatches = speaker.cross_video_matches.slice(0, 3)}
                               {@const remainingMatches = speaker.cross_video_matches.slice(3, 8)}
                               {@const remainingCount = speaker.cross_video_matches.length - 3}
-                              
+
                               <!-- After labeling: Show file list -->
                               <div class="matches-help">
-                                Files where "{speaker.display_name}" appears:
+                                {$t('transcript.filesWhereAppears', { name: speaker.display_name })}
                               </div>
                               <div class="compact-matches">
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
-                                  <div class="compact-match" title={match.title || match.media_file_title || 'Unknown video'}>
-                                    <span class="match-text">{((match.title || match.media_file_title || 'Unknown video').length > 35 ? (match.title || match.media_file_title || 'Unknown video').substring(0, 35) + '...' : (match.title || match.media_file_title || 'Unknown video'))}</span>
+                                  <div class="compact-match" title={match.title || match.media_file_title || $t('transcript.unknownVideo')}>
+                                    <span class="match-text">{((match.title || match.media_file_title || $t('transcript.unknownVideo')).length > 35 ? (match.title || match.media_file_title || $t('transcript.unknownVideo')).substring(0, 35) + '...' : (match.title || match.media_file_title || $t('transcript.unknownVideo')))}</span>
                                     <span class="match-confidence">
                                       {#if match.same_speaker}
-                                        ✓ Current
+                                        {$t('transcript.currentVideo')}
                                       {:else if match.confidence}
                                         ✓ {Math.round(match.confidence * 100)}%
                                       {:else}
-                                        ✓ Profile Match
+                                        {$t('transcript.profileMatch')}
                                       {/if}
                                     </span>
                                   </div>
                                 {/each}
                               </div>
-                                
+
                                 {#if remainingCount > 0}
                                   <div class="more-matches-compact hover-container">
-                                    <span class="more-matches-text">+{remainingCount} more</span>
+                                    <span class="more-matches-text">{$t('transcript.moreMatches', { count: remainingCount })}</span>
                                     <div class="hover-popup">
                                       {#each remainingMatches as match}
                                         <div class="popup-match">
-                                          <span class="popup-match-text">{match.title || match.media_file_title || 'Unknown video'}</span>
+                                          <span class="popup-match-text">{match.title || match.media_file_title || $t('transcript.unknownVideo')}</span>
                                           <span class="popup-match-confidence">
                                             {#if match.same_speaker}
-                                              ✓ Current
+                                              {$t('transcript.currentVideo')}
                                             {:else if match.confidence}
                                               ✓ {Math.round(match.confidence * 100)}%
                                             {:else}
-                                              ✓ Profile Match
+                                              {$t('transcript.profileMatch')}
                                             {/if}
                                           </span>
                                         </div>
@@ -784,13 +979,13 @@
 
                               <!-- For unlabeled speakers: Show video matches -->
                               <div class="matches-help">
-                                Potential voice matches found:
+                                {$t('transcript.potentialVoiceMatches')}
                               </div>
                               <div class="compact-matches">
                                 <div class="matches-scroll-container">
                                 {#each visibleMatches as match}
-                                  <div class="compact-match" title={match.media_file_title || 'Unknown video'}>
-                                    <span class="match-text">{(match.media_file_title || 'Unknown video').length > 20 ? (match.media_file_title || 'Unknown video').substring(0, 20) + '...' : (match.media_file_title || 'Unknown video')}</span>
+                                  <div class="compact-match" title={match.media_file_title || $t('transcript.unknownVideo')}>
+                                    <span class="match-text">{(match.media_file_title || $t('transcript.unknownVideo')).length > 20 ? (match.media_file_title || $t('transcript.unknownVideo')).substring(0, 20) + '...' : (match.media_file_title || $t('transcript.unknownVideo'))}</span>
                                     <span class="match-confidence">
                                       {Math.round(match.confidence * 100)}%
                                     </span>
@@ -801,11 +996,11 @@
                                 {#if remainingCount > 0}
                                   <div class="more-matches-compact">
                                     {#if remainingCount < 10}
-                                      +{remainingCount} more voice matches
+                                      {$t('transcript.moreVoiceMatches', { count: remainingCount })}
                                     {:else if remainingCount < 50}
-                                      +{remainingCount} more matches (showing top by confidence)
+                                      {$t('transcript.moreMatchesTopConfidence', { count: remainingCount })}
                                     {:else}
-                                      +{remainingCount} more matches (showing most relevant)
+                                      {$t('transcript.moreMatchesMostRelevant', { count: remainingCount })}
                                     {/if}
                                   </div>
                                 {/if}
@@ -822,34 +1017,114 @@
                 class="save-speakers-button"
                 on:click={saveSpeakerNames}
                 disabled={savingSpeakers || !speakerNamesChanged}
-                title={speakerNamesChanged ? "Save all speaker name changes and update the transcript" : "No changes to save"}
+                title={speakerNamesChanged ? $t('transcript.saveSpeakerNamesTitle') : $t('transcript.noChangesToSave')}
               >
                 {#if savingSpeakers}
                   <svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 12a9 9 0 11-6.219-8.56"/>
                   </svg>
-                  Saving...
+                  {$t('common.saving')}
                 {:else}
-                  Save Speaker Names
+                  {$t('transcript.saveSpeakerNames')}
                 {/if}
               </button>
             </div>
           {:else}
-            <p>No speakers found in this transcript.</p>
+            <p>{$t('transcript.noSpeakersFound')}</p>
           {/if}
         </div>
       {/if}
     {/if}
   {:else if file.status === 'completed'}
-    <p>No transcript available for this file.</p>
+    <p>{$t('transcript.noTranscriptAvailable')}</p>
   {:else if file.status === 'processing'}
-    <p>Transcript is being generated...</p>
+    <p>{$t('transcript.transcriptGenerating')}</p>
   {:else}
-    <p>Transcript not available.</p>
+    <p>{$t('transcript.transcriptNotAvailable')}</p>
   {/if}
 </section>
 
 <style>
+  /* Reading progress bar - horizontal bar at top showing scroll position */
+  .reading-progress-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border-color);
+    z-index: 10;
+    border-radius: 0;
+  }
+
+  .reading-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.1s ease-out;
+    border-radius: 0;
+  }
+
+  /* Infinite scroll styles */
+  .infinite-scroll-sentinel {
+    min-height: 1px;
+    padding: 8px 0;
+  }
+
+  .loading-more-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .loading-more-indicator .loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Segments loaded info bar */
+  .segments-loaded-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--surface-secondary);
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .segments-count {
+    font-weight: 500;
+  }
+
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .loading-spinner-small {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   .transcript-column {
     flex: 1;
     min-width: 0;
@@ -870,7 +1145,7 @@
     font-weight: 600;
     color: var(--text-primary);
   }
-  
+
 
   .transcript-textarea {
     width: 100%;
@@ -951,6 +1226,7 @@
   .transcript-display {
     max-height: 600px;
     overflow-y: auto;
+    overflow-x: hidden;
     position: relative;
   }
 
@@ -965,12 +1241,14 @@
   .segment-row {
     display: flex;
     align-items: stretch;
+    min-width: 0; /* Allow flex container to shrink */
+    width: 100%;
   }
 
   .segment-content {
-    flex: 1;
+    flex: 1 1 0; /* Allow shrinking below content size */
     display: grid;
-    grid-template-columns: auto auto 1fr;
+    grid-template-columns: auto auto minmax(0, 1fr); /* minmax(0, 1fr) allows column to shrink */
     gap: 12px;
     align-items: center;
     padding: 8px 12px;
@@ -981,6 +1259,15 @@
     transition: all 0.2s ease;
     border-radius: 4px;
     margin: 2px 4px;
+    min-width: 0; /* Allow grid to shrink */
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .segment-speaker-wrapper {
+    display: flex;
+    align-items: center;
+    min-width: fit-content;
   }
 
   .segment-content:hover {
@@ -1024,6 +1311,10 @@
     line-height: 1.4;
     position: relative;
     padding-left: 12px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0; /* Allow text to shrink in grid layout */
   }
 
   .segment-text::before {
@@ -1085,7 +1376,7 @@
     margin-top: 8px;
   }
 
-  .segment-edit-actions .save-button, 
+  .segment-edit-actions .save-button,
   .segment-edit-actions .cancel-button {
     padding: 0.4rem 0.8rem;
     border-radius: 10px;
@@ -1243,31 +1534,31 @@
     border-radius: 8px;
     border: 1px solid var(--border-color);
   }
-  
+
   .speaker-editor-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
   }
-  
+
   .legend-info-container {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.9rem;
   }
-  
+
   .legend-title {
     font-weight: 600;
     color: var(--text-primary);
   }
-  
+
   .legend-info-wrapper {
     position: relative;
     display: inline-block;
   }
-  
+
   .legend-info-icon {
     background: none;
     border: none;
@@ -1277,15 +1568,15 @@
     border-radius: 50%;
     transition: all 0.2s ease;
   }
-  
+
   .legend-info-icon:hover {
     background-color: var(--surface-hover);
   }
-  
+
   .legend-info-wrapper:hover .legend-tooltip {
     display: block;
   }
-  
+
   .legend-tooltip {
     display: none;
     position: absolute;
@@ -1301,7 +1592,7 @@
     min-width: 200px;
     margin-top: 4px;
   }
-  
+
   .legend-item {
     display: flex;
     align-items: center;
@@ -1310,11 +1601,11 @@
     margin-bottom: 0.5rem;
     font-size: 0.8rem;
   }
-  
+
   .legend-item:last-child {
     margin-bottom: 0;
   }
-  
+
   .legend-color {
     width: 12px;
     height: 12px;
@@ -1451,7 +1742,7 @@
     height: 1rem;
   }
 
-  
+
 
 
   .match-confidence {
@@ -1478,31 +1769,31 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-speakers-button:active {
     transform: translateY(0);
   }
-  
+
   .save-speakers-button:disabled {
     background: #94a3b8;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
   }
-  
+
   .save-speakers-button:disabled:hover {
     background: #94a3b8;
     transform: none;
     box-shadow: none;
   }
-  
+
   .save-speakers-button .spinner {
     margin-right: 0.5rem;
   }
 
   @media (max-width: 768px) {
     .segment-content {
-      grid-template-columns: auto auto 1fr;
+      grid-template-columns: auto auto minmax(0, 1fr);
       gap: 8px;
       padding: 8px;
     }
@@ -1545,29 +1836,29 @@
       min-width: auto;
     }
   }
-  
+
   /* Enhanced download button styles */
   .download-button:disabled {
     opacity: 0.7;
     cursor: not-allowed;
   }
-  
+
   .download-button.downloading {
     background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
   }
-  
+
   .download-button.processing {
     background: var(--warning-color, #f59e0b);
     color: white;
     border-color: var(--warning-color, #f59e0b);
   }
-  
+
   .spinner {
     animation: spin 1s linear infinite;
   }
-  
+
   @keyframes spin {
     from {
       transform: rotate(0deg);
@@ -1576,7 +1867,7 @@
       transform: rotate(360deg);
     }
   }
-  
+
   /* Compact cross-video UI styles */
   .cross-video-compact {
     margin-top: 0.3rem;
@@ -1586,7 +1877,7 @@
     border-radius: 4px;
     font-size: 0.75rem;
   }
-  
+
   .compact-header {
     display: flex;
     align-items: center;
@@ -1594,19 +1885,19 @@
     cursor: pointer;
     user-select: none;
   }
-  
+
   .compact-text {
     color: var(--text-color);
     flex: 1;
     font-size: 0.7rem;
   }
-  
+
   .compact-controls {
     display: flex;
     align-items: center;
     gap: 0.25rem;
   }
-  
+
   .info-btn-consistent, .dropdown-arrow {
     background: none;
     border: none;
@@ -1619,38 +1910,38 @@
     align-items: center;
     justify-content: center;
   }
-  
+
   .info-btn-consistent:hover, .dropdown-arrow:hover {
     background-color: var(--border-color-soft);
   }
-  
+
   .dropdown-arrow svg {
     transition: transform 0.2s ease;
   }
-  
+
   .dropdown-arrow svg.rotated {
     transform: rotate(180deg);
   }
-  
+
   .compact-dropdown {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
     border-top: 1px solid var(--border-color-soft);
   }
-  
+
   .matches-help {
     font-size: 0.65rem;
     color: var(--text-color-secondary);
     margin-bottom: 0.3rem;
     font-style: italic;
   }
-  
+
   .compact-matches {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
   }
-  
+
   .compact-match {
     display: flex;
     align-items: center;
@@ -1663,7 +1954,7 @@
     cursor: help;
     transition: background-color 0.2s ease;
   }
-  
+
   .compact-match:hover {
     background-color: var(--background-main);
     border-color: var(--border-color);
@@ -1673,13 +1964,13 @@
     flex: 1;
     color: var(--text-color);
   }
-  
+
   .match-confidence {
     font-weight: 500;
     font-size: 0.65rem;
     color: var(--success-color);
   }
-  
+
   .more-matches-compact {
     padding: 0.2rem 0.4rem;
     text-align: center;
@@ -1751,7 +2042,7 @@
     color: var(--success-color);
     white-space: nowrap;
   }
-  
+
   /* Scrollable container for large match sets */
   .matches-scroll-container {
     max-height: 200px;
@@ -1760,21 +2051,21 @@
     border-radius: 3px;
     padding: 0.2rem;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-track {
     background: var(--background-alt);
     border-radius: 3px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-thumb {
     background: var(--border-color);
     border-radius: 3px;
   }
-  
+
   .matches-scroll-container::-webkit-scrollbar-thumb:hover {
     background: var(--text-color-secondary);
   }

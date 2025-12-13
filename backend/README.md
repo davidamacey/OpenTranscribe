@@ -67,16 +67,22 @@ OpenTranscribe backend is built with modern Python technologies:
 
 #### Enhanced AI Processing Features
 - **Fast Batch Processing**: WhisperX leverages faster-whisper for batched inference (70x realtime with large-v2)
-- **Accurate Word-level Timestamps**: Uses wav2vec2 alignment for precise word timing
+- **100+ Language Transcription**: Support for 100+ languages with configurable source language
+- **Accurate Word-level Timestamps**: Uses wav2vec2 alignment for precise word timing (~42 languages supported)
+- **Optional English Translation**: Toggle to translate non-English audio or keep original language
 - **Advanced Speaker Diarization**: Identifies different speakers using PyAnnote.audio with voice fingerprinting
 - **Cross-Video Speaker Recognition**: AI-powered matching of speakers across different media files using embedding similarity
 - **Speaker Profile Management**: Global speaker profiles that persist across all transcriptions
 - **AI-Powered Speaker Suggestions**: Automatic speaker identification with confidence scoring and verification workflow
+- **Speaker Merge**: Combine duplicate speakers into single profiles with segment reassignment
 - **LLM-Powered Summarization**: Generate BLUF (Bottom Line Up Front) format summaries with action items, decisions, and speaker analysis
+- **Multilingual LLM Output**: Generate summaries in 12 different languages (en, es, fr, de, pt, zh, ja, ko, it, ru, ar, hi)
 - **Intelligent Section Processing**: Automatically handles transcripts of any length using context-aware chunking and summary stitching
 - **Universal Model Compatibility**: Works with models from 3B parameters (Ollama) to 200B+ parameters (Claude) via adaptive processing
-- **Automatic Translation**: Always converts audio to English transcripts
+- **Model Auto-Discovery**: Automatic detection of available models for OpenAI-compatible providers
 - **Video Metadata Extraction**: Extracts detailed metadata from video files using ExifTool (resolution, frame rate, codec, etc.)
+- **Auto-Cleanup Garbage Segments**: Automatic detection and removal of erroneous transcription segments
+- **Pagination Support**: Efficient handling of large transcripts without browser performance issues
 
 #### AI/ML Configuration
 Required environment variables for AI processing:
@@ -91,6 +97,8 @@ Required environment variables for AI processing:
 | `MAX_SPEAKERS` | Maximum number of speakers to detect (optional, can be increased to 50+ for large events) | `20` |
 | `HUGGINGFACE_TOKEN` | HuggingFace API token for diarization models | Required |
 | `MODEL_CACHE_DIR` | Host directory to cache downloaded models | `./models` |
+
+**Note**: Language settings (source language, translate to English, LLM output language) are user-configurable via the Settings UI and stored per-user in the database.
 
 #### Model Caching
 OpenTranscribe automatically caches AI models for persistence across container restarts:
@@ -134,21 +142,25 @@ backend/
 │   ├── api/                   # API layer
 │   │   ├── endpoints/         # API route handlers
 │   │   │   ├── files/        # File management modules
+│   │   │   ├── system.py     # System stats endpoint
 │   │   │   └── *.py          # Individual endpoint modules
 │   │   ├── router.py         # Main API router
 │   │   └── websockets.py     # WebSocket handlers
 │   ├── auth/                 # Authentication modules
 │   ├── core/                 # Core configuration and setup
+│   │   └── constants.py      # Language constants and system defaults
 │   ├── db/                   # Database utilities
+│   │   └── migrations.py     # Automatic startup migrations
 │   ├── models/               # SQLAlchemy ORM models
 │   ├── schemas/              # Pydantic validation schemas
+│   │   └── transcription_settings.py  # Transcription preferences
 │   ├── services/             # Business logic layer
 │   ├── tasks/                # Background task processing
 │   │   └── transcription/    # Modular transcription pipeline
 │   ├── utils/                # Common utilities
 │   ├── main.py              # FastAPI application entry point
 │   └── initial_data.py      # Database initialization
-├── alembic/                  # Database migrations
+├── alembic/                  # Database migrations (production)
 ├── scripts/                  # Utility scripts
 ├── tests/                    # Test suite
 ├── requirements.txt          # Python dependencies
@@ -220,25 +232,39 @@ backend/
   - GET `/recording` - Get user recording preferences
   - PUT `/recording` - Update recording settings (duration, quality, auto-stop)
   - DELETE `/recording` - Reset to default settings
+  - GET `/transcription` - Get user transcription preferences (speaker settings, language, garbage cleanup)
+  - PUT `/transcription` - Update transcription settings
+  - DELETE `/transcription` - Reset to default settings
+  - GET `/transcription/system-defaults` - Get system defaults and available language options
   - GET `/all` - Get all user settings for debugging
+
+- **System API** (`/api/system/`):
+  - GET `/stats` - System statistics (CPU, memory, disk, GPU) accessible to all authenticated users
 
 - **Enhanced File Processing**:
   - Improved upload handling with concurrency control
   - Better streaming support for large files
   - Enhanced URL processing with metadata extraction
   - POST `/{file_id}/analytics/refresh` - Refresh analytics computation for a media file
+  - Pagination support for large transcripts
 
 - **Advanced Speaker Management**:
   - Enhanced speaker suggestions with consolidated profile matching
   - Automatic profile creation and assignment workflow
   - Cross-video speaker recognition with embedding similarity
   - LLM-powered speaker identification using conversational context
+  - Speaker merge functionality with segment reassignment
 
 - **Enhanced Data Processing**:
   - Server-side analytics computation with comprehensive speaker metrics
   - Intelligent data formatting service for consistent display
   - Error categorization service with user-friendly suggestions
   - Task filtering service for optimized data retrieval
+
+- **LLM Improvements**:
+  - Model auto-discovery for OpenAI-compatible providers
+  - Multilingual output language support (12 languages)
+  - Improved endpoint configuration handling
 
 ## 📚 API Documentation
 
@@ -255,10 +281,11 @@ backend/
 ├── /files/upload      # Enhanced upload handling with concurrency
 ├── /files/url-processing # URL processing for video links
 ├── /users             # User management
-├── /user-settings     # User-specific settings management (recording preferences)
+├── /user-settings     # User-specific settings (recording, transcription preferences)
+├── /system            # System statistics (CPU, memory, disk, GPU)
 ├── /comments          # Comment system
 ├── /tags              # Tag management
-├── /speakers          # Speaker management and cross-video matching
+├── /speakers          # Speaker management, merge, and cross-video matching
 ├── /speaker-profiles  # Global speaker profile management
 ├── /summarization     # LLM-powered summarization endpoints
 ├── /llm-settings      # User-specific LLM configuration management
@@ -323,11 +350,13 @@ alembic revision --autogenerate    # Generate migration
 - **Async processing** for CPU-intensive operations
 
 ### Available Tasks
-- **Transcription**: WhisperX + speaker diarization with voice fingerprinting
+- **Transcription**: WhisperX + speaker diarization with voice fingerprinting (100+ languages)
 - **Speaker Matching**: Cross-video speaker identification and profile matching
+- **Speaker Merge**: Combine duplicate speakers with segment reassignment
 - **YouTube Processing**: Enhanced URL processing for video links with metadata extraction
 - **Analysis**: Transcript analysis and metrics
-- **Summarization**: Multi-provider LLM-powered summarization with BLUF format
+- **Summarization**: Multi-provider LLM-powered summarization with BLUF format (12 output languages)
+- **Garbage Cleanup**: Automatic detection and removal of erroneous transcription segments
 - **Notification System**: Real-time WebSocket updates for all processing stages
 
 ### Task Monitoring

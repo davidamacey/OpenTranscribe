@@ -34,17 +34,36 @@ OpenTranscribe uses the **large-v2** model by default:
 
 ## Multi-Language Support
 
-**50+ Languages Supported**:
+**100+ Languages Supported**:
+
+OpenTranscribe supports transcription in over 100 languages, including:
 
 - English (US, UK, Australian, Indian)
-- Spanish, French, German, Italian
-- Portuguese, Russian, Japanese, Chinese
-- Arabic, Hindi, Korean, and many more
+- Spanish, French, German, Italian, Portuguese
+- Russian, Japanese, Chinese (Simplified/Traditional)
+- Arabic, Hindi, Korean, Vietnamese, Thai
+- Dutch, Polish, Turkish, Swedish, Norwegian
+- And 80+ more languages from the Whisper model
 
-**Automatic Translation**:
-- Transcribe in original language
-- Automatically translate to English
-- Preserve word-level timestamps
+### Language Settings (New in v0.2.0)
+
+**User-Configurable Options**:
+
+1. **Source Language**:
+   - Auto-detect (default) - Whisper automatically identifies the language
+   - Manual selection - Specify language for improved accuracy
+
+2. **Translation to English**:
+   - Toggle on/off - Choose to keep original language or translate
+   - Default: Off (keeps original language)
+   - Useful when you need English output from foreign audio
+
+3. **Word-Level Timestamp Support**:
+   - ~42 languages have full word-level alignment
+   - Languages without alignment fall back to segment-level timestamps
+   - UI shows alignment support indicator for each language
+
+**Language Settings Location**: Settings → Transcription → Language Settings
 
 ## Word-Level Timestamps
 

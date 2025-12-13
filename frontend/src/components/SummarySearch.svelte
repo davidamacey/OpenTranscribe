@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  
+  import { t } from '$stores/locale';
+
   export let searchQuery: string = '';
   export let totalMatches: number = 0;
   export let currentMatchIndex: number = 0;
   export let disabled: boolean = false;
-  
+
   const dispatch = createEventDispatcher<{
     search: { query: string };
     clearSearch: void;
@@ -13,13 +14,13 @@
     previousMatch: void;
     keydown: KeyboardEvent;
   }>();
-  
+
   function handleInput(event: Event) {
     const target = event.target as HTMLInputElement;
     searchQuery = target.value;
     dispatch('search', { query: searchQuery });
   }
-  
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -33,16 +34,16 @@
       dispatch('keydown', event);
     }
   }
-  
+
   function clearSearch() {
     searchQuery = '';
     dispatch('clearSearch');
   }
-  
+
   function nextMatch() {
     dispatch('nextMatch');
   }
-  
+
   function previousMatch() {
     dispatch('previousMatch');
   }
@@ -53,36 +54,36 @@
     <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
       <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
     </svg>
-    
-    <input 
+
+    <input
       type="text"
-      placeholder="Search within summary... (Press Enter to cycle)"
+      placeholder={$t('search.placeholder')}
       bind:value={searchQuery}
       on:input={handleInput}
       on:keydown={handleKeydown}
       class="search-input"
       {disabled}
     />
-    
+
     {#if searchQuery && totalMatches > 0}
       <div class="search-controls">
         <span class="match-counter">{currentMatchIndex + 1}/{totalMatches}</span>
-        <button 
-          class="nav-button" 
+        <button
+          class="nav-button"
           on:click={previousMatch}
-          aria-label="Previous match"
-          title="Previous match (Shift+Enter)"
+          aria-label={$t('search.previousMatch')}
+          title={$t('search.previousMatchWithKey')}
           disabled={totalMatches === 0}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
             <path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/>
           </svg>
         </button>
-        <button 
-          class="nav-button" 
+        <button
+          class="nav-button"
           on:click={nextMatch}
-          aria-label="Next match"
-          title="Next match (Enter)"
+          aria-label={$t('search.nextMatch')}
+          title={$t('search.nextMatchWithKey')}
           disabled={totalMatches === 0}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -91,13 +92,13 @@
         </button>
       </div>
     {/if}
-    
+
     {#if searchQuery}
-      <button 
-        class="clear-button" 
+      <button
+        class="clear-button"
         on:click={clearSearch}
-        aria-label="Clear search"
-        title="Clear search"
+        aria-label={$t('search.clearSearch')}
+        title={$t('search.clearSearch')}
       >
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
           <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
@@ -106,10 +107,10 @@
       </button>
     {/if}
   </div>
-  
+
   {#if searchQuery && totalMatches === 0}
     <div class="no-results">
-      <span>No results found for "{searchQuery}"</span>
+      <span>{$t('search.noResults', { query: searchQuery })}</span>
     </div>
   {/if}
 </div>

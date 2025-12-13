@@ -126,17 +126,31 @@ def upload_file_to_storage(
         logger.info("Skipping S3 upload in test environment")
 
 
-def start_transcription_task(file_id: int, file_uuid: str) -> None:
+def start_transcription_task(
+    file_id: int,
+    file_uuid: str,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    num_speakers: Optional[int] = None,
+) -> None:
     """
     Start the background transcription and waveform generation tasks in parallel.
 
     Args:
         file_id: Database ID of the media file
         file_uuid: UUID of the media file to transcribe
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization
     """
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        # Launch GPU transcription task
-        transcribe_audio_task.delay(file_uuid)
+        # Launch GPU transcription task with speaker parameters
+        transcribe_audio_task.delay(
+            file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+        )
         # Launch CPU waveform generation task in parallel
         generate_waveform_task.delay(file_id=file_id, file_uuid=file_uuid)
         logger.info(
@@ -146,12 +160,160 @@ def start_transcription_task(file_id: int, file_uuid: str) -> None:
         logger.info("Skipping Celery task in test environment")
 
 
+def _get_or_create_file_record(
+    db: Session,
+    file: UploadFile,
+    current_user: User,
+    file_size: int,
+    existing_file_uuid: Optional[str],
+) -> MediaFile:
+    """
+    Get an existing file record or create a new one.
+
+    Args:
+        db: Database session
+        file: Uploaded file
+        current_user: Current user
+        file_size: Size of the file in bytes
+        existing_file_uuid: Optional UUID of existing file record
+
+    Returns:
+        MediaFile database record
+    """
+    if not existing_file_uuid:
+        db_file = create_media_file_record(db, file, current_user, file_size)
+        logger.info(f"Created new file record with ID: {db_file.id}")
+        return db_file
+
+    # Look up file by UUID
+    db_file = (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.uuid == existing_file_uuid,
+            MediaFile.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not db_file:
+        logger.warning(
+            f"Existing file UUID {existing_file_uuid} not found for user {current_user.id}"
+        )
+        return create_media_file_record(db, file, current_user, file_size)
+
+    logger.info(f"Using existing file record with UUID={existing_file_uuid}")
+    db_file.status = FileStatus.PENDING
+    db.commit()
+    return db_file
+
+
+async def _read_file_content(file: UploadFile) -> tuple[bytearray, int]:
+    """
+    Read file content in chunks.
+
+    Args:
+        file: Uploaded file
+
+    Returns:
+        Tuple of (file_content, total_size)
+    """
+    file_content = bytearray()
+    total_read = 0
+
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        file_content.extend(chunk)
+        total_read += len(chunk)
+
+    return file_content, total_read
+
+
+def _update_file_hash(db_file: MediaFile, client_file_hash: Optional[str], filename: str) -> None:
+    """
+    Update file hash on the database record.
+
+    Args:
+        db_file: MediaFile database record
+        client_file_hash: Optional file hash from client
+        filename: Original filename for logging
+    """
+    if client_file_hash:
+        # Remove 0x prefix if present for database consistency
+        if client_file_hash.startswith("0x"):
+            client_file_hash = client_file_hash[2:]
+        db_file.file_hash = client_file_hash
+    elif not db_file.file_hash:
+        logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
+
+
+def _cleanup_temp_file(temp_file_path: Optional[str]) -> None:
+    """
+    Clean up a temporary file if it exists.
+
+    Args:
+        temp_file_path: Path to temporary file
+    """
+    if temp_file_path and os.path.exists(temp_file_path):
+        with contextlib.suppress(Exception):
+            os.unlink(temp_file_path)
+
+
+async def _generate_video_thumbnail(
+    file_content: bytearray,
+    filename: str,
+    current_user: User,
+    db_file: MediaFile,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Generate and upload a thumbnail for video files.
+
+    Args:
+        file_content: Video file content
+        filename: Original filename
+        current_user: Current user
+        db_file: MediaFile database record
+
+    Returns:
+        Tuple of (thumbnail_path, temp_file_path)
+    """
+    import tempfile
+
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=os.path.splitext(filename)[1]
+        ) as temp_video:
+            temp_video.write(file_content)
+            temp_file_path = temp_video.name
+
+        thumbnail_path = await generate_and_upload_thumbnail(
+            user_id=current_user.id,
+            media_file_id=db_file.id,
+            video_path=temp_file_path,
+        )
+
+        if thumbnail_path:
+            logger.info(f"Generated thumbnail for video: {filename}, path: {thumbnail_path}")
+        else:
+            logger.warning(f"Failed to generate thumbnail for video: {filename}")
+
+        return thumbnail_path, temp_file_path
+    except Exception as e:
+        logger.warning(f"Error generating thumbnail for {filename}: {e}")
+        return None, temp_file_path
+
+
 async def process_file_upload(
     file: UploadFile,
     db: Session,
     current_user: User,
     existing_file_uuid: Optional[str] = None,
     client_file_hash: Optional[str] = None,
+    min_speakers: Optional[int] = None,
+    max_speakers: Optional[int] = None,
+    num_speakers: Optional[int] = None,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -163,6 +325,9 @@ async def process_file_upload(
         current_user: Current user
         existing_file_uuid: Optional UUID of existing file record from prepare_upload
         client_file_hash: Optional file hash calculated by the client (preferred method)
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization
 
     Returns:
         Created MediaFile object with storage path updated
@@ -170,156 +335,70 @@ async def process_file_upload(
     Raises:
         HTTPException: If there's an error during file processing
     """
-    try:
-        logger.info(f"File upload request received from user: {current_user.email}")
+    logger.info(f"File upload request received from user: {current_user.email}")
 
-        # Validate file type first
-        validate_file_type(file)
-        logger.info(
-            f"Processing file - filename: {file.filename}, content_type: {file.content_type}"
+    # Validate file type first
+    validate_file_type(file)
+    logger.info(f"Processing file - filename: {file.filename}, content_type: {file.content_type}")
+
+    # Get file size from content-length header if available
+    file_size = 0
+    with contextlib.suppress(ValueError, TypeError):
+        file_size = int(file.headers.get("content-length", 0))
+
+    # Get or create file record
+    db_file = _get_or_create_file_record(db, file, current_user, file_size, existing_file_uuid)
+
+    # Generate storage path with sanitized filename
+    storage_path = get_safe_storage_filename(file.filename, current_user.id, db_file.id)
+    temp_file_path: Optional[str] = None
+
+    try:
+        # Read file content in chunks
+        file_content, file_size = await _read_file_content(file)
+
+        # Update file hash
+        _update_file_hash(db_file, client_file_hash, file.filename)
+
+        # Upload to storage
+        upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
+
+        # For video files, generate and upload a thumbnail
+        if file.content_type.startswith("video/"):
+            thumbnail_path, temp_file_path = await _generate_video_thumbnail(
+                file_content, file.filename, current_user, db_file
+            )
+            if thumbnail_path:
+                db_file.thumbnail_path = thumbnail_path
+            _cleanup_temp_file(temp_file_path)
+
+        # Update storage path, file size, and thumbnail path in database
+        db_file.storage_path = storage_path
+        db_file.file_size = file_size
+        db.commit()
+        db.refresh(db_file)
+
+        # Start background transcription and waveform generation in parallel
+        start_transcription_task(
+            db_file.id, str(db_file.uuid), min_speakers, max_speakers, num_speakers
         )
 
-        # Get file size from content-length header if available
-        file_size = 0
-        with contextlib.suppress(ValueError, TypeError):
-            file_size = int(file.headers.get("content-length", 0))
-
-        # Check if we should use an existing file record (from prepare_upload)
-        if existing_file_uuid:
-            # Look up file by UUID
-            db_file = (
-                db.query(MediaFile)
-                .filter(
-                    MediaFile.uuid == existing_file_uuid,
-                    MediaFile.user_id == current_user.id,
-                )
-                .first()
-            )
-
-            if not db_file:
-                logger.warning(
-                    f"Existing file UUID {existing_file_uuid} not found for user {current_user.id}"
-                )
-                # Create a new file record if the existing one can't be found
-                db_file = create_media_file_record(db, file, current_user, file_size)
-            else:
-                logger.info(f"Using existing file record with UUID={existing_file_uuid}")
-                # Update the status to PENDING (in case it was in a different state)
-                db_file.status = FileStatus.PENDING
-                db.commit()
-        else:
-            # Create a new database record
-            db_file = create_media_file_record(db, file, current_user, file_size)
-            logger.info(f"Created new file record with ID: {db_file.id}")
-
-        # Generate storage path with sanitized filename
-        storage_path = get_safe_storage_filename(file.filename, current_user.id, db_file.id)
-        temp_file_path: Optional[str] = None
-
-        try:
-            # Process file in chunks
-            file_content = bytearray()
-            total_read = 0
-
-            # Read file in chunks
-            while True:
-                chunk = await file.read(UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                file_content.extend(chunk)
-                total_read += len(chunk)
-                # Removed debug log for performance
-
-            # Update file size with actual bytes read
-            file_size = total_read
-
-            # Prioritize client-provided hash, then existing hash, then calculate as fallback
-            if client_file_hash:
-                # If client_file_hash starts with 0x, remove it for database consistency
-                if client_file_hash.startswith("0x"):
-                    client_file_hash = client_file_hash[2:]
-                db_file.file_hash = client_file_hash
-            elif not db_file.file_hash:
-                # No file hash provided - this shouldn't happen with the updated frontend
-                logger.warning(
-                    f"No file hash provided for {file.filename} - duplicate detection may not work"
-                )
-
-            # Upload to storage
-            upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
-
-            # For video files, generate and upload a thumbnail
-            thumbnail_path = None
-            if file.content_type.startswith("video/"):
-                try:
-                    # We need to save the video temporarily to generate thumbnail
-                    import tempfile
-
-                    with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=os.path.splitext(file.filename)[1]
-                    ) as temp_video:
-                        temp_video.write(file_content)
-                        temp_file_path = temp_video.name
-
-                    # Generate and upload thumbnail
-                    thumbnail_path = await generate_and_upload_thumbnail(
-                        user_id=current_user.id,
-                        media_file_id=db_file.id,
-                        video_path=temp_file_path,
-                    )
-
-                    if thumbnail_path:
-                        logger.info(
-                            f"Generated thumbnail for video: {file.filename}, path: {thumbnail_path}"
-                        )
-                        db_file.thumbnail_path = thumbnail_path
-                    else:
-                        logger.warning(f"Failed to generate thumbnail for video: {file.filename}")
-                finally:
-                    # Clean up temporary file
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        try:
-                            os.unlink(temp_file_path)
-                            # Removed debug log
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to remove temporary file {temp_file_path}: {str(e)}"
-                            )
-
-            # Update storage path, file size, and thumbnail path in database
-            db_file.storage_path = storage_path
-            db_file.file_size = file_size
-            db.commit()
-            db.refresh(db_file)
-
-            # Start background transcription and waveform generation in parallel
-            start_transcription_task(db_file.id, str(db_file.uuid))
-
-            logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
-            return db_file
-
-        except Exception as upload_error:
-            # Clean up the database record if upload fails
-            db.delete(db_file)
-            db.commit()
-            logger.error(f"Upload failed: {str(upload_error)}")
-
-            # Clean up temporary file if it exists
-            if temp_file_path and os.path.exists(temp_file_path):
-                with contextlib.suppress(Exception):
-                    os.unlink(temp_file_path)
-
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error during file upload: {str(upload_error)}",
-            ) from upload_error
+        logger.info(f"File processed: {file.filename} (ID: {db_file.id})")
+        return db_file
 
     except HTTPException:
-        # Re-raise HTTP exceptions
+        # Re-raise HTTP exceptions after cleanup
+        db.delete(db_file)
+        db.commit()
+        _cleanup_temp_file(temp_file_path)
         raise
     except Exception as e:
-        logger.error(f"File upload processing error: {str(e)}", exc_info=True)
+        # Clean up on failure
+        db.delete(db_file)
+        db.commit()
+        _cleanup_temp_file(temp_file_path)
+        logger.error(f"Upload failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing file upload: {str(e)}",
+            detail=f"Error during file upload: {str(e)}",
         ) from e

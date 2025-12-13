@@ -1,6 +1,7 @@
 <script lang="ts">
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { t } from '$stores/locale';
 
   export let file: any = null;
   export let currentProcessingStep: string = '';
@@ -27,7 +28,7 @@
   }
 
   function getDisplayName(file: any): string {
-    return file?.title || file?.filename || 'Unknown File';
+    return file?.title || file?.filename || $t('fileDetail.unknownFile');
   }
 
   function startEditingTitle() {
@@ -99,7 +100,7 @@
           bind:value={editedTitle}
           on:keydown={handleKeydown}
           class="title-input"
-          placeholder="Enter display name"
+          placeholder={$t('fileDetail.enterDisplayName')}
           maxlength="255"
           disabled={isSaving}
         />
@@ -109,7 +110,7 @@
             on:click={saveTitle}
             disabled={isSaving}
             class="save-btn"
-            title="Save (Enter)"
+            title={$t('fileDetail.saveTitle')}
           >
             {#if isSaving}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spinning">
@@ -127,7 +128,7 @@
             on:click={cancelEditingTitle}
             disabled={isSaving}
             class="cancel-btn"
-            title="Cancel (Escape)"
+            title={$t('fileDetail.cancelTitle')}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -143,7 +144,7 @@
           type="button"
           on:click={startEditingTitle}
           class="edit-btn"
-          title="Edit display name"
+          title={$t('fileDetail.editDisplayName')}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m18 2 4 4-14 14H4v-4z"></path>
@@ -157,7 +158,7 @@
   <!-- Processing Status Display -->
   {#if file?.status === 'error' && file?.error_message}
     <div class="status-message error">
-      <p><strong>Processing Status:</strong> {file.error_message}</p>
+      <p><strong>{$t('fileDetail.processingStatus')}:</strong> {file.error_message}</p>
     </div>
   {/if}
 
@@ -171,32 +172,32 @@
           </svg>
         </div>
         <div class="processing-status">
-          <span class="processing-label">Processing in Progress</span>
-          <span class="processing-step-text">{#if currentProcessingStep}{currentProcessingStep}{:else}Processing file...{/if}</span>
+          <span class="processing-label">{$t('fileDetail.processingInProgress')}</span>
+          <span class="processing-step-text">{#if currentProcessingStep}{currentProcessingStep}{:else}{$t('fileDetail.processingFile')}{/if}</span>
         </div>
         <span class="progress-percentage">{file.progress || 0}%</span>
       </div>
-      
+
       <div class="progress-bar">
         <div class="progress-bar-inner" style="width: {file.progress || 0}%;"></div>
       </div>
-      
+
       <div class="processing-stages">
         <div class="stage {(file.progress || 0) >= 5 ? 'active' : ''} {(file.progress || 0) >= 25 ? 'completed' : ''}">
           <span class="stage-dot"></span>
-          <span class="stage-label">Setup</span>
+          <span class="stage-label">{$t('fileDetail.stageSetup')}</span>
         </div>
         <div class="stage {(file.progress || 0) >= 25 ? 'active' : ''} {(file.progress || 0) >= 65 ? 'completed' : ''}">
           <span class="stage-dot"></span>
-          <span class="stage-label">Transcription</span>
+          <span class="stage-label">{$t('fileDetail.stageTranscription')}</span>
         </div>
         <div class="stage {(file.progress || 0) >= 65 ? 'active' : ''} {(file.progress || 0) >= 85 ? 'completed' : ''}">
           <span class="stage-dot"></span>
-          <span class="stage-label">Analysis</span>
+          <span class="stage-label">{$t('fileDetail.stageAnalysis')}</span>
         </div>
         <div class="stage {(file.progress || 0) >= 85 ? 'active' : ''} {(file.progress || 0) >= 100 ? 'completed' : ''}">
           <span class="stage-dot"></span>
-          <span class="stage-label">Finalization</span>
+          <span class="stage-label">{$t('fileDetail.stageFinalization')}</span>
         </div>
       </div>
     </div>
@@ -205,17 +206,17 @@
 
   {#if file?.description}
     <div class="file-summary">
-      
+
       {#if shouldTruncate(file.description)}
         {#if isExpanded}
           <p class="summary-text">
             {file.description}
-            <span class="expand-link" on:click={toggleExpanded} on:keydown={(e) => e.key === 'Enter' && toggleExpanded()} tabindex="0" role="button"> See less</span>
+            <span class="expand-link" on:click={toggleExpanded} on:keydown={(e) => e.key === 'Enter' && toggleExpanded()} tabindex="0" role="button"> {$t('fileDetail.seeLess')}</span>
           </p>
         {:else}
           <div class="truncated-wrapper">
             <p class="summary-text truncated">{file.description}</p>
-            <span class="expand-link" on:click={toggleExpanded} on:keydown={(e) => e.key === 'Enter' && toggleExpanded()} tabindex="0" role="button">See more</span>
+            <span class="expand-link" on:click={toggleExpanded} on:keydown={(e) => e.key === 'Enter' && toggleExpanded()} tabindex="0" role="button">{$t('fileDetail.seeMore')}</span>
           </div>
         {/if}
       {:else}
@@ -230,9 +231,9 @@
 <!-- Modal dialogs -->
 <ConfirmationModal
   bind:isOpen={showLengthErrorModal}
-  title="Display Name Too Long"
-  message="Display name must be 255 characters or less. Please shorten your input and try again."
-  confirmText="OK"
+  title={$t('fileDetail.displayNameTooLong')}
+  message={$t('fileDetail.displayNameTooLongMessage')}
+  confirmText={$t('common.confirm')}
   cancelText=""
   confirmButtonClass="confirm-button"
   on:confirm={() => showLengthErrorModal = false}
@@ -241,9 +242,9 @@
 
 <ConfirmationModal
   bind:isOpen={showSaveErrorModal}
-  title="Save Failed"
-  message="Failed to update display name. Please try again."
-  confirmText="OK"
+  title={$t('fileDetail.saveFailed')}
+  message={$t('fileDetail.saveFailedMessage')}
+  confirmText={$t('common.confirm')}
   cancelText=""
   confirmButtonClass="confirm-button"
   on:confirm={() => showSaveErrorModal = false}
@@ -459,11 +460,11 @@
     transition: max-height 0.3s ease-in-out;
     overflow: hidden;
   }
-  
+
   .truncated-wrapper {
     position: relative;
   }
-  
+
   .summary-text.truncated {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -473,7 +474,7 @@
     margin-bottom: 0;
     padding-right: 5rem;
   }
-  
+
   .truncated-wrapper .expand-link {
     position: absolute;
     bottom: 0;
@@ -482,7 +483,7 @@
     padding-left: 0.5em;
     margin-left: 0.3em;
   }
-  
+
   .expand-link {
     color: var(--primary-color);
     cursor: pointer;
@@ -491,12 +492,12 @@
     white-space: nowrap;
     transition: color 0.2s ease;
   }
-  
+
   .expand-link:hover {
     color: var(--primary-color-dark, #2563eb);
     text-decoration: underline;
   }
-  
+
   .expand-link:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;

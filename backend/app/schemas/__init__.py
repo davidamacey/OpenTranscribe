@@ -49,6 +49,9 @@ from .summary import SummaryResponse
 from .summary import SummarySearchHit
 from .summary import SummarySearchResponse
 from .summary import SummaryTaskStatus
+from .transcription_settings import TranscriptionSettings
+from .transcription_settings import TranscriptionSettingsUpdate
+from .transcription_settings import TranscriptionSystemDefaults
 from .user import User as UserSchema
 from .user import UserCreate
 from .user import UserUpdate
@@ -102,4 +105,7 @@ __all__ = [
     "ProviderDefaults",
     "SupportedProvidersResponse",
     "LLMSettingsStatus",
+    "TranscriptionSettings",
+    "TranscriptionSettingsUpdate",
+    "TranscriptionSystemDefaults",
 ]

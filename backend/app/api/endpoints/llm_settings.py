@@ -5,6 +5,7 @@ API endpoints for user LLM settings management
 import contextlib
 import logging
 import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter
@@ -77,16 +78,16 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OLLAMA,
-            default_model="llama2:7b-chat",
-            default_base_url="http://localhost:11434/v1",
+            default_model="llama3.2:latest",
+            default_base_url="http://localhost:11434",
             requires_api_key=False,
             supports_custom_url=True,
-            max_context_length=4096,
-            description="Ollama for local model deployment",
+            max_context_length=128000,
+            description="Ollama for local model deployment - uses native /api/chat endpoint",
         ),
         schemas.ProviderDefaults(
-            provider=schemas.LLMProvider.CLAUDE,
-            default_model="claude-3-haiku-20240307",
+            provider=schemas.LLMProvider.ANTHROPIC,
+            default_model="claude-opus-4-5-20251101",
             default_base_url="https://api.anthropic.com/v1",
             requires_api_key=True,
             supports_custom_url=False,
@@ -95,7 +96,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OPENROUTER,
-            default_model="anthropic/claude-3-haiku",
+            default_model="anthropic/claude-3.5-haiku",
             default_base_url="https://openrouter.ai/api/v1",
             requires_api_key=True,
             supports_custom_url=False,
@@ -502,14 +503,36 @@ def delete_all_user_configurations(
 async def test_llm_connection(
     *,
     test_request: schemas.ConnectionTestRequest,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Test connection to LLM provider without saving settings
+    Test connection to LLM provider without saving settings.
+    If config_id is provided and no api_key, will use the stored API key from that config.
     """
     start_time = time.time()
 
     try:
+        # If no api_key provided but config_id is, look up the stored key
+        effective_api_key = test_request.api_key
+        if not effective_api_key and test_request.config_id:
+            try:
+                config = (
+                    db.query(models.UserLLMSettings)
+                    .filter(
+                        models.UserLLMSettings.uuid == test_request.config_id,
+                        models.UserLLMSettings.user_id == current_user.id,
+                    )
+                    .first()
+                )
+                if config and config.api_key:
+                    # Decrypt the stored API key
+                    effective_api_key = decrypt_api_key(config.api_key)
+            except Exception as e:
+                logger.warning(
+                    f"Could not retrieve stored API key for config {test_request.config_id}: {e}"
+                )
+
         # Map schema enum to service enum
         service_provider = ServiceLLMProvider(test_request.provider.value)
 
@@ -517,7 +540,7 @@ async def test_llm_connection(
         config = LLMConfig(
             provider=service_provider,
             model=test_request.model_name,
-            api_key=test_request.api_key,
+            api_key=effective_api_key,
             base_url=test_request.base_url,
         )
 
@@ -677,6 +700,35 @@ async def test_specific_configuration(
     return result
 
 
+@router.get("/config/{config_uuid}/api-key")
+async def get_config_api_key(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get the decrypted API key for a specific configuration.
+    Only the owner can access their own API keys.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+
+    if user_config.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to access this configuration",
+        )
+
+    if not user_config.api_key:
+        return {"api_key": None}
+
+    # Decrypt API key
+    api_key = decrypt_api_key(user_config.api_key)
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+
+    return {"api_key": api_key}
+
+
 @router.get("/ollama/models")
 async def get_ollama_models(
     base_url: str,
@@ -748,6 +800,286 @@ async def get_ollama_models(
             "total": 0,
             "message": f"Unexpected error: {str(e)}",
         }
+
+
+# --- Model Discovery Helper Functions ---
+
+
+def _model_discovery_response(
+    success: bool, model_list: list = None, message: str = ""
+) -> dict[str, Any]:
+    """Create a standardized model discovery response."""
+    return {
+        "success": success,
+        "models": model_list or [],
+        "total": len(model_list) if model_list else 0,
+        "message": message,
+    }
+
+
+def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None:
+    """Retrieve and decrypt stored API key for a config."""
+    try:
+        config_uuid = uuid.UUID(config_id)
+        config = (
+            db.query(models.UserLLMSettings)
+            .filter(
+                models.UserLLMSettings.uuid == config_uuid,
+                models.UserLLMSettings.user_id == user_id,
+            )
+            .first()
+        )
+        if config and config.api_key:
+            return decrypt_api_key(config.api_key)
+    except (ValueError, Exception) as e:
+        logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
+    return None
+
+
+def _extract_raw_models(data: Any) -> tuple[list | None, str | None]:
+    """
+    Extract raw models list from various OpenAI-compatible response formats.
+
+    Returns (raw_models, error_message). If error_message is set, raw_models is None.
+    """
+    # Format 1: OpenAI standard { "data": [...] }
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+        logger.debug("Model discovery: Using OpenAI standard format (data array)")
+        return data["data"], None
+
+    # Format 2: Direct array response [...]
+    if isinstance(data, list):
+        logger.debug("Model discovery: Using direct array format")
+        return data, None
+
+    # Format 3: { "models": [...] } (some providers use this)
+    if isinstance(data, dict) and "models" in data and isinstance(data["models"], list):
+        logger.debug("Model discovery: Using 'models' key format")
+        return data["models"], None
+
+    # Format 4: { "object": "list", "data": [...] } (explicit OpenAI format)
+    if isinstance(data, dict) and data.get("object") == "list" and "data" in data:
+        logger.debug("Model discovery: Using OpenAI list object format")
+        return data["data"], None
+
+    # Unexpected format
+    keys_info = list(data.keys()) if isinstance(data, dict) else type(data).__name__
+    error_msg = (
+        f"Unexpected response format. Expected 'data' or 'models' array. Got keys: {keys_info}"
+    )
+    logger.warning(f"Model discovery: {error_msg}")
+    return None, error_msg
+
+
+def _parse_model_entry(model: Any) -> dict | None:
+    """Parse a single model entry into standardized format."""
+    if isinstance(model, dict):
+        model_id = model.get("id") or model.get("name") or model.get("model") or ""
+        return {
+            "name": model.get("name", model_id),
+            "id": model_id,
+            "owned_by": model.get("owned_by", model.get("owner", "")),
+            "created": model.get("created", model.get("created_at", 0)),
+        }
+    if isinstance(model, str):
+        return {"name": model, "id": model, "owned_by": "", "created": 0}
+    logger.warning(f"Model discovery: Skipping unexpected model format: {type(model)}")
+    return None
+
+
+def _get_http_error_message(status_code: int, models_url: str, error_text: str = "") -> str:
+    """Get user-friendly error message for HTTP error codes."""
+    error_messages = {
+        401: "Authentication failed: Invalid or missing API key",
+        403: "Access forbidden: Check API key permissions",
+        404: f"Models endpoint not found at {models_url}. Check base URL configuration.",
+    }
+    if status_code in error_messages:
+        return error_messages[status_code]
+    return f"Failed to fetch models: HTTP {status_code} - {error_text[:200]}"
+
+
+@router.get("/openai-compatible/models")
+async def get_openai_compatible_models(
+    base_url: str,
+    api_key: str | None = None,
+    config_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from an OpenAI-compatible API endpoint.
+
+    Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
+    If config_id is provided and no api_key, will use the stored API key from that config.
+    """
+    import aiohttp
+
+    # Resolve effective API key
+    effective_api_key = api_key
+    if not effective_api_key and config_id:
+        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+
+    # Build models URL
+    clean_url = base_url.strip().rstrip("/")
+    if not clean_url.endswith("/v1"):
+        clean_url = f"{clean_url}/v1"
+    models_url = f"{clean_url}/models"
+
+    # Prepare headers
+    headers = {"Authorization": f"Bearer {effective_api_key}"} if effective_api_key else {}
+
+    try:
+        return await _fetch_and_parse_models(models_url, headers, base_url)
+    except aiohttp.ClientConnectorError:
+        logger.warning(f"Model discovery: Connection failed to {base_url}")
+        return _model_discovery_response(
+            False,
+            message=f"Connection failed: Could not reach {base_url}. Check the URL and ensure the server is running.",
+        )
+    except aiohttp.ClientError as e:
+        logger.warning(f"Model discovery: Client error for {base_url}: {e}")
+        return _model_discovery_response(False, message=f"Connection error: {str(e)}")
+    except TimeoutError:
+        logger.warning(f"Model discovery: Timeout connecting to {base_url}")
+        return _model_discovery_response(
+            False,
+            message=f"Connection timeout: Server at {base_url} did not respond within 10 seconds.",
+        )
+    except Exception as e:
+        logger.error(f"Error fetching OpenAI-compatible models from {base_url}: {e}", exc_info=True)
+        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
+
+
+async def _fetch_and_parse_models(models_url: str, headers: dict, base_url: str) -> dict[str, Any]:
+    """Fetch models from URL and parse the response."""
+    import aiohttp
+
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.get(models_url, headers=headers) as response,
+    ):
+        if response.status != 200:
+            error_text = await response.text() if response.status not in (401, 403, 404) else ""
+            if response.status not in (401, 403, 404):
+                logger.warning(
+                    f"Model discovery: HTTP {response.status} from {models_url}: {error_text[:200]}"
+                )
+            return _model_discovery_response(
+                False, message=_get_http_error_message(response.status, models_url, error_text)
+            )
+
+        # Parse JSON response
+        try:
+            data = await response.json()
+        except Exception as json_err:
+            logger.warning(f"Model discovery: Invalid JSON response from {models_url}: {json_err}")
+            return _model_discovery_response(
+                False, message=f"Invalid JSON response from provider: {str(json_err)}"
+            )
+
+        # Extract raw models from various formats
+        raw_models, error_msg = _extract_raw_models(data)
+        if error_msg:
+            return _model_discovery_response(False, message=error_msg)
+
+        # Parse each model entry
+        model_list = [parsed for m in raw_models if (parsed := _parse_model_entry(m))]
+
+        if not model_list and raw_models:
+            logger.warning(
+                f"Model discovery: Found {len(raw_models)} raw models but none could be parsed"
+            )
+            return _model_discovery_response(
+                False,
+                message=f"Found {len(raw_models)} models but could not parse them. Check provider compatibility.",
+            )
+
+        logger.info(
+            f"Model discovery: Successfully found {len(model_list)} models from {models_url}"
+        )
+        return _model_discovery_response(True, model_list, f"Found {len(model_list)} models")
+
+
+def _parse_anthropic_model(model: dict) -> dict:
+    """Parse a single Anthropic model entry into standardized format."""
+    return {
+        "id": model.get("id", ""),
+        "display_name": model.get("display_name", model.get("id", "")),
+        "created_at": model.get("created_at", ""),
+        "type": model.get("type", "model"),
+    }
+
+
+async def _fetch_anthropic_models(headers: dict) -> dict[str, Any]:
+    """Fetch and parse models from Anthropic API."""
+    import aiohttp
+
+    models_url = "https://api.anthropic.com/v1/models"
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.get(models_url, headers=headers) as response,
+    ):
+        if response.status != 200:
+            error_text = await response.text() if response.status not in (401, 403) else ""
+            return _model_discovery_response(
+                False, message=_get_http_error_message(response.status, models_url, error_text)
+            )
+
+        data = await response.json()
+        # Anthropic returns { "data": [...], "has_more": bool, "first_id": str, "last_id": str }
+        model_list = [_parse_anthropic_model(m) for m in data.get("data", [])]
+
+        logger.info(f"Anthropic model discovery: Found {len(model_list)} models")
+        return _model_discovery_response(True, model_list, f"Found {len(model_list)} models")
+
+
+@router.get("/anthropic/models")
+async def get_anthropic_models(
+    api_key: str | None = None,
+    config_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from Anthropic API.
+    If config_id is provided and no api_key, will use the stored API key from that config.
+    """
+    import aiohttp
+
+    # Resolve effective API key
+    effective_api_key = api_key
+    if not effective_api_key and config_id:
+        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+
+    if not effective_api_key:
+        return _model_discovery_response(
+            False, message="API key is required to fetch Anthropic models"
+        )
+
+    headers = {
+        "x-api-key": effective_api_key,
+        "anthropic-version": "2023-06-01",
+    }
+
+    try:
+        return await _fetch_anthropic_models(headers)
+    except aiohttp.ClientConnectorError:
+        return _model_discovery_response(
+            False, message="Connection failed: Could not reach Anthropic API"
+        )
+    except aiohttp.ClientError as e:
+        return _model_discovery_response(False, message=f"Connection error: {str(e)}")
+    except TimeoutError:
+        return _model_discovery_response(
+            False, message="Connection timeout: Anthropic API did not respond within 10 seconds"
+        )
+    except Exception as e:
+        logger.error(f"Error fetching Anthropic models: {e}", exc_info=True)
+        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
 
 
 @router.get("/encryption-test")

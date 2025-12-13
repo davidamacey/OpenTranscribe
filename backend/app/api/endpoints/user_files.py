@@ -353,7 +353,7 @@ async def request_user_recovery(
         return {
             "success": True,
             "message": "Recovery process started for your files",
-            "user_id": current_user.id,
+            "user_id": str(current_user.uuid),
         }
 
     except Exception as e:

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  
+  import { t } from '$stores/locale';
+
   export let isEditingSpeakers: boolean = false;
-  
+
   const dispatch = createEventDispatcher();
 
   function toggleSpeakerEditor() {
@@ -16,7 +17,7 @@
     <path d="M12 20h9"></path>
     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
   </svg>
-  {isEditingSpeakers ? 'Hide Speaker Editor' : 'Edit Speakers'}
+  {isEditingSpeakers ? $t('transcript.hideSpeakerEditor') : $t('transcript.editSpeakers')}
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
     <circle cx="12" cy="7" r="4"></circle>

@@ -22,6 +22,7 @@ from app.services.task_detection_service import task_detection_service
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+from app.utils.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +285,7 @@ async def task_system_health(
                     "id": task.id,
                     "task_type": task.task_type,
                     "status": task.status,
-                    "media_file_id": task.media_file_id,
+                    "media_file_id": str(task.media_file.uuid) if task.media_file else None,
                     "created_at": task.created_at,
                     "updated_at": task.updated_at,
                     "age_seconds": calculate_age_seconds(task.created_at),
@@ -299,7 +300,7 @@ async def task_system_health(
                     "id": str(file.uuid),  # Use UUID for frontend
                     "filename": file.filename,
                     "status": file.status.value,
-                    "user_id": file.user_id,
+                    "user_id": str(file.user.uuid) if file.user else None,
                     "upload_time": file.upload_time,
                     "age_seconds": calculate_age_seconds(file.upload_time),
                 }
@@ -589,9 +590,9 @@ async def trigger_startup_recovery(
         ) from e
 
 
-@router.post("/system/recover-user-files/{user_id}", response_model=dict[str, Any])
+@router.post("/system/recover-user-files/{user_uuid}", response_model=dict[str, Any])
 async def trigger_user_file_recovery(
-    user_id: int,
+    user_uuid: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -602,12 +603,12 @@ async def trigger_user_file_recovery(
     This is useful when a user reports stuck or missing files.
     """
     try:
-        # Verify the user exists
-        target_user = db.query(User).filter(User.id == user_id).first()
-        if not target_user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        # Verify the user exists using UUID helper
+        target_user = get_user_by_uuid(db, user_uuid)
 
-        # Schedule user file recovery in background
+        # Schedule user file recovery in background using internal integer ID
+        user_id = target_user.id
+
         async def run_user_recovery():
             try:
                 from app.tasks.recovery import recover_user_files_task
@@ -622,7 +623,7 @@ async def trigger_user_file_recovery(
         return {
             "success": True,
             "message": f"File recovery scheduled for user {target_user.email}",
-            "user_id": user_id,
+            "user_uuid": user_uuid,
         }
     except HTTPException:
         raise

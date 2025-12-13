@@ -19,6 +19,59 @@ from app.tasks.transcription.waveform_generator import WaveformGenerator
 logger = logging.getLogger(__name__)
 
 
+def _get_storage_path(file_id: int) -> str | None:
+    """Get storage path for a media file from database."""
+    with session_scope() as db:
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+        if not media_file:
+            logger.error(f"Media file {file_id} not found")
+            return None
+        if not media_file.storage_path:
+            logger.error(f"No storage path for file {file_id}")
+            return None
+        return media_file.storage_path
+
+
+def _download_to_temp_file(storage_path: str) -> str | None:
+    """Download file from storage to a temporary file. Returns temp file path or None."""
+    logger.info(f"Downloading file from storage: {storage_path}")
+    _, file_extension = os.path.splitext(storage_path)
+
+    try:
+        file_data, _, _ = download_file(storage_path)
+        temp_fd, temp_file_path = tempfile.mkstemp(suffix=file_extension)
+        os.close(temp_fd)
+
+        with open(temp_file_path, "wb") as f:
+            f.write(file_data.read())
+
+        logger.info(f"Downloaded file to {temp_file_path}")
+        return temp_file_path
+    except Exception as e:
+        logger.error(f"Error downloading file from storage: {e}")
+        return None
+
+
+def _save_waveform_data(file_id: int, waveform_data: dict) -> None:
+    """Save waveform data to database."""
+    with session_scope() as db:
+        media_file = get_refreshed_object(db, MediaFile, file_id)
+        if media_file:
+            media_file.waveform_data = waveform_data
+            db.commit()
+            logger.info(f"Waveform data saved for file {file_id} - generation complete")
+
+
+def _cleanup_temp_file(temp_file_path: str | None) -> None:
+    """Clean up temporary file if it exists."""
+    if temp_file_path and os.path.exists(temp_file_path):
+        try:
+            os.unlink(temp_file_path)
+            logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+        except Exception as e:
+            logger.warning(f"Error cleaning up temporary file: {e}")
+
+
 @celery_app.task(
     name="generate_waveform_task",
     bind=True,
@@ -44,74 +97,27 @@ def generate_waveform_task(self, file_id: int, file_uuid: str):
     try:
         logger.info(f"Starting waveform generation for file {file_id} ({file_uuid})")
 
-        # Get file information from database
-        with session_scope() as db:
-            media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-            if not media_file:
-                logger.error(f"Media file {file_id} not found")
-                return {"success": False, "error": "Media file not found"}
+        storage_path = _get_storage_path(file_id)
+        if not storage_path:
+            return {"success": False, "error": "Media file not found or no storage path"}
 
-            storage_path = media_file.storage_path
+        temp_file_path = _download_to_temp_file(storage_path)
+        if not temp_file_path:
+            return {"success": False, "error": "Download failed"}
 
-            if not storage_path:
-                logger.error(f"No storage path for file {file_id}")
-                return {"success": False, "error": "No storage path"}
-
-        # Download file from storage to temporary location
-        # Note: Progress notifications suppressed to avoid conflicting with transcription progress
-        logger.info(f"Downloading file from storage: {storage_path}")
-        _, file_extension = os.path.splitext(storage_path)
-
-        try:
-            # Download file from MinIO (returns BytesIO buffer)
-            file_data, _, content_type = download_file(storage_path)
-
-            # Create temporary file with original extension
-            temp_fd, temp_file_path = tempfile.mkstemp(suffix=file_extension)
-            os.close(temp_fd)
-
-            # Write buffer to temporary file
-            with open(temp_file_path, "wb") as f:
-                f.write(file_data.read())
-
-            logger.info(f"Downloaded file to {temp_file_path}")
-        except Exception as e:
-            logger.error(f"Error downloading file from storage: {e}")
-            return {"success": False, "error": f"Download failed: {str(e)}"}
-
-        # Generate waveform data (silently in background)
         logger.info(f"Generating waveform visualization for file {file_id}")
+        waveform_generator = WaveformGenerator()
+        waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
 
-        try:
-            waveform_generator = WaveformGenerator()
-            waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
+        if not waveform_data:
+            logger.warning(f"Failed to generate waveform data for file {file_id}")
+            return {"success": False, "error": "Waveform generation returned no data"}
 
-            if waveform_data:
-                # Save waveform data to database
-                with session_scope() as db:
-                    media_file = get_refreshed_object(db, MediaFile, file_id)
-                    if media_file:
-                        media_file.waveform_data = waveform_data
-                        db.commit()
-                        logger.info(f"Waveform data saved for file {file_id} - generation complete")
-
-                return {
-                    "success": True,
-                    "file_id": file_id,
-                    "resolutions": len(waveform_data),
-                }
-            else:
-                logger.warning(f"Failed to generate waveform data for file {file_id}")
-                return {"success": False, "error": "Waveform generation returned no data"}
-
-        except Exception as e:
-            logger.error(f"Error generating waveform data: {e}")
-            # Don't fail the task - waveform is optional
-            return {"success": False, "error": f"Waveform generation error: {str(e)}"}
+        _save_waveform_data(file_id, waveform_data)
+        return {"success": True, "file_id": file_id, "resolutions": len(waveform_data)}
 
     except Exception as e:
         logger.error(f"Unexpected error in waveform generation: {e}", exc_info=True)
-        # Retry on unexpected errors
         try:
             raise self.retry(exc=e)
         except self.MaxRetriesExceededError:
@@ -119,10 +125,4 @@ def generate_waveform_task(self, file_id: int, file_uuid: str):
             return {"success": False, "error": "Max retries exceeded"}
 
     finally:
-        # Clean up temporary file
-        if temp_file_path and os.path.exists(temp_file_path):
-            try:
-                os.unlink(temp_file_path)
-                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
-            except Exception as e:
-                logger.warning(f"Error cleaning up temporary file: {e}")
+        _cleanup_temp_file(temp_file_path)

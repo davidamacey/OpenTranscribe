@@ -19,6 +19,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.core.config import settings
+from app.core.constants import LLM_OUTPUT_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,11 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     VLLM = "vllm"
     OLLAMA = "ollama"
-    CLAUDE = "claude"
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
     CUSTOM = "custom"
+    # Legacy - kept for backward compatibility
+    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
 @dataclass
@@ -96,22 +98,33 @@ class LLMService:
             return f"{clean_url}/api/chat"
 
         self.endpoints = {
-            LLMProvider.OPENAI: "https://api.openai.com/v1/chat/completions",
+            # Dynamic endpoints - respect custom base_url for OpenAI-compatible servers (vLLM, etc.)
+            LLMProvider.OPENAI: build_endpoint(config.base_url)
+            if config.base_url
+            else "https://api.openai.com/v1/chat/completions",
             LLMProvider.VLLM: build_endpoint(config.base_url) if config.base_url else None,
             LLMProvider.OLLAMA: build_ollama_endpoint(config.base_url)
             if config.base_url
             else "http://localhost:11434/api/chat",
+            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
+            LLMProvider.OPENROUTER: build_endpoint(config.base_url)
+            if config.base_url
+            else "https://openrouter.ai/api/v1/chat/completions",
+            # Fixed endpoints - these providers don't support custom base URLs
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
-            LLMProvider.OPENROUTER: "https://openrouter.ai/api/v1/chat/completions",
-            LLMProvider.CUSTOM: build_endpoint(config.base_url) if config.base_url else None,
         }
 
         if not self.endpoints.get(config.provider):
             raise ValueError(f"Invalid provider configuration for {config.provider}")
 
+        # Log the resolved endpoint for debugging (helps diagnose connection issues like Issue #100)
+        resolved_endpoint = self.endpoints.get(config.provider)
         logger.info(
-            f"Initialized LLMService: {config.provider}/{config.model}, context_window={self.user_context_window}"
+            f"Initialized LLMService: {config.provider}/{config.model}, "
+            f"endpoint={resolved_endpoint}, "
+            f"base_url={config.base_url or 'default'}, "
+            f"context_window={self.user_context_window}"
         )
 
     def _get_headers(self) -> dict[str, str]:
@@ -187,10 +200,12 @@ class LLMService:
 
             # Add response prefilling for JSON output if requested
             # This forces Claude to start response with "{" (bypasses preamble)
-            if kwargs.get("prefill_json", False):
-                # Ensure last message is from user (required for Claude API)
-                if user_messages and user_messages[-1]["role"] == "user":
-                    user_messages.append({"role": "assistant", "content": "{"})
+            if (
+                kwargs.get("prefill_json", False)
+                and user_messages
+                and user_messages[-1]["role"] == "user"
+            ):
+                user_messages.append({"role": "assistant", "content": "{"})
 
             payload = {
                 "model": self.config.model,
@@ -241,102 +256,114 @@ class LLMService:
 
         return payload
 
+    def _extract_claude_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+        """Extract content, usage tokens, and finish reason from Claude/Anthropic response."""
+        if "content" not in data or not data["content"]:
+            raise Exception("No content in Claude response")
+
+        content_blocks = data["content"]
+        if isinstance(content_blocks, list) and content_blocks:
+            content = content_blocks[0].get("text", "")
+        else:
+            content = str(content_blocks)
+
+        usage_tokens = None
+        if "usage" in data:
+            usage_tokens = data["usage"].get("output_tokens", 0) + data["usage"].get(
+                "input_tokens", 0
+            )
+
+        finish_reason = data.get("stop_reason")
+        return content, usage_tokens, finish_reason
+
+    def _extract_ollama_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+        """Extract content, usage tokens, and finish reason from Ollama response."""
+        if "message" not in data:
+            logger.error(
+                f"Ollama response missing 'message' field. Response keys: {list(data.keys())}"
+            )
+            logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
+            raise Exception("No message in Ollama response")
+
+        content = data["message"].get("content", "")
+        finish_reason = data.get("done_reason", "stop")
+
+        if not content:
+            logger.error(
+                f"Ollama message field exists but content is empty. Message: {data.get('message')}"
+            )
+            logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
+
+        usage_tokens = None
+        if "prompt_eval_count" in data and "eval_count" in data:
+            usage_tokens = data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+
+        return content, usage_tokens, finish_reason
+
+    def _extract_openai_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+        """Extract content, usage tokens, and finish reason from OpenAI-compatible response."""
+        if "choices" not in data or not data["choices"]:
+            raise Exception("No choices in LLM response")
+
+        choice = data["choices"][0]
+        content = choice.get("message", {}).get("content", "")
+        finish_reason = choice.get("finish_reason")
+
+        usage_tokens = None
+        if "usage" in data:
+            usage_tokens = data["usage"].get("total_tokens")
+
+        return content, usage_tokens, finish_reason
+
+    def _extract_response_content(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
+        """Extract content from response based on provider type."""
+        if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            return self._extract_claude_response(data)
+        elif self.config.provider == LLMProvider.OLLAMA:
+            return self._extract_ollama_response(data)
+        else:
+            return self._extract_openai_response(data)
+
+    def _send_llm_request(self, url: str, payload: dict, headers: dict, timeout: int) -> dict:
+        """Send HTTP request to LLM provider and return parsed JSON response."""
+        start_time = time.time()
+        response = self.session.post(url, json=payload, headers=headers, timeout=timeout)
+        request_time = time.time() - start_time
+
+        logger.info(
+            f"LLM request completed in {request_time:.2f}s with status {response.status_code}"
+        )
+
+        if response.status_code != 200:
+            error_detail = f"LLM API error ({response.status_code}): {response.text[:500]}{'...' if len(response.text) > 500 else ''}"
+            logger.error(error_detail)
+            raise Exception(f"LLM API error: {response.status_code} - {response.text}")
+
+        try:
+            return response.json()
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response: {response.text}")
+            raise Exception(f"Invalid JSON response: {e}") from e
+
     def chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
         """
         Send chat completion request to LLM provider
         """
+        url = self.endpoints[self.config.provider]
+        headers = self._get_headers()
+        payload = self._prepare_payload(messages, **kwargs)
+
+        total_content_length = sum(len(msg.get("content", "")) for msg in messages)
+        logger.info(f"Sending request to {self.config.provider} ({url})")
+        logger.info(f"Total request content length: {total_content_length} characters")
+        logger.debug(f"Request payload keys: {list(payload.keys())}")
+
+        timeout = min(1200, max(300, total_content_length // 1000))
+        logger.info(f"Using timeout: {timeout} seconds for content length: {total_content_length}")
+
         try:
-            url = self.endpoints[self.config.provider]
-            headers = self._get_headers()
-            payload = self._prepare_payload(messages, **kwargs)
-
-            # Log request details for debugging
-            total_content_length = sum(len(msg.get("content", "")) for msg in messages)
-            logger.info(f"Sending request to {self.config.provider} ({url})")
-            logger.info(f"Total request content length: {total_content_length} characters")
-            logger.debug(f"Request payload keys: {list(payload.keys())}")
-
-            start_time = time.time()
-
-            # Use appropriate timeout based on content length
-            timeout = min(
-                1200, max(300, total_content_length // 1000)
-            )  # 5-20 minutes based on content
-            logger.info(
-                f"Using timeout: {timeout} seconds for content length: {total_content_length}"
-            )
-
-            response = self.session.post(url, json=payload, headers=headers, timeout=timeout)
-            request_time = time.time() - start_time
-
-            logger.info(
-                f"LLM request completed in {request_time:.2f}s with status {response.status_code}"
-            )
-
-            if response.status_code != 200:
-                error_detail = f"LLM API error ({response.status_code}): {response.text[:500]}{'...' if len(response.text) > 500 else ''}"
-                logger.error(error_detail)
-                raise Exception(f"LLM API error: {response.status_code} - {response.text}")
-
-            try:
-                data = response.json()
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse LLM response: {response.text}")
-                raise Exception(f"Invalid JSON response: {e}") from e
-
-            # Extract content from response based on provider
-            content = ""
-            usage_tokens = None
-            finish_reason = None
-
-            if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
-                if "content" not in data or not data["content"]:
-                    raise Exception("No content in Claude response")
-
-                content_blocks = data["content"]
-                if isinstance(content_blocks, list) and content_blocks:
-                    content = content_blocks[0].get("text", "")
-                else:
-                    content = str(content_blocks)
-
-                if "usage" in data:
-                    usage_tokens = data["usage"].get("output_tokens", 0) + data["usage"].get(
-                        "input_tokens", 0
-                    )
-
-                finish_reason = data.get("stop_reason")
-            elif self.config.provider == LLMProvider.OLLAMA:
-                # Ollama native response format
-                if "message" not in data:
-                    logger.error(
-                        f"Ollama response missing 'message' field. Response keys: {list(data.keys())}"
-                    )
-                    logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
-                    raise Exception("No message in Ollama response")
-
-                content = data["message"].get("content", "")
-                finish_reason = data.get("done_reason", "stop")
-
-                # Debug logging for Ollama responses
-                if not content:
-                    logger.error(
-                        f"Ollama message field exists but content is empty. Message: {data.get('message')}"
-                    )
-                    logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
-
-                # Ollama provides token counts in separate fields
-                if "prompt_eval_count" in data and "eval_count" in data:
-                    usage_tokens = data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
-            else:
-                if "choices" not in data or not data["choices"]:
-                    raise Exception("No choices in LLM response")
-
-                choice = data["choices"][0]
-                content = choice.get("message", {}).get("content", "")
-                finish_reason = choice.get("finish_reason")
-
-                if "usage" in data:
-                    usage_tokens = data["usage"].get("total_tokens")
+            data = self._send_llm_request(url, payload, headers, timeout)
+            content, usage_tokens, finish_reason = self._extract_response_content(data)
 
             if not content:
                 raise Exception("Empty content in LLM response")
@@ -413,35 +440,30 @@ class LLMService:
         # Add buffer for safety
         return int(estimated_tokens * TOKEN_ESTIMATION_BUFFER)
 
-    def _chunk_transcript_intelligently(
-        self, transcript: str, chunk_overlap: int = 200
-    ) -> list[str]:
-        """
-        Split transcript into intelligent chunks using ONLY user's max_tokens setting
-        """
-        # Use user's configured context window - reserve space for prompt and response
-        available_tokens = self.user_context_window - 2000  # Reserve for prompt + response
-        estimated_tokens = self._estimate_tokens(transcript)
+    def _split_oversized_chunk_by_sentences(self, chunk: str, available_tokens: int) -> list[str]:
+        """Split an oversized chunk into smaller chunks by sentence boundaries."""
+        sentences = re.split(r"(?<=[.!?])\s+", chunk)
+        sub_chunks = []
+        sub_chunk = ""
 
-        logger.info(
-            f"Chunking transcript: {len(transcript)} chars, estimated {estimated_tokens} tokens"
-        )
-        logger.info(
-            f"Using user context window: {self.user_context_window}, available for content: {available_tokens}"
-        )
+        for sentence in sentences:
+            test_chunk = sub_chunk + sentence + " "
+            if self._estimate_tokens(test_chunk) <= available_tokens:
+                sub_chunk = test_chunk
+            else:
+                if sub_chunk.strip():
+                    sub_chunks.append(sub_chunk.strip())
+                sub_chunk = sentence + " "
 
-        if estimated_tokens <= available_tokens:
-            logger.info("Transcript fits in single chunk")
-            return [transcript]
+        if sub_chunk.strip():
+            sub_chunks.append(sub_chunk.strip())
 
-        # Calculate target size per chunk (conservative)
-        target_chars_per_chunk = int(available_tokens * 2.5)
-        logger.info(f"Target chars per chunk: {target_chars_per_chunk}")
+        return sub_chunks
 
-        chunks = []
-        # Split by speaker changes for natural boundaries
+    def _split_by_speaker_segments(self, transcript: str, available_tokens: int) -> list[str]:
+        """Split transcript by speaker changes into appropriately sized chunks."""
         speaker_segments = re.split(r"(\n[A-Z_][A-Z0-9_]*:\s*\[\d+:\d+\])", transcript)
-
+        chunks = []
         current_chunk = ""
         current_size = 0
 
@@ -460,6 +482,33 @@ class LLMService:
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
 
+        return chunks
+
+    def _chunk_transcript_intelligently(
+        self, transcript: str, chunk_overlap: int = 200
+    ) -> list[str]:
+        """
+        Split transcript into intelligent chunks using ONLY user's max_tokens setting
+        """
+        available_tokens = self.user_context_window - 2000  # Reserve for prompt + response
+        estimated_tokens = self._estimate_tokens(transcript)
+
+        logger.info(
+            f"Chunking transcript: {len(transcript)} chars, estimated {estimated_tokens} tokens"
+        )
+        logger.info(
+            f"Using user context window: {self.user_context_window}, available for content: {available_tokens}"
+        )
+
+        if estimated_tokens <= available_tokens:
+            logger.info("Transcript fits in single chunk")
+            return [transcript]
+
+        target_chars_per_chunk = int(available_tokens * 2.5)
+        logger.info(f"Target chars per chunk: {target_chars_per_chunk}")
+
+        chunks = self._split_by_speaker_segments(transcript, available_tokens)
+
         # Handle oversized chunks by splitting on sentences
         final_chunks = []
         for chunk in chunks:
@@ -467,20 +516,9 @@ class LLMService:
                 final_chunks.append(chunk)
             else:
                 logger.warning("Chunk too large, splitting by sentences")
-                sentences = re.split(r"(?<=[.!?])\s+", chunk)
-                sub_chunk = ""
-
-                for sentence in sentences:
-                    test_chunk = sub_chunk + sentence + " "
-                    if self._estimate_tokens(test_chunk) <= available_tokens:
-                        sub_chunk = test_chunk
-                    else:
-                        if sub_chunk.strip():
-                            final_chunks.append(sub_chunk.strip())
-                        sub_chunk = sentence + " "
-
-                if sub_chunk.strip():
-                    final_chunks.append(sub_chunk.strip())
+                final_chunks.extend(
+                    self._split_oversized_chunk_by_sentences(chunk, available_tokens)
+                )
 
         if not final_chunks and transcript:
             logger.warning("No chunks created, truncating original transcript")
@@ -496,11 +534,28 @@ class LLMService:
         transcript: str,
         speaker_data: Optional[dict[str, Any]] = None,
         user_id: Optional[int] = None,
+        output_language: str = "en",
     ) -> dict[str, Any]:
-        """Generate structured summary from transcript"""
+        """
+        Generate structured summary from transcript.
+
+        Args:
+            transcript: Full transcript text with speaker labels
+            speaker_data: Optional speaker statistics (talk time, word count, etc.)
+            user_id: Optional user ID for loading custom prompts
+            output_language: ISO 639-1 code for output language (default: "en")
+
+        Returns:
+            Structured summary dict with metadata
+        """
+        from app.core.constants import LLM_OUTPUT_LANGUAGES
         from app.utils.prompt_manager import get_user_active_prompt
 
         prompt_template = get_user_active_prompt(user_id)
+
+        # Get language name for prompt
+        output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")
+        logger.info(f"Generating summary in {output_language_name} ({output_language})")
 
         # Chunk transcript using ONLY user's context window setting
         transcript_chunks = self._chunk_transcript_intelligently(transcript)
@@ -508,14 +563,22 @@ class LLMService:
         if len(transcript_chunks) == 1:
             # Single chunk processing
             logger.info(f"Processing transcript as single section ({len(transcript)} chars)")
-            return self._process_single_chunk(transcript_chunks[0], speaker_data, prompt_template)
+            return self._process_single_chunk(
+                transcript_chunks[0], speaker_data, prompt_template, output_language_name
+            )
         else:
             # Multi-chunk processing
             logger.info(f"Processing transcript in {len(transcript_chunks)} sections")
-            return self._process_multiple_chunks(transcript_chunks, speaker_data, prompt_template)
+            return self._process_multiple_chunks(
+                transcript_chunks, speaker_data, prompt_template, output_language_name
+            )
 
     def _process_single_chunk(
-        self, transcript: str, speaker_data: dict, prompt_template: str
+        self,
+        transcript: str,
+        speaker_data: dict,
+        prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Process single transcript chunk"""
         formatted_prompt = prompt_template.format(
@@ -523,10 +586,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.",
+                "content": f"You are an expert meeting analyst. Analyze transcripts and generate structured summaries in the exact JSON format specified.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -536,7 +606,11 @@ class LLMService:
         return self._parse_summary_response(response, len(transcript))
 
     def _process_multiple_chunks(
-        self, chunks: list[str], speaker_data: dict, prompt_template: str
+        self,
+        chunks: list[str],
+        speaker_data: dict,
+        prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Process multiple transcript chunks"""
         section_summaries = []
@@ -545,7 +619,7 @@ class LLMService:
             logger.info(f"Processing section {i}/{len(chunks)} ({len(chunk)} chars)")
             try:
                 section_summary = self._summarize_section(
-                    chunk, i, len(chunks), speaker_data, prompt_template
+                    chunk, i, len(chunks), speaker_data, prompt_template, output_language_name
                 )
                 section_summaries.append(section_summary)
                 logger.info(f"Section {i} processing completed successfully")
@@ -563,7 +637,9 @@ class LLMService:
 
         # Combine sections into final summary
         logger.info("Combining section summaries into final comprehensive summary")
-        return self._combine_sections(section_summaries, speaker_data, prompt_template, len(chunks))
+        return self._combine_sections(
+            section_summaries, speaker_data, prompt_template, len(chunks), output_language_name
+        )
 
     def _summarize_section(
         self,
@@ -572,6 +648,7 @@ class LLMService:
         total_sections: int,
         speaker_data: dict,
         prompt_template: str,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Summarize a single section"""
         formatted_prompt = prompt_template.format(
@@ -579,10 +656,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.",
+                "content": f"You are analyzing section {section_num} of {total_sections}. Provide a structured summary of this section.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -611,7 +695,12 @@ class LLMService:
             }
 
     def _combine_sections(
-        self, sections: list[dict], speaker_data: dict, prompt_template: str, total_sections: int
+        self,
+        sections: list[dict],
+        speaker_data: dict,
+        prompt_template: str,
+        total_sections: int,
+        output_language_name: str = "English",
     ) -> dict[str, Any]:
         """Combine multiple section summaries into final summary"""
         combined_content = f"SECTION SUMMARIES TO COMBINE:\n{json.dumps(sections, indent=2)}"
@@ -621,10 +710,17 @@ class LLMService:
             speaker_data=json.dumps(speaker_data or {}, indent=2),
         )
 
+        # Build system message with language instruction
+        language_instruction = (
+            f" Generate all output text in {output_language_name}."
+            if output_language_name != "English"
+            else ""
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": "You are combining multiple section summaries into a comprehensive BLUF format summary.",
+                "content": f"You are combining multiple section summaries into a comprehensive BLUF format summary.{language_instruction}",
             },
             {"role": "user", "content": formatted_prompt},
         ]
@@ -722,7 +818,10 @@ class LLMService:
 
     def validate_connection(self) -> tuple[bool, str]:
         """
-        Validate connection to LLM provider
+        Validate connection to LLM provider.
+
+        Uses the same endpoint resolution as chat_completion() to ensure
+        the test accurately reflects what will happen during actual use.
 
         Returns:
             Tuple of (success, message)
@@ -744,24 +843,35 @@ class LLMService:
                     return False, "Connection established but model returned empty response"
 
             else:
-                # For other providers, test with models endpoint
-                base_url = (
-                    self.config.base_url.strip().rstrip("/") if self.config.base_url else None
-                )
-                if not base_url:
-                    return False, "No base URL configured"
+                # For OpenAI-compatible providers, derive models endpoint from chat completions endpoint
+                # This ensures we test the same server that chat_completion() will use
+                chat_endpoint = self.endpoints.get(self.config.provider)
+                if not chat_endpoint:
+                    return False, f"No endpoint configured for {self.config.provider}"
 
-                if base_url.endswith("/v1"):
-                    models_url = f"{base_url}/models"
+                # Derive models endpoint from chat completions endpoint
+                # e.g., http://host:8000/v1/chat/completions → http://host:8000/v1/models
+                if "/chat/completions" in chat_endpoint:
+                    models_url = chat_endpoint.replace("/chat/completions", "/models")
+                elif "/api/chat" in chat_endpoint:
+                    # Ollama uses /api/chat, models endpoint is /api/tags
+                    models_url = chat_endpoint.replace("/api/chat", "/api/tags")
                 else:
-                    models_url = f"{base_url}/v1/models"
+                    # Fallback: try appending /models to base
+                    models_url = chat_endpoint.rsplit("/", 1)[0] + "/models"
 
+                logger.debug(
+                    f"Testing connection to {self.config.provider}: {models_url} (derived from {chat_endpoint})"
+                )
                 response = self.session.get(models_url, headers=headers, timeout=10)
 
                 if response.status_code == 200:
-                    return True, "Connection successful (models endpoint responded)"
+                    return True, f"Connection successful (tested {models_url})"
                 else:
-                    return False, f"Models endpoint failed with status {response.status_code}"
+                    return (
+                        False,
+                        f"Connection test failed with status {response.status_code} at {models_url}",
+                    )
 
         except Exception as e:
             return False, f"Connection failed: {str(e)}"
@@ -780,8 +890,134 @@ class LLMService:
             except Exception as e:
                 logger.warning(f"Error closing session: {e}")
 
+    def _build_known_speakers_context(self, known_speakers: list) -> str:
+        """Build context string from known speaker profiles."""
+        if not known_speakers:
+            return "\n\nNo known speaker profiles provided for comparison.\n"
+
+        context = "\n\nKNOWN SPEAKER PROFILES:\n"
+        for i, speaker in enumerate(known_speakers[:15]):  # Limit to prevent token overflow
+            description = speaker.get("description", "No description available")
+            context += f"{i + 1}. {speaker['name']}: {description}\n"
+        return context
+
+    def _truncate_transcript_for_speakers(self, transcript: str, available_tokens: int) -> str:
+        """Truncate transcript while preserving beginning and end context."""
+        max_chars = available_tokens * 3  # Rough char to token ratio
+        if len(transcript) <= max_chars:
+            return transcript
+
+        half_length = max_chars // 2
+        return (
+            transcript[:half_length]
+            + "\n\n[... middle content truncated ...]\n\n"
+            + transcript[-half_length:]
+        )
+
+    def _strip_markdown_fences(self, content: str) -> str:
+        """Remove markdown code fences from content."""
+        if content.startswith("```json") and "```" in content[7:]:
+            fence_end = content.find("```", 7)
+            return content[7:fence_end].strip()
+
+        if content.startswith("```") and "```" in content[3:]:
+            fence_end = content.find("```", 3)
+            result = content[3:fence_end].strip()
+            if result.startswith(("json", "JSON")):
+                return result[4:].lstrip()
+            return result
+
+        return content
+
+    def _find_json_object_bounds(self, content: str) -> str:
+        """Find and extract complete JSON object from content."""
+        json_start = content.find("{")
+        if json_start > 0:
+            content = content[json_start:]
+
+        if not content.startswith("{"):
+            return content
+
+        brace_count = 0
+        for i, char in enumerate(content):
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    return content[: i + 1]
+
+        return content
+
+    def _extract_json_from_response(self, content: str) -> str:
+        """Extract and clean JSON from LLM response content."""
+        content = self._strip_markdown_fences(content)
+        return self._find_json_object_bounds(content)
+
+    def _validate_speaker_prediction(self, pred: dict) -> bool:
+        """Validate a single speaker prediction has required fields and sufficient confidence."""
+        if not isinstance(pred, dict):
+            return False
+
+        required_fields = ["speaker_label", "predicted_name", "confidence"]
+        if not all(field in pred for field in required_fields):
+            logger.warning(f"Skipping prediction with missing fields: {pred}")
+            return False
+
+        confidence = pred.get("confidence", 0.0)
+        return isinstance(confidence, (int, float)) and confidence >= 0.5
+
+    def _parse_speaker_identification_response(self, response: LLMResponse) -> dict:
+        """Parse and validate speaker identification LLM response."""
+        content = self._extract_json_from_response(response.content.strip())
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM identification response as JSON: {e}")
+            logger.error(f"Raw response content: {response.content[:500]}...")
+            return {"speaker_predictions": [], "error": f"Invalid JSON response: {str(e)}"}
+
+        if not isinstance(result, dict):
+            logger.error("LLM response is not a valid JSON object")
+            return {
+                "speaker_predictions": [],
+                "error": "Invalid response format - not a JSON object",
+            }
+
+        if "speaker_predictions" not in result:
+            logger.error("LLM response missing required 'speaker_predictions' field")
+            return {
+                "speaker_predictions": [],
+                "error": "Invalid response format - missing speaker_predictions",
+            }
+
+        predictions = result["speaker_predictions"]
+        if not isinstance(predictions, list):
+            logger.error("speaker_predictions is not a list")
+            return {
+                "speaker_predictions": [],
+                "error": "Invalid response format - speaker_predictions must be a list",
+            }
+
+        valid_predictions = [p for p in predictions if self._validate_speaker_prediction(p)]
+
+        logger.info(
+            f"Speaker identification completed: {len(valid_predictions)} valid predictions from {len(predictions)} total"
+        )
+
+        return {
+            "speaker_predictions": valid_predictions,
+            "overall_confidence": result.get("overall_confidence", "unknown"),
+            "analysis_notes": result.get("analysis_notes", "No additional notes provided"),
+        }
+
     def identify_speakers(
-        self, transcript: str, speaker_segments: list, known_speakers: list
+        self,
+        transcript: str,
+        speaker_segments: list,
+        known_speakers: list,
+        output_language: str = "en",
     ) -> dict:
         """
         Use LLM to suggest speaker identifications based on contextual analysis of speech patterns,
@@ -791,13 +1027,24 @@ class LLMService:
             transcript: Full transcript text with speaker labels
             speaker_segments: List of speaker segments with metadata including timestamps and text
             known_speakers: List of known speaker profiles with names and descriptions
+            output_language: Language code for output reasoning (default: "en")
 
         Returns:
             Dictionary containing speaker predictions with confidence scores and reasoning
         """
         try:
-            # Build comprehensive system prompt for speaker identification
-            system_prompt = """You are an expert linguist and conversation analyst specializing in speaker identification. Your task is to analyze transcripts and identify speakers based on multiple contextual clues.
+            # Build language instruction for non-English output
+            output_language_name = LLM_OUTPUT_LANGUAGES.get(output_language, "English")
+            if output_language_name != "English":
+                language_instruction = (
+                    f"\n\nIMPORTANT: Generate all reasoning, analysis_notes, and explanations "
+                    f"in {output_language_name}. Speaker names should remain as identified "
+                    f"(names are language-agnostic), but all descriptive text must be in {output_language_name}."
+                )
+            else:
+                language_instruction = ""
+
+            system_prompt = f"""You are an expert linguist and conversation analyst specializing in speaker identification. Your task is to analyze transcripts and identify speakers based on multiple contextual clues.{language_instruction}
 
 ANALYSIS METHODOLOGY:
 1. Speech Patterns & Style:
@@ -832,17 +1079,8 @@ CONFIDENCE SCORING:
 
 Only provide predictions with confidence >= 0.5. Explain your reasoning clearly for each identification."""
 
-            # Prepare known speakers context with rich descriptions
-            known_speakers_context = ""
-            if known_speakers and len(known_speakers) > 0:
-                known_speakers_context = "\n\nKNOWN SPEAKER PROFILES:\n"
-                for i, speaker in enumerate(known_speakers[:15]):  # Limit to prevent token overflow
-                    description = speaker.get("description", "No description available")
-                    known_speakers_context += f"{i + 1}. {speaker['name']}: {description}\n"
-            else:
-                known_speakers_context = "\n\nNo known speaker profiles provided for comparison.\n"
+            known_speakers_context = self._build_known_speakers_context(known_speakers)
 
-            # Extract unique speaker labels from segments
             speaker_labels = list(
                 set(
                     seg.get("speaker_label", "Unknown")
@@ -851,26 +1089,12 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
                 )
             )
 
-            # Calculate available tokens for transcript content
-            # Reserve tokens for system prompt, known speakers, response, and formatting
-            reserved_tokens = (
-                len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2000 + 500
-            )  # Rough token estimation
+            reserved_tokens = len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2500
             available_tokens = max(1000, self.user_context_window - reserved_tokens)
+            transcript_content = self._truncate_transcript_for_speakers(
+                transcript, available_tokens
+            )
 
-            # Truncate transcript if needed, trying to preserve important context
-            transcript_content = transcript
-            if len(transcript) > available_tokens * 3:  # Rough char to token ratio
-                # Try to keep beginning and end of transcript for context
-                target_length = available_tokens * 3
-                half_length = target_length // 2
-                transcript_content = (
-                    transcript[:half_length]
-                    + "\n\n[... middle content truncated ...]\n\n"
-                    + transcript[-half_length:]
-                )
-
-            # Build comprehensive user prompt
             user_prompt = f"""TRANSCRIPT TO ANALYZE:
 {transcript_content}
 
@@ -885,7 +1109,7 @@ Analyze this conversation transcript and identify each speaker label based on th
 - Any direct or indirect name mentions or role references
 - Communication styles and interpersonal dynamics
 
-For each speaker you can identify with reasonable confidence (≥0.5), provide a detailed analysis.
+For each speaker you can identify with reasonable confidence (>=0.5), provide a detailed analysis.
 
 RESPONSE FORMAT (JSON):
 {{
@@ -902,130 +1126,29 @@ RESPONSE FORMAT (JSON):
     "analysis_notes": "Brief summary of the identification process and any challenges encountered"
 }}
 
-IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confidently identify any speakers, return an empty predictions array."""
+IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confidently identify any speakers, return an empty predictions array."""
 
-            # Generate response with user's configured token limit
-            # Use quote extraction technique (improves recall from ~27% to ~98%)
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
-                # Prefill response to force quote extraction first
                 {
                     "role": "assistant",
                     "content": "Let me identify the most relevant evidence for each speaker:\n\nRELEVANT QUOTES AND EVIDENCE:\n",
                 },
             ]
 
-            # Use conservative response token limit based on user's context window
             response_tokens = min(self.config.response_tokens, self.user_context_window // 4)
-
             response = self.chat_completion(
                 messages=messages,
                 max_tokens=response_tokens,
-                temperature=0.2,  # Lower temperature for more consistent and reliable identification
+                temperature=0.2,
             )
 
             if not response or not response.content:
                 logger.warning("LLM returned empty response for speaker identification")
                 return {"speaker_predictions": [], "error": "No response from LLM"}
 
-            # Parse and validate JSON response
-            try:
-                # Clean up response content - remove markdown code blocks if present
-                content = response.content.strip()
-
-                # Strip markdown code fences first
-                if content.startswith("```json") and "```" in content[7:]:
-                    # Find closing fence and extract content between them
-                    fence_end = content.find("```", 7)
-                    content = content[7:fence_end].strip()
-                elif content.startswith("```") and "```" in content[3:]:
-                    # Find closing fence and extract content between them
-                    fence_end = content.find("```", 3)
-                    content = content[3:fence_end].strip()
-                    # Remove language identifier if present (e.g., "json\n")
-                    if content.startswith(("json", "JSON")):
-                        content = content[4:].lstrip()
-
-                # Extract JSON from response (may include quote section first due to prefilling)
-                # Look for JSON object starting with { after any prefilled quote section
-                json_start = content.find("{")
-                if json_start > 0:
-                    content = content[json_start:]
-
-                # Find the matching closing brace for the JSON object
-                # This handles cases where there's extra text after the JSON
-                if content.startswith("{"):
-                    brace_count = 0
-                    json_end = 0
-                    for i, char in enumerate(content):
-                        if char == "{":
-                            brace_count += 1
-                        elif char == "}":
-                            brace_count -= 1
-                            if brace_count == 0:
-                                json_end = i + 1
-                                break
-                    if json_end > 0:
-                        content = content[:json_end]
-
-                result = json.loads(content)
-
-                # Validate response structure
-                if not isinstance(result, dict):
-                    logger.error("LLM response is not a valid JSON object")
-                    return {
-                        "speaker_predictions": [],
-                        "error": "Invalid response format - not a JSON object",
-                    }
-
-                if "speaker_predictions" not in result:
-                    logger.error("LLM response missing required 'speaker_predictions' field")
-                    return {
-                        "speaker_predictions": [],
-                        "error": "Invalid response format - missing speaker_predictions",
-                    }
-
-                # Validate prediction structure
-                predictions = result["speaker_predictions"]
-                if not isinstance(predictions, list):
-                    logger.error("speaker_predictions is not a list")
-                    return {
-                        "speaker_predictions": [],
-                        "error": "Invalid response format - speaker_predictions must be a list",
-                    }
-
-                # Filter predictions by confidence threshold and validate structure
-                valid_predictions = []
-                for pred in predictions:
-                    if not isinstance(pred, dict):
-                        continue
-
-                    required_fields = ["speaker_label", "predicted_name", "confidence"]
-                    if not all(field in pred for field in required_fields):
-                        logger.warning(f"Skipping prediction with missing fields: {pred}")
-                        continue
-
-                    confidence = pred.get("confidence", 0.0)
-                    if not isinstance(confidence, (int, float)) or confidence < 0.5:
-                        continue
-
-                    valid_predictions.append(pred)
-
-                logger.info(
-                    f"Speaker identification completed: {len(valid_predictions)} valid predictions from {len(predictions)} total"
-                )
-
-                return {
-                    "speaker_predictions": valid_predictions,
-                    "overall_confidence": result.get("overall_confidence", "unknown"),
-                    "analysis_notes": result.get("analysis_notes", "No additional notes provided"),
-                }
-
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse LLM identification response as JSON: {e}")
-                logger.error(f"Raw response content: {response.content[:500]}...")
-                return {"speaker_predictions": [], "error": f"Invalid JSON response: {str(e)}"}
+            return self._parse_speaker_identification_response(response)
 
         except Exception as e:
             logger.error(f"Speaker identification failed with error: {e}", exc_info=True)
@@ -1196,6 +1319,96 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
             db.close()
 
     @staticmethod
+    def _get_provider_config(
+        provider: LLMProvider,
+    ) -> Optional[tuple[str, Optional[str], Optional[str]]]:
+        """
+        Get provider-specific configuration (model, api_key, base_url) with validation.
+
+        Returns:
+            Tuple of (model, api_key, base_url) if valid, None if validation fails.
+        """
+        provider_settings = {
+            LLMProvider.VLLM: {
+                "model": settings.VLLM_MODEL_NAME,
+                "api_key": settings.VLLM_API_KEY,
+                "base_url": settings.VLLM_BASE_URL,
+                "requires_api_key": False,
+                "invalid_model_defaults": ["gpt-oss"],
+                "invalid_url_defaults": ["http://localhost:8012/v1"],
+            },
+            LLMProvider.OPENAI: {
+                "model": settings.OPENAI_MODEL_NAME,
+                "api_key": settings.OPENAI_API_KEY,
+                "base_url": settings.OPENAI_BASE_URL,
+                "requires_api_key": True,
+            },
+            LLMProvider.OLLAMA: {
+                "model": settings.OLLAMA_MODEL_NAME,
+                "api_key": None,
+                "base_url": settings.OLLAMA_BASE_URL,
+                "requires_api_key": False,
+            },
+            LLMProvider.CLAUDE: {
+                "model": settings.ANTHROPIC_MODEL_NAME,
+                "api_key": settings.ANTHROPIC_API_KEY,
+                "base_url": settings.ANTHROPIC_BASE_URL,
+                "requires_api_key": True,
+            },
+            LLMProvider.ANTHROPIC: {
+                "model": settings.ANTHROPIC_MODEL_NAME,
+                "api_key": settings.ANTHROPIC_API_KEY,
+                "base_url": settings.ANTHROPIC_BASE_URL,
+                "requires_api_key": True,
+            },
+            LLMProvider.OPENROUTER: {
+                "model": settings.OPENROUTER_MODEL_NAME,
+                "api_key": settings.OPENROUTER_API_KEY,
+                "base_url": settings.OPENROUTER_BASE_URL,
+                "requires_api_key": True,
+            },
+        }
+
+        if provider == LLMProvider.CUSTOM:
+            logger.info("Custom provider requires user-specific configuration via UI")
+            return None
+
+        if provider not in provider_settings:
+            logger.warning(f"Unsupported LLM provider: {provider}")
+            return None
+
+        cfg = provider_settings[provider]
+        model = cfg["model"]
+        api_key = cfg["api_key"] or None
+        base_url = cfg["base_url"]
+
+        # Validate model
+        if not model or not model.strip():
+            logger.info(f"{provider.value} provider configured but no model name set")
+            return None
+
+        # Check for invalid model defaults (e.g., vLLM "gpt-oss")
+        invalid_models = cfg.get("invalid_model_defaults", [])
+        if model.strip() in invalid_models:
+            logger.info(f"{provider.value} provider configured but no valid model name set")
+            return None
+
+        # Check for invalid URL defaults
+        invalid_urls = cfg.get("invalid_url_defaults", [])
+        if base_url in invalid_urls:
+            logger.info(
+                f"{provider.value} provider configured but using default localhost endpoint (likely not available)"
+            )
+            return None
+
+        # Validate API key if required
+        if cfg.get("requires_api_key") and (not api_key or not api_key.strip()):
+            logger.info(f"{provider.value} provider configured but no API key set")
+            return None
+
+        return model, api_key, base_url
+
+    @staticmethod
     def create_from_system_settings() -> Optional["LLMService"]:
         """Create LLMService from system settings"""
         if not settings.LLM_PROVIDER or settings.LLM_PROVIDER.strip() == "":
@@ -1208,55 +1421,11 @@ IMPORTANT: Only include predictions with confidence ≥ 0.5. If you cannot confi
             logger.warning(f"Invalid LLM provider '{settings.LLM_PROVIDER}': {e}")
             return None
 
-        # Provider-specific configuration with validation
-        if provider == LLMProvider.VLLM:
-            model = settings.VLLM_MODEL_NAME
-            api_key = settings.VLLM_API_KEY or None
-            base_url = settings.VLLM_BASE_URL
-            # Validate required settings for vLLM
-            if not model or model.strip() == "gpt-oss":  # Invalid default model name
-                logger.info("vLLM provider configured but no valid model name set")
-                return None
-            if (
-                not base_url or base_url == "http://localhost:8012/v1"
-            ):  # Default that likely won't work
-                logger.info(
-                    "vLLM provider configured but using default localhost endpoint (likely not available)"
-                )
-                return None
-        elif provider == LLMProvider.OPENAI:
-            model = settings.OPENAI_MODEL_NAME
-            api_key = settings.OPENAI_API_KEY or None
-            base_url = settings.OPENAI_BASE_URL
-            # Validate required settings for OpenAI
-            if not model or not model.strip():
-                logger.info("OpenAI provider configured but no model name set")
-                return None
-            if not api_key or not api_key.strip():
-                logger.info("OpenAI provider configured but no API key set")
-                return None
-        elif provider == LLMProvider.OLLAMA:
-            model = settings.OLLAMA_MODEL_NAME
-            api_key = None
-            base_url = settings.OLLAMA_BASE_URL
-            # Validate required settings for Ollama
-            if not model or not model.strip():
-                logger.info("Ollama provider configured but no model name set")
-                return None
-        elif provider == LLMProvider.CLAUDE:
-            model = settings.ANTHROPIC_MODEL_NAME
-            api_key = settings.ANTHROPIC_API_KEY or None
-            base_url = settings.ANTHROPIC_BASE_URL
-            # Validate required settings for Claude/Anthropic
-            if not model or not model.strip():
-                logger.info("Claude/Anthropic provider configured but no model name set")
-                return None
-            if not api_key or not api_key.strip():
-                logger.info("Claude/Anthropic provider configured but no API key set")
-                return None
-        else:
-            logger.warning(f"Unsupported LLM provider: {provider}")
+        provider_config = LLMService._get_provider_config(provider)
+        if provider_config is None:
             return None
+
+        model, api_key, base_url = provider_config
 
         try:
             config = LLMConfig(

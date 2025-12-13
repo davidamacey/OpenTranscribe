@@ -42,6 +42,11 @@ async function downloadPlyrIcons() {
     const plyrSvgPath = join(publicDir, 'plyr.svg');
     const plyrSvgUrl = 'https://cdn.plyr.io/3.7.8/plyr.svg';
 
+    // Create public directory if it doesn't exist
+    if (!existsSync(publicDir)) {
+      mkdirSync(publicDir, { recursive: true });
+    }
+
     console.log('Downloading Plyr icons...');
     const svgData = await downloadFile(plyrSvgUrl);
     writeFileSync(plyrSvgPath, svgData);

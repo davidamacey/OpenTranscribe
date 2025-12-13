@@ -23,8 +23,12 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 🎧 **Advanced Transcription**
 - **High-Accuracy Speech Recognition**: Powered by WhisperX with faster-whisper backend
 - **Word-Level Timestamps**: Precise timing for every word using WAV2VEC2 alignment
-- **Multi-Language Support**: Transcribe in multiple languages with automatic English translation
+- **100+ Language Support**: Transcribe in 100+ languages with optional English translation
+- **Configurable Source Language**: Auto-detect or specify source language for improved accuracy
+- **Translation Toggle**: Choose to keep original language or translate non-English audio to English
+- **Language-Aware Alignment**: Indicators show which languages support word-level timestamps (~42 languages)
 - **Batch Processing**: 70x realtime speed with large-v2 model on GPU
+- **Pagination for Large Transcripts**: Efficient display of long transcripts without browser hanging
 - **Audio Waveform Visualization**: Interactive waveform player with precise timing and click-to-seek
 - **Browser Recording**: Built-in microphone recording with real-time audio level monitoring
 - **Recording Controls**: Pause/resume recording with duration tracking and quality settings
@@ -41,6 +45,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Retroactive Speaker Matching**: Cross-video speaker matching with automatic label propagation for high-confidence matches
 - **Custom Speaker Labels**: Edit and manage speaker names and information with intelligent suggestions
 - **Speaker Analytics**: View speaking time distribution, cross-media appearances, and interaction patterns
+- **Speaker Merge UI**: Combine duplicate speakers into single profiles with segment reassignment
+- **Per-File Speaker Settings**: Configure min/max speaker count per upload or reprocess operation
+- **User-Level Speaker Preferences**: Save default speaker detection settings (always prompt, use defaults, use custom values)
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
@@ -83,6 +90,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **LLM Configuration Management**: User-specific LLM settings with encrypted API key storage
 - **Provider Testing**: Test LLM connections and validate configurations before use
 - **Real-Time Topic Extraction**: AI-powered topic extraction with granular progress notifications
+- **LLM Output Language**: Generate AI summaries in 12 different languages (English, Spanish, French, German, etc.)
+- **Model Discovery**: Automatic discovery of available models for vLLM, Ollama, and Anthropic providers
+- **Auto-Cleanup Garbage Segments**: Automatic detection and cleanup of erroneous transcription segments
 
 ### 💬 **Collaboration Features**
 - **Time-Stamped Comments**: Add annotations at specific moments
@@ -129,6 +139,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 📱 **Enhanced User Experience**
 - **Progressive Web App**: Installable app experience with offline capabilities
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
+- **UI Internationalization**: Interface available in 7 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese)
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
 - **Floating Upload Manager**: Draggable upload interface with real-time progress
 - **Smart Modal System**: Consistent modal design with improved accessibility
@@ -138,6 +149,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Auto-Refresh Systems**: Background data updates without manual page refreshing
 - **Theme Support**: Seamless dark/light mode switching
 - **Keyboard Shortcuts**: Efficient navigation and control via hotkeys
+- **System Statistics**: CPU, memory, disk, and GPU usage visible to all users
+- **Admin Password Reset**: Secure password reset functionality with validation
 
 ## 🛠️ Technology Stack
 
@@ -145,6 +158,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Svelte** - Reactive UI framework with excellent performance
 - **TypeScript** - Type-safe development with modern JavaScript and comprehensive ESLint integration
 - **Progressive Web App** - Offline capabilities and native-like experience
+- **Internationalization (i18n)** - Multi-language UI support with 7 languages
 - **Responsive Design** - Seamless experience across all devices
 - **Advanced UI Components** - Draggable upload manager, modal consistency, and real-time status updates
 - **Code Quality Tooling** - ESLint, TypeScript strict mode, and automated formatting
@@ -161,13 +175,15 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **WebSocket** - Real-time communication for live updates
 
 ### **AI/ML Stack**
-- **WhisperX** - Advanced speech recognition with alignment
+- **WhisperX** - Advanced speech recognition with 100+ language support
 - **PyAnnote.audio** - Speaker diarization and voice analysis
 - **Faster-Whisper** - Optimized inference engine
 - **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
 - **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
 - **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
 - **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
+- **Multilingual AI Output** - Generate summaries in 12 different languages
+- **Model Auto-Discovery** - Automatic detection of available models from vLLM, Ollama, and Anthropic
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas

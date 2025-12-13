@@ -14,8 +14,8 @@ OpenTranscribe is a containerized AI-powered transcription application with thes
 - **Monitoring**: Flower for task monitoring
 
 ### Key Technologies
-- **AI Models**: WhisperX for transcription, PyAnnote for speaker diarization
-- **Frontend**: Svelte, TypeScript, Vite, Plyr for media playback
+- **AI Models**: WhisperX for transcription (100+ languages), PyAnnote for speaker diarization
+- **Frontend**: Svelte, TypeScript, Vite, Plyr for media playback, i18n (7 UI languages)
 - **Backend**: FastAPI, SQLAlchemy 2.0, Alembic, Celery
 - **Infrastructure**: Docker Compose, NGINX for production
 
@@ -115,6 +115,26 @@ PLATFORMS=linux/amd64 ./scripts/docker-build-push.sh backend
 
 See [scripts/README.md](scripts/README.md) for detailed documentation.
 
+### Local Development Builds (No Docker Hub Push)
+
+When making code changes and testing locally without pushing to Docker Hub:
+
+```bash
+# Build backend image locally (always use --no-cache for code changes)
+cd ~/prj/src/OpenTranscribe
+docker build --no-cache -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
+
+# Restart production with local image (use docker-compose.local.yml to prevent pulling)
+cd ~/prj/opentranscribe
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml up -d --force-recreate
+```
+
+**Important:**
+- `--no-cache` is required because Docker may cache the COPY layer even when files changed
+- `--force-recreate` ensures containers use the new image
+- `docker-compose.local.yml` sets `pull_policy: never` to prevent overwriting local images with Docker Hub versions
+- Never use `./opentranscribe.sh update` with local builds (it pulls from Docker Hub)
+
 ### Frontend Development
 ```bash
 # From frontend/ directory
@@ -139,7 +159,10 @@ alembic upgrade head # Apply migrations (production only)
 3. Update Pydantic schemas in `backend/app/schemas/`
 4. Reset the development database: `./opentr.sh reset dev`
 
-For production deployments, migrations will be handled differently.
+For production deployments, the backend now includes an **automatic migration system** that runs on startup:
+- Migrations are located in `backend/app/db/migrations.py`
+- Fresh installs, upgrades from v0.1.0, and already-tracked databases are handled automatically
+- No manual migration commands required for normal operation
 
 ## Code Organization Patterns
 
@@ -153,9 +176,12 @@ For production deployments, migrations will be handled differently.
 
 ### Frontend Structure
 - `src/components/` - Reusable Svelte components
+- `src/components/settings/` - Settings-related components
 - `src/routes/` - Page components
 - `src/stores/` - Svelte stores for state management
 - `src/lib/` - Utilities and services
+- `src/lib/i18n/` - Internationalization system (7 languages)
+- `src/lib/i18n/locales/` - Translation JSON files (en, es, fr, de, pt, zh, ja)
 
 ### Key Patterns
 - **Authentication**: JWT-based with role-based access control
@@ -217,17 +243,21 @@ For production deployments, migrations will be handled differently.
 1. File upload to MinIO storage
 2. Metadata extraction and database record creation
 3. Celery task dispatch to worker with GPU support
-4. WhisperX transcription with word-level alignment
+4. WhisperX transcription with word-level alignment (100+ languages supported)
+   - Configurable source language (auto-detect or specify)
+   - Optional translation to English
+   - ~42 languages support word-level timestamps
 5. PyAnnote speaker diarization and voice fingerprinting
 6. **LLM speaker identification suggestions** (optional - manual verification required)
 7. **LLM-powered summarization** with BLUF format (optional - user-triggered)
    - Automatic context-aware processing (single or multi-section based on transcript length)
    - Intelligent chunking at speaker/topic boundaries for long content
    - Section-by-section analysis with final summary stitching
+   - Configurable output language (12 languages supported)
 8. Database storage and OpenSearch indexing
 9. WebSocket notification to frontend
 
-### LLM Features (New in v2.0)
+### LLM Features
 
 The application now includes optional AI-powered features using Large Language Models:
 
@@ -239,12 +269,19 @@ The application now includes optional AI-powered features using Large Language M
 - Support for multiple LLM providers (vLLM, OpenAI, Ollama, Claude)
 - Intelligent section-by-section processing for transcripts of any length
 - Automatic context-aware chunking and summary stitching
+- **Multilingual output**: Generate summaries in 12 languages (en, es, fr, de, pt, zh, ja, ko, it, ru, ar, hi)
 
 **Speaker Identification:**
 - LLM-powered speaker name suggestions based on conversation context
 - Confidence scoring for identification accuracy
 - Manual verification workflow (suggestions are not auto-applied)
 - Cross-video speaker matching with embedding analysis
+- Speaker merge UI for combining duplicate speakers
+
+**Model Discovery:**
+- Automatic discovery of available models for vLLM, Ollama, and Anthropic
+- Works with OpenAI-compatible API endpoints
+- Edit mode supports stored API keys (no need to re-enter)
 
 **Configuration:**
 - Set `LLM_PROVIDER` in .env file (vllm, openai, ollama, anthropic, openrouter)
@@ -255,6 +292,37 @@ The application now includes optional AI-powered features using Large Language M
 - **Cloud Providers**: Use `.env` configuration with external providers (OpenAI, Claude, OpenRouter, etc.)
 - **Self-Hosted LLM**: Configure vLLM or Ollama endpoints in `.env` (deployed separately)
 - **No LLM**: Leave LLM_PROVIDER empty for transcription-only mode
+
+### Multilingual Transcription (New)
+
+OpenTranscribe now supports transcription in 100+ languages with configurable settings:
+
+**User-Configurable Language Settings:**
+- **Source Language**: Auto-detect or specify language for improved accuracy
+- **Translate to English**: Toggle to translate non-English audio to English
+- **LLM Output Language**: Generate AI summaries in preferred language (12 supported)
+
+**Language Features:**
+- ~42 languages support word-level timestamps via wav2vec2 alignment models
+- Languages without alignment models fall back to segment-level timestamps
+- Settings stored per-user in the database
+
+**Configuration:**
+- User settings available in Settings → Transcription → Language Settings
+- Per-file language override available at upload/reprocess time
+
+### User-Level Settings
+
+Users can configure their own transcription preferences:
+
+**Transcription Settings:**
+- **Speaker Behavior**: Always prompt, use defaults, or use saved custom values
+- **Min/Max Speakers**: Configure default speaker detection range (1-50+)
+- **Garbage Cleanup**: Enable/disable automatic cleanup of erroneous segments
+
+**Recording Settings:**
+- Audio recording quality and duration preferences
+- Microphone device selection
 
 ## Model Caching System
 

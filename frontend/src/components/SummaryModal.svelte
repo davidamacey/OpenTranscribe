@@ -4,6 +4,7 @@
   import axiosInstance from '$lib/axios';
   import { isLLMAvailable } from '../stores/llmStatus';
   import { copyToClipboard } from '$lib/utils/clipboard';
+  import { t } from '$stores/locale';
 
   // Import smaller components
   import SummaryDisplay from './SummaryDisplay.svelte';
@@ -120,10 +121,10 @@
         dispatch('generateSummary', { fileId });
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to start summarization');
+        throw new Error(errorData.detail || $t('summary.startFailed'));
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to generate summary';
+      error = err instanceof Error ? err.message : $t('summary.generateFailed');
     } finally {
       generating = false;
     }
@@ -150,10 +151,10 @@
         dispatch('generateSummary', { fileId });
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to retry summary generation');
+        throw new Error(errorData.detail || $t('summary.retryFailed'));
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to retry summary generation';
+      error = err instanceof Error ? err.message : $t('summary.retryFailed');
     } finally {
       generating = false;
     }
@@ -277,15 +278,15 @@
     copyToClipboard(
       markdown,
       () => {
-        copyButtonText = 'Copied!';
+        copyButtonText = $t('summary.copied');
         setTimeout(() => {
-          copyButtonText = 'Copy';
+          copyButtonText = $t('summary.copy');
         }, 2000);
       },
       (error) => {
-        copyButtonText = 'Copy failed';
+        copyButtonText = $t('summary.copyFailed');
         setTimeout(() => {
-          copyButtonText = 'Copy';
+          copyButtonText = $t('summary.copy');
         }, 2000);
       }
     );
@@ -298,7 +299,7 @@
   }
 
   function formatSummaryAsMarkdown(data: SummaryData): string {
-    let markdown = `# AI Summary - ${fileName}\n\n`;
+    let markdown = `# ${$t('summary.modalTitle', { fileName })}\n\n`;
 
     // Check if this is standard BLUF format or custom format
     const isStandardBLUF = !!(data.bluf && data.brief_summary);
@@ -306,23 +307,23 @@
     if (isStandardBLUF) {
       // Standard BLUF format
       if (data.bluf) {
-        markdown += `## Executive Summary (BLUF)\n${removeEmojis(data.bluf)}\n\n`;
+        markdown += `## ${$t('summary.executiveSummary')}\n${removeEmojis(data.bluf)}\n\n`;
       }
 
       // Brief Summary
       if (data.brief_summary) {
-        markdown += `## Brief Summary\n${removeEmojis(data.brief_summary)}\n\n`;
+        markdown += `## ${$t('summary.briefSummary')}\n${removeEmojis(data.brief_summary)}\n\n`;
       }
 
       // Major Topics
       if (data.major_topics && data.major_topics.length > 0) {
-        markdown += `## Major Topics Discussed\n`;
+        markdown += `## ${$t('summary.majorTopics')}\n`;
         data.major_topics.forEach((topic: any) => {
           // Use text indicators instead of emojis
-          const importanceText = topic.importance === 'high' ? '[HIGH] ' : topic.importance === 'medium' ? '[MED] ' : '[LOW] ';
+          const importanceText = topic.importance === 'high' ? `[${$t('summary.importance.high')}] ` : topic.importance === 'medium' ? `[${$t('summary.importance.medium')}] ` : `[${$t('summary.importance.low')}] `;
           markdown += `### ${importanceText}${removeEmojis(topic.topic || '')}\n`;
           if (topic.participants && topic.participants.length > 0) {
-            markdown += `*Key participants: ${topic.participants.join(', ')}*\n\n`;
+            markdown += `*${$t('summary.keyParticipants', { participants: topic.participants.join(', ') })}*\n\n`;
           }
           if (topic.key_points && topic.key_points.length > 0) {
             topic.key_points.forEach((point: string) => {
@@ -335,7 +336,7 @@
 
       // Key Decisions
       if (data.key_decisions && data.key_decisions.length > 0) {
-        markdown += `## Key Decisions\n`;
+        markdown += `## ${$t('summary.keyDecisions')}\n`;
         data.key_decisions.forEach((decision: any) => {
           const text = typeof decision === 'string' ? decision : (decision.decision || JSON.stringify(decision));
           markdown += `- ${removeEmojis(text)}\n`;
@@ -345,7 +346,7 @@
 
       // Follow-up Items
       if (data.follow_up_items && data.follow_up_items.length > 0) {
-        markdown += `## Follow-up Items\n`;
+        markdown += `## ${$t('summary.followUpItems')}\n`;
         data.follow_up_items.forEach((item: any) => {
           const text = typeof item === 'string' ? item : (item.item || JSON.stringify(item));
           markdown += `- ${removeEmojis(text)}\n`;
@@ -359,10 +360,10 @@
 
     // AI Disclaimer
     if (data.metadata) {
-      markdown += `---\n\n*AI-generated summary - please verify important details. `;
-      markdown += `Generated by ${data.metadata.provider} (${data.metadata.model})`;
+      markdown += `---\n\n*${$t('summary.aiDisclaimer')} `;
+      markdown += $t('summary.generatedBy', { provider: data.metadata.provider, model: data.metadata.model });
       if (data.metadata.processing_time_ms) {
-        markdown += ` in ${(data.metadata.processing_time_ms / 1000).toFixed(1)}s`;
+        markdown += ` ${$t('summary.processingTime', { time: (data.metadata.processing_time_ms / 1000).toFixed(1) })}`;
       }
       markdown += `.*\n`;
     }
@@ -411,7 +412,7 @@
     return markdown;
   }
 
-  let copyButtonText = 'Copy';
+  let copyButtonText = $t('summary.copy');
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -438,27 +439,27 @@
       on:keydown={handleKeydown}
     >
       <div class="modal-header">
-        <h2 class="modal-title" id="summary-modal-title">AI Summary - {fileName}</h2>
+        <h2 class="modal-title" id="summary-modal-title">{$t('summary.modalTitle', { fileName })}</h2>
         <div class="header-actions">
           {#if summary}
             <button
               class="copy-button-header"
-              class:copied={copyButtonText === 'Copied!'}
+              class:copied={copyButtonText === $t('summary.copied')}
               on:click={handleCopy}
-              aria-label="Copy summary"
-              title={copyButtonText === 'Copied!' ? 'Summary copied to clipboard!' : 'Copy summary as markdown'}
+              aria-label={$t('summary.copySummaryLabel')}
+              title={copyButtonText === $t('summary.copied') ? $t('summary.copiedToClipboard') : $t('summary.copySummaryMarkdown')}
             >
-              {#if copyButtonText === 'Copied!'}
+              {#if copyButtonText === $t('summary.copied')}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                 </svg>
-                Copied!
+                {$t('summary.copied')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                   <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                 </svg>
-                Copy
+                {$t('summary.copy')}
               {/if}
             </button>
 
@@ -468,8 +469,8 @@
                 class="reprocess-button-header"
                 on:click={reprocessSummary}
                 disabled={generating}
-                aria-label="Reprocess summary"
-                title="Regenerate summary with current speaker names and transcript text"
+                aria-label={$t('summary.reprocessLabel')}
+                title={$t('summary.regenerateSummaryTooltip')}
               >
                 {#if generating}
                   <div class="spinner-small"></div>
@@ -479,11 +480,11 @@
                     <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
                   </svg>
                 {/if}
-                Reprocess
+                {$t('summary.reprocess')}
               </button>
             {/if}
           {/if}
-          <button class="close-button" on:click={handleCloseButton} aria-label="Close modal" title="Close modal (Esc)">
+          <button class="close-button" on:click={handleCloseButton} aria-label={$t('summary.closeLabel')} title={$t('summary.closeTooltip')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
@@ -494,7 +495,7 @@
       {#if loading}
         <div class="loading-container">
           <div class="spinner"></div>
-          <p>Loading summary...</p>
+          <p>{$t('summary.loading')}</p>
         </div>
       {:else if error}
         <div class="error-container">
@@ -506,7 +507,7 @@
             </svg>
           </div>
           <div class="error-message">
-            <h3>Error Loading Summary</h3>
+            <h3>{$t('summary.errorLoading')}</h3>
             <p>{error}</p>
           </div>
         </div>

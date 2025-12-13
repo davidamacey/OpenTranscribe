@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData } from '$lib/types/summary';
-  
+  import { t } from '$stores/locale';
+
   export let summary: SummaryData | null;
   export let generating: boolean = false;
   export let llmAvailable: boolean = false;
@@ -20,40 +21,40 @@
 
 <div class="summary-actions">
   {#if !summary && llmAvailable && summaryStatus === 'pending'}
-    <button 
+    <button
       class="action-button primary"
       on:click={() => dispatch('generateSummary')}
       disabled={generating}
     >
       {#if generating}
         <div class="spinner"></div>
-        Generating Summary...
+        {$t('summary.generatingSummary')}
       {:else}
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
         </svg>
-        Generate AI Summary
+        {$t('summary.generateSummary')}
       {/if}
     </button>
   {:else if !summary && canRetry && (summaryStatus === 'failed' || summaryStatus === 'error')}
-    <button 
+    <button
       class="action-button warning"
       on:click={() => dispatch('retrySummary')}
       disabled={generating}
     >
       {#if generating}
         <div class="spinner"></div>
-        Retrying...
+        {$t('summary.retrying')}
       {:else}
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z"/>
           <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z"/>
         </svg>
-        Retry Summary Generation
+        {$t('summary.retrySummaryGeneration')}
       {/if}
     </button>
   {/if}
-  
+
 </div>
 
 <style>

@@ -106,11 +106,33 @@ See [Offline Installation](./installation/offline-installation.md) for details.
 
 Maximum file size: **4GB**
 
-### What languages are supported?
+### What languages are supported for transcription?
 
-WhisperX supports 50+ languages. See the [Whisper documentation](https://github.com/openai/whisper#available-models-and-languages) for the full list.
+**100+ languages** are supported for transcription via WhisperX/Whisper. See the [Whisper documentation](https://github.com/openai/whisper#available-models-and-languages) for the full list.
 
-**Note:** English transcription quality is best. Other languages work but may be less accurate.
+**v0.2.0 Language Features:**
+- **Source Language Selection**: Auto-detect or manually specify the audio language
+- **Translation Toggle**: Choose to keep original language or translate to English
+- **Word-Level Timestamps**: ~42 languages support word-level alignment (others fall back to segment-level)
+
+Configure language settings in: **Settings → Transcription → Language Settings**
+
+**Note:** English transcription quality is best. Other languages work but accuracy varies.
+
+### What languages is the UI available in?
+
+**7 languages** as of v0.2.0:
+- English (default)
+- Spanish (Espa\u00f1ol)
+- French (Fran\u00e7ais)
+- German (Deutsch)
+- Portuguese (Portugu\u00eas)
+- Chinese (\u4e2d\u6587)
+- Japanese (\u65e5\u672c\u8a9e)
+
+Change the UI language in: **Settings → Language**
+
+Want to contribute a translation? Submit a PR with a new locale file!
 
 ### How accurate is the transcription?
 
@@ -177,6 +199,17 @@ No! LLMs are **optional** and only used for:
 - Enhanced speaker name suggestions
 
 Transcription and speaker diarization work without any LLM.
+
+### Can I generate AI summaries in languages other than English?
+
+Yes! As of v0.2.0, AI summaries can be generated in **12 languages**:
+- English, Spanish, French, German
+- Portuguese, Chinese, Japanese, Korean
+- Italian, Russian, Arabic, Hindi
+
+Configure in: **Settings → Transcription → LLM Output Language**
+
+The LLM will generate the summary in your chosen language regardless of the original audio language.
 
 ### Can I use OpenTranscribe without any cloud services?
 

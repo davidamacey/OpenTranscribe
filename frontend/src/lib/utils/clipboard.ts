@@ -3,6 +3,9 @@
  * Provides fallback methods for secure/non-secure contexts
  */
 
+import { get } from "svelte/store";
+import { t } from "$stores/locale";
+
 export interface CopyResult {
   success: boolean;
   error?: string;
@@ -17,10 +20,10 @@ export interface CopyResult {
 export async function copyToClipboard(
   text: string,
   onSuccess?: () => void,
-  onError?: (error: string) => void
+  onError?: (error: string) => void,
 ): Promise<CopyResult> {
   if (!text) {
-    const error = 'No content to copy';
+    const error = get(t)("clipboard.noContent");
     onError?.(error);
     return { success: false, error };
   }
@@ -49,17 +52,17 @@ export async function copyToClipboard(
 function copyWithFallback(
   text: string,
   onSuccess?: () => void,
-  onError?: (error: string) => void
+  onError?: (error: string) => void,
 ): CopyResult {
   try {
-    const textArea = document.createElement('textarea');
+    const textArea = document.createElement("textarea");
     textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-999999px';
-    textArea.style.top = '-999999px';
-    textArea.style.opacity = '0';
-    textArea.style.pointerEvents = 'none';
-    textArea.setAttribute('readonly', '');
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    textArea.style.top = "-999999px";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    textArea.setAttribute("readonly", "");
     document.body.appendChild(textArea);
 
     // Select the text
@@ -68,17 +71,17 @@ function copyWithFallback(
     textArea.setSelectionRange(0, textArea.value.length);
 
     // Execute copy command
-    const successful = document.execCommand('copy');
+    const successful = document.execCommand("copy");
     document.body.removeChild(textArea);
 
     if (successful) {
       onSuccess?.();
       return { success: true };
     } else {
-      throw new Error('execCommand copy failed');
+      throw new Error("execCommand copy failed");
     }
   } catch (fallbackError) {
-    const error = 'Copy operation failed';
+    const error = get(t)("clipboard.operationFailed");
     onError?.(error);
     return { success: false, error };
   }
@@ -87,8 +90,9 @@ function copyWithFallback(
 /**
  * Show manual copy modal as final fallback
  */
-export function showManualCopyModal(text: string, title: string = 'Copy Content'): void {
-  const modal = document.createElement('div');
+export function showManualCopyModal(text: string, title?: string): void {
+  const modalTitle = title || get(t)("clipboard.modalTitle");
+  const modal = document.createElement("div");
   modal.style.cssText = `
     position: fixed;
     top: 0;
@@ -103,7 +107,7 @@ export function showManualCopyModal(text: string, title: string = 'Copy Content'
     padding: 20px;
   `;
 
-  const content = document.createElement('div');
+  const content = document.createElement("div");
   content.style.cssText = `
     background: white;
     border-radius: 8px;
@@ -113,14 +117,14 @@ export function showManualCopyModal(text: string, title: string = 'Copy Content'
     overflow: auto;
   `;
 
-  const titleElement = document.createElement('h3');
-  titleElement.textContent = title;
-  titleElement.style.marginTop = '0';
+  const titleElement = document.createElement("h3");
+  titleElement.textContent = modalTitle;
+  titleElement.style.marginTop = "0";
 
-  const instructions = document.createElement('p');
-  instructions.textContent = 'Select all text below and copy manually:';
+  const instructions = document.createElement("p");
+  instructions.textContent = get(t)("clipboard.instructions");
 
-  const textArea = document.createElement('textarea');
+  const textArea = document.createElement("textarea");
   textArea.value = text;
   textArea.style.cssText = `
     width: 100%;
@@ -132,8 +136,8 @@ export function showManualCopyModal(text: string, title: string = 'Copy Content'
   `;
   textArea.select();
 
-  const closeButton = document.createElement('button');
-  closeButton.textContent = 'Close';
+  const closeButton = document.createElement("button");
+  closeButton.textContent = get(t)("clipboard.close");
   closeButton.style.cssText = `
     margin-top: 10px;
     padding: 8px 16px;

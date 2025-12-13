@@ -2,6 +2,8 @@
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let videoUrl: string = '';
   export let file: any = null;
@@ -50,7 +52,7 @@
 
     try {
       // Find the track element
-      const videoElement = player.media as HTMLVideoElement;
+      const videoElement = (player as any).media as HTMLVideoElement;
       trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
 
       if (!trackElement) {
@@ -95,12 +97,12 @@
         currentLoadHandler = () => {
           textTrack.mode = 'showing';
 
-          if (player.captions) {
-            player.captions.active = true;
+          if ((player as any).captions) {
+            (player as any).captions.active = true;
           }
 
           // Force Plyr to update its caption state
-          if (player.elements?.buttons?.captions && !player.captions.active) {
+          if (player.elements?.buttons?.captions && !(player as any).captions?.active) {
             player.elements.buttons.captions.click();
           }
         };
@@ -113,8 +115,8 @@
           if (textTrack.cues?.length === 0) {
             textTrack.mode = 'showing';
 
-            if (player.captions) {
-              player.captions.active = true;
+            if ((player as any).captions) {
+              (player as any).captions.active = true;
             }
           }
         }, 1000);
@@ -256,12 +258,12 @@
         const formattedEndTime = formatTime(endTime);
 
         // Get original speaker name from segment
-        const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `Speaker ${index + 1}`;
+        const originalSpeakerName = segment.speaker_label || segment.speaker?.name || segment.speaker || `SPEAKER_${String(index + 1).padStart(2, '0')}`;
 
-        // Use speaker mapping to get display name, fallback to original
+        // Use speaker mapping to get display name, fallback to translated speaker label
         const displaySpeakerName = speakerMapping?.get(originalSpeakerName) ||
                                   segment.speaker?.display_name ||
-                                  originalSpeakerName;
+                                  translateSpeakerLabel(originalSpeakerName);
 
         const displayText = `${displaySpeakerName}: ${text.trim()}`;
 
@@ -316,7 +318,7 @@
         playsinline
       >
         <source src={videoUrl} type={file.content_type} />
-        Your browser does not support the audio element.
+        {$t('videoPlayer.audioNotSupported')}
       </audio>
     {:else}
       <!-- Plyr Video Player -->
@@ -329,15 +331,15 @@
       >
         <source src={videoUrl} type={file?.content_type || 'video/mp4'} />
         <!-- Always include track element so CC button appears -->
-        <track kind="captions" label="Auto-generated Captions" srclang="en" default />
-        Your browser does not support the video element.
+        <track kind="captions" label={$t('videoPlayer.captionsLabel')} srclang="en" default />
+        {$t('videoPlayer.videoNotSupported')}
       </video>
     {/if}
 
     {#if isPlayerBuffering}
       <div class="buffer-indicator">
         <div class="spinner"></div>
-        <div class="buffer-text">Loading video... {Math.round(loadProgress)}%</div>
+        <div class="buffer-text">{$t('videoPlayer.loadingProgress', { progress: Math.round(loadProgress) })}</div>
       </div>
     {/if}
 
@@ -346,16 +348,16 @@
       <button
         class="retry-button"
         on:click={handleRetry}
-        title="Retry loading the video file"
-      >Retry Loading Video</button>
+        title={$t('videoPlayer.retryLoadingTitle')}
+      >{$t('videoPlayer.retryLoading')}</button>
     {/if}
   {:else}
     <div class="no-preview">
       {#if errorMessage}
         <p class="error-message">{errorMessage}</p>
-        <button on:click={handleRetry} class="retry-button">Retry Loading Video</button>
+        <button on:click={handleRetry} class="retry-button">{$t('videoPlayer.retryLoading')}</button>
       {:else}
-        Video not available.
+        {$t('videoPlayer.notAvailable')}
       {/if}
     </div>
   {/if}

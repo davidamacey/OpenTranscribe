@@ -108,8 +108,9 @@ def update_gpu_stats(self):
 
             # Use nvidia-smi for accurate memory usage (includes all processes)
             # Format: memory.used,memory.total,memory.free (in MiB)
-            result = subprocess.run(
-                [
+            # Using hardcoded nvidia-smi command, not user input
+            result = subprocess.run(  # noqa: S603
+                [  # noqa: S607
                     "nvidia-smi",
                     "--query-gpu=memory.used,memory.total,memory.free",
                     "--format=csv,noheader,nounits",

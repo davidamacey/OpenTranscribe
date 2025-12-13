@@ -673,6 +673,81 @@ class SpeakerMatchingService:
 
         return occurrences
 
+    def _get_speaker_embedding_for_propagation(
+        self, matched_speaker_id: int
+    ) -> tuple[Optional[list[float]], Optional[str]]:
+        """
+        Get speaker embedding for profile propagation.
+
+        Args:
+            matched_speaker_id: ID of the speaker to get embedding for
+
+        Returns:
+            Tuple of (embedding, speaker_uuid) or (None, None) if not found
+        """
+        from app.db.base import get_db
+        from app.services.opensearch_service import get_speaker_embedding
+
+        db = next(get_db())
+        try:
+            matched_speaker = db.query(Speaker).filter(Speaker.id == matched_speaker_id).first()
+            if not matched_speaker:
+                logger.warning(f"Speaker {matched_speaker_id} not found, skipping propagation")
+                return None, None
+
+            embedding = get_speaker_embedding(str(matched_speaker.uuid))
+            if not embedding:
+                logger.warning(
+                    f"No embedding found for speaker {matched_speaker.uuid}, skipping propagation"
+                )
+                return None, None
+
+            return embedding, str(matched_speaker.uuid)
+        finally:
+            db.close()
+
+    def _should_propagate_to_speaker(self, speaker: Speaker) -> bool:
+        """
+        Check if a speaker should receive profile propagation.
+
+        Args:
+            speaker: Speaker to check
+
+        Returns:
+            True if speaker should be updated with profile
+        """
+        if speaker.profile_id:
+            return False
+        if not speaker.display_name:
+            return False
+        return not speaker.display_name.startswith("SPEAKER_")
+
+    def _update_speakers_in_opensearch(
+        self, updated_speakers: list[Speaker], profile_id: int
+    ) -> None:
+        """
+        Update speakers in OpenSearch after profile propagation.
+
+        Args:
+            updated_speakers: List of speakers to update
+            profile_id: Profile ID assigned to speakers
+        """
+        from app.services.opensearch_service import update_speaker_profile
+
+        profile_uuid = None
+        if profile_id:
+            profile = self.db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+            if profile:
+                profile_uuid = str(profile.uuid)
+
+        for speaker in updated_speakers:
+            update_speaker_profile(
+                speaker_uuid=str(speaker.uuid),
+                profile_id=speaker.profile_id,
+                profile_uuid=profile_uuid,
+                verified=speaker.verified,
+            )
+
     def _propagate_profile_assignment(self, matched_speaker_id: int, profile_id: int, user_id: int):
         """
         When a speaker is assigned to a profile, find and update other similar speakers
@@ -684,30 +759,10 @@ class SpeakerMatchingService:
             user_id: User ID for scoping
         """
         try:
-            # Get the matched speaker object to extract UUID
-            from app.db.base import get_db
-            from app.models.media import Speaker
+            embedding, _ = self._get_speaker_embedding_for_propagation(matched_speaker_id)
+            if not embedding:
+                return
 
-            db = next(get_db())
-            try:
-                matched_speaker = db.query(Speaker).filter(Speaker.id == matched_speaker_id).first()
-                if not matched_speaker:
-                    logger.warning(f"Speaker {matched_speaker_id} not found, skipping propagation")
-                    return
-
-                # Get the matched speaker's embedding using UUID
-                from app.services.opensearch_service import get_speaker_embedding
-
-                embedding = get_speaker_embedding(str(matched_speaker.uuid))
-                if not embedding:
-                    logger.warning(
-                        f"No embedding found for speaker {matched_speaker.uuid}, skipping propagation"
-                    )
-                    return
-            finally:
-                db.close()
-
-            # Find similar speakers using OpenSearch with high confidence threshold
             from app.services.similarity_service import SimilarityService
 
             similar_matches = SimilarityService.opensearch_similarity_search(
@@ -716,7 +771,7 @@ class SpeakerMatchingService:
                 index_name="speakers",
                 threshold=0.75,  # High confidence for automatic assignment (matches SPEAKER_CONFIDENCE_HIGH)
                 max_results=20,
-                exclude_ids=[matched_speaker_id],  # Don't include the original speaker
+                exclude_ids=[matched_speaker_id],
             )
 
             updated_speakers = []
@@ -725,57 +780,28 @@ class SpeakerMatchingService:
                 if not speaker_id:
                     continue
 
-                # Get speaker from database
                 speaker = self.db.query(Speaker).filter(Speaker.id == speaker_id).first()
-                if not speaker:
+                if not speaker or not self._should_propagate_to_speaker(speaker):
                     continue
 
-                # Only update speakers that don't already have a profile and have a display name
-                if (
-                    not speaker.profile_id
-                    and speaker.display_name
-                    and not speaker.display_name.startswith("SPEAKER_")
-                ):
-                    # Update speaker with profile assignment
-                    speaker.profile_id = profile_id
-                    speaker.verified = True
-                    speaker.confidence = match["similarity"]
-                    updated_speakers.append(speaker)
-
-                    logger.info(
-                        f"Propagated profile {profile_id} to similar speaker {speaker_id} "
-                        f"(confidence: {match['similarity']:.3f})"
-                    )
-
-            # Commit all changes
-            if updated_speakers:
-                self.db.commit()
-
-                # Bulk update OpenSearch
-                from app.services.opensearch_service import update_speaker_profile
-
-                # Get profile UUID
-                profile_uuid = None
-                if profile_id:
-                    profile = (
-                        self.db.query(SpeakerProfile)
-                        .filter(SpeakerProfile.id == profile_id)
-                        .first()
-                    )
-                    if profile:
-                        profile_uuid = str(profile.uuid)
-
-                for speaker in updated_speakers:
-                    update_speaker_profile(
-                        speaker_uuid=str(speaker.uuid),
-                        profile_id=speaker.profile_id,
-                        profile_uuid=profile_uuid,
-                        verified=speaker.verified,
-                    )
+                speaker.profile_id = profile_id
+                speaker.verified = True
+                speaker.confidence = match["similarity"]
+                updated_speakers.append(speaker)
 
                 logger.info(
-                    f"Propagated profile {profile_id} to {len(updated_speakers)} similar speakers"
+                    f"Propagated profile {profile_id} to similar speaker {speaker_id} "
+                    f"(confidence: {match['similarity']:.3f})"
                 )
+
+            if not updated_speakers:
+                return
+
+            self.db.commit()
+            self._update_speakers_in_opensearch(updated_speakers, profile_id)
+            logger.info(
+                f"Propagated profile {profile_id} to {len(updated_speakers)} similar speakers"
+            )
 
         except Exception as e:
             logger.error(f"Error propagating profile assignment: {e}")
@@ -860,6 +886,105 @@ class SpeakerMatchingService:
             self.db.rollback()
             return False
 
+    def _build_speaker_match_query(
+        self, embedding: np.ndarray, user_id: int, exclude_speaker_id: int
+    ) -> dict[str, Any]:
+        """
+        Build OpenSearch query for finding speaker matches.
+
+        Args:
+            embedding: Speaker embedding vector
+            user_id: User ID
+            exclude_speaker_id: Speaker ID to exclude from results
+
+        Returns:
+            OpenSearch query dictionary
+        """
+        filters = [
+            {"term": {"user_id": user_id}},
+            {
+                "bool": {
+                    "must_not": [
+                        {"term": {"speaker_id": exclude_speaker_id}},
+                        {"exists": {"field": "document_type"}},  # Exclude profile documents
+                    ]
+                }
+            },
+        ]
+
+        return {
+            "size": 20,
+            "query": {
+                "knn": {
+                    "embedding": {
+                        "vector": embedding.tolist(),
+                        "k": 20,
+                        "filter": {"bool": {"filter": filters}},
+                    }
+                }
+            },
+        }
+
+    def _create_speaker_match_record(
+        self, speaker1_id: int, speaker2_id: int, score: float
+    ) -> bool:
+        """
+        Create a new speaker match record in the database.
+
+        Args:
+            speaker1_id: First speaker ID (smaller)
+            speaker2_id: Second speaker ID (larger)
+            score: Confidence score
+
+        Returns:
+            True if match was created successfully
+        """
+        speaker1_exists = self.db.query(Speaker).filter(Speaker.id == speaker1_id).first()
+        speaker2_exists = self.db.query(Speaker).filter(Speaker.id == speaker2_id).first()
+
+        if not speaker1_exists or not speaker2_exists:
+            logger.debug(
+                f"Skipping speaker match - speaker1_id {speaker1_id} exists: "
+                f"{bool(speaker1_exists)}, speaker2_id {speaker2_id} exists: {bool(speaker2_exists)}"
+            )
+            return False
+
+        try:
+            speaker_match = SpeakerMatch(
+                speaker1_id=speaker1_id,
+                speaker2_id=speaker2_id,
+                confidence=score,
+            )
+            self.db.add(speaker_match)
+            self.db.flush()
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Failed to create speaker match between {speaker1_id} and {speaker2_id}: {e}"
+            )
+            self.db.rollback()
+            return False
+
+    def _build_match_result(self, matched_speaker: Speaker, score: float) -> dict[str, Any]:
+        """
+        Build a match result dictionary from a speaker.
+
+        Args:
+            matched_speaker: Speaker object
+            score: Confidence score
+
+        Returns:
+            Match result dictionary
+        """
+        return {
+            "speaker_id": matched_speaker.id,
+            "speaker_name": matched_speaker.name,
+            "display_name": matched_speaker.display_name,
+            "media_file_id": matched_speaker.media_file_id,
+            "confidence": score,
+            "confidence_level": self.get_confidence_level(score),
+        }
+
     def find_and_store_speaker_matches(
         self,
         new_speaker_id: int,
@@ -882,7 +1007,6 @@ class SpeakerMatchingService:
         matches = []
 
         try:
-            # Search for similar speakers in OpenSearch
             search_results = find_matching_speaker(
                 embedding.tolist(),
                 user_id,
@@ -893,118 +1017,47 @@ class SpeakerMatchingService:
             if not search_results:
                 return matches
 
-            # The search returns the best match, but we want to find all matches
-            # So we need to do a broader search
             from app.services.opensearch_service import opensearch_client
             from app.services.opensearch_service import settings
 
-            # Build filters array following OpenSearch 2.5 pattern
-            filters = [{"term": {"user_id": user_id}}]
-
-            # Add must_not wrapped in nested bool (OpenSearch 2.5 requirement)
-            filters.append(
-                {
-                    "bool": {
-                        "must_not": [
-                            {"term": {"speaker_id": new_speaker_id}},
-                            {"exists": {"field": "document_type"}},  # Exclude profile documents
-                        ]
-                    }
-                }
-            )
-
-            query = {
-                "size": 20,  # Get more potential matches
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": embedding.tolist(),
-                            "k": 20,
-                            "filter": {"bool": {"filter": filters}},
-                        }
-                    }
-                },
-            }
-
+            query = self._build_speaker_match_query(embedding, user_id, new_speaker_id)
             response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
-            # Process each match
             for hit in response["hits"]["hits"]:
                 score = hit["_score"]
-                if score >= threshold:
-                    # Safely access speaker_id - skip if not present (e.g., profile documents)
-                    source = hit.get("_source", {})
-                    match_speaker_id = source.get("speaker_id")
-                    if not match_speaker_id:
-                        continue
+                if score < threshold:
+                    continue
 
-                    # Ensure consistent ordering (smaller ID first)
-                    speaker1_id = min(new_speaker_id, match_speaker_id)
-                    speaker2_id = max(new_speaker_id, match_speaker_id)
+                match_speaker_id = hit.get("_source", {}).get("speaker_id")
+                if not match_speaker_id:
+                    continue
 
-                    # Check if this match already exists
-                    existing_match = (
-                        self.db.query(SpeakerMatch)
-                        .filter(
-                            SpeakerMatch.speaker1_id == speaker1_id,
-                            SpeakerMatch.speaker2_id == speaker2_id,
-                        )
-                        .first()
+                speaker1_id = min(new_speaker_id, match_speaker_id)
+                speaker2_id = max(new_speaker_id, match_speaker_id)
+
+                existing_match = (
+                    self.db.query(SpeakerMatch)
+                    .filter(
+                        SpeakerMatch.speaker1_id == speaker1_id,
+                        SpeakerMatch.speaker2_id == speaker2_id,
                     )
+                    .first()
+                )
 
-                    if not existing_match:
-                        # Verify both speakers exist before creating match
-                        speaker1_exists = (
-                            self.db.query(Speaker).filter(Speaker.id == speaker1_id).first()
-                        )
-                        speaker2_exists = (
-                            self.db.query(Speaker).filter(Speaker.id == speaker2_id).first()
-                        )
+                if existing_match:
+                    if score > existing_match.confidence:
+                        existing_match.confidence = score
+                        existing_match.updated_at = func.now()
+                    continue
 
-                        if not speaker1_exists or not speaker2_exists:
-                            logger.debug(
-                                f"Skipping speaker match - speaker1_id {speaker1_id} exists: {bool(speaker1_exists)}, speaker2_id {speaker2_id} exists: {bool(speaker2_exists)}"
-                            )
-                            continue
+                if not self._create_speaker_match_record(speaker1_id, speaker2_id, score):
+                    continue
 
-                        # Create match with both speakers verified to exist
-                        try:
-                            speaker_match = SpeakerMatch(
-                                speaker1_id=speaker1_id,
-                                speaker2_id=speaker2_id,
-                                confidence=score,
-                            )
-                            self.db.add(speaker_match)
-                            # Flush to catch any remaining issues
-                            self.db.flush()
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to create speaker match between {speaker1_id} and {speaker2_id}: {e}"
-                            )
-                            self.db.rollback()
-                            continue
-
-                        # Get speaker details for the match
-                        matched_speaker = (
-                            self.db.query(Speaker).filter(Speaker.id == match_speaker_id).first()
-                        )
-
-                        if matched_speaker:
-                            matches.append(
-                                {
-                                    "speaker_id": match_speaker_id,
-                                    "speaker_name": matched_speaker.name,
-                                    "display_name": matched_speaker.display_name,
-                                    "media_file_id": matched_speaker.media_file_id,
-                                    "confidence": score,
-                                    "confidence_level": self.get_confidence_level(score),
-                                }
-                            )
-                    else:
-                        # Update confidence if higher
-                        if score > existing_match.confidence:
-                            existing_match.confidence = score
-                            existing_match.updated_at = func.now()
+                matched_speaker = (
+                    self.db.query(Speaker).filter(Speaker.id == match_speaker_id).first()
+                )
+                if matched_speaker:
+                    matches.append(self._build_match_result(matched_speaker, score))
 
             self.db.flush()
 

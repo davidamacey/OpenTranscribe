@@ -8,8 +8,9 @@ This module contains the refactored files endpoint split into modular components
 - streaming.py: Video/audio streaming endpoints
 """
 
-import contextlib
+import logging
 from datetime import datetime
+from typing import NamedTuple
 from typing import Optional
 
 from fastapi import APIRouter
@@ -32,6 +33,7 @@ from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
@@ -62,6 +64,55 @@ from .waveform import router as waveform_router
 
 # Create the router
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class SpeakerParams(NamedTuple):
+    """Speaker diarization parameters parsed from request headers."""
+
+    min_speakers: Optional[int]
+    max_speakers: Optional[int]
+    num_speakers: Optional[int]
+
+
+def _parse_speaker_params_from_headers(request: Optional[Request]) -> SpeakerParams:
+    """
+    Parse speaker diarization parameters from request headers.
+
+    Returns SpeakerParams with validated values. Invalid values are logged and set to None.
+    If min_speakers > max_speakers, both are reset to None.
+    """
+    if not request:
+        return SpeakerParams(None, None, None)
+
+    def parse_int_header(header_name: str) -> Optional[int]:
+        """Parse an integer from a request header, returning None on failure."""
+        value = request.headers.get(header_name)
+        if not value:
+            return None
+        try:
+            return int(value)
+        except ValueError:
+            logger.warning(
+                f"Invalid {header_name} header value: '{value}' - must be an integer. Using default."
+            )
+            return None
+
+    min_speakers = parse_int_header("X-Min-Speakers")
+    max_speakers = parse_int_header("X-Max-Speakers")
+    num_speakers = parse_int_header("X-Num-Speakers")
+
+    # Validate min <= max if both are provided
+    if min_speakers is not None and max_speakers is not None and min_speakers > max_speakers:
+        logger.warning(
+            f"Invalid speaker range: min_speakers ({min_speakers}) > max_speakers ({max_speakers}). "
+            "Ignoring both values and using defaults."
+        )
+        min_speakers = None
+        max_speakers = None
+
+    return SpeakerParams(min_speakers, max_speakers, num_speakers)
+
 
 # Include all routers
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
@@ -81,23 +132,27 @@ async def upload_media_file(
     request: Request = None,
 ):
     """Upload a media file for transcription"""
-    # Check if we have a file_uuid from prepare step
-    existing_file_uuid = None
-    if request and request.headers.get("X-File-ID"):
-        # X-File-ID now contains UUID string (not integer)
-        existing_file_uuid = request.headers.get("X-File-ID")
+    # Get optional headers from prepare step
+    existing_file_uuid = request.headers.get("X-File-ID") if request else None
+    file_hash = request.headers.get("X-File-Hash") if request else None
 
-    # Get file hash from header if provided
-    file_hash = None
-    if request and request.headers.get("X-File-Hash"):
-        file_hash = request.headers.get("X-File-Hash")
+    # Parse speaker diarization parameters from headers
+    speaker_params = _parse_speaker_params_from_headers(request)
 
     # Process the file upload
-    db_file = await process_file_upload(file, db, current_user, existing_file_uuid, file_hash)
+    db_file = await process_file_upload(
+        file,
+        db,
+        current_user,
+        existing_file_uuid,
+        file_hash,
+        speaker_params.min_speakers,
+        speaker_params.max_speakers,
+        speaker_params.num_speakers,
+    )
 
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
-    # Add file UUID to header so frontend can access it early
     response.headers["X-File-ID"] = str(db_file.uuid)
 
     return response
@@ -182,11 +237,27 @@ def list_media_files(
 @router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
     file_uuid: str,
+    segment_limit: Optional[int] = Query(
+        500,
+        description="Maximum number of transcript segments to return. Use 0 for all segments.",
+        ge=0,
+    ),
+    segment_offset: int = Query(
+        0,
+        description="Offset for transcript segment pagination",
+        ge=0,
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get a specific media file with transcript details"""
-    return get_media_file_detail(db, file_uuid, current_user)
+    """Get a specific media file with transcript details.
+
+    For large transcripts, use segment_limit and segment_offset for pagination.
+    Default returns first 500 segments. Use segment_limit=0 to get all segments.
+    """
+    # segment_limit=0 means get all segments
+    effective_limit = None if segment_limit == 0 else segment_limit
+    return get_media_file_detail(db, file_uuid, current_user, effective_limit, segment_offset)
 
 
 @router.put("/{file_uuid}", response_model=MediaFileSchema)
@@ -537,11 +608,19 @@ def update_transcript_segment(
 @router.post("/{file_uuid}/reprocess", response_model=MediaFileSchema)
 async def reprocess_media_file(
     file_uuid: str,
+    reprocess_request: Optional[ReprocessRequest] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Reprocess a media file for transcription"""
-    return await process_file_reprocess(file_uuid, db, current_user)
+    """Reprocess a media file for transcription with optional speaker diarization settings"""
+    # Extract speaker parameters from request if provided
+    min_speakers = reprocess_request.min_speakers if reprocess_request else None
+    max_speakers = reprocess_request.max_speakers if reprocess_request else None
+    num_speakers = reprocess_request.num_speakers if reprocess_request else None
+
+    return await process_file_reprocess(
+        file_uuid, db, current_user, min_speakers, max_speakers, num_speakers
+    )
 
 
 @router.delete("/{file_uuid}/cache", status_code=204)

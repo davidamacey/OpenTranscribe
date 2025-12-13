@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 class SpeakerEmbeddingService:
     """Service for extracting speaker embeddings using pyannote."""
 
-    def __init__(
-        self, model_name: str = "pyannote/embedding", models_dir: Optional[str] = None
-    ):
+    def __init__(self, model_name: str = "pyannote/embedding", models_dir: Optional[str] = None):
         """
         Initialize the speaker embedding service.
 

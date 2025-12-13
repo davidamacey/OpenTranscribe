@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { register, login } from "$stores/auth";
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -14,28 +15,28 @@
   let loading = false;
   let showPassword = false;
   let showConfirmPassword = false;
-  
+
   // Validate form
   function validateForm() {
     if (!username || !email || !password || !confirmPassword) {
-      toastStore.error("All fields are required");
+      toastStore.error($t('auth.allFieldsRequired'));
       return false;
     }
 
     if (password !== confirmPassword) {
-      toastStore.error("Passwords do not match");
+      toastStore.error($t('auth.passwordsNoMatch'));
       return false;
     }
 
     if (password.length < 8) {
-      toastStore.error("Password must be at least 8 characters long");
+      toastStore.error($t('auth.passwordMinLength'));
       return false;
     }
 
     // Simple email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      toastStore.error("Please enter a valid email address");
+      toastStore.error($t('auth.validEmailRequired'));
       return false;
     }
 
@@ -60,27 +61,27 @@
         // Log the user in automatically after registration
         const loginResult = await login(email, password);
         if (loginResult.success) {
-          toastStore.success("Registration successful! Redirecting...");
+          toastStore.success($t('auth.registrationSuccess'));
           goto("/");
         } else {
-          toastStore.error("Registration successful, but login failed. Please try logging in manually.");
+          toastStore.error($t('auth.registrationSuccessLoginFailed'));
         }
       } else {
-        toastStore.error(result.message || "Registration failed. Please try again.");
+        toastStore.error(result.message || $t('auth.registrationFailed'));
       }
     } catch (err) {
       console.error("Registration error:", err);
-      toastStore.error("An unexpected error occurred. Please try again.");
+      toastStore.error($t('auth.unexpectedError'));
     } finally {
       loading = false;
     }
   }
-  
+
   // Toggle password visibility
   function togglePasswordVisibility() {
     showPassword = !showPassword;
   }
-  
+
   function toggleConfirmPasswordVisibility() {
     showConfirmPassword = !showConfirmPassword;
   }
@@ -92,44 +93,42 @@
       <div class="auth-logo">
         <img src={logoBanner} alt="OpenTranscribe" class="logo-banner" />
       </div>
-      <h1>Register</h1>
-      <p>Create a new account</p>
+      <h1>{$t('auth.register')}</h1>
+      <p>{$t('auth.createNewAccount')}</p>
     </div>
-    
+
     <form on:submit|preventDefault={handleSubmit} class="auth-form">
       <div class="form-group">
-        <label for="username">Username</label>
+        <label for="username">{$t('auth.username')}</label>
         <input
           id="username"
           type="text"
           bind:value={username}
-          placeholder="Choose a username"
+          placeholder={$t('auth.usernamePlaceholder')}
           disabled={loading}
-          title="Enter a unique username for your account"
         />
       </div>
-      
+
       <div class="form-group">
-        <label for="email">Email</label>
+        <label for="email">{$t('auth.email')}</label>
         <input
           id="email"
           type="email"
           bind:value={email}
-          placeholder="Enter your email"
+          placeholder={$t('auth.emailPlaceholder')}
           disabled={loading}
-          title="Enter a valid email address for your account"
         />
       </div>
-      
+
       <div class="form-group">
         <div class="password-header">
-          <label for="password">Password</label>
-          <button 
-            type="button" 
-            class="toggle-password" 
+          <label for="password">{$t('auth.password')}</label>
+          <button
+            type="button"
+            class="toggle-password"
             on:click={togglePasswordVisibility}
-            aria-label={showPassword ? 'Hide password' : 'Show password'}
-            title={showPassword ? 'Hide password text' : 'Show password text'}
+            aria-label={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            title={showPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
           >
             {#if showPassword}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -153,31 +152,29 @@
             id="password"
             type="text"
             bind:value={password}
-            placeholder="Choose a password"
+            placeholder={$t('auth.choosePassword')}
             disabled={loading}
-            title="Choose a secure password (minimum 8 characters)"
           />
         {:else}
           <input
             id="password"
             type="password"
             bind:value={password}
-            placeholder="Choose a password"
+            placeholder={$t('auth.choosePassword')}
             disabled={loading}
-            title="Choose a secure password (minimum 8 characters)"
           />
         {/if}
       </div>
-      
+
       <div class="form-group">
         <div class="password-header">
-          <label for="confirmPassword">Confirm Password</label>
-          <button 
-            type="button" 
-            class="toggle-password" 
+          <label for="confirmPassword">{$t('auth.confirmPassword')}</label>
+          <button
+            type="button"
+            class="toggle-password"
             on:click={toggleConfirmPasswordVisibility}
-            aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-            title={showConfirmPassword ? 'Hide confirm password text' : 'Show confirm password text'}
+            aria-label={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            title={showConfirmPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
           >
             {#if showConfirmPassword}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -201,38 +198,34 @@
             id="confirmPassword"
             type="text"
             bind:value={confirmPassword}
-            placeholder="Confirm your password"
+            placeholder={$t('auth.confirmPasswordPlaceholder')}
             disabled={loading}
-            title="Re-enter your password to confirm it matches"
           />
         {:else}
           <input
             id="confirmPassword"
             type="password"
             bind:value={confirmPassword}
-            placeholder="Confirm your password"
+            placeholder={$t('auth.confirmPasswordPlaceholder')}
             disabled={loading}
-            title="Re-enter your password to confirm it matches"
           />
         {/if}
       </div>
-      
-      <button 
-        type="submit" 
-        class="auth-button" 
+
+      <button
+        type="submit"
+        class="auth-button"
         disabled={loading}
-        title="Create your new OpenTranscribe account"
       >
-        {loading ? "Creating account..." : "Create Account"}
+        {loading ? $t('auth.creatingAccount') : $t('auth.createAccount')}
       </button>
-      
+
       <div class="auth-footer">
         <p>
-          Already have an account? <a 
-            href="/login" 
+          <a
+            href="/login"
             class="auth-link"
-            title="Sign in to your existing OpenTranscribe account"
-          >Login</a>
+          >{$t('auth.haveAccount')}</a>
         </p>
       </div>
     </form>
@@ -248,7 +241,7 @@
     padding: 1rem;
     background-color: var(--background-color);
   }
-  
+
   .auth-card {
     background-color: var(--surface-color);
     border-radius: 8px;
@@ -257,40 +250,40 @@
     max-width: 400px;
     padding: 2rem;
   }
-  
+
   .auth-header {
     text-align: center;
     margin-bottom: 2rem;
   }
-  
+
   .auth-header h1 {
     font-size: 1.5rem;
     color: var(--text-color);
     margin-bottom: 0.5rem;
   }
-  
+
   .auth-header p {
     color: var(--text-light);
     font-size: 0.9rem;
   }
-  
+
   .auth-form {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
-  
+
   .form-group {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .form-group label {
     font-size: 0.9rem;
     font-weight: 500;
   }
-  
+
   .form-group input {
     padding: 0.75rem 1rem;
     border: 1px solid var(--border-color);
@@ -298,12 +291,12 @@
     font-size: 1rem;
     transition: border-color 0.2s;
   }
-  
+
   .form-group input:focus {
     outline: none;
     border-color: var(--primary-color);
   }
-  
+
   .auth-button {
     background-color: #3b82f6;
     color: white;
@@ -320,22 +313,22 @@
     justify-content: center;
     gap: 0.5rem;
   }
-  
+
   .auth-button:hover:not(:disabled) {
     background-color: #2563eb;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .auth-button:active:not(:disabled) {
     transform: translateY(0);
   }
-  
+
   .auth-button:disabled {
     background-color: var(--border-color);
     cursor: not-allowed;
   }
-  
+
   .auth-footer {
     text-align: center;
     font-size: 0.9rem;
@@ -346,21 +339,21 @@
     text-align: center;
     margin-bottom: 1.5rem;
   }
-  
+
   .auth-logo .logo-banner {
     height: 60px;
     width: auto;
     object-fit: contain;
     border-radius: 8px;
   }
-  
+
   .password-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.5rem;
   }
-  
+
   .toggle-password {
     background: none;
     border: none;
@@ -372,7 +365,7 @@
     border-radius: 4px;
     transition: background-color 0.2s;
   }
-  
+
   .toggle-password:hover {
     background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
   }

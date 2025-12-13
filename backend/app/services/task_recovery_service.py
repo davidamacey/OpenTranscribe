@@ -18,6 +18,7 @@ from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services import system_settings_service
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -211,6 +212,16 @@ class TaskRecoveryService:
 
         for media_file in stuck_files:
             try:
+                # Check if retry is allowed based on system settings
+                if not system_settings_service.should_retry_file(db, media_file.retry_count):
+                    logger.info(
+                        f"Skipping retry for file {media_file.id} - retry limit reached "
+                        f"(count: {media_file.retry_count})"
+                    )
+                    # Mark as ERROR since we won't retry
+                    update_media_file_status(db, media_file.id, FileStatus.ERROR)
+                    continue
+
                 logger.info(f"Recovering stuck file {media_file.id} ({media_file.filename})")
 
                 # Mark any existing tasks as failed
@@ -233,7 +244,8 @@ class TaskRecoveryService:
                     )
                     stats["tasks_failed"] += 1
 
-                # Reset file status to pending for retry
+                # Increment retry count and reset file status to pending for retry
+                media_file.retry_count += 1
                 update_media_file_status(db, media_file.id, FileStatus.PENDING)
                 stats["files_recovered"] += 1
 
@@ -264,6 +276,14 @@ class TaskRecoveryService:
 
         for media_file in problem_files:
             try:
+                # Check if retry is allowed based on system settings
+                if not system_settings_service.should_retry_file(db, media_file.retry_count):
+                    logger.info(
+                        f"Skipping retry for file {media_file.id} - retry limit reached "
+                        f"(count: {media_file.retry_count})"
+                    )
+                    continue
+
                 active_tasks = (
                     db.query(Task)
                     .filter(
@@ -277,6 +297,7 @@ class TaskRecoveryService:
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
                     # File is stuck, recover it
+                    media_file.retry_count += 1
                     update_media_file_status(db, media_file.id, FileStatus.PENDING)
                     stats["files_recovered"] += 1
 
@@ -287,6 +308,7 @@ class TaskRecoveryService:
                     hours=self.config.PENDING_FILE_RETRY_THRESHOLD
                 ):
                     # File has been pending too long, retry it
+                    media_file.retry_count += 1
                     if self.schedule_file_retry(media_file.id):
                         stats["tasks_retried"] += 1
 

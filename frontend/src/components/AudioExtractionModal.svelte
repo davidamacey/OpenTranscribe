@@ -4,6 +4,7 @@
   import { audioExtractionService } from '$lib/services/audioExtractionService';
   import type { ExtractedAudio } from '$lib/types/audioExtraction';
   import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import { t } from '$stores/locale';
 
   // Props
   export let isOpen = false;
@@ -104,13 +105,13 @@
         <!-- Header -->
         <div class="modal-header">
           <h2 id="extraction-modal-title" class="modal-title">
-            Large Video File Detected
+            {$t('extraction.largeVideoDetected')}
           </h2>
           <button
             class="modal-close-button"
             on:click={handleCancel}
-            aria-label="Close dialog"
-            title="Close and clear selection"
+            aria-label={$t('extraction.closeDialog')}
+            title={$t('extraction.closeAndClear')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -131,20 +132,19 @@
               </svg>
             </div>
             <p class="info-message">
-              This video is <strong>{formatFileSize(file.size)}</strong>.
-              You can extract just the audio for faster upload and transcription.
+              {$t('extraction.videoSizeMessage', { size: formatFileSize(file.size) })}
             </p>
           </div>
 
           <!-- Size comparison -->
           <div class="comparison-section">
             <div class="comparison-item">
-              <div class="comparison-label">Video File</div>
+              <div class="comparison-label">{$t('extraction.videoFile')}</div>
               <div class="comparison-value video">{formatFileSize(file.size)}</div>
             </div>
             <div class="comparison-arrow">→</div>
             <div class="comparison-item">
-              <div class="comparison-label">Audio Only</div>
+              <div class="comparison-label">{$t('extraction.audioOnly')}</div>
               <div class="comparison-value audio">{formatFileSize(estimatedAudioSize)}</div>
             </div>
           </div>
@@ -153,7 +153,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            <span>~{compressionRatio}% smaller • Faster upload</span>
+            <span>{$t('extraction.savingsBadge', { ratio: compressionRatio })}</span>
           </div>
 
           <div class="metadata-info">
@@ -162,7 +162,7 @@
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span>Original video metadata will be preserved</span>
+            <span>{$t('extraction.metadataPreserved')}</span>
           </div>
         </div>
 
@@ -173,7 +173,7 @@
             on:click={handleUploadFull}
             type="button"
           >
-            Upload Full Video
+            {$t('extraction.uploadFullVideo')}
           </button>
           <button
             class="modal-button primary-button"
@@ -185,7 +185,7 @@
               <circle cx="6" cy="18" r="3"></circle>
               <circle cx="18" cy="16" r="3"></circle>
             </svg>
-            Extract Audio
+            {$t('extraction.extractAudio')}
           </button>
         </div>
       </div>

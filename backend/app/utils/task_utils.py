@@ -14,6 +14,7 @@ from app.db.session_utils import get_refreshed_object
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from app.services import system_settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -298,15 +299,12 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
         .all()
     )
 
-    # Check for failed files that can be immediately retried (no time threshold needed)
-    failed_files = (
-        db.query(MediaFile)
-        .filter(
-            MediaFile.status == FileStatus.ERROR,
-            MediaFile.retry_count < MediaFile.max_retries,
-        )
-        .all()
-    )
+    # Check for failed files that can be retried based on system settings
+    all_failed_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ERROR).all()
+    # Filter based on system retry settings
+    failed_files = [
+        f for f in all_failed_files if system_settings_service.should_retry_file(db, f.retry_count)
+    ]
 
     # Check for orphaned files that need recovery
     orphaned_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ORPHANED).all()
@@ -339,6 +337,95 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     return stuck_file_ids
 
 
+def _start_transcription_task(file_uuid: str, file_id: int, task_description: str) -> None:
+    """Start a new transcription task for a file.
+
+    Args:
+        file_uuid: UUID of the media file
+        file_id: ID of the media file (for logging)
+        task_description: Description of the task type (e.g., "pending", "failed", "orphaned")
+    """
+    import os
+
+    if os.environ.get("SKIP_CELERY", "False").lower() != "true":
+        from app.tasks.transcription import transcribe_audio_task
+
+        task = transcribe_audio_task.delay(file_uuid)
+        logger.info(f"Started recovery task {task.id} for {task_description} file {file_id}")
+
+
+def _recover_pending_file(db: Session, media_file: MediaFile) -> bool:
+    """Recover a file stuck in pending status.
+
+    Args:
+        db: Database session
+        media_file: The media file to recover
+
+    Returns:
+        True if recovery was successful
+    """
+    logger.info(f"File {media_file.id} stuck in pending, restarting processing")
+    _start_transcription_task(str(media_file.uuid), media_file.id, "pending")
+    return True
+
+
+def _recover_failed_file(db: Session, media_file: MediaFile) -> bool:
+    """Recover a file in error status that can be retried.
+
+    Args:
+        db: Database session
+        media_file: The media file to recover
+
+    Returns:
+        True if recovery was successful, False otherwise
+    """
+    logger.info(
+        f"File {media_file.id} failed, attempting retry (attempt {media_file.retry_count + 1})"
+    )
+
+    success = reset_file_for_retry(db, media_file.id, reset_retry_count=False)
+    if success:
+        _start_transcription_task(str(media_file.uuid), media_file.id, "failed")
+        return True
+    return False
+
+
+def _recover_orphaned_file(db: Session, media_file: MediaFile) -> bool:
+    """Recover an orphaned file.
+
+    Args:
+        db: Database session
+        media_file: The media file to recover
+
+    Returns:
+        True if recovery was successful
+    """
+    logger.info(f"File {media_file.id} orphaned, attempting recovery restart")
+
+    # Reset status to pending and try again
+    media_file.status = FileStatus.PENDING
+    media_file.active_task_id = None
+    media_file.task_started_at = None
+    db.commit()
+
+    _start_transcription_task(str(media_file.uuid), media_file.id, "orphaned")
+    return True
+
+
+def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
+    """Update recovery tracking fields for a file.
+
+    Args:
+        db: Database session
+        media_file: The media file to update
+    """
+    media_file.recovery_attempts += 1
+    media_file.last_recovery_attempt = datetime.now(timezone.utc)
+    media_file.active_task_id = None
+    media_file.task_started_at = None
+    db.commit()
+
+
 def recover_stuck_file(db: Session, file_id: int) -> bool:
     """Attempt to recover a stuck file.
 
@@ -358,71 +445,20 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
         if media_file.active_task_id:
             cancel_active_task(db, file_id)
 
-        # Update file status based on current state and what we can determine
+        # Handle different file statuses
         if media_file.status == FileStatus.PENDING:
-            # File never started processing - trigger a new transcription task
-            logger.info(f"File {file_id} stuck in pending, restarting processing")
+            return _recover_pending_file(db, media_file)
 
-            # Start new transcription task
-            import os
-
-            if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-                from app.tasks.transcription import transcribe_audio_task
-
-                file_uuid = str(media_file.uuid)
-                task = transcribe_audio_task.delay(file_uuid)
-                logger.info(f"Started recovery task {task.id} for pending file {file_id}")
-
-            # File status will be updated by the task
-            return True
-
-        elif (
-            media_file.status == FileStatus.ERROR
-            and media_file.retry_count < media_file.max_retries
+        if media_file.status == FileStatus.ERROR and system_settings_service.should_retry_file(
+            db, media_file.retry_count
         ):
-            # Failed file that can be retried - use the reset and retry logic
-            logger.info(
-                f"File {file_id} failed, attempting retry (attempt {media_file.retry_count + 1})"
-            )
+            return _recover_failed_file(db, media_file)
 
-            # Reset for retry
-            success = reset_file_for_retry(db, file_id, reset_retry_count=False)
-            if success:
-                # Start new transcription task
-                import os
+        if media_file.status == FileStatus.ORPHANED:
+            return _recover_orphaned_file(db, media_file)
 
-                if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-                    from app.tasks.transcription import transcribe_audio_task
-
-                    file_uuid = str(media_file.uuid)
-                    task = transcribe_audio_task.delay(file_uuid)
-                    logger.info(f"Started retry task {task.id} for failed file {file_id}")
-                return True
-            return False
-
-        elif media_file.status == FileStatus.ORPHANED:
-            # Orphaned file - try to restart processing
-            logger.info(f"File {file_id} orphaned, attempting recovery restart")
-
-            # Reset status to pending and try again
-            media_file.status = FileStatus.PENDING
-            media_file.active_task_id = None
-            media_file.task_started_at = None
-            db.commit()
-
-            # Start new transcription task
-            import os
-
-            if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-                from app.tasks.transcription import transcribe_audio_task
-
-                file_uuid = str(media_file.uuid)
-                task = transcribe_audio_task.delay(file_uuid)
-                logger.info(f"Started recovery task {task.id} for orphaned file {file_id}")
-            return True
-
-        elif media_file.transcript_segments:
-            # Has transcript data, mark as completed
+        # Handle files with transcript data
+        if media_file.transcript_segments:
             media_file.status = FileStatus.COMPLETED
             media_file.completed_at = datetime.now(timezone.utc)
         else:
@@ -431,12 +467,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
             media_file.force_delete_eligible = True
 
         # Update recovery tracking
-        media_file.recovery_attempts += 1
-        media_file.last_recovery_attempt = datetime.now(timezone.utc)
-        media_file.active_task_id = None
-        media_file.task_started_at = None
-
-        db.commit()
+        _update_recovery_tracking(db, media_file)
         logger.info(f"Recovered stuck file {file_id}, new status: {media_file.status}")
         return True
 
@@ -469,9 +500,12 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
                     False,
                     f"File is currently being processed (task: {media_file.active_task_id})",
                 )
-        except Exception:
+        except Exception as e:
             # If we can't check task status, assume it's safe
-            pass
+            logger.warning(
+                f"Could not check Celery task status for {media_file.active_task_id}: {e}. "
+                "Assuming file is safe to delete."
+            )
 
     # Safe to delete in these states
     safe_states = [

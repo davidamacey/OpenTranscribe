@@ -297,7 +297,7 @@ services:
     runtime: nvidia
     build:
       context: ./backend
-      dockerfile: Dockerfile.multiplatform
+      dockerfile: Dockerfile.prod
     # Full configuration provided by docker-compose.gpu-scale.yml
     # Overlay files (prod.yml, offline.yml) provide environment-specific settings
 

@@ -81,8 +81,11 @@ function createUploadStore() {
     },
 
     // Upload actions (delegate to service)
-    addFile(file: File) {
-      return uploadService.addUpload('file', file);
+    addFile(
+      file: File,
+      speakerParams?: { minSpeakers?: number | null; maxSpeakers?: number | null; numSpeakers?: number | null }
+    ) {
+      return uploadService.addUpload('file', file, undefined, speakerParams);
     },
 
     addFiles(files: File[]) {

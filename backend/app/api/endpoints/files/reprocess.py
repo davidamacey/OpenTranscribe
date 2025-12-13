@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services import system_settings_service
 from app.tasks.transcription import transcribe_audio_task
 
 logger = logging.getLogger(__name__)
@@ -63,23 +64,43 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         raise
 
 
-def start_reprocessing_task(file_uuid: str) -> None:
+def start_reprocessing_task(
+    file_uuid: str,
+    min_speakers: int = None,
+    max_speakers: int = None,
+    num_speakers: int = None,
+) -> None:
     """
     Start the background reprocessing task.
 
     Args:
         file_uuid: UUID of the media file to reprocess
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization
     """
     import os
 
     if os.environ.get("SKIP_CELERY", "False").lower() != "true":
-        # Use the same transcription task - it will handle reprocessing
-        transcribe_audio_task.delay(file_uuid)
+        # Use the same transcription task with speaker parameters - it will handle reprocessing
+        transcribe_audio_task.delay(
+            file_uuid,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            num_speakers=num_speakers,
+        )
     else:
         logger.info("Skipping Celery task in test environment")
 
 
-async def process_file_reprocess(file_uuid: str, db: Session, current_user: User) -> MediaFile:
+async def process_file_reprocess(
+    file_uuid: str,
+    db: Session,
+    current_user: User,
+    min_speakers: int = None,
+    max_speakers: int = None,
+    num_speakers: int = None,
+) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
 
@@ -87,6 +108,9 @@ async def process_file_reprocess(file_uuid: str, db: Session, current_user: User
         file_uuid: UUID of the file to reprocess
         db: Database session
         current_user: Current user
+        min_speakers: Optional minimum number of speakers for diarization
+        max_speakers: Optional maximum number of speakers for diarization
+        num_speakers: Optional fixed number of speakers for diarization
 
     Returns:
         Updated MediaFile object
@@ -124,11 +148,14 @@ async def process_file_reprocess(file_uuid: str, db: Session, current_user: User
                 detail="File storage path not found. Cannot reprocess.",
             )
 
-        # Check retry limits (unless admin)
-        if not is_admin and media_file.retry_count >= media_file.max_retries:
+        # Check retry limits based on system settings (unless admin)
+        if not is_admin and not system_settings_service.should_retry_file(
+            db, media_file.retry_count
+        ):
+            config = system_settings_service.get_retry_config(db)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File has reached maximum retry attempts ({media_file.max_retries}). Contact admin for help.",
+                detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
         logger.info(
@@ -146,8 +173,8 @@ async def process_file_reprocess(file_uuid: str, db: Session, current_user: User
         # Refresh the file object
         db.refresh(media_file)
 
-        # Start background reprocessing task
-        start_reprocessing_task(file_uuid)
+        # Start background reprocessing task with speaker parameters
+        start_reprocessing_task(file_uuid, min_speakers, max_speakers, num_speakers)
 
         logger.info(
             f"Reprocessing task started for file {file_uuid} (id: {file_id}, attempt {media_file.retry_count})"

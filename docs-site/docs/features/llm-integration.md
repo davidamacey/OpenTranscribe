@@ -9,8 +9,8 @@ OpenTranscribe integrates with multiple Large Language Model (LLM) providers for
 ## Supported Providers
 
 - **vLLM**: Self-hosted, high-performance inference
-- **OpenAI**: GPT-4, GPT-3.5, and compatible models
-- **Anthropic Claude**: Claude 3 models (Opus, Sonnet, Haiku)
+- **OpenAI**: GPT-4, GPT-4o, and compatible models
+- **Anthropic**: Claude 3.5, Claude 3, and Claude Opus 4.5 models
 - **Ollama**: Local LLM server with many model options
 - **OpenRouter**: Access to multiple models through one API
 
@@ -25,6 +25,14 @@ Generate BLUF (Bottom Line Up Front) summaries with:
 - Action items with priorities
 - Decisions and follow-ups
 
+**Multilingual Output (New in v0.2.0)**:
+Generate summaries in 12 different languages:
+- English, Spanish, French, German
+- Portuguese, Chinese, Japanese, Korean
+- Italian, Russian, Arabic, Hindi
+
+Configure in Settings → Transcription → LLM Output Language.
+
 ### Speaker Identification
 
 LLM-powered speaker name suggestions based on:
@@ -32,6 +40,21 @@ LLM-powered speaker name suggestions based on:
 - Speaking patterns
 - Topic expertise
 - Cross-video speaker matching
+
+### Model Auto-Discovery (New in v0.2.0)
+
+Automatic model discovery for multiple providers:
+
+**Supported providers:**
+- **vLLM**: OpenAI-compatible /v1/models endpoint
+- **Ollama**: Native /api/tags endpoint
+- **Anthropic**: Native /v1/models endpoint
+
+**Features:**
+- Model selection dropdown populated dynamically
+- No manual model name entry required
+- Edit mode supports stored API keys (no need to re-enter)
+- Works with any OpenAI-compatible API endpoint
 
 ## Configuration
 
@@ -74,8 +97,20 @@ Quick setup with commercial API:
 ```bash
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-xxxxx
-OPENAI_MODEL=gpt-4-turbo-preview
+OPENAI_MODEL=gpt-4o
 ```
+
+### Anthropic
+
+Claude models with automatic model discovery:
+
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-xxxxx
+ANTHROPIC_MODEL=claude-opus-4-5-20251101  # or claude-sonnet-4-20250514
+```
+
+**Default model:** claude-opus-4-5-20251101 (Claude Opus 4.5)
 
 ### Ollama
 
@@ -86,13 +121,15 @@ Local LLM server:
 curl -fsSL https://ollama.com/install.sh | sh
 
 # Pull a model
-ollama pull llama2:70b
+ollama pull llama3.2:latest
 
 # Configure OpenTranscribe
 LLM_PROVIDER=ollama
 OLLAMA_API_URL=http://localhost:11434
-OLLAMA_MODEL=llama2:70b
+OLLAMA_MODEL=llama3.2:latest
 ```
+
+**Default model:** llama3.2:latest
 
 ## No LLM Mode
 
