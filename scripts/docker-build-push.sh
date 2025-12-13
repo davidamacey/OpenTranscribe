@@ -198,6 +198,24 @@ build_frontend() {
     run_security_scan "frontend"
 }
 
+# Function to scan only (no build, pull latest and scan)
+scan_only() {
+    print_info "Running security scan only (no build)..."
+    print_info "Pulling latest images from Docker Hub..."
+
+    # Pull latest backend image
+    print_info "Pulling backend image..."
+    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
+    run_security_scan "backend"
+
+    # Pull latest frontend image
+    print_info "Pulling frontend image..."
+    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
+    run_security_scan "frontend"
+
+    print_success "Security scans completed!"
+}
+
 # Function to show usage
 show_usage() {
     cat << EOF
@@ -210,6 +228,7 @@ Options:
     frontend    Build and push only frontend image
     all         Build and push both images (default)
     auto        Auto-detect changes and build only changed components
+    scan        Security scan only (pull latest images, scan, push reports)
     help        Show this help message
 
 Environment Variables:
@@ -227,6 +246,7 @@ Examples:
     $0              # Build and push both images with security scanning
     $0 backend      # Build and push only backend
     $0 auto         # Auto-detect and build changed components
+    $0 scan         # Security scan only (no build, pulls latest images)
 
     # Specify version (creates tags: v1.2.3, v1.2, v1, latest)
     VERSION=v1.2.3 $0 all
@@ -397,6 +417,21 @@ main() {
                 print_info "Use '$0 all' to force build both images"
                 exit 0
             fi
+            ;;
+        scan)
+            print_info "Security scan only mode..."
+            scan_only
+
+            # Push security reports and exit early (skip build success message)
+            print_info ""
+            print_info "📋 Pushing security reports..."
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            if [ -f "${SCRIPT_DIR}/push-security-reports.sh" ]; then
+                VERSION="${VERSION_FULL}" "${SCRIPT_DIR}/push-security-reports.sh" || {
+                    print_warning "⚠️  Security reports push had issues (see above for details)"
+                }
+            fi
+            exit 0
             ;;
         help|--help|-h)
             show_usage
