@@ -29,7 +29,7 @@ RUN chmod -R 755 static/fonts
 RUN npm run build
 
 # Production stage
-FROM nginx:1.29.3-alpine3.22
+FROM nginx:1.29.4-alpine3.23
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \
@@ -60,6 +60,10 @@ USER nginx
 
 # Expose port 8080 (non-privileged port for non-root user)
 EXPOSE 8080
+
+# Health check to verify nginx is responding
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:8080/ || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]
