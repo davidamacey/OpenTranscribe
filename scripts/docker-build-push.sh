@@ -152,7 +152,7 @@ run_security_scan() {
     fi
 }
 
-# Function to build and push backend
+# Function to build and push backend (no scan - scan runs separately)
 build_backend() {
     print_info "Building backend image..."
     print_info "Platforms: ${PLATFORMS}"
@@ -183,17 +183,9 @@ build_backend() {
     print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR_MINOR}"
     print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR}"
     print_info "  - ${REPO_BACKEND}:${COMMIT_SHA}"
-
-    # Remove old local image and pull fresh amd64 image for scanning
-    print_info "Pulling fresh amd64 image from registry for security scan..."
-    docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
-    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
-
-    # Run security scan on freshly pulled image
-    run_security_scan "backend"
 }
 
-# Function to build and push frontend
+# Function to build and push frontend (no scan - scan runs separately)
 build_frontend() {
     print_info "Building frontend image..."
     print_info "Platforms: ${PLATFORMS}"
@@ -224,88 +216,100 @@ build_frontend() {
     print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}"
     print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR}"
     print_info "  - ${REPO_FRONTEND}:${COMMIT_SHA}"
+}
 
-    # Remove old local image and pull fresh amd64 image for scanning
-    print_info "Pulling fresh amd64 image from registry for security scan..."
-    docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
-    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
+# Function to run parallel security scans on both images
+run_parallel_scans() {
+    local components=("$@")
 
-    # Run security scan on freshly pulled image
-    run_security_scan "frontend"
+    if [ "${SKIP_SECURITY_SCAN}" = "true" ]; then
+        print_warning "Security scanning skipped (SKIP_SECURITY_SCAN=true)"
+        return 0
+    fi
+
+    print_info ""
+    print_info "=========================================="
+    print_info "Running security scans in parallel..."
+    print_info "=========================================="
+
+    # Update security tool databases first
+    update_security_tools
+
+    # Pull images in parallel
+    print_info "Pulling images for scanning..."
+    local pids=()
+
+    for component in "${components[@]}"; do
+        if [ "$component" = "backend" ]; then
+            (
+                docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
+                docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
+            ) &
+            pids+=($!)
+        elif [ "$component" = "frontend" ]; then
+            (
+                docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
+                docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
+            ) &
+            pids+=($!)
+        fi
+    done
+
+    # Wait for all pulls
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
+    print_success "Images pulled for scanning"
+
+    # Run scans in parallel
+    print_info "Starting parallel security scans..."
+
+    # Create temp files for status tracking
+    local status_dir
+    status_dir=$(mktemp -d)
+
+    for component in "${components[@]}"; do
+        (
+            print_info "[${component^}] Starting security scan..."
+            if run_security_scan "$component"; then
+                echo "0" > "${status_dir}/${component}.status"
+                print_success "[${component^}] Security scan completed"
+            else
+                echo "1" > "${status_dir}/${component}.status"
+                print_warning "[${component^}] Security scan had issues"
+            fi
+        ) 2>&1 | sed "s/^/[${component^}] /" &
+    done
+
+    # Wait for all scans to complete
+    wait
+
+    # Check results
+    local all_passed=true
+    for component in "${components[@]}"; do
+        if [ -f "${status_dir}/${component}.status" ]; then
+            status=$(cat "${status_dir}/${component}.status")
+            if [ "$status" != "0" ]; then
+                all_passed=false
+            fi
+        fi
+    done
+
+    # Cleanup
+    rm -rf "${status_dir}"
+
+    if [ "$all_passed" = true ]; then
+        print_success "All security scans completed successfully!"
+    else
+        print_warning "Some security scans had issues (see above)"
+    fi
 }
 
 # Function to scan only (no build, pull latest and scan)
 scan_only() {
     print_info "Running security scan only (no build)..."
-
-    # Update security tool databases first
-    update_security_tools
-
-    print_info "Pulling latest images from Docker Hub..."
-
-    # Pull both images in parallel
-    print_info "Pulling backend and frontend images in parallel..."
-    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest" &
-    PULL_BACKEND_PID=$!
-    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest" &
-    PULL_FRONTEND_PID=$!
-
-    # Wait for pulls to complete
-    wait $PULL_BACKEND_PID
-    BACKEND_PULL_STATUS=$?
-    wait $PULL_FRONTEND_PID
-    FRONTEND_PULL_STATUS=$?
-
-    if [ $BACKEND_PULL_STATUS -ne 0 ]; then
-        print_error "Failed to pull backend image"
-        return 1
-    fi
-    if [ $FRONTEND_PULL_STATUS -ne 0 ]; then
-        print_error "Failed to pull frontend image"
-        return 1
-    fi
-    print_success "Both images pulled successfully"
-
-    # Run security scans in parallel
-    print_info "Running security scans in parallel..."
-
-    # Create temp files for capturing output
-    BACKEND_LOG=$(mktemp)
-    FRONTEND_LOG=$(mktemp)
-
-    # Run backend scan in background
-    (
-        print_info "[Backend] Starting security scan..."
-        run_security_scan "backend"
-        echo $? > "${BACKEND_LOG}.status"
-    ) 2>&1 | tee "${BACKEND_LOG}" | sed 's/^/[Backend] /' &
-    SCAN_BACKEND_PID=$!
-
-    # Run frontend scan in background
-    (
-        print_info "[Frontend] Starting security scan..."
-        run_security_scan "frontend"
-        echo $? > "${FRONTEND_LOG}.status"
-    ) 2>&1 | tee "${FRONTEND_LOG}" | sed 's/^/[Frontend] /' &
-    SCAN_FRONTEND_PID=$!
-
-    # Wait for both scans to complete
-    print_info "Waiting for parallel scans to complete..."
-    wait $SCAN_BACKEND_PID
-    wait $SCAN_FRONTEND_PID
-
-    # Check results
-    BACKEND_STATUS=$(cat "${BACKEND_LOG}.status" 2>/dev/null || echo "1")
-    FRONTEND_STATUS=$(cat "${FRONTEND_LOG}.status" 2>/dev/null || echo "1")
-
-    # Cleanup temp files
-    rm -f "${BACKEND_LOG}" "${BACKEND_LOG}.status" "${FRONTEND_LOG}" "${FRONTEND_LOG}.status"
-
-    if [ "$BACKEND_STATUS" -ne 0 ] || [ "$FRONTEND_STATUS" -ne 0 ]; then
-        print_warning "Some security scans had issues"
-    else
-        print_success "All security scans completed successfully!"
-    fi
+    # Reuse run_parallel_scans which handles DB updates, parallel pulls, and parallel scans
+    run_parallel_scans "backend" "frontend"
 }
 
 # Function to show usage
@@ -476,35 +480,40 @@ main() {
         fi
     fi
 
+    # Track which components were built for parallel scanning
+    BUILT_COMPONENTS=()
+
     case "${BUILD_TARGET}" in
         backend)
             print_info "Building backend only..."
             build_backend
+            BUILT_COMPONENTS+=("backend")
             ;;
         frontend)
             print_info "Building frontend only..."
             build_frontend
+            BUILT_COMPONENTS+=("frontend")
             ;;
         all)
             print_info "Building both backend and frontend..."
             build_backend
             build_frontend
+            BUILT_COMPONENTS+=("backend" "frontend")
             ;;
         auto)
             print_info "Auto-detecting changes..."
-            BUILT_SOMETHING=false
 
             if detect_changes "backend"; then
                 build_backend
-                BUILT_SOMETHING=true
+                BUILT_COMPONENTS+=("backend")
             fi
 
             if detect_changes "frontend"; then
                 build_frontend
-                BUILT_SOMETHING=true
+                BUILT_COMPONENTS+=("frontend")
             fi
 
-            if [ "$BUILT_SOMETHING" = false ]; then
+            if [ ${#BUILT_COMPONENTS[@]} -eq 0 ]; then
                 print_warning "No changes detected in backend or frontend"
                 print_info "Use '$0 all' to force build both images"
                 exit 0
@@ -535,6 +544,11 @@ main() {
             exit 1
             ;;
     esac
+
+    # Run parallel security scans on all built components
+    if [ ${#BUILT_COMPONENTS[@]} -gt 0 ]; then
+        run_parallel_scans "${BUILT_COMPONENTS[@]}"
+    fi
 
     print_success "All builds completed successfully!"
     print_info ""
