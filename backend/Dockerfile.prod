@@ -7,7 +7,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.13-slim-trixie AS builder
 
 WORKDIR /build
 
@@ -36,7 +36,7 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-trixie
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
@@ -83,7 +83,7 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.12/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib \
+    LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib \
     HF_HOME=/home/appuser/.cache/huggingface \
     TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
     TORCH_HOME=/home/appuser/.cache/torch \
@@ -98,6 +98,10 @@ USER appuser
 
 # Expose application port
 EXPOSE 8080
+
+# Health check to verify the application is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
 
 # Command to run the application in production (no reload)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

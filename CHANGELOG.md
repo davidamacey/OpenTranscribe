@@ -5,6 +5,47 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-13
+
+### Overview
+Security patch release addressing critical container vulnerabilities identified in security scans.
+
+### Security
+
+#### Container Base Image Updates
+- **Frontend**: Upgraded `nginx:1.29.3-alpine3.22` → `nginx:1.29.4-alpine3.23`
+- **Backend**: Upgraded `python:3.12-slim-bookworm` → `python:3.13-slim-trixie` (Debian 12 → Debian 13)
+
+#### Resolved Critical CVEs (4 → 0)
+- **CVE-2025-47917** (libmbedcrypto) - CRITICAL - Fixed in 3.6.4-2
+- **CVE-2023-6879** (libaom3) - CRITICAL - Fixed in 3.12.1-1
+- **CVE-2025-7458** (libsqlite3) - CRITICAL - Fixed in 3.46.1-7
+- **CVE-2023-45853** (zlib) - CRITICAL - Fixed in 1.3.1
+
+#### Frontend Security Fixes
+- Fixed 3 HIGH severity libpng vulnerabilities
+- Fixed 2 MEDIUM severity libpng vulnerabilities
+- Fixed 1 MEDIUM severity busybox vulnerability
+- Remaining: 3 tiff CVEs (no Alpine fix available)
+
+#### Additional Improvements
+- Added `HEALTHCHECK` instructions to both frontend and backend Dockerfiles
+- Updated Python from 3.12 to 3.13
+- Updated pip to latest version (25.3)
+
+### Changed
+- Backend now runs on Debian 13 "trixie" (released August 2025)
+- Python site-packages path updated from 3.12 to 3.13
+
+### Upgrade Notes
+Users running self-hosted deployments should pull the latest images:
+```bash
+docker pull davidamacey/opentranscribe-frontend:v0.2.1
+docker pull davidamacey/opentranscribe-backend:v0.2.1
+```
+
+---
+
 ## [0.2.0] - 2025-12-12
 
 ### Overview
