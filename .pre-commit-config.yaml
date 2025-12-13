@@ -7,16 +7,20 @@ repos:
     rev: v4.5.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^security-reports/
       - id: end-of-file-fixer
+        exclude: ^security-reports/
       - id: check-yaml
         args: [--unsafe]  # Allow custom YAML tags in docker-compose
       - id: check-json
+        exclude: ^security-reports/
       - id: check-added-large-files
         args: [--maxkb=10240]  # 10MB max file size
       - id: check-merge-conflict
       - id: check-toml
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: ^security-reports/
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
 
@@ -68,6 +72,7 @@ repos:
     hooks:
       - id: gitleaks
         args: [--verbose, --no-banner]
+        exclude: ^security-reports/
 
   # Python security linting
   - repo: https://github.com/PyCQA/bandit
@@ -94,5 +99,5 @@ repos:
         args: [--force-scope]
 
 # Configuration for specific hooks
-default_stages: [commit]
+default_stages: [pre-commit]
 fail_fast: false

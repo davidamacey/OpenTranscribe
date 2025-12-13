@@ -457,35 +457,18 @@ main() {
         print_info "  2. Then: USE_REMOTE_BUILDER=true $0"
     fi
 
-    # Auto-commit and push security reports if they exist
-    if [ -d "./security-reports" ] && [ "$(ls -A ./security-reports 2>/dev/null)" ]; then
-        print_info ""
-        print_info "📋 Committing security reports..."
+    # Auto-commit and push security reports using dedicated script
+    print_info ""
+    print_info "📋 Pushing security reports..."
 
-        # Check if there are changes to commit
-        if git status --porcelain ./security-reports | grep -q .; then
-            git add ./security-reports/
-            git commit -m "chore: Update security reports for ${VERSION_FULL}
-
-Security scan results from Docker build process.
-Reports include: Hadolint, Dockle, Trivy, Grype, and Syft SBOM.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
-
-            # Push to current branch
-            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-            if git push origin "${CURRENT_BRANCH}"; then
-                print_success "✅ Security reports committed and pushed to ${CURRENT_BRANCH}"
-            else
-                print_warning "⚠️  Failed to push security reports (you may need to push manually)"
-            fi
-        else
-            print_info "No changes to security reports"
-        fi
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "${SCRIPT_DIR}/push-security-reports.sh" ]; then
+        VERSION="${VERSION_FULL}" "${SCRIPT_DIR}/push-security-reports.sh" || {
+            print_warning "⚠️  Security reports push had issues (see above for details)"
+            print_info "You can manually run: ./scripts/push-security-reports.sh"
+        }
     else
-        print_info "No security reports directory found (security scanning may be disabled)"
+        print_warning "push-security-reports.sh not found, skipping auto-push"
     fi
 }
 
