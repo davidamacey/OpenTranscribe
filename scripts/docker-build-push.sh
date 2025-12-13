@@ -157,19 +157,16 @@ build_backend() {
     print_info "Building backend image..."
     print_info "Platforms: ${PLATFORMS}"
     print_info "Version: ${VERSION_FULL}"
-    print_info "Tags: latest, ${VERSION_FULL}, ${VERSION_MAJOR_MINOR}, ${VERSION_MAJOR}, ${COMMIT_SHA}"
+    print_info "Tags: latest, ${VERSION_FULL}"
 
     cd backend
 
-    # Build and push multi-arch image with all version tags
+    # Build and push multi-arch image (only latest and full version tags)
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
         --tag "${REPO_BACKEND}:latest" \
         --tag "${REPO_BACKEND}:${VERSION_FULL}" \
-        --tag "${REPO_BACKEND}:${VERSION_MAJOR_MINOR}" \
-        --tag "${REPO_BACKEND}:${VERSION_MAJOR}" \
-        --tag "${REPO_BACKEND}:${COMMIT_SHA}" \
         ${CACHE_FLAG} \
         --push \
         .
@@ -180,9 +177,6 @@ build_backend() {
     print_info "Tags pushed:"
     print_info "  - ${REPO_BACKEND}:latest"
     print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
-    print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR_MINOR}"
-    print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR}"
-    print_info "  - ${REPO_BACKEND}:${COMMIT_SHA}"
 }
 
 # Function to build and push frontend (no scan - scan runs separately)
@@ -190,19 +184,16 @@ build_frontend() {
     print_info "Building frontend image..."
     print_info "Platforms: ${PLATFORMS}"
     print_info "Version: ${VERSION_FULL}"
-    print_info "Tags: latest, ${VERSION_FULL}, ${VERSION_MAJOR_MINOR}, ${VERSION_MAJOR}, ${COMMIT_SHA}"
+    print_info "Tags: latest, ${VERSION_FULL}"
 
     cd frontend
 
-    # Build and push multi-arch image with all version tags
+    # Build and push multi-arch image (only latest and full version tags)
     docker buildx build \
         --platform "${PLATFORMS}" \
         --file Dockerfile.prod \
         --tag "${REPO_FRONTEND}:latest" \
         --tag "${REPO_FRONTEND}:${VERSION_FULL}" \
-        --tag "${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}" \
-        --tag "${REPO_FRONTEND}:${VERSION_MAJOR}" \
-        --tag "${REPO_FRONTEND}:${COMMIT_SHA}" \
         ${CACHE_FLAG} \
         --push \
         .
@@ -213,9 +204,6 @@ build_frontend() {
     print_info "Tags pushed:"
     print_info "  - ${REPO_FRONTEND}:latest"
     print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
-    print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}"
-    print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR}"
-    print_info "  - ${REPO_FRONTEND}:${COMMIT_SHA}"
 }
 
 # Function to run parallel security scans on both images
@@ -312,6 +300,80 @@ scan_only() {
     run_parallel_scans "backend" "frontend"
 }
 
+# Function to delete old partial version tags from Docker Hub
+cleanup_old_tags() {
+    print_info "Cleaning up old partial version tags from Docker Hub..."
+    print_info "This will delete vX and vX.X style tags (keeping latest and vX.Y.Z)"
+
+    # Get Docker Hub token
+    print_info "Authenticating with Docker Hub..."
+    local token
+    token=$(curl -s -X POST "https://hub.docker.com/v2/users/login/" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"$(docker-credential-desktop get <<< 'https://index.docker.io/v1/' 2>/dev/null | jq -r .Secret 2>/dev/null || echo '')\"}" \
+        2>/dev/null | jq -r .token 2>/dev/null)
+
+    if [ -z "$token" ] || [ "$token" = "null" ]; then
+        print_warning "Could not get Docker Hub token automatically."
+        print_info "Please delete tags manually via Docker Hub web interface:"
+        print_info "  Backend: https://hub.docker.com/r/${DOCKERHUB_USERNAME}/opentranscribe-backend/tags"
+        print_info "  Frontend: https://hub.docker.com/r/${DOCKERHUB_USERNAME}/opentranscribe-frontend/tags"
+        print_info ""
+        print_info "Tags to delete (partial versions):"
+        print_info "  - v0, v0.1, v0.2 (and similar)"
+        print_info "  - Any commit SHA tags (e.g., 14accb6)"
+        return 1
+    fi
+
+    # Function to delete a tag
+    delete_tag() {
+        local repo=$1
+        local tag=$2
+        print_info "Deleting ${repo}:${tag}..."
+        local response
+        response=$(curl -s -X DELETE \
+            "https://hub.docker.com/v2/repositories/${DOCKERHUB_USERNAME}/${repo}/tags/${tag}/" \
+            -H "Authorization: Bearer ${token}" \
+            -w "%{http_code}")
+        if [ "$response" = "204" ]; then
+            print_success "Deleted ${repo}:${tag}"
+        else
+            print_warning "Failed to delete ${repo}:${tag} (may not exist)"
+        fi
+    }
+
+    # List of partial version tags to delete
+    local partial_tags=("v0" "v0.1" "v0.2")
+
+    # Also find and delete commit SHA tags (7-8 character hex strings)
+    print_info "Fetching existing tags..."
+    for repo in "opentranscribe-backend" "opentranscribe-frontend"; do
+        print_info "Processing ${repo}..."
+
+        # Get all tags
+        local tags_json
+        tags_json=$(curl -s "https://hub.docker.com/v2/repositories/${DOCKERHUB_USERNAME}/${repo}/tags/?page_size=100" \
+            -H "Authorization: Bearer ${token}" 2>/dev/null)
+
+        # Delete partial version tags
+        for tag in "${partial_tags[@]}"; do
+            if echo "$tags_json" | jq -r '.results[].name' 2>/dev/null | grep -q "^${tag}$"; then
+                delete_tag "$repo" "$tag"
+            fi
+        done
+
+        # Delete commit SHA tags (7-8 hex characters)
+        local sha_tags
+        sha_tags=$(echo "$tags_json" | jq -r '.results[].name' 2>/dev/null | grep -E '^[a-f0-9]{7,8}$' || true)
+        for tag in $sha_tags; do
+            delete_tag "$repo" "$tag"
+        done
+    done
+
+    print_success "Cleanup complete!"
+    print_info "Remaining tags should be: latest, vX.Y.Z versions"
+}
+
 # Function to show usage
 show_usage() {
     cat << EOF
@@ -325,6 +387,7 @@ Options:
     all         Build and push both images (default)
     auto        Auto-detect changes and build only changed components
     scan        Security scan only (pull latest images, scan, push reports)
+    cleanup     Delete old partial version tags (vX, vX.X) from Docker Hub
     help        Show this help message
 
 Environment Variables:
@@ -344,7 +407,7 @@ Examples:
     $0 auto         # Auto-detect and build changed components
     $0 scan         # Security scan only (no build, pulls latest images)
 
-    # Specify version (creates tags: v1.2.3, v1.2, v1, latest)
+    # Specify version (creates tags: latest, v1.2.3)
     VERSION=v1.2.3 $0 all
 
     # Version from VERSION file (recommended for releases)
@@ -368,10 +431,11 @@ Examples:
 
 Versioning:
     The script supports semantic versioning via VERSION file or environment variable:
-    - Creates tags: vX.Y.Z (full), vX.Y (minor), vX (major), latest, commit-sha
+    - Creates tags: latest, vX.Y.Z (full version only)
     - Version can be specified as v1.2.3 or 1.2.3 (v prefix added automatically)
     - Environment variable VERSION overrides VERSION file
     - If neither exists, defaults to v0.0.0 with a warning
+    - Use 'cleanup' command to remove old partial version tags (vX, vX.X)
 
 Remote Builder Setup:
     For dramatically faster ARM64 builds, set up a remote builder:
@@ -420,10 +484,8 @@ main() {
         SEMVER="v${SEMVER}"
     fi
 
-    # Parse version components for additional tags
+    # Parse version for tagging (only full version used now)
     VERSION_FULL="${SEMVER}"  # e.g., v1.2.3
-    VERSION_MAJOR_MINOR=$(echo "${SEMVER}" | cut -d. -f1-2)  # e.g., v1.2
-    VERSION_MAJOR=$(echo "${SEMVER}" | cut -d. -f1)  # e.g., v1
 
     print_info "OpenTranscribe Docker Build & Push Script"
     print_info "=========================================="
@@ -534,6 +596,11 @@ main() {
             fi
             exit 0
             ;;
+        cleanup)
+            print_info "Cleanup mode - removing old partial version tags..."
+            cleanup_old_tags
+            exit 0
+            ;;
         help|--help|-h)
             show_usage
             exit 0
@@ -553,34 +620,20 @@ main() {
     print_success "All builds completed successfully!"
     print_info ""
     print_info "Images pushed to Docker Hub with version ${VERSION_FULL}:"
-    if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ]; then
+    if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ] || [ "${BUILD_TARGET}" = "auto" ]; then
         print_info "Backend:"
         print_info "  - ${REPO_BACKEND}:latest"
         print_info "  - ${REPO_BACKEND}:${VERSION_FULL}"
-        print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR_MINOR}"
-        print_info "  - ${REPO_BACKEND}:${VERSION_MAJOR}"
-        print_info "  - ${REPO_BACKEND}:${COMMIT_SHA}"
     fi
-    if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ]; then
+    if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ] || [ "${BUILD_TARGET}" = "auto" ]; then
         print_info "Frontend:"
         print_info "  - ${REPO_FRONTEND}:latest"
         print_info "  - ${REPO_FRONTEND}:${VERSION_FULL}"
-        print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR_MINOR}"
-        print_info "  - ${REPO_FRONTEND}:${VERSION_MAJOR}"
-        print_info "  - ${REPO_FRONTEND}:${COMMIT_SHA}"
     fi
     print_info ""
-    print_info "To pull specific versions:"
-    if [ "${BUILD_TARGET}" = "backend" ] || [ "${BUILD_TARGET}" = "all" ]; then
-        print_info "  docker pull ${REPO_BACKEND}:latest           # Always latest"
-        print_info "  docker pull ${REPO_BACKEND}:${VERSION_FULL}  # Specific version"
-        print_info "  docker pull ${REPO_BACKEND}:${VERSION_MAJOR}            # Major version"
-    fi
-    if [ "${BUILD_TARGET}" = "frontend" ] || [ "${BUILD_TARGET}" = "all" ]; then
-        print_info "  docker pull ${REPO_FRONTEND}:latest           # Always latest"
-        print_info "  docker pull ${REPO_FRONTEND}:${VERSION_FULL}  # Specific version"
-        print_info "  docker pull ${REPO_FRONTEND}:${VERSION_MAJOR}            # Major version"
-    fi
+    print_info "To pull:"
+    print_info "  docker pull ${REPO_BACKEND}:latest      # Always latest"
+    print_info "  docker pull ${REPO_BACKEND}:${VERSION_FULL}   # Specific version"
 
     # CRITICAL: Switch back to default builder to prevent interference with local dev builds
     print_info ""
