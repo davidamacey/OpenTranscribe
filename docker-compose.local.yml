@@ -1,0 +1,27 @@
+# Local override to use locally-built images instead of pulling from Docker Hub
+# Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml up -d
+
+services:
+  backend:
+    pull_policy: never
+
+  celery-worker:
+    pull_policy: never
+
+  celery-download-worker:
+    pull_policy: never
+
+  celery-cpu-worker:
+    pull_policy: never
+
+  celery-nlp-worker:
+    pull_policy: never
+
+  celery-beat:
+    pull_policy: never
+
+  flower:
+    pull_policy: never
+
+  celery-worker-gpu-scaled:
+    pull_policy: never

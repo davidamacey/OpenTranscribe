@@ -54,95 +54,100 @@ class SubtitleService:
         return min(optimal_time, SubtitleService.MAX_DISPLAY_TIME)
 
     @staticmethod
+    def _get_speaker_prefix(speaker_name: Optional[str]) -> str:
+        """Get formatted speaker prefix from speaker name."""
+        if not speaker_name or speaker_name.upper() == "UNKNOWN":
+            return ""
+        clean_name = speaker_name.strip()
+        return f"{clean_name}: " if clean_name else ""
+
+    @staticmethod
+    def _wrap_text(text: str) -> list[str]:
+        """Wrap text to subtitle line length constraints."""
+        return textwrap.wrap(
+            text,
+            width=SubtitleService.MAX_LINE_LENGTH,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+
+    @staticmethod
+    def _create_subtitle_block(lines: list[str], speaker_prefix: str) -> str:
+        """Create a subtitle block from lines, adding speaker prefix to first line."""
+        block_lines = lines[: SubtitleService.MAX_LINES_PER_SUBTITLE]
+        if speaker_prefix:
+            block_lines[0] = f"{speaker_prefix}{block_lines[0]}"
+        return "\n".join(block_lines)
+
+    @staticmethod
+    def _process_sentence(
+        sentence: str,
+        current_subtitle: str,
+        speaker_prefix: str,
+        formatted_subtitles: list[str],
+    ) -> str:
+        """Process a sentence and add to subtitles if needed. Returns updated current_subtitle."""
+        if not current_subtitle:
+            return sentence
+
+        test_text = f"{current_subtitle} {sentence}"
+        test_lines = SubtitleService._wrap_text(test_text)
+
+        if len(test_lines) <= SubtitleService.MAX_LINES_PER_SUBTITLE:
+            return test_text
+
+        # Finalize current subtitle and start new one
+        subtitle_lines = SubtitleService._wrap_text(current_subtitle)
+        formatted_subtitles.append(
+            SubtitleService._create_subtitle_block(subtitle_lines, speaker_prefix)
+        )
+        return sentence
+
+    @staticmethod
+    def _finalize_remaining_text(
+        current_subtitle: str, speaker_prefix: str, formatted_subtitles: list[str]
+    ) -> None:
+        """Process remaining text into subtitle blocks."""
+        if not current_subtitle:
+            return
+
+        subtitle_lines = SubtitleService._wrap_text(current_subtitle)
+        for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
+            chunk = subtitle_lines[i : i + SubtitleService.MAX_LINES_PER_SUBTITLE]
+            formatted_subtitles.append(
+                SubtitleService._create_subtitle_block(chunk, speaker_prefix)
+            )
+
+    @staticmethod
     def format_text_for_subtitles(
         text: str, speaker_name: Optional[str] = None, format_type: str = "srt"
     ) -> list[str]:
         """Format text for movie-style subtitles with proper line breaks and speaker continuity."""
         # Clean the text
-        text = text.strip()
-        text = re.sub(r"\s+", " ", text)  # Normalize whitespace
+        text = re.sub(r"\s+", " ", text.strip())
 
-        # Format speaker name
-        speaker_prefix = ""
-        if speaker_name and speaker_name.upper() != "UNKNOWN":
-            # Use the speaker name as-is, or clean it if it's a generic SPEAKER_XX format
-            clean_name = speaker_name.strip()
-
-            # If it's still a generic SPEAKER_XX format, keep it as-is for now
-            # Users can update display names which will override this
-            if clean_name:
-                # For WebVTT, we want speaker names on every subtitle chunk for clarity
-                if format_type.lower() == "webvtt":
-                    speaker_prefix = f"{clean_name}: "
-                else:
-                    speaker_prefix = f"{clean_name}: "
+        # Get speaker prefix
+        speaker_prefix = SubtitleService._get_speaker_prefix(speaker_name)
 
         # If text with speaker prefix fits in one line, return as single subtitle
         full_text = f"{speaker_prefix}{text}"
         if len(full_text) <= SubtitleService.MAX_LINE_LENGTH:
             return [full_text]
 
-        # For longer text, handle speaker continuity properly
-        # IMPORTANT: Add speaker prefix to EVERY subtitle chunk for clarity
-        formatted_subtitles = []
-
-        # Split text into sentences for better breaking points
+        # For longer text, process sentences into subtitle blocks
+        formatted_subtitles: list[str] = []
         sentences = re.split(r"(?<=[.!?])\s+", text)
-
         current_subtitle = ""
 
         for sentence in sentences:
-            # Check if we need to start a new subtitle
-            if current_subtitle:
-                # Test if adding this sentence would exceed limits
-                test_text = f"{current_subtitle} {sentence}"
-                test_lines = textwrap.wrap(
-                    test_text,
-                    width=SubtitleService.MAX_LINE_LENGTH,
-                    break_long_words=False,
-                    break_on_hyphens=False,
-                )
-
-                if len(test_lines) > SubtitleService.MAX_LINES_PER_SUBTITLE:
-                    # Finalize current subtitle
-                    subtitle_lines = textwrap.wrap(
-                        current_subtitle,
-                        width=SubtitleService.MAX_LINE_LENGTH,
-                        break_long_words=False,
-                        break_on_hyphens=False,
-                    )
-
-                    # Add speaker prefix to EVERY subtitle chunk
-                    if speaker_prefix:
-                        subtitle_lines[0] = f"{speaker_prefix}{subtitle_lines[0]}"
-
-                    formatted_subtitles.append(
-                        "\n".join(subtitle_lines[: SubtitleService.MAX_LINES_PER_SUBTITLE])
-                    )
-                    current_subtitle = sentence
-                else:
-                    current_subtitle = test_text
-            else:
-                current_subtitle = sentence
-
-        # Handle remaining text
-        if current_subtitle:
-            subtitle_lines = textwrap.wrap(
-                current_subtitle,
-                width=SubtitleService.MAX_LINE_LENGTH,
-                break_long_words=False,
-                break_on_hyphens=False,
+            current_subtitle = SubtitleService._process_sentence(
+                sentence, current_subtitle, speaker_prefix, formatted_subtitles
             )
 
-            # Split into multiple subtitles if needed
-            for i in range(0, len(subtitle_lines), SubtitleService.MAX_LINES_PER_SUBTITLE):
-                subtitle_chunk = subtitle_lines[i : i + SubtitleService.MAX_LINES_PER_SUBTITLE]
-
-                # Add speaker prefix to EVERY subtitle chunk (both first and continuation chunks)
-                if speaker_prefix:
-                    subtitle_chunk[0] = f"{speaker_prefix}{subtitle_chunk[0]}"
-
-                formatted_subtitles.append("\n".join(subtitle_chunk))
+        # Handle remaining text
+        SubtitleService._finalize_remaining_text(
+            current_subtitle, speaker_prefix, formatted_subtitles
+        )
 
         return formatted_subtitles if formatted_subtitles else [full_text]
 

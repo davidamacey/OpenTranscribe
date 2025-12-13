@@ -1,14 +1,21 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { fade } from 'svelte/transition';
+  import { t } from '$stores/locale';
 
   export let isOpen = false;
-  export let title = 'Confirm Action';
-  export let message = 'Are you sure you want to proceed?';
-  export let confirmText = 'Confirm';
-  export let cancelText = 'Cancel';
+  export let title = '';
+  export let message = '';
+  export let confirmText = '';
+  export let cancelText = '';
   export let confirmButtonClass = 'confirm-button';
   export let cancelButtonClass = 'cancel-button';
+
+  // Apply defaults from translations if not provided
+  $: title = title || $t('modal.confirmAction');
+  $: message = message || $t('modal.confirmMessage');
+  $: confirmText = confirmText || $t('modal.confirm');
+  $: cancelText = cancelText || $t('modal.cancel');
 
   const dispatch = createEventDispatcher();
 
@@ -64,8 +71,8 @@
           <button
             class="modal-close-button"
             on:click={handleClose}
-            aria-label="Close dialog"
-            title="Close dialog"
+            aria-label={$t('modal.closeDialog')}
+            title={$t('modal.closeDialog')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>

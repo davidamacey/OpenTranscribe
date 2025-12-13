@@ -1,29 +1,48 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { getSpeakerColorForSegment } from '$lib/utils/speakerColors';
   import { processedTranscriptSegments, transcriptStore } from '../stores/transcriptStore';
   import { copyToClipboard } from '$lib/utils/clipboard';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let fileId: number;
   export let fileName: string = '';
   export let isOpen: boolean = false;
+
+  // Pagination props
+  export let totalSegments: number = 0;
+  export let hasMoreSegments: boolean = false;
+  export let loadingMoreSegments: boolean = false;
 
   // Reference fileId to suppress warning (will be tree-shaken in production)
   $: { fileId; }
 
   const dispatch = createEventDispatcher<{
     close: void;
+    loadMore: void;
   }>();
 
   let loading = false;
   let error: string | null = null;
   let consolidatedTranscript = '';
 
+  // Infinite scroll sentinel element
+  let infiniteScrollSentinel: HTMLElement | null = null;
+  let infiniteScrollObserver: IntersectionObserver | null = null;
+
+  // Scroll progress tracking (reading progress bar)
+  let scrollProgress: number = 0;
+  let transcriptContentElement: HTMLElement | null = null;
+
+  // Calculate loaded segments info from the store
+  $: loadedSegments = $processedTranscriptSegments?.length || 0;
+
   // Search functionality
   let searchQuery = '';
   let currentMatchIndex = 0;
   let totalMatches = 0;
-  let copyButtonText = 'Copy';
+  let copyButtonText = $t('transcriptModal.copy');
 
   // Subscribe to the processed transcript segments from the store
   $: displaySegments = $processedTranscriptSegments;
@@ -31,12 +50,12 @@
   // Generate consolidated transcript when display segments change
   $: if (displaySegments && displaySegments.length > 0) {
     consolidatedTranscript = displaySegments
-      .map(block => `${block.speakerName} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
+      .map(block => `${translateSpeakerLabel(block.speakerName)} [${formatSimpleTimestamp(block.startTime ?? 0)}-${formatSimpleTimestamp(block.endTime ?? 0)}]: ${block.text}`)
       .join('\n\n');
   } else {
     consolidatedTranscript = '';
   }
-  
+
   $: if (searchQuery && displaySegments.length > 0) {
     // Count matches across all segment text for accurate search navigation
     const allText = displaySegments.map(segment => segment.text).join(' ');
@@ -46,7 +65,7 @@
     totalMatches = 0;
     currentMatchIndex = 0;
   }
-  
+
   // Handle body scroll prevention when modal opens/closes
   $: {
     if (isOpen) {
@@ -55,23 +74,23 @@
       document.body.style.overflow = '';
     }
   }
-  
+
   function countMatches(query: string, text: string): number {
     if (!query.trim() || !text) return 0;
-    
+
     const searchTerm = query.toLowerCase();
     const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const matches = text.toLowerCase().match(new RegExp(escapedTerm, 'g'));
     return matches ? matches.length : 0;
   }
-  
+
   function highlightSearchTerms(text: string, query: string, matchIndex: number = -1): string {
     if (!query.trim() || !text) return text;
-    
+
     const searchTerm = query.toLowerCase();
     const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`(${escapedTerm})`, 'gi');
-    
+
     let currentMatch = 0;
     return text.replace(regex, (match) => {
       const isCurrentMatch = currentMatch === matchIndex;
@@ -81,40 +100,40 @@
       return result;
     });
   }
-  
+
   function cycleToNextMatch() {
     if (totalMatches > 0) {
       currentMatchIndex = (currentMatchIndex + 1) % totalMatches;
       scrollToCurrentMatch();
     }
   }
-  
+
   function cycleToPreviousMatch() {
     if (totalMatches > 0) {
       currentMatchIndex = currentMatchIndex > 0 ? currentMatchIndex - 1 : totalMatches - 1;
       scrollToCurrentMatch();
     }
   }
-  
+
   function scrollToCurrentMatch() {
     setTimeout(() => {
       const currentMatch = document.querySelector(`[data-match-index="${currentMatchIndex}"].current-match`);
       if (currentMatch) {
-        currentMatch.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'center', 
-          inline: 'nearest' 
+        currentMatch.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+          inline: 'nearest'
         });
       }
     }, 50);
   }
-  
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       dispatch('close');
     }
   }
-  
+
   function handleSearchKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       searchQuery = '';
@@ -126,26 +145,26 @@
       }
     }
   }
-  
+
   function handleBackdropClick() {
     dispatch('close');
   }
-  
+
   function handleCloseButton(event: Event) {
     event.preventDefault();
     event.stopPropagation();
     dispatch('close');
   }
-  
+
   function handleModalClick(event: Event) {
     event.stopPropagation();
   }
-  
+
   function handleCopy() {
     if (!consolidatedTranscript) {
-      copyButtonText = 'No content';
+      copyButtonText = $t('transcriptModal.noContent');
       setTimeout(() => {
-        copyButtonText = 'Copy';
+        copyButtonText = $t('transcriptModal.copy');
       }, 2000);
       return;
     }
@@ -153,21 +172,21 @@
     copyToClipboard(
       consolidatedTranscript,
       () => {
-        copyButtonText = 'Copied!';
+        copyButtonText = $t('transcriptModal.copied');
         setTimeout(() => {
-          copyButtonText = 'Copy';
+          copyButtonText = $t('transcriptModal.copy');
         }, 2000);
       },
       (error) => {
-        copyButtonText = 'Copy failed';
+        copyButtonText = $t('transcriptModal.copyFailed');
         setTimeout(() => {
-          copyButtonText = 'Copy';
+          copyButtonText = $t('transcriptModal.copy');
         }, 2000);
       }
     );
   }
 
-  
+
   function clearSearch() {
     searchQuery = '';
   }
@@ -178,12 +197,56 @@
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  
-  // Clean up body overflow when component is destroyed
+
+  // Handle scroll to update progress bar
+  function handleTranscriptScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    if (target) {
+      const scrollHeight = target.scrollHeight - target.clientHeight;
+      if (scrollHeight > 0) {
+        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+      }
+    }
+  }
+
+  // Set up infinite scroll observer
+  function setupInfiniteScrollObserver() {
+    if (typeof IntersectionObserver !== 'undefined' && !infiniteScrollObserver) {
+      infiniteScrollObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (entry?.isIntersecting && hasMoreSegments && !loadingMoreSegments) {
+            dispatch('loadMore');
+          }
+        },
+        { rootMargin: '200px' } // Trigger 200px before reaching the sentinel
+      );
+    }
+  }
+
+  // Observe the sentinel element when it's available
+  $: if (infiniteScrollSentinel && infiniteScrollObserver) {
+    infiniteScrollObserver.observe(infiniteScrollSentinel);
+  }
+
+  // Reset scroll progress when modal opens
+  $: if (isOpen) {
+    scrollProgress = 0;
+    setupInfiniteScrollObserver();
+  }
+
+  // Clean up body overflow and observer when component is destroyed
   onMount(() => {
     return () => {
       document.body.style.overflow = '';
     };
+  });
+
+  onDestroy(() => {
+    if (infiniteScrollObserver) {
+      infiniteScrollObserver.disconnect();
+      infiniteScrollObserver = null;
+    }
   });
 </script>
 
@@ -212,38 +275,38 @@
       on:keydown={handleKeydown}
     >
       <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">Full Transcript - {fileName}</h2>
+        <h2 class="modal-title" id="modal-title">{$t('transcriptModal.title', { fileName })}</h2>
         <div class="header-actions">
           {#if consolidatedTranscript}
-            <button 
+            <button
               class="copy-button-header"
-              class:copied={copyButtonText === 'Copied!'}
+              class:copied={copyButtonText === $t('transcriptModal.copied')}
               on:click={handleCopy}
-              aria-label="Copy transcript"
-              title={copyButtonText === 'Copied!' ? 'Transcript copied to clipboard!' : 'Copy full transcript text'}
+              aria-label={$t('transcriptModal.searchTranscript')}
+              title={copyButtonText === $t('transcriptModal.copied') ? $t('transcriptModal.transcriptCopied') : $t('transcriptModal.copyTranscript')}
             >
-              {#if copyButtonText === 'Copied!'}
+              {#if copyButtonText === $t('transcriptModal.copied')}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M10.97 4.97a.75.75 0 0 1 1.07 1.05l-3.99 4.99a.75.75 0 0 1-1.08.02L4.324 8.384a.75.75 0 1 1 1.06-1.06l2.094 2.093 3.473-4.425a.267.267 0 0 1 .02-.022z"/>
                 </svg>
-                Copied!
+                {$t('transcriptModal.copied')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
                   <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
                 </svg>
-                Copy
+                {$t('transcriptModal.copy')}
               {/if}
             </button>
           {/if}
-          <button class="close-button" on:click={handleCloseButton} aria-label="Close modal" title="Close modal (Esc)">
+          <button class="close-button" on:click={handleCloseButton} aria-label={$t('transcriptModal.closeModal')} title={$t('transcriptModal.closeModalEsc')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
           </button>
         </div>
       </div>
-      
+
       <!-- Search Section -->
       {#if displaySegments.length > 0}
         <div class="search-section">
@@ -253,20 +316,20 @@
                 <circle cx="11" cy="11" r="8"></circle>
                 <path d="m21 21-4.35-4.35"></path>
               </svg>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 bind:value={searchQuery}
-                placeholder="Search transcript..." 
+                placeholder={$t('transcriptModal.searchPlaceholder')}
                 class="search-input"
                 on:keydown={handleSearchKeydown}
-                aria-label="Search transcript"
+                aria-label={$t('transcriptModal.searchTranscript')}
               />
               {#if searchQuery}
-                <button 
+                <button
                   class="clear-search-button"
                   on:click={clearSearch}
-                  aria-label="Clear search"
-                  title="Clear search"
+                  aria-label={$t('transcriptModal.clearSearch')}
+                  title={$t('transcriptModal.clearSearch')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -275,28 +338,28 @@
                 </button>
               {/if}
             </div>
-            
+
             {#if totalMatches > 0}
               <div class="search-results">
-                <span class="match-count">{currentMatchIndex + 1} of {totalMatches}</span>
+                <span class="match-count">{$t('transcriptModal.matchCount', { current: currentMatchIndex + 1, total: totalMatches })}</span>
                 <div class="navigation-buttons">
-                  <button 
+                  <button
                     class="nav-button"
                     on:click={cycleToPreviousMatch}
                     disabled={totalMatches === 0}
-                    aria-label="Previous match"
-                    title="Previous match (Shift+Enter)"
+                    aria-label={$t('transcriptModal.previousMatch')}
+                    title={$t('transcriptModal.previousMatchShortcut')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="15,18 9,12 15,6"></polyline>
                     </svg>
                   </button>
-                  <button 
+                  <button
                     class="nav-button"
                     on:click={cycleToNextMatch}
                     disabled={totalMatches === 0}
-                    aria-label="Next match"
-                    title="Next match (Enter)"
+                    aria-label={$t('transcriptModal.nextMatch')}
+                    title={$t('transcriptModal.nextMatchShortcut')}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="9,18 15,12 9,6"></polyline>
@@ -308,56 +371,102 @@
           </div>
         </div>
       {/if}
-      
+
       <!-- Transcript Content -->
-      <div class="modal-content">
-        {#if loading}
-          <div class="loading-container">
-            <div class="spinner"></div>
-            <p>Loading transcript...</p>
+      <div class="modal-content-wrapper">
+        <!-- Reading progress bar at top -->
+        {#if displaySegments.length > 0}
+          <div class="reading-progress-bar">
+            <div
+              class="reading-progress-fill"
+              style="width: {scrollProgress}%"
+            ></div>
           </div>
-        {:else if error}
-          <div class="error-container">
-            <div class="error-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
-                <path d="M12 9v4"/>
-                <path d="m12 17 .01 0"/>
-              </svg>
+        {/if}
+
+        <div
+          class="modal-content"
+          bind:this={transcriptContentElement}
+          on:scroll={handleTranscriptScroll}
+        >
+          {#if loading}
+            <div class="loading-container">
+              <div class="spinner"></div>
+              <p>{$t('transcriptModal.loading')}</p>
             </div>
-            <div class="error-message">
-              <h3>Error Loading Transcript</h3>
-              <p>{error}</p>
-            </div>
-          </div>
-        {:else if displaySegments.length > 0}
-          <div class="transcript-content">
-            {#each displaySegments as segment}
-              <div class="transcript-segment">
-                <div class="segment-header">
-                  <div
-                    class="segment-speaker"
-                    style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
-                  >{segment.speakerName}</div>
-                  <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
-                </div>
-                <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+          {:else if error}
+            <div class="error-container">
+              <div class="error-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                  <path d="M12 9v4"/>
+                  <path d="m12 17 .01 0"/>
+                </svg>
               </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="no-transcript">
-            <div class="no-transcript-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14,2 14,8 20,8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10,9 9,9 8,9"></polyline>
-              </svg>
+              <div class="error-message">
+                <h3>{$t('transcriptModal.errorTitle')}</h3>
+                <p>{error}</p>
+              </div>
             </div>
-            <h3>No Transcript Available</h3>
-            <p>This file doesn't have a transcript available yet.</p>
+          {:else if displaySegments.length > 0}
+            <div class="transcript-content">
+              {#each displaySegments as segment}
+                <div class="transcript-segment">
+                  <div class="segment-header">
+                    <div
+                      class="segment-speaker"
+                      style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                    >{translateSpeakerLabel(segment.speakerName)}</div>
+                    <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+                  </div>
+                  <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+                </div>
+              {/each}
+
+              <!-- Infinite scroll sentinel and loading indicator -->
+              {#if hasMoreSegments}
+                <div
+                  class="infinite-scroll-sentinel"
+                  bind:this={infiniteScrollSentinel}
+                >
+                  {#if loadingMoreSegments}
+                    <div class="loading-more-indicator">
+                      <span class="loading-spinner"></span>
+                      <span>{$t('transcriptModal.loadingMore')}</span>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="no-transcript">
+              <div class="no-transcript-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14,2 14,8 20,8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                  <polyline points="10,9 9,9 8,9"></polyline>
+                </svg>
+              </div>
+              <h3>{$t('transcriptModal.noTranscriptTitle')}</h3>
+              <p>{$t('transcriptModal.noTranscriptMessage')}</p>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Segments loaded info -->
+        {#if totalSegments > 0 && hasMoreSegments}
+          <div class="segments-loaded-info">
+            <span class="segments-count">{$t('transcriptModal.segmentsLoaded', { count: loadedSegments })}</span>
+            {#if loadingMoreSegments}
+              <span class="loading-indicator">
+                <span class="loading-spinner-small"></span>
+                {$t('transcriptModal.loadingIndicator')}
+              </span>
+            {:else}
+              <span class="more-available">{$t('transcriptModal.moreAvailable')}</span>
+            {/if}
           </div>
         {/if}
       </div>
@@ -390,6 +499,97 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .modal-content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Reading progress bar - horizontal bar at top showing scroll position */
+  .reading-progress-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border-color);
+    z-index: 10;
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+
+  .reading-progress-fill {
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.1s ease-out;
+    border-radius: 0;
+  }
+
+  /* Infinite scroll styles */
+  .infinite-scroll-sentinel {
+    min-height: 1px;
+    padding: 8px 0;
+  }
+
+  .loading-more-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .loading-more-indicator .loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* Segments loaded info bar */
+  .segments-loaded-info {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .segments-count {
+    font-weight: 500;
+  }
+
+  .more-available {
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  .loading-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .loading-spinner-small {
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
 
   .modal-header {
@@ -749,38 +949,38 @@
     .modal-backdrop {
       padding: 0;
     }
-    
+
     .modal-container {
       border-radius: 0;
       max-height: 100vh;
     }
-    
+
     .modal-header {
       padding: 1rem;
     }
-    
+
     .modal-title {
       font-size: 1.25rem;
     }
-    
+
     .search-section {
       padding: 1rem;
     }
-    
+
     .search-container {
       flex-direction: column;
       align-items: stretch;
       gap: 0.75rem;
     }
-    
+
     .search-results {
       justify-content: space-between;
     }
-    
+
     .modal-content {
       padding: 1rem;
     }
-    
+
     .transcript-content {
       font-size: 0.85rem;
     }

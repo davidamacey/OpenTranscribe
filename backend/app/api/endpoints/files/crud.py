@@ -194,7 +194,186 @@ def set_file_urls(db_file: MediaFile) -> None:
             db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 
 
-def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> MediaFileDetail:
+def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> Analytics | None:
+    """
+    Get analytics for a file, computing them on-demand if needed.
+
+    Args:
+        db: Database session
+        file_id: File ID
+        file_status: Current status of the file
+
+    Returns:
+        Analytics object or None
+    """
+    analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+
+    if analytics or file_status != "completed":
+        return analytics
+
+    # Compute analytics on-demand for completed files
+    from app.services.analytics_service import AnalyticsService
+
+    logger.info(f"Computing missing analytics on-demand for file {file_id}")
+    success = AnalyticsService.compute_and_save_analytics(db, file_id)
+    if success:
+        analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+
+    return analytics
+
+
+def _get_transcript_segments(
+    db: Session, file_id: int, segment_limit: int | None, segment_offset: int
+) -> tuple[list[TranscriptSegment], int]:
+    """
+    Get transcript segments with pagination and compute total count.
+
+    Args:
+        db: Database session
+        file_id: File ID
+        segment_limit: Maximum number of segments to return
+        segment_offset: Offset for pagination
+
+    Returns:
+        Tuple of (list of transcript segments, total count)
+    """
+    from sqlalchemy import func
+    from sqlalchemy.orm import joinedload
+
+    total_segments = (
+        db.query(func.count(TranscriptSegment.id))
+        .filter(TranscriptSegment.media_file_id == file_id)
+        .scalar()
+    )
+
+    segment_query = (
+        db.query(TranscriptSegment)
+        .options(joinedload(TranscriptSegment.speaker))
+        .filter(TranscriptSegment.media_file_id == file_id)
+        .order_by(TranscriptSegment.start_time)
+    )
+
+    if segment_offset > 0:
+        segment_query = segment_query.offset(segment_offset)
+    if segment_limit is not None:
+        segment_query = segment_query.limit(segment_limit)
+
+    return segment_query.all(), total_segments
+
+
+def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -> None:
+    """
+    Add error categorization information to response for failed files.
+
+    Args:
+        response: MediaFileDetail response to update
+        db_file: MediaFile object
+    """
+    if db_file.status != FileStatus.ERROR or not hasattr(db_file, "last_error_message"):
+        return
+
+    from app.services.error_categorization_service import ErrorCategorizationService
+
+    error_info = ErrorCategorizationService.get_error_info(db_file.last_error_message)
+    response.error_category = error_info["category"]
+    response.error_suggestions = error_info["suggestions"]
+    response.is_retryable = error_info["is_retryable"]
+
+
+def _format_transcript_segments(
+    transcript_segments: list[TranscriptSegment], speakers: list[Speaker]
+) -> list[dict]:
+    """
+    Format transcript segments with speaker labels and timestamps.
+
+    Args:
+        transcript_segments: List of transcript segments
+        speakers: List of speakers for name mapping
+
+    Returns:
+        List of formatted segment dictionaries
+    """
+    speaker_mapping = {
+        speaker.name: FormattingService.format_speaker_name(speaker) for speaker in speakers
+    }
+
+    return [
+        FormattingService.format_transcript_segment(segment, speaker_mapping)
+        for segment in transcript_segments
+    ]
+
+
+def _build_media_file_response(
+    db_file: MediaFile,
+    tags: list[str],
+    collections: list[dict],
+    speakers: list[Speaker],
+    analytics: Analytics | None,
+    transcript_segments: list[TranscriptSegment],
+    total_segments: int,
+    segment_limit: int | None,
+    segment_offset: int,
+) -> MediaFileDetail:
+    """
+    Build the MediaFileDetail response with all formatted fields.
+
+    Args:
+        db_file: MediaFile object
+        tags: List of tag names
+        collections: List of collection dictionaries
+        speakers: List of speakers
+        analytics: Analytics object or None
+        transcript_segments: List of transcript segments
+        total_segments: Total segment count for pagination
+        segment_limit: Segment pagination limit
+        segment_offset: Segment pagination offset
+
+    Returns:
+        MediaFileDetail response object
+    """
+    response = MediaFileDetail.model_validate(db_file)
+    response.tags = tags
+    response.collections = collections
+    response.speakers = speakers
+
+    # Convert analytics to schema if it exists
+    if analytics:
+        from app.schemas.media import Analytics as AnalyticsSchema
+
+        response.analytics = AnalyticsSchema.model_validate(analytics)
+    else:
+        response.analytics = None
+
+    # Add formatted fields
+    response.formatted_duration = FormattingService.format_duration(db_file.duration)
+    response.formatted_upload_date = FormattingService.format_upload_date(db_file.upload_time)
+    response.formatted_file_age = FormattingService.format_file_age(db_file.upload_time)
+    response.formatted_file_size = FormattingService.format_bytes_detailed(db_file.file_size)
+    response.display_status = FormattingService.format_status(db_file.status)
+    response.status_badge_class = FormattingService.get_status_badge_class(db_file.status.value)
+    response.speaker_summary = FormattingService.create_speaker_summary(speakers)
+
+    # Add error info if applicable
+    _add_error_info_to_response(response, db_file)
+
+    # Format and add transcript segments
+    response.transcript_segments = _format_transcript_segments(transcript_segments, speakers)
+
+    # Add pagination metadata
+    response.total_segments = total_segments
+    response.segment_limit = segment_limit
+    response.segment_offset = segment_offset
+
+    return response
+
+
+def get_media_file_detail(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    segment_limit: int = None,
+    segment_offset: int = 0,
+) -> MediaFileDetail:
     """
     Get detailed media file information including tags, analytics, and formatted fields.
 
@@ -202,6 +381,8 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
         db: Database session
         file_uuid: File UUID
         current_user: Current user
+        segment_limit: Maximum number of transcript segments to return (None = all)
+        segment_offset: Offset for transcript segment pagination (default 0)
 
     Returns:
         MediaFileDetail object with all computed and formatted data
@@ -210,40 +391,23 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
         # Get the file by uuid and user id (admin can access any file)
         is_admin = current_user.role == "admin"
         db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for subsequent queries
+        file_id = db_file.id
 
         # Get related data
         tags = get_file_tags(db, file_id)
         collections = get_file_collections(db, file_id, current_user.id)
 
-        # Get speakers for speaker summary
+        # Get speakers and add computed status
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-
-        # Add computed status to speakers
         for speaker in speakers:
             SpeakerStatusService.add_computed_status(speaker)
 
-        # Get analytics - compute them if they don't exist
-        analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
+        # Get analytics (compute on-demand if needed)
+        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
 
-        # If analytics don't exist and file is completed, compute them now
-        if not analytics and db_file.status == "completed":
-            from app.services.analytics_service import AnalyticsService
-
-            logger.info(f"Computing missing analytics on-demand for file {file_id}")
-            success = AnalyticsService.compute_and_save_analytics(db, file_id)
-            if success:
-                analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
-
-        # Get transcript segments with speakers (sorted by start_time for consistent ordering)
-        from sqlalchemy.orm import joinedload
-
-        transcript_segments = (
-            db.query(TranscriptSegment)
-            .options(joinedload(TranscriptSegment.speaker))
-            .filter(TranscriptSegment.media_file_id == file_id)
-            .order_by(TranscriptSegment.start_time)
-            .all()
+        # Get transcript segments with pagination
+        transcript_segments, total_segments = _get_transcript_segments(
+            db, file_id, segment_limit, segment_offset
         )
 
         # Add computed status to speakers in segments
@@ -254,58 +418,23 @@ def get_media_file_detail(db: Session, file_uuid: str, current_user: User) -> Me
         # Set URLs
         set_file_urls(db_file)
 
-        # Prepare the response with formatted fields
-        response = MediaFileDetail.model_validate(db_file)
-        response.tags = tags
-        response.collections = collections
-        # Convert analytics to schema if it exists
-        if analytics:
-            from app.schemas.media import Analytics as AnalyticsSchema
+        # Build the response
+        response = _build_media_file_response(
+            db_file=db_file,
+            tags=tags,
+            collections=collections,
+            speakers=speakers,
+            analytics=analytics,
+            transcript_segments=transcript_segments,
+            total_segments=total_segments,
+            segment_limit=segment_limit,
+            segment_offset=segment_offset,
+        )
 
-            response.analytics = AnalyticsSchema.model_validate(analytics)
-        else:
-            response.analytics = None
-        response.speakers = speakers
-
-        # Add formatted fields using enhanced service
-        response.formatted_duration = FormattingService.format_duration(db_file.duration)
-        response.formatted_upload_date = FormattingService.format_upload_date(db_file.upload_time)
-        response.formatted_file_age = FormattingService.format_file_age(db_file.upload_time)
-        response.formatted_file_size = FormattingService.format_bytes_detailed(db_file.file_size)
-        response.display_status = FormattingService.format_status(db_file.status)
-        response.status_badge_class = FormattingService.get_status_badge_class(db_file.status.value)
-        response.speaker_summary = FormattingService.create_speaker_summary(speakers)
-
-        # Add error categorization for failed files
-        if db_file.status == FileStatus.ERROR and hasattr(db_file, "last_error_message"):
-            from app.services.error_categorization_service import ErrorCategorizationService
-
-            error_info = ErrorCategorizationService.get_error_info(db_file.last_error_message)
-            response.error_category = error_info["category"]
-            response.error_suggestions = error_info["suggestions"]
-            response.is_retryable = error_info["is_retryable"]
-
-        # Format transcript segments with speaker labels and timestamps
-        formatted_segments = []
-        speaker_mapping = {
-            speaker.name: FormattingService.format_speaker_name(speaker) for speaker in speakers
-        }
-
-        for segment in transcript_segments:
-            formatted_segment = FormattingService.format_transcript_segment(
-                segment, speaker_mapping
-            )
-            formatted_segments.append(formatted_segment)
-
-        response.transcript_segments = formatted_segments
-
-        # Ensure changes are committed
         db.commit()
-
         return response
 
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
     except Exception as e:
         logger.error(f"Error in get_media_file_detail: {e}")

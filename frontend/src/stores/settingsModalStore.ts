@@ -3,14 +3,16 @@ import { writable } from "svelte/store";
 export type SettingsSection =
   // User sections
   | "profile"
-  | "password"
+  | "language"
   | "recording"
   | "audio-extraction"
+  | "transcription"
   | "ai-prompts"
   | "llm-provider"
+  // System sections (visible to all users)
+  | "system-statistics"
   // Admin sections
   | "admin-users"
-  | "admin-statistics"
   | "admin-task-health"
   | "admin-settings";
 
@@ -25,13 +27,14 @@ const initialState: SettingsModalState = {
   activeSection: "profile",
   dirtyState: {
     profile: false,
-    password: false,
+    language: false,
     recording: false,
     "audio-extraction": false,
+    transcription: false,
     "ai-prompts": false,
     "llm-provider": false,
+    "system-statistics": false,
     "admin-users": false,
-    "admin-statistics": false,
     "admin-task-health": false,
     "admin-settings": false,
   },

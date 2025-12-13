@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
@@ -18,8 +19,13 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
+from app.schemas.admin import GarbageCleanupConfig
+from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import RetryConfig
+from app.schemas.admin import RetryConfigUpdate
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
+from app.services import system_settings_service
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -506,7 +512,8 @@ def get_admin_users(
     logger.info("Admin users list requested")
 
     try:
-        users = db.query(User).all()
+        # Sort alphabetically by full_name (case-insensitive) for consistent UI ordering
+        users = db.query(User).order_by(func.lower(User.full_name)).all()
         return users
     except Exception as e:
         logger.error(f"Error getting admin users: {e}")
@@ -543,16 +550,16 @@ def create_admin_user(
         ) from e
 
 
-@router.delete("/users/{user_id}", response_model=dict[str, str])
+@router.delete("/users/{user_uuid}", response_model=dict[str, str])
 def delete_admin_user(
-    user_id: int,
+    user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Delete a user and all their data (admin only).
 
     Args:
-        user_id: ID of the user to delete
+        user_uuid: UUID of the user to delete
         db: Database session
         current_user: Current admin user
 
@@ -562,13 +569,13 @@ def delete_admin_user(
     Raises:
         HTTPException: If user not found or deletion not allowed
     """
-    logger.info(f"Admin deleting user with ID: {user_id}")
+    from app.utils.uuid_helpers import get_user_by_uuid
+
+    logger.info(f"Admin deleting user with UUID: {user_uuid}")
 
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        user = get_user_by_uuid(db, user_uuid)
+        user_id = user.id  # Get internal ID for cascade operations
 
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
@@ -611,3 +618,89 @@ def delete_admin_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting user: {str(e)}",
         ) from e
+
+
+@router.get("/settings/retry-config", response_model=RetryConfig)
+async def get_retry_configuration(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetryConfig:
+    """
+    Get retry configuration settings (admin only).
+
+    Returns the current retry configuration including:
+    - max_retries: Maximum retry attempts (0 = unlimited)
+    - retry_limit_enabled: Whether limits are enforced
+    """
+    logger.info(f"Retry config requested by admin {current_user.email}")
+    config = system_settings_service.get_retry_config(db)
+    return RetryConfig(**config)
+
+
+@router.put("/settings/retry-config", response_model=RetryConfig)
+async def update_retry_configuration(
+    config: RetryConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetryConfig:
+    """
+    Update retry configuration settings (admin only).
+
+    Args:
+        config: New configuration values (only provided values are updated)
+
+    Returns:
+        Updated retry configuration
+    """
+    logger.info(f"Retry config update by admin {current_user.email}: {config}")
+
+    updated = system_settings_service.update_retry_config(
+        db,
+        max_retries=config.max_retries,
+        retry_limit_enabled=config.retry_limit_enabled,
+    )
+
+    return RetryConfig(**updated)
+
+
+@router.get("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
+async def get_garbage_cleanup_configuration(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> GarbageCleanupConfig:
+    """
+    Get garbage cleanup configuration settings (admin only).
+
+    Returns the current garbage cleanup configuration including:
+    - garbage_cleanup_enabled: Whether garbage cleanup is active
+    - max_word_length: Maximum word length threshold (words longer are replaced)
+    """
+    logger.info(f"Garbage cleanup config requested by admin {current_user.email}")
+    config = system_settings_service.get_garbage_cleanup_config(db)
+    return GarbageCleanupConfig(**config)
+
+
+@router.put("/settings/garbage-cleanup", response_model=GarbageCleanupConfig)
+async def update_garbage_cleanup_configuration(
+    config: GarbageCleanupConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> GarbageCleanupConfig:
+    """
+    Update garbage cleanup configuration settings (admin only).
+
+    Args:
+        config: New configuration values (only provided values are updated)
+
+    Returns:
+        Updated garbage cleanup configuration
+    """
+    logger.info(f"Garbage cleanup config update by admin {current_user.email}: {config}")
+
+    updated = system_settings_service.update_garbage_cleanup_config(
+        db,
+        garbage_cleanup_enabled=config.garbage_cleanup_enabled,
+        max_word_length=config.max_word_length,
+    )
+
+    return GarbageCleanupConfig(**updated)

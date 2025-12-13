@@ -3,6 +3,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
@@ -23,7 +24,7 @@
     if (Array.isArray(collections)) {
       collections = collections.map(collection => {
         if (collection && typeof collection === 'object') {
-          return { 
+          return {
             id: collection.id || `temp-${collection.name}`,
             name: collection.name || '',
             description: collection.description || ''
@@ -33,29 +34,29 @@
       });
     }
   }
-  
+
   /** @type {Array<{id: string, name: string, description?: string, media_count: number}>} */
   let allCollections = [];
   /** @type {string} */
   let newCollectionInput = '';
   /** @type {boolean} */
   let loading = false;
-  
+
   // Event dispatcher
   const dispatch = createEventDispatcher();
-  
+
   // Fetch all available collections
   async function fetchAllCollections() {
     try {
       const response = await axiosInstance.get('/api/collections/');
-      
+
       // Ensure all collections have valid IDs
-      const validCollections = (response.data || []).filter(collection => 
-        collection && typeof collection === 'object' && 
-        collection.id !== undefined && collection.id !== null && 
+      const validCollections = (response.data || []).filter(collection =>
+        collection && typeof collection === 'object' &&
+        collection.id !== undefined && collection.id !== null &&
         collection.name !== undefined && collection.name !== null
       );
-      
+
       allCollections = validCollections;
     } catch (err) {
       console.error('[CollectionsEditor] Error fetching collections:', err);
@@ -67,14 +68,14 @@
 
       // Show toast for critical errors
       if (err.response && err.response.status === 401) {
-        toastStore.error('Unauthorized: Please log in.');
+        toastStore.error($t('collections.unauthorizedLogin'));
       } else if (err.code === 'ERR_NETWORK') {
-        toastStore.error('Network error: Cannot connect to server');
+        toastStore.error($t('collections.networkError'));
       }
       // Silent fail for collection loading - not critical
     }
   }
-  
+
   // Add file to an existing collection
   async function addToCollection(collectionId) {
     loading = true;
@@ -84,23 +85,23 @@
         console.error(`[CollectionsEditor] Collection with ID ${collectionId} not found`);
         throw new Error('Collection not found');
       }
-      
+
       // Add file to collection
       const payload = { media_file_ids: [fileId] };
       const addUrl = `/api/collections/${collectionId}/media`;
       const response = await axiosInstance.post(addUrl, payload);
-      
+
       // Add collection to local list if not already present
       if (!collections.some(c => c.id === collectionToAdd.id)) {
         collections = [...collections, collectionToAdd];
         dispatch('collectionsUpdated', { collections });
-        toastStore.success(`Added to "${collectionToAdd.name}"`);
+        toastStore.success($t('collections.addedTo', { name: collectionToAdd.name }));
       }
     } catch (err) {
       console.error('[CollectionsEditor] Error adding to collection:', err);
 
       // Extract error message
-      let errorMessage = 'Failed to add to collection';
+      let errorMessage = $t('collections.failedToAdd');
       if (err?.response?.data?.detail) {
         errorMessage = err.response.data.detail;
       } else if (err?.message) {
@@ -112,7 +113,7 @@
       loading = false;
     }
   }
-  
+
   // Create a new collection or add to existing one
   async function createAndAddCollection() {
     if (!newCollectionInput.trim()) return;
@@ -156,9 +157,9 @@
       if (!collections.some(c => c.id === newCollection.id)) {
         collections = [...collections, newCollection];
         dispatch('collectionsUpdated', { collections });
-        toastStore.success(`Created collection "${newCollection.name}" and added file`);
+        toastStore.success($t('collections.createdAndAdded', { name: newCollection.name }));
       } else {
-        toastStore.success(`Created collection "${newCollection.name}"`);
+        toastStore.success($t('collections.created', { name: newCollection.name }));
       }
 
       newCollectionInput = '';
@@ -166,7 +167,7 @@
       console.error('[CollectionsEditor] Error with collection:', err);
 
       // Extract error message
-      let errorMessage = 'Failed to add to collection';
+      let errorMessage = $t('collections.failedToAdd');
       if (err?.response?.data?.detail) {
         errorMessage = err.response.data.detail;
       } else if (err?.message) {
@@ -179,7 +180,7 @@
       loading = false;
     }
   }
-  
+
   // Remove file from a collection
   async function removeFromCollection(collectionId) {
     loading = true;
@@ -189,27 +190,27 @@
         console.error(`[CollectionsEditor] Collection with ID ${collectionId} not found in collections list`);
         throw new Error('Collection not found');
       }
-      
+
       // Remove file from collection
       const deleteUrl = `/api/collections/${collectionId}/media`;
       const payload = { media_file_ids: [fileId] };
       await axiosInstance.delete(deleteUrl, { data: payload });
-      
+
       // Update the local collections array
-      const updatedCollections = collections.filter(c => 
+      const updatedCollections = collections.filter(c =>
         c.id !== undefined && c.id !== null && c.id !== collectionId
       );
-      
+
       if (updatedCollections.length !== collections.length) {
         collections = updatedCollections;
         dispatch('collectionsUpdated', { collections });
-        toastStore.success(`Removed from "${collectionToRemove.name}"`);
+        toastStore.success($t('collections.removedFrom', { name: collectionToRemove.name }));
       }
     } catch (err) {
       console.error('[CollectionsEditor] Error removing from collection:', err);
 
       // Extract error message
-      let errorMessage = 'Failed to remove from collection';
+      let errorMessage = $t('collections.failedToRemove');
       if (err?.response?.data?.detail) {
         errorMessage = err.response.data.detail;
       } else if (err?.message) {
@@ -221,7 +222,7 @@
       loading = false;
     }
   }
-  
+
   // Handle keydown event in the input field
   function handleInputKeydown(event) {
     if (event.key === 'Enter' && newCollectionInput.trim()) {
@@ -229,7 +230,7 @@
       createAndAddCollection();
     }
   }
-  
+
   let suggestedCollections = [];
   let dropdownCollections = [];
 
@@ -271,7 +272,7 @@
       name: collection.name,
       count: collection.media_count || 0
     }));
-  
+
   // Handle multiselect collection selection
   async function handleCollectionSelect(event) {
     const { id } = event.detail;
@@ -297,38 +298,38 @@
 <div class="collections-editor">
   <div class="collections-list">
     {#if collections.length === 0}
-      <span class="no-collections">No collections yet.</span>
+      <span class="no-collections">{$t('collections.noCollectionsYet')}</span>
     {/if}
     {#each collections.filter(c => c && c.id !== undefined) as collection (collection.id)}
       <span class="collection">
         {collection.name}
-        <button class="collection-remove" on:click={() => removeFromCollection(collection.id)} title="Remove from collection">×</button>
+        <button class="collection-remove" on:click={() => removeFromCollection(collection.id)} title={$t('collections.removeFromCollection')}>×</button>
       </span>
     {/each}
-    
+
     <div class="collection-input-container">
       <input
         type="text"
-        placeholder="Add collection..."
+        placeholder={$t('collections.addCollectionPlaceholder')}
         bind:value={newCollectionInput}
         on:keydown={handleInputKeydown}
         class="collection-input"
         disabled={loading}
-        title="Type a new collection name and press Enter or click Add to create and apply it to this file"
+        title={$t('collections.typeNewCollectionHint')}
       >
       {#if newCollectionInput.trim()}
-        <button 
+        <button
           class="collection-add-button"
           on:click={createAndAddCollection}
           disabled={loading}
-          title="Create and add the collection '{newCollectionInput.trim()}' to this file"
+          title={$t('collections.createAndAddHint', { collectionName: newCollectionInput.trim() })}
         >
-          Add
+          {$t('collections.add')}
         </button>
       {/if}
     </div>
   </div>
-  
+
   <!-- AI Suggestions Dropdown -->
   <AISuggestionsDropdown
     suggestions={filteredAISuggestions}
@@ -339,13 +340,13 @@
 
   {#if suggestedCollections.length > 0}
     <div class="suggested-collections">
-      <span class="suggested-label">Suggested:</span>
+      <span class="suggested-label">{$t('collections.suggested')}</span>
       {#each suggestedCollections.filter(c => c && c.id !== undefined) as collection (collection.id)}
         <button
           class="suggested-collection"
           on:click={() => addToCollection(collection.id)}
           disabled={loading}
-          title="Add to existing collection '{collection.name}'"
+          title={$t('collections.addToExistingHint', { collectionName: collection.name })}
         >
           {collection.name}
         </button>
@@ -355,11 +356,11 @@
 
   {#if dropdownCollections.length > 0}
     <div class="dropdown-section">
-      <span class="dropdown-label">Select from all collections:</span>
+      <span class="dropdown-label">{$t('collections.selectFromAllCollections')}</span>
       <SearchableMultiSelect
         options={dropdownCollections}
         selectedIds={[]}
-        placeholder="Add to collections from library..."
+        placeholder={$t('collections.addFromLibraryPlaceholder')}
         showCounts={true}
         on:select={handleCollectionSelect}
       />
@@ -373,14 +374,14 @@
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .collections-list {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
   }
-  
+
   .collection {
     background-color: rgba(59, 130, 246, 0.1);
     color: var(--primary-color);
@@ -391,7 +392,7 @@
     align-items: center;
     gap: 0.25rem;
   }
-  
+
   .collection-remove {
     background: none;
     border: none;
@@ -405,16 +406,16 @@
     width: 16px;
     height: 16px;
   }
-  
+
   .collection-remove:hover {
     color: var(--error-color);
   }
-  
+
   .collection-input-container {
     display: flex;
     align-items: center;
   }
-  
+
   .collection-input {
     background: transparent;
     border: none;
@@ -424,12 +425,12 @@
     width: 100px;
     color: var(--text-color);
   }
-  
+
   .collection-input:focus {
     border-bottom-color: var(--primary-color);
     outline: none;
   }
-  
+
   .collection-add-button {
     background-color: var(--primary-color);
     color: white;
@@ -440,12 +441,12 @@
     cursor: pointer;
     margin-left: 0.5rem;
   }
-  
+
   .collection-add-button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   .suggested-collections {
     display: flex;
     flex-wrap: wrap;
@@ -453,11 +454,11 @@
     align-items: center;
     font-size: 0.8rem;
   }
-  
+
   .suggested-label {
     color: var(--text-light);
   }
-  
+
   .suggested-collection {
     background: none;
     border: 1px dashed var(--border-color);
@@ -467,31 +468,31 @@
     cursor: pointer;
     color: var(--text-light);
   }
-  
+
   .suggested-collection:hover {
     border-color: var(--primary-color);
     color: var(--primary-color);
     background-color: rgba(59, 130, 246, 0.05);
   }
-  
+
   .suggested-collection:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
-  
+
   .no-collections {
     color: var(--text-secondary);
     font-size: 0.85rem;
     font-style: italic;
     padding: 0.5rem 0;
   }
-  
+
   /* Dark mode support */
   :global(.dark) .collection {
     background: rgba(59, 130, 246, 0.2);
     color: #93bbfc;
   }
-  
+
   :global(.dark) .suggested-collection:hover {
     background-color: rgba(59, 130, 246, 0.1);
   }

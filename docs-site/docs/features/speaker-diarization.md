@@ -179,17 +179,30 @@ Track identification confidence:
 - 🎯 **Auto-Matched**: Voice fingerprint match (greater than 85%)
 - ❓ **Unverified**: Default detection
 
-### Merge & Split
+### Merge & Split (Enhanced in v0.2.0)
 
-**Merge speakers**:
-- Combine incorrectly split speakers
-- Consolidate speaker profiles
-- Update all segments
+**Merge speakers** (New UI):
+- Visual speaker merge interface with segment preview
+- Select primary speaker and merge others into it
+- Automatic segment reassignment
+- Consolidate speaker profiles across files
+- Update all segments automatically
 
 **Split speakers**:
 - Separate incorrectly merged speakers
 - Re-assign segments
 - Create new profiles
+
+### Per-File Speaker Settings (New in v0.2.0)
+
+Configure speaker detection for each upload or reprocess:
+
+- **Upload dialog**: Set min/max speakers before transcription
+- **Reprocess dialog**: Adjust speaker range for re-transcription
+- **User preferences**: Save default settings in Settings → Transcription
+  - **Always prompt**: Show speaker settings on every upload
+  - **Use defaults**: Skip dialog, use system defaults (1-20)
+  - **Use custom**: Skip dialog, use your saved min/max values
 
 ## Performance
 

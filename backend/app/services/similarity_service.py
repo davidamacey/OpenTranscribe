@@ -16,7 +16,7 @@ from typing import Union
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+from torch.nn import functional as nn_functional
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class SimilarityService:
         embedding2 = embedding2.to(SimilarityService.device)
 
         # Use PyTorch's optimized cosine similarity
-        similarity = F.cosine_similarity(
+        similarity = nn_functional.cosine_similarity(
             embedding1.unsqueeze(0), embedding2.unsqueeze(0), dim=1
         ).item()
 
@@ -98,7 +98,7 @@ class SimilarityService:
         query_tensor = query_tensor.to(SimilarityService.device)
 
         # Compute all similarities at once using PyTorch's vectorized operations
-        similarities = F.cosine_similarity(
+        similarities = nn_functional.cosine_similarity(
             query_tensor.unsqueeze(0).expand(targets_matrix.size(0), -1), targets_matrix, dim=1
         )
 
@@ -230,7 +230,7 @@ class SimilarityService:
 
         # Compute pairwise cosine similarity using matrix operations
         # This is extremely efficient on GPU for large matrices
-        similarity_matrix = F.cosine_similarity(
+        similarity_matrix = nn_functional.cosine_similarity(
             tensor_embeddings.unsqueeze(1), tensor_embeddings.unsqueeze(0), dim=2
         )
 
@@ -279,7 +279,9 @@ class SimilarityService:
         candidates_tensor = candidates_tensor.to(SimilarityService.device)
 
         # Compute all similarities at once
-        similarities = F.cosine_similarity(query_tensor.unsqueeze(0), candidates_tensor, dim=1)
+        similarities = nn_functional.cosine_similarity(
+            query_tensor.unsqueeze(0), candidates_tensor, dim=1
+        )
 
         # Filter by threshold and get top-k
         valid_indices = torch.where(similarities >= threshold)[0]

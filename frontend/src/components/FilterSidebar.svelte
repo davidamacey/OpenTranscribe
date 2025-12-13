@@ -4,6 +4,8 @@
   import axiosInstance from '../lib/axios';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   // Type definitions for props and state
   /**
@@ -116,7 +118,7 @@
   // Reactive: Prepare dropdown speakers with proper format
   $: dropdownSpeakers = allSpeakers.map(speaker => ({
     id: speaker.id,
-    name: speaker.display_name || speaker.name,
+    name: translateSpeakerLabel(speaker.display_name || speaker.name),
     count: speaker.media_count || 0
   }));
 
@@ -467,48 +469,48 @@
 
 <div class="filter-sidebar">
   <div class="filter-header">
-    <h2>Filters</h2>
+    <h2>{$t('filter.title')}</h2>
     <div class="header-buttons">
       <button
         class="apply-button-compact"
         on:click={applyFilters}
-        title="Apply all selected filters to update the file list"
-      >Apply</button>
+        title={$t('filter.applyTooltip')}
+      >{$t('filter.apply')}</button>
       <button
         class="reset-button"
         on:click={resetFilters}
-        title="Clear all filters and show all files"
-      >Reset</button>
+        title={$t('filter.resetTooltip')}
+      >{$t('filter.reset')}</button>
     </div>
   </div>
 
   <div class="filter-section">
-    <h3>Search Files</h3>
+    <h3>{$t('filter.searchFiles')}</h3>
     <input
       type="text"
       bind:value={searchQuery}
-      placeholder="Search filenames and titles..."
+      placeholder={$t('filter.searchPlaceholder')}
       class="filter-input"
-      title="Search by file name or title - does not search transcript content"
+      title={$t('filter.searchTooltip')}
     />
-    <small class="input-help">Searches file names and titles only</small>
+    <small class="input-help">{$t('filter.searchHelp')}</small>
   </div>
 
   <div class="filter-section">
-    <h3>Tags</h3>
+    <h3>{$t('filter.tags')}</h3>
     {#if loadingTags}
-      <p class="loading-text">Loading tags...</p>
+      <p class="loading-text">{$t('filter.loadingTags')}</p>
     {:else if errorTags}
-      <p class="empty-text">No tags available yet</p>
+      <p class="empty-text">{$t('filter.noTagsAvailable')}</p>
     {:else if allTags.length === 0}
-      <p class="empty-text">No tags created yet</p>
+      <p class="empty-text">{$t('filter.noTagsCreated')}</p>
     {:else}
       <div class="tags-list">
         {#each allTags.slice(0, 6) as tag}
           <button
             class="tag-button {selectedTags.includes(tag.name) ? 'selected' : ''}"
             on:click={() => toggleTag(tag.name)}
-            title="Filter files tagged with '{tag.name}'. {tag.usage_count ? `Used in ${tag.usage_count} file${tag.usage_count > 1 ? 's' : ''}` : ''}"
+            title={$t('filter.tagTooltip', { tag: tag.name, count: tag.usage_count ? $t('filter.tagUsedInFiles', { count: tag.usage_count }) : '' })}
           >
             {tag.name}
             {#if tag.usage_count}
@@ -522,7 +524,7 @@
           <SearchableMultiSelect
             options={dropdownTags}
             selectedIds={selectedTagIds}
-            placeholder="Select tags to filter..."
+            placeholder={$t('filter.selectTagsPlaceholder')}
             maxHeight="300px"
             showCounts={true}
             on:select={handleTagSelect}
@@ -534,27 +536,27 @@
   </div>
 
   <div class="filter-section">
-    <h3>Collections</h3>
+    <h3>{$t('filter.collections')}</h3>
     <CollectionsFilter bind:selectedCollectionId={selectedCollectionId} bind:this={collectionsFilterRef} />
   </div>
 
   <div class="filter-section">
-    <h3>Speakers</h3>
+    <h3>{$t('filter.speakers')}</h3>
     {#if loadingSpeakers}
-      <p class="loading-text">Loading speakers...</p>
+      <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
-      <p class="empty-text">No speakers available yet</p>
+      <p class="empty-text">{$t('filter.noSpeakersAvailable')}</p>
     {:else if allSpeakers.length === 0}
-      <p class="empty-text">No speakers detected yet</p>
+      <p class="empty-text">{$t('filter.noSpeakersDetected')}</p>
     {:else}
       <div class="speakers-list">
         {#each allSpeakers.slice(0, 4) as speaker}
           <button
             class="speaker-button {selectedSpeakers.includes(speaker.display_name || speaker.name) ? 'selected' : ''}"
             on:click={() => toggleSpeaker(speaker.display_name || speaker.name)}
-            title="Filter files with speaker '{speaker.display_name || speaker.name}'. {speaker.media_count ? `Appears in ${speaker.media_count} file${speaker.media_count > 1 ? 's' : ''}` : ''}"
+            title={$t('filter.speakerTooltip', { speaker: translateSpeakerLabel(speaker.display_name || speaker.name), count: speaker.media_count ? $t('filter.speakerAppearsInFiles', { count: speaker.media_count }) : '' })}
           >
-            {speaker.display_name || speaker.name}
+            {translateSpeakerLabel(speaker.display_name || speaker.name)}
             {#if speaker.media_count}
               <span class="speaker-count">{speaker.media_count}</span>
             {/if}
@@ -566,7 +568,7 @@
           <SearchableMultiSelect
             options={dropdownSpeakers}
             selectedIds={selectedSpeakerIds}
-            placeholder="Select speakers to filter..."
+            placeholder={$t('filter.selectSpeakersPlaceholder')}
             maxHeight="300px"
             showCounts={true}
             on:select={handleSpeakerSelect}
@@ -578,28 +580,28 @@
   </div>
 
   <div class="filter-section">
-    <h3>Date Range</h3>
+    <h3>{$t('filter.dateRange')}</h3>
     <div class="date-inputs">
       <div class="date-group">
-        <label for="fromDate">From</label>
+        <label for="fromDate">{$t('common.from')}</label>
         <input
           type="date"
           id="fromDate"
           bind:value={fromDate}
           on:input={handleFromDateChange}
           class="filter-input"
-          title="Filter files uploaded on or after this date"
+          title={$t('filter.fromDateTooltip')}
         />
       </div>
       <div class="date-group">
-        <label for="toDate">To</label>
+        <label for="toDate">{$t('common.to')}</label>
         <input
           type="date"
           id="toDate"
           bind:value={toDate}
           on:input={handleToDateChange}
           class="filter-input"
-          title="Filter files uploaded on or before this date"
+          title={$t('filter.toDateTooltip')}
         />
       </div>
     </div>
@@ -611,12 +613,11 @@
     <button
       class="advanced-toggle-compact"
       on:click={toggleAdvancedFilters}
-      title="{showAdvancedFilters ? 'Hide' : 'Show'} advanced filtering options including transcript search, duration, file size, type, and status filters"
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toggle-icon {showAdvancedFilters ? 'rotated' : ''}">
         <polyline points="6 9 12 15 18 9"></polyline>
       </svg>
-      <span>Advanced Filters</span>
+      <span>{$t('filter.advancedFilters')}</span>
     </button>
     <hr class="divider-line" />
   </div>
@@ -626,28 +627,28 @@
     <div class="advanced-filters-content" transition:slide={{ duration: 300 }}>
       <!-- Transcript Content Search -->
       <div class="filter-section">
-        <h3>Search Transcript Content</h3>
+        <h3>{$t('filter.searchTranscript')}</h3>
         <input
           type="text"
-          placeholder="Search within spoken words..."
+          placeholder={$t('filter.searchTranscriptPlaceholder')}
           bind:value={transcriptSearch}
           class="filter-input"
-          title="Search for specific words or phrases within the transcript content of your files"
+          title={$t('filter.searchTranscriptTooltip')}
         />
-        <small class="input-help">Searches within the actual transcript text content</small>
+        <small class="input-help">{$t('filter.searchTranscriptHelp')}</small>
       </div>
 
       <!-- File Type -->
       <div class="filter-section">
-        <h3>File Type</h3>
+        <h3>{$t('filter.fileType')}</h3>
         <div class="file-type-list">
           {#each availableFileTypes as fileType}
             <button
               class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
               on:click={() => toggleFileType(fileType)}
-              title="Filter files by type: {fileType} files only. Click to toggle selection."
+              title={$t('filter.fileTypeTooltip', { type: fileType })}
             >
-              {fileType.charAt(0).toUpperCase() + fileType.slice(1)}
+              {fileType === 'audio' ? $t('common.audio') : $t('common.video')}
             </button>
           {/each}
         </div>
@@ -655,32 +656,32 @@
 
       <!-- Duration Range -->
       <div class="filter-section">
-        <h3>Duration</h3>
+        <h3>{$t('filter.duration')}</h3>
         <div class="range-inputs">
           <div class="range-group">
-            <label for="minDuration">Min (seconds)</label>
+            <label for="minDuration">{$t('filter.minSeconds')}</label>
             <input
               type="number"
               id="minDuration"
               min="0"
-              placeholder="Minimum"
+              placeholder={$t('common.minimum')}
               class="filter-input"
               bind:value={minDurationInput}
               on:input={handleMinDurationChange}
-              title="Filter files with duration greater than or equal to this value (in seconds)"
+              title={$t('filter.minDurationTooltip')}
             />
           </div>
           <div class="range-group">
-            <label for="maxDuration">Max (seconds)</label>
+            <label for="maxDuration">{$t('filter.maxSeconds')}</label>
             <input
               type="number"
               id="maxDuration"
               min="0"
-              placeholder="Maximum"
+              placeholder={$t('common.maximum')}
               class="filter-input"
               bind:value={maxDurationInput}
               on:input={handleMaxDurationChange}
-              title="Filter files with duration less than or equal to this value (in seconds)"
+              title={$t('filter.maxDurationTooltip')}
             />
           </div>
         </div>
@@ -688,32 +689,32 @@
 
       <!-- File Size Range -->
       <div class="filter-section">
-        <h3>File Size (MB)</h3>
+        <h3>{$t('filter.fileSize')}</h3>
         <div class="range-inputs">
           <div class="range-group">
-            <label for="minFileSize">Min (MB)</label>
+            <label for="minFileSize">{$t('filter.minMB')}</label>
             <input
               type="number"
               id="minFileSize"
               min="0"
-              placeholder="Minimum"
+              placeholder={$t('common.minimum')}
               class="filter-input"
               bind:value={minFileSizeInput}
               on:input={(e) => handleFileSizeChange('min', e)}
-              title="Filter files with size greater than or equal to this value (in megabytes)"
+              title={$t('filter.minFileSizeTooltip')}
             />
           </div>
           <div class="range-group">
-            <label for="maxFileSize">Max (MB)</label>
+            <label for="maxFileSize">{$t('filter.maxMB')}</label>
             <input
               type="number"
               id="maxFileSize"
               min="0"
-              placeholder="Maximum"
+              placeholder={$t('common.maximum')}
               class="filter-input"
               bind:value={maxFileSizeInput}
               on:input={(e) => handleFileSizeChange('max', e)}
-              title="Filter files with size less than or equal to this value (in megabytes)"
+              title={$t('filter.maxFileSizeTooltip')}
             />
           </div>
         </div>
@@ -721,15 +722,15 @@
 
       <!-- Processing Status -->
       <div class="filter-section">
-        <h3>Processing Status</h3>
+        <h3>{$t('filter.processingStatus')}</h3>
         <div class="status-list">
           {#each availableStatuses as status}
             <button
               class="status-button {selectedStatuses.includes(status) ? 'selected' : ''}"
               on:click={() => toggleStatus(status)}
-              title="Filter files by processing status: {status} files only. Click to toggle selection."
+              title={$t('filter.statusTooltip', { status })}
             >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
+              {status === 'pending' ? $t('common.pending') : status === 'processing' ? $t('common.processing') : status === 'completed' ? $t('common.completed') : status === 'error' ? $t('common.error') : status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
           {/each}
         </div>

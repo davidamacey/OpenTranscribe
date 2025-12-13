@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import { 
-    calculateScrollbarPositionBySegment, 
-    findCurrentSegment, 
+  import {
+    calculateScrollbarPositionBySegment,
+    findCurrentSegment,
     createThrottledPositionUpdate,
-    type TranscriptSegment 
+    type TranscriptSegment
   } from '$lib/utils/scrollbarCalculations';
+  import { t } from '$stores/locale';
 
   const dispatch = createEventDispatcher();
 
@@ -36,16 +37,16 @@
     if (transcriptSegments && transcriptSegments.length > 0 && currentTime >= 0) {
       const position = calculateScrollbarPositionBySegment(currentTime, transcriptSegments);
       throttledPositionUpdate(position);
-      
+
       // Show indicator only if we have valid content and position
       isVisible = position >= 0 && position <= 100;
-      
+
       // Update tooltip text
       if (showTooltip) {
         const currentSegment = findCurrentSegment(currentTime, transcriptSegments);
-        tooltipText = currentSegment 
-          ? `${formatTime(currentTime)} - ${currentSegment.text.substring(0, 40)}${currentSegment.text.length > 40 ? '...' : ''}\n\nClick to scroll to this position`
-          : `${formatTime(currentTime)}\n\nClick to scroll to this position`;
+        tooltipText = currentSegment
+          ? `${formatTime(currentTime)} - ${currentSegment.text.substring(0, 40)}${currentSegment.text.length > 40 ? '...' : ''}\n\n${$t('scrollbar.clickToScroll')}`
+          : `${formatTime(currentTime)}\n\n${$t('scrollbar.clickToScroll')}`;
       }
     } else {
       isVisible = false;
@@ -63,14 +64,14 @@
       // Get the actual height of the transcript-display container
       const rect = containerElement.getBoundingClientRect();
       containerHeight = rect.height || 600; // Use actual height or fallback to 600px
-      
+
       // Position the overlay to match the exact height of transcript-display
       overlayElement.style.setProperty('--transcript-height', `${containerHeight}px`);
-      
+
       // Detect scrollbar width dynamically
       if (containerElement instanceof HTMLElement) {
         const hasVerticalScrollbar = containerElement.scrollHeight > containerElement.clientHeight;
-        scrollbarWidth = hasVerticalScrollbar ? 
+        scrollbarWidth = hasVerticalScrollbar ?
           containerElement.offsetWidth - containerElement.clientWidth : 16; // Default scrollbar width
       } else {
         scrollbarWidth = 16; // Default scrollbar width for Element
@@ -80,7 +81,7 @@
 
   function formatTime(seconds: number): string {
     if (isNaN(seconds) || seconds < 0) return '0:00';
-    
+
     const minutes = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
@@ -88,12 +89,12 @@
 
   function handleIndicatorClick(event: MouseEvent) {
     if (disabled || !transcriptSegments.length) return;
-    
+
     event.preventDefault();
     event.stopPropagation();
-    
+
     // Dispatch event to scroll transcript to current playhead position
-    dispatch('seekToPlayhead', { 
+    dispatch('seekToPlayhead', {
       currentTime,
       targetSegment: findCurrentSegment(currentTime, transcriptSegments)
     });
@@ -101,7 +102,7 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (disabled) return;
-    
+
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       handleIndicatorClick(event as any);
@@ -143,19 +144,19 @@
 
 <!-- Scrollbar Indicator Overlay -->
 {#if isVisible && !disabled}
-  <div 
+  <div
     bind:this={overlayElement}
     class="scrollbar-indicator-overlay"
     aria-hidden="true"
   >
-    <div 
+    <div
       bind:this={indicatorElement}
       class="playhead-indicator"
       class:has-tooltip={showTooltip}
       style="top: {indicatorPosition}%;"
       role="button"
       tabindex="0"
-      aria-label="Current playhead position at {formatTime(currentTime)}. Press Enter to scroll to this position."
+      aria-label={$t('scrollbar.ariaLabel', { time: formatTime(currentTime) })}
       title={showTooltip ? tooltipText : ''}
       on:click={handleIndicatorClick}
       on:keydown={handleKeydown}
@@ -276,7 +277,7 @@
     border: 1px solid var(--border-color);
     z-index: 1000;
     line-height: 1.4;
-    
+
     /* Tooltip arrow */
     &::before {
       content: '';
@@ -313,7 +314,7 @@
       border: 1px solid;
       background: CanvasText;
     }
-    
+
     .indicator-tooltip {
       border: 2px solid;
       background: Canvas;
@@ -343,12 +344,12 @@
       height: 16px;
       /* Keep the same left: 50%, transform centering */
     }
-    
+
     .playhead-indicator::before {
       width: 16px;
       height: 6px;
     }
-    
+
     .indicator-tooltip {
       display: none; /* Hide tooltips on touch devices */
     }

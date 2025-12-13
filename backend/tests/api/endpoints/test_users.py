@@ -39,18 +39,25 @@ def test_update_current_user(client, user_token_headers):
     assert user_data["full_name"] == "Updated Name"
 
 
-def test_get_user_by_id(client, admin_token_headers, normal_user):
-    """Test getting user by ID (admin only)"""
-    response = client.get(f"/api/users/{normal_user.id}", headers=admin_token_headers)
+def test_get_user_by_uuid(client, admin_token_headers, normal_user):
+    """Test getting user by UUID (admin only)"""
+    response = client.get(f"/api/users/{normal_user.uuid}", headers=admin_token_headers)
     assert response.status_code == 200
     user_data = response.json()
     assert user_data["email"] == normal_user.email
-    assert user_data["id"] == normal_user.id
+    assert user_data["uuid"] == str(normal_user.uuid)
 
 
-def test_get_user_by_id_unauthorized(client, user_token_headers, admin_user):
-    """Test that regular users cannot get other users by ID"""
-    response = client.get(f"/api/users/{admin_user.id}", headers=user_token_headers)
+def test_get_user_by_uuid_invalid(client, admin_token_headers):
+    """Test getting user with invalid UUID format"""
+    response = client.get("/api/users/not-a-valid-uuid", headers=admin_token_headers)
+    assert response.status_code == 400
+    assert "Invalid UUID format" in response.json()["detail"]
+
+
+def test_get_user_by_uuid_unauthorized(client, user_token_headers, admin_user):
+    """Test that regular users cannot get other users by UUID"""
+    response = client.get(f"/api/users/{admin_user.uuid}", headers=user_token_headers)
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden
 
 
@@ -58,7 +65,7 @@ def test_update_user(client, admin_token_headers, normal_user):
     """Test updating a user (admin only)"""
     update_data = {"full_name": "Admin Updated User", "is_active": False}
     response = client.put(
-        f"/api/users/{normal_user.id}", headers=admin_token_headers, json=update_data
+        f"/api/users/{normal_user.uuid}", headers=admin_token_headers, json=update_data
     )
     assert response.status_code == 200
     user_data = response.json()
@@ -66,28 +73,47 @@ def test_update_user(client, admin_token_headers, normal_user):
     assert user_data["is_active"] is False
 
 
+def test_update_user_invalid_uuid(client, admin_token_headers):
+    """Test updating user with invalid UUID format"""
+    update_data = {"full_name": "Should Fail"}
+    response = client.put(
+        "/api/users/not-a-valid-uuid", headers=admin_token_headers, json=update_data
+    )
+    assert response.status_code == 400
+    assert "Invalid UUID format" in response.json()["detail"]
+
+
 def test_update_user_unauthorized(client, user_token_headers, admin_user):
     """Test that regular users cannot update other users"""
     update_data = {"full_name": "Should Fail"}
     response = client.put(
-        f"/api/users/{admin_user.id}", headers=user_token_headers, json=update_data
+        f"/api/users/{admin_user.uuid}", headers=user_token_headers, json=update_data
     )
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden
 
 
 def test_delete_user(client, admin_token_headers, normal_user, db_session):
     """Test deleting a user (admin only)"""
-    response = client.delete(f"/api/users/{normal_user.id}", headers=admin_token_headers)
+    user_uuid = str(normal_user.uuid)
+    user_id = normal_user.id
+    response = client.delete(f"/api/users/{user_uuid}", headers=admin_token_headers)
     assert response.status_code == 204
 
     # Verify the user is deleted from the database
     from app.models.user import User
 
-    deleted_user = db_session.query(User).filter(User.id == normal_user.id).first()
+    deleted_user = db_session.query(User).filter(User.id == user_id).first()
     assert deleted_user is None
+
+
+def test_delete_user_invalid_uuid(client, admin_token_headers):
+    """Test deleting user with invalid UUID format"""
+    response = client.delete("/api/users/not-a-valid-uuid", headers=admin_token_headers)
+    assert response.status_code == 400
+    assert "Invalid UUID format" in response.json()["detail"]
 
 
 def test_delete_user_unauthorized(client, user_token_headers, admin_user):
     """Test that regular users cannot delete other users"""
-    response = client.delete(f"/api/users/{admin_user.id}", headers=user_token_headers)
+    response = client.delete(f"/api/users/{admin_user.uuid}", headers=user_token_headers)
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden

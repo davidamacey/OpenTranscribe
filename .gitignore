@@ -4,6 +4,7 @@
 offline-package-build/
 OT_TEST/
 opentranscribe/
+reference_repos/
 
 # Environment variables
 .env

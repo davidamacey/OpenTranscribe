@@ -6,7 +6,7 @@ def test_login_success(client, normal_user):
     tokens = response.json()
     assert "access_token" in tokens
     assert "token_type" in tokens
-    assert tokens["token_type"] == "bearer"
+    assert tokens["token_type"] == "bearer"  # noqa: S105 - OAuth token type, not a password
 
 
 def test_login_invalid_credentials(client, normal_user):

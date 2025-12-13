@@ -2,6 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { fade } from 'svelte/transition';
   import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import { t } from '$stores/locale';
 
   export let isOpen = false;
   export let videoFiles: File[] = [];
@@ -69,13 +70,13 @@
         <!-- Header -->
         <div class="modal-header">
           <h2 id="bulk-extraction-modal-title" class="modal-title">
-            Large Video Files Detected
+            {$t('extraction.largeVideosDetected')}
           </h2>
           <button
             class="modal-close-button"
             on:click={handleCancel}
-            aria-label="Close dialog"
-            title="Close dialog"
+            aria-label={$t('extraction.closeDialog')}
+            title={$t('extraction.closeDialog')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -95,14 +96,13 @@
               </svg>
             </div>
             <p class="info-message">
-              <strong>{videoFiles.length} video file(s)</strong> exceed the size threshold.
-              Extract audio for faster upload and transcription?
+              {$t('extraction.bulkMessage', { count: videoFiles.length })}
             </p>
           </div>
 
           <!-- File List -->
           <div class="file-list-container">
-            <div class="file-list-header">Files to extract audio from:</div>
+            <div class="file-list-header">{$t('extraction.filesToExtract')}</div>
             <div class="file-list">
               {#each videoFiles as file}
                 <div class="file-item">
@@ -124,19 +124,19 @@
                 <line x1="12" y1="16" x2="12" y2="12"></line>
                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
               </svg>
-              <span>{regularFiles.length} other file(s) will upload normally</span>
+              <span>{$t('extraction.otherFilesNormal', { count: regularFiles.length })}</span>
             </div>
           {/if}
 
           <!-- Size comparison -->
           <div class="comparison-section">
             <div class="comparison-item">
-              <div class="comparison-label">Total Video Size</div>
+              <div class="comparison-label">{$t('extraction.totalVideoSize')}</div>
               <div class="comparison-value video">{formatFileSize(totalVideoSize)}</div>
             </div>
             <div class="comparison-arrow">→</div>
             <div class="comparison-item">
-              <div class="comparison-label">Estimated Audio Size</div>
+              <div class="comparison-label">{$t('extraction.estimatedAudioSize')}</div>
               <div class="comparison-value audio">{formatFileSize(estimatedTotalAudioSize)}</div>
             </div>
           </div>
@@ -145,7 +145,7 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            <span>~{compressionRatio}% smaller • Much faster upload</span>
+            <span>{$t('extraction.bulkSavingsBadge', { ratio: compressionRatio })}</span>
           </div>
         </div>
 
@@ -156,7 +156,7 @@
             on:click={handleUploadAllFull}
             type="button"
           >
-            Upload All as Video
+            {$t('extraction.uploadAllAsVideo')}
           </button>
           <button
             class="modal-button primary-button"
@@ -168,7 +168,7 @@
               <circle cx="6" cy="18" r="3"></circle>
               <circle cx="18" cy="16" r="3"></circle>
             </svg>
-            Extract Audio ({videoFiles.length})
+            {$t('extraction.extractAudioCount', { count: videoFiles.length })}
           </button>
         </div>
       </div>

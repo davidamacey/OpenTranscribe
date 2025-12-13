@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
+  import { t } from '$stores/locale';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
   export let selectedCollectionId: string | null = null;
@@ -68,15 +69,15 @@
 
 <div class="collections-filter">
   {#if loading}
-    <p class="loading-text">Loading collections...</p>
+    <p class="loading-text">{$t('collections.loadingCollections')}</p>
   {:else if collections.length === 0}
-    <p class="empty-text">No collections created yet</p>
+    <p class="empty-text">{$t('collections.noCollectionsCreated')}</p>
   {:else}
     <div class="dropdown-section">
       <SearchableMultiSelect
         options={dropdownCollections}
         selectedIds={selectedCollectionIds}
-        placeholder="Select collection to filter..."
+        placeholder={$t('collections.selectCollectionToFilter')}
         maxHeight="300px"
         showCounts={true}
         on:select={handleCollectionSelect}

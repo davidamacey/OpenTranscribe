@@ -4,6 +4,8 @@
   import axiosInstance from '$lib/axios';
   import SpeakerVerification from './SpeakerVerification.svelte';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
 
   export let fileId: string;  // UUID
   export let isVisible = false;
@@ -44,6 +46,7 @@
   let suggestions: any[] = [];
   let crossMediaOccurrences: any[] = [];
   let isLoading = false;
+  let errorMessage: string = '';
 
   onMount(() => {
     if (isVisible) {
@@ -70,7 +73,7 @@
 
     } catch (error) {
       console.error('Error loading speaker data:', error);
-      toastStore.error('Failed to load speaker data');
+      toastStore.error($t('speakerProfile.errorLoadingData'));
     } finally {
       isLoading = false;
     }
@@ -98,7 +101,7 @@
 
     } catch (error) {
       console.error('Error loading speaker suggestions:', error);
-      toastStore.error('Failed to load speaker suggestions');
+      toastStore.error($t('speakerProfile.errorLoadingSuggestions'));
     }
   }
 
@@ -110,7 +113,7 @@
   }>) {
     try {
       const { action, speaker_id, profile_id, profile_name } = event.detail;
-      
+
       const response = await axiosInstance.post(`/api/speakers/${speaker_id}/verify`, {
         action,
         profile_id,
@@ -122,13 +125,13 @@
         await loadData();
         dispatch('speakerVerified', response.data);
       }
-      
+
       showVerification = false;
       selectedSpeaker = null;
-      
+
     } catch (error) {
       console.error('Error verifying speaker:', error);
-      errorMessage = 'Failed to verify speaker';
+      errorMessage = $t('speakerProfile.errorVerifyingSpeaker');
     }
   }
 
@@ -149,7 +152,7 @@
   }
 
   function getStatusText(speaker: Speaker): string {
-    return speaker.status_text || 'Needs identification';
+    return speaker.status_text || $t('speakerProfile.needsIdentification');
   }
 </script>
 
@@ -158,39 +161,39 @@
     {#if isLoading}
       <div class="loading-state">
         <div class="loading-spinner"></div>
-        <p>Loading speaker data...</p>
+        <p>{$t('speakerProfile.loadingData')}</p>
       </div>
     {:else if errorMessage}
       <div class="error-state">
         <p class="error-message">{errorMessage}</p>
         <button on:click={loadData} class="retry-button">
-          Retry
+          {$t('speakerProfile.retry')}
         </button>
       </div>
     {:else}
       <div class="manager-header">
-        <h3 class="manager-title">Speaker Identification</h3>
+        <h3 class="manager-title">{$t('speakerProfile.title')}</h3>
         <p class="manager-subtitle">
-          Verify speaker identities and assign profiles
+          {$t('speakerProfile.subtitle')}
         </p>
       </div>
 
       {#if speakers.length === 0}
         <div class="empty-state">
-          <p>No speakers detected in this media file.</p>
+          <p>{$t('speakerProfile.noSpeakersDetected')}</p>
         </div>
       {:else}
         <div class="speakers-grid">
           {#each speakers as speaker}
             {@const status = getSpeakerStatus(speaker)}
             {#if !speaker.verified || !speaker.profile}
-              <button 
+              <button
                 class="speaker-card {status} clickable"
                 on:click={() => handleSpeakerClick(speaker)}
               >
                 <div class="speaker-info">
                   <div class="speaker-header">
-                    <span class="speaker-name">{speaker.display_name || speaker.name}</span>
+                    <span class="speaker-name">{translateSpeakerLabel(speaker.display_name || speaker.name)}</span>
                     <div class="speaker-status" style="color: {getStatusColor(speaker)}">
                       {#if status === 'verified'}
                         ✓
@@ -205,16 +208,16 @@
                       {/if}
                     </div>
                   </div>
-                  
+
                   <p class="speaker-description">
                     {getStatusText(speaker)}
                   </p>
-                  
+
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
                       <div class="confidence-bar">
-                        <div 
-                          class="confidence-fill" 
+                        <div
+                          class="confidence-fill"
                           style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
@@ -222,10 +225,10 @@
                     </div>
                   {/if}
                 </div>
-                
+
                 <div class="speaker-action">
                   <span class="verify-text">
-                    Click to Verify Speaker
+                    {$t('speakerProfile.clickToVerify')}
                   </span>
                 </div>
               </button>
@@ -236,21 +239,21 @@
               >
                 <div class="speaker-info">
                   <div class="speaker-header">
-                    <span class="speaker-name">{speaker.display_name || speaker.name}</span>
+                    <span class="speaker-name">{translateSpeakerLabel(speaker.display_name || speaker.name)}</span>
                     <div class="speaker-status" style="color: {getStatusColor(speaker)}">
                       ✓
                     </div>
                   </div>
-                  
+
                   <p class="speaker-description">
                     {getStatusText(speaker)}
                   </p>
-                  
+
                   {#if speaker.confidence}
                     <div class="confidence-indicator">
                       <div class="confidence-bar">
-                        <div 
-                          class="confidence-fill" 
+                        <div
+                          class="confidence-fill"
                           style="width: {speaker.confidence * 100}%; background-color: {getStatusColor(speaker)}"
                         ></div>
                       </div>
@@ -261,7 +264,7 @@
 
                 <div class="speaker-action">
                   <span class="verify-text">
-                    Click to View Profile Details
+                    {$t('speakerProfile.clickToViewDetails')}
                   </span>
                 </div>
               </button>
@@ -271,15 +274,15 @@
 
         {#if speakerProfiles.length > 0}
           <div class="profiles-section">
-            <h4 class="section-title">Your Speaker Profiles</h4>
+            <h4 class="section-title">{$t('speakerProfile.yourProfiles')}</h4>
             <div class="profiles-grid">
               {#each speakerProfiles as profile}
                 <div class="profile-card">
                   <div class="profile-info">
                     <span class="profile-name">{profile.name}</span>
                     <span class="profile-stats">
-                      {profile.instance_count} instance{profile.instance_count !== 1 ? 's' : ''} 
-                      • {profile.media_count} file{profile.media_count !== 1 ? 's' : ''}
+                      {profile.instance_count} {profile.instance_count !== 1 ? $t('speakerProfile.instances') : $t('speakerProfile.instance')}
+                      • {profile.media_count} {profile.media_count !== 1 ? $t('speakerProfile.files') : $t('speakerProfile.file')}
                     </span>
                   </div>
                 </div>
@@ -294,7 +297,7 @@
 
 {#if showVerification && selectedSpeaker}
   <div class="verification-overlay" transition:fade>
-    <SpeakerVerification 
+    <SpeakerVerification
       speaker={selectedSpeaker}
       {suggestions}
       {crossMediaOccurrences}

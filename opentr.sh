@@ -74,7 +74,7 @@ detect_and_configure_hardware() {
   export COMPUTE_TYPE="auto"
   export USE_GPU="auto"
   export DOCKER_RUNTIME=""
-  export BACKEND_DOCKERFILE="Dockerfile.multiplatform"
+  export BACKEND_DOCKERFILE="Dockerfile.prod"
   export BUILD_ENV="development"
 
   # Check for NVIDIA GPU

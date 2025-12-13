@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
+  import { t } from '$stores/locale';
 
   export let suggestions: Array<{name: string, confidence: number, rationale?: string}> = [];
   export let type: 'tag' | 'collection' = 'tag';
@@ -63,7 +64,7 @@
   }
 
   $: hasSuggestions = suggestions && suggestions.length > 0;
-  $: suggestionLabel = type === 'tag' ? 'Tags' : 'Collections';
+  $: suggestionLabel = type === 'tag' ? $t('ai.tags') : $t('ai.collections');
 </script>
 
 {#if hasSuggestions}
@@ -78,7 +79,7 @@
           <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
           <path d="M2 17l10 5 10-5M2 12l10 5 10-5"></path>
         </svg>
-        AI Suggested {suggestionLabel}
+        {$t('ai.suggestedLabel', { type: suggestionLabel })}
       </span>
       <span class="suggestion-count">{suggestions.length}</span>
       <svg
@@ -102,21 +103,21 @@
         {#if editingSuggestion}
           <div class="edit-modal" transition:slide={{ duration: 200 }}>
             <div class="edit-header">
-              <h4>Edit {type === 'tag' ? 'Tag' : 'Collection'} Name</h4>
+              <h4>{type === 'tag' ? $t('ai.editTagName') : $t('ai.editCollectionName')}</h4>
             </div>
             <div class="edit-body">
               <input
                 type="text"
                 bind:value={editedName}
                 on:keydown={handleKeydown}
-                placeholder="Enter name..."
+                placeholder={$t('ai.enterNamePlaceholder')}
                 class="edit-input"
               />
             </div>
             <div class="edit-actions">
-              <button class="btn-cancel" on:click={cancelEdit}>Cancel</button>
+              <button class="btn-cancel" on:click={cancelEdit}>{$t('ai.cancel')}</button>
               <button class="btn-save" on:click={saveEdit} disabled={!editedName.trim()}>
-                Save & Add
+                {$t('ai.saveAndAdd')}
               </button>
             </div>
           </div>
@@ -136,7 +137,7 @@
                   class="chip-add"
                   on:click={() => handleAccept(suggestion)}
                   disabled={loading}
-                  title="Add as-is"
+                  title={$t('ai.addAsIs')}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -148,7 +149,7 @@
                   class="chip-edit"
                   on:click={() => startEdit(suggestion)}
                   disabled={loading}
-                  title="Edit name before adding"
+                  title={$t('ai.editBeforeAdding')}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>

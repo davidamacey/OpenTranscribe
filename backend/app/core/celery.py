@@ -1,9 +1,28 @@
-from celery import Celery
-from celery.schedules import crontab
-from celery.signals import task_postrun
-from celery.signals import worker_process_init
+# PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
+# Patch torch.load to default to weights_only=False for trusted HuggingFace models
+# This must be at the TOP of celery.py because Celery's include= imports task modules
+# which import pyannote/whisperx that cache torch.load at import time
+import torch
 
-from app.core.config import settings
+_original_torch_load = torch.load
+
+
+def _patched_torch_load(*args, **kwargs):
+    # Handle both missing weights_only AND weights_only=None (which PyTorch 2.8 treats as True)
+    if kwargs.get("weights_only") is None:
+        kwargs["weights_only"] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _patched_torch_load
+
+# Imports must come after torch.load patch to prevent caching issues
+from celery import Celery  # noqa: E402
+from celery.schedules import crontab  # noqa: E402
+from celery.signals import task_postrun  # noqa: E402
+from celery.signals import worker_process_init  # noqa: E402
+
+from app.core.config import settings  # noqa: E402
 
 # Initialize Celery
 celery_app = Celery(

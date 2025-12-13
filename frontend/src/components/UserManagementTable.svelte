@@ -2,7 +2,9 @@
   import { onMount } from 'svelte';
   import axiosInstance from '../lib/axios';
   import { user } from '../stores/auth';
+  import { toastStore } from '../stores/toast';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import { t } from '$stores/locale';
 
   /**
    * @typedef {Object} User
@@ -20,12 +22,6 @@
 
   /** @type {boolean} */
   export let loading = false;
-
-  /** @type {string|null} */
-  export let error = null;
-
-  // Reference error to suppress warning (will be tree-shaken in production)
-  $: { error; }
 
   /** @type {Function} */
   export let onRefresh = () => {};
@@ -52,6 +48,16 @@
   /** @type {(() => void) | null} */
   let confirmCallback = null;
 
+  // Password reset modal state
+  let showPasswordResetModal = false;
+  /** @type {User|null} */
+  let passwordResetUser = null;
+  let resetPassword = '';
+  let confirmResetPassword = '';
+  let passwordResetLoading = false;
+  let showResetPassword = false;
+  let showConfirmResetPassword = false;
+
   /** @type {boolean} */
   let showAddUserForm = false;
 
@@ -70,12 +76,6 @@
   } else {
     currentUserId = null;
   }
-
-  /** @type {string|null} */
-  let successMessage = null;
-
-  /** @type {string|null} */
-  let errorMessage = null;
 
   // Initialize component
   onMount(() => {
@@ -103,14 +103,14 @@
    */
   async function createUser() {
     if (!newUsername || !newEmail || !newPassword) {
-      errorMessage = 'Please fill out all required fields';
+      toastStore.error($t('userManagement.fillAllFields'));
       return;
     }
 
     try {
       // The backend expects full_name as a required field
       // Using username as the full_name since that's what we collect
-      const response = await axiosInstance.post('/api/admin/users', {
+      await axiosInstance.post('/api/admin/users', {
         email: newEmail,
         password: newPassword,
         full_name: newUsername, // Required field
@@ -119,6 +119,9 @@
         is_superuser: newRole === 'admin' // Set superuser based on role
       });
 
+      // Capture name for toast before resetting
+      const createdUserName = newUsername || newEmail;
+
       // Add new user to the list and reset form
       newUsername = '';
       newEmail = '';
@@ -126,13 +129,14 @@
       newRole = 'user';
       showAddUserForm = false;
 
-      successMessage = 'User created successfully';
+      toastStore.success($t('userManagement.userCreatedSuccess', { name: createdUserName }));
 
       // Refresh the user list
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to create user';
+      const message = err instanceof Error ? err.message : $t('userManagement.createUserFailed');
+      toastStore.error(message);
     }
   }
 
@@ -174,8 +178,8 @@
    */
   async function deleteUser(userId) {
     showConfirmation(
-      'Delete User',
-      'Are you sure you want to delete this user? This action cannot be undone.',
+      $t('userManagement.deleteUser'),
+      $t('userManagement.deleteUserConfirm'),
       () => executeDeleteUser(userId)
     );
   }
@@ -187,13 +191,14 @@
   async function executeDeleteUser(userId) {
     try {
       await axiosInstance.delete(`/api/users/${userId}`);
-      successMessage = 'User deleted successfully';
+      toastStore.success($t('userManagement.userDeletedSuccess'));
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error deleting user:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to delete user';
+      const message = err instanceof Error ? err.message : $t('userManagement.deleteUserFailed');
+      toastStore.error(message);
     }
   }
 
@@ -205,13 +210,14 @@
   async function updateUserRole(userId, role) {
     try {
       await axiosInstance.put(`/api/users/${userId}`, { role });
-      successMessage = `User role updated to ${role}`;
+      toastStore.success($t('userManagement.userRoleUpdated', { role }));
 
       // Refresh user list
       onRefresh();
     } catch (err) {
       console.error('Error updating user role:', err);
-      errorMessage = err instanceof Error ? err.message : 'Failed to update user role';
+      const message = err instanceof Error ? err.message : $t('userManagement.updateRoleFailed');
+      toastStore.error(message);
     }
   }
 
@@ -223,6 +229,72 @@
   function handleUserRoleChange(userId, e) {
     if (e.target && 'value' in e.target) {
       updateUserRole(userId, /** @type {HTMLSelectElement} */ (e.target).value);
+    }
+  }
+
+  /**
+   * Open password reset modal for a user
+   * @param {User} userToReset
+   */
+  function openPasswordResetModal(userToReset) {
+    passwordResetUser = userToReset;
+    resetPassword = '';
+    confirmResetPassword = '';
+    showResetPassword = false;
+    showConfirmResetPassword = false;
+    showPasswordResetModal = true;
+  }
+
+  /**
+   * Close password reset modal
+   */
+  function closePasswordResetModal() {
+    showPasswordResetModal = false;
+    passwordResetUser = null;
+    resetPassword = '';
+    confirmResetPassword = '';
+    showResetPassword = false;
+    showConfirmResetPassword = false;
+  }
+
+  /**
+   * Reset user password
+   */
+  async function executePasswordReset() {
+    if (!passwordResetUser) return;
+
+    // Validation
+    if (!resetPassword || !confirmResetPassword) {
+      toastStore.error($t('userManagement.fillBothPasswordFields'));
+      return;
+    }
+
+    if (resetPassword !== confirmResetPassword) {
+      toastStore.error($t('userManagement.passwordsDoNotMatch'));
+      return;
+    }
+
+    if (resetPassword.length < 8) {
+      toastStore.error($t('userManagement.passwordMinLength'));
+      return;
+    }
+
+    passwordResetLoading = true;
+
+    try {
+      await axiosInstance.put(`/api/users/${passwordResetUser.id}`, {
+        password: resetPassword
+      });
+
+      const userName = passwordResetUser.full_name || passwordResetUser.email;
+      toastStore.success($t('userManagement.passwordResetSuccess', { userName }));
+      closePasswordResetModal();
+    } catch (err) {
+      console.error('Error resetting password:', err);
+      const message = err instanceof Error ? err.message : $t('userManagement.passwordResetFailed');
+      toastStore.error(message);
+    } finally {
+      passwordResetLoading = false;
     }
   }
 
@@ -243,7 +315,7 @@
    * @returns {string}
    */
   function formatDate(dateString) {
-    if (!dateString) return 'N/A';
+    if (!dateString) return $t('userManagement.notAvailable');
 
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -253,14 +325,6 @@
       hour: '2-digit',
       minute: '2-digit'
     });
-  }
-
-  /**
-   * Clear any messages
-   */
-  function clearMessages() {
-    successMessage = null;
-    errorMessage = null;
   }
 
   /**
@@ -285,125 +349,111 @@
 </script>
 
 <div class="user-management">
-  {#if errorMessage}
-    <div class="alert alert-error">
-      <p>{errorMessage}</p>
-      <button on:click={clearMessages}>×</button>
-    </div>
-  {/if}
-
-  {#if successMessage}
-    <div class="alert alert-success">
-      <p>{successMessage}</p>
-      <button on:click={clearMessages}>×</button>
-    </div>
-  {/if}
-
   <div class="table-controls">
     <div class="search-container">
       <input
         type="text"
-        placeholder="Search users by name or email..."
+        placeholder={$t('userManagement.searchPlaceholder')}
         on:input={handleSearchInput}
         value={searchTerm}
-        title="Search users by name or email"
+        title={$t('userManagement.searchTitle')}
       />
     </div>
 
     <button
       on:click={toggleAddUserForm}
       class="add-button"
-      title="{showAddUserForm ? 'Cancel adding a new user' : 'Create a new user account'}"
+      title={showAddUserForm ? $t('userManagement.cancelAddUser') : $t('userManagement.createNewUser')}
     >
-      {showAddUserForm ? 'Cancel' : 'Add User'}
+      {showAddUserForm ? $t('common.cancel') : $t('userManagement.addUser')}
     </button>
   </div>
 
   {#if showAddUserForm}
     <div class="add-user-form">
-      <h3>Add New User</h3>
+      <h3>{$t('userManagement.addNewUser')}</h3>
       <div class="form-group">
-        <label for="username">Full Name</label>
+        <label for="username">{$t('userManagement.fullName')}</label>
         <input
           type="text"
           id="username"
           bind:value={newUsername}
-          placeholder="Full Name"
+          placeholder={$t('userManagement.fullName')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="email">Email</label>
+        <label for="email">{$t('userManagement.email')}</label>
         <input
           type="email"
           id="email"
           bind:value={newEmail}
-          placeholder="Email"
+          placeholder={$t('userManagement.email')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password">{$t('userManagement.password')}</label>
         <input
           type="password"
           id="password"
           bind:value={newPassword}
-          placeholder="Password"
+          placeholder={$t('userManagement.password')}
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="role">Role</label>
+        <label for="role">{$t('userManagement.role')}</label>
         <select id="role" bind:value={newRole}>
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">{$t('userManagement.roleUser')}</option>
+          <option value="admin">{$t('userManagement.roleAdmin')}</option>
         </select>
       </div>
 
       <button
         on:click={createUser}
         class="create-button"
-        title="Create the new user account with the provided information"
-      >Create User</button>
+        title={$t('userManagement.createUserTitle')}
+      >{$t('userManagement.createUser')}</button>
     </div>
   {/if}
 
   {#if loading}
     <div class="loading-state">
-      <p>Loading users...</p>
+      <p>{$t('userManagement.loadingUsers')}</p>
     </div>
   {:else if !users || users.length === 0}
     <div class="empty-state">
-      <p>No users found.</p>
+      <p>{$t('userManagement.noUsersFound')}</p>
     </div>
   {:else}
     <table class="users-table user-management-table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th>Email</th>
-          <th>Role</th>
-          <th>Created</th>
-          <th>Actions</th>
+          <th>{$t('userManagement.name')}</th>
+          <th>{$t('userManagement.email')}</th>
+          <th>{$t('userManagement.role')}</th>
+          <th>{$t('userManagement.created')}</th>
+          <th>{$t('userManagement.actions')}</th>
         </tr>
       </thead>
       <tbody>
         {#each filteredUsers as currentUser (currentUser.id)}
           <tr>
-            <td>{currentUser.full_name || 'N/A'}</td>
+            <td>{currentUser.full_name || $t('userManagement.notAvailable')}</td>
             <td>{currentUser.email}</td>
             <td>
               {#if currentUser.id !== currentUserId}
                 <select
                   value={currentUser.role}
                   on:change={(e) => handleUserRoleChange(currentUser.id, e)}
-                  title="Change the role for {currentUser.full_name || currentUser.email}"
+                  title={$t('userManagement.changeRoleFor', { name: currentUser.full_name || currentUser.email })}
                 >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  <option value="user">{$t('userManagement.roleUser')}</option>
+                  <option value="admin">{$t('userManagement.roleAdmin')}</option>
                 </select>
               {:else}
                 <span class="current-role">{currentUser.role}</span>
@@ -414,21 +464,42 @@
               <div class="table-actions">
                 {#if currentUser.id !== currentUserId}
                   <button
-                    class="recover-button"
-                    on:click={() => onUserRecovery(currentUser.id)}
-                    title="Recover stuck files for {currentUser.full_name || currentUser.email}"
+                    class="icon-button reset-password-button"
+                    on:click={() => openPasswordResetModal(currentUser)}
+                    title={$t('userManagement.resetPasswordFor', { name: currentUser.full_name || currentUser.email })}
                   >
-                    Recover Files
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
                   </button>
                   <button
-                    class="delete-button"
-                    on:click={() => deleteUser(currentUser.id)}
-                    title="Permanently delete {currentUser.full_name || currentUser.email}'s account"
+                    class="icon-button recover-button"
+                    on:click={() => onUserRecovery(currentUser.id)}
+                    title={$t('userManagement.recoverFilesFor', { name: currentUser.full_name || currentUser.email })}
                   >
-                    Delete
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                      <path d="M3 3v5h5"/>
+                      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                      <path d="M16 16h5v5"/>
+                    </svg>
+                  </button>
+                  <button
+                    class="icon-button delete-button"
+                    on:click={() => deleteUser(currentUser.id)}
+                    title={$t('userManagement.deleteAccount', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 6h18"/>
+                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                      <line x1="10" x2="10" y1="11" y2="17"/>
+                      <line x1="14" x2="14" y1="11" y2="17"/>
+                    </svg>
                   </button>
                 {:else}
-                  <span class="self-user">Current User</span>
+                  <span class="self-user">{$t('userManagement.currentUser')}</span>
                 {/if}
               </div>
             </td>
@@ -444,14 +515,131 @@
   bind:isOpen={showConfirmModal}
   title={confirmModalTitle}
   message={confirmModalMessage}
-  confirmText="Delete"
-  cancelText="Cancel"
+  confirmText={$t('common.delete')}
+  cancelText={$t('common.cancel')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"
   on:confirm={handleConfirmModalConfirm}
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
 />
+
+<!-- Password Reset Modal -->
+{#if showPasswordResetModal && passwordResetUser}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="password-reset-modal-backdrop" on:click={closePasswordResetModal} role="presentation" on:keydown={(e) => e.key === 'Escape' && closePasswordResetModal()}>
+    <div class="password-reset-modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="password-reset-title" tabindex="0">
+      <button class="modal-close-btn" on:click={closePasswordResetModal} aria-label={$t('common.close')} title={$t('common.close')}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <h3 id="password-reset-title" class="modal-title">{$t('userManagement.resetPassword')}</h3>
+      <p class="modal-description">
+        {$t('userManagement.setNewPasswordFor', { name: passwordResetUser.full_name || passwordResetUser.email })}
+      </p>
+
+      <form on:submit|preventDefault={executePasswordReset} class="password-reset-form">
+        <div class="form-group">
+          <div class="password-header">
+            <label for="reset-password">{$t('userManagement.newPassword')}</label>
+            <button
+              type="button"
+              class="toggle-password"
+              on:click={() => showResetPassword = !showResetPassword}
+              tabindex="-1"
+              aria-label={showResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            >
+              {#if showResetPassword}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 18-.722-3.25"/>
+                  <path d="m2 2 20 20"/>
+                  <path d="m9 9-.637 3.181"/>
+                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                  <path d="m18.147 8.476.853 3.524"/>
+                </svg>
+              {/if}
+            </button>
+          </div>
+          <input
+            type={showResetPassword ? 'text' : 'password'}
+            id="reset-password"
+            class="form-control"
+            bind:value={resetPassword}
+            placeholder={$t('userManagement.enterNewPassword')}
+            required
+            minlength="8"
+          />
+          <small class="form-text">{$t('userManagement.minimumCharacters')}</small>
+        </div>
+
+        <div class="form-group">
+          <div class="password-header">
+            <label for="confirm-reset-password">{$t('userManagement.confirmPassword')}</label>
+            <button
+              type="button"
+              class="toggle-password"
+              on:click={() => showConfirmResetPassword = !showConfirmResetPassword}
+              tabindex="-1"
+              aria-label={showConfirmResetPassword ? $t('auth.hidePassword') : $t('auth.showPassword')}
+            >
+              {#if showConfirmResetPassword}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m15 18-.722-3.25"/>
+                  <path d="m2 2 20 20"/>
+                  <path d="m9 9-.637 3.181"/>
+                  <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                  <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                  <path d="m18.147 8.476.853 3.524"/>
+                </svg>
+              {/if}
+            </button>
+          </div>
+          <input
+            type={showConfirmResetPassword ? 'text' : 'password'}
+            id="confirm-reset-password"
+            class="form-control"
+            bind:value={confirmResetPassword}
+            placeholder={$t('userManagement.confirmNewPassword')}
+            required
+            minlength="8"
+          />
+        </div>
+
+        <div class="modal-actions">
+          <button
+            type="button"
+            class="btn-cancel"
+            on:click={closePasswordResetModal}
+            disabled={passwordResetLoading}
+          >
+            {$t('common.cancel')}
+          </button>
+          <button
+            type="submit"
+            class="btn-confirm"
+            disabled={passwordResetLoading || !resetPassword || !confirmResetPassword}
+          >
+            {passwordResetLoading ? $t('userManagement.resetting') : $t('userManagement.resetPasswordButton')}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
 
 <style>
   .user-management {
@@ -591,70 +779,79 @@
 
   .table-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.375rem;
+    align-items: center;
   }
 
+  /* Base icon button styles */
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .icon-button svg {
+    flex-shrink: 0;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Delete button - red */
   .delete-button {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .delete-button:hover:not(:disabled) {
     background-color: #ef4444;
     color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-  }
-
-  .delete-button:hover:not(:disabled),
-  .delete-button:focus:not(:disabled) {
-    background-color: #d32f2f;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
-    text-decoration: none;
+    transform: scale(1.05);
   }
 
   .delete-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(0.95);
   }
 
-  .delete-button:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
-  }
-
+  /* Recover button - green */
   .recover-button {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+  }
+
+  .recover-button:hover:not(:disabled) {
     background-color: #10b981;
     color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-    margin-right: 0.5rem;
-  }
-
-  .recover-button:hover:not(:disabled),
-  .recover-button:focus:not(:disabled) {
-    background-color: #059669;
-    color: white;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 8px rgba(16, 185, 129, 0.25);
-    text-decoration: none;
+    transform: scale(1.05);
   }
 
   .recover-button:active:not(:disabled) {
-    transform: translateY(0);
+    transform: scale(0.95);
   }
 
-  .recover-button:disabled {
-    background-color: #6c757d;
-    cursor: not-allowed;
+  /* Reset password button - purple/indigo */
+  .reset-password-button {
+    background-color: rgba(99, 102, 241, 0.1);
+    color: #6366f1;
+  }
+
+  .reset-password-button:hover:not(:disabled) {
+    background-color: #6366f1;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .reset-password-button:active:not(:disabled) {
+    transform: scale(0.95);
   }
 
   .current-role {
@@ -666,36 +863,6 @@
     font-style: italic;
     color: var(--text-secondary);
     font-size: 0.8125rem;
-  }
-
-  .alert {
-    padding: 0.75rem;
-    margin-bottom: 1rem;
-    border-radius: 4px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.8125rem;
-  }
-
-  .alert-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-  }
-
-  .alert-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-  }
-
-  .alert button {
-    background: none;
-    border: none;
-    font-size: 1.125rem;
-    cursor: pointer;
-    color: inherit;
   }
 
   .loading-state, .empty-state {
@@ -749,5 +916,204 @@
     border-color: #2563eb !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  /* Password Reset Modal */
+  .password-reset-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--modal-backdrop, rgba(0, 0, 0, 0.5));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1200;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .password-reset-modal {
+    position: relative;
+    width: 90%;
+    max-width: 420px;
+    background-color: var(--surface-color, #fff);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    padding: 1.5rem;
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .modal-close-btn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-close-btn:hover {
+    color: var(--text-color);
+    background: var(--button-hover, var(--background-color));
+  }
+
+  .modal-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+    padding-right: 2rem;
+  }
+
+  .modal-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0 0 1.25rem 0;
+  }
+
+  .modal-description strong {
+    color: var(--text-color);
+  }
+
+  .password-reset-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .password-reset-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .password-reset-form label {
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.8125rem;
+  }
+
+  .password-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .toggle-password {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+  }
+
+  .toggle-password:hover {
+    background-color: var(--background-color);
+    color: var(--text-color);
+  }
+
+  .password-reset-form .form-control {
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.8125rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .password-reset-form .form-control:focus {
+    outline: none;
+    border-color: var(--primary-color, #3b82f6);
+    box-shadow: 0 0 0 3px var(--primary-light, rgba(59, 130, 246, 0.1));
+  }
+
+  .password-reset-form .form-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.125rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  .btn-cancel {
+    background-color: var(--card-background, #f3f4f6);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-cancel:hover:not(:disabled) {
+    background-color: #2563eb;
+    color: white;
+    border-color: #2563eb;
+    transform: translateY(-1px);
+  }
+
+  .btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-confirm {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-confirm:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
+  }
+
+  .btn-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

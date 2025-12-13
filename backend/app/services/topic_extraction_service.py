@@ -16,13 +16,18 @@ Key Features:
 import json
 import logging
 import re
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.constants import DEFAULT_LLM_OUTPUT_LANGUAGE
+from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.models.media import MediaFile
+from app.models.prompt import UserSetting
 from app.models.topic import TopicSuggestion
 from app.schemas.topic import LLMSuggestionResponse
+from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
@@ -39,11 +44,11 @@ class TopicExtractionService:
     4. Store suggestions in PostgreSQL
     """
 
-    # System prompt for suggestion extraction
-    SYSTEM_PROMPT = """You are an expert content analyst specializing in media organization and categorization.
+    # System prompt for suggestion extraction (language instruction added dynamically)
+    SYSTEM_PROMPT_TEMPLATE = """You are an expert content analyst specializing in media organization and categorization.
 
 YOUR TASK:
-Analyze transcripts and suggest tags and collections to help users organize their media library.
+Analyze transcripts and suggest tags and collections to help users organize their media library.{language_instruction}
 
 TAGS:
 - Short, searchable keywords (1-3 words, lowercase)
@@ -133,6 +138,33 @@ IMPORTANT GUIDELINES:
     def __init__(self, db: Session):
         self.db = db
 
+    def _get_user_llm_output_language(self, user_id: int) -> str:
+        """
+        Retrieve user's LLM output language setting from the database.
+
+        Args:
+            user_id: ID of the user
+
+        Returns:
+            LLM output language code (default: "en")
+        """
+        setting = (
+            self.db.query(UserSetting)
+            .filter(
+                UserSetting.user_id == user_id,
+                UserSetting.setting_key == "transcription_llm_output_language",
+            )
+            .first()
+        )
+
+        if setting:
+            return setting.setting_value
+        return DEFAULT_LLM_OUTPUT_LANGUAGE
+
+    def _get_language_name(self, language_code: str) -> str:
+        """Convert language code to full language name."""
+        return LLM_OUTPUT_LANGUAGES.get(language_code, "English")
+
     @staticmethod
     def create_from_settings(user_id: int, db: Session) -> Optional["TopicExtractionService"]:
         """
@@ -209,6 +241,11 @@ IMPORTANT GUIDELINES:
             logger.warning(f"LLM not configured for user {media_file.user_id}")
             return None
 
+        # Get user's LLM output language preference
+        output_language = self._get_user_llm_output_language(media_file.user_id)
+        output_language_name = self._get_language_name(output_language)
+        logger.info(f"Topic extraction output language: {output_language} ({output_language_name})")
+
         # Notify: Building AI prompt
         if progress_callback:
             progress_callback("Building AI prompt...")
@@ -227,6 +264,7 @@ IMPORTANT GUIDELINES:
             transcript=transcript,
             file_id=media_file_id,
             duration=media_file.duration or 0,
+            output_language=output_language,
         )
 
         # Notify: Processing response
@@ -318,7 +356,12 @@ IMPORTANT GUIDELINES:
         return "\n".join(transcript_parts)
 
     def _call_llm_for_extraction(
-        self, llm_service: LLMService, transcript: str, file_id: int, duration: float
+        self,
+        llm_service: LLMService,
+        transcript: str,
+        file_id: int,
+        duration: float,
+        output_language: str = "en",
     ) -> Optional[LLMSuggestionResponse]:
         """
         Call LLM to extract suggestions from transcript with provider-specific optimizations
@@ -328,11 +371,28 @@ IMPORTANT GUIDELINES:
             transcript: Full transcript text
             file_id: Media file ID
             duration: Duration in seconds
+            output_language: Language code for output (default: "en")
 
         Returns:
             Parsed LLM response or None
         """
         from app.services.llm_service import LLMProvider
+
+        # Build language instruction for non-English output
+        output_language_name = self._get_language_name(output_language)
+        if output_language_name != "English":
+            language_instruction = (
+                f"\n\nIMPORTANT: Generate ALL tag names, collection names, and rationales "
+                f"in {output_language_name}. The JSON structure should remain the same, "
+                f"but all text values must be in {output_language_name}."
+            )
+        else:
+            language_instruction = ""
+
+        # Build system prompt with language instruction
+        system_prompt = self.SYSTEM_PROMPT_TEMPLATE.format(
+            language_instruction=language_instruction
+        )
 
         # Build prompt
         prompt = self.EXTRACTION_PROMPT_TEMPLATE.format(
@@ -343,7 +403,7 @@ IMPORTANT GUIDELINES:
 
         # Prepare messages with provider-specific optimizations
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
 
@@ -371,7 +431,7 @@ IMPORTANT GUIDELINES:
             return None
 
     def _parse_llm_response(
-        self, response_text: str, provider: "LLMProvider"
+        self, response_text: str, provider: LLMProvider
     ) -> Optional[LLMSuggestionResponse]:
         """
         Parse LLM response and extract JSON with provider-specific handling
@@ -383,15 +443,12 @@ IMPORTANT GUIDELINES:
         Returns:
             Parsed response or None
         """
-        from app.services.llm_service import LLMProvider
 
         try:
             json_str = None
 
             # For all providers, try to extract JSON from <answer> tags first
-            json_match = re.search(
-                r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL
-            )
+            json_match = re.search(r"<answer>\s*(\{.*?\})\s*</answer>", response_text, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
             else:

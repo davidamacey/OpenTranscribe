@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse } from '../../lib/api/llmSettings';
+  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
+  import { t } from '$stores/locale';
   import ConfirmationModal from '../ConfirmationModal.svelte';
 
   export let show = false;
@@ -25,7 +26,6 @@
   // Form state
   let saving = false;
   let testing = false;
-  let testResult: ConnectionTestResponse | null = null;
   let showApiKey = false;
   let isDirty = false;
   let originalFormData = {
@@ -49,12 +49,29 @@
     details: any;
     display_name: string;
   }> = [];
-  let ollamaModelsError = '';
   let showModelSelector = false;
 
-  // Auto-fade timer for test results
-  let testResultTimer: NodeJS.Timeout;
-  
+  // OpenAI-compatible model discovery
+  let loadingOpenAIModels = false;
+  let openaiCompatibleModels: Array<{
+    name: string;
+    id: string;
+    owned_by: string;
+    created: number;
+  }> = [];
+  let showOpenAIModelSelector = false;
+
+  // Anthropic model discovery
+  let loadingAnthropicModels = false;
+  let anthropicModels: Array<{
+    id: string;
+    display_name: string;
+    created_at: string;
+    type: string;
+  }> = [];
+  let showAnthropicModelSelector = false;
+
+
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
   let pendingCloseAction: (() => void) | null = null;
@@ -110,20 +127,53 @@
     if (formData.provider === 'ollama' && !formData.base_url) {
       return false;
     }
+    // Check if API key is required and present (for new configs or if no stored key)
+    const providerConfig = getProviderDefaults(formData.provider);
+    if (providerConfig?.requires_api_key) {
+      // In edit mode with stored key, allow test even without re-entering key
+      if (editingConfig?.has_api_key) {
+        return true;
+      }
+      // Otherwise require API key to be entered
+      if (!formData.api_key?.trim()) {
+        return false;
+      }
+    }
     return true;
   })();
 
-  function populateForm(config: UserLLMSettings) {
+  // Loading state for API key fetch
+  let loadingApiKey = false;
+
+  async function populateForm(config: UserLLMSettings) {
     formData = {
       name: config.name,
       provider: config.provider as any,
       model_name: config.model_name,
-      api_key: '', // Never populate API key for security
+      api_key: '', // Will be populated below if exists
       base_url: config.base_url || '',
       max_tokens: config.max_tokens,
       temperature: config.temperature,
       is_active: config.is_active
     };
+
+    // Fetch the actual API key if one is stored
+    if (config.has_api_key && config.id) {
+      loadingApiKey = true;
+      try {
+        const result = await LLMSettingsApi.getConfigApiKey(config.id);
+        if (result.api_key) {
+          formData.api_key = result.api_key;
+          formData = { ...formData }; // Trigger reactivity
+        }
+      } catch (err) {
+        console.error('Failed to fetch API key:', err);
+        // Don't show error to user, just leave field empty
+      } finally {
+        loadingApiKey = false;
+      }
+    }
+
     originalFormData = { ...formData };
   }
 
@@ -139,10 +189,12 @@
       is_active: true
     };
     originalFormData = { ...formData };
-    testResult = null;
     ollamaModels = [];
-    ollamaModelsError = '';
     showModelSelector = false;
+    openaiCompatibleModels = [];
+    showOpenAIModelSelector = false;
+    anthropicModels = [];
+    showAnthropicModelSelector = false;
   }
 
 
@@ -154,7 +206,7 @@
   function positionTooltip(event) {
     const rect = event.target.closest('.info-tooltip').getBoundingClientRect();
     const tooltip = event.target.closest('.info-tooltip');
-    
+
     tooltip.style.setProperty('--tooltip-left', `${rect.left + rect.width / 2}px`);
     tooltip.style.setProperty('--tooltip-top', `${rect.bottom}px`);
   }
@@ -166,7 +218,7 @@
       showUnsavedChangesModal = true;
       return;
     }
-    
+
     executeCloseModal();
   }
 
@@ -176,7 +228,7 @@
     // Reset form state
     resetForm();
   }
-  
+
   function handleUnsavedChangesConfirm() {
     if (pendingCloseAction) {
       pendingCloseAction();
@@ -184,7 +236,7 @@
     }
     showUnsavedChangesModal = false;
   }
-  
+
   function handleUnsavedChangesCancel() {
     showUnsavedChangesModal = false;
     pendingCloseAction = null;
@@ -192,23 +244,23 @@
 
   async function saveConfiguration() {
     if (!isFormValid) return;
-    
+
     saving = true;
-    
+
     try {
       let savedConfig;
       if (editingConfig) {
         savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, formData);
-        toastStore.success('Configuration updated successfully', 5000);
+        toastStore.success($t('llm.configUpdated'), 5000);
       } else {
         savedConfig = await LLMSettingsApi.createSettings(formData);
-        toastStore.success('Configuration created successfully', 5000);
+        toastStore.success($t('llm.configCreated'), 5000);
       }
-      
+
       dispatch('saved', savedConfig);
       closeModal(true);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Failed to save configuration';
+      const errorMsg = err.response?.data?.detail || $t('llm.configSaveFailed');
       toastStore.error(errorMsg, 8000);
     } finally {
       saving = false;
@@ -217,42 +269,26 @@
 
   async function testConnection() {
     if (!isConnectionTestValid) return;
-    
+
     testing = true;
-    testResult = null;
-    
+
     try {
       const result = await LLMSettingsApi.testConnection({
         provider: formData.provider,
         model_name: formData.model_name,
-        api_key: formData.api_key || undefined,
-        base_url: formData.base_url || undefined
+        api_key: formData.api_key?.trim() || undefined,
+        base_url: formData.base_url || undefined,
+        config_id: editingConfig?.id  // Pass config ID for edit mode to use stored key
       });
-      
-      testResult = result;
-      
+
       if (result.success) {
         toastStore.success(result.message, 5000);
       } else {
         toastStore.error(result.message, 8000);
       }
-      
-      // Auto-fade test result
-      clearTimeout(testResultTimer);
-      testResultTimer = setTimeout(() => testResult = null, result.success ? 5000 : 8000);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || 'Connection test failed';
+      const errorMsg = err.response?.data?.detail || $t('llm.connectionTestFailed');
       toastStore.error(errorMsg, 8000);
-      
-      testResult = {
-        success: false,
-        status: 'failed',
-        message: errorMsg
-      };
-      
-      // Auto-fade test result
-      clearTimeout(testResultTimer);
-      testResultTimer = setTimeout(() => testResult = null, 8000);
     } finally {
       testing = false;
     }
@@ -260,12 +296,11 @@
 
   async function loadOllamaModels() {
     if (!formData.base_url) {
-      ollamaModelsError = 'Please enter a base URL first';
+      toastStore.error($t('llm.enterBaseUrlFirst'));
       return;
     }
 
     loadingOllamaModels = true;
-    ollamaModelsError = '';
 
     try {
       const result = await LLMSettingsApi.getOllamaModels(formData.base_url);
@@ -273,10 +308,10 @@
         ollamaModels = result.models;
         showModelSelector = true;
       } else {
-        ollamaModelsError = result.message;
+        toastStore.error(result.message);
       }
     } catch (err: any) {
-      ollamaModelsError = err.response?.data?.detail || 'Failed to load Ollama models';
+      toastStore.error(err.response?.data?.detail || $t('llm.ollamaLoadFailed'));
     } finally {
       loadingOllamaModels = false;
     }
@@ -294,17 +329,111 @@
     return `${gb}GB`;
   }
 
+  async function loadOpenAICompatibleModels() {
+    if (!formData.base_url) {
+      toastStore.error($t('llm.enterBaseUrlFirst'));
+      return;
+    }
+
+    // Check if API key is required for this provider
+    const providerConfig = getProviderDefaults(formData.provider);
+    const hasStoredKey = editingConfig?.has_api_key;
+    if (providerConfig?.requires_api_key && !formData.api_key?.trim() && !hasStoredKey) {
+      toastStore.error($t('llm.enterApiKeyFirst'));
+      return;
+    }
+
+    loadingOpenAIModels = true;
+
+    try {
+      const result = await LLMSettingsApi.getOpenAICompatibleModels(
+        formData.base_url,
+        formData.api_key?.trim() || undefined,
+        editingConfig?.id  // Pass config ID for edit mode to use stored key
+      );
+      if (result.success && result.models) {
+        openaiCompatibleModels = result.models;
+        showOpenAIModelSelector = true;
+      } else {
+        toastStore.error(result.message);
+      }
+    } catch (err: any) {
+      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
+    } finally {
+      loadingOpenAIModels = false;
+    }
+  }
+
+  function selectOpenAIModel(modelId: string) {
+    formData.model_name = modelId;
+    formData = { ...formData }; // Force reactivity update
+    showOpenAIModelSelector = false;
+  }
+
+  async function loadAnthropicModels() {
+    // In edit mode, we can use stored key if no new key is entered
+    const hasKey = formData.api_key?.trim() || editingConfig?.has_api_key;
+    if (!hasKey) {
+      toastStore.error($t('llm.enterApiKeyFirst'));
+      return;
+    }
+
+    loadingAnthropicModels = true;
+
+    try {
+      const result = await LLMSettingsApi.getAnthropicModels(
+        formData.api_key?.trim() || undefined,  // Only send if user typed a new key
+        editingConfig?.id  // Backend will use stored key if no api_key provided
+      );
+      if (result.success && result.models) {
+        anthropicModels = result.models;
+        showAnthropicModelSelector = true;
+      } else {
+        toastStore.error(result.message);
+      }
+    } catch (err: any) {
+      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
+    } finally {
+      loadingAnthropicModels = false;
+    }
+  }
+
+  function selectAnthropicModel(modelId: string) {
+    formData.model_name = modelId;
+    formData = { ...formData }; // Force reactivity update
+    showAnthropicModelSelector = false;
+  }
+
+  // Track provider changes to reset defaults
+  let previousProvider: string = '';
+
   // Apply provider defaults when provider changes
   $: if (formData.provider) {
     const defaults = getProviderDefaults(formData.provider);
     if (defaults && !editingConfig) {
-      // Only apply defaults for new configurations
-      if (!formData.base_url && defaults.default_base_url) {
-        formData.base_url = defaults.default_base_url;
+      // Detect if provider actually changed (not just initialization)
+      const providerChanged = previousProvider !== '' && previousProvider !== formData.provider;
+
+      if (providerChanged) {
+        // Provider changed - reset and apply new defaults
+        formData.base_url = defaults.default_base_url || '';
+        formData.model_name = defaults.default_model || '';
+        // Close any open model selectors
+        showModelSelector = false;
+        showOpenAIModelSelector = false;
+        showAnthropicModelSelector = false;
+      } else {
+        // Initial load or same provider - only apply if empty
+        if (!formData.base_url && defaults.default_base_url) {
+          formData.base_url = defaults.default_base_url;
+        }
+        if (!formData.model_name && defaults.default_model) {
+          formData.model_name = defaults.default_model;
+        }
       }
-      if (!formData.model_name && defaults.default_model) {
-        formData.model_name = defaults.default_model;
-      }
+
+      // Track current provider for next change detection
+      previousProvider = formData.provider;
     }
   }
 
@@ -319,13 +448,13 @@
 
   function getProviderDisplayName(provider: string): string {
     const displayNames: Record<string, string> = {
-      openai: 'OpenAI',
-      vllm: 'vLLM',
-      ollama: 'Ollama',
-      claude: 'Claude (Anthropic)',
-      anthropic: 'Anthropic Claude',
-      openrouter: 'OpenRouter',
-      custom: 'Custom Provider'
+      openai: $t('llm.provider.openai'),
+      vllm: $t('llm.provider.vllm'),
+      ollama: $t('llm.provider.ollama'),
+      claude: $t('llm.provider.claude'),
+      anthropic: $t('llm.provider.anthropic'),
+      openrouter: $t('llm.provider.openrouter'),
+      custom: $t('llm.provider.custom')
     };
     return displayNames[provider] || provider;
   }
@@ -353,32 +482,32 @@
     >
       <div class="modal-header">
         <h3>
-          {editingConfig ? 'Edit Configuration' : 'Create LLM Configuration'}
+          {editingConfig ? $t('llm.editConfiguration') : $t('llm.createConfiguration')}
           {#if isDirty}
-            <span class="unsaved-indicator" title="You have unsaved changes">•</span>
+            <span class="unsaved-indicator" title={$t('llm.unsavedChangesIndicator')}>•</span>
           {/if}
         </h3>
-        <button class="close-button" on:click={() => closeModal()} title={isDirty ? 'Close (unsaved changes will be lost)' : 'Close'}>×</button>
+        <button class="close-button" on:click={() => closeModal()} title={isDirty ? $t('llm.closeUnsavedWarning') : $t('common.close')}>×</button>
       </div>
 
       <form on:submit|preventDefault={saveConfiguration} class="config-form">
         <!-- Configuration Name -->
         <div class="form-group">
-          <label for="config-name">Configuration Name *</label>
+          <label for="config-name">{$t('llm.configName')}</label>
           <input
             type="text"
             id="config-name"
             bind:value={formData.name}
             disabled={saving}
             class="form-control"
-            placeholder="e.g., My Ollama Setup"
+            placeholder={$t('llm.configNamePlaceholder')}
             required
           />
         </div>
 
         <!-- Provider Selection -->
         <div class="form-group">
-          <label for="provider">Provider *</label>
+          <label for="provider">{$t('llm.provider')}</label>
           <select
             id="provider"
             bind:value={formData.provider}
@@ -386,7 +515,7 @@
             class="form-control"
             required
           >
-            <option value="">Select a provider...</option>
+            <option value="">{$t('llm.selectProvider')}</option>
             {#each supportedProviders.sort((a, b) => getProviderDisplayName(a.provider).localeCompare(getProviderDisplayName(b.provider))) as provider}
               <option value={provider.provider}>{getProviderDisplayName(provider.provider)}</option>
             {/each}
@@ -399,12 +528,12 @@
             <div class="form-group">
               <label for="base-url">
                 <span class="label-with-tooltip">
-                  Base URL *
+                  {$t('llm.baseUrl')}
                   {#if formData.provider === 'vllm' || formData.provider === 'ollama'}
                     <span
                       class="info-tooltip"
                       role="tooltip"
-                      data-tooltip="For local installations, use your server's IP address (e.g., http://192.168.1.10:11434). Ensure the port is open and accessible from your network."
+                      data-tooltip={$t('llm.baseUrlTooltipLocal')}
                       on:mouseenter={positionTooltip}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -417,7 +546,7 @@
                     <span
                       class="info-tooltip"
                       role="tooltip"
-                      data-tooltip="OpenRouter is a cloud service. Use the default URL (https://openrouter.ai/api/v1) unless you have a custom endpoint."
+                      data-tooltip={$t('llm.baseUrlTooltipCloud')}
                       on:mouseenter={positionTooltip}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -444,14 +573,14 @@
           <!-- Model Selection -->
           <div class="form-group">
             <label for="model-name">
-              Model Name *
+              {$t('llm.modelName')}
               {#if formData.provider === 'ollama'}
                 <button
                   type="button"
                   class="discover-models-btn"
                   on:click={loadOllamaModels}
                   disabled={loadingOllamaModels || saving || !formData.base_url}
-                  title="Discover available models from Ollama instance"
+                  title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOllamaModels}
                     <div class="spinner-mini"></div>
@@ -468,7 +597,57 @@
                       <circle cx="19.78" cy="4.22" r="1"/>
                     </svg>
                   {/if}
-                  Discover Models
+                  {$t('llm.discoverModels')}
+                </button>
+              {:else if formData.provider === 'openai' || formData.provider === 'vllm' || formData.provider === 'openrouter'}
+                <button
+                  type="button"
+                  class="discover-models-btn"
+                  on:click={loadOpenAICompatibleModels}
+                  disabled={loadingOpenAIModels || saving || loadingApiKey || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key?.trim() && !editingConfig?.has_api_key)}
+                  title={$t('llm.discoverModelsTooltip')}
+                >
+                  {#if loadingOpenAIModels}
+                    <div class="spinner-mini"></div>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                  {/if}
+                  {$t('llm.discoverModels')}
+                </button>
+              {:else if formData.provider === 'anthropic' || formData.provider === 'claude'}
+                <button
+                  type="button"
+                  class="discover-models-btn"
+                  on:click={loadAnthropicModels}
+                  disabled={loadingAnthropicModels || saving || loadingApiKey || (!formData.api_key?.trim() && !editingConfig?.has_api_key)}
+                  title={$t('llm.discoverModelsTooltip')}
+                >
+                  {#if loadingAnthropicModels}
+                    <div class="spinner-mini"></div>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                  {/if}
+                  {$t('llm.discoverModels')}
                 </button>
               {/if}
             </label>
@@ -478,17 +657,17 @@
               bind:value={formData.model_name}
               disabled={saving}
               class="form-control"
-              placeholder={getProviderDefaults(formData.provider)?.default_model || 'Enter model name'}
+              placeholder={getProviderDefaults(formData.provider)?.default_model || $t('llm.modelNamePlaceholder')}
               required
             />
-            
+
             <!-- Ollama Model Selector -->
             {#if showModelSelector && ollamaModels.length > 0}
               <div class="model-selector">
-                <h4>Available Models:</h4>
+                <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
                   {#each ollamaModels as model}
-                    <button 
+                    <button
                       type="button"
                       class="model-item"
                       on:click={() => selectOllamaModel(model.name, model)}
@@ -501,69 +680,114 @@
                   {/each}
                 </div>
                 <button type="button" class="close-selector" on:click={() => showModelSelector = false}>
-                  Close
+                  {$t('llm.closeSelector')}
                 </button>
               </div>
             {/if}
-            
-            {#if ollamaModelsError}
-              <div class="error-text">{ollamaModelsError}</div>
+
+
+            <!-- OpenAI-Compatible Model Selector -->
+            {#if showOpenAIModelSelector && openaiCompatibleModels.length > 0}
+              <div class="model-selector">
+                <h4>{$t('llm.availableModels')}</h4>
+                <div class="model-list">
+                  {#each openaiCompatibleModels as model}
+                    <button
+                      type="button"
+                      class="model-item"
+                      on:click={() => selectOpenAIModel(model.id)}
+                    >
+                      <div class="model-info">
+                        <div class="model-name">{model.id}</div>
+                        {#if model.owned_by}
+                          <div class="model-details">{model.owned_by}</div>
+                        {/if}
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+                <button type="button" class="close-selector" on:click={() => showOpenAIModelSelector = false}>
+                  {$t('llm.closeSelector')}
+                </button>
+              </div>
             {/if}
+
+            <!-- Anthropic Model Selector -->
+            {#if showAnthropicModelSelector && anthropicModels.length > 0}
+              <div class="model-selector">
+                <h4>{$t('llm.availableModels')}</h4>
+                <div class="model-list">
+                  {#each anthropicModels as model}
+                    <button
+                      type="button"
+                      class="model-item"
+                      on:click={() => selectAnthropicModel(model.id)}
+                    >
+                      <div class="model-info">
+                        <div class="model-name">{model.display_name}</div>
+                        <div class="model-details">{model.id}</div>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+                <button type="button" class="close-selector" on:click={() => showAnthropicModelSelector = false}>
+                  {$t('llm.closeSelector')}
+                </button>
+              </div>
+            {/if}
+
           </div>
 
           <!-- API Key (if required) -->
-          {#if getProviderDefaults(formData.provider)?.requires_api_key}
+          {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
             <div class="form-group">
-              <label for="api-key">API Key *</label>
-              <div class="api-key-input">
-                {#if showApiKey}
-                  <input
-                    type="text"
-                    id="api-key"
-                    bind:value={formData.api_key}
-                    disabled={saving}
-                    class="form-control"
-                    placeholder={editingConfig ? 'Enter new API key (leave blank to keep current)' : 'Enter your API key'}
-                    required={!editingConfig}
-                  />
-                {:else}
-                  <input
-                    type="password"
-                    id="api-key"
-                    bind:value={formData.api_key}
-                    disabled={saving}
-                    class="form-control"
-                    placeholder={editingConfig ? 'Enter new API key (leave blank to keep current)' : 'Enter your API key'}
-                    required={!editingConfig}
-                  />
-                {/if}
-                <button 
-                  type="button" 
-                  class="toggle-visibility"
+              <div class="api-key-header">
+                <label for="api-key">
+                  {$t('llm.apiKey')} {#if !editingConfig}*{/if}
+                </label>
+                <button
+                  type="button"
+                  class="toggle-password"
                   on:click={() => showApiKey = !showApiKey}
-                  title={showApiKey ? 'Hide API key' : 'Show API key'}
+                  tabindex="-1"
+                  aria-label={showApiKey ? $t('llm.hideApiKey') : $t('llm.showApiKey')}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    {#if showApiKey}
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    {:else}
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  {#if showApiKey}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
                       <circle cx="12" cy="12" r="3"/>
-                    {/if}
-                  </svg>
+                    </svg>
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m15 18-.722-3.25"/>
+                      <path d="m2 2 20 20"/>
+                      <path d="m9 9-.637 3.181"/>
+                      <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                      <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                      <path d="m18.147 8.476.853 3.524"/>
+                    </svg>
+                  {/if}
                 </button>
               </div>
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                id="api-key"
+                bind:value={formData.api_key}
+                disabled={saving}
+                class="form-control"
+                placeholder={$t('llm.apiKeyPlaceholder')}
+                required={!editingConfig}
+              />
             </div>
           {/if}
 
           <!-- Advanced Settings -->
           <div class="advanced-settings">
-            <h4>Advanced Settings</h4>
-            
+            <h4>{$t('llm.advancedSettings')}</h4>
+
             <div class="form-row">
               <div class="form-group">
-                <label for="max-tokens">Max Tokens</label>
+                <label for="max-tokens">{$t('llm.maxTokens')}</label>
                 <input
                   type="number"
                   id="max-tokens"
@@ -574,9 +798,9 @@
                   max="200000"
                 />
               </div>
-              
+
               <div class="form-group">
-                <label for="temperature">Temperature</label>
+                <label for="temperature">{$t('llm.temperature')}</label>
                 <input
                   type="text"
                   id="temperature"
@@ -586,7 +810,7 @@
                   placeholder="0.3"
                 />
               </div>
-              
+
             </div>
           </div>
 
@@ -596,35 +820,27 @@
               type="button"
               class="test-connection-btn"
               on:click={testConnection}
-              disabled={testing || !isConnectionTestValid}
-              title="Test the connection with current settings"
+              disabled={testing || loadingApiKey || !isConnectionTestValid}
+              title={$t('llm.testConnectionTooltip')}
             >
               {#if testing}
                 <div class="spinner-mini"></div>
-                Testing...
+                {$t('llm.testing')}
               {:else}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"/>
                 </svg>
-                Test Connection
+                {$t('llm.testConnection')}
               {/if}
             </button>
-            
-            {#if testResult}
-              <div class="test-result {testResult.success ? 'success' : 'error'}">
-                {testResult.message}
-                {#if testResult.response_time_ms}
-                  <span class="response-time">({testResult.response_time_ms}ms)</span>
-                {/if}
-              </div>
-            {/if}
+
           </div>
         {/if}
 
         <!-- Form Actions -->
         <div class="form-actions">
           <button type="button" class="cancel-button" on:click={() => closeModal()} disabled={saving}>
-            Cancel
+            {$t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -633,14 +849,14 @@
           >
             {#if saving}
               <div class="spinner-mini"></div>
-              Saving...
+              {$t('llm.saving')}
             {:else}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
                 <polyline points="17,21 17,13 7,13 7,21"/>
                 <polyline points="7,3 7,8 15,8"/>
               </svg>
-              {editingConfig ? 'Update Configuration' : 'Save Configuration'}
+              {editingConfig ? $t('llm.updateConfiguration') : $t('llm.saveConfiguration')}
             {/if}
           </button>
         </div>
@@ -652,10 +868,10 @@
 <!-- Unsaved Changes Modal -->
 <ConfirmationModal
   bind:isOpen={showUnsavedChangesModal}
-  title="Unsaved Changes"
-  message="You have unsaved changes that will be lost. Are you sure you want to continue without saving?"
-  confirmText="Discard Changes"
-  cancelText="Keep Editing"
+  title={$t('llm.unsavedChanges')}
+  message={$t('llm.unsavedChangesMessage')}
+  confirmText={$t('llm.discardChanges')}
+  cancelText={$t('llm.keepEditing')}
   confirmButtonClass="modal-warning-button"
   cancelButtonClass="modal-primary-button"
   on:confirm={handleUnsavedChangesConfirm}
@@ -787,28 +1003,26 @@
     cursor: not-allowed;
   }
 
-  .api-key-input {
-    position: relative;
+  .api-key-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
-  .toggle-visibility {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
+  .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-muted);
     padding: 4px;
-    border-radius: 4px;
+    color: var(--text-secondary, var(--text-muted));
     display: flex;
     align-items: center;
-    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
   }
 
-  .toggle-visibility:hover {
-    background-color: var(--hover-color);
+  .toggle-password:hover {
+    background-color: var(--background-color, var(--hover-color));
     color: var(--text-color);
   }
 
@@ -919,7 +1133,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .test-connection-btn:active:not(:disabled) {
     transform: translateY(0);
   }
@@ -927,33 +1141,6 @@
   .test-connection-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .test-result {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .test-result.success {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .test-result.error {
-    background-color: var(--error-bg);
-    color: var(--error-color);
-    border: 1px solid var(--error-border);
-  }
-
-  .response-time {
-    font-size: 0.75rem;
-    opacity: 0.8;
   }
 
   .form-actions {
@@ -985,7 +1172,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .cancel-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
@@ -1012,7 +1199,7 @@
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
   }
-  
+
   .save-button:active:not(:disabled) {
     transform: translateY(0);
   }
@@ -1034,12 +1221,6 @@
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-  }
-
-  .error-text {
-    color: var(--error-color);
-    font-size: 0.75rem;
-    margin-top: 0.25rem;
   }
 
   /* Tooltip styles */

@@ -7,6 +7,7 @@ by dispatching background tasks for non-blocking processing.
 
 import logging
 import re
+from typing import Any
 from typing import Union
 
 from fastapi import APIRouter
@@ -125,6 +126,294 @@ def normalize_youtube_url(url: str) -> str:
     return url
 
 
+def _validate_youtube_url(url: str) -> tuple[str, YouTubeService]:
+    """Validate and normalize a YouTube URL.
+
+    Args:
+        url: Raw YouTube URL from the request.
+
+    Returns:
+        Tuple of (normalized_url, youtube_service).
+
+    Raises:
+        HTTPException: If URL is missing or invalid.
+    """
+    if not url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL is required")
+
+    normalized_url = normalize_youtube_url(url)
+    youtube_service = YouTubeService()
+
+    if not youtube_service.is_valid_youtube_url(normalized_url):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL")
+
+    return normalized_url, youtube_service
+
+
+def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistProcessingResponse:
+    """Handle playlist URL processing by dispatching a background task.
+
+    Args:
+        normalized_url: Normalized YouTube playlist URL.
+        user_id: ID of the user requesting processing.
+
+    Returns:
+        PlaylistProcessingResponse with processing status.
+
+    Raises:
+        HTTPException: If task dispatch fails.
+    """
+    logger.info(f"Detected playlist URL: {normalized_url}")
+
+    try:
+        task_result = process_youtube_playlist_task.delay(url=normalized_url, user_id=user_id)
+        logger.info(
+            f"Dispatched YouTube playlist processing task {task_result.id} for user {user_id}"
+        )
+
+        return PlaylistProcessingResponse(
+            type="playlist",
+            status="processing",
+            message="Playlist processing started. Videos will appear as they are extracted.",
+            url=normalized_url,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to dispatch YouTube playlist processing task: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start playlist processing. Please try again.",
+        ) from e
+
+
+def _extract_video_info(
+    youtube_service: YouTubeService, normalized_url: str
+) -> tuple[str, str, dict[str, Any]]:
+    """Extract video ID and title from a YouTube URL.
+
+    Args:
+        youtube_service: YouTubeService instance.
+        normalized_url: Normalized YouTube video URL.
+
+    Returns:
+        Tuple of (youtube_id, video_title, video_info).
+
+    Raises:
+        HTTPException: If video info extraction fails.
+    """
+    try:
+        video_info = youtube_service.extract_video_info(normalized_url)
+        youtube_id = video_info.get("id")
+        video_title = video_info.get("title", "YouTube Video")
+    except Exception as e:
+        logger.error(f"Error extracting video info from {normalized_url}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to extract video information. Please check the URL.",
+        ) from e
+
+    if not youtube_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not extract YouTube video ID",
+        )
+
+    return youtube_id, video_title, video_info
+
+
+def _check_duplicate_video(db: Session, user_id: int, youtube_id: str, normalized_url: str) -> None:
+    """Check if the video already exists for this user.
+
+    Args:
+        db: Database session.
+        user_id: User ID to check against.
+        youtube_id: YouTube video ID.
+        normalized_url: Normalized YouTube URL.
+
+    Raises:
+        HTTPException: If a duplicate video is found (409 Conflict).
+    """
+    # Check by metadata_raw first
+    existing_video = (
+        db.query(MediaFile)
+        .filter(
+            MediaFile.user_id == user_id,
+            text("metadata_raw->>'youtube_id' = :youtube_id"),
+        )
+        .params(youtube_id=youtube_id)
+        .first()
+    )
+
+    # Also check by source_url as a backup
+    if not existing_video:
+        existing_video = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.user_id == user_id,
+                MediaFile.source_url == normalized_url,
+            )
+            .first()
+        )
+
+    if not existing_video:
+        return
+
+    logger.info(
+        f"Found existing YouTube video with ID {youtube_id} for user {user_id}: "
+        f"MediaFile ID {existing_video.id}, status: {existing_video.status}"
+    )
+
+    _raise_duplicate_error(existing_video)
+
+
+def _raise_duplicate_error(existing_video: MediaFile) -> None:
+    """Raise appropriate HTTPException for a duplicate video.
+
+    Args:
+        existing_video: The existing MediaFile record.
+
+    Raises:
+        HTTPException: 409 Conflict with status-specific message.
+    """
+    if existing_video.status == FileStatus.ERROR:
+        error_msg = existing_video.last_error_message or "processing failed"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This video already exists in your library but {error_msg}. "
+            f"Please delete it first if you want to re-process it.",
+        )
+
+    if existing_video.status in [FileStatus.PENDING, FileStatus.PROCESSING]:
+        video_name = existing_video.title or existing_video.filename
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This YouTube video is already being processed: {video_name}",
+        )
+
+    video_name = existing_video.title or existing_video.filename
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"This YouTube video already exists in your library: {video_name}",
+    )
+
+
+def _create_media_file_record(
+    db: Session,
+    user_id: int,
+    normalized_url: str,
+    youtube_id: str,
+    video_title: str,
+    video_info: dict[str, Any],
+) -> MediaFile:
+    """Create a placeholder MediaFile record for the YouTube video.
+
+    Args:
+        db: Database session.
+        user_id: User ID.
+        normalized_url: Normalized YouTube URL.
+        youtube_id: YouTube video ID.
+        video_title: Video title.
+        video_info: Full video info dict from YouTube.
+
+    Returns:
+        Created MediaFile instance.
+    """
+    placeholder_metadata = {
+        "youtube_id": youtube_id,
+        "youtube_url": normalized_url,
+        "title": video_title,
+        "processing": True,
+    }
+
+    media_file = MediaFile(
+        user_id=user_id,
+        filename=video_title[:255],
+        storage_path="",
+        file_size=0,
+        content_type="video/mp4",
+        duration=video_info.get("duration"),
+        status=FileStatus.PROCESSING,
+        title=video_title,
+        author=video_info.get("uploader"),
+        description=video_info.get("description"),
+        source_url=normalized_url,
+        metadata_raw=placeholder_metadata,
+        metadata_important=placeholder_metadata,
+    )
+
+    db.add(media_file)
+    db.commit()
+    db.refresh(media_file)
+
+    return media_file
+
+
+def _dispatch_video_task(
+    db: Session, media_file: MediaFile, normalized_url: str, user_id: int
+) -> None:
+    """Dispatch the YouTube video processing background task.
+
+    Args:
+        db: Database session.
+        media_file: MediaFile record to process.
+        normalized_url: Normalized YouTube URL.
+        user_id: User ID.
+
+    Raises:
+        HTTPException: If task dispatch fails.
+    """
+    try:
+        task_result = process_youtube_url_task.delay(
+            url=normalized_url, user_id=user_id, file_uuid=str(media_file.uuid)
+        )
+        logger.info(
+            f"Dispatched YouTube processing task {task_result.id} for MediaFile {media_file.id}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to dispatch YouTube processing task: {e}")
+        db.delete(media_file)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start YouTube processing. Please try again.",
+        ) from e
+
+
+async def _send_file_created_notification(media_file: MediaFile, user_id: int) -> None:
+    """Send WebSocket notification for newly created file.
+
+    Args:
+        media_file: The created MediaFile.
+        user_id: User ID to notify.
+    """
+    try:
+        from app.api.websockets import send_notification
+
+        await send_notification(
+            user_id=user_id,
+            notification_type="file_created",
+            data={
+                "file_id": str(media_file.uuid),
+                "file": {
+                    "id": str(media_file.uuid),
+                    "filename": media_file.filename,
+                    "status": media_file.status.value,
+                    "display_status": FormattingService.format_status(media_file.status),
+                    "content_type": media_file.content_type,
+                    "file_size": media_file.file_size,
+                    "title": media_file.title,
+                    "author": media_file.author,
+                    "duration": media_file.duration,
+                    "upload_time": media_file.upload_time.isoformat()
+                    if media_file.upload_time
+                    else None,
+                },
+            },
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send file_created notification: {e}")
+
+
 @router.post("/process-url", response_model=URLProcessingResponse)
 async def process_youtube_url(
     request_data: URLProcessingRequest,
@@ -161,196 +450,34 @@ async def process_youtube_url(
             {"url": "https://youtube.com/playlist?list=PLClBBDzHMVijJfoN2EY_3OpmHfRIv4eGO"}
     """
     try:
-        url = request_data.url
+        # Validate and normalize URL
+        normalized_url, youtube_service = _validate_youtube_url(request_data.url)
 
-        if not url:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL is required")
+        # Handle playlist processing (early return)
+        if youtube_service.is_playlist_url(normalized_url):
+            return _handle_playlist_processing(normalized_url, current_user.id)
 
-        # Normalize and validate URL
-        normalized_url = normalize_youtube_url(url)
-        youtube_service = YouTubeService()
+        # Extract video info
+        youtube_id, video_title, video_info = _extract_video_info(youtube_service, normalized_url)
 
-        if not youtube_service.is_valid_youtube_url(normalized_url):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL"
-            )
+        # Check for duplicate video
+        _check_duplicate_video(db, current_user.id, youtube_id, normalized_url)
 
-        # Check if URL is a playlist
-        is_playlist = youtube_service.is_playlist_url(normalized_url)
-
-        if is_playlist:
-            # Handle playlist processing
-            logger.info(f"Detected playlist URL: {normalized_url}")
-
-            try:
-                # Dispatch playlist processing task
-                task_result = process_youtube_playlist_task.delay(
-                    url=normalized_url, user_id=current_user.id
-                )
-                logger.info(
-                    f"Dispatched YouTube playlist processing task {task_result.id} for user {current_user.id}"
-                )
-
-                # Return immediate response indicating playlist processing started
-                return {
-                    "type": "playlist",
-                    "status": "processing",
-                    "message": "Playlist processing started. Videos will appear as they are extracted.",
-                    "url": normalized_url,
-                }
-
-            except Exception as e:
-                logger.error(f"Failed to dispatch YouTube playlist processing task: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to start playlist processing. Please try again.",
-                ) from e
-
-        # Extract video ID for duplicate checking (fast operation)
-        try:
-            video_info = youtube_service.extract_video_info(normalized_url)
-            youtube_id = video_info.get("id")
-            video_title = video_info.get("title", "YouTube Video")
-        except Exception as e:
-            logger.error(f"Error extracting video info from {normalized_url}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to extract video information. Please check the URL.",
-            ) from e
-
-        if not youtube_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not extract YouTube video ID",
-            )
-
-        # Check for existing video with same YouTube ID (early duplicate detection)
-        # Check both metadata_raw and source_url for comprehensive duplicate detection
-        existing_video = (
-            db.query(MediaFile)
-            .filter(
-                MediaFile.user_id == current_user.id,
-                text("metadata_raw->>'youtube_id' = :youtube_id"),
-            )
-            .params(youtube_id=youtube_id)
-            .first()
+        # Create placeholder MediaFile record
+        media_file = _create_media_file_record(
+            db, current_user.id, normalized_url, youtube_id, video_title, video_info
         )
 
-        # Also check by source_url as a backup (in case metadata_raw is incomplete)
-        if not existing_video:
-            existing_video = (
-                db.query(MediaFile)
-                .filter(
-                    MediaFile.user_id == current_user.id,
-                    MediaFile.source_url == normalized_url,
-                )
-                .first()
-            )
+        # Dispatch background task
+        _dispatch_video_task(db, media_file, normalized_url, current_user.id)
 
-        if existing_video:
-            logger.info(
-                f"Found existing YouTube video with ID {youtube_id} for user {current_user.id}: "
-                f"MediaFile ID {existing_video.id}, status: {existing_video.status}"
-            )
-            # Provide different messages based on video status
-            if existing_video.status == FileStatus.ERROR:
-                error_msg = existing_video.last_error_message or "processing failed"
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"This video already exists in your library but {error_msg}. "
-                    f"Please delete it first if you want to re-process it.",
-                )
-            elif existing_video.status in [FileStatus.PENDING, FileStatus.PROCESSING]:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"This YouTube video is already being processed: {existing_video.title or existing_video.filename}",
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"This YouTube video already exists in your library: {existing_video.title or existing_video.filename}",
-                )
-
-        # Create placeholder MediaFile record for immediate response
-        placeholder_metadata = {
-            "youtube_id": youtube_id,
-            "youtube_url": normalized_url,
-            "title": video_title,
-            "processing": True,
-        }
-
-        media_file = MediaFile(
-            user_id=current_user.id,
-            filename=video_title[:255],  # Temporary filename, will be updated by YouTube service
-            storage_path="",  # Will be set by background task
-            file_size=0,  # Will be set by background task
-            content_type="video/mp4",  # Default, will be updated
-            duration=video_info.get("duration"),
-            status=FileStatus.PROCESSING,
-            title=video_title,
-            author=video_info.get("uploader"),
-            description=video_info.get("description"),
-            source_url=normalized_url,
-            metadata_raw=placeholder_metadata,
-            metadata_important=placeholder_metadata,
-        )
-
-        # Save placeholder record
-        db.add(media_file)
-        db.commit()
-        db.refresh(media_file)
-
-        # Dispatch background task immediately
-        try:
-            task_result = process_youtube_url_task.delay(
-                url=normalized_url, user_id=current_user.id, file_uuid=str(media_file.uuid)
-            )
-            logger.info(
-                f"Dispatched YouTube processing task {task_result.id} for MediaFile {media_file.id}"
-            )
-        except Exception as e:
-            logger.error(f"Failed to dispatch YouTube processing task: {e}")
-            # Clean up the placeholder record
-            db.delete(media_file)
-            db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to start YouTube processing. Please try again.",
-            ) from e
-
-        # Send initial file creation notification for gallery (silent - no notification panel message)
-        try:
-            from app.api.websockets import send_notification
-
-            await send_notification(
-                user_id=current_user.id,
-                notification_type="file_created",
-                data={
-                    "file_id": str(media_file.uuid),  # Use UUID
-                    "file": {
-                        "id": str(media_file.uuid),  # Use UUID for frontend
-                        "filename": media_file.filename,
-                        "status": media_file.status.value,
-                        "display_status": FormattingService.format_status(media_file.status),
-                        "content_type": media_file.content_type,
-                        "file_size": media_file.file_size,
-                        "title": media_file.title,
-                        "author": media_file.author,
-                        "duration": media_file.duration,
-                        "upload_time": media_file.upload_time.isoformat()
-                        if media_file.upload_time
-                        else None,
-                    },
-                },
-            )
-        except Exception as e:
-            logger.warning(f"Failed to send file_created notification: {e}")
+        # Send WebSocket notification
+        await _send_file_created_notification(media_file, current_user.id)
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for YouTube URL processing")
         return media_file
 
     except HTTPException:
-        # Re-raise HTTP exceptions (validation errors, etc.)
         raise
     except Exception as e:
         logger.error(f"Unexpected error processing YouTube URL: {e}", exc_info=True)

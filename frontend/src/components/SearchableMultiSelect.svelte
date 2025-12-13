@@ -1,13 +1,16 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let options = []; // Array of {id, name, count?}
   export let selectedIds = []; // Array of selected IDs
-  export let placeholder = "Select...";
+  export let placeholder = "";
   export let maxHeight = "200px";
   export let disabled = false;
   export let showCounts = false; // Show usage counts in dropdown
+
+  $: placeholder = placeholder || $t('select.placeholder');
 
   const dispatch = createEventDispatcher();
 
@@ -69,7 +72,7 @@
   >
     <span class="toggle-text">
       {#if selectedIds.length > 0}
-        {selectedIds.length} selected
+        {$t('select.selected', { count: selectedIds.length })}
       {:else}
         {placeholder}
       {/if}
@@ -90,7 +93,7 @@
       <div class="search-box">
         <input
           type="text"
-          placeholder="Search..."
+          placeholder={$t('select.searchPlaceholder')}
           bind:value={searchTerm}
           class="search-input"
           on:click|stopPropagation
@@ -99,7 +102,7 @@
 
       <div class="options-list" style="max-height: {maxHeight}">
         {#if sortedOptions.length === 0}
-          <div class="empty-message">No options found</div>
+          <div class="empty-message">{$t('select.noOptions')}</div>
         {:else}
           {#each sortedOptions as option (option.id)}
             <label class="option-item">

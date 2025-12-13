@@ -110,6 +110,8 @@ def process_youtube_url_task(
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
+    file_id = None  # Initialize to handle exceptions before file_id is assigned
+
     try:
         logger.info(f"Starting YouTube processing task for URL: {url}, file_uuid: {file_uuid}")
 
@@ -141,7 +143,11 @@ def process_youtube_url_task(
                     message="User or file record not found",
                     progress=0,
                 )
-                return {"status": "error", "message": "User or file record not found"}
+                return {
+                    "status": "error",
+                    "message": "User or file record not found",
+                    "file_id": file_id,
+                }
 
             youtube_service = YouTubeService()
 
@@ -274,21 +280,22 @@ def process_youtube_url_task(
                     progress=0,
                 )
 
-                return {"status": "error", "message": str(e)}
+                return {"status": "error", "message": str(e), "file_id": file_id}
 
     except Exception as e:
         logger.error(f"Unexpected error in YouTube processing task: {e}")
 
-        # Send error notification
-        send_youtube_notification_via_redis(
-            user_id=user_id,
-            file_id=file_id,
-            status=FileStatus.ERROR,
-            message=f"Unexpected error: {str(e)}",
-            progress=0,
-        )
+        # Send error notification only if file_id was assigned
+        if file_id is not None:
+            send_youtube_notification_via_redis(
+                user_id=user_id,
+                file_id=file_id,
+                status=FileStatus.ERROR,
+                message=f"Unexpected error: {str(e)}",
+                progress=0,
+            )
 
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": str(e), "file_id": file_id}
 
 
 class YouTubePlaylistProcessingResult(TypedDict):
@@ -299,6 +306,122 @@ class YouTubePlaylistProcessingResult(TypedDict):
     created_count: int
     skipped_count: int
     total_videos: int
+
+
+def _send_playlist_notification(
+    user_id: int,
+    status: str,
+    message: str,
+    progress: int,
+    extra_data: dict | None = None,
+) -> None:
+    """Send playlist processing notification via Redis.
+
+    Args:
+        user_id: User ID to send notification to.
+        status: Notification status (processing, completed, error).
+        message: Status message.
+        progress: Progress percentage (0-100).
+        extra_data: Optional additional data to include in notification.
+    """
+    try:
+        redis_client = redis.from_url(settings.REDIS_URL)
+        data = {
+            "status": status,
+            "message": message,
+            "progress": progress,
+        }
+        if extra_data:
+            data.update(extra_data)
+        notification = {
+            "user_id": user_id,
+            "type": "playlist_processing_status",
+            "data": data,
+        }
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+    except Exception as e:
+        logger.error(f"Failed to send playlist notification: {e}")
+
+
+def _create_playlist_error_result(message: str) -> YouTubePlaylistProcessingResult:
+    """Create an error result for playlist processing.
+
+    Args:
+        message: Error message.
+
+    Returns:
+        YouTubePlaylistProcessingResult with error status.
+    """
+    return {
+        "status": "error",
+        "message": message,
+        "created_count": 0,
+        "skipped_count": 0,
+        "total_videos": 0,
+    }
+
+
+def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None:
+    """Send file_created notification for a media file.
+
+    Args:
+        user_id: User ID to send notification to.
+        media_file: MediaFile instance to notify about.
+    """
+    try:
+        file_data = {
+            "id": str(media_file.uuid),
+            "filename": media_file.filename,
+            "status": media_file.status.value if media_file.status else "processing",
+            "display_status": FormattingService.format_status(media_file.status)
+            if media_file.status
+            else "Processing",
+            "content_type": media_file.content_type,
+            "file_size": media_file.file_size,
+            "title": media_file.title,
+            "author": media_file.author,
+            "duration": media_file.duration,
+            "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else None,
+        }
+
+        notification = {
+            "user_id": user_id,
+            "type": "file_created",
+            "data": {
+                "file_id": str(media_file.uuid),
+                "file": file_data,
+            },
+        }
+        redis_client = redis.from_url(settings.REDIS_URL)
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+    except Exception as e:
+        logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
+
+
+def _dispatch_video_task(media_file: MediaFile, user_id: int, db) -> bool:
+    """Dispatch processing task for a single video.
+
+    Args:
+        media_file: MediaFile instance to process.
+        user_id: User ID who initiated the request.
+        db: Database session.
+
+    Returns:
+        True if task was dispatched successfully, False otherwise.
+    """
+    try:
+        video_url = media_file.source_url
+        process_youtube_url_task.delay(
+            url=video_url, user_id=user_id, file_uuid=str(media_file.uuid)
+        )
+        logger.info(f"Dispatched YouTube processing task for video: {media_file.title}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
+        media_file.status = FileStatus.ERROR
+        media_file.last_error_message = f"Failed to start processing: {str(e)}"
+        db.commit()
+        return False
 
 
 @celery_app.task(name="process_youtube_playlist_task", bind=True)
@@ -324,219 +447,109 @@ def process_youtube_playlist_task(self, url: str, user_id: int) -> YouTubePlayli
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    logger.info(f"Starting YouTube playlist processing task for URL: {url}")
+    _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
+
     try:
-        logger.info(f"Starting YouTube playlist processing task for URL: {url}")
-
-        # Send initial notification
-        try:
-            redis_client = redis.from_url(settings.REDIS_URL)
-            notification = {
-                "user_id": user_id,
-                "type": "playlist_processing_status",
-                "data": {
-                    "status": "processing",
-                    "message": "Extracting playlist information...",
-                    "progress": 5,
-                },
-            }
-            redis_client.publish("websocket_notifications", json.dumps(notification))
-        except Exception as e:
-            logger.error(f"Failed to send initial playlist notification: {e}")
-
-        with session_scope() as db:
-            # Get the user record
-            user = db.query(User).filter(User.id == user_id).first()
-
-            if not user:
-                logger.error(f"User {user_id} not found")
-                return {
-                    "status": "error",
-                    "message": "User not found",
-                    "created_count": 0,
-                    "skipped_count": 0,
-                    "total_videos": 0,
-                }
-
-            youtube_service = YouTubeService()
-
-            # Progress callback for playlist extraction
-            def progress_callback(progress, message, data):
-                try:
-                    redis_client = redis.from_url(settings.REDIS_URL)
-                    notification = {
-                        "user_id": user_id,
-                        "type": "playlist_processing_status",
-                        "data": {
-                            "status": "processing",
-                            "message": message,
-                            "progress": progress,
-                            **data,
-                        },
-                    }
-                    redis_client.publish("websocket_notifications", json.dumps(notification))
-                except Exception as e:
-                    logger.error(f"Failed to send playlist progress notification: {e}")
-
-            # Process the playlist and create placeholder records
-            try:
-                result = youtube_service.process_youtube_playlist_sync(
-                    url=url, db=db, user=user, progress_callback=progress_callback
-                )
-
-                created_media_files = result.get("media_files", [])
-                skipped_videos = result.get("skipped_videos", [])
-                playlist_info = result.get("playlist_info", {})
-                created_count = result.get("created_count", 0)
-                skipped_count = result.get("skipped_count", 0)
-                total_videos = result.get("total_videos", 0)
-
-                playlist_title = playlist_info.get("playlist_title", "Unknown Playlist")
-                logger.info(
-                    f"Playlist '{playlist_title}' extraction complete: {created_count} videos to process, "
-                    f"{skipped_count} skipped"
-                )
-
-                # Send file_created notifications for each video
-                for media_file in created_media_files:
-                    try:
-                        file_data = {
-                            "id": str(media_file.uuid),
-                            "filename": media_file.filename,
-                            "status": media_file.status.value
-                            if media_file.status
-                            else "processing",
-                            "display_status": FormattingService.format_status(media_file.status)
-                            if media_file.status
-                            else "Processing",
-                            "content_type": media_file.content_type,
-                            "file_size": media_file.file_size,
-                            "title": media_file.title,
-                            "author": media_file.author,
-                            "duration": media_file.duration,
-                            "upload_time": media_file.upload_time.isoformat()
-                            if media_file.upload_time
-                            else None,
-                        }
-
-                        notification = {
-                            "user_id": user_id,
-                            "type": "file_created",
-                            "data": {
-                                "file_id": str(media_file.uuid),
-                                "file": file_data,
-                            },
-                        }
-                        redis_client = redis.from_url(settings.REDIS_URL)
-                        redis_client.publish("websocket_notifications", json.dumps(notification))
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to send file_created notification for video {media_file.id}: {e}"
-                        )
-
-                # Dispatch individual processing tasks for each video
-                dispatched_count = 0
-                for media_file in created_media_files:
-                    try:
-                        video_url = media_file.source_url
-                        process_youtube_url_task.delay(
-                            url=video_url, user_id=user_id, file_uuid=str(media_file.uuid)
-                        )
-                        dispatched_count += 1
-                        logger.info(
-                            f"Dispatched YouTube processing task for video: {media_file.title}"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
-                        # Update media file status to error
-                        media_file.status = FileStatus.ERROR
-                        media_file.last_error_message = f"Failed to start processing: {str(e)}"
-                        db.commit()
-
-                # Send completion notification with detailed stats
-                try:
-                    playlist_title = playlist_info.get("playlist_title", "Unknown Playlist")
-                    completion_message = f"Playlist '{playlist_title}': {created_count} of {total_videos} videos queued for download"
-                    if skipped_count > 0:
-                        completion_message += f" ({skipped_count} already in library)"
-
-                    notification = {
-                        "user_id": user_id,
-                        "type": "playlist_processing_status",
-                        "data": {
-                            "status": "completed",
-                            "message": completion_message,
-                            "progress": 100,
-                            "playlist_title": playlist_title,
-                            "playlist_id": playlist_info.get("playlist_id"),
-                            "created_count": created_count,
-                            "skipped_count": skipped_count,
-                            "total_videos": total_videos,
-                            "dispatched_count": dispatched_count,
-                        },
-                    }
-                    redis_client = redis.from_url(settings.REDIS_URL)
-                    redis_client.publish("websocket_notifications", json.dumps(notification))
-                except Exception as e:
-                    logger.error(f"Failed to send completion notification: {e}")
-
-                return {
-                    "status": "success",
-                    "message": completion_message,
-                    "created_count": created_count,
-                    "skipped_count": skipped_count,
-                    "total_videos": total_videos,
-                }
-
-            except Exception as e:
-                logger.error(f"Error processing YouTube playlist {url}: {e}")
-
-                # Send error notification
-                try:
-                    notification = {
-                        "user_id": user_id,
-                        "type": "playlist_processing_status",
-                        "data": {
-                            "status": "error",
-                            "message": f"Playlist processing failed: {str(e)}",
-                            "progress": 0,
-                        },
-                    }
-                    redis_client = redis.from_url(settings.REDIS_URL)
-                    redis_client.publish("websocket_notifications", json.dumps(notification))
-                except Exception as notif_error:
-                    logger.error(f"Failed to send error notification: {notif_error}")
-
-                return {
-                    "status": "error",
-                    "message": str(e),
-                    "created_count": 0,
-                    "skipped_count": 0,
-                    "total_videos": 0,
-                }
-
+        return _process_playlist_with_db(url, user_id)
     except Exception as e:
         logger.error(f"Unexpected error in YouTube playlist processing task: {e}")
+        _send_playlist_notification(user_id, "error", f"Unexpected error: {str(e)}", 0)
+        return _create_playlist_error_result(str(e))
 
-        # Send error notification
+
+def _process_playlist_with_db(url: str, user_id: int) -> YouTubePlaylistProcessingResult:
+    """Process playlist within a database session.
+
+    Args:
+        url: YouTube playlist URL.
+        user_id: User ID.
+
+    Returns:
+        YouTubePlaylistProcessingResult with processing outcome.
+    """
+    with session_scope() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if not user:
+            logger.error(f"User {user_id} not found")
+            return _create_playlist_error_result("User not found")
+
+        def progress_callback(progress, message, data):
+            _send_playlist_notification(user_id, "processing", message, progress, data)
+
         try:
-            notification = {
-                "user_id": user_id,
-                "type": "playlist_processing_status",
-                "data": {
-                    "status": "error",
-                    "message": f"Unexpected error: {str(e)}",
-                    "progress": 0,
-                },
-            }
-            redis_client = redis.from_url(settings.REDIS_URL)
-            redis_client.publish("websocket_notifications", json.dumps(notification))
-        except Exception as notif_error:
-            logger.error(f"Failed to send error notification: {notif_error}")
+            result = YouTubeService().process_youtube_playlist_sync(
+                url=url, db=db, user=user, progress_callback=progress_callback
+            )
+            return _handle_playlist_result(result, user_id, db)
+        except Exception as e:
+            logger.error(f"Error processing YouTube playlist {url}: {e}")
+            _send_playlist_notification(
+                user_id, "error", f"Playlist processing failed: {str(e)}", 0
+            )
+            return _create_playlist_error_result(str(e))
 
-        return {
-            "status": "error",
-            "message": str(e),
-            "created_count": 0,
-            "skipped_count": 0,
-            "total_videos": 0,
-        }
+
+def _handle_playlist_result(result: dict, user_id: int, db) -> YouTubePlaylistProcessingResult:
+    """Handle successful playlist extraction result.
+
+    Args:
+        result: Result dict from YouTubeService.process_youtube_playlist_sync.
+        user_id: User ID.
+        db: Database session.
+
+    Returns:
+        YouTubePlaylistProcessingResult with success outcome.
+    """
+    created_media_files = result.get("media_files", [])
+    playlist_info = result.get("playlist_info", {})
+    created_count = result.get("created_count", 0)
+    skipped_count = result.get("skipped_count", 0)
+    total_videos = result.get("total_videos", 0)
+
+    playlist_title = playlist_info.get("playlist_title", "Unknown Playlist")
+    logger.info(
+        f"Playlist '{playlist_title}' extraction complete: {created_count} videos to process, "
+        f"{skipped_count} skipped"
+    )
+
+    # Send file_created notifications for each video
+    for media_file in created_media_files:
+        _send_file_created_notification(user_id, media_file)
+
+    # Dispatch individual processing tasks for each video
+    dispatched_count = sum(
+        1 for media_file in created_media_files if _dispatch_video_task(media_file, user_id, db)
+    )
+
+    # Build completion message
+    completion_message = (
+        f"Playlist '{playlist_title}': {created_count} of {total_videos} videos queued for download"
+    )
+    if skipped_count > 0:
+        completion_message += f" ({skipped_count} already in library)"
+
+    # Send completion notification
+    _send_playlist_notification(
+        user_id,
+        "completed",
+        completion_message,
+        100,
+        {
+            "playlist_title": playlist_title,
+            "playlist_id": playlist_info.get("playlist_id"),
+            "created_count": created_count,
+            "skipped_count": skipped_count,
+            "total_videos": total_videos,
+            "dispatched_count": dispatched_count,
+        },
+    )
+
+    return {
+        "status": "success",
+        "message": completion_message,
+        "created_count": created_count,
+        "skipped_count": skipped_count,
+        "total_videos": total_videos,
+    }

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { getAudioExtractionSettings, updateAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
   import { toastStore } from '$stores/toast';
+  import { t } from '$stores/locale';
 
   // Settings state
   let autoExtractEnabled = true;
@@ -10,7 +11,6 @@
   let showModal = true;
   let loading = false;
   let saving = false;
-  let error = '';
 
   // Original values for change tracking
   let originalAutoExtractEnabled = true;
@@ -31,7 +31,6 @@
 
   async function loadSettings() {
     loading = true;
-    error = '';
     try {
       const settings = await getAudioExtractionSettings();
       autoExtractEnabled = settings.auto_extract_enabled;
@@ -46,7 +45,7 @@
       originalShowModal = settings.show_modal;
     } catch (err) {
       console.error('Failed to load audio extraction settings:', err);
-      error = 'Failed to load settings. Using defaults.';
+      toastStore.error($t('settings.audioExtraction.loadFailed'));
     } finally {
       loading = false;
     }
@@ -54,7 +53,6 @@
 
   async function saveSettings() {
     saving = true;
-    error = '';
     try {
       await updateAudioExtractionSettings({
         auto_extract_enabled: autoExtractEnabled,
@@ -69,11 +67,10 @@
       originalRememberChoice = rememberChoice;
       originalShowModal = showModal;
 
-      toastStore.success('Audio extraction settings saved successfully');
+      toastStore.success($t('settings.audioExtraction.saved'));
     } catch (err) {
       console.error('Failed to save audio extraction settings:', err);
-      error = 'Failed to save settings. Please try again.';
-      toastStore.error('Failed to save audio extraction settings');
+      toastStore.error($t('settings.audioExtraction.saveFailed'));
     } finally {
       saving = false;
     }
@@ -84,7 +81,7 @@
   {#if loading}
     <div class="loading-state">
       <div class="spinner"></div>
-      <p>Loading settings...</p>
+      <p>{$t('settings.audioExtraction.loading')}</p>
     </div>
   {:else}
     <div class="settings-form">
@@ -93,9 +90,9 @@
         <div class="toggle-group">
           <div class="toggle-header">
             <label for="auto-extract" class="toggle-label">
-              <span class="label-text">Enable Audio Extraction</span>
+              <span class="label-text">{$t('settings.audioExtraction.enableExtraction')}</span>
               <span class="label-description">
-                Automatically detect large video files and offer audio extraction
+                {$t('settings.audioExtraction.enableExtractionDesc')}
               </span>
             </label>
             <label class="toggle-switch">
@@ -114,8 +111,8 @@
         <!-- Extraction Threshold -->
         <div class="form-group">
           <label for="threshold" class="form-label">
-            File Size Threshold
-            <span class="label-hint">Minimum video size to trigger extraction prompt</span>
+            {$t('settings.audioExtraction.threshold')}
+            <span class="label-hint">{$t('settings.audioExtraction.thresholdHint')}</span>
           </label>
           <div class="threshold-input-group">
             <input
@@ -129,7 +126,7 @@
             <span class="threshold-unit">MB</span>
           </div>
           <p class="input-hint">
-            Videos larger than {extractionThresholdMb}MB will prompt for audio extraction
+            {$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })}
           </p>
         </div>
 
@@ -138,9 +135,9 @@
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="show-modal" class="toggle-label">
-                <span class="label-text">Show Extraction Dialog</span>
+                <span class="label-text">{$t('settings.audioExtraction.showDialog')}</span>
                 <span class="label-description">
-                  Ask before extracting audio (disable to extract automatically)
+                  {$t('settings.audioExtraction.showDialogDesc')}
                 </span>
               </label>
               <label class="toggle-switch">
@@ -160,9 +157,9 @@
           <div class="toggle-group">
             <div class="toggle-header">
               <label for="remember-choice" class="toggle-label">
-                <span class="label-text">Remember Choice</span>
+                <span class="label-text">{$t('settings.audioExtraction.rememberChoice')}</span>
                 <span class="label-description">
-                  Remember your last extraction decision (extract vs. upload full video)
+                  {$t('settings.audioExtraction.rememberChoiceDesc')}
                 </span>
               </label>
               <label class="toggle-switch">
@@ -178,12 +175,6 @@
         </div>
       {/if}
 
-      {#if error}
-        <div class="error-message">
-          {error}
-        </div>
-      {/if}
-
       <!-- Save Button -->
       <div class="form-actions">
         <button
@@ -193,9 +184,9 @@
         >
           {#if saving}
             <span class="button-spinner"></span>
-            Saving...
+            {$t('settings.audioExtraction.saving')}
           {:else}
-            Save Settings
+            {$t('settings.audioExtraction.saveSettings')}
           {/if}
         </button>
       </div>
@@ -210,13 +201,13 @@
           </svg>
         </div>
         <div class="info-content">
-          <p><strong>How it works:</strong></p>
+          <p><strong>{$t('settings.audioExtraction.howItWorks')}</strong></p>
           <ul>
-            <li>Large video files are automatically detected during upload</li>
-            <li>Audio is extracted client-side using your browser (nothing sent to server until complete)</li>
-            <li>Original video metadata is preserved for accurate transcription</li>
-            <li>Typical size reduction: 90%+ (500MB video → 45MB audio)</li>
-            <li>Format: Opus @ 32kbps, 16kHz mono (optimal for Whisper ASR)</li>
+            <li>{$t('settings.audioExtraction.howItWorks1')}</li>
+            <li>{$t('settings.audioExtraction.howItWorks2')}</li>
+            <li>{$t('settings.audioExtraction.howItWorks3')}</li>
+            <li>{$t('settings.audioExtraction.howItWorks4')}</li>
+            <li>{$t('settings.audioExtraction.howItWorks5')}</li>
           </ul>
         </div>
       </div>
@@ -399,15 +390,6 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .error-message {
-    padding: 0.75rem 1rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 6px;
-    color: #ef4444;
-    font-size: 0.8125rem;
   }
 
   .form-actions {

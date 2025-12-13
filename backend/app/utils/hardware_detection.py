@@ -236,7 +236,7 @@ class HardwareConfig:
             f"{vram['reserved_mb']:.0f}MB reserved / "
             f"{vram['total_mb']:.0f}MB total "
             f"({vram['usage_percent']:.1f}% allocated, "
-            f"{vram['reserved_mb']/vram['total_mb']*100:.1f}% reserved)"
+            f"{vram['reserved_mb'] / vram['total_mb'] * 100:.1f}% reserved)"
         )
 
     def optimize_memory_usage(self, aggressive: bool = True):

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { MajorTopic } from '$lib/types/summary';
+  import { t } from '$stores/locale';
 
   export let topics: MajorTopic[];
   // searchQuery prop removed - not used internally
@@ -15,7 +16,7 @@
 </script>
 
 <section class="topics-section">
-  <h3 class="section-title">Major Topics Discussed</h3>
+  <h3 class="section-title">{$t('topics.majorTopics')}</h3>
   <div class="topics-list">
     {#each topics as topic}
       <div class="topic-item">
@@ -23,16 +24,16 @@
           <span class="importance-indicator importance-{topic.importance || 'medium'}">{getImportanceIndicator(topic.importance || 'medium')}</span>
           {@html topic.topic}
         </h4>
-        
+
         {#if topic.participants && topic.participants.length > 0}
           <div class="topic-meta">
-            <em>Key participants: {@html topic.participants.join(', ')}</em>
+            <em>{$t('topics.keyParticipants')} {@html topic.participants.join(', ')}</em>
           </div>
         {/if}
-        
-        {#if (topic.key_points || topic.keyPoints) && (topic.key_points || topic.keyPoints).length > 0}
+
+        {#if topic.key_points && topic.key_points.length > 0}
           <ul class="topic-points">
-            {#each (topic.key_points || topic.keyPoints) as point}
+            {#each topic.key_points as point}
               <li>{@html point}</li>
             {/each}
           </ul>
@@ -148,7 +149,7 @@
     .topic-item {
       padding-left: 1rem;
     }
-    
+
     .topic-heading {
       font-size: 1rem;
     }

@@ -1,16 +1,18 @@
 <script lang="ts">
   import type { SummaryData } from '$lib/types/summary';
-  
+  import { t } from '$stores/locale';
+  import { translateSpeakerLabel } from '$lib/i18n';
+
   export let speakers: SummaryData['speakers'];
-  
+
   let expanded = false;
-  
+
   function formatTime(seconds: number): string {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  
+
   function getBarWidth(percentage: number): string {
     return `${Math.max(percentage, 2)}%`;
   }
@@ -18,41 +20,41 @@
 
 <section class="speaker-analysis-section">
   <div class="section-header">
-    <h3 class="section-title">Speaker Analysis</h3>
-    <button 
+    <h3 class="section-title">{$t('speaker.analysis')}</h3>
+    <button
       class="expand-toggle"
       class:expanded
       on:click={() => expanded = !expanded}
-      aria-label={expanded ? 'Collapse speaker analysis' : 'Expand speaker analysis'}
+      aria-label={expanded ? $t('speaker.collapseAnalysis') : $t('speaker.expandAnalysis')}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <path d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/>
       </svg>
     </button>
   </div>
-  
+
   {#if expanded}
     <div class="speakers-grid" transition:slide>
       {#each speakers as speaker}
         <div class="speaker-card">
           <div class="speaker-header">
-            <div class="speaker-name">{speaker.name}</div>
+            <div class="speaker-name">{translateSpeakerLabel(speaker.name)}</div>
             <div class="speaker-stats">
               <span class="talk-time">{formatTime(speaker.talk_time_seconds)}</span>
               <span class="percentage">({speaker.percentage.toFixed(1)}%)</span>
             </div>
           </div>
-          
+
           <div class="talk-time-bar">
-            <div 
+            <div
               class="talk-time-fill"
               style="width: {getBarWidth(speaker.percentage)}"
             ></div>
           </div>
-          
+
           {#if speaker.key_points && speaker.key_points.length > 0}
             <div class="key-points">
-              <h4 class="key-points-title">Key Contributions:</h4>
+              <h4 class="key-points-title">{$t('speaker.keyContributions')}</h4>
               <ul class="key-points-list">
                 {#each speaker.key_points as point}
                   <li class="key-point">{point}</li>
@@ -68,7 +70,7 @@
       <div class="speakers-overview">
         {#each speakers as speaker}
           <div class="speaker-chip">
-            <span class="speaker-chip-name">{speaker.name}</span>
+            <span class="speaker-chip-name">{translateSpeakerLabel(speaker.name)}</span>
             <span class="speaker-chip-percentage">{speaker.percentage.toFixed(1)}%</span>
           </div>
         {/each}

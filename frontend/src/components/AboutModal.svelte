@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fade, scale } from 'svelte/transition';
   import { onMount, onDestroy } from 'svelte';
+  import { t } from '$stores/locale';
 
   export let showModal = false;
 
@@ -77,12 +78,12 @@
     >
       <div class="modal-content">
         <div class="modal-header">
-          <h2 id="about-modal-title">About OpenTranscribe</h2>
+          <h2 id="about-modal-title">{$t('about.title')}</h2>
           <button
             class="modal-close"
             on:click={closeModal}
-            aria-label="Close about dialog"
-            title="Close about dialog"
+            aria-label={$t('about.closeDialog')}
+            title={$t('about.closeDialog')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -94,14 +95,14 @@
         <div class="modal-body">
           <div class="about-content">
             <section class="intro-section">
-              <p class="subtitle">AI-Powered Transcription & Media Management Platform</p>
+              <p class="subtitle">{$t('about.subtitle')}</p>
               <p class="description">
-                OpenTranscribe transforms your audio and video files into accurate, searchable transcripts using cutting-edge AI models. Built for professional workflows with an intuitive user experience.
+                {$t('about.description')}
               </p>
             </section>
 
             <section class="features-section">
-              <h3>Key Features</h3>
+              <h3>{$t('about.keyFeatures')}</h3>
               <div class="features-grid">
                 <div class="feature-item">
                   <div class="feature-icon">
@@ -112,8 +113,8 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>AI Transcription</h4>
-                    <p>WhisperX for highly accurate speech-to-text with word-level alignment.</p>
+                    <h4>{$t('about.aiTranscription')}</h4>
+                    <p>{$t('about.aiTranscriptionDesc')}</p>
                   </div>
                 </div>
 
@@ -127,8 +128,8 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>Speaker Detection</h4>
-                    <p>PyAnnote automatically identifies different speakers in conversations.</p>
+                    <h4>{$t('about.speakerDetection')}</h4>
+                    <p>{$t('about.speakerDetectionDesc')}</p>
                   </div>
                 </div>
 
@@ -140,8 +141,8 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>Full-Text Search</h4>
-                    <p>OpenSearch integration enables powerful searching across all transcripts.</p>
+                    <h4>{$t('about.fullTextSearch')}</h4>
+                    <p>{$t('about.fullTextSearchDesc')}</p>
                   </div>
                 </div>
 
@@ -152,8 +153,8 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>LLM Summaries</h4>
-                    <p>Generate intelligent summaries and extract action items with AI.</p>
+                    <h4>{$t('about.llmSummaries')}</h4>
+                    <p>{$t('about.llmSummariesDesc')}</p>
                   </div>
                 </div>
 
@@ -166,8 +167,8 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>Progressive Web App</h4>
-                    <p>Works seamlessly across desktop and mobile devices.</p>
+                    <h4>{$t('about.progressiveWebApp')}</h4>
+                    <p>{$t('about.progressiveWebAppDesc')}</p>
                   </div>
                 </div>
 
@@ -180,57 +181,57 @@
                     </svg>
                   </div>
                   <div>
-                    <h4>Secure & Private</h4>
-                    <p>Self-hosted with role-based access control and JWT authentication.</p>
+                    <h4>{$t('about.securePrivate')}</h4>
+                    <p>{$t('about.securePrivateDesc')}</p>
                   </div>
                 </div>
               </div>
             </section>
 
             <section class="workflow-section">
-              <h3>How It Works</h3>
+              <h3>{$t('about.howItWorks')}</h3>
               <div class="workflow-steps">
                 <div class="step">
                   <div class="step-number">1</div>
                   <div class="step-content">
-                    <h4>Upload</h4>
-                    <p>Upload audio/video files or record directly in the browser.</p>
+                    <h4>{$t('about.stepUpload')}</h4>
+                    <p>{$t('about.stepUploadDesc')}</p>
                   </div>
                 </div>
 
                 <div class="step">
                   <div class="step-number">2</div>
                   <div class="step-content">
-                    <h4>Process</h4>
-                    <p>AI models transcribe speech and identify speakers automatically.</p>
+                    <h4>{$t('about.stepProcess')}</h4>
+                    <p>{$t('about.stepProcessDesc')}</p>
                   </div>
                 </div>
 
                 <div class="step">
                   <div class="step-number">3</div>
                   <div class="step-content">
-                    <h4>Enhance</h4>
-                    <p>Generate summaries, extract action items with LLM features.</p>
+                    <h4>{$t('about.stepEnhance')}</h4>
+                    <p>{$t('about.stepEnhanceDesc')}</p>
                   </div>
                 </div>
 
                 <div class="step">
                   <div class="step-number">4</div>
                   <div class="step-content">
-                    <h4>Explore</h4>
-                    <p>Search, filter, and manage transcripts with powerful tools.</p>
+                    <h4>{$t('about.stepExplore')}</h4>
+                    <p>{$t('about.stepExploreDesc')}</p>
                   </div>
                 </div>
               </div>
             </section>
 
             <section class="credits-section">
-              <h3>Built With</h3>
-              <p class="credits-intro">OpenTranscribe is powered by these amazing open-source technologies:</p>
+              <h3>{$t('about.builtWith')}</h3>
+              <p class="credits-intro">{$t('about.builtWithIntro')}</p>
 
               <div class="credits-grid">
                 <div class="credit-category">
-                  <h4>AI & Machine Learning</h4>
+                  <h4>{$t('about.aiMachineLearning')}</h4>
                   <div class="credit-links">
                     <a href="https://github.com/m-bain/whisperX" target="_blank" rel="noopener noreferrer" class="credit-link">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -254,7 +255,7 @@
                 </div>
 
                 <div class="credit-category">
-                  <h4>Backend & Infrastructure</h4>
+                  <h4>{$t('about.backendInfrastructure')}</h4>
                   <div class="credit-links">
                     <a href="https://github.com/python/cpython" target="_blank" rel="noopener noreferrer" class="credit-link">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -278,7 +279,7 @@
                 </div>
 
                 <div class="credit-category">
-                  <h4>Frontend</h4>
+                  <h4>{$t('about.frontend')}</h4>
                   <div class="credit-links">
                     <a href="https://github.com/sveltejs/svelte" target="_blank" rel="noopener noreferrer" class="credit-link">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -296,7 +297,7 @@
                 </div>
 
                 <div class="credit-category">
-                  <h4>Queue & Task Processing</h4>
+                  <h4>{$t('about.queueTaskProcessing')}</h4>
                   <div class="credit-links">
                     <a href="https://github.com/celery/celery" target="_blank" rel="noopener noreferrer" class="credit-link">
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -321,14 +322,14 @@
               </div>
 
               <p class="credits-footer">
-                We're grateful to the open-source community for making OpenTranscribe possible.
+                {$t('about.gratefulMessage')}
                 <a href="https://github.com/openai/whisper" target="_blank" rel="noopener noreferrer" class="inline-link">OpenAI Whisper</a>
-                provides the foundation for our transcription capabilities.
+                {$t('about.whisperFoundation')}
               </p>
             </section>
 
             <section class="version-section">
-              <p class="version-info">OpenTranscribe v2.0 - Built for professional transcription workflows</p>
+              <p class="version-info">{$t('about.version')}</p>
             </section>
           </div>
         </div>

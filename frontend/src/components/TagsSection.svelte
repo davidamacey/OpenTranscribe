@@ -1,5 +1,6 @@
 <script lang="ts">
   import { slide } from 'svelte/transition';
+  import { t } from '$stores/locale';
   import TagsEditor from './TagsEditor.svelte';
 
   export let file: any = null;
@@ -19,22 +20,22 @@
 </script>
 
 <div class="tags-dropdown-section">
-  <button 
-    class="tags-header" 
-    on:click={toggleTags} 
+  <button
+    class="tags-header"
+    on:click={toggleTags}
     on:keydown={e => e.key === 'Enter' && toggleTags()}
-    title="Show or hide the tags editor to add, remove, or manage tags for this file" aria-expanded={isTagsExpanded}>
-    <h4 class="section-heading">Tags</h4>
+    title={$t('tags.toggleEditorHint')} aria-expanded={isTagsExpanded}>
+    <h4 class="section-heading">{$t('tags.title')}</h4>
     <div class="tags-preview">
       {#if file?.tags && file.tags.length > 0}
         {#each file.tags.slice(0, 3) as tag, i}
           <span class="tag-chip">{tag && tag.name ? tag.name : tag}</span>
         {/each}
         {#if file.tags.length > 3}
-          <span class="tag-chip more">+{file.tags.length - 3} more</span>
+          <span class="tag-chip more">{$t('tags.moreCount', { count: file.tags.length - 3 })}</span>
         {/if}
       {:else}
-        <span class="no-tags">No tags</span>
+        <span class="no-tags">{$t('tags.noTags')}</span>
       {/if}
     </div>
     <span class="dropdown-toggle" aria-hidden="true">
@@ -43,7 +44,7 @@
       </svg>
     </span>
   </button>
-  
+
   {#if isTagsExpanded}
     <div class="tags-content" transition:slide={{ duration: 200 }}>
       {#if file && file.id}
@@ -54,7 +55,7 @@
           on:tagsUpdated={handleTagsUpdated}
         />
       {:else}
-        <p>Loading tags...</p>
+        <p>{$t('tags.loadingTags')}</p>
       {/if}
     </div>
   {/if}
