@@ -86,6 +86,42 @@ detect_changes() {
     fi
 }
 
+# Function to update security scanning tool databases
+update_security_tools() {
+    print_info "Updating security scanning tool databases..."
+
+    # Update Trivy vulnerability database
+    if command -v trivy &> /dev/null; then
+        print_info "Updating Trivy vulnerability database..."
+        trivy image --download-db-only --quiet 2>/dev/null || true
+        trivy image --download-java-db-only --quiet 2>/dev/null || true
+        print_success "Trivy database updated"
+    else
+        print_warning "Trivy not found, skipping database update"
+    fi
+
+    # Update Grype vulnerability database
+    if command -v grype &> /dev/null; then
+        print_info "Updating Grype vulnerability database..."
+        grype db update --quiet 2>/dev/null || true
+        print_success "Grype database updated"
+    else
+        print_warning "Grype not found, skipping database update"
+    fi
+
+    # Update Syft (no database, but check for updates)
+    if command -v syft &> /dev/null; then
+        print_info "Syft is available (no database update needed)"
+    else
+        print_warning "Syft not found"
+    fi
+
+    # Hadolint and Dockle are rule-based, no database updates needed
+    print_info "Hadolint and Dockle are rule-based (no database updates needed)"
+
+    print_success "Security tool updates complete!"
+}
+
 # Function to run security scan if enabled
 run_security_scan() {
     local component=$1
@@ -201,19 +237,75 @@ build_frontend() {
 # Function to scan only (no build, pull latest and scan)
 scan_only() {
     print_info "Running security scan only (no build)..."
+
+    # Update security tool databases first
+    update_security_tools
+
     print_info "Pulling latest images from Docker Hub..."
 
-    # Pull latest backend image
-    print_info "Pulling backend image..."
-    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
-    run_security_scan "backend"
+    # Pull both images in parallel
+    print_info "Pulling backend and frontend images in parallel..."
+    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest" &
+    PULL_BACKEND_PID=$!
+    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest" &
+    PULL_FRONTEND_PID=$!
 
-    # Pull latest frontend image
-    print_info "Pulling frontend image..."
-    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
-    run_security_scan "frontend"
+    # Wait for pulls to complete
+    wait $PULL_BACKEND_PID
+    BACKEND_PULL_STATUS=$?
+    wait $PULL_FRONTEND_PID
+    FRONTEND_PULL_STATUS=$?
 
-    print_success "Security scans completed!"
+    if [ $BACKEND_PULL_STATUS -ne 0 ]; then
+        print_error "Failed to pull backend image"
+        return 1
+    fi
+    if [ $FRONTEND_PULL_STATUS -ne 0 ]; then
+        print_error "Failed to pull frontend image"
+        return 1
+    fi
+    print_success "Both images pulled successfully"
+
+    # Run security scans in parallel
+    print_info "Running security scans in parallel..."
+
+    # Create temp files for capturing output
+    BACKEND_LOG=$(mktemp)
+    FRONTEND_LOG=$(mktemp)
+
+    # Run backend scan in background
+    (
+        print_info "[Backend] Starting security scan..."
+        run_security_scan "backend"
+        echo $? > "${BACKEND_LOG}.status"
+    ) 2>&1 | tee "${BACKEND_LOG}" | sed 's/^/[Backend] /' &
+    SCAN_BACKEND_PID=$!
+
+    # Run frontend scan in background
+    (
+        print_info "[Frontend] Starting security scan..."
+        run_security_scan "frontend"
+        echo $? > "${FRONTEND_LOG}.status"
+    ) 2>&1 | tee "${FRONTEND_LOG}" | sed 's/^/[Frontend] /' &
+    SCAN_FRONTEND_PID=$!
+
+    # Wait for both scans to complete
+    print_info "Waiting for parallel scans to complete..."
+    wait $SCAN_BACKEND_PID
+    wait $SCAN_FRONTEND_PID
+
+    # Check results
+    BACKEND_STATUS=$(cat "${BACKEND_LOG}.status" 2>/dev/null || echo "1")
+    FRONTEND_STATUS=$(cat "${FRONTEND_LOG}.status" 2>/dev/null || echo "1")
+
+    # Cleanup temp files
+    rm -f "${BACKEND_LOG}" "${BACKEND_LOG}.status" "${FRONTEND_LOG}" "${FRONTEND_LOG}.status"
+
+    if [ "$BACKEND_STATUS" -ne 0 ] || [ "$FRONTEND_STATUS" -ne 0 ]; then
+        print_warning "Some security scans had issues"
+    else
+        print_success "All security scans completed successfully!"
+    fi
 }
 
 # Function to show usage
