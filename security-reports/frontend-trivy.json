@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2025-11-06T00:28:39.256729317-05:00",
+  "CreatedAt": "2025-12-13T00:30:13.294558283-05:00",
   "ArtifactName": "davidamacey/opentranscribe-frontend:latest",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 128798720,
+    "Size": 131900416,
     "OS": {
       "Family": "alpine",
       "Name": "3.22.2"
     },
-    "ImageID": "sha256:34ada614c2008f90915f31f5cecc4b851454721e04307a6369cf123cb1c90eff",
+    "ImageID": "sha256:0514d118ad4e7900d643cd7ebdcedebb43fb29155b11d4c458c54165adde733e",
     "DiffIDs": [
       "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1",
       "sha256:50b58ca2a3f5df327f34b26a67bcf09e84bd922972d651ed30939fc7378f8acc",
@@ -19,19 +19,19 @@
       "sha256:3297b9628ff3624c5cec418fce70b84e81cee2d50beec077b58fb6daf478df56",
       "sha256:99ea4bde418df15b6e7a8b9e4aed69b3b46a7176e7dcd26ee8f715cf0f29a4a2",
       "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac",
-      "sha256:d6cfa1a980546d372ee4f5fda59e0126a12c1b70b3440766d853ad7df8c09168",
-      "sha256:26c0c639a8a8fc811ca11b29d8e34634c9ee74f87aefdba784092e954826abc0",
-      "sha256:4aae3ca58e6d17e1345326fce324921f2ab8b6642e84a9ea1e8bb46c4f7b2239"
+      "sha256:59cff142515bfa09b56918903a9ce723cd41d91542f9cc7097c1179c1b06bc8b",
+      "sha256:3bc6ed90b33247cd250f79ca3c7e8cfc7834544514626915e38642f209c3cac9",
+      "sha256:a3cc7ad84c688e6c8658b02c0dfe635f7a11a8fbbd8d25f3d227e027658de107"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-frontend:latest"
     ],
     "RepoDigests": [
-      "davidamacey/opentranscribe-frontend@sha256:e5fa8be0159eaa654c8345dcaf7283010067a69a53b340d519d726343e278f0b"
+      "davidamacey/opentranscribe-frontend@sha256:6448c01c5f4b41b66626ccecc5b4e43a109fbc16e200b5538cd15e6b428a10c5"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2025-11-06T05:27:59.764942717Z",
+      "created": "2025-12-13T01:38:44.704730314Z",
       "history": [
         {
           "created": "2025-10-08T11:04:56Z",
@@ -140,40 +140,40 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:43Z",
           "created_by": "LABEL org.opencontainers.image.title=OpenTranscribe Frontend org.opencontainers.image.description=Svelte-based Progressive Web App for AI-powered transcription org.opencontainers.image.vendor=OpenTranscribe org.opencontainers.image.authors=OpenTranscribe Contributors org.opencontainers.image.licenses=AGPL-3.0 org.opencontainers.image.source=https://github.com/davidamacey/OpenTranscribe org.opencontainers.image.documentation=https://github.com/davidamacey/OpenTranscribe/blob/master/README.md",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:43Z",
           "created_by": "COPY /app/dist /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:43Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:44Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:44Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:44Z",
           "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2025-11-06T05:27:59Z",
+          "created": "2025-12-13T01:38:44Z",
           "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -191,9 +191,9 @@
           "sha256:3297b9628ff3624c5cec418fce70b84e81cee2d50beec077b58fb6daf478df56",
           "sha256:99ea4bde418df15b6e7a8b9e4aed69b3b46a7176e7dcd26ee8f715cf0f29a4a2",
           "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac",
-          "sha256:d6cfa1a980546d372ee4f5fda59e0126a12c1b70b3440766d853ad7df8c09168",
-          "sha256:26c0c639a8a8fc811ca11b29d8e34634c9ee74f87aefdba784092e954826abc0",
-          "sha256:4aae3ca58e6d17e1345326fce324921f2ab8b6642e84a9ea1e8bb46c4f7b2239"
+          "sha256:59cff142515bfa09b56918903a9ce723cd41d91542f9cc7097c1179c1b06bc8b",
+          "sha256:3bc6ed90b33247cd250f79ca3c7e8cfc7834544514626915e38642f209c3cac9",
+          "sha256:a3cc7ad84c688e6c8658b02c0dfe635f7a11a8fbbd8d25f3d227e027658de107"
         ]
       },
       "config": {
@@ -267,16 +267,16 @@
         "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
       },
       {
-        "Size": 37280768,
-        "DiffID": "sha256:d6cfa1a980546d372ee4f5fda59e0126a12c1b70b3440766d853ad7df8c09168"
+        "Size": 38831616,
+        "DiffID": "sha256:59cff142515bfa09b56918903a9ce723cd41d91542f9cc7097c1179c1b06bc8b"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:26c0c639a8a8fc811ca11b29d8e34634c9ee74f87aefdba784092e954826abc0"
+        "DiffID": "sha256:3bc6ed90b33247cd250f79ca3c7e8cfc7834544514626915e38642f209c3cac9"
       },
       {
-        "Size": 37286400,
-        "DiffID": "sha256:4aae3ca58e6d17e1345326fce324921f2ab8b6642e84a9ea1e8bb46c4f7b2239"
+        "Size": 38837248,
+        "DiffID": "sha256:a3cc7ad84c688e6c8658b02c0dfe635f7a11a8fbbd8d25f3d227e027658de107"
       }
     ]
   },
@@ -3511,6 +3511,397 @@
             "usr/lib/libzstd.so.1",
             "usr/lib/libzstd.so.1.5.7"
           ]
+        }
+      ],
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-58251",
+          "PkgID": "busybox@1.37.0-r19",
+          "PkgName": "busybox",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/busybox@1.37.0-r19?arch=x86_64\u0026distro=3.22.2",
+            "UID": "5158911d21d1c608"
+          },
+          "InstalledVersion": "1.37.0-r19",
+          "FixedVersion": "1.37.0-r20",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-58251",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "In netstat in BusyBox through 1.37.0, local users can launch of networ ...",
+          "Description": "In netstat in BusyBox through 1.37.0, local users can launch of network application with an argv[0] containing an ANSI terminal escape sequence, leading to a denial of service (terminal locked up) when netstat is used by a victim.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-150"
+          ],
+          "VendorSeverity": {
+            "ubuntu": 2
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2025/04/23/6",
+            "https://bugs.busybox.net/show_bug.cgi?id=15922",
+            "https://www.busybox.net",
+            "https://www.busybox.net/downloads/",
+            "https://www.cve.org/CVERecord?id=CVE-2024-58251"
+          ],
+          "PublishedDate": "2025-04-23T18:16:03.057Z",
+          "LastModifiedDate": "2025-04-29T13:52:47.47Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-58251",
+          "PkgID": "busybox-binsh@1.37.0-r19",
+          "PkgName": "busybox-binsh",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/busybox-binsh@1.37.0-r19?arch=x86_64\u0026distro=3.22.2",
+            "UID": "7150d5a240bb77cc"
+          },
+          "InstalledVersion": "1.37.0-r19",
+          "FixedVersion": "1.37.0-r20",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-58251",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "In netstat in BusyBox through 1.37.0, local users can launch of networ ...",
+          "Description": "In netstat in BusyBox through 1.37.0, local users can launch of network application with an argv[0] containing an ANSI terminal escape sequence, leading to a denial of service (terminal locked up) when netstat is used by a victim.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-150"
+          ],
+          "VendorSeverity": {
+            "ubuntu": 2
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2025/04/23/6",
+            "https://bugs.busybox.net/show_bug.cgi?id=15922",
+            "https://www.busybox.net",
+            "https://www.busybox.net/downloads/",
+            "https://www.cve.org/CVERecord?id=CVE-2024-58251"
+          ],
+          "PublishedDate": "2025-04-23T18:16:03.057Z",
+          "LastModifiedDate": "2025-04-29T13:52:47.47Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-64720",
+          "PkgID": "libpng@1.6.47-r0",
+          "PkgName": "libpng",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libpng@1.6.47-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "dc7943769b551d5b"
+          },
+          "InstalledVersion": "1.6.47-r0",
+          "FixedVersion": "1.6.51-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-64720",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "libpng: LIBPNG buffer overflow",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. From version 1.6.0 to before 1.6.51, an out-of-bounds read vulnerability exists in png_image_read_composite when processing palette images with PNG_FLAG_OPTIMIZE_ALPHA enabled. The palette compositing code in png_init_read_transformations incorrectly applies background compositing during premultiplication, violating the invariant component ≤ alpha × 257 required by the simplified PNG API. This issue has been patched in version 1.6.51.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-125"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "azure": 3,
+            "cbl-mariner": 3,
+            "photon": 3,
+            "redhat": 3,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:H",
+              "V3Score": 7.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2025-64720",
+            "https://github.com/pnggroup/libpng/commit/08da33b4c88cfcd36e5a706558a8d7e0e4773643",
+            "https://github.com/pnggroup/libpng/commit/08da33b4c88cfcd36e5a706558a8d7e0e4773643 (v1.6.51)",
+            "https://github.com/pnggroup/libpng/issues/686",
+            "https://github.com/pnggroup/libpng/pull/751",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-hfc7-ph9c-wcww",
+            "https://nvd.nist.gov/vuln/detail/CVE-2025-64720",
+            "https://ubuntu.com/security/notices/USN-7924-1",
+            "https://www.cve.org/CVERecord?id=CVE-2025-64720",
+            "https://www.openwall.com/lists/oss-security/2025/11/22/1"
+          ],
+          "PublishedDate": "2025-11-25T00:15:47.46Z",
+          "LastModifiedDate": "2025-11-26T18:35:18.253Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-65018",
+          "PkgID": "libpng@1.6.47-r0",
+          "PkgName": "libpng",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libpng@1.6.47-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "dc7943769b551d5b"
+          },
+          "InstalledVersion": "1.6.47-r0",
+          "FixedVersion": "1.6.51-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-65018",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "libpng: LIBPNG heap buffer overflow",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. From version 1.6.0 to before 1.6.51, there is a heap buffer overflow vulnerability in the libpng simplified API function png_image_finish_read when processing 16-bit interlaced PNGs with 8-bit output format. Attacker-crafted interlaced PNG files cause heap writes beyond allocated buffer bounds. This issue has been patched in version 1.6.51.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-122",
+            "CWE-787"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "azure": 3,
+            "cbl-mariner": 3,
+            "photon": 3,
+            "redhat": 3,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:H",
+              "V3Score": 7.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2025-65018",
+            "https://github.com/pnggroup/libpng/commit/16b5e3823918840aae65c0a6da57c78a5a496a4d",
+            "https://github.com/pnggroup/libpng/commit/16b5e3823918840aae65c0a6da57c78a5a496a4d (v1.6.51)",
+            "https://github.com/pnggroup/libpng/commit/218612ddd6b17944e21eda56caf8b4bf7779d1ea",
+            "https://github.com/pnggroup/libpng/commit/218612ddd6b17944e21eda56caf8b4bf7779d1ea (v1.6.51)",
+            "https://github.com/pnggroup/libpng/issues/755",
+            "https://github.com/pnggroup/libpng/pull/757",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-7wv6-48j4-hj3g",
+            "https://nvd.nist.gov/vuln/detail/CVE-2025-65018",
+            "https://ubuntu.com/security/notices/USN-7924-1",
+            "https://www.cve.org/CVERecord?id=CVE-2025-65018",
+            "https://www.openwall.com/lists/oss-security/2025/11/22/1"
+          ],
+          "PublishedDate": "2025-11-25T00:15:47.61Z",
+          "LastModifiedDate": "2025-11-26T18:34:53.65Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-66293",
+          "PkgID": "libpng@1.6.47-r0",
+          "PkgName": "libpng",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libpng@1.6.47-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "dc7943769b551d5b"
+          },
+          "InstalledVersion": "1.6.47-r0",
+          "FixedVersion": "1.6.53-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-66293",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "libpng: LIBPNG out-of-bounds read in png_image_read_composite",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. Prior to 1.6.52, an out-of-bounds read vulnerability in libpng's simplified API allows reading up to 1012 bytes beyond the png_sRGB_base[512] array when processing valid palette PNG images with partial transparency and gamma correction. The PNG files that trigger this vulnerability are valid per the PNG specification; the bug is in libpng's internal state management. Upgrade to libpng 1.6.52 or later.",
+          "Severity": "HIGH",
+          "CweIDs": [
+            "CWE-125"
+          ],
+          "VendorSeverity": {
+            "azure": 3,
+            "redhat": 3
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:H",
+              "V3Score": 7.1
+            }
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2025/12/03/6",
+            "http://www.openwall.com/lists/oss-security/2025/12/03/7",
+            "http://www.openwall.com/lists/oss-security/2025/12/03/8",
+            "https://access.redhat.com/security/cve/CVE-2025-66293",
+            "https://github.com/pnggroup/libpng/commit/788a624d7387a758ffd5c7ab010f1870dea753a1",
+            "https://github.com/pnggroup/libpng/commit/a05a48b756de63e3234ea6b3b938b8f5f862484a",
+            "https://github.com/pnggroup/libpng/issues/764",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-9mpm-9pxh-mg4f",
+            "https://nvd.nist.gov/vuln/detail/CVE-2025-66293",
+            "https://www.cve.org/CVERecord?id=CVE-2025-66293"
+          ],
+          "PublishedDate": "2025-12-03T21:15:53.06Z",
+          "LastModifiedDate": "2025-12-04T17:15:08.283Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-64505",
+          "PkgID": "libpng@1.6.47-r0",
+          "PkgName": "libpng",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libpng@1.6.47-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "dc7943769b551d5b"
+          },
+          "InstalledVersion": "1.6.47-r0",
+          "FixedVersion": "1.6.51-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-64505",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "libpng: LIBPNG heap buffer overflow via malformed palette index",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. Prior to version 1.6.51, a heap buffer over-read vulnerability exists in libpng's png_do_quantize function when processing PNG files with malformed palette indices. The vulnerability occurs when palette_lookup array bounds are not validated against externally-supplied image data, allowing an attacker to craft a PNG file with out-of-range palette indices that trigger out-of-bounds memory access. This issue has been patched in version 1.6.51.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-125"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "azure": 2,
+            "cbl-mariner": 2,
+            "photon": 2,
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:L",
+              "V3Score": 4.4
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2025-64505",
+            "https://github.com/pnggroup/libpng/commit/6a528eb5fd0dd7f6de1c39d30de0e41473431c37",
+            "https://github.com/pnggroup/libpng/commit/6a528eb5fd0dd7f6de1c39d30de0e41473431c37 (v1.6.51)",
+            "https://github.com/pnggroup/libpng/pull/748",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-4952-h5wq-4m42",
+            "https://nvd.nist.gov/vuln/detail/CVE-2025-64505",
+            "https://ubuntu.com/security/notices/USN-7924-1",
+            "https://www.cve.org/CVERecord?id=CVE-2025-64505",
+            "https://www.openwall.com/lists/oss-security/2025/11/22/1"
+          ],
+          "PublishedDate": "2025-11-25T00:15:47.133Z",
+          "LastModifiedDate": "2025-11-26T18:28:32.22Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-64506",
+          "PkgID": "libpng@1.6.47-r0",
+          "PkgName": "libpng",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/libpng@1.6.47-r0?arch=x86_64\u0026distro=3.22.2",
+            "UID": "dc7943769b551d5b"
+          },
+          "InstalledVersion": "1.6.47-r0",
+          "FixedVersion": "1.6.51-r0",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:25906c27b84d62cffa22785bff6e5f2d29499313c43b8a4985890528ac72c7ac"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-64506",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "libpng: LIBPNG heap buffer over-read",
+          "Description": "LIBPNG is a reference library for use in applications that read, create, and manipulate PNG (Portable Network Graphics) raster image files. From version 1.6.0 to before 1.6.51, a heap buffer over-read vulnerability exists in libpng's png_write_image_8bit function when processing 8-bit images through the simplified write API with convert_to_8bit enabled. The vulnerability affects 8-bit grayscale+alpha, RGB/RGBA, and images with incomplete row data. A conditional guard incorrectly allows 8-bit input to enter code expecting 16-bit input, causing reads up to 2 bytes beyond allocated buffer boundaries. This issue has been patched in version 1.6.51.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-125"
+          ],
+          "VendorSeverity": {
+            "amazon": 3,
+            "azure": 2,
+            "cbl-mariner": 2,
+            "photon": 2,
+            "redhat": 2,
+            "ubuntu": 2
+          },
+          "CVSS": {
+            "redhat": {
+              "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:H",
+              "V3Score": 6.1
+            }
+          },
+          "References": [
+            "https://access.redhat.com/security/cve/CVE-2025-64506",
+            "https://github.com/pnggroup/libpng/commit/2bd84c019c300b78e811743fbcddb67c9d9bf821",
+            "https://github.com/pnggroup/libpng/commit/2bd84c019c300b78e811743fbcddb67c9d9bf821 (v1.6.51)",
+            "https://github.com/pnggroup/libpng/pull/749",
+            "https://github.com/pnggroup/libpng/security/advisories/GHSA-qpr4-xm66-hww6",
+            "https://nvd.nist.gov/vuln/detail/CVE-2025-64506",
+            "https://ubuntu.com/security/notices/USN-7924-1",
+            "https://www.cve.org/CVERecord?id=CVE-2025-64506",
+            "https://www.openwall.com/lists/oss-security/2025/11/22/1"
+          ],
+          "PublishedDate": "2025-11-25T00:15:47.3Z",
+          "LastModifiedDate": "2025-11-26T18:34:38.24Z"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-58251",
+          "PkgID": "ssl_client@1.37.0-r19",
+          "PkgName": "ssl_client",
+          "PkgIdentifier": {
+            "PURL": "pkg:apk/alpine/ssl_client@1.37.0-r19?arch=x86_64\u0026distro=3.22.2",
+            "UID": "691bd1fc4de953e2"
+          },
+          "InstalledVersion": "1.37.0-r19",
+          "FixedVersion": "1.37.0-r20",
+          "Status": "fixed",
+          "Layer": {
+            "DiffID": "sha256:256f393e029fa2063d8c93720da36a74a032bed3355a2bc3e313ad12f8bde9d1"
+          },
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-58251",
+          "DataSource": {
+            "ID": "alpine",
+            "Name": "Alpine Secdb",
+            "URL": "https://secdb.alpinelinux.org/"
+          },
+          "Title": "In netstat in BusyBox through 1.37.0, local users can launch of networ ...",
+          "Description": "In netstat in BusyBox through 1.37.0, local users can launch of network application with an argv[0] containing an ANSI terminal escape sequence, leading to a denial of service (terminal locked up) when netstat is used by a victim.",
+          "Severity": "MEDIUM",
+          "CweIDs": [
+            "CWE-150"
+          ],
+          "VendorSeverity": {
+            "ubuntu": 2
+          },
+          "References": [
+            "http://www.openwall.com/lists/oss-security/2025/04/23/6",
+            "https://bugs.busybox.net/show_bug.cgi?id=15922",
+            "https://www.busybox.net",
+            "https://www.busybox.net/downloads/",
+            "https://www.cve.org/CVERecord?id=CVE-2024-58251"
+          ],
+          "PublishedDate": "2025-04-23T18:16:03.057Z",
+          "LastModifiedDate": "2025-04-29T13:52:47.47Z"
         }
       ]
     }
