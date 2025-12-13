@@ -1,19 +1,19 @@
 {
   "image": "davidamacey/opentranscribe-backend:latest",
   "summary": {
-    "fatal": 0,
+    "fatal": 1,
     "warn": 0,
-    "info": 2,
+    "info": 1,
     "skip": 0,
     "pass": 14
   },
   "details": [
     {
-      "code": "CIS-DI-0006",
-      "title": "Add HEALTHCHECK instruction to the container image",
-      "level": "INFO",
+      "code": "DKL-DI-0005",
+      "title": "Clear apt-get caches",
+      "level": "FATAL",
       "alerts": [
-        "not found HEALTHCHECK statement"
+        "Use 'rm -rf /var/lib/apt/lists' after 'apt-get install|update' : RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tnetbase \t\ttzdata \t; \tapt-get dist-clean # buildkit"
       ]
     },
     {
@@ -21,17 +21,17 @@
       "title": "Confirm safety of setuid/setgid files",
       "level": "INFO",
       "alerts": [
+        "setuid file: urwxr-xr-x usr/bin/gpasswd",
+        "setuid file: urwxr-xr-x usr/bin/su",
+        "setuid file: urwxr-xr-x usr/bin/mount",
+        "setgid file: grwxr-xr-x usr/bin/chage",
         "setuid file: urwxr-xr-x usr/bin/umount",
+        "setuid file: urwxr-xr-x usr/bin/chsh",
+        "setuid file: urwxr-xr-x usr/bin/chfn",
         "setgid file: grwxr-xr-x usr/sbin/unix_chkpwd",
         "setuid file: urwxr-xr-x usr/bin/passwd",
-        "setgid file: grwxr-xr-x usr/bin/chage",
-        "setuid file: urwxr-xr-x usr/bin/gpasswd",
-        "setgid file: grwxr-xr-x usr/bin/expiry",
         "setuid file: urwxr-xr-x usr/bin/newgrp",
-        "setuid file: urwxr-xr-x usr/bin/chsh",
-        "setuid file: urwxr-xr-x usr/bin/su",
-        "setuid file: urwxr-xr-x usr/bin/chfn",
-        "setuid file: urwxr-xr-x usr/bin/mount"
+        "setgid file: grwxr-xr-x usr/bin/expiry"
       ]
     }
   ]
