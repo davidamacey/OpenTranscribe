@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse } from '../../lib/api/llmSettings';
+  import { LLMSettingsApi, type UserLLMSettings, type ProviderDefaults } from '../../lib/api/llmSettings';
   import { toastStore } from '../../stores/toast';
   import { t } from '$stores/locale';
   import ConfirmationModal from '../ConfirmationModal.svelte';
@@ -26,7 +26,6 @@
   // Form state
   let saving = false;
   let testing = false;
-  let testResult: ConnectionTestResponse | null = null;
   let showApiKey = false;
   let isDirty = false;
   let originalFormData = {
@@ -50,7 +49,6 @@
     details: any;
     display_name: string;
   }> = [];
-  let ollamaModelsError = '';
   let showModelSelector = false;
 
   // OpenAI-compatible model discovery
@@ -61,11 +59,18 @@
     owned_by: string;
     created: number;
   }> = [];
-  let openaiModelsError = '';
   let showOpenAIModelSelector = false;
 
-  // Auto-fade timer for test results
-  let testResultTimer: NodeJS.Timeout;
+  // Anthropic model discovery
+  let loadingAnthropicModels = false;
+  let anthropicModels: Array<{
+    id: string;
+    display_name: string;
+    created_at: string;
+    type: string;
+  }> = [];
+  let showAnthropicModelSelector = false;
+
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -122,6 +127,18 @@
     if (formData.provider === 'ollama' && !formData.base_url) {
       return false;
     }
+    // Check if API key is required and present (for new configs or if no stored key)
+    const providerConfig = getProviderDefaults(formData.provider);
+    if (providerConfig?.requires_api_key) {
+      // In edit mode with stored key, allow test even without re-entering key
+      if (editingConfig?.has_api_key) {
+        return true;
+      }
+      // Otherwise require API key to be entered
+      if (!formData.api_key?.trim()) {
+        return false;
+      }
+    }
     return true;
   })();
 
@@ -172,13 +189,12 @@
       is_active: true
     };
     originalFormData = { ...formData };
-    testResult = null;
     ollamaModels = [];
-    ollamaModelsError = '';
     showModelSelector = false;
     openaiCompatibleModels = [];
-    openaiModelsError = '';
     showOpenAIModelSelector = false;
+    anthropicModels = [];
+    showAnthropicModelSelector = false;
   }
 
 
@@ -255,40 +271,24 @@
     if (!isConnectionTestValid) return;
 
     testing = true;
-    testResult = null;
 
     try {
       const result = await LLMSettingsApi.testConnection({
         provider: formData.provider,
         model_name: formData.model_name,
-        api_key: formData.api_key || undefined,
-        base_url: formData.base_url || undefined
+        api_key: formData.api_key?.trim() || undefined,
+        base_url: formData.base_url || undefined,
+        config_id: editingConfig?.id  // Pass config ID for edit mode to use stored key
       });
-
-      testResult = result;
 
       if (result.success) {
         toastStore.success(result.message, 5000);
       } else {
         toastStore.error(result.message, 8000);
       }
-
-      // Auto-fade test result
-      clearTimeout(testResultTimer);
-      testResultTimer = setTimeout(() => testResult = null, result.success ? 5000 : 8000);
     } catch (err: any) {
       const errorMsg = err.response?.data?.detail || $t('llm.connectionTestFailed');
       toastStore.error(errorMsg, 8000);
-
-      testResult = {
-        success: false,
-        status: 'failed',
-        message: errorMsg
-      };
-
-      // Auto-fade test result
-      clearTimeout(testResultTimer);
-      testResultTimer = setTimeout(() => testResult = null, 8000);
     } finally {
       testing = false;
     }
@@ -296,12 +296,11 @@
 
   async function loadOllamaModels() {
     if (!formData.base_url) {
-      ollamaModelsError = $t('llm.enterBaseUrlFirst');
+      toastStore.error($t('llm.enterBaseUrlFirst'));
       return;
     }
 
     loadingOllamaModels = true;
-    ollamaModelsError = '';
 
     try {
       const result = await LLMSettingsApi.getOllamaModels(formData.base_url);
@@ -309,10 +308,10 @@
         ollamaModels = result.models;
         showModelSelector = true;
       } else {
-        ollamaModelsError = result.message;
+        toastStore.error(result.message);
       }
     } catch (err: any) {
-      ollamaModelsError = err.response?.data?.detail || $t('llm.ollamaLoadFailed');
+      toastStore.error(err.response?.data?.detail || $t('llm.ollamaLoadFailed'));
     } finally {
       loadingOllamaModels = false;
     }
@@ -332,33 +331,34 @@
 
   async function loadOpenAICompatibleModels() {
     if (!formData.base_url) {
-      openaiModelsError = $t('llm.enterBaseUrlFirst');
+      toastStore.error($t('llm.enterBaseUrlFirst'));
       return;
     }
 
     // Check if API key is required for this provider
     const providerConfig = getProviderDefaults(formData.provider);
-    if (providerConfig?.requires_api_key && !formData.api_key) {
-      openaiModelsError = $t('llm.enterApiKeyFirst');
+    const hasStoredKey = editingConfig?.has_api_key;
+    if (providerConfig?.requires_api_key && !formData.api_key?.trim() && !hasStoredKey) {
+      toastStore.error($t('llm.enterApiKeyFirst'));
       return;
     }
 
     loadingOpenAIModels = true;
-    openaiModelsError = '';
 
     try {
       const result = await LLMSettingsApi.getOpenAICompatibleModels(
         formData.base_url,
-        formData.api_key || undefined
+        formData.api_key?.trim() || undefined,
+        editingConfig?.id  // Pass config ID for edit mode to use stored key
       );
       if (result.success && result.models) {
         openaiCompatibleModels = result.models;
         showOpenAIModelSelector = true;
       } else {
-        openaiModelsError = result.message;
+        toastStore.error(result.message);
       }
     } catch (err: any) {
-      openaiModelsError = err.response?.data?.detail || $t('llm.modelsLoadFailed');
+      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
     } finally {
       loadingOpenAIModels = false;
     }
@@ -370,17 +370,70 @@
     showOpenAIModelSelector = false;
   }
 
+  async function loadAnthropicModels() {
+    // In edit mode, we can use stored key if no new key is entered
+    const hasKey = formData.api_key?.trim() || editingConfig?.has_api_key;
+    if (!hasKey) {
+      toastStore.error($t('llm.enterApiKeyFirst'));
+      return;
+    }
+
+    loadingAnthropicModels = true;
+
+    try {
+      const result = await LLMSettingsApi.getAnthropicModels(
+        formData.api_key?.trim() || undefined,  // Only send if user typed a new key
+        editingConfig?.id  // Backend will use stored key if no api_key provided
+      );
+      if (result.success && result.models) {
+        anthropicModels = result.models;
+        showAnthropicModelSelector = true;
+      } else {
+        toastStore.error(result.message);
+      }
+    } catch (err: any) {
+      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
+    } finally {
+      loadingAnthropicModels = false;
+    }
+  }
+
+  function selectAnthropicModel(modelId: string) {
+    formData.model_name = modelId;
+    formData = { ...formData }; // Force reactivity update
+    showAnthropicModelSelector = false;
+  }
+
+  // Track provider changes to reset defaults
+  let previousProvider: string = '';
+
   // Apply provider defaults when provider changes
   $: if (formData.provider) {
     const defaults = getProviderDefaults(formData.provider);
     if (defaults && !editingConfig) {
-      // Only apply defaults for new configurations
-      if (!formData.base_url && defaults.default_base_url) {
-        formData.base_url = defaults.default_base_url;
+      // Detect if provider actually changed (not just initialization)
+      const providerChanged = previousProvider !== '' && previousProvider !== formData.provider;
+
+      if (providerChanged) {
+        // Provider changed - reset and apply new defaults
+        formData.base_url = defaults.default_base_url || '';
+        formData.model_name = defaults.default_model || '';
+        // Close any open model selectors
+        showModelSelector = false;
+        showOpenAIModelSelector = false;
+        showAnthropicModelSelector = false;
+      } else {
+        // Initial load or same provider - only apply if empty
+        if (!formData.base_url && defaults.default_base_url) {
+          formData.base_url = defaults.default_base_url;
+        }
+        if (!formData.model_name && defaults.default_model) {
+          formData.model_name = defaults.default_model;
+        }
       }
-      if (!formData.model_name && defaults.default_model) {
-        formData.model_name = defaults.default_model;
-      }
+
+      // Track current provider for next change detection
+      previousProvider = formData.provider;
     }
   }
 
@@ -551,10 +604,35 @@
                   type="button"
                   class="discover-models-btn"
                   on:click={loadOpenAICompatibleModels}
-                  disabled={loadingOpenAIModels || saving || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key)}
+                  disabled={loadingOpenAIModels || saving || loadingApiKey || !formData.base_url || (getProviderDefaults(formData.provider)?.requires_api_key && !formData.api_key?.trim() && !editingConfig?.has_api_key)}
                   title={$t('llm.discoverModelsTooltip')}
                 >
                   {#if loadingOpenAIModels}
+                    <div class="spinner-mini"></div>
+                  {:else}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <circle cx="12" cy="1" r="1"/>
+                      <circle cx="12" cy="23" r="1"/>
+                      <circle cx="4.22" cy="4.22" r="1"/>
+                      <circle cx="19.78" cy="19.78" r="1"/>
+                      <circle cx="1" cy="12" r="1"/>
+                      <circle cx="23" cy="12" r="1"/>
+                      <circle cx="4.22" cy="19.78" r="1"/>
+                      <circle cx="19.78" cy="4.22" r="1"/>
+                    </svg>
+                  {/if}
+                  {$t('llm.discoverModels')}
+                </button>
+              {:else if formData.provider === 'anthropic' || formData.provider === 'claude'}
+                <button
+                  type="button"
+                  class="discover-models-btn"
+                  on:click={loadAnthropicModels}
+                  disabled={loadingAnthropicModels || saving || loadingApiKey || (!formData.api_key?.trim() && !editingConfig?.has_api_key)}
+                  title={$t('llm.discoverModelsTooltip')}
+                >
+                  {#if loadingAnthropicModels}
                     <div class="spinner-mini"></div>
                   {:else}
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -607,9 +685,6 @@
               </div>
             {/if}
 
-            {#if ollamaModelsError}
-              <div class="error-text">{ollamaModelsError}</div>
-            {/if}
 
             <!-- OpenAI-Compatible Model Selector -->
             {#if showOpenAIModelSelector && openaiCompatibleModels.length > 0}
@@ -637,56 +712,72 @@
               </div>
             {/if}
 
-            {#if openaiModelsError}
-              <div class="error-text">{openaiModelsError}</div>
+            <!-- Anthropic Model Selector -->
+            {#if showAnthropicModelSelector && anthropicModels.length > 0}
+              <div class="model-selector">
+                <h4>{$t('llm.availableModels')}</h4>
+                <div class="model-list">
+                  {#each anthropicModels as model}
+                    <button
+                      type="button"
+                      class="model-item"
+                      on:click={() => selectAnthropicModel(model.id)}
+                    >
+                      <div class="model-info">
+                        <div class="model-name">{model.display_name}</div>
+                        <div class="model-details">{model.id}</div>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+                <button type="button" class="close-selector" on:click={() => showAnthropicModelSelector = false}>
+                  {$t('llm.closeSelector')}
+                </button>
+              </div>
             {/if}
+
           </div>
 
           <!-- API Key (if required) -->
           {#if getProviderDefaults(formData.provider)?.requires_api_key || (editingConfig && editingConfig.has_api_key)}
             <div class="form-group">
-              <label for="api-key">
-                {$t('llm.apiKey')} {#if !editingConfig}*{/if}
-              </label>
-              <div class="api-key-input">
-                {#if showApiKey}
-                  <input
-                    type="text"
-                    id="api-key"
-                    bind:value={formData.api_key}
-                    disabled={saving}
-                    class="form-control"
-                    placeholder={$t('llm.apiKeyPlaceholder')}
-                    required={!editingConfig}
-                  />
-                {:else}
-                  <input
-                    type="password"
-                    id="api-key"
-                    bind:value={formData.api_key}
-                    disabled={saving}
-                    class="form-control"
-                    placeholder={$t('llm.apiKeyPlaceholder')}
-                    required={!editingConfig}
-                  />
-                {/if}
+              <div class="api-key-header">
+                <label for="api-key">
+                  {$t('llm.apiKey')} {#if !editingConfig}*{/if}
+                </label>
                 <button
                   type="button"
-                  class="toggle-visibility"
+                  class="toggle-password"
                   on:click={() => showApiKey = !showApiKey}
-                  title={showApiKey ? $t('llm.hideApiKey') : $t('llm.showApiKey')}
+                  tabindex="-1"
+                  aria-label={showApiKey ? $t('llm.hideApiKey') : $t('llm.showApiKey')}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    {#if showApiKey}
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                      <line x1="1" y1="1" x2="23" y2="23"/>
-                    {:else}
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  {#if showApiKey}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
                       <circle cx="12" cy="12" r="3"/>
-                    {/if}
-                  </svg>
+                    </svg>
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="m15 18-.722-3.25"/>
+                      <path d="m2 2 20 20"/>
+                      <path d="m9 9-.637 3.181"/>
+                      <path d="M12.5 5.5c2.13.13 4.16 1.11 5.5 3.5-.274.526-.568 1.016-.891 1.469"/>
+                      <path d="M2 12s3-7 10-7c1.284 0 2.499.23 3.62.67"/>
+                      <path d="m18.147 8.476.853 3.524"/>
+                    </svg>
+                  {/if}
                 </button>
               </div>
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                id="api-key"
+                bind:value={formData.api_key}
+                disabled={saving}
+                class="form-control"
+                placeholder={$t('llm.apiKeyPlaceholder')}
+                required={!editingConfig}
+              />
             </div>
           {/if}
 
@@ -729,7 +820,7 @@
               type="button"
               class="test-connection-btn"
               on:click={testConnection}
-              disabled={testing || !isConnectionTestValid}
+              disabled={testing || loadingApiKey || !isConnectionTestValid}
               title={$t('llm.testConnectionTooltip')}
             >
               {#if testing}
@@ -743,14 +834,6 @@
               {/if}
             </button>
 
-            {#if testResult}
-              <div class="test-result {testResult.success ? 'success' : 'error'}">
-                {testResult.message}
-                {#if testResult.response_time_ms}
-                  <span class="response-time">({testResult.response_time_ms}ms)</span>
-                {/if}
-              </div>
-            {/if}
           </div>
         {/if}
 
@@ -920,28 +1003,26 @@
     cursor: not-allowed;
   }
 
-  .api-key-input {
-    position: relative;
+  .api-key-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
 
-  .toggle-visibility {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
+  .toggle-password {
     background: none;
     border: none;
     cursor: pointer;
-    color: var(--text-muted);
     padding: 4px;
-    border-radius: 4px;
+    color: var(--text-secondary, var(--text-muted));
     display: flex;
     align-items: center;
-    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
   }
 
-  .toggle-visibility:hover {
-    background-color: var(--hover-color);
+  .toggle-password:hover {
+    background-color: var(--background-color, var(--hover-color));
     color: var(--text-color);
   }
 
@@ -1062,33 +1143,6 @@
     cursor: not-allowed;
   }
 
-  .test-result {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .test-result.success {
-    background-color: var(--success-bg);
-    color: var(--success-color);
-    border: 1px solid var(--success-border);
-  }
-
-  .test-result.error {
-    background-color: var(--error-bg);
-    color: var(--error-color);
-    border: 1px solid var(--error-border);
-  }
-
-  .response-time {
-    font-size: 0.75rem;
-    opacity: 0.8;
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -1167,12 +1221,6 @@
   @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-  }
-
-  .error-text {
-    color: var(--error-color);
-    font-size: 0.75rem;
-    margin-top: 0.25rem;
   }
 
   /* Tooltip styles */

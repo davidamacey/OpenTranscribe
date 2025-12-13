@@ -10,7 +10,6 @@ export type LLMProvider =
   | "openai"
   | "vllm"
   | "ollama"
-  | "claude"
   | "anthropic"
   | "openrouter"
   | "custom";
@@ -302,15 +301,46 @@ export class LLMSettingsApi {
   }
 
   /**
+   * Get available models from Anthropic API
+   * @param apiKey - API key for Anthropic (required)
+   * @param configId - Optional config ID (for edit mode - uses stored key)
+   */
+  static async getAnthropicModels(
+    apiKey?: string,
+    configId?: string,
+  ): Promise<{
+    success: boolean;
+    models: Array<{
+      id: string;
+      display_name: string;
+      created_at: string;
+      type: string;
+    }>;
+    total: number;
+    message: string;
+  }> {
+    const response = await axiosInstance.get(
+      `${this.BASE_PATH}/anthropic/models`,
+      {
+        params: {
+          api_key: apiKey,
+          config_id: configId,
+        },
+      },
+    );
+    return response.data;
+  }
+
+  /**
    * Get provider-specific default configuration
    */
   static getProviderDefaults(
-    provider: LLMProvider,
+    provider: LLMProvider | string,
   ): Partial<UserLLMSettingsCreate> {
-    const providerDefaults: Record<
-      LLMProvider,
-      Partial<UserLLMSettingsCreate>
-    > = {
+    // Normalize legacy 'claude' to 'anthropic'
+    const normalizedProvider = provider === "claude" ? "anthropic" : provider;
+
+    const providerDefaults: Record<string, Partial<UserLLMSettingsCreate>> = {
       openai: {
         provider: "openai",
         model_name: "gpt-4o-mini",
@@ -327,21 +357,14 @@ export class LLMSettingsApi {
       },
       ollama: {
         provider: "ollama",
-        model_name: "llama2:7b-chat",
+        model_name: "llama3.2:latest",
         base_url: "http://localhost:11434/v1",
-        max_tokens: 8192, // Conservative context window
-        temperature: "0.3",
-      },
-      claude: {
-        provider: "claude",
-        model_name: "claude-3-haiku-20240307",
-        base_url: "https://api.anthropic.com/v1",
-        max_tokens: 200000, // Claude's large context window
+        max_tokens: 128000, // Modern context window
         temperature: "0.3",
       },
       anthropic: {
         provider: "anthropic",
-        model_name: "claude-3-haiku-20240307",
+        model_name: "claude-opus-4-5-20251101",
         base_url: "https://api.anthropic.com/v1",
         max_tokens: 200000, // Anthropic Claude context window
         temperature: "0.3",
@@ -362,19 +385,19 @@ export class LLMSettingsApi {
       },
     };
 
-    return providerDefaults[provider] || {};
+    return providerDefaults[normalizedProvider] || {};
   }
 
   /**
    * Get user-friendly provider name
    */
-  static getProviderDisplayName(provider: LLMProvider): string {
-    const displayNames: Record<LLMProvider, string> = {
+  static getProviderDisplayName(provider: LLMProvider | string): string {
+    const displayNames: Record<string, string> = {
       openai: "OpenAI",
       vllm: "vLLM",
       ollama: "Ollama",
-      claude: "Claude (Anthropic)",
-      anthropic: "Anthropic Claude",
+      anthropic: "Anthropic",
+      claude: "Anthropic", // Legacy support
       openrouter: "OpenRouter",
       custom: "Custom Provider",
     };

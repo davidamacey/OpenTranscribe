@@ -19,10 +19,11 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     VLLM = "vllm"
     OLLAMA = "ollama"
-    CLAUDE = "claude"
-    ANTHROPIC = "anthropic"  # Alias for claude
+    ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
     CUSTOM = "custom"
+    # Legacy - kept for backward compatibility with existing database records
+    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
 class ConnectionStatus(str, Enum):

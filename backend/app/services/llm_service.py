@@ -28,10 +28,11 @@ class LLMProvider(str, Enum):
     OPENAI = "openai"
     VLLM = "vllm"
     OLLAMA = "ollama"
-    CLAUDE = "claude"
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
     CUSTOM = "custom"
+    # Legacy - kept for backward compatibility
+    CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead
 
 
 @dataclass

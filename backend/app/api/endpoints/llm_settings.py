@@ -78,16 +78,16 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OLLAMA,
-            default_model="llama2:7b-chat",
+            default_model="llama3.2:latest",
             default_base_url="http://localhost:11434",
             requires_api_key=False,
             supports_custom_url=True,
-            max_context_length=4096,
+            max_context_length=128000,
             description="Ollama for local model deployment - uses native /api/chat endpoint",
         ),
         schemas.ProviderDefaults(
-            provider=schemas.LLMProvider.CLAUDE,
-            default_model="claude-3-haiku-20240307",
+            provider=schemas.LLMProvider.ANTHROPIC,
+            default_model="claude-opus-4-5-20251101",
             default_base_url="https://api.anthropic.com/v1",
             requires_api_key=True,
             supports_custom_url=False,
@@ -96,7 +96,7 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
         ),
         schemas.ProviderDefaults(
             provider=schemas.LLMProvider.OPENROUTER,
-            default_model="anthropic/claude-3-haiku",
+            default_model="anthropic/claude-3.5-haiku",
             default_base_url="https://openrouter.ai/api/v1",
             requires_api_key=True,
             supports_custom_url=False,
@@ -1000,6 +1000,86 @@ async def _fetch_and_parse_models(models_url: str, headers: dict, base_url: str)
             f"Model discovery: Successfully found {len(model_list)} models from {models_url}"
         )
         return _model_discovery_response(True, model_list, f"Found {len(model_list)} models")
+
+
+def _parse_anthropic_model(model: dict) -> dict:
+    """Parse a single Anthropic model entry into standardized format."""
+    return {
+        "id": model.get("id", ""),
+        "display_name": model.get("display_name", model.get("id", "")),
+        "created_at": model.get("created_at", ""),
+        "type": model.get("type", "model"),
+    }
+
+
+async def _fetch_anthropic_models(headers: dict) -> dict[str, Any]:
+    """Fetch and parse models from Anthropic API."""
+    import aiohttp
+
+    models_url = "https://api.anthropic.com/v1/models"
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.get(models_url, headers=headers) as response,
+    ):
+        if response.status != 200:
+            error_text = await response.text() if response.status not in (401, 403) else ""
+            return _model_discovery_response(
+                False, message=_get_http_error_message(response.status, models_url, error_text)
+            )
+
+        data = await response.json()
+        # Anthropic returns { "data": [...], "has_more": bool, "first_id": str, "last_id": str }
+        model_list = [_parse_anthropic_model(m) for m in data.get("data", [])]
+
+        logger.info(f"Anthropic model discovery: Found {len(model_list)} models")
+        return _model_discovery_response(True, model_list, f"Found {len(model_list)} models")
+
+
+@router.get("/anthropic/models")
+async def get_anthropic_models(
+    api_key: str | None = None,
+    config_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get available models from Anthropic API.
+    If config_id is provided and no api_key, will use the stored API key from that config.
+    """
+    import aiohttp
+
+    # Resolve effective API key
+    effective_api_key = api_key
+    if not effective_api_key and config_id:
+        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+
+    if not effective_api_key:
+        return _model_discovery_response(
+            False, message="API key is required to fetch Anthropic models"
+        )
+
+    headers = {
+        "x-api-key": effective_api_key,
+        "anthropic-version": "2023-06-01",
+    }
+
+    try:
+        return await _fetch_anthropic_models(headers)
+    except aiohttp.ClientConnectorError:
+        return _model_discovery_response(
+            False, message="Connection failed: Could not reach Anthropic API"
+        )
+    except aiohttp.ClientError as e:
+        return _model_discovery_response(False, message=f"Connection error: {str(e)}")
+    except TimeoutError:
+        return _model_discovery_response(
+            False, message="Connection timeout: Anthropic API did not respond within 10 seconds"
+        )
+    except Exception as e:
+        logger.error(f"Error fetching Anthropic models: {e}", exc_info=True)
+        return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
 
 
 @router.get("/encryption-test")
