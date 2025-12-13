@@ -279,8 +279,9 @@ The application now includes optional AI-powered features using Large Language M
 - Speaker merge UI for combining duplicate speakers
 
 **Model Discovery:**
-- Automatic discovery of available models for OpenAI-compatible providers
-- Works with vLLM, Ollama, and other OpenAI API-compatible servers
+- Automatic discovery of available models for vLLM, Ollama, and Anthropic
+- Works with OpenAI-compatible API endpoints
+- Edit mode supports stored API keys (no need to re-enter)
 
 **Configuration:**
 - Set `LLM_PROVIDER` in .env file (vllm, openai, ollama, anthropic, openrouter)

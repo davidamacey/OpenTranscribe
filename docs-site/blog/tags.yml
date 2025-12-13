@@ -17,3 +17,33 @@ tutorial:
   label: Tutorial
   permalink: /tutorial
   description: Step-by-step tutorials and guides
+
+milestone:
+  label: Milestone
+  permalink: /milestone
+  description: Project milestones and achievements
+
+agpl:
+  label: AGPL
+  permalink: /agpl
+  description: License and open source topics
+
+open-source:
+  label: Open Source
+  permalink: /open-source
+  description: Open source community and contributions
+
+community:
+  label: Community
+  permalink: /community
+  description: Community contributions and feedback
+
+multilingual:
+  label: Multilingual
+  permalink: /multilingual
+  description: Multi-language support and internationalization
+
+i18n:
+  label: i18n
+  permalink: /i18n
+  description: Internationalization features

@@ -5,6 +5,78 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-12
+
+### Overview
+Community-driven multilingual release! This version features significant contributions from the open source community, including 7 pull requests from [@SQLServerIO](https://github.com/SQLServerIO) (Wes Brown) and a critical multilingual feature request from [@LaboratorioInternacionalWeb](https://github.com/LaboratorioInternacionalWeb).
+
+### Added
+
+#### Multilingual Transcription Support
+- **100+ Language Support** - Expanded from 50+ to 100+ languages via WhisperX
+- **Configurable Source Language** - Auto-detect or manually specify source language for improved accuracy
+- **Translation Toggle** - Choose to keep original language or translate to English (default: keep original)
+- **Word-Level Alignment Indicators** - UI shows which languages (~42) support word-level timestamps
+- **LLM Output Language** - Generate AI summaries in 12 languages (EN, ES, FR, DE, PT, ZH, JA, KO, IT, RU, AR, HI)
+
+#### UI Internationalization (i18n)
+- **7 UI Languages** - English, Spanish, French, German, Portuguese, Chinese, Japanese
+- **Language Settings** - User-configurable UI language preference
+- **Locale Store** - Persistent language preference with localStorage
+- **Translation System** - Comprehensive i18n system across all frontend components
+
+#### Speaker Management Enhancements
+- **Speaker Merge UI** - Visual interface to combine duplicate speakers with segment preview
+- **Segment Reassignment** - Automatic segment speaker reassignment during merge
+- **Per-File Speaker Settings** - Configure min/max speakers at upload or reprocess time
+- **User-Level Speaker Preferences** - Save default speaker detection settings (always prompt, use defaults, use custom)
+
+#### LLM Integration Improvements
+- **Anthropic Model Discovery** - Native /v1/models API for dynamic model listing
+- **Model Auto-Discovery** - Extended to support vLLM, Ollama, and Anthropic providers
+- **Edit Mode API Key Support** - Stored API keys work in edit mode (no need to re-enter)
+- **Updated Default Models** - Anthropic: claude-opus-4-5-20251101, Ollama: llama3.2:latest
+- **Improved Configuration UX** - Toast notifications replace inline errors, better API key toggle positioning
+
+#### User Settings
+- **Transcription Settings** - User-level transcription preferences stored in database
+- **Garbage Cleanup Settings** - User-configurable automatic cleanup of erroneous segments
+- **Automatic Database Migrations** - Migrations run automatically on startup
+
+#### Admin & System
+- **System Statistics** - CPU, memory, disk, and GPU usage visible to all authenticated users
+- **Admin Password Reset** - Secure password reset with validation
+- **Compact Action Buttons** - Icon-only action buttons with tooltips in admin UI
+
+### Changed
+
+- **Provider Consolidation** - `claude` provider deprecated in favor of `anthropic`
+- **LLM Provider Enum** - Reordered with legacy CLAUDE at end
+- **Error Display** - Converted inline errors to toast notifications in LLM config modal
+
+### Fixed
+
+- **Large Transcript Pagination** - Fixed page hanging with thousands of segments ([PR #110](https://github.com/davidamacey/OpenTranscribe/pull/110))
+- **Garbage Segment Cleanup** - Automatic detection and removal of erroneous transcription segments ([PR #107](https://github.com/davidamacey/OpenTranscribe/pull/107))
+- **UUID Admin Endpoints** - Fixed admin endpoints to use UUID instead of integer ID ([PR #106](https://github.com/davidamacey/OpenTranscribe/pull/106))
+- **PyTorch 2.6+ Compatibility** - Updated for newer PyTorch versions ([PR #102](https://github.com/davidamacey/OpenTranscribe/pull/102))
+- **vLLM Endpoint Configuration** - Fixed summaries not working with vLLM in OpenAI mode ([Issue #100](https://github.com/davidamacey/OpenTranscribe/issues/100))
+- **API Key Whitespace** - Added .trim() to all API key validations
+- **Race Conditions** - Fixed race conditions when editing existing LLM configurations
+- **Speaker Dropdown Visibility** - Fixed flickering and visibility issues
+
+### Code Quality
+
+- **Reduced Cyclomatic Complexity** - Refactored 47 functions across 27 files
+- **ESLint Integration** - Improved frontend linting and type safety
+- **Removed Unused Code** - Cleaned up unused error variables and CSS classes
+
+### Contributors
+
+Special thanks to our community contributors:
+- [@SQLServerIO](https://github.com/SQLServerIO) (Wes Brown) - 7 pull requests
+- [@LaboratorioInternacionalWeb](https://github.com/LaboratorioInternacionalWeb) - Multilingual feature request
+
 ## [0.1.0] - 2025-11-05
 
 ### Overview

@@ -91,7 +91,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Provider Testing**: Test LLM connections and validate configurations before use
 - **Real-Time Topic Extraction**: AI-powered topic extraction with granular progress notifications
 - **LLM Output Language**: Generate AI summaries in 12 different languages (English, Spanish, French, German, etc.)
-- **Model Discovery**: Automatic discovery of available models for OpenAI-compatible providers
+- **Model Discovery**: Automatic discovery of available models for vLLM, Ollama, and Anthropic providers
 - **Auto-Cleanup Garbage Segments**: Automatic detection and cleanup of erroneous transcription segments
 
 ### 💬 **Collaboration Features**
@@ -183,7 +183,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Intelligent Context Processing** - Section-by-section analysis handles unlimited transcript lengths
 - **Universal Model Compatibility** - Works with any model size from 3B to 200B+ parameters
 - **Multilingual AI Output** - Generate summaries in 12 different languages
-- **Model Auto-Discovery** - Automatic detection of available models from OpenAI-compatible providers
+- **Model Auto-Discovery** - Automatic detection of available models from vLLM, Ollama, and Anthropic
 
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas
