@@ -3,18 +3,9 @@
   "summary": {
     "fatal": 0,
     "warn": 0,
-    "info": 1,
+    "info": 0,
     "skip": 0,
-    "pass": 15
+    "pass": 16
   },
-  "details": [
-    {
-      "code": "CIS-DI-0006",
-      "title": "Add HEALTHCHECK instruction to the container image",
-      "level": "INFO",
-      "alerts": [
-        "not found HEALTHCHECK statement"
-      ]
-    }
-  ]
+  "details": []
 }

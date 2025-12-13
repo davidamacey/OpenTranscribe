@@ -1,602 +1,165 @@
 
-davidamacey/opentranscribe-backend:latest (debian 12.12)
-========================================================
-Total: 150 (UNKNOWN: 0, LOW: 0, MEDIUM: 113, HIGH: 33, CRITICAL: 4)
+davidamacey/opentranscribe-backend:latest (debian 13.2)
+=======================================================
+Total: 36 (UNKNOWN: 0, LOW: 0, MEDIUM: 35, HIGH: 1, CRITICAL: 0)
 
-┌─────────────────────────┬────────────────┬──────────┬──────────────┬─────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
-│         Library         │ Vulnerability  │ Severity │    Status    │    Installed Version    │ Fixed Version │                            Title                             │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ bsdutils                │ CVE-2025-14104 │ MEDIUM   │ affected     │ 1:2.38.1-5+deb12u3      │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ curl                    │ CVE-2025-10148 │          │ will_not_fix │ 7.88.1-10+deb12u14      │               │ curl: predictable WebSocket mask                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10148                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9086  │          │ affected     │                         │               │ curl: libcurl: Curl out of bounds read for cookie path       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9086                    │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ ffmpeg                  │ CVE-2025-1594  │ HIGH     │ fix_deferred │ 7:5.1.8-0+deb12u1       │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ gpgv                    │ CVE-2025-30258 │          │ affected     │ 2.2.40-1.1+deb12u1      │               │ gnupg: verification DoS due to a malicious subkey in the     │
-│                         │                │          │              │                         │               │ keyring                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-30258                   │
-├─────────────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libaom3                 │ CVE-2023-6879  │ CRITICAL │              │ 3.6.0-1+deb12u2         │               │ aom: heap-buffer-overflow on frame size change               │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-6879                    │
-│                         ├────────────────┼──────────┼──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-39616 │ HIGH     │ will_not_fix │                         │               │ AOMedia v3.0.0 to v3.5.0 was discovered to contain an        │
-│                         │                │          │              │                         │               │ invalid read mem...                                          │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39616                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavcodec59            │ CVE-2025-1594  │          │ fix_deferred │ 7:5.1.8-0+deb12u1       │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavdevice59           │ CVE-2025-1594  │ HIGH     │              │                         │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavfilter8            │ CVE-2025-1594  │ HIGH     │              │                         │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavformat59           │ CVE-2025-1594  │ HIGH     │              │                         │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libavutil57             │ CVE-2025-1594  │ HIGH     │              │                         │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libblkid1               │ CVE-2025-14104 │          │ affected     │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libcurl4                │ CVE-2025-10148 │          │ will_not_fix │ 7.88.1-10+deb12u14      │               │ curl: predictable WebSocket mask                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10148                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9086  │          │ affected     │                         │               │ curl: libcurl: Curl out of bounds read for cookie path       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9086                    │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libdav1d6               │ CVE-2023-32570 │          │ will_not_fix │ 1.0.0-2+deb12u1         │               │ VideoLAN dav1d before 1.2.0 has a thread_task.c race         │
-│                         │                │          │              │                         │               │ condition that ca ......                                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-32570                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libexpat1               │ CVE-2025-59375 │          │              │ 2.5.0-1+deb12u2         │               │ expat: libexpat in Expat allows attackers to trigger large   │
-│                         │                │          │              │                         │               │ dynamic memory allocations...                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-59375                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libgdk-pixbuf-2.0-0     │ CVE-2025-7345  │ HIGH     │ fix_deferred │ 2.42.10+dfsg-1+deb12u2  │               │ gdk‑pixbuf: Heap‑buffer‑overflow in gdk‑pixbuf               │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-7345                    │
-├─────────────────────────┤                │          │              │                         ├───────────────┤                                                              │
-│ libgdk-pixbuf2.0-common │                │          │              │                         │               │                                                              │
-│                         │                │          │              │                         │               │                                                              │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libglib2.0-0            │ CVE-2025-13601 │          │ affected     │ 2.74.6-2+deb12u7        │               │ glib: Integer overflow in in g_escape_uri_string()           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-13601                   │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-14087 │ MEDIUM   │              │                         │               │ glib: GLib: Buffer underflow in GVariant parser leads to     │
-│                         │                │          │              │                         │               │ heap corruption                                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14087                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-14512 │          │              │                         │               │ glib: Integer Overflow in GLib GIO Attribute Escaping Causes │
-│                         │                │          │              │                         │               │ Heap Buffer Overflow...                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14512                   │
-├─────────────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libharfbuzz0b           │ CVE-2023-25193 │ HIGH     │              │ 6.0.0+dfsg-3            │               │ harfbuzz: allows attackers to trigger O(n^2) growth via      │
-│                         │                │          │              │                         │               │ consecutive marks                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-25193                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libldap-2.5-0           │ CVE-2023-2953  │          │              │ 2.5.13+dfsg-5           │               │ openldap: null pointer dereference in ber_memalloc_x         │
-│                         │                │          │              │                         │               │ function                                                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-2953                    │
-├─────────────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libmbedcrypto7          │ CVE-2025-47917 │ CRITICAL │              │ 2.28.3-1                │               │ Mbed TLS before 3.6.4 allows a use-after-free in certain     │
-│                         │                │          │              │                         │               │ situations of ......                                         │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-47917                   │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-23775 │ HIGH     │              │                         │               │ Integer Overflow vulnerability in Mbed TLS 2.x before 2.28.7 │
-│                         │                │          │              │                         │               │ and 3.x b...                                                 │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-23775                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-48965 │          │              │                         │               │ Mbed TLS before 3.6.4 has a NULL pointer dereference because │
-│                         │                │          │              │                         │               │ mbedtls_a ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-48965                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-52496 │          │              │                         │               │ Mbed TLS before 3.6.4 has a race condition in AESNI          │
-│                         │                │          │              │                         │               │ detection if...                                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-52496                   │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-23170 │ MEDIUM   │              │                         │               │ An issue was discovered in Mbed TLS 2.x before 2.28.7 and    │
-│                         │                │          │              │                         │               │ 3.x...                                                       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-23170                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-28960 │          │              │                         │               │ mbedtls: Insecure handling of shared memory in PSA Crypto    │
-│                         │                │          │              │                         │               │ APIs                                                         │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-28960                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-27809 │          │              │                         │               │ Mbed TLS before 2.28.10 and 3.x before 3.6.3, on the client  │
-│                         │                │          │              │                         │               │ side,...                                                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-27809                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-27810 │          │              │                         │               │ Mbed TLS before 2.28.10 and 3.x before 3.6.3, in some cases  │
-│                         │                │          │              │                         │               │ of...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-27810                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-52497 │          │              │                         │               │ Mbed TLS before 3.6.4 has a PEM parsing one-byte heap-based  │
-│                         │                │          │              │                         │               │ buffer und...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-52497                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libmfx1                 │ CVE-2023-45221 │ HIGH     │ will_not_fix │ 22.5.4-1                │               │ Improper buffer restrictions in Intel(R) Media SDK all       │
-│                         │                │          │              │                         │               │ versions may al ......                                       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-45221                   │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-47169 │ MEDIUM   │              │                         │               │ Improper buffer restrictions in Intel(R) Media SDK software  │
-│                         │                │          │              │                         │               │ all versio ...                                               │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-47169                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-48368 │          │              │                         │               │ Improper input validation in Intel(R) Media SDK software all │
-│                         │                │          │              │                         │               │ versions ......                                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-48368                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libmount1               │ CVE-2025-14104 │          │ affected     │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libncursesw6            │ CVE-2023-50495 │          │              │ 6.4-4                   │               │ ncurses: segmentation fault via _nc_wrap_entry()             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-50495                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libopenjp2-7            │ CVE-2023-39327 │          │ fix_deferred │ 2.5.0-2+deb12u2         │               │ openjpeg: Malicious files can cause the program to enter a   │
-│                         │                │          │              │                         │               │ large loop...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39327                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-39328 │          │              │                         │               │ openjpeg: denail of service via crafted image file           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39328                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-39329 │          │              │                         │               │ openjpeg: Resource exhaustion will occur in the              │
-│                         │                │          │              │                         │               │ opj_t1_decode_cblks function in the tcd.c...                 │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39329                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libpam-modules          │ CVE-2025-6020  │ HIGH     │ affected     │ 1.5.2-6+deb12u1         │               │ linux-pam: Linux-pam directory Traversal                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-6020                    │
-│                         ├────────────────┼──────────┼──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-10041 │ MEDIUM   │ will_not_fix │                         │               │ pam: libpam: Libpam vulnerable to read hashed password       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-10041                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-22365 │          │ affected     │                         │               │ pam: allowing unprivileged user to block another user        │
-│                         │                │          │              │                         │               │ namespace                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-22365                   │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libpam-modules-bin      │ CVE-2025-6020  │ HIGH     │              │                         │               │ linux-pam: Linux-pam directory Traversal                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-6020                    │
-│                         ├────────────────┼──────────┼──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-10041 │ MEDIUM   │ will_not_fix │                         │               │ pam: libpam: Libpam vulnerable to read hashed password       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-10041                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-22365 │          │ affected     │                         │               │ pam: allowing unprivileged user to block another user        │
-│                         │                │          │              │                         │               │ namespace                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-22365                   │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libpam-runtime          │ CVE-2025-6020  │ HIGH     │              │                         │               │ linux-pam: Linux-pam directory Traversal                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-6020                    │
-│                         ├────────────────┼──────────┼──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-10041 │ MEDIUM   │ will_not_fix │                         │               │ pam: libpam: Libpam vulnerable to read hashed password       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-10041                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-22365 │          │ affected     │                         │               │ pam: allowing unprivileged user to block another user        │
-│                         │                │          │              │                         │               │ namespace                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-22365                   │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libpam0g                │ CVE-2025-6020  │ HIGH     │              │                         │               │ linux-pam: Linux-pam directory Traversal                     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-6020                    │
-│                         ├────────────────┼──────────┼──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-10041 │ MEDIUM   │ will_not_fix │                         │               │ pam: libpam: Libpam vulnerable to read hashed password       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-10041                   │
-│                         ├────────────────┤          ├──────────────┤                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-22365 │          │ affected     │                         │               │ pam: allowing unprivileged user to block another user        │
-│                         │                │          │              │                         │               │ namespace                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-22365                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libpostproc56           │ CVE-2025-1594  │ HIGH     │ fix_deferred │ 7:5.1.8-0+deb12u1       │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libsmartcols1           │ CVE-2025-14104 │          │ affected     │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libsndfile1             │ CVE-2024-50613 │          │ fix_deferred │ 1.2.0-1+deb12u1         │               │ libsndfile: Reachable assertion in mpeg_l3_encoder_close     │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-50613                   │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libsqlite3-0            │ CVE-2025-7458  │ CRITICAL │ affected     │ 3.40.1-2+deb12u2        │               │ sqlite: SQLite integer overflow                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-7458                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-7709  │ MEDIUM   │              │                         │               │ An integer overflow exists in the FTS5                       │
-│                         │                │          │              │                         │               │ https://sqlite.org/fts5.html e ...                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-7709                    │
-├─────────────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libssh-gcrypt-4         │ CVE-2025-5318  │ HIGH     │              │ 0.10.6-0+deb12u1        │               │ libssh: out-of-bounds read in sftp_handle()                  │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-5318                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-5372  │          │              │                         │               │ libssh: Incorrect Return Code Handling in ssh_kdf() in       │
-│                         │                │          │              │                         │               │ libssh                                                       │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-5372                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-5987  │          │              │                         │               │ libssh: Invalid return code for chacha20 poly1305 with       │
-│                         │                │          │              │                         │               │ OpenSSL backend                                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-5987                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-4877  │ MEDIUM   │              │                         │               │ libssh: Write beyond bounds in binary to base64 conversion   │
-│                         │                │          │              │                         │               │ functions                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-4877                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-5351  │          │              │                         │               │ libssh: Double Free Vulnerability in libssh Key Export       │
-│                         │                │          │              │                         │               │ Functions                                                    │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-5351                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-8114  │          │              │                         │               │ libssh: NULL Pointer Dereference in libssh KEX Session ID    │
-│                         │                │          │              │                         │               │ Calculation                                                  │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-8114                    │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libswresample4          │ CVE-2025-1594  │ HIGH     │ fix_deferred │ 7:5.1.8-0+deb12u1       │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libswscale6             │ CVE-2025-1594  │ HIGH     │              │                         │               │ A vulnerability, which was classified as critical, was found │
-│                         │                │          │              │                         │               │ in FFmpeg ......                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-1594                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-49528 │ MEDIUM   │              │                         │               │ Buffer Overflow vulnerability in FFmpeg version              │
-│                         │                │          │              │                         │               │ n6.1-3-g466799d4f5, al ...                                   │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-49528                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-31578 │          │              │                         │               │ FFmpeg version n6.1.1 was discovered to contain a heap       │
-│                         │                │          │              │                         │               │ use-after-free ......                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-31578                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-32228 │          │              │                         │               │ FFmpeg 7.0 is vulnerable to Buffer Overflow. There is a SEGV │
-│                         │                │          │              │                         │               │ at...                                                        │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-32228                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2024-36618 │          │              │                         │               │ FFmpeg n6.1.1 has a vulnerability in the AVI demuxer of the  │
-│                         │                │          │              │                         │               │ libavforma...                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-36618                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-10256 │          │              │                         │               │ ffmpeg: NULL pointer dereference in Firequalizer filter      │
-│                         │                │          │              │                         │               │ (libavfilter/af_firequalizer.c)                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-10256                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
-│                         │                │          │              │                         │               │ contain a seg ...                                            │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
-│                         │                │          │              │                         │               │ which allows ...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtiff6                │ CVE-2023-52355 │ HIGH     │ will_not_fix │ 4.5.0-6+deb12u3         │               │ libtiff: TIFFRasterScanlineSize64 produce too-big size and   │
-│                         │                │          │              │                         │               │ could cause OOM                                              │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-52355                   │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2023-6277  │ MEDIUM   │              │                         │               │ libtiff: Out-of-memory in TIFFOpen via a craft file          │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-6277                    │
-├─────────────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libtinfo6               │ CVE-2023-50495 │          │ affected     │ 6.4-4                   │               │ ncurses: segmentation fault via _nc_wrap_entry()             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-50495                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libuuid1                │ CVE-2025-14104 │          │              │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libxml2                 │ CVE-2025-9714  │          │              │ 2.9.14+dfsg-1.3~deb12u4 │               │ libxslt: libxml2: Inifinite recursion at exsltDynMapFunction │
-│                         │                │          │              │                         │               │ function in libexslt/dynamic.c                               │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9714                    │
-├─────────────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ libzvbi-common          │ CVE-2025-2173  │ HIGH     │              │ 0.2.41-1                │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2173                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2174  │          │              │                         │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2174                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2176  │          │              │                         │               │ A vulnerability classified as critical has been found in     │
-│                         │                │          │              │                         │               │ libzvbi up to...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2176                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2175  │ MEDIUM   │              │                         │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2175                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2177  │          │              │                         │               │ A vulnerability classified as critical was found in libzvbi  │
-│                         │                │          │              │                         │               │ up to 0.2....                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2177                    │
-├─────────────────────────┼────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│ libzvbi0                │ CVE-2025-2173  │ HIGH     │              │                         │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2173                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2174  │          │              │                         │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2174                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2176  │          │              │                         │               │ A vulnerability classified as critical has been found in     │
-│                         │                │          │              │                         │               │ libzvbi up to...                                             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2176                    │
-│                         ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2175  │ MEDIUM   │              │                         │               │ A vulnerability was found in libzvbi up to 0.2.43. It has    │
-│                         │                │          │              │                         │               │ been...                                                      │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2175                    │
-│                         ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
-│                         │ CVE-2025-2177  │          │              │                         │               │ A vulnerability classified as critical was found in libzvbi  │
-│                         │                │          │              │                         │               │ up to 0.2....                                                │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-2177                    │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ mount                   │ CVE-2025-14104 │          │              │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ ncurses-base            │ CVE-2023-50495 │          │              │ 6.4-4                   │               │ ncurses: segmentation fault via _nc_wrap_entry()             │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-50495                   │
-├─────────────────────────┤                │          │              │                         ├───────────────┤                                                              │
-│ ncurses-bin             │                │          │              │                         │               │                                                              │
-│                         │                │          │              │                         │               │                                                              │
-├─────────────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ util-linux              │ CVE-2025-14104 │          │              │ 2.38.1-5+deb12u3        │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
-│                         │                │          │              │                         │               │ when processing 256-byte usernames                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
-├─────────────────────────┤                │          │              │                         ├───────────────┤                                                              │
-│ util-linux-extra        │                │          │              │                         │               │                                                              │
-│                         │                │          │              │                         │               │                                                              │
-│                         │                │          │              │                         │               │                                                              │
-├─────────────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
-│ zlib1g                  │ CVE-2023-45853 │ CRITICAL │ will_not_fix │ 1:1.2.13.dfsg-1         │               │ zlib: integer overflow and resultant heap-based buffer       │
-│                         │                │          │              │                         │               │ overflow in zipOpenNewFileInZip4_6                           │
-│                         │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-45853                   │
-└─────────────────────────┴────────────────┴──────────┴──────────────┴─────────────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
+┌─────────────────┬────────────────┬──────────┬──────────────┬─────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
+│     Library     │ Vulnerability  │ Severity │    Status    │    Installed Version    │ Fixed Version │                            Title                             │
+├─────────────────┼────────────────┼──────────┼──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ bsdutils        │ CVE-2025-14104 │ MEDIUM   │ affected     │ 1:2.41-5                │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
+│                 │                │          │              │                         │               │ when processing 256-byte usernames                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ ffmpeg          │ CVE-2025-22921 │          │ fix_deferred │ 7:7.1.3-0+deb13u1       │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavcodec61    │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavdevice61   │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavfilter10   │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavformat61   │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libavutil59     │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libblkid1       │ CVE-2025-14104 │          │ affected     │ 2.41-5                  │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
+│                 │                │          │              │                         │               │ when processing 256-byte usernames                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
+├─────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libexpat1       │ CVE-2025-59375 │          │              │ 2.7.1-2                 │               │ expat: libexpat in Expat allows attackers to trigger large   │
+│                 │                │          │              │                         │               │ dynamic memory allocations...                                │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-59375                   │
+├─────────────────┼────────────────┼──────────┤              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libglib2.0-0t64 │ CVE-2025-13601 │ HIGH     │              │ 2.84.4-3~deb13u1        │               │ glib: Integer overflow in in g_escape_uri_string()           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-13601                   │
+│                 ├────────────────┼──────────┤              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-14087 │ MEDIUM   │              │                         │               │ glib: GLib: Buffer underflow in GVariant parser leads to     │
+│                 │                │          │              │                         │               │ heap corruption                                              │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14087                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-14512 │          │              │                         │               │ glib: Integer Overflow in GLib GIO Attribute Escaping Causes │
+│                 │                │          │              │                         │               │ Heap Buffer Overflow...                                      │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14512                   │
+├─────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ liblastlog2-2   │ CVE-2025-14104 │          │              │ 2.41-5                  │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
+│                 │                │          │              │                         │               │ when processing 256-byte usernames                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
+├─────────────────┤                │          │              │                         ├───────────────┤                                                              │
+│ libmount1       │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libopenjp2-7    │ CVE-2023-39327 │          │ fix_deferred │ 2.5.3-2.1~deb13u1       │               │ openjpeg: Malicious files can cause the program to enter a   │
+│                 │                │          │              │                         │               │ large loop...                                                │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39327                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2023-39328 │          │              │                         │               │ openjpeg: denail of service via crafted image file           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39328                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2023-39329 │          │              │                         │               │ openjpeg: Resource exhaustion will occur in the              │
+│                 │                │          │              │                         │               │ opj_t1_decode_cblks function in the tcd.c...                 │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2023-39329                   │
+├─────────────────┼────────────────┤          │              ├─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libpostproc58   │ CVE-2025-22921 │          │              │ 7:7.1.3-0+deb13u1       │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libsmartcols1   │ CVE-2025-14104 │          │ affected     │ 2.41-5                  │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
+│                 │                │          │              │                         │               │ when processing 256-byte usernames                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libsndfile1     │ CVE-2024-50613 │          │ fix_deferred │ 1.2.2-2+b1              │               │ libsndfile: Reachable assertion in mpeg_l3_encoder_close     │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2024-50613                   │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libsqlite3-0    │ CVE-2025-7709  │          │ affected     │ 3.46.1-7                │               │ An integer overflow exists in the FTS5                       │
+│                 │                │          │              │                         │               │ https://sqlite.org/fts5.html e ...                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-7709                    │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libswresample5  │ CVE-2025-22921 │          │ fix_deferred │ 7:7.1.3-0+deb13u1       │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│ libswscale8     │ CVE-2025-22921 │          │              │                         │               │ FFmpeg git-master,N-113007-g8d24a28d06 was discovered to     │
+│                 │                │          │              │                         │               │ contain a seg ...                                            │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-22921                   │
+│                 ├────────────────┤          │              │                         ├───────────────┼──────────────────────────────────────────────────────────────┤
+│                 │ CVE-2025-9951  │          │              │                         │               │ A heap-buffer-overflow write exists in jpeg2000dec FFmpeg    │
+│                 │                │          │              │                         │               │ which allows ...                                             │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-9951                    │
+├─────────────────┼────────────────┤          ├──────────────┼─────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libuuid1        │ CVE-2025-14104 │          │ affected     │ 2.41-5                  │               │ util-linux: util-linux: Heap buffer overread in setpwnam()   │
+│                 │                │          │              │                         │               │ when processing 256-byte usernames                           │
+│                 │                │          │              │                         │               │ https://avd.aquasec.com/nvd/cve-2025-14104                   │
+├─────────────────┤                │          │              ├─────────────────────────┼───────────────┤                                                              │
+│ login           │                │          │              │ 1:4.16.0-2+really2.41-5 │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+├─────────────────┤                │          │              ├─────────────────────────┼───────────────┤                                                              │
+│ mount           │                │          │              │ 2.41-5                  │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+├─────────────────┤                │          │              │                         ├───────────────┤                                                              │
+│ util-linux      │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+│                 │                │          │              │                         │               │                                                              │
+└─────────────────┴────────────────┴──────────┴──────────────┴─────────────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘
 
 Python (python-pkg)
 ===================
-Total: 2 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 1, CRITICAL: 0)
+Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 1, CRITICAL: 0)
 
-┌──────────────────┬────────────────┬──────────┬──────────┬───────────────────┬───────────────┬─────────────────────────────────────────────────────┐
-│     Library      │ Vulnerability  │ Severity │  Status  │ Installed Version │ Fixed Version │                        Title                        │
-├──────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼─────────────────────────────────────────────────────┤
-│ ecdsa (METADATA) │ CVE-2024-23342 │ HIGH     │ affected │ 0.19.1            │               │ python-ecdsa: vulnerable to the Minerva attack      │
-│                  │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2024-23342          │
-├──────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼─────────────────────────────────────────────────────┤
-│ pip (METADATA)   │ CVE-2025-8869  │ MEDIUM   │ fixed    │ 25.0.1            │ 25.3          │ pip: pip missing checks on symbolic link extraction │
-│                  │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2025-8869           │
-└──────────────────┴────────────────┴──────────┴──────────┴───────────────────┴───────────────┴─────────────────────────────────────────────────────┘
+┌──────────────────┬────────────────┬──────────┬──────────┬───────────────────┬───────────────┬────────────────────────────────────────────────┐
+│     Library      │ Vulnerability  │ Severity │  Status  │ Installed Version │ Fixed Version │                     Title                      │
+├──────────────────┼────────────────┼──────────┼──────────┼───────────────────┼───────────────┼────────────────────────────────────────────────┤
+│ ecdsa (METADATA) │ CVE-2024-23342 │ HIGH     │ affected │ 0.19.1            │               │ python-ecdsa: vulnerable to the Minerva attack │
+│                  │                │          │          │                   │               │ https://avd.aquasec.com/nvd/cve-2024-23342     │
+└──────────────────┴────────────────┴──────────┴──────────┴───────────────────┴───────────────┴────────────────────────────────────────────────┘
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/adultswim.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/adultswim.cpython-313.pyc (secrets)
 ==================================================================================================================
 Total: 2 (UNKNOWN: 0, LOW: 0, MEDIUM: 2, HIGH: 0, CRITICAL: 0)
 
@@ -613,7 +176,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/aenetworks.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/aenetworks.cpython-313.pyc (secrets)
 ===================================================================================================================
 Total: 4 (UNKNOWN: 0, LOW: 0, MEDIUM: 4, HIGH: 0, CRITICAL: 0)
 
@@ -642,7 +205,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/blackboardcollaborate.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/blackboardcollaborate.cpython-313.pyc (secrets)
 ==============================================================================================================================
 Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 0, CRITICAL: 0)
 
@@ -665,7 +228,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/cloudflarestream.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/cloudflarestream.cpython-313.pyc (secrets)
 =========================================================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -676,7 +239,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/espn.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/espn.cpython-313.pyc (secrets)
 =============================================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -687,7 +250,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/go.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/go.cpython-313.pyc (secrets)
 ===========================================================================================================
 Total: 5 (UNKNOWN: 0, LOW: 0, MEDIUM: 5, HIGH: 0, CRITICAL: 0)
 
@@ -722,7 +285,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/nbc.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/nbc.cpython-313.pyc (secrets)
 ============================================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -733,7 +296,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/tbs.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/tbs.cpython-313.pyc (secrets)
 ============================================================================================================
 Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 0, CRITICAL: 0)
 
@@ -756,7 +319,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/__pycache__/vice.cpython-312.pyc (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/__pycache__/vice.cpython-313.pyc (secrets)
 =============================================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -767,7 +330,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/adultswim.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/adultswim.py (secrets)
 =========================================================================================
 Total: 2 (UNKNOWN: 0, LOW: 0, MEDIUM: 2, HIGH: 0, CRITICAL: 0)
 
@@ -775,7 +338,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/adultswim.py:87 (offset: 3134 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/adultswim.py:87 (offset: 3134 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   85       }]
   86   
@@ -788,7 +351,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/adultswim.py:156 (offset: 6018 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/adultswim.py:156 (offset: 6018 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  154                       # CDN_TOKEN_APP_ID from:
  155                       # https://d2gg02c3xr550i.cloudfront.net/assets/asvp.e9c8bef24322d060ef87.bundle.
@@ -798,7 +361,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/aenetworks.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/aenetworks.py (secrets)
 ==========================================================================================
 Total: 4 (UNKNOWN: 0, LOW: 0, MEDIUM: 4, HIGH: 0, CRITICAL: 0)
 
@@ -806,7 +369,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/aenetworks.py:24 (offset: 621 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/aenetworks.py:24 (offset: 621 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   22       _THEPLATFORM_SECRET = 'S10BPXHMlb'
   23       _DOMAIN_MAP = {
@@ -819,7 +382,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/aenetworks.py:25 (offset: 1165 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/aenetworks.py:25 (offset: 1165 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   23       _DOMAIN_MAP = {
   24           'history.com': ('HISTORY', 'history', '*****************************************************
@@ -832,7 +395,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/aenetworks.py:26 (offset: 1723 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/aenetworks.py:26 (offset: 1723 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   24           'history.com': ('HISTORY', 'history', '*****************************************************
   25           'aetv.com': ('AETV', 'aetv', '**************************************************************
@@ -845,7 +408,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/aenetworks.py:27 (offset: 2263 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/aenetworks.py:27 (offset: 2263 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   25           'aetv.com': ('AETV', 'aetv', '**************************************************************
   26           'mylifetime.com': ('LIFETIME', 'lifetime', '************************************************
@@ -855,7 +418,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/blackboardcollaborate.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/blackboardcollaborate.py (secrets)
 =====================================================================================================
 Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 0, CRITICAL: 0)
 
@@ -863,7 +426,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/blackboardcollaborate.py:159 (offset: 6168 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/blackboardcollaborate.py:159 (offset: 6168 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  157       _TESTS = [
  158           {
@@ -876,7 +439,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/blackboardcollaborate.py:163 (offset: 6863 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/blackboardcollaborate.py:163 (offset: 6863 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  161           },
  162           {
@@ -889,7 +452,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/blackboardcollaborate.py:167 (offset: 7558 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/blackboardcollaborate.py:167 (offset: 7558 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  165           },
  166           {
@@ -899,7 +462,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/cloudflarestream.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/cloudflarestream.py (secrets)
 ================================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -907,7 +470,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/cloudflarestream.py:46 (offset: 2150 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/cloudflarestream.py:46 (offset: 2150 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   44           'only_matching': True,
   45       }, {
@@ -917,7 +480,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/espn.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/espn.py (secrets)
 ====================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -925,7 +488,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/espn.py:332 (offset: 12899 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/espn.py:332 (offset: 12899 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  330   
  331       _API_KEY = 'ZXNwbiZicm93c2VyJjEuMC4w.ptUt7QxsteaRruuPmGZFaJByOoqKvDP2a5YkInHrc7c'
@@ -935,7 +498,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py (secrets)
 ==================================================================================
 Total: 5 (UNKNOWN: 0, LOW: 0, MEDIUM: 5, HIGH: 0, CRITICAL: 0)
 
@@ -943,7 +506,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py:22 (offset: 452 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py:22 (offset: 452 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   20               'requestor_id': 'dtci',
   21               'provider_id': 'ABC',
@@ -956,7 +519,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py:28 (offset: 1134 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py:28 (offset: 1134 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   26               'requestor_id': 'ABCFamily',
   27               'provider_id': 'ABCFamily',
@@ -969,7 +532,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py:34 (offset: 1856 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py:34 (offset: 1856 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   32               'requestor_id': 'DisneyChannels',
   33               'provider_id': 'DisneyChannels',
@@ -982,7 +545,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py:41 (offset: 2601 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py:41 (offset: 2601 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   39               'requestor_id': 'dtci',
   40               'provider_id': 'fx',  # also 'fxx', 'fxm'
@@ -995,7 +558,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/go.py:47 (offset: 3310 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/go.py:47 (offset: 3310 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   45               'requestor_id': 'dtci',
   46               'provider_id': 'ngc',  # also 'ngw'
@@ -1005,7 +568,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/nbc.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/nbc.py (secrets)
 ===================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -1013,7 +576,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/nbc.py:233 (offset: 10569 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/nbc.py:233 (offset: 10569 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  231           'only_matching': True,
  232       }]
@@ -1023,7 +586,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/shahid.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/shahid.py (secrets)
 ======================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 1)
 
@@ -1031,7 +594,7 @@ CRITICAL: AWS (aws-access-key-id)
 ════════════════════════════════════════
 AWS Access Key ID
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/shahid.py:39 (offset: 1170 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/shahid.py:39 (offset: 1170 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   37               return self._aws_execute_api({
   38                   'uri': '/proxy/v2/' + path,
@@ -1041,7 +604,7 @@ AWS Access Key ID
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/tbs.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/tbs.py (secrets)
 ===================================================================================
 Total: 3 (UNKNOWN: 0, LOW: 0, MEDIUM: 3, HIGH: 0, CRITICAL: 0)
 
@@ -1049,7 +612,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/tbs.py:16 (offset: 279 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/tbs.py:16 (offset: 279 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   14   class TBSIE(TurnerBaseIE):
   15       _SITE_INFO = {
@@ -1062,7 +625,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/tbs.py:17 (offset: 814 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/tbs.py:17 (offset: 814 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   15       _SITE_INFO = {
   16           'tbs': ('TBS', '****************************************************************************
@@ -1075,7 +638,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/tbs.py:18 (offset: 1348 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/tbs.py:18 (offset: 1348 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
   16           'tbs': ('TBS', '****************************************************************************
   17           'tntdrama': ('TNT', '***********************************************************************
@@ -1085,7 +648,7 @@ JWT token
 
 
 
-/home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/vice.py (secrets)
+/home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/vice.py (secrets)
 ====================================================================================
 Total: 1 (UNKNOWN: 0, LOW: 0, MEDIUM: 1, HIGH: 0, CRITICAL: 0)
 
@@ -1093,7 +656,7 @@ MEDIUM: JWT (jwt-token)
 ════════════════════════════════════════
 JWT token
 ────────────────────────────────────────
- /home/appuser/.local/lib/python3.12/site-packages/yt_dlp/extractor/vice.py:103 (offset: 3704 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
+ /home/appuser/.local/lib/python3.13/site-packages/yt_dlp/extractor/vice.py:103 (offset: 3704 bytes) (added by 'COPY --chown=appuser:appuser /root/.loca')
 ────────────────────────────────────────
  101           'only_matching': True,
  102       }]

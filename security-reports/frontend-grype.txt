@@ -1,16 +1,4 @@
-NAME           INSTALLED   FIXED IN    TYPE  VULNERABILITY   SEVERITY  EPSS           RISK   
-tiff           4.7.1-r0                apk   CVE-2023-52356  High      0.4% (57th)    0.3    
-tiff           4.7.1-r0                apk   CVE-2023-6277   Medium    0.4% (61st)    0.2    
-libpng         1.6.47-r0   1.6.53-r0   apk   CVE-2025-66293  High      < 0.1% (14th)  < 0.1  
-libpng         1.6.47-r0   1.6.51-r0   apk   CVE-2025-64720  High      < 0.1% (9th)   < 0.1  
-libpng         1.6.47-r0   1.6.51-r0   apk   CVE-2025-65018  High      < 0.1% (3rd)   < 0.1  
-curl           8.14.1-r2               apk   CVE-2025-10966  Medium    < 0.1% (3rd)   < 0.1  
-tiff           4.7.1-r0                apk   CVE-2023-6228   Medium    < 0.1% (2nd)   < 0.1  
-libpng         1.6.47-r0   1.6.51-r0   apk   CVE-2025-64505  Medium    < 0.1% (1st)   < 0.1  
-libpng         1.6.47-r0   1.6.51-r0   apk   CVE-2025-64506  Medium    < 0.1% (1st)   < 0.1  
-busybox        1.37.0-r19  1.37.0-r20  apk   CVE-2024-58251  Low       < 0.1% (4th)   < 0.1  
-busybox-binsh  1.37.0-r19  1.37.0-r20  apk   CVE-2024-58251  Low       < 0.1% (4th)   < 0.1  
-ssl_client     1.37.0-r19  1.37.0-r20  apk   CVE-2024-58251  Low       < 0.1% (4th)   < 0.1  
-busybox        1.37.0-r19  1.37.0-r20  apk   CVE-2025-46394  Low       < 0.1% (3rd)   < 0.1  
-busybox-binsh  1.37.0-r19  1.37.0-r20  apk   CVE-2025-46394  Low       < 0.1% (3rd)   < 0.1  
-ssl_client     1.37.0-r19  1.37.0-r20  apk   CVE-2025-46394  Low       < 0.1% (3rd)   < 0.1
+NAME  INSTALLED  TYPE  VULNERABILITY   SEVERITY  EPSS          RISK   
+tiff  4.7.1-r0   apk   CVE-2023-52356  High      0.4% (58th)   0.3    
+tiff  4.7.1-r0   apk   CVE-2023-6277   Medium    0.4% (61st)   0.2    
+tiff  4.7.1-r0   apk   CVE-2023-6228   Medium    < 0.1% (2nd)  < 0.1
