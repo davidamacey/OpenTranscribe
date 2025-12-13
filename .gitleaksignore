@@ -1,0 +1,10 @@
+# Gitleaks Ignore File
+# Security reports contain vulnerability patterns that trigger false positives
+# These are scan outputs documenting issues, not actual secrets
+
+# Security scan reports directory
+security-reports/
+
+# Specific patterns in security reports
+security-reports/**/*.txt
+security-reports/**/*.json
