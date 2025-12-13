@@ -154,7 +154,7 @@ lint_dockerfile() {
     fi
 }
 
-# Function to run Dockle on image with all CIS Docker Benchmark checks
+# Function to run Dockle on image with all CIS Docker Benchmark checks (optimized - single run)
 run_dockle() {
     local image=$1
     local component=$2
@@ -165,55 +165,29 @@ run_dockle() {
     local abs_output_dir
     abs_output_dir=$(cd "${OUTPUT_DIR}" && pwd)
 
-    # Run Dockle with ALL best practices enabled:
-    # - All CIS Docker Benchmark checks (runs by default)
-    # - Suppress known false positives
-    # - Exit code enforcement (fail on WARN or higher)
-    # - Generate both JSON and human-readable output
-    local dockle_base_args=(
-        --timeout 600s
-        --exit-code 1              # Exit with error code if issues found
-        --exit-level WARN          # Fail on WARN level or higher
-        --accept-file settings.py  # Suppress scipy library false positive
-        --accept-key KEY_SHA512    # Suppress NGINX signing key false positive
-        --ignore CIS-DI-0005       # Docker Content Trust (not applicable for all environments)
-        --ignore DKL-DI-0006       # Latest tag (intentional for our workflow)
+    # Run Dockle ONCE with JSON output only (faster)
+    local dockle_args=(
+        --timeout 300s
+        --exit-code 1
+        --exit-level WARN
+        --accept-file settings.py
+        --accept-key KEY_SHA512
+        --ignore CIS-DI-0005
+        --ignore DKL-DI-0006
+        --format json
+        --output "/output/${component}-dockle.json"
     )
 
-    # Run Dockle with JSON output
     if docker run --rm \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${abs_output_dir}:/output" \
         goodwithtech/dockle:latest \
-        "${dockle_base_args[@]}" \
-        --format json \
-        --output "/output/${component}-dockle.json" \
+        "${dockle_args[@]}" \
         "${image}"; then
         print_success "Dockle scan completed (see ${output_file})"
-
-        # Display human-readable summary
-        echo ""
-        print_info "Dockle Summary (Human-Readable):"
-        docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            goodwithtech/dockle:latest \
-            "${dockle_base_args[@]}" \
-            "${image}"
-
         return 0
     else
-        print_error "Dockle scan found security issues (level: WARN or higher)"
-        print_error "Review ${output_file} for details"
-
-        # Still display summary even on failure
-        echo ""
-        print_warning "Dockle Failure Details:"
-        docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            goodwithtech/dockle:latest \
-            "${dockle_base_args[@]}" \
-            "${image}" || true
-
+        print_warning "Dockle found issues (see ${output_file})"
         return 1
     fi
 }
@@ -237,7 +211,7 @@ generate_sbom() {
     echo "${sbom_file}"
 }
 
-# Function to scan vulnerabilities with Trivy
+# Function to scan vulnerabilities with Trivy (optimized - single scan, multiple outputs)
 scan_trivy() {
     local image=$1
     local component=$2
@@ -247,24 +221,17 @@ scan_trivy() {
     local json_output="${OUTPUT_DIR}/${component}-trivy.json"
     local txt_output="${OUTPUT_DIR}/${component}-trivy.txt"
 
-    # Run Trivy scan with multiple output formats
+    # Run Trivy scan ONCE with JSON output, then convert to table
     trivy image \
         --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" \
         --format json \
         --output "${json_output}" \
+        --quiet \
         "${image}"
 
-    trivy image \
-        --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" \
-        --format table \
-        --output "${txt_output}" \
-        "${image}"
-
-    # Display summary
-    print_info "Trivy scan results:"
-    trivy image \
-        --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" \
-        "${image}"
+    # Generate table format from JSON (faster than re-scanning)
+    trivy convert --format table --output "${txt_output}" "${json_output}" 2>/dev/null || \
+        trivy image --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" --format table --output "${txt_output}" "${image}"
 
     print_success "Trivy reports generated:"
     print_info "  - JSON: ${json_output}"
@@ -338,7 +305,7 @@ scan_grype() {
     return 0
 }
 
-# Function to scan a component (backend or frontend)
+# Function to scan a component (backend or frontend) - PARALLEL EXECUTION
 scan_component() {
     local component=$1
     local dockerfile=""
@@ -362,20 +329,10 @@ scan_component() {
     print_header "Security Scanning: ${component}"
     print_info "Image: ${image}"
     print_info "Dockerfile: ${dockerfile}"
+    print_info "Running tools in PARALLEL for speed..."
     echo ""
 
-    local exit_code=0
-
-    # Step 1: Lint Dockerfile
-    if [ -f "${dockerfile}" ]; then
-        lint_dockerfile "${dockerfile}" "${component}" || exit_code=$?
-    else
-        print_warning "Dockerfile not found: ${dockerfile}"
-    fi
-
-    echo ""
-
-    # Check if image exists locally (build if needed or pull from registry)
+    # Check if image exists locally
     if ! docker image inspect "${image}" >/dev/null 2>&1; then
         print_warning "Image not found locally: ${image}"
         print_info "Attempting to pull from registry..."
@@ -385,27 +342,86 @@ scan_component() {
         fi
     fi
 
-    # Step 2: Run Dockle for CIS best practices
-    check_dockle && run_dockle "${image}" "${component}" || exit_code=$?
-    echo ""
+    # Create status directory for parallel job tracking
+    local status_dir
+    status_dir=$(mktemp -d)
 
-    # Step 3: Generate SBOM
-    local sbom_file
-    sbom_file=$(generate_sbom "${image}" "${component}")
-    echo ""
+    # === PARALLEL PHASE 1: Hadolint + Dockle + SBOM ===
+    # These have no dependencies on each other
 
-    # Step 4: Scan with Trivy
-    scan_trivy "${image}" "${component}" || exit_code=$?
-    echo ""
+    # Hadolint (fast - Dockerfile only)
+    if [ -f "${dockerfile}" ]; then
+        (
+            lint_dockerfile "${dockerfile}" "${component}"
+            echo $? > "${status_dir}/hadolint.status"
+        ) &
+    else
+        echo "0" > "${status_dir}/hadolint.status"
+    fi
 
-    # Step 5: Scan with Grype
-    scan_grype "${image}" "${component}" "${sbom_file}" || exit_code=$?
-    echo ""
+    # Dockle (medium speed)
+    (
+        check_dockle && run_dockle "${image}" "${component}"
+        echo $? > "${status_dir}/dockle.status"
+    ) &
 
+    # SBOM generation (needed for Grype, but can start now)
+    (
+        generate_sbom "${image}" "${component}" > "${status_dir}/sbom_path.txt"
+        echo $? > "${status_dir}/sbom.status"
+    ) &
+
+    # Wait for Phase 1 to complete
+    wait
+    print_info "Phase 1 complete (Hadolint, Dockle, SBOM)"
+
+    # Get SBOM path for Grype
+    local sbom_file=""
+    if [ -f "${status_dir}/sbom_path.txt" ]; then
+        sbom_file=$(cat "${status_dir}/sbom_path.txt")
+    fi
+
+    # === PARALLEL PHASE 2: Trivy + Grype ===
+    # Both vulnerability scanners run in parallel
+
+    print_info "Phase 2: Running Trivy and Grype in parallel..."
+
+    # Trivy scan
+    (
+        scan_trivy "${image}" "${component}"
+        echo $? > "${status_dir}/trivy.status"
+    ) &
+
+    # Grype scan (uses SBOM for speed)
+    (
+        scan_grype "${image}" "${component}" "${sbom_file}"
+        echo $? > "${status_dir}/grype.status"
+    ) &
+
+    # Wait for Phase 2 to complete
+    wait
+    print_info "Phase 2 complete (Trivy, Grype)"
+
+    # Collect results
+    local exit_code=0
+    for tool in hadolint dockle sbom trivy grype; do
+        if [ -f "${status_dir}/${tool}.status" ]; then
+            local status
+            status=$(cat "${status_dir}/${tool}.status")
+            if [ "$status" != "0" ]; then
+                exit_code=1
+            fi
+        fi
+    done
+
+    # Cleanup
+    rm -rf "${status_dir}"
+
+    echo ""
     if [ ${exit_code} -eq 0 ]; then
         print_success "Security scan completed for ${component}"
     else
-        print_error "Security scan failed for ${component}"
+        print_warning "Security scan completed with issues for ${component}"
     fi
 
     return ${exit_code}
