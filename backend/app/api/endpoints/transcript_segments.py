@@ -68,6 +68,9 @@ def update_segment_speaker(
             detail="Not authorized to modify this transcript segment",
         )
 
+    # Track original speaker_id for change detection
+    original_speaker_id = segment.speaker_id
+
     # Handle speaker assignment
     new_speaker_id: Optional[int] = None
     if update.speaker_uuid is not None:
@@ -94,6 +97,19 @@ def update_segment_speaker(
     segment.speaker_id = new_speaker_id
     db.commit()
     db.refresh(segment)
+
+    # Refresh analytics if speaker assignment changed (affects talk time calculations)
+    if original_speaker_id != new_speaker_id:
+        try:
+            from app.services.analytics_service import AnalyticsService
+
+            AnalyticsService.refresh_analytics(db, media_file.id)
+            logger.info(
+                f"Refreshed analytics for file {media_file.id} after segment speaker change"
+            )
+        except Exception as e:
+            # Don't fail the operation if analytics refresh fails
+            logger.warning(f"Failed to refresh analytics after segment speaker change: {e}")
 
     # Format the response with speaker details
     def format_timestamp(seconds: float) -> str:

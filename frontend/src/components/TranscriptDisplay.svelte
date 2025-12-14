@@ -284,6 +284,9 @@
       file.transcript_segments[segmentIndex] = updatedSegment;
       file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
 
+      // Notify parent to refresh analytics (backend refreshed them, frontend needs to fetch)
+      dispatch('analyticsRefreshNeeded');
+
       toastStore.success($t('transcript.speakerAssignmentUpdated'));
     } catch (error: any) {
       console.error('Error updating segment speaker:', error);

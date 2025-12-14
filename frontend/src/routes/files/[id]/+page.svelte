@@ -593,6 +593,25 @@
     }
   }
 
+  // Handle analytics refresh after segment speaker change (backend refreshes analytics, frontend fetches)
+  async function handleAnalyticsRefreshNeeded() {
+    if (!file?.id) return;
+
+    try {
+      // Silently refresh file data to get updated analytics
+      const response = await axiosInstance.get(`/api/files/${file.id}`);
+
+      if (response.data && typeof response.data === 'object') {
+        // Update analytics from refreshed response
+        file.analytics = response.data.analytics;
+        reactiveFile.set(file);
+      }
+    } catch (error) {
+      console.error('Error refreshing analytics after speaker change:', error);
+      // Don't show error toast - analytics refresh is not critical to user workflow
+    }
+  }
+
   // Handle speaker name updates
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
@@ -2523,6 +2542,7 @@
           on:speakerUpdate={handleSpeakerUpdate}
           on:speakerNameChanged={handleSpeakerNameChanged}
           on:speakersMerged={handleSpeakersMerged}
+          on:analyticsRefreshNeeded={handleAnalyticsRefreshNeeded}
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
           on:loadMore={loadMoreSegments}
