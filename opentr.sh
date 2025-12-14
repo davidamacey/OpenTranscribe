@@ -8,6 +8,18 @@
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
 
+# Load environment variables from .env if present
+if [ -f ".env" ]; then
+  set -a
+  # shellcheck source=.env
+  source ./.env
+  set +a
+fi
+
+# Maximum compose files list for stopping/removing all containers
+# Includes all possible compose files to ensure all containers are stopped
+MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml"
+
 #######################
 # HELPER FUNCTIONS
 #######################
@@ -19,17 +31,19 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod] [--build] [--gpu-scale]  - Start the application (dev mode by default)"
-  echo "                                               --build: Build prod images locally (test before push)"
-  echo "                                               --gpu-scale: Enable multi-GPU worker scaling"
+  echo "  start [dev|prod] [--build] [--pull] [--gpu-scale]  - Start the application (dev mode by default)"
+  echo "                                                        --build: Build prod images locally (test before push)"
+  echo "                                                        --pull:  Force pull prod images from Docker Hub"
+  echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
   echo "  stop                                       - Stop OpenTranscribe containers"
   echo "  status                                     - Show container status"
   echo "  logs [service]                             - View logs (all services by default)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod] [--build] [--gpu-scale]  - Reset and reinitialize (deletes all data!)"
-  echo "                                               --build: Build prod images locally (test before push)"
-  echo "                                               --gpu-scale: Enable multi-GPU worker scaling"
+  echo "  reset [dev|prod] [--build] [--pull] [--gpu-scale]   - Reset and reinitialize (deletes all data!)"
+  echo "                                                        --build: Build prod images locally (test before push)"
+  echo "                                                        --pull:  Force pull prod images from Docker Hub"
+  echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
   echo "  backup              - Create a database backup"
   echo "  restore [file]      - Restore database from backup"
   echo ""
@@ -59,6 +73,25 @@ show_help() {
   echo "  ./opentr.sh logs backend             # View backend logs"
   echo "  ./opentr.sh restart-backend          # Restart backend services only"
   echo ""
+}
+
+# Build production images locally (backend + frontend)
+build_prod_images() {
+  echo "🥽 Building production Docker images locally..."
+
+  echo "🧱 Building backend image (davidamacey/opentranscribe-backend:latest)..."
+  docker build -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend || {
+    echo "❌ Backend image build failed"
+    exit 1
+  }
+
+  echo "🧱 Building frontend image (davidamacey/opentranscribe-frontend:latest)..."
+  docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend || {
+    echo "❌ Frontend image build failed"
+    exit 1
+  }
+
+  echo "✅ Local production images built successfully"
 }
 
 # Function to detect and configure hardware
@@ -128,11 +161,16 @@ start_app() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  PULL_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --build)
         BUILD_FLAG="--build"
+        shift
+        ;;
+      --pull)
+        PULL_FLAG="--pull"
         shift
         ;;
       --gpu-scale)
@@ -145,6 +183,10 @@ start_app() {
         ;;
     esac
   done
+
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale"
+  fi
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
 
@@ -173,12 +215,23 @@ start_app() {
   if [ "$ENVIRONMENT" = "prod" ]; then
     # Production: Use base + prod override files
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
+
     # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
+
+    if [ "$PULL_FLAG" = "--pull" ]; then
+      echo "⬇️  Forcing pull of latest production images from Docker Hub..."
+      # shellcheck disable=SC2086
+      docker compose $COMPOSE_FILES pull || {
+        echo "❌ Failed to pull production images"
+        exit 1
+      }
+    fi
 
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
-      echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
-      BUILD_CMD="--build"
+      echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
+      build_prod_images
+      BUILD_CMD=""
     else
       echo "🔄 Starting services in PRODUCTION mode (pulling from Docker Hub)..."
       BUILD_CMD=""
@@ -190,12 +243,22 @@ start_app() {
     BUILD_CMD="--build"
   fi
 
+  # Add GPU overlay if NVIDIA GPU is detected and Container Toolkit is available
+  if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+    echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
+  fi
+
   # Add GPU scaling overlay if requested
   if [ -n "$GPU_SCALE_FLAG" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
+  if [ -n "$NGINX_SERVER_NAME" ]; then
+    echo "🎯 Adding NGINX server name: $NGINX_SERVER_NAME"
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+  fi
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -233,11 +296,16 @@ reset_and_init() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  PULL_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --build)
         BUILD_FLAG="--build"
+        shift
+        ;;
+      --pull)
+        PULL_FLAG="--pull"
         shift
         ;;
       --gpu-scale)
@@ -250,6 +318,10 @@ reset_and_init() {
         ;;
     esac
   done
+
+  if [ -n "$GPU_SCALE_FLAG" ]; then
+    export COMPOSE_PROFILES="gpu-scale"
+  fi
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
 
@@ -274,10 +346,20 @@ reset_and_init() {
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.prod.yml"
     # Note: INIT_DB_PATH uses default ./database/init_db.sql (same for all modes)
 
+    if [ "$PULL_FLAG" = "--pull" ]; then
+      echo "⬇️  Forcing pull of latest production images from Docker Hub..."
+      # shellcheck disable=SC2086
+      docker compose $COMPOSE_FILES pull || {
+        echo "❌ Failed to pull production images"
+        exit 1
+      }
+    fi
+
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Resetting in PRODUCTION mode with LOCAL BUILD (testing before push)..."
-      echo "⚠️  Note: This builds production images locally instead of pulling from Docker Hub"
-      BUILD_CMD="--build"
+      echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
+      build_prod_images
+      BUILD_CMD=""
     else
       echo "🔄 Resetting in PRODUCTION mode (pulling from Docker Hub)..."
       BUILD_CMD=""
@@ -289,10 +371,21 @@ reset_and_init() {
     BUILD_CMD="--build"
   fi
 
+  # Add GPU overlay if NVIDIA GPU is detected and Container Toolkit is available
+  if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+    echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
+  fi
+
   # Add GPU scaling overlay if requested
   if [ -n "$GPU_SCALE_FLAG" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu-scale.yml"
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
+  fi
+
+  if [ -n "$NGINX_SERVER_NAME" ]; then
+    echo "🎯 Adding NGINX server name: $NGINX_SERVER_NAME"
+    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."
@@ -420,9 +513,10 @@ remove_system() {
   echo "🗑️ Removing OpenTranscribe containers and data volumes..."
 
   # Stop and remove containers and volumes
-  # Note: docker compose down automatically loads docker-compose.yml + docker-compose.override.yml
+  # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
   echo "🗑️ Stopping containers and removing data volumes..."
-  docker compose down -v
+  # shellcheck disable=SC2086
+  docker compose $MAX_COMPOSE_FILES down -v
 
   echo "✅ Containers and data volumes removed. Images preserved for faster rebuilds."
 }
@@ -432,9 +526,10 @@ purge_system() {
   echo "💥 Purging ALL OpenTranscribe resources including images..."
 
   # Stop and remove everything
-  # Note: docker compose down automatically loads docker-compose.yml + docker-compose.override.yml
+  # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
   echo "🗑️ Stopping and removing containers, volumes, and images..."
-  docker compose down -v --rmi all
+  # shellcheck disable=SC2086
+  docker compose $MAX_COMPOSE_FILES down -v --rmi all
 
   # Remove any remaining OpenTranscribe images
   echo "🗑️ Removing any remaining OpenTranscribe images..."
@@ -492,7 +587,9 @@ case "$1" in
 
   stop)
     echo "🛑 Stopping all containers..."
-    docker compose down
+    # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
+    # shellcheck disable=SC2086
+    docker compose $MAX_COMPOSE_FILES down
     echo "✅ All containers stopped."
     ;;
 
@@ -552,7 +649,17 @@ case "$1" in
   rebuild-backend)
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
-    docker compose up -d --build backend celery-worker celery-beat flower
+
+    # Build compose file list
+    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml"
+
+    # Add GPU overlay if NVIDIA GPU is detected
+    if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+    fi
+
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-beat flower
     echo "✅ Backend services rebuilt successfully."
     ;;
 
@@ -589,7 +696,18 @@ case "$1" in
   build)
     echo "🔨 Rebuilding containers..."
     detect_and_configure_hardware
-    docker compose build
+
+    # Build compose file list
+    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml"
+
+    # Add GPU overlay if NVIDIA GPU is detected
+    if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
+      echo "🎯 Including GPU overlay for build"
+    fi
+
+    # shellcheck disable=SC2086
+    docker compose $COMPOSE_FILES build
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
 

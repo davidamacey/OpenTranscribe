@@ -83,3 +83,15 @@ services:
     volumes:
       - ./backend:/app  # Mount source code for development
       - flower_data:/app
+
+  # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
+  celery-worker-gpu-scaled:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers

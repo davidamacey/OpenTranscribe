@@ -63,7 +63,8 @@ fix_model_cache_permissions() {
     fi
 
     # Check current ownership
-    local current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
+    local current_owner
+    current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
 
     # If directory is owned by root (0) or doesn't match container user (1000), fix permissions
     if [ "$current_owner" = "0" ] || [ "$current_owner" != "1000" ]; then
@@ -92,12 +93,29 @@ fix_model_cache_permissions() {
     return 0
 }
 
+detect_nvidia_runtime() {
+    # Check if NVIDIA Container Runtime is available
+    if docker info 2>/dev/null | grep -q "Runtimes.*nvidia"; then
+        echo "nvidia"
+    else
+        echo "default"
+    fi
+}
+
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
     # Production deployment always uses prod overrides
     if [ -f docker-compose.prod.yml ]; then
         compose_files="$compose_files -f docker-compose.prod.yml"
+    fi
+
+    # Add GPU overlay if NVIDIA runtime is available and overlay exists
+    local docker_runtime
+    docker_runtime=$(detect_nvidia_runtime)
+    if [ "$docker_runtime" = "nvidia" ] && [ -f docker-compose.gpu.yml ]; then
+        compose_files="$compose_files -f docker-compose.gpu.yml"
+        echo -e "${BLUE}🎯 GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
     fi
 
     echo "$compose_files"
