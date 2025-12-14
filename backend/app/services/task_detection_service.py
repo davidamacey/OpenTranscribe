@@ -134,6 +134,37 @@ class TaskDetectionService:
                             break
 
                     if all_tasks_stale:
+                        # Before marking as stuck, check if file has completed tasks
+                        # (e.g., transcription completed but file status wasn't updated)
+                        completed_tasks = (
+                            db.query(Task)
+                            .filter(
+                                Task.media_file_id == media_file.id,
+                                Task.status == "completed",
+                            )
+                            .order_by(Task.completed_at.desc())
+                            .first()
+                        )
+
+                        if completed_tasks:
+                            # File has completed tasks but status wasn't updated
+                            # Attempt to reconcile status and skip recovery
+                            refreshed_file = update_media_file_from_task_status(
+                                db, media_file.id
+                            )
+                            if refreshed_file and refreshed_file.status in [
+                                FileStatus.COMPLETED,
+                                FileStatus.ERROR,
+                            ]:
+                                logger.info(
+                                    f"File {media_file.id} ({media_file.filename}) has "
+                                    f"completed tasks but status was still PROCESSING. "
+                                    f"Reconciled to {refreshed_file.status.value}; "
+                                    f"skipping recovery."
+                                )
+                                continue
+
+                        # File is still marked as processing with stale tasks
                         stuck_files.append(media_file)
                         logger.info(
                             f"Found stuck file {media_file.id} ({media_file.filename}) - "
