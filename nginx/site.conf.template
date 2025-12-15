@@ -1,0 +1,143 @@
+# OpenTranscribe NGINX Configuration Template
+# Environment variables are substituted at container startup via envsubst
+#
+# Required: NGINX_SERVER_NAME (e.g., transcribe.local, transcribe.example.com)
+
+# HTTP server - redirect all traffic to HTTPS
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name ${NGINX_SERVER_NAME};
+
+    # Health check endpoint for Docker healthcheck (no redirect)
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS server - main application
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${NGINX_SERVER_NAME};
+
+    # SSL/TLS Configuration
+    ssl_certificate /etc/nginx/certs/server.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # File upload size limit (for audio/video transcription)
+    # Supports files up to 10GB for large GoPro/4K recordings
+    client_max_body_size 10G;
+    client_body_timeout 600s;
+    client_body_buffer_size 256k;
+
+    # Common proxy settings applied to all locations
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+
+    # Frontend SPA (Svelte application)
+    # Handles all routes not matched by other locations
+    # Internal container port is 8080 (external host port is 5173)
+    location / {
+        proxy_pass http://frontend:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # SPA routing - let frontend handle 404s for client-side routes
+        proxy_intercept_errors off;
+    }
+
+    # Backend WebSocket endpoint (real-time notifications)
+    # IMPORTANT: Must be defined BEFORE /api/ to match first
+    location /api/ws {
+        proxy_pass http://backend:8080/api/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # WebSocket-specific timeouts
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+
+        # Disable buffering for real-time communication
+        proxy_buffering off;
+    }
+
+    # Backend REST API
+    location /api/ {
+        proxy_pass http://backend:8080/api/;
+        proxy_http_version 1.1;
+
+        # Large file upload support for audio/video (10GB for GoPro/4K files)
+        client_max_body_size 10G;
+        proxy_request_buffering off;
+
+        # Extended timeouts for long transcription operations
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 600s;
+    }
+
+    # Flower dashboard (Celery task monitoring)
+    location /flower/ {
+        proxy_pass http://flower:5555/flower/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_redirect off;
+
+        # Basic auth can be added here if needed
+        # auth_basic "Flower Dashboard";
+        # auth_basic_user_file /etc/nginx/.htpasswd;
+    }
+
+    # MinIO Console (S3 storage management)
+    location /minio/ {
+        proxy_pass http://minio:9001/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+
+        # MinIO requires these for proper console operation
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support for MinIO console
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # MinIO API endpoint (for direct S3 operations if needed)
+    location /s3/ {
+        proxy_pass http://minio:9000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+
+        # Large file uploads to MinIO (10GB for GoPro/4K files)
+        client_max_body_size 10G;
+        proxy_request_buffering off;
+    }
+}

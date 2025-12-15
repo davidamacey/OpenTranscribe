@@ -1,0 +1,58 @@
+# docker-compose.nginx.yml
+# Optional overlay for NGINX reverse proxy with SSL/TLS support
+#
+# This overlay enables HTTPS access for OpenTranscribe, which is REQUIRED for:
+# - Browser microphone recording (browsers block mic access over HTTP except localhost)
+# - Production deployments with custom domains
+# - Secure access from other devices on your network
+#
+# Usage:
+#   1. Set NGINX_SERVER_NAME in .env (e.g., transcribe.local or your domain)
+#   2. Generate SSL certificates (see scripts/generate-ssl-cert.sh)
+#   3. Run: ./opentr.sh start dev (auto-detects NGINX_SERVER_NAME)
+#
+# For homelab/self-signed certificates:
+#   ./scripts/generate-ssl-cert.sh transcribe.local
+#
+# For production with Let's Encrypt:
+#   See docs/NGINX_SETUP.md for Certbot instructions
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: opentranscribe-nginx
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+      flower:
+        condition: service_started
+      minio:
+        condition: service_started
+    env_file:
+      - .env
+    command: >
+      /bin/sh -c "envsubst '$$NGINX_SERVER_NAME'
+      < /etc/nginx/templates/site.conf.template
+      > /etc/nginx/conf.d/site.conf && nginx -g 'daemon off;'"
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ${NGINX_CERT_FILE:-./nginx/ssl/server.crt}:/etc/nginx/certs/server.crt:ro
+      - ${NGINX_CERT_KEY:-./nginx/ssl/server.key}:/etc/nginx/certs/server.key:ro
+      - ./nginx/site.conf.template:/etc/nginx/templates/site.conf.template:ro
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-opentranscribe}_default

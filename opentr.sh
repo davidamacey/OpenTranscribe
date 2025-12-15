@@ -64,6 +64,12 @@ show_help() {
   echo "  health              - Check health status of all services"
   echo "  help                - Show this help menu"
   echo ""
+  echo "HTTPS/SSL Setup (for microphone recording from other devices):"
+  echo "  1. Generate certificates: ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip"
+  echo "  2. Add to .env: NGINX_SERVER_NAME=opentranscribe.local"
+  echo "  3. Start normally: ./opentr.sh start dev"
+  echo "  See docs/NGINX_SETUP.md for full instructions"
+  echo ""
   echo "Examples:"
   echo "  ./opentr.sh start                    # Start in development mode"
   echo "  ./opentr.sh start dev --gpu-scale    # Start with multi-GPU scaling enabled"
@@ -255,10 +261,34 @@ start_app() {
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
+  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set
   if [ -n "$NGINX_SERVER_NAME" ]; then
-    echo "🎯 Adding NGINX server name: $NGINX_SERVER_NAME"
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+    if [ -f "docker-compose.nginx.yml" ]; then
+      # Check for SSL certificates
+      CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
+      KEY_FILE="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
+
+      if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+        echo ""
+        echo "⚠️  SSL certificates not found!"
+        echo "   Expected: $CERT_FILE and $KEY_FILE"
+        echo ""
+        echo "   Generate certificates with:"
+        echo "   ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
+        echo ""
+        echo "   Or disable NGINX by commenting out NGINX_SERVER_NAME in .env"
+        exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+      echo "🔒 Adding NGINX reverse proxy (HTTPS enabled)"
+      echo "   Server name: $NGINX_SERVER_NAME"
+      echo "   Access URL: https://$NGINX_SERVER_NAME"
+    else
+      echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
+    fi
   fi
+
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -383,9 +413,32 @@ reset_and_init() {
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
+  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set
   if [ -n "$NGINX_SERVER_NAME" ]; then
-    echo "🎯 Adding NGINX server name: $NGINX_SERVER_NAME"
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+    if [ -f "docker-compose.nginx.yml" ]; then
+      # Check for SSL certificates
+      CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
+      KEY_FILE="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
+
+      if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+        echo ""
+        echo "⚠️  SSL certificates not found!"
+        echo "   Expected: $CERT_FILE and $KEY_FILE"
+        echo ""
+        echo "   Generate certificates with:"
+        echo "   ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
+        echo ""
+        echo "   Or disable NGINX by commenting out NGINX_SERVER_NAME in .env"
+        exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+      echo "🔒 Adding NGINX reverse proxy (HTTPS enabled)"
+      echo "   Server name: $NGINX_SERVER_NAME"
+      echo "   Access URL: https://$NGINX_SERVER_NAME"
+    else
+      echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
+    fi
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."
