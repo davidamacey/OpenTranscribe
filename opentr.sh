@@ -237,6 +237,8 @@ start_app() {
       echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
       build_prod_images
+      # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
       BUILD_CMD=""
     else
       echo "🔄 Starting services in PRODUCTION mode (pulling from Docker Hub)..."
@@ -389,6 +391,8 @@ reset_and_init() {
       echo "🔄 Resetting in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
       build_prod_images
+      # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
       BUILD_CMD=""
     else
       echo "🔄 Resetting in PRODUCTION mode (pulling from Docker Hub)..."

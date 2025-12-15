@@ -35,14 +35,14 @@ def create_user(user_data: UserCreate, db: Session) -> User:
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
-    # Create new user
+    # Create new user with role and permissions from request data
     new_user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
         full_name=user_data.full_name,
-        is_active=True,
-        is_superuser=False,  # Default to non-superuser
-        role="user",  # Default role
+        is_active=user_data.is_active if user_data.is_active is not None else True,
+        is_superuser=user_data.is_superuser if user_data.is_superuser is not None else False,
+        role=user_data.role if user_data.role else "user",
     )
 
     db.add(new_user)

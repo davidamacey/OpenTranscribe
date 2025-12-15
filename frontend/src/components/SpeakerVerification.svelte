@@ -7,7 +7,7 @@
   import { translateSpeakerLabel } from '$lib/i18n';
 
   export let speaker: {
-    id: string;  // UUID
+    uuid: string;  // UUID (public identifier)
     name: string;
     display_name?: string;
     verified: boolean;
@@ -97,7 +97,7 @@
       profile_name?: string;
     } = {
       action: selectedAction,
-      speaker_id: speaker.id
+      speaker_id: speaker.uuid
     };
 
     if (selectedAction === 'accept' && selectedProfileId !== null) {

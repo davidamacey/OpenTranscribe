@@ -8,7 +8,7 @@
 
   /**
    * @typedef {Object} User
-   * @property {string} id
+   * @property {string} uuid
    * @property {string} email
    * @property {string} role
    * @property {string} created_at
@@ -70,32 +70,24 @@
   /** @type {string|null} */
   let currentUserId = null;
 
-  // Subscribe to the user store to get the current user ID
+  // Subscribe to the user store to get the current user UUID
   $: if ($user) {
-    currentUserId = $user.id;
+    currentUserId = $user.uuid;
   } else {
     currentUserId = null;
   }
 
-  // Initialize component
-  onMount(() => {
-    filterUsers();
-  });
-
-  /**
-   * Filter users based on search term
-   */
-  function filterUsers() {
+  // Reactively update filtered users when users prop or search term changes
+  $: {
     if (!searchTerm.trim()) {
       filteredUsers = [...users];
-      return;
+    } else {
+      const term = searchTerm.toLowerCase();
+      filteredUsers = users.filter(user =>
+        (user.full_name && user.full_name.toLowerCase().includes(term)) ||
+        (user.email && user.email.toLowerCase().includes(term))
+      );
     }
-
-    const term = searchTerm.toLowerCase();
-    filteredUsers = users.filter(user =>
-      (user.full_name && user.full_name.toLowerCase().includes(term)) ||
-      (user.email && user.email.toLowerCase().includes(term))
-    );
   }
 
   /**
@@ -282,7 +274,7 @@
     passwordResetLoading = true;
 
     try {
-      await axiosInstance.put(`/api/users/${passwordResetUser.id}`, {
+      await axiosInstance.put(`/api/users/${passwordResetUser.uuid}`, {
         password: resetPassword
       });
 
@@ -305,7 +297,7 @@
   function handleSearchInput(e) {
     if (e.target && 'value' in e.target) {
       searchTerm = /** @type {HTMLInputElement} */ (e.target).value;
-      filterUsers();
+      // Reactive statement handles filtering automatically when searchTerm changes
     }
   }
 
@@ -341,11 +333,6 @@
     }
   }
 
-  // Ensure users are filtered when they change
-  $: {
-    users; // Track changes to users
-    filterUsers();
-  }
 </script>
 
 <div class="user-management">
@@ -441,15 +428,15 @@
         </tr>
       </thead>
       <tbody>
-        {#each filteredUsers as currentUser (currentUser.id)}
+        {#each filteredUsers as currentUser (currentUser.uuid)}
           <tr>
             <td>{currentUser.full_name || $t('userManagement.notAvailable')}</td>
             <td>{currentUser.email}</td>
             <td>
-              {#if currentUser.id !== currentUserId}
+              {#if currentUser.uuid !== currentUserId}
                 <select
                   value={currentUser.role}
-                  on:change={(e) => handleUserRoleChange(currentUser.id, e)}
+                  on:change={(e) => handleUserRoleChange(currentUser.uuid, e)}
                   title={$t('userManagement.changeRoleFor', { name: currentUser.full_name || currentUser.email })}
                 >
                   <option value="user">{$t('userManagement.roleUser')}</option>
@@ -462,7 +449,7 @@
             <td>{formatDate(currentUser.created_at)}</td>
             <td>
               <div class="table-actions">
-                {#if currentUser.id !== currentUserId}
+                {#if currentUser.uuid !== currentUserId}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
@@ -475,7 +462,7 @@
                   </button>
                   <button
                     class="icon-button recover-button"
-                    on:click={() => onUserRecovery(currentUser.id)}
+                    on:click={() => onUserRecovery(currentUser.uuid)}
                     title={$t('userManagement.recoverFilesFor', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -487,7 +474,7 @@
                   </button>
                   <button
                     class="icon-button delete-button"
-                    on:click={() => deleteUser(currentUser.id)}
+                    on:click={() => deleteUser(currentUser.uuid)}
                     title={$t('userManagement.deleteAccount', { name: currentUser.full_name || currentUser.email })}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -538,7 +525,7 @@
 
       <h3 id="password-reset-title" class="modal-title">{$t('userManagement.resetPassword')}</h3>
       <p class="modal-description">
-        {$t('userManagement.setNewPasswordFor', { name: passwordResetUser.full_name || passwordResetUser.email })}
+        {$t('userManagement.setNewPasswordFor')} <strong>{passwordResetUser.full_name || passwordResetUser.email}</strong>
       </p>
 
       <form on:submit|preventDefault={executePasswordReset} class="password-reset-form">

@@ -255,7 +255,7 @@ class UploadService {
       this.updateUpload(uploadId, {
         status: "completed",
         progress: 100,
-        fileId: result.id,
+        fileId: result.uuid,
         isDuplicate: result.isDuplicate,
         estimatedTime: undefined,
       });
@@ -337,7 +337,7 @@ class UploadService {
     const { file_id: fileId, is_duplicate } = prepareResponse.data;
 
     if (is_duplicate) {
-      return { id: fileId, isDuplicate: true };
+      return { uuid: fileId, isDuplicate: true };
     }
 
     // Step 2: Upload the file
@@ -400,7 +400,7 @@ class UploadService {
       },
     });
 
-    return { id: fileId, isDuplicate: false };
+    return { uuid: fileId, isDuplicate: false };
   }
 
   private async uploadExtractedAudio(
@@ -429,7 +429,7 @@ class UploadService {
     const { file_id: fileId, is_duplicate } = prepareResponse.data;
 
     if (is_duplicate) {
-      return { id: fileId, isDuplicate: true };
+      return { uuid: fileId, isDuplicate: true };
     }
 
     // Step 2: Upload the extracted audio file
@@ -477,7 +477,7 @@ class UploadService {
       },
     });
 
-    return { id: fileId, isDuplicate: false };
+    return { uuid: fileId, isDuplicate: false };
   }
 
   private async processUrl(uploadId: string, url: string): Promise<any> {
@@ -508,7 +508,7 @@ class UploadService {
       },
     );
 
-    return { id: response.data.id, isDuplicate: false };
+    return { uuid: response.data.uuid, isDuplicate: false };
   }
 
   // Upload management

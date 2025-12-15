@@ -1100,8 +1100,8 @@
       const responseData = response.data;
 
       // Store the file ID for potential cancellation
-      if (responseData && responseData.id) {
-        currentFileId = responseData.id;
+      if (responseData && responseData.uuid) {
+        currentFileId = responseData.uuid;
       }
 
       // Update progress to 100% when complete
@@ -1413,7 +1413,7 @@
         const mediaFile = responseData;
 
         // Dispatch success event to close modal
-        dispatch('uploadComplete', { fileId: mediaFile.id, isUrl: true });
+        dispatch('uploadComplete', { fileId: mediaFile.uuid, isUrl: true });
 
         // Show success toast with more descriptive message
         toastStore.success($t('uploader.youtubeVideoAdded', { title: mediaFile.title || 'video' }));

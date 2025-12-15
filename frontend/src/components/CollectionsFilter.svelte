@@ -15,7 +15,7 @@
 
   // Reactive: Prepare dropdown collections with proper format
   $: dropdownCollections = collections.map(collection => ({
-    id: collection.id,
+    id: collection.uuid,
     name: collection.name,
     count: collection.media_count || 0
   }));

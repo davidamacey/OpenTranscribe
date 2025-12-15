@@ -15,6 +15,9 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
+    role: Optional[str] = "user"
+    is_active: Optional[bool] = True
+    is_superuser: Optional[bool] = False
 
 
 class UserUpdate(BaseModel):

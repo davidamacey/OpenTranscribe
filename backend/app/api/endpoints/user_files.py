@@ -81,7 +81,7 @@ def get_user_file_status(
             ):
                 problem_files.append(
                     {
-                        "id": str(file.uuid),  # Use UUID for frontend
+                        "uuid": str(file.uuid),
                         "filename": file.filename,
                         "status": file.status.value,
                         "upload_time": file.upload_time,
@@ -104,7 +104,7 @@ def get_user_file_status(
             if file_age < timedelta(hours=24):
                 recent_files.append(
                     {
-                        "id": str(file.uuid),  # Use UUID for frontend
+                        "uuid": str(file.uuid),
                         "filename": file.filename,
                         "status": file.status.value,
                         "upload_time": file.upload_time,
@@ -198,7 +198,7 @@ def get_file_detailed_status(
 
         return {
             "file": {
-                "id": str(media_file.uuid),  # Use UUID for frontend
+                "uuid": str(media_file.uuid),
                 "filename": media_file.filename,
                 "status": media_file.status.value,
                 "upload_time": media_file.upload_time,

@@ -1,15 +1,15 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived } from "svelte/store";
 
 export interface TranscriptSegment {
-  id: number | string;
+  uuid: string; // UUID identifier
   start_time: number;
   end_time: number;
   text: string;
-  speaker_id?: string;  // UUID
+  speaker_id?: string; // UUID
   speaker_label?: string;
   resolved_speaker_name?: string;
   speaker?: {
-    id: string;  // UUID
+    uuid: string; // UUID
     name: string;
     display_name?: string;
   };
@@ -18,15 +18,14 @@ export interface TranscriptSegment {
 }
 
 export interface SpeakerInfo {
-  id: string;  // UUID
+  uuid: string; // UUID (public identifier)
   name: string; // Original speaker ID (e.g., "SPEAKER_01")
   display_name?: string; // User-assigned display name
-  uuid: string;  // UUID (same as id)
   verified: boolean;
 }
 
 export interface TranscriptData {
-  fileId: string | null;  // UUID
+  fileId: string | null; // UUID
   segments: TranscriptSegment[];
   speakers: SpeakerInfo[];
 }
@@ -36,46 +35,52 @@ const createTranscriptStore = () => {
   const { subscribe, set, update } = writable<TranscriptData>({
     fileId: null,
     segments: [],
-    speakers: []
+    speakers: [],
   });
 
   return {
     subscribe,
     // Load initial data for a file
-    loadTranscriptData: (fileId: string, segments: TranscriptSegment[], speakers: SpeakerInfo[]) => {
+    loadTranscriptData: (
+      fileId: string,
+      segments: TranscriptSegment[],
+      speakers: SpeakerInfo[],
+    ) => {
       set({
         fileId,
-        segments: segments.map(segment => ({ ...segment })),
-        speakers: speakers.map(speaker => ({ ...speaker }))
+        segments: segments.map((segment) => ({ ...segment })),
+        speakers: speakers.map((speaker) => ({ ...speaker })),
       });
     },
 
     // Update a speaker's display name
     updateSpeakerName: (speakerId: string, newDisplayName: string) => {
-      update(data => {
+      update((data) => {
         // Update speaker in speakers array
-        const updatedSpeakers = data.speakers.map(speaker =>
-          speaker.id === speakerId
+        const updatedSpeakers = data.speakers.map((speaker) =>
+          speaker.uuid === speakerId
             ? { ...speaker, display_name: newDisplayName }
-            : speaker
+            : speaker,
         );
 
         // Update all segments for this speaker
-        const updatedSegments = data.segments.map(segment => {
+        const updatedSegments = data.segments.map((segment) => {
           if (segment.speaker_id === speakerId) {
             return {
               ...segment,
               resolved_speaker_name: newDisplayName,
-              speaker: segment.speaker ? {
-                ...segment.speaker,
-                id: segment.speaker.id,
-                name: segment.speaker.name, // Keep original name for color consistency
-                display_name: newDisplayName
-              } : {
-                id: speakerId,
-                name: segment.speaker_label || `SPEAKER_${speakerId}`,
-                display_name: newDisplayName
-              }
+              speaker: segment.speaker
+                ? {
+                    ...segment.speaker,
+                    uuid: segment.speaker.uuid,
+                    name: segment.speaker.name, // Keep original name for color consistency
+                    display_name: newDisplayName,
+                  }
+                : {
+                    uuid: speakerId,
+                    name: segment.speaker_label || `SPEAKER_${speakerId}`,
+                    display_name: newDisplayName,
+                  },
             };
           }
           return segment;
@@ -84,7 +89,7 @@ const createTranscriptStore = () => {
         return {
           ...data,
           speakers: updatedSpeakers,
-          segments: updatedSegments
+          segments: updatedSegments,
         };
       });
     },
@@ -94,27 +99,27 @@ const createTranscriptStore = () => {
       set({
         fileId: null,
         segments: [],
-        speakers: []
+        speakers: [],
       });
     },
 
     // Update segments (for text edits, etc.)
     updateSegments: (newSegments: TranscriptSegment[]) => {
-      update(data => ({
+      update((data) => ({
         ...data,
-        segments: newSegments.map(segment => ({ ...segment }))
+        segments: newSegments.map((segment) => ({ ...segment })),
       }));
     },
 
     // Update a specific segment's text while preserving ALL other data
-    updateSegmentText: (segmentId: number | string, newText: string) => {
-      update(data => {
-        const updatedSegments = data.segments.map(segment => {
-          if (segment.id === segmentId) {
+    updateSegmentText: (segmentUuid: string, newText: string) => {
+      update((data) => {
+        const updatedSegments = data.segments.map((segment) => {
+          if (segment.uuid === segmentUuid) {
             // Preserve ALL existing segment data, only update text
             return {
               ...segment, // Keep all existing properties
-              text: newText // Only update the text field
+              text: newText, // Only update the text field
               // Preserve: speaker_id, speaker_label, speaker, resolved_speaker_name, etc.
             };
           }
@@ -123,10 +128,10 @@ const createTranscriptStore = () => {
 
         return {
           ...data,
-          segments: updatedSegments
+          segments: updatedSegments,
         };
       });
-    }
+    },
   };
 };
 
@@ -158,12 +163,14 @@ export const processedTranscriptSegments = derived(
 
     sortedSegments.forEach((segment) => {
       // Use the latest speaker display name from the store
-      const speakerName = segment.resolved_speaker_name ||
-                         segment.speaker?.display_name ||
-                         segment.speaker?.name ||
-                         segment.speaker_label ||
-                         'Unknown Speaker';
-      const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
+      const speakerName =
+        segment.resolved_speaker_name ||
+        segment.speaker?.display_name ||
+        segment.speaker?.name ||
+        segment.speaker_label ||
+        "Unknown Speaker";
+      const speakerLabel =
+        segment.speaker_label || segment.speaker?.name || "Unknown";
       const startTime = parseFloat(String(segment.start_time || 0));
       const endTime = parseFloat(String(segment.end_time || 0));
 
@@ -172,9 +179,9 @@ export const processedTranscriptSegments = derived(
           groupedSegments.push({
             speakerName: currentSpeaker,
             speaker_label: currentSpeakerLabel, // Original ID for color mapping
-            text: currentText.join(' '),
+            text: currentText.join(" "),
             startTime: currentStartTime,
-            endTime: currentEndTime
+            endTime: currentEndTime,
           });
         }
         currentSpeaker = speakerName;
@@ -193,12 +200,12 @@ export const processedTranscriptSegments = derived(
       groupedSegments.push({
         speakerName: currentSpeaker,
         speaker_label: currentSpeakerLabel, // Preserve for color mapping
-        text: currentText.join(' '),
+        text: currentText.join(" "),
         startTime: currentStartTime,
-        endTime: currentEndTime
+        endTime: currentEndTime,
       });
     }
 
     return groupedSegments;
-  }
+  },
 );

@@ -33,7 +33,7 @@
   }
 
   interface Speaker {
-    id: string;  // UUID
+    uuid: string;  // UUID (public identifier)
     name: string;
     display_name?: string;
   }
@@ -51,7 +51,7 @@
 
 
   // Create a unique key based on active speaker list and analytics data to force re-rendering when speakers change
-  $: speakerKey = activeSpeakers.map(s => `${s.id}-${s.display_name || s.name}`).join('-');
+  $: speakerKey = activeSpeakers.map(s => `${s.uuid}-${s.display_name || s.name}`).join('-');
 
   // Use only backend-provided analytics structure
   // Support both file.analytics.overall_analytics (nested) and file.overall_analytics (flat)

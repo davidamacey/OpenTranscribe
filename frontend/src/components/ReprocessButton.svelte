@@ -131,7 +131,7 @@
   }
 
   async function executeReprocess() {
-    if (!file?.id || reprocessing) return;
+    if (!file?.uuid || reprocessing) return;
 
     try {
       reprocessing = true;
@@ -163,7 +163,7 @@
       if (effectiveNum !== null) requestBody.num_speakers = effectiveNum;
 
       await axiosInstance.post(
-        `/api/files/${file.id}/reprocess`,
+        `/api/files/${file.uuid}/reprocess`,
         Object.keys(requestBody).length > 0 ? requestBody : undefined
       );
 
@@ -172,7 +172,7 @@
       maxSpeakers = null;
       numSpeakers = null;
 
-      dispatch('reprocess', { fileId: file.id });
+      dispatch('reprocess', { fileId: file.uuid });
     } catch (error) {
       console.error('Error reprocessing file:', error);
       toastStore.error($t('reprocess.startFailed'));

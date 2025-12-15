@@ -6,15 +6,14 @@
  * Speaker entity representing a speaker instance in a media file
  */
 export interface Speaker {
-  uuid: string;
-  id?: string; // Same as uuid, kept for backward compatibility
+  uuid: string; // Public UUID identifier
   name: string; // Original speaker ID (e.g., "SPEAKER_01")
   display_name?: string; // User-assigned display name
   verified?: boolean;
   confidence?: number;
   segment_count?: number; // Number of segments assigned to this speaker
   profile?: {
-    id: string;
+    uuid: string; // Public UUID identifier
     name: string;
     description?: string;
   };
@@ -29,8 +28,8 @@ export interface Speaker {
  * Transcript segment with speaker information
  */
 export interface Segment {
-  uuid?: string;
-  id: number | string;
+  uuid: string; // Public UUID identifier (required)
+  id?: number | string; // Legacy fallback (optional)
   start_time: number;
   end_time: number;
   text: string;
@@ -38,8 +37,7 @@ export interface Segment {
   speaker_label?: string;
   resolved_speaker_name?: string;
   speaker?: {
-    id: string; // UUID
-    uuid?: string;
+    uuid: string; // Public UUID identifier
     name: string;
     display_name?: string;
   };

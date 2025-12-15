@@ -395,7 +395,7 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
             data={
                 "file_id": str(media_file.uuid),
                 "file": {
-                    "id": str(media_file.uuid),
+                    "uuid": str(media_file.uuid),
                     "filename": media_file.filename,
                     "status": media_file.status.value,
                     "display_status": FormattingService.format_status(media_file.status),

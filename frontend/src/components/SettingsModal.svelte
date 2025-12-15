@@ -616,7 +616,7 @@
     }
   }
 
-  async function retryFile(fileId: number) {
+  async function retryFile(fileId: string) {
     try {
       await axiosInstance.post(`/tasks/retry-file/${fileId}`);
       toastStore.success($t('settings.toast.fileRetryInitiated'));
@@ -1280,11 +1280,11 @@
                           <tbody>
                             {#each taskHealthData.inconsistent_files as file}
                               <tr>
-                                <td>{file.id}</td>
+                                <td>{file.uuid}</td>
                                 <td>{file.filename}</td>
                                 <td><span class="status-badge status-{file.status}">{formatStatus(file.status)}</span></td>
                                 <td>
-                                  <button class="btn-small btn-primary" on:click={() => retryFile(file.id)}>
+                                  <button class="btn-small btn-primary" on:click={() => retryFile(file.uuid)}>
                                     {$t('settings.taskHealth.retry')}
                                   </button>
                                 </td>

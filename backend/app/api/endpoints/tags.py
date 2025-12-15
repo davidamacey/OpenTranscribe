@@ -69,7 +69,7 @@ def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_cu
         # Convert to TagWithCount objects
         tags_with_counts = []
         for tag, count in tag_counts:
-            tags_with_counts.append(TagWithCount(id=tag.uuid, name=tag.name, usage_count=count))
+            tags_with_counts.append(TagWithCount(uuid=tag.uuid, name=tag.name, usage_count=count))
 
         return tags_with_counts
     except Exception as e:

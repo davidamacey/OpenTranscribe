@@ -98,7 +98,7 @@
 
   // Reactive: Prepare dropdown tags with proper format
   $: dropdownTags = allTags.map(tag => ({
-    id: tag.id,
+    id: tag.uuid,
     name: tag.name,
     count: tag.usage_count || 0
   }));
@@ -106,7 +106,7 @@
   // Reactive: Convert selected tag names to IDs for multiselect
   $: selectedTagIds = allTags
     .filter(tag => selectedTags.includes(tag.name))
-    .map(tag => tag.id);
+    .map(tag => tag.uuid);
 
   // Component refs
   let collectionsFilterRef: any;
@@ -117,7 +117,7 @@
 
   // Reactive: Prepare dropdown speakers with proper format
   $: dropdownSpeakers = allSpeakers.map(speaker => ({
-    id: speaker.id,
+    id: speaker.uuid,
     name: translateSpeakerLabel(speaker.display_name || speaker.name),
     count: speaker.media_count || 0
   }));
@@ -125,7 +125,7 @@
   // Reactive: Convert selected speaker names to IDs for multiselect
   $: selectedSpeakerIds = allSpeakers
     .filter(speaker => selectedSpeakers.includes(speaker.display_name || speaker.name))
-    .map(speaker => speaker.id);
+    .map(speaker => speaker.uuid);
 
   /** @type {boolean} */
   let loadingTags = false;
@@ -223,7 +223,7 @@
    */
   function handleTagSelect(event: CustomEvent) {
     const tagId = event.detail.id;
-    const tag = allTags.find(t => t.id === tagId);
+    const tag = allTags.find(t => t.uuid === tagId);
     if (tag && !selectedTags.includes(tag.name)) {
       selectedTags = [...selectedTags, tag.name];
     }
@@ -235,7 +235,7 @@
    */
   function handleTagDeselect(event: CustomEvent) {
     const tagId = event.detail.id;
-    const tag = allTags.find(t => t.id === tagId);
+    const tag = allTags.find(t => t.uuid === tagId);
     if (tag) {
       selectedTags = selectedTags.filter(t => t !== tag.name);
     }
@@ -261,7 +261,7 @@
    */
   function handleSpeakerSelect(event: CustomEvent) {
     const speakerId = event.detail.id;
-    const speaker = allSpeakers.find(s => s.id === speakerId);
+    const speaker = allSpeakers.find(s => s.uuid === speakerId);
     if (speaker) {
       const speakerName = speaker.display_name || speaker.name;
       if (!selectedSpeakers.includes(speakerName)) {
@@ -276,7 +276,7 @@
    */
   function handleSpeakerDeselect(event: CustomEvent) {
     const speakerId = event.detail.id;
-    const speaker = allSpeakers.find(s => s.id === speakerId);
+    const speaker = allSpeakers.find(s => s.uuid === speakerId);
     if (speaker) {
       const speakerName = speaker.display_name || speaker.name;
       selectedSpeakers = selectedSpeakers.filter(s => s !== speakerName);

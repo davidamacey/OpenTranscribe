@@ -47,9 +47,9 @@
 
   {#if isTagsExpanded}
     <div class="tags-content" transition:slide={{ duration: 200 }}>
-      {#if file && file.id}
+      {#if file && file.uuid}
         <TagsEditor
-          fileId={String(file.id)}
+          fileId={String(file.uuid)}
           tags={file.tags || []}
           aiSuggestions={aiTagSuggestions}
           on:tagsUpdated={handleTagsUpdated}

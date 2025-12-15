@@ -10,7 +10,7 @@
 
   /** @type {string} */
   export let fileId = "";
-  /** @type {Array<{id: string, name: string}>} */
+  /** @type {Array<{uuid: string, name: string}>} */
   export let tags = [];
   /** @type {Array<{name: string, confidence: number, rationale?: string}>} */
   export let aiSuggestions = [];
@@ -26,12 +26,12 @@
       // Handle case where backend returns tag names as strings instead of objects
       tags = tags.map(tag => {
         if (typeof tag === 'string') {
-          // Convert string tag to object format with a temporary ID
-          return { id: `temp-${tag}`, name: tag };
+          // Convert string tag to object format with a temporary UUID
+          return { uuid: `temp-${tag}`, name: tag };
         } else if (tag && typeof tag === 'object') {
-          // Ensure tag object has required properties
+          // Ensure tag object has required properties - preserve uuid
           return {
-            id: tag.id !== undefined ? tag.id : `temp-${tag.name}`,
+            uuid: tag.uuid !== undefined ? tag.uuid : `temp-${tag.name}`,
             name: tag.name || ''
           };
         }
@@ -40,7 +40,7 @@
     }
   }
 
-  /** @type {Array<{id: string, name: string}>} */
+  /** @type {Array<{uuid: string, name: string, usage_count?: number}>} */
   let allTags = [];
   /** @type {string} */
   let newTagInput = '';
@@ -61,7 +61,7 @@
       // Ensure all tags have valid IDs before adding them to the allTags array
       const validTags = (response.data || []).filter(tag =>
         tag && typeof tag === 'object' &&
-        tag.id !== undefined && tag.id !== null &&
+        tag.uuid !== undefined && tag.uuid !== null &&
         tag.name !== undefined && tag.name !== null
       );
 
@@ -93,7 +93,7 @@
       // Adding tag to file
 
       // Get the tag name by ID and send tag_data with name field as required by backend
-      const tagToAdd = allTags.find(t => t.id === tagId);
+      const tagToAdd = allTags.find(t => t.uuid === tagId);
       if (!tagToAdd) {
         console.error(`[TagsEditor] Tag with ID ${tagId} not found in allTags`);
         throw new Error('Tag not found');
@@ -109,10 +109,10 @@
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = response.data;
 
-      // Ensure the tag has a valid ID and name
+      // Ensure the tag has a valid UUID and name
       if (!finalTag ||
-          typeof finalTag.id === 'undefined' ||
-          finalTag.id === null ||
+          typeof finalTag.uuid === 'undefined' ||
+          finalTag.uuid === null ||
           typeof finalTag.name === 'undefined' ||
           finalTag.name === null) {
         console.error('[TagsEditor] Invalid tag received from server:', finalTag);
@@ -120,7 +120,7 @@
       }
 
       // Only add the tag if it's not already present
-      if (!tags.some(t => t.id === finalTag.id)) {
+      if (!tags.some(t => t.uuid === finalTag.uuid)) {
         tags = [...tags, finalTag];
         dispatch('tagsUpdated', { tags });
       }
@@ -150,8 +150,8 @@
       const createResponse = await axiosInstance.post('/tags/', createPayload);
       const newTag = createResponse.data;
 
-      // Ensure the tag has a valid ID and name to prevent 'undefined' key errors
-      if (!newTag || typeof newTag.id === 'undefined') {
+      // Ensure the tag has a valid UUID and name to prevent 'undefined' key errors
+      if (!newTag || typeof newTag.uuid === 'undefined') {
         console.error('[TagsEditor] Invalid tag received from server:', newTag);
         throw new Error('Server returned an invalid tag');
       }
@@ -164,18 +164,18 @@
 
       // Use the response data from add_tag_to_file as the final tag object
       const finalTag = addResponse.data;
-      if (!finalTag || typeof finalTag.id === 'undefined') {
+      if (!finalTag || typeof finalTag.uuid === 'undefined') {
         console.error('[TagsEditor] Invalid tag received after adding to file:', finalTag);
         throw new Error('Server returned an invalid tag after adding to file');
       }
 
       // Add to allTags if it's not already present
-      if (!allTags.some(t => t.id === finalTag.id)) {
+      if (!allTags.some(t => t.uuid === finalTag.uuid)) {
         allTags = [...allTags, finalTag];
       }
 
       // Add to tags if it's not already present
-      if (!tags.some(t => t.id === finalTag.id)) {
+      if (!tags.some(t => t.uuid === finalTag.uuid)) {
         tags = [...tags, finalTag];
         newTagInput = '';
         dispatch('tagsUpdated', { tags });
@@ -218,7 +218,7 @@
       // Removing tag from file
 
       // Find the tag by ID to get its name - the backend needs tag name, not ID
-      const tagToRemove = tags.find(t => t.id === tagId);
+      const tagToRemove = tags.find(t => t.uuid === tagId);
       if (!tagToRemove) {
         console.error(`[TagsEditor] Tag with ID ${tagId} not found in tags list`);
         throw new Error('Tag not found');
@@ -235,7 +235,7 @@
       // Update the local tags array
       // Filter out the removed tag using a safe comparison
       const updatedTags = tags.filter(t =>
-        t.id !== undefined && t.id !== null && t.id !== tagId
+        t.uuid !== undefined && t.uuid !== null && t.uuid !== tagId
       );
 
       // Only update if something actually changed
@@ -279,7 +279,7 @@
   // Get top 5 suggested tags as chips (most used)
   $: suggestedTags = allTags
     .filter(tag => {
-      const isAssigned = tags.some(t => (t.id === tag.id) || (t.name === tag.name));
+      const isAssigned = tags.some(t => (t.uuid === tag.uuid) || (t.name === tag.name));
       if (isAssigned) return false;
 
       const isInAISuggestions = filteredAISuggestions.some(aiSug =>
@@ -295,7 +295,7 @@
   // Get all available tags for dropdown (excluding already assigned and AI suggestions)
   $: dropdownTags = allTags
     .filter(tag => {
-      const isAssigned = tags.some(t => (t.id === tag.id) || (t.name === tag.name));
+      const isAssigned = tags.some(t => (t.uuid === tag.uuid) || (t.name === tag.name));
       if (isAssigned) return false;
 
       const isInAISuggestions = filteredAISuggestions.some(aiSug =>
@@ -306,7 +306,7 @@
       return true;
     })
     .map(tag => ({
-      id: tag.id,
+      id: tag.uuid,
       name: tag.name,
       count: tag.usage_count || 0
     }));
@@ -338,10 +338,10 @@
     {#if tags.length === 0}
       <span class="no-tags">{$t('tags.noTagsYet')}</span>
     {/if}
-    {#each tags.filter(t => t && t.id !== undefined) as tag (tag.id)}
+    {#each tags.filter(t => t && t.uuid !== undefined) as tag (tag.uuid)}
       <span class="tag">
         {tag.name}
-        <button class="tag-remove" on:click={() => removeTag(tag.id)} title={$t('tags.removeTag')}>×</button>
+        <button class="tag-remove" on:click={() => removeTag(tag.uuid)} title={$t('tags.removeTag')}>×</button>
       </span>
     {/each}
 
@@ -379,10 +379,10 @@
   {#if suggestedTags.length > 0}
     <div class="suggested-tags">
       <span class="suggested-label">{$t('tags.suggested')}</span>
-      {#each suggestedTags.filter(t => t && t.id !== undefined) as tag (tag.id)}
+      {#each suggestedTags.filter(t => t && t.uuid !== undefined) as tag (tag.uuid)}
         <button
           class="suggested-tag"
-          on:click={() => addTag(tag.id)}
+          on:click={() => addTag(tag.uuid)}
           disabled={loading}
           title={$t('tags.addExistingTagHint', { tagName: tag.name })}
         >
