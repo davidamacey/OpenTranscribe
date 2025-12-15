@@ -163,7 +163,7 @@ def _get_unique_speakers_for_filter(speakers, db: Session, current_user: User):
         if representative_speaker:
             unique_speakers.append(
                 {
-                    "id": str(representative_speaker.uuid),
+                    "uuid": str(representative_speaker.uuid),
                     "name": representative_speaker.name,
                     "display_name": display_name,
                     "media_count": media_count,
@@ -359,11 +359,10 @@ def _build_speaker_dict(
 ) -> dict:
     """Build the speaker dictionary for API response."""
     speaker_dict = {
-        "id": str(speaker.uuid),  # Use UUID as id for frontend compatibility
+        "uuid": str(speaker.uuid),
         "name": speaker.name,
         "display_name": speaker.display_name or "",  # Handle nulls in backend
         "suggested_name": suggested_name,
-        "uuid": str(speaker.uuid),  # Also keep uuid field for clarity
         "verified": speaker.verified,
         "user_id": str(current_user.uuid),  # Use user UUID
         "confidence": speaker.confidence,
@@ -384,7 +383,7 @@ def _build_speaker_dict(
     # Add profile information if speaker is assigned to a profile
     if speaker.profile_id and speaker.profile:
         speaker_dict["profile"] = {
-            "id": str(speaker.profile.uuid) if speaker.profile.uuid else None,
+            "uuid": str(speaker.profile.uuid) if speaker.profile.uuid else None,
             "name": speaker.profile.name,
             "description": speaker.profile.description,
         }

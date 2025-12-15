@@ -9,7 +9,10 @@
 #   - Development-specific commands
 
 services:
+  # All backend services share the same image to save disk space
+  # Image is built once and reused by all backend-based services
   backend:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -18,6 +21,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
 
   celery-worker:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -29,6 +33,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-download-worker:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -38,6 +43,7 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
 
   celery-cpu-worker:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -45,6 +51,7 @@ services:
       - ./backend:/app  # Mount source code for development
 
   celery-nlp-worker:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -52,6 +59,7 @@ services:
       - ./backend:/app  # Mount source code for development
 
   celery-beat:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -59,6 +67,7 @@ services:
       - ./backend:/app  # Mount source code for development
 
   frontend:
+    image: opentranscribe-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev  # Use development Dockerfile
@@ -77,9 +86,23 @@ services:
       start_period: 30s
 
   flower:
+    image: opentranscribe-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
       - flower_data:/app
+
+  # GPU Scaled Worker - Development build (only active with --gpu-scale flag)
+  celery-worker-gpu-scaled:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers

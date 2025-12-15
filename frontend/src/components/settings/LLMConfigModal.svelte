@@ -81,9 +81,9 @@
 
   // Only populate form when modal opens or editingConfig changes
   $: if (show) {
-    if (editingConfig && editingConfig.id !== lastEditingConfigId) {
+    if (editingConfig && editingConfig.uuid !== lastEditingConfigId) {
       populateForm(editingConfig);
-      lastEditingConfigId = editingConfig.id;
+      lastEditingConfigId = editingConfig.uuid;
     } else if (!editingConfig && lastEditingConfigId !== null) {
       resetForm();
       lastEditingConfigId = null;
@@ -158,10 +158,10 @@
     };
 
     // Fetch the actual API key if one is stored
-    if (config.has_api_key && config.id) {
+    if (config.has_api_key && config.uuid) {
       loadingApiKey = true;
       try {
-        const result = await LLMSettingsApi.getConfigApiKey(config.id);
+        const result = await LLMSettingsApi.getConfigApiKey(config.uuid);
         if (result.api_key) {
           formData.api_key = result.api_key;
           formData = { ...formData }; // Trigger reactivity
@@ -250,7 +250,7 @@
     try {
       let savedConfig;
       if (editingConfig) {
-        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.id, formData);
+        savedConfig = await LLMSettingsApi.updateSettings(editingConfig.uuid, formData);
         toastStore.success($t('llm.configUpdated'), 5000);
       } else {
         savedConfig = await LLMSettingsApi.createSettings(formData);
@@ -260,7 +260,8 @@
       dispatch('saved', savedConfig);
       closeModal(true);
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('llm.configSaveFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('llm.configSaveFailed');
       toastStore.error(errorMsg, 8000);
     } finally {
       saving = false;
@@ -278,7 +279,7 @@
         model_name: formData.model_name,
         api_key: formData.api_key?.trim() || undefined,
         base_url: formData.base_url || undefined,
-        config_id: editingConfig?.id  // Pass config ID for edit mode to use stored key
+        config_id: editingConfig?.uuid  // Pass config UUID for edit mode to use stored key
       });
 
       if (result.success) {
@@ -287,7 +288,8 @@
         toastStore.error(result.message, 8000);
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('llm.connectionTestFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('llm.connectionTestFailed');
       toastStore.error(errorMsg, 8000);
     } finally {
       testing = false;
@@ -349,7 +351,7 @@
       const result = await LLMSettingsApi.getOpenAICompatibleModels(
         formData.base_url,
         formData.api_key?.trim() || undefined,
-        editingConfig?.id  // Pass config ID for edit mode to use stored key
+        editingConfig?.uuid  // Pass config UUID for edit mode to use stored key
       );
       if (result.success && result.models) {
         openaiCompatibleModels = result.models;
@@ -358,7 +360,8 @@
         toastStore.error(result.message);
       }
     } catch (err: any) {
-      toastStore.error(err.response?.data?.detail || $t('llm.modelsLoadFailed'));
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('llm.modelsLoadFailed'));
     } finally {
       loadingOpenAIModels = false;
     }
@@ -383,7 +386,7 @@
     try {
       const result = await LLMSettingsApi.getAnthropicModels(
         formData.api_key?.trim() || undefined,  // Only send if user typed a new key
-        editingConfig?.id  // Backend will use stored key if no api_key provided
+        editingConfig?.uuid  // Backend will use stored key if no api_key provided
       );
       if (result.success && result.models) {
         anthropicModels = result.models;

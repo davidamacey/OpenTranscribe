@@ -49,6 +49,10 @@
   export let reprocessing: boolean = false;
   export let currentTime: number = 0;
 
+  // Create a reactive key based on speakerList to force re-renders of speaker sections
+  // This ensures Edit Speakers and Merge Speakers sections update when speakers change
+  $: speakerListKey = speakerList.map(s => s.uuid).join('-');
+
   // Pagination props
   export let totalSegments: number = 0;
   export let hasMoreSegments: boolean = false;
@@ -112,7 +116,7 @@
   // Download state management
   let downloadState = $downloadStore;
   $: downloadState = $downloadStore;
-  $: currentDownload = downloadState[file?.id];
+  $: currentDownload = downloadState[file?.uuid];
   $: isDownloading = currentDownload && ['preparing', 'processing', 'downloading'].includes(currentDownload.status);
 
   // Scrollbar indicator state
@@ -135,7 +139,7 @@
 
     if (targetSegment) {
       // Scroll to the current segment
-      const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.id || `${targetSegment.start_time}-${targetSegment.end_time}`}"]`);
+      const segmentElement = document.querySelector(`[data-segment-id="${targetSegment.uuid}"]`);
       if (segmentElement) {
         segmentElement.scrollIntoView({
           behavior: 'smooth',
@@ -256,7 +260,7 @@
 
     // Find the segment in our local state
     const segmentIndex = file.transcript_segments.findIndex(
-      (s: any) => (s.uuid || s.id) === segmentUuid
+      (s: any) => s.uuid === segmentUuid
     );
 
     if (segmentIndex === -1) {
@@ -265,7 +269,7 @@
       return;
     }
 
-    // Store original speaker for rollback
+    // Store original speaker for rollback and orphan detection
     const originalSpeaker = file.transcript_segments[segmentIndex].speaker;
 
     // Optimistic update - find the new speaker from our speaker list
@@ -284,6 +288,24 @@
       file.transcript_segments[segmentIndex] = updatedSegment;
       file.transcript_segments = [...file.transcript_segments]; // Trigger reactivity
 
+      // Check if the old speaker is now orphaned (no remaining segments)
+      // The backend auto-deletes orphaned speakers, so we need to sync the frontend
+      const originalSpeakerUuid = originalSpeaker?.uuid;
+      if (originalSpeaker && originalSpeakerUuid) {
+        const oldSpeakerStillUsed = file.transcript_segments.some(
+          (s: any) => s.speaker?.uuid === originalSpeakerUuid
+        );
+
+        if (!oldSpeakerStillUsed) {
+          // Notify parent that a speaker was deleted - parent will update speakerList
+          // which flows back down to this component and its children (SpeakerMerge, etc.)
+          dispatch('speakerDeleted', { speakerUuid: originalSpeakerUuid });
+        }
+      }
+
+      // Notify parent to refresh analytics (backend refreshed them, frontend needs to fetch)
+      dispatch('analyticsRefreshNeeded');
+
       toastStore.success($t('transcript.speakerAssignmentUpdated'));
     } catch (error: any) {
       console.error('Error updating segment speaker:', error);
@@ -300,13 +322,23 @@
     }
   }
 
+  // Handle new speaker creation from dropdown
+  function handleSpeakerCreated(event: CustomEvent) {
+    const { speaker } = event.detail;
+    if (speaker) {
+      // Notify parent to refresh speakers - parent will reload from backend
+      // which flows back down to this component and its children
+      dispatch('speakerCreated', { speaker });
+    }
+  }
+
   async function downloadFile() {
-    if (!file || !file.id) {
+    if (!file || !file.uuid) {
       toastStore.error($t('transcript.fileNotAvailable'));
       return;
     }
 
-    const fileId = file.id.toString();
+    const fileId = file.uuid.toString();
     const filename = file.filename;
 
     // Check if download is already in progress
@@ -460,9 +492,9 @@
         {#each file.transcript_segments as segment}
           <div
             class="transcript-segment"
-            data-segment-id="{segment.id || `${segment.start_time}-${segment.end_time}`}"
+            data-segment-id="{segment.uuid}"
           >
-            {#if editingSegmentId === segment.id}
+            {#if editingSegmentId === segment.uuid}
               <div class="segment-edit-container">
                 <div class="segment-time">{segment.display_timestamp || segment.formatted_timestamp || formatSimpleTimestamp(segment.start_time)}</div>
                 <div class="segment-speaker">{translateSpeakerLabel(segment.speaker?.display_name || segment.speaker?.name || segment.speaker_label || $t('fileDetail.unknownSpeaker'))}</div>
@@ -504,7 +536,9 @@
                     <SegmentSpeakerDropdown
                       {segment}
                       speakers={speakerList}
+                      mediaFileUuid={file?.uuid?.toString() || ''}
                       on:change={handleSegmentSpeakerChange}
+                      on:speakerCreated={handleSpeakerCreated}
                     />
                   </div>
                   <div class="segment-text">
@@ -720,7 +754,8 @@
             </div>
           </div>
 
-          <!-- Speaker Merge UI -->
+          <!-- Speaker Merge UI and Edit Speakers - keyed by speakerListKey to force re-render when speakers change -->
+          {#key speakerListKey}
           {#if speakerList && speakerList.length > 1}
             <SpeakerMerge
               speakers={speakerList}
@@ -748,16 +783,16 @@
                       title={$t('transcript.enterSpeakerName', { speaker: translateSpeakerLabel(speaker.name) })}
                       class:suggested-high={speaker.is_high_confidence}
                       class:suggested-medium={speaker.is_medium_confidence}
-                      data-speaker-id={speaker.id}
+                      data-speaker-id={speaker.uuid}
                       on:input={() => {
                         // Dispatch event to notify parent of speaker name change
-                        dispatch('speakerNameChanged', { speakerId: speaker.id, newName: speaker.display_name });
+                        dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.display_name });
                       }}
                       on:focus={() => {
                         if (speaker.is_high_confidence && speaker.suggested_name) {
                           speaker.display_name = speaker.suggested_name;
                           // Dispatch event after auto-fill
-                          dispatch('speakerNameChanged', { speakerId: speaker.id, newName: speaker.display_name });
+                          dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.display_name });
                         }
                       }}
                     />
@@ -859,7 +894,7 @@
                                         class:profile-suggestion={suggestion.suggestion_type === 'profile'}
                                         on:click={() => {
                                           speaker.display_name = suggestion.name;
-                                          dispatch('speakerUpdate', { speakerId: speaker.id, newName: suggestion.name });
+                                          dispatch('speakerUpdate', { speakerId: speaker.uuid, newName: suggestion.name });
                                         }}
                                         title="{suggestion.reason}"
                                       >
@@ -1032,6 +1067,7 @@
           {:else}
             <p>{$t('transcript.noSpeakersFound')}</p>
           {/if}
+          {/key}
         </div>
       {/if}
     {/if}

@@ -16,7 +16,7 @@
   /** @type {number} */
   export let currentTime = 0;
 
-  /** @type {Array<{id: string, text: string, timestamp: number, user: {id: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
+  /** @type {Array<{uuid: string, text: string, timestamp: number, user: {uuid: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
@@ -24,7 +24,7 @@
   let newComment = '';
   /** @type {number|null} */
   let timestampInput = null;
-  /** @type {number|null} */
+  /** @type {string|null} */
   let editingCommentId = null;
   /** @type {string} */
   let editingCommentText = '';
@@ -140,7 +140,7 @@
           return {
             ...comment,
             user: {
-              id: comment.user_id,
+              uuid: comment.user_id,
               email: userData.email,
               full_name: userData.full_name || userData.email || 'User ' + comment.user_id
             }
@@ -286,7 +286,7 @@
         ...response.data,
         // Add user info from localStorage if not present in the response
         user: response.data.user || {
-          id: response.data.user_id || userData.id || 0,
+          uuid: response.data.user_id || userData.uuid || '',
           email: userData.email,
           full_name: userData.full_name || userData.email || 'User ' + response.data.user_id
         }
@@ -320,7 +320,7 @@
   // Edit a comment
   /**
    * Edit an existing comment
-   * @param {number} commentId - The ID of the comment to edit
+   * @param {string} commentId - The UUID of the comment to edit
    * @param {string} newText - The new text for the comment
    */
   async function editComment(commentId, newText) {
@@ -364,7 +364,7 @@
       // Comment edited successfully
 
       // Update the comment in the list
-      comments = comments.map(c => c.id === commentId ? { ...c, text: newText } : c);
+      comments = comments.map(c => c.uuid === commentId ? { ...c, text: newText } : c);
 
       // Reset editing state if we were editing this comment
       if (editingCommentId === commentId) {
@@ -424,7 +424,7 @@
 
   /**
    * Delete a comment
-   * @param {number} commentId - The ID of the comment to delete
+   * @param {string} commentId - The UUID of the comment to delete
    */
   async function deleteComment(commentId) {
     showConfirmation(
@@ -436,7 +436,7 @@
 
   /**
    * Execute comment deletion after confirmation
-   * @param {number} commentId - The ID of the comment to delete
+   * @param {string} commentId - The UUID of the comment to delete
    */
   async function executeDeleteComment(commentId) {
     try {
@@ -467,7 +467,7 @@
       await axiosInstance.delete(`comments/${commentId}`, { headers });
       // Comment deleted successfully
 
-      comments = comments.filter(c => c.id !== commentId);
+      comments = comments.filter(c => c.uuid !== commentId);
     } catch (/** @type {any} */ err) { // Handle error with proper type
       console.error('[CommentSection] Error deleting comment:', err);
       console.error('[CommentSection] Error details:', {
@@ -515,14 +515,14 @@
   // Check if the current user is the author of a comment
   /**
    * Check if the current user is the author of a comment
-   * @param {number} userId - The user ID to check
+   * @param {string} userId - The user UUID to check
    * @returns {boolean} Whether the current user is the author
    */
   function isCommentAuthor(userId) {
     if (!$authStore.user) return false;
 
     // UUIDs are strings, so compare directly
-    return $authStore.user.id === userId;
+    return $authStore.user.uuid === userId;
   }
 </script>
 
@@ -604,11 +604,11 @@
         <p>{$t('comments.noCommentsYet')}</p>
       </div>
     {:else}
-      {#each comments as comment (comment.id)}
+      {#each comments as comment (comment.uuid)}
         <div class="comment-item" transition:slide={{duration: 300}}>
           <div class="comment-header">
             <div class="comment-user">
-              {comment.user ? (comment.user.full_name || comment.user.email || `User ${comment.user.id}`) : $t('comments.anonymous')}
+              {comment.user ? (comment.user.full_name || comment.user.email || `User ${comment.user.uuid}`) : $t('comments.anonymous')}
             </div>
             <div class="comment-timestamp">
               {#if comment.timestamp !== null}
@@ -627,8 +627,8 @@
             </div>
           </div>
 
-          {#if editingCommentId === comment.id}
-            <form class="edit-comment-form" on:submit|preventDefault={() => editComment(comment.id, editingCommentText)}>
+          {#if editingCommentId === comment.uuid}
+            <form class="edit-comment-form" on:submit|preventDefault={() => editComment(comment.uuid, editingCommentText)}>
               <textarea
                 bind:value={editingCommentText}
                 rows="2"
@@ -657,13 +657,13 @@
             </div>
 
             <!-- Only show edit/delete for comment author -->
-            {#if isCommentAuthor(comment.user.id)}
+            {#if isCommentAuthor(comment.user.uuid)}
               <div class="comment-actions">
                 <button
                   type="button"
                   class="edit-button"
                   on:click={() => {
-                    editingCommentId = comment.id;
+                    editingCommentId = comment.uuid;
                     editingCommentText = comment.text;
                   }}
                   title={$t('comments.editHint')}
@@ -673,7 +673,7 @@
                 <button
                   type="button"
                   class="delete-button"
-                  on:click={() => deleteComment(comment.id)}
+                  on:click={() => deleteComment(comment.uuid)}
                   title={$t('comments.deleteHint')}
                 >
                   {$t('comments.delete')}

@@ -178,12 +178,14 @@ uploads/
 downloads/
 media/
 
-# Security
+# Security and SSL certificates
 *.pem
 *.key
 *.crt
 *.csr
 secrets/
+nginx/ssl/*.crt
+nginx/ssl/*.key
 
 # Package files
 *.deb

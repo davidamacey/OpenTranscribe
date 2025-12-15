@@ -1,0 +1,32 @@
+# docker-compose.gpu.yml
+# Optional overlay for GPU acceleration (NVIDIA)
+#
+# This overlay enables GPU runtime for celery-worker on systems with NVIDIA GPUs.
+# It is automatically detected and loaded by opentr.sh when NVIDIA Container Toolkit
+# is available.
+#
+# Usage:
+#   ./opentr.sh start dev              # Auto-detects GPU and applies if available
+#   OR manually:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gpu.yml up
+#
+# Note: This file is automatically included by opentr.sh when NVIDIA GPU is detected.
+# On macOS or systems without NVIDIA GPU, this file is not loaded, allowing the base
+# docker-compose.yml to work on CPU-only systems.
+#
+# Configuration:
+#   GPU_DEVICE_ID - GPU device to use (default: 0)
+#   Set in .env file: GPU_DEVICE_ID=1
+
+services:
+  celery-worker:
+    # Enable NVIDIA runtime for GPU acceleration
+    # Note: deploy.resources.reservations is preferred over runtime: nvidia
+    # in newer Docker versions (20.10+) for better compatibility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${GPU_DEVICE_ID:-0}']

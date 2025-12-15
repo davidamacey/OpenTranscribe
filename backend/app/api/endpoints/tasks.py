@@ -114,7 +114,7 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
         "completed_at": completed_at,
         "error_message": error_message,
         "media_file": {
-            "id": str(file.uuid),  # Convert to UUID string
+            "uuid": str(file.uuid),
             "filename": file.filename,
             "file_size": file.file_size,
             "content_type": file.content_type,
@@ -297,7 +297,7 @@ async def task_system_health(
         for file in inconsistent_files:
             inconsistent_file_data.append(
                 {
-                    "id": str(file.uuid),  # Use UUID for frontend
+                    "uuid": str(file.uuid),
                     "filename": file.filename,
                     "status": file.status.value,
                     "user_id": str(file.user.uuid) if file.user else None,

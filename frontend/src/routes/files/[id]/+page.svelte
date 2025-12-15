@@ -106,7 +106,7 @@
 
   // Detect changes in speaker names - depends on speaker display_name values
   $: speakerNamesChanged = speakerList.length > 0 && speakerList.some(speaker => {
-    const originalName = originalSpeakerNames.get(speaker.id) || '';
+    const originalName = originalSpeakerNames.get(speaker.uuid) || '';
     const currentName = (speaker.display_name || '').trim();
     return originalName !== currentName;
   });
@@ -263,8 +263,8 @@
         totalSegments = response.data.total_segments || totalSegments;
 
         // Update transcript store so TranscriptModal gets the new segments
-        if (file?.id && file.transcript_segments && speakerList) {
-          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        if (file?.uuid && file.transcript_segments && speakerList) {
+          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
         }
       }
     } catch (error) {
@@ -350,13 +350,13 @@
     // Load cross-media data for each labeled speaker
     for (const speaker of speakersNeedingCrossMedia) {
       try {
-        const response = await axiosInstance.get(`/api/speakers/${speaker.id}/cross-media`);
+        const response = await axiosInstance.get(`/api/speakers/${speaker.uuid}/cross-media`);
 
         // Update the speaker's cross_video_matches with actual file appearances
         speaker.cross_video_matches = response.data || [];
 
       } catch (error) {
-        console.error(`Error loading cross-media data for speaker ${speaker.id}:`, error);
+        console.error(`Error loading cross-media data for speaker ${speaker.uuid}:`, error);
         speaker.cross_video_matches = [];
       }
     }
@@ -366,8 +366,8 @@
     speakerList = [...speakerList];
 
     // Update transcript store with the new cross-media data
-    if (file?.id && file.transcript_segments) {
-      transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+    if (file?.uuid && file.transcript_segments) {
+      transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
     }
   }
 
@@ -375,12 +375,12 @@
    * Load speakers for the current file
    */
   async function loadSpeakers(): Promise<void> {
-    if (!file?.id) return;
+    if (!file?.uuid) return;
 
     try {
       // Load speakers from the backend API
       const response = await axiosInstance.get(`/api/speakers/`, {
-        params: { file_uuid: file.id }  // Use file_uuid parameter (file.id contains UUID)
+        params: { file_uuid: file.uuid }  // Use file_uuid parameter (file.uuid contains UUID)
       });
 
       if (response.data && Array.isArray(response.data)) {
@@ -393,7 +393,7 @@
 
         // Store original speaker names for change detection (trimmed for consistent comparison)
         originalSpeakerNames = new Map(
-          speakerList.map(speaker => [speaker.id, (speaker.display_name || '').trim()])
+          speakerList.map(speaker => [speaker.uuid, (speaker.display_name || '').trim()])
         );
 
         // Speakers are now pre-sorted by the backend
@@ -402,8 +402,8 @@
         await loadCrossMediaDataForLabeledSpeakers();
 
         // Load data into the transcript store for reactive updates
-        if (file?.id && file.transcript_segments) {
-          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        if (file?.uuid && file.transcript_segments) {
+          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
         }
 
       } else {
@@ -424,8 +424,8 @@
           // Backend provides pre-sorted speakers
 
           // Load data into the transcript store for fallback case
-          if (file?.id && file.transcript_segments) {
-            transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+          if (file?.uuid && file.transcript_segments) {
+            transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
           }
         }
       }
@@ -448,8 +448,8 @@
         // Backend provides pre-sorted speakers
 
         // Load data into the transcript store for error fallback case
-        if (file?.id && file.transcript_segments) {
-          transcriptStore.loadTranscriptData(file.id, file.transcript_segments, speakerList);
+        if (file?.uuid && file.transcript_segments) {
+          transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
         }
       }
     }
@@ -518,7 +518,7 @@
     });
 
     if (currentSegment) {
-      const segmentElement = document.querySelector(`[data-segment-id="${currentSegment.id || `${currentSegment.start_time}-${currentSegment.end_time}`}"]`);
+      const segmentElement = document.querySelector(`[data-segment-id="${currentSegment.uuid || currentSegment.id || `${currentSegment.start_time}-${currentSegment.end_time}`}"]`);
       if (segmentElement) {
         segmentElement.classList.add('active-segment');
         // Remove auto-scroll to allow manual scrolling
@@ -550,7 +550,7 @@
 
     // Check for duplicate names (excluding the current speaker)
     const existingNames = speakerList
-      .filter(s => s.id !== speakerId)
+      .filter(s => s.uuid !== speakerId)
       .map(s => (s.display_name || s.name).toLowerCase());
 
     if (existingNames.includes(trimmedName.toLowerCase())) {
@@ -569,11 +569,11 @@
 
   // Handle speakers merged event - refresh all related data silently (no loading spinner)
   async function handleSpeakersMerged() {
-    if (!file?.id) return;
+    if (!file?.uuid) return;
 
     try {
       // Silently refresh file data without showing loading state
-      const response = await axiosInstance.get(`/api/files/${file.id}`);
+      const response = await axiosInstance.get(`/api/files/${file.uuid}`);
 
       if (response.data && typeof response.data === 'object') {
         // Update file data (includes analytics and transcript segments)
@@ -593,6 +593,42 @@
     }
   }
 
+  // Handle new speaker created - just reload speakers without touching file/analytics
+  // The segment assignment will trigger analyticsRefreshNeeded which handles analytics
+  async function handleSpeakerCreated() {
+    await loadSpeakers();
+  }
+
+  // Handle speaker deletion after segment reassignment leaves a speaker with no segments
+  async function handleSpeakerDeleted(event: CustomEvent) {
+    const { speakerUuid } = event.detail;
+    if (!speakerUuid) return;
+
+    // Use the same comprehensive refresh as handleSpeakersMerged
+    // This ensures all speaker-related components (Edit Speakers, Merge Speakers, Analytics)
+    // stay in sync - just calling loadSpeakers() wasn't triggering proper reactivity
+    await handleSpeakersMerged();
+  }
+
+  // Handle analytics refresh after segment speaker change (backend refreshes analytics, frontend fetches)
+  async function handleAnalyticsRefreshNeeded() {
+    if (!file?.uuid) return;
+
+    try {
+      // Silently refresh file data to get updated analytics
+      const response = await axiosInstance.get(`/api/files/${file.uuid}`);
+
+      if (response.data && typeof response.data === 'object') {
+        // Update analytics from refreshed response
+        file.analytics = response.data.analytics;
+        reactiveFile.set(file);
+      }
+    } catch (error) {
+      console.error('Error refreshing analytics after speaker change:', error);
+      // Don't show error toast - analytics refresh is not critical to user workflow
+    }
+  }
+
   // Handle speaker name updates
   async function handleSpeakerUpdate(event: CustomEvent) {
     const { speakerId, newName } = event.detail;
@@ -605,7 +641,7 @@
     }
 
     // Find the speaker to check if they have a profile
-    const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
+    const speaker = speakerList.find(s => s.uuid === speakerId);
 
     // Check if this speaker has a profile and the name is changing
     if (speaker && speaker.profile && speaker.profile.name !== newName) {
@@ -686,7 +722,7 @@
     if (currentConfirmationIndex < speakerConfirmationQueue.length) {
       const speaker = speakerConfirmationQueue[currentConfirmationIndex];
       pendingSpeakerUpdate = {
-        speakerId: speaker.id,
+        speakerId: speaker.uuid,
         newName: speaker.display_name,
         speaker
       };
@@ -702,7 +738,7 @@
     // IMPORTANT: Only update display_name, NEVER change name (original speaker ID for color consistency)
     speakerList = speakerList
       .map(speaker => {
-        if (speaker.id === speakerId || speaker.uuid === speakerId) {
+        if (speaker.uuid === speakerId) {
           return { ...speaker, display_name: newName };
         }
         return speaker;
@@ -749,8 +785,8 @@
 
     // Persist to database with the action decision
     try {
-      const speaker = speakerList.find(s => s.id === speakerId || s.uuid === speakerId);
-      if (speaker && speaker.id) {
+      const speaker = speakerList.find(s => s.uuid === speakerId);
+      if (speaker && speaker.uuid) {
         const payload: any = {
           display_name: newName
           // NEVER update 'name' field - it contains the original speaker ID for color consistency
@@ -761,7 +797,7 @@
           payload.profile_action = action;
         }
 
-        await axiosInstance.put(`/api/speakers/${speaker.id}`, payload);
+        await axiosInstance.put(`/api/speakers/${speaker.uuid}`, payload);
 
         // Show success feedback with appropriate message
         const successMessage = action === 'update_profile'
@@ -790,7 +826,7 @@
 
   function handleEditSegment(event: any) {
     const segment = event.detail.segment;
-    editingSegmentId = segment.id;
+    editingSegmentId = segment.uuid;
     editingSegmentText = segment.text;
   }
 
@@ -837,16 +873,17 @@
         text: editingSegmentText
       };
 
-      const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segment.id}`, segmentUpdate);
+      const segmentUuid = segment.uuid;
+      const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segmentUuid}`, segmentUpdate);
 
       if (response.data) {
         // Update the transcript store FIRST for reactivity
-        transcriptStore.updateSegmentText(segment.id, editingSegmentText);
+        transcriptStore.updateSegmentText(segmentUuid, editingSegmentText);
 
         // Update the specific segment in local data
         const transcriptData = file?.transcript_segments;
         if (transcriptData && file) {
-          const segmentIndex = transcriptData.findIndex((s: any) => s.id === segment.id);
+          const segmentIndex = transcriptData.findIndex((s: any) => s.uuid === segmentUuid);
 
           if (segmentIndex !== -1) {
             // Create a new array with the updated segment, preserving speaker data
@@ -875,7 +912,7 @@
 
             // Clear cached processed videos so downloads will use updated transcript
             try {
-              await axiosInstance.delete(`/api/files/${file.id}/cache`);
+              await axiosInstance.delete(`/api/files/${file.uuid}/cache`);
             } catch (error) {
               console.warn('Could not clear video cache:', error);
             }
@@ -958,7 +995,7 @@
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         };
-        const endpoint = `/comments/files/${file.id}/comments`;
+        const endpoint = `/comments/files/${file.uuid}/comments`;
         const response = await axiosInstance.get(endpoint, { headers });
         const fileComments = response.data || [];
         hasComments = fileComments.length > 0;
@@ -995,7 +1032,7 @@
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           };
-          const endpoint = `/comments/files/${file.id}/comments`;
+          const endpoint = `/comments/files/${file.uuid}/comments`;
           const response = await axiosInstance.get(endpoint, { headers });
           fileComments = response.data || [];
 
@@ -1005,7 +1042,7 @@
           // Add current user data to each comment
           fileComments = fileComments.map((comment: any) => {
             // If the comment is from the current user, add their details
-            if (!comment.user && comment.user_id === userData.id) {
+            if (!comment.user && comment.user_id === userData.uuid) {
               comment.user = {
                 full_name: userData.full_name,
                 username: userData.username,
@@ -1359,7 +1396,7 @@
     try {
       // Validate all speaker names first
       const speakersToUpdate = speakerList.filter(speaker =>
-        speaker.id &&
+        speaker.uuid &&
         speaker.display_name &&
         speaker.display_name.trim() !== "" &&
         !speaker.display_name.startsWith('SPEAKER_')
@@ -1367,7 +1404,7 @@
 
       // Validate each speaker name
       for (const speaker of speakersToUpdate) {
-        const validation = validateSpeakerName(speaker.display_name, speaker.id);
+        const validation = validateSpeakerName(speaker.display_name, speaker.uuid);
         if (!validation.isValid) {
           toastStore.error(`${speaker.name}: ${validation.error}`);
           savingSpeakers = false;
@@ -1406,7 +1443,7 @@
   async function performBulkSaveWithDecisions() {
     try {
       const speakersToUpdate = speakerList.filter(speaker =>
-        speaker.id &&
+        speaker.uuid &&
         speaker.display_name &&
         speaker.display_name.trim() !== "" &&
         !speaker.display_name.startsWith('SPEAKER_')
@@ -1439,12 +1476,12 @@
     const nameChanges = new Map(); // Track profile name changes for voice suggestions
 
     speakersToUpdate.forEach((speaker: any) => {
-      const decision = decisions.get(speaker.id);
+      const decision = decisions.get(speaker.uuid);
       const newName = speaker.display_name.trim();
 
       // If updating a profile globally, track the name change
       if (decision && decision.decision === 'update_profile' && speaker.profile) {
-        nameChanges.set(speaker.profile.id, { oldName: speaker.profile.name, newName });
+        nameChanges.set(speaker.profile.uuid, { oldName: speaker.profile.name, newName });
       }
     });
 
@@ -1471,7 +1508,7 @@
 
     // STEP 3: Update speakers in the backend with decisions
     const updatePromises = speakersToUpdate.map(async (speaker: any) => {
-      const decision = decisions.get(speaker.id);
+      const decision = decisions.get(speaker.uuid);
       const payload: any = {
         display_name: speaker.display_name.trim(),
         name: speaker.name
@@ -1482,7 +1519,7 @@
         payload.profile_action = decision.decision;
       }
 
-      return axiosInstance.put(`/api/speakers/${speaker.id}`, payload);
+      return axiosInstance.put(`/api/speakers/${speaker.uuid}`, payload);
     });
 
     await Promise.all(updatePromises);
@@ -1494,13 +1531,13 @@
 
     // Reset original names to current values (no changes after save)
     originalSpeakerNames = new Map(
-      speakerList.map(speaker => [speaker.id, (speaker.display_name || '').trim()])
+      speakerList.map(speaker => [speaker.uuid, (speaker.display_name || '').trim()])
     );
 
     // STEP 5: Update the transcript store for reactive updates (instant)
     speakerList.forEach((speaker: any) => {
-      if (speaker.id && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
-        transcriptStore.updateSpeakerName(speaker.id, speaker.display_name.trim());
+      if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
+        transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
       }
     });
 
@@ -1543,7 +1580,7 @@
       });
     }
 
-    axiosInstance.delete(`/api/files/${file.id}/cache`).catch(error => {
+    axiosInstance.delete(`/api/files/${file.uuid}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
     });
 
@@ -1561,8 +1598,8 @@
 
     // Refresh speakers from the backend to sync local state
     speakerList.forEach((speaker: any) => {
-      if (speaker.id && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
-        transcriptStore.updateSpeakerName(speaker.id, speaker.display_name.trim());
+      if (speaker.uuid && speaker.display_name && speaker.display_name.trim() !== "" && !speaker.display_name.startsWith('SPEAKER_')) {
+        transcriptStore.updateSpeakerName(speaker.uuid, speaker.display_name.trim());
       }
     });
   }
@@ -1683,7 +1720,7 @@
   }
 
   async function handleReprocessHeader() {
-    if (!file?.id) return;
+    if (!file?.uuid) return;
 
     try {
       reprocessing = true;
@@ -1719,7 +1756,7 @@
         requestBody.num_speakers = reprocessNumSpeakers;
       }
 
-      await axiosInstance.post(`/api/files/${file.id}/reprocess`, Object.keys(requestBody).length > 0 ? requestBody : undefined);
+      await axiosInstance.post(`/api/files/${file.uuid}/reprocess`, Object.keys(requestBody).length > 0 ? requestBody : undefined);
 
       // Reset settings after starting
       showReprocessSettings = false;
@@ -1735,7 +1772,7 @@
       toastStore.error($t('reprocess.startFailed'));
 
       // Revert optimistic update on error
-      await fetchFileDetails(file.id);
+      await fetchFileDetails(file.uuid);
     } finally {
       reprocessing = false;
     }
@@ -1749,7 +1786,7 @@
    * Generate summary for the transcript
    */
   async function handleGenerateSummary() {
-    if (!file?.id) return;
+    if (!file?.uuid) return;
 
     // Check if LLM is available
     if (!$isLLMAvailable) {
@@ -1759,7 +1796,7 @@
     try {
       generatingSummary = true;
 
-      await axiosInstance.post(`/api/files/${file.id}/summarize`);
+      await axiosInstance.post(`/api/files/${file.uuid}/summarize`);
 
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
@@ -1779,10 +1816,10 @@
    * Load summary data from the backend
    */
   async function loadSummary() {
-    if (!file?.id) return;
+    if (!file?.uuid) return;
 
     try {
-      const response = await axiosInstance.get(`/api/files/${file.id}/summary`);
+      const response = await axiosInstance.get(`/api/files/${file.uuid}/summary`);
       summaryData = response.data.summary_data;
     } catch (error: any) {
       console.error('Error loading summary:', error);
@@ -2050,7 +2087,7 @@
                   currentProcessingStep = ''; // Clear processing step
 
                   // Only refresh the transcript data, not the entire file object to preserve spinner state
-                  if (file?.id && (file.status === 'completed' || file.status === 'success')) {
+                  if (file?.uuid && (file.status === 'completed' || file.status === 'success')) {
                     await fetchTranscriptData();
 
                     // Refresh subtitles in the video player now that transcript is available
@@ -2451,10 +2488,10 @@
         />
 
         <!-- Waveform visualization -->
-        {#if file && file.id && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
+        {#if file && file.uuid && (file.content_type?.startsWith('audio/') || file.content_type?.startsWith('video/')) && file.status === 'completed'}
           <div class="waveform-section">
             <WaveformPlayer
-              fileId={file.id}
+              fileId={file.uuid}
               duration={file.duration_seconds || file.duration || 0}
               {currentTime}
               height={80}
@@ -2472,7 +2509,7 @@
 
         <CollectionsSection
           bind:collections
-          fileId={file?.id}
+          fileId={file?.uuid}
           bind:isExpanded={isCollectionsExpanded}
           {aiCollectionSuggestions}
           on:collectionsUpdated={handleCollectionsUpdated}
@@ -2487,7 +2524,7 @@
         />
 
         <CommentSection
-          fileId={file?.id ? String(file.id) : ''}
+          fileId={file?.uuid ? String(file.uuid) : ''}
           {currentTime}
           on:seekTo={handleSeekTo}
         />
@@ -2523,6 +2560,9 @@
           on:speakerUpdate={handleSpeakerUpdate}
           on:speakerNameChanged={handleSpeakerNameChanged}
           on:speakersMerged={handleSpeakersMerged}
+          on:speakerCreated={handleSpeakerCreated}
+          on:speakerDeleted={handleSpeakerDeleted}
+          on:analyticsRefreshNeeded={handleAnalyticsRefreshNeeded}
           on:reprocess={handleReprocess}
           on:seekToPlayhead={handleSeekTo}
           on:loadMore={loadMoreSegments}
@@ -2610,10 +2650,10 @@
 {/if}
 
 <!-- Summary Modal -->
-{#if file?.id}
+{#if file?.uuid}
   <SummaryModal
     bind:isOpen={showSummaryModal}
-    fileId={file.id}
+    fileId={file.uuid}
     fileName={file?.filename || 'Unknown File'}
     on:close={() => showSummaryModal = false}
     on:reprocessSummary={async (_event) => {
@@ -2632,7 +2672,7 @@
 
       // 4. Trigger the API call for reprocessing
       try {
-        await axiosInstance.post(`/api/files/${file.id}/summarize`, {
+        await axiosInstance.post(`/api/files/${file.uuid}/summarize`, {
           force_regenerate: true
         });
 
@@ -2647,10 +2687,10 @@
 {/if}
 
 <!-- Transcript Modal -->
-{#if file?.id}
+{#if file?.uuid}
   <TranscriptModal
     bind:isOpen={showTranscriptModal}
-    fileId={file.id}
+    fileId={file.uuid}
     fileName={file?.filename || 'Unknown File'}
     {totalSegments}
     {hasMoreSegments}

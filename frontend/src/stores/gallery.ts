@@ -85,7 +85,7 @@ function createGalleryStore() {
         const allSelected = state.selectedFiles.size === state.files.length;
         const newSelected = allSelected
           ? new Set<string>()
-          : new Set(state.files.map((f) => f.id));
+          : new Set(state.files.map((f) => f.uuid));
         return { ...state, selectedFiles: newSelected };
       });
     },

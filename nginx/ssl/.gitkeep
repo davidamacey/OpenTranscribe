@@ -1,0 +1,11 @@
+# This directory holds SSL certificates for NGINX reverse proxy
+#
+# Generate certificates with:
+#   ./scripts/generate-ssl-cert.sh your-hostname.local --auto-ip
+#
+# Files created:
+#   server.crt - SSL certificate
+#   server.key - Private key (keep secure!)
+#
+# These files are gitignored for security.
+# See docs/NGINX_SETUP.md for setup instructions.

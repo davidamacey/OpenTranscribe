@@ -9,9 +9,12 @@
 #   OR
 #   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gpu-scale.yml up
 #
+# Note: This overlay extends the base celery-worker-gpu-scaled definition from docker-compose.yml
+# and adds GPU-specific configuration. Image/build/volumes come from environment overlays
+# (override.yml for dev, prod.yml for production, offline.yml for airgapped).
+#
 # Configuration:
 #   Set these variables in your .env file:
-#   - GPU_SCALE_ENABLED=true          # Enable GPU scaling (default: false)
 #   - GPU_SCALE_DEVICE_ID=2           # GPU device ID to use (default: 2)
 #   - GPU_SCALE_WORKERS=4             # Number of parallel workers (default: 4)
 #
@@ -25,11 +28,11 @@ services:
   celery-worker:
     scale: 0
 
-  # Scaled GPU Worker - Single container with multiple concurrent workers
-  # This overlay enables the service and configures GPU scaling settings
-  # Image, build, and pull_policy settings come from overlay files (prod.yml, offline.yml)
+  # Scaled GPU Worker - GPU-specific settings
+  # Base definition (env, tmpfs, depends_on) in docker-compose.yml
+  # Image/build/volumes from override.yml (dev) or prod.yml/offline.yml
   celery-worker-gpu-scaled:
-    scale: 1  # Enable this service (overrides scale: 0 from base)
+    scale: 1  # Enable this service (base has scale: 0)
     command: >
       celery -A app.core.celery worker
       -Q gpu
@@ -39,18 +42,7 @@ services:
       -n gpu-scaled@%h
       --loglevel=info
     environment:
-      # Internal Docker network settings (same as other workers)
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - MINIO_HOST=minio
-      - MINIO_PORT=9000
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENSEARCH_HOST=opensearch
-      - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=/app/models
-      - MODEL_BASE_DIR=/app/models
-      - TEMP_DIR=/app/temp
+      # GPU-specific environment variable (extends base environment)
       - CUDA_VISIBLE_DEVICES=${GPU_SCALE_DEVICE_ID:-2}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]
@@ -58,6 +50,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # GPU configuration for multi-GPU scaling
     deploy:
       resources:
         reservations:
@@ -65,8 +58,3 @@ services:
             - driver: nvidia
               device_ids: ["${GPU_SCALE_DEVICE_ID:-2}"]
               capabilities: [gpu]
-    depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch

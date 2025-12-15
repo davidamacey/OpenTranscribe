@@ -134,14 +134,9 @@ services:
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=1
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              device_ids: ['${GPU_DEVICE_ID:-0}']
+    # GPU configuration is provided by docker-compose.gpu.yml overlay
+    # when NVIDIA GPU is detected (automatically handled by opentr.sh)
+    # This allows the base file to work on macOS and CPU-only Linux systems
     volumes:
       # Model cache directories - must be owned by UID 1000 on host
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
@@ -286,20 +281,37 @@ services:
       - postgres
       - redis
 
-  # GPU Scaled Worker - Disabled by default, enabled by docker-compose.gpu-scale.yml
-  # This service provides high-throughput transcription using multiple concurrent workers
-  # on a single GPU device. See docker-compose.gpu-scale.yml for full configuration.
+  # GPU Scaled Worker - Base definition
+  # Activated only with --gpu-scale flag via docker-compose.gpu-scale.yml overlay
+  # GPU configuration (deploy.resources.reservations) is provided by gpu-scale.yml
+  # Image/build/volumes provided by override.yml (dev) or prod.yml/offline.yml
   celery-worker-gpu-scaled:
     container_name: ${COMPOSE_PROJECT_NAME:-opentranscribe}-celery-worker-gpu-scaled
-    scale: 0  # Disabled by default - only enabled when --gpu-scale flag is used
+    profiles:
+      - gpu-scale  # Only activated with --gpu-scale flag
+    scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
     env_file: .env
-    runtime: nvidia
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
-    # Full configuration provided by docker-compose.gpu-scale.yml
-    # Overlay files (prod.yml, offline.yml) provide environment-specific settings
+    environment:
+      # Internal Docker network settings (same as other workers)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODELS_DIRECTORY=/app/models
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
+    tmpfs:
+      - /app/temp:noexec,nosuid,size=20g,mode=1777
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
 
   frontend:
     container_name: opentranscribe-frontend

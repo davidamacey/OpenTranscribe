@@ -22,7 +22,7 @@
 
   // Define types
   interface MediaFile {
-    id: string;  // UUID
+    uuid: string;  // UUID identifier
     filename: string;
     status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelling' | 'cancelled' | 'orphaned';
     upload_time: string;
@@ -314,28 +314,28 @@
   function updateFileMap() {
     fileMap.clear();
     files.forEach(file => {
-      fileMap.set(file.id, file);
+      fileMap.set(file.uuid, file);
     });
   }
 
   // Smooth file list updates without full re-render
   function updateFilesSmooth(newFiles: MediaFile[]) {
     const newFileMap = new Map<string, MediaFile>();
-    newFiles.forEach(file => newFileMap.set(file.id, file));
+    newFiles.forEach(file => newFileMap.set(file.uuid, file));
 
     // Identify truly new files (not in current list)
-    const existingIds = new Set(files.map(f => f.id));
-    const newIds = newFiles.map(f => f.id).filter(id => !existingIds.has(id));
+    const existingIds = new Set(files.map(f => f.uuid));
+    const newIds = newFiles.map(f => f.uuid).filter(uuid => !existingIds.has(uuid));
 
     // Only mark files as new if this is not an initial load
     // (Don't highlight on page navigation, only on actual new uploads)
     if (files.length > 0 && newIds.length > 0) {
       // Mark new files for entrance animation
-      newIds.forEach(id => pendingNewFiles.add(id));
+      newIds.forEach(uuid => pendingNewFiles.add(uuid));
 
       // Clear new file markers after animation
       setTimeout(() => {
-        newIds.forEach(id => pendingNewFiles.delete(id));
+        newIds.forEach(uuid => pendingNewFiles.delete(uuid));
       }, 600);
     }
 
@@ -348,21 +348,21 @@
   // Add a single new file smoothly to the top
   function addNewFileSmooth(newFile: MediaFile) {
     // Check if file already exists
-    if (fileMap.has(newFile.id)) {
+    if (fileMap.has(newFile.uuid)) {
       // Update existing file
-      files = files.map(f => f.id === newFile.id ? newFile : f);
-      fileMap.set(newFile.id, newFile);
+      files = files.map(f => f.uuid === newFile.uuid ? newFile : f);
+      fileMap.set(newFile.uuid, newFile);
       return;
     }
 
     // Add new file to the beginning
-    pendingNewFiles.add(newFile.id);
+    pendingNewFiles.add(newFile.uuid);
     files = [newFile, ...files];
-    fileMap.set(newFile.id, newFile);
+    fileMap.set(newFile.uuid, newFile);
 
     // Clear new file marker after animation
     setTimeout(() => {
-      pendingNewFiles.delete(newFile.id);
+      pendingNewFiles.delete(newFile.uuid);
     }, 600);
   }
 
@@ -391,7 +391,7 @@
 
     // Wait for exit animation to complete, then remove from array
     setTimeout(() => {
-      files = files.filter(file => !fileIds.includes(file.id));
+      files = files.filter(file => !fileIds.includes(file.uuid));
       fileIds.forEach(id => {
         fileMap.delete(id);
         pendingDeletions.delete(id);
@@ -622,7 +622,7 @@
               // This ensures gallery items show correct status during multiple file processing
               // instead of staying stuck on "Pending" while notifications work correctly
               const updatedFiles = files.map(file => {
-                if (file.id === fileId) {
+                if (file.uuid === fileId) {
                   const updatedFile = {
                     ...file,
                     status: status,
@@ -678,7 +678,7 @@
               let fileExists = false;
               let updatedFile = null;
               files = files.map(file => {
-                if (file.id === fileId) {  // Compare UUIDs directly
+                if (file.uuid === fileId) {  // Compare UUIDs directly
                   fileExists = true;
                   // If we have full file data, use it; otherwise merge notification data
                   if (notification.data.file) {
@@ -902,9 +902,9 @@
         </div>
       {:else}
         <div class="file-grid">
-          {#each files as file (file.id)}
+          {#each files as file (file.uuid)}
             <div
-              class="file-card {selectedFiles.has(file.id) ? 'selected' : ''} {pendingNewFiles.has(file.id) ? 'new-file' : ''} {pendingDeletions.has(file.id) ? 'deleting' : ''}"
+              class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''}"
               animate:flip={{ duration: 300 }}
               in:scale={{ duration: 300, start: 0.8 }}
               out:fade={{ duration: 250 }}
@@ -914,23 +914,23 @@
                     <input
                       type="checkbox"
                       class="file-checkbox"
-                      checked={selectedFiles.has(file.id)}
-                      on:change={(e) => toggleFileSelection(file.id, e)}
+                      checked={selectedFiles.has(file.uuid)}
+                      on:change={(e) => toggleFileSelection(file.uuid, e)}
                       title={$t('gallery.selectFileTooltip')}
                     />
                     <span class="checkmark"></span>
                   </label>
                 {/if}
                 <a
-                  href={isSelecting ? '#' : `/files/${file.id}`}
+                  href={isSelecting ? '#' : `/files/${file.uuid}`}
                   class="file-card-link"
                   on:click={(e) => {
                     if (isSelecting) {
                       e.preventDefault();
-                      toggleFileSelection(file.id, e);
+                      toggleFileSelection(file.uuid, e);
                     } else {
                       e.preventDefault();
-                      goto(`/files/${file.id}`);
+                      goto(`/files/${file.uuid}`);
                     }
                   }}
                 >

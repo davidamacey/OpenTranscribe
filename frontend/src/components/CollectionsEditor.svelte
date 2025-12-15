@@ -9,7 +9,7 @@
 
   /** @type {string} */
   export let fileId = "";
-  /** @type {Array<{id: string, name: string, description?: string}>} */
+  /** @type {Array<{uuid: string, name: string, description?: string}>} */
   export let collections = [];
   /** @type {Array<{name: string, confidence: number, rationale?: string, description?: string}>} */
   export let aiSuggestions = [];
@@ -25,7 +25,7 @@
       collections = collections.map(collection => {
         if (collection && typeof collection === 'object') {
           return {
-            id: collection.id || `temp-${collection.name}`,
+            uuid: collection.uuid || `temp-${collection.name}`,
             name: collection.name || '',
             description: collection.description || ''
           };
@@ -35,7 +35,7 @@
     }
   }
 
-  /** @type {Array<{id: string, name: string, description?: string, media_count: number}>} */
+  /** @type {Array<{uuid: string, name: string, description?: string, media_count?: number}>} */
   let allCollections = [];
   /** @type {string} */
   let newCollectionInput = '';
@@ -53,7 +53,7 @@
       // Ensure all collections have valid IDs
       const validCollections = (response.data || []).filter(collection =>
         collection && typeof collection === 'object' &&
-        collection.id !== undefined && collection.id !== null &&
+        collection.uuid !== undefined && collection.uuid !== null &&
         collection.name !== undefined && collection.name !== null
       );
 
@@ -80,7 +80,7 @@
   async function addToCollection(collectionId) {
     loading = true;
     try {
-      const collectionToAdd = allCollections.find(c => c.id === collectionId);
+      const collectionToAdd = allCollections.find(c => c.uuid === collectionId);
       if (!collectionToAdd) {
         console.error(`[CollectionsEditor] Collection with ID ${collectionId} not found`);
         throw new Error('Collection not found');
@@ -92,7 +92,7 @@
       const response = await axiosInstance.post(addUrl, payload);
 
       // Add collection to local list if not already present
-      if (!collections.some(c => c.id === collectionToAdd.id)) {
+      if (!collections.some(c => c.uuid === collectionToAdd.uuid)) {
         collections = [...collections, collectionToAdd];
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.addedTo', { name: collectionToAdd.name }));
@@ -129,7 +129,7 @@
 
       if (existingCollection) {
         // Collection exists - just add file to it
-        await addToCollection(existingCollection.id);
+        await addToCollection(existingCollection.uuid);
         newCollectionInput = '';
         return;
       }
@@ -139,22 +139,22 @@
       const createResponse = await axiosInstance.post('/api/collections/', createPayload);
       const newCollection = createResponse.data;
 
-      if (!newCollection || typeof newCollection.id === 'undefined') {
+      if (!newCollection || typeof newCollection.uuid === 'undefined') {
         console.error('[CollectionsEditor] Invalid collection received from server:', newCollection);
         throw new Error('Server returned an invalid collection');
       }
 
       // Add to allCollections if it's not already present
-      if (!allCollections.some(c => c.id === newCollection.id)) {
+      if (!allCollections.some(c => c.uuid === newCollection.uuid)) {
         allCollections = [...allCollections, { ...newCollection, media_count: 0 }];
       }
 
       // Add current file to the new collection
       const addPayload = { media_file_ids: [fileId] };
-      await axiosInstance.post(`/api/collections/${newCollection.id}/media`, addPayload);
+      await axiosInstance.post(`/api/collections/${newCollection.uuid}/media`, addPayload);
 
       // Add to collections if it's not already present
-      if (!collections.some(c => c.id === newCollection.id)) {
+      if (!collections.some(c => c.uuid === newCollection.uuid)) {
         collections = [...collections, newCollection];
         dispatch('collectionsUpdated', { collections });
         toastStore.success($t('collections.createdAndAdded', { name: newCollection.name }));
@@ -185,7 +185,7 @@
   async function removeFromCollection(collectionId) {
     loading = true;
     try {
-      const collectionToRemove = collections.find(c => c.id === collectionId);
+      const collectionToRemove = collections.find(c => c.uuid === collectionId);
       if (!collectionToRemove) {
         console.error(`[CollectionsEditor] Collection with ID ${collectionId} not found in collections list`);
         throw new Error('Collection not found');
@@ -198,7 +198,7 @@
 
       // Update the local collections array
       const updatedCollections = collections.filter(c =>
-        c.id !== undefined && c.id !== null && c.id !== collectionId
+        c.uuid !== undefined && c.uuid !== null && c.uuid !== collectionId
       );
 
       if (updatedCollections.length !== collections.length) {
@@ -239,7 +239,7 @@
     .filter(collection => {
       // Exclude collections the file is already in
       const isAssigned = collections.some(c =>
-        (c.id === collection.id) || (c.name === collection.name)
+        (c.uuid === collection.uuid) || (c.name === collection.name)
       );
       if (isAssigned) return false;
 
@@ -257,7 +257,7 @@
   // Get all available collections for dropdown (excluding already assigned and AI suggestions)
   $: dropdownCollections = allCollections
     .filter(collection => {
-      const isAssigned = collections.some(c => (c.id === collection.id) || (c.name === collection.name));
+      const isAssigned = collections.some(c => (c.uuid === collection.uuid) || (c.name === collection.name));
       if (isAssigned) return false;
 
       const isInAISuggestions = filteredAISuggestions.some(aiSug =>
@@ -268,7 +268,7 @@
       return true;
     })
     .map(collection => ({
-      id: collection.id,
+      id: collection.uuid,
       name: collection.name,
       count: collection.media_count || 0
     }));
@@ -300,10 +300,10 @@
     {#if collections.length === 0}
       <span class="no-collections">{$t('collections.noCollectionsYet')}</span>
     {/if}
-    {#each collections.filter(c => c && c.id !== undefined) as collection (collection.id)}
+    {#each collections.filter(c => c && c.uuid !== undefined) as collection (collection.uuid)}
       <span class="collection">
         {collection.name}
-        <button class="collection-remove" on:click={() => removeFromCollection(collection.id)} title={$t('collections.removeFromCollection')}>×</button>
+        <button class="collection-remove" on:click={() => removeFromCollection(collection.uuid)} title={$t('collections.removeFromCollection')}>×</button>
       </span>
     {/each}
 
@@ -341,10 +341,10 @@
   {#if suggestedCollections.length > 0}
     <div class="suggested-collections">
       <span class="suggested-label">{$t('collections.suggested')}</span>
-      {#each suggestedCollections.filter(c => c && c.id !== undefined) as collection (collection.id)}
+      {#each suggestedCollections.filter(c => c && c.uuid !== undefined) as collection (collection.uuid)}
         <button
           class="suggested-collection"
-          on:click={() => addToCollection(collection.id)}
+          on:click={() => addToCollection(collection.uuid)}
           disabled={loading}
           title={$t('collections.addToExistingHint', { collectionName: collection.name })}
         >

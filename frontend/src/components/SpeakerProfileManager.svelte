@@ -13,13 +13,13 @@
   const dispatch = createEventDispatcher();
 
   interface Speaker {
-    id: string;  // UUID
+    uuid: string;  // UUID (public identifier)
     name: string;
     display_name?: string;
     verified: boolean;
     confidence?: number;
     profile?: {
-      id: string;  // UUID
+      uuid: string;  // UUID (public identifier)
       name: string;
       description?: string;
     };
@@ -31,7 +31,7 @@
   }
 
   interface SpeakerProfile {
-    id: string;  // UUID
+    uuid: string;  // UUID (public identifier)
     name: string;
     description?: string;
     instance_count: number;
@@ -85,11 +85,11 @@
 
       // Get suggestions and cross-media occurrences
       const [suggestionsResponse, occurrencesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speaker-profiles/speakers/${speaker.id}/suggestions`).catch((err) => {
+        axiosInstance.get(`/api/speaker-profiles/speakers/${speaker.uuid}/suggestions`).catch((err) => {
           console.error('Failed to load speaker suggestions:', err);
           return { data: [] };
         }),
-        axiosInstance.get(`/api/speakers/${speaker.id}/cross-media`).catch((err) => {
+        axiosInstance.get(`/api/speakers/${speaker.uuid}/cross-media`).catch((err) => {
           console.error('Failed to load cross-media occurrences:', err);
           return { data: [] };
         })

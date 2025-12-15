@@ -62,7 +62,7 @@ export async function getAISuggestions(
       tags,
       collections,
       status: data.status || "pending",
-      suggestion_id: data.id || data.suggestion_id,
+      suggestion_id: data.uuid || data.suggestion_id || data.id,
     };
   } catch (error: any) {
     if (error.response?.status === 404) {

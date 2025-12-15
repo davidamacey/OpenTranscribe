@@ -68,7 +68,7 @@ def list_speaker_profiles(
 
             result.append(
                 {
-                    "id": str(profile.uuid),  # Use UUID for frontend
+                    "uuid": str(profile.uuid),
                     "name": profile.name,
                     "description": profile.description,
                     "created_at": profile.created_at.isoformat(),
@@ -119,7 +119,7 @@ def create_speaker_profile(
         db.refresh(profile)
 
         return {
-            "id": str(profile.uuid),  # Use UUID for frontend
+            "uuid": str(profile.uuid),
             "name": profile.name,
             "description": profile.description,
             "created_at": profile.created_at.isoformat(),
@@ -178,7 +178,7 @@ def update_speaker_profile(
         db.refresh(profile)
 
         return {
-            "id": str(profile.uuid),  # Use UUID for frontend
+            "uuid": str(profile.uuid),
             "name": profile.name,
             "description": profile.description,
             "updated_at": profile.updated_at.isoformat(),
@@ -288,7 +288,7 @@ def _get_embedding_suggestions(
 
             suggestions.append(
                 {
-                    "profile_id": match["profile_id"],
+                    "profile_id": match["profile_uuid"],  # Return UUID for external API
                     "profile_name": match["profile_name"],
                     "confidence": confidence,
                     "confidence_level": confidence_level,
@@ -485,7 +485,7 @@ def list_speaker_collections(
 
             result.append(
                 {
-                    "id": str(collection.uuid),  # Use UUID for frontend
+                    "uuid": str(collection.uuid),
                     "name": collection.name,
                     "description": collection.description,
                     "is_public": collection.is_public,
@@ -537,7 +537,7 @@ def create_speaker_collection(
         db.refresh(collection)
 
         return {
-            "id": str(collection.uuid),  # Use UUID for frontend
+            "uuid": str(collection.uuid),
             "name": collection.name,
             "description": collection.description,
             "is_public": collection.is_public,

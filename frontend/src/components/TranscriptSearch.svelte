@@ -205,7 +205,7 @@
     });
 
     // Scroll to the segment
-    const segmentElement = document.querySelector(`[data-segment-id="${segment.id || `${segment.start_time}-${segment.end_time}`}"]`);
+    const segmentElement = document.querySelector(`[data-segment-id="${segment.uuid}"]`);
     if (segmentElement) {
       segmentElement.scrollIntoView({
         behavior: 'smooth',

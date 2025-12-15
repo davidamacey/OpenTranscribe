@@ -324,6 +324,40 @@ Users can configure their own transcription preferences:
 - Audio recording quality and duration preferences
 - Microphone device selection
 
+### Universal Media URL Support
+
+OpenTranscribe supports downloading and processing videos from 1800+ platforms via yt-dlp integration:
+
+**Supported Platforms:**
+- **Best Support (Recommended)**: YouTube, Dailymotion, TikTok - most reliable for public video downloads
+- **Limited Support**: Vimeo, Twitter/X, Instagram, Facebook - may require authentication for many videos
+- **Other Platforms**: Twitch, Reddit, SoundCloud, and 1800+ more sites supported by yt-dlp
+
+**Platform Limitations:**
+- Some platforms (Vimeo, Instagram, Facebook) restrict most videos to logged-in users
+- Authentication-required videos cannot be downloaded without browser cookies
+- Age-restricted, geo-restricted, or private videos are not accessible
+- Premium/subscriber-only content requires active subscriptions
+
+**User-Friendly Error Messages:**
+- The system detects authentication-related errors and provides helpful guidance
+- When a video fails, users receive platform-specific suggestions
+- Recommends alternative platforms when authentication issues are detected
+
+**How It Works:**
+1. User enters a video URL from any supported platform
+2. System validates the URL and extracts video metadata via yt-dlp
+3. Video is downloaded in web-compatible format (H.264/MP4 preferred)
+4. Downloaded video is uploaded to MinIO storage
+5. Standard transcription pipeline processes the video
+6. WebSocket notification updates the frontend
+
+**Configuration:**
+- No additional configuration required - yt-dlp is included in the backend container
+- Anti-blocking measures included for YouTube (client rotation, proper headers)
+- Maximum video duration: 4 hours
+- Maximum file size: 15GB (same as direct upload limit)
+
 ## Model Caching System
 
 OpenTranscribe uses a simple volume-based model caching system that automatically persists AI models between container restarts.

@@ -273,12 +273,10 @@
   }
 
   // Reactive updates - redraw when waveform data or playhead position changes
+  // Use currentTime directly in the expression to ensure it's tracked as a dependency
   $: if (canvas && ctx && waveformData.length > 0) {
-    drawWaveform();
-  }
-
-  // Redraw when currentTime changes (playhead movement)
-  $: if (canvas && ctx && waveformData.length > 0 && currentTime !== undefined) {
+    // Track currentTime changes by referencing it
+    const _ = currentTime;
     drawWaveform();
   }
 
