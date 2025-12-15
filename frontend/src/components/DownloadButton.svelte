@@ -38,7 +38,7 @@
       downloadStore.updateStatus(fileId, 'processing');
 
       // Build download URL with token
-      const downloadWithTokenUrl = `/api/files/${fileId}/download-with-token?token=${token}&include_speakers=true`;
+      const downloadWithTokenUrl = `/api/files/${fileId}/download-with-token?token=${encodeURIComponent(token)}&include_speakers=true`;
 
       // Start the download
       const link = document.createElement('a');
