@@ -90,18 +90,19 @@
         );
 
         if (universalPrompt) {
-          await setActivePrompt(universalPrompt.id);
+          await setActivePrompt(universalPrompt.uuid);
         } else {
           // Fallback to first system prompt if no universal found
           const firstSystemPrompt = allPrompts.find(p => p.is_system_default);
           if (firstSystemPrompt) {
-            await setActivePrompt(firstSystemPrompt.id);
+            await setActivePrompt(firstSystemPrompt.uuid);
           }
         }
       }
     } catch (err: any) {
       console.error('Error loading prompts:', err);
-      toastStore.error(err.response?.data?.detail || $t('prompts.loadFailed'));
+      const detail = err.response?.data?.detail;
+      toastStore.error(typeof detail === 'string' ? detail : $t('prompts.loadFailed'));
     } finally {
       loading = false;
     }
@@ -116,7 +117,7 @@
       });
 
       selectedPromptId = promptId;
-      activePrompt = allPrompts.find(p => p.id === promptId) || null;
+      activePrompt = allPrompts.find(p => p.uuid === promptId) || null;
       toastStore.success($t('prompts.activePromptUpdated'));
 
       if (onSettingsChange) {
@@ -124,7 +125,9 @@
       }
     } catch (err: any) {
       console.error('Error setting active prompt:', err);
-      toastStore.error(err.response?.data?.detail || $t('prompts.setActiveFailed'));
+      const detail = err.response?.data?.detail;
+      const errorMessage = typeof detail === 'string' ? detail : $t('prompts.setActiveFailed');
+      toastStore.error(errorMessage);
     } finally {
       saving = false;
     }
@@ -206,10 +209,10 @@
     try {
       if (editingPrompt) {
         // Update existing prompt
-        const updatedPrompt = await PromptsApi.updatePrompt(editingPrompt.id, formData);
+        const updatedPrompt = await PromptsApi.updatePrompt(editingPrompt.uuid, formData);
 
         // Update in the list
-        const index = allPrompts.findIndex(p => p.id === updatedPrompt.id);
+        const index = allPrompts.findIndex(p => p.uuid === updatedPrompt.uuid);
         if (index >= 0) {
           allPrompts[index] = updatedPrompt;
           allPrompts = [...allPrompts]; // Trigger reactivity
@@ -232,7 +235,8 @@
       }
     } catch (err: any) {
       console.error('Error saving prompt:', err);
-      toastStore.error(err.response?.data?.detail || $t('prompts.saveFailed'));
+      const saveDetail = err.response?.data?.detail;
+      toastStore.error(typeof saveDetail === 'string' ? saveDetail : $t('prompts.saveFailed'));
     } finally {
       saving = false;
     }
@@ -254,13 +258,13 @@
     saving = true;
 
     try {
-      await PromptsApi.deletePrompt(promptToDelete.id);
+      await PromptsApi.deletePrompt(promptToDelete.uuid);
 
       // Remove from list
-      allPrompts = allPrompts.filter(p => p.id !== promptToDelete.id);
+      allPrompts = allPrompts.filter(p => p.uuid !== promptToDelete.uuid);
 
       // Check if we deleted the active prompt
-      const wasActivePrompt = selectedPromptId === promptToDelete.id;
+      const wasActivePrompt = selectedPromptId === promptToDelete.uuid;
 
       // Check if we have any remaining user prompts after deletion
       const remainingUserPrompts = allPrompts.filter(p => !p.is_system_default);
@@ -298,7 +302,8 @@
       }
     } catch (err: any) {
       console.error('Error deleting prompt:', err);
-      toastStore.error(err.response?.data?.detail || $t('prompts.deleteFailed'));
+      const deleteDetail = err.response?.data?.detail;
+      toastStore.error(typeof deleteDetail === 'string' ? deleteDetail : $t('prompts.deleteFailed'));
     } finally {
       saving = false;
       promptToDelete = null;
@@ -423,7 +428,7 @@
 
         <div class="config-list">
           {#each systemPrompts as prompt}
-            <div class="config-item" class:active={selectedPromptId === prompt.id}>
+            <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">
                   {prompt.name}
@@ -446,7 +451,7 @@
                 {/if}
               </div>
               <div class="prompt-actions">
-                {#if selectedPromptId === prompt.id}
+                {#if selectedPromptId === prompt.uuid}
                   <div class="config-status currently-active">
                     <div class="status-indicator">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -458,7 +463,7 @@
                 {:else}
                   <button
                     class="activate-button"
-                    on:click={() => setActivePrompt(prompt.id)}
+                    on:click={() => setActivePrompt(prompt.uuid)}
                     disabled={saving}
                     title={$t('prompts.makeActive')}
                   >
@@ -521,7 +526,7 @@
       {#if userPrompts.length > 0}
         <div class="config-list">
           {#each userPrompts as prompt}
-            <div class="config-item" class:active={selectedPromptId === prompt.id}>
+            <div class="config-item" class:active={selectedPromptId === prompt.uuid}>
               <div class="config-info">
                 <div class="config-name">{prompt.name}</div>
                 <div class="config-provider">{prompt.content_type || 'General'}</div>
@@ -530,7 +535,7 @@
                 {/if}
               </div>
               <div class="prompt-actions">
-                {#if selectedPromptId === prompt.id}
+                {#if selectedPromptId === prompt.uuid}
                   <div class="config-status currently-active">
                     <div class="status-indicator">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -542,7 +547,7 @@
                 {:else}
                   <button
                     class="activate-button"
-                    on:click={() => setActivePrompt(prompt.id)}
+                    on:click={() => setActivePrompt(prompt.uuid)}
                     disabled={saving}
                     title={$t('prompts.makeActive')}
                   >

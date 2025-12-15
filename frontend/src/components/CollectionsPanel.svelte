@@ -64,11 +64,11 @@
 
       // If in add mode and media is selected, add to new collection
       if (viewMode === 'add' && selectedMediaIds.length > 0) {
-        await addMediaToCollection(response.data.id);
+        await addMediaToCollection(response.data.uuid);
         // Close create modal after adding media since the workflow is complete
         showCreateModal = false;
         // Trigger callback to refresh filters after adding media
-        onCollectionSelect(response.data.id);
+        onCollectionSelect(response.data.uuid);
       } else {
         toastStore.success($t('collectionsPanel.createdSuccess', { name: response.data.name }));
         // Close the create modal but keep the manage collections modal open
@@ -90,14 +90,14 @@
     updating = true;
 
     try {
-      const response = await axiosInstance.put(`/api/collections/${collectionToEdit.id}`, {
+      const response = await axiosInstance.put(`/api/collections/${collectionToEdit.uuid}`, {
         name: editCollectionName.trim(),
         description: editCollectionDescription.trim() || null
       });
 
       // Update local state
       collections = collections.map(col =>
-        col.id === collectionToEdit.id ? { ...col, ...response.data } : col
+        col.uuid === collectionToEdit.uuid ? { ...col, ...response.data } : col
       );
 
       toastStore.success($t('collectionsPanel.updatedSuccess', { name: editCollectionName }));
@@ -132,10 +132,10 @@
     deleting = true;
 
     try {
-      await axiosInstance.delete(`/api/collections/${collectionToDelete.id}`);
-      collections = collections.filter(col => col.id !== collectionToDelete.id);
+      await axiosInstance.delete(`/api/collections/${collectionToDelete.uuid}`);
+      collections = collections.filter(col => col.uuid !== collectionToDelete.uuid);
 
-      if (selectedCollectionId === collectionToDelete.id) {
+      if (selectedCollectionId === collectionToDelete.uuid) {
         selectedCollectionId = null;
       }
 
@@ -174,13 +174,13 @@
 
       // Update media count
       collections = collections.map(col =>
-        col.id === collectionId
+        col.uuid === collectionId
           ? { ...col, media_count: col.media_count + (response.data.added || 0) }
           : col
       );
 
       // Show success message
-      const collection = collections.find(c => c.id === collectionId);
+      const collection = collections.find(c => c.uuid === collectionId);
       toastStore.success($t('collectionsPanel.addedSuccess', { count: response.data.added, name: collection?.name || 'collection' }));
 
       // Trigger callback to close modal and refresh
@@ -196,10 +196,10 @@
   // Handle collection click
   function handleCollectionClick(collection: any) {
     if (viewMode === 'manage') {
-      selectedCollectionId = collection.id;
-      onCollectionSelect(collection.id);
+      selectedCollectionId = collection.uuid;
+      onCollectionSelect(collection.uuid);
     } else if (viewMode === 'add' && selectedMediaIds.length > 0) {
-      addMediaToCollection(collection.id);
+      addMediaToCollection(collection.uuid);
     }
   }
 
@@ -235,10 +235,10 @@
     </div>
   {:else}
     <div class="collections-list">
-      {#each collections as collection (collection.id)}
+      {#each collections as collection (collection.uuid)}
         <div
           class="collection-card"
-          class:selected={selectedCollectionId === collection.id}
+          class:selected={selectedCollectionId === collection.uuid}
           role="button"
           tabindex="0"
           on:click={() => handleCollectionClick(collection)}
@@ -287,7 +287,7 @@
             <button
               class="btn-add"
               disabled={addingToCollection}
-              on:click|stopPropagation={() => addMediaToCollection(collection.id)}
+              on:click|stopPropagation={() => addMediaToCollection(collection.uuid)}
             >
               {selectedMediaIds.length !== 1 ? $t('collectionsPanel.addFiles', { count: selectedMediaIds.length }) : $t('collectionsPanel.addFile', { count: selectedMediaIds.length })}
             </button>

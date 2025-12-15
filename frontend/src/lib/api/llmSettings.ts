@@ -17,7 +17,7 @@ export type LLMProvider =
 export type ConnectionStatus = "success" | "failed" | "pending" | "untested";
 
 export interface UserLLMSettings {
-  id: string; // UUID
+  uuid: string; // UUID - primary identifier from backend
   user_id: string; // UUID
   name: string;
   provider: LLMProvider;

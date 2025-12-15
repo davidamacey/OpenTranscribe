@@ -421,7 +421,7 @@
                 <div class="file-actions">
                   <button
                     class="info-button"
-                    on:click={() => fetchDetailedStatus(file.id)}
+                    on:click={() => fetchDetailedStatus(file.uuid)}
                     title={$t('fileStatus.viewDetailsTooltip')}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -433,7 +433,7 @@
 
                   <button
                     class="details-btn"
-                    on:click={() => fetchDetailedStatus(file.id)}
+                    on:click={() => fetchDetailedStatus(file.uuid)}
                   >
                     {$t('fileStatus.details')}
                   </button>
@@ -441,10 +441,10 @@
                   {#if file.can_retry}
                     <button
                       class="retry-btn"
-                      on:click={() => retryFile(file.id)}
-                      disabled={retryingFiles.has(file.id)}
+                      on:click={() => retryFile(file.uuid)}
+                      disabled={retryingFiles.has(file.uuid)}
                     >
-                      {retryingFiles.has(file.id) ? $t('fileStatus.retrying') : $t('fileStatus.retry')}
+                      {retryingFiles.has(file.uuid) ? $t('fileStatus.retrying') : $t('fileStatus.retry')}
                     </button>
                   {/if}
                 </div>
@@ -474,7 +474,7 @@
                   </div>
                   <button
                     class="info-button small"
-                    on:click={() => fetchDetailedStatus(file.id)}
+                    on:click={() => fetchDetailedStatus(file.uuid)}
                     title={$t('fileStatus.viewDetailsTooltip')}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -628,7 +628,7 @@
                   {#if task.media_file}
                     <button
                       class="info-button small"
-                      on:click={() => fetchDetailedStatus(task.media_file.id)}
+                      on:click={() => fetchDetailedStatus(task.media_file.uuid)}
                       title={$t('fileStatus.viewDetailsTooltip')}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

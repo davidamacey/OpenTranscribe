@@ -33,7 +33,7 @@
     const counts = new Map<string, number>();
     if (transcriptSegments && transcriptSegments.length > 0) {
       for (const segment of transcriptSegments) {
-        const speakerId = segment.speaker?.uuid || segment.speaker?.id || segment.speaker_id;
+        const speakerId = segment.speaker?.uuid || segment.speaker_id;
         if (speakerId) {
           counts.set(speakerId, (counts.get(speakerId) || 0) + 1);
         }

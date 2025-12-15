@@ -1,8 +1,8 @@
 """
-URL processing endpoints for handling YouTube and other external video URLs.
+URL processing endpoints for handling media URLs from various platforms.
 
-This module provides API endpoints for processing external URLs, primarily YouTube videos,
-by dispatching background tasks for non-blocking processing.
+This module provides API endpoints for processing external URLs from YouTube, Vimeo,
+Twitter/X, TikTok, and 1800+ other platforms supported by yt-dlp.
 """
 
 import logging
@@ -26,7 +26,8 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.formatting_service import FormattingService
-from app.services.youtube_service import YouTubeService
+from app.services.media_download_service import MediaDownloadService
+from app.services.media_download_service import create_user_friendly_error
 from app.tasks.youtube_processing import process_youtube_playlist_task
 from app.tasks.youtube_processing import process_youtube_url_task
 
@@ -37,13 +38,15 @@ router = APIRouter()
 
 # Request model for URL processing
 class URLProcessingRequest(BaseModel):
-    """Request model for processing YouTube URLs (videos or playlists)."""
+    """Request model for processing media URLs (YouTube, Vimeo, Twitter, and many more)."""
 
     url: str = Field(
-        description="YouTube video or playlist URL",
+        description="Media URL from YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other sites",
         examples=[
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             "https://youtube.com/playlist?list=PLClBBDzHMVijJfoN2EY_3OpmHfRIv4eGO",
+            "https://vimeo.com/123456789",
+            "https://twitter.com/user/status/123456789",
         ],
         min_length=1,
     )
@@ -75,35 +78,39 @@ class PlaylistProcessingResponse(BaseModel):
 URLProcessingResponse = Union[MediaFileSchema, PlaylistProcessingResponse]
 
 
-# YouTube URL validation and normalization
+# Generic URL pattern for any HTTP/HTTPS URL
+GENERIC_URL_PATTERN = re.compile(r"^https?://.+$")
+
+# YouTube URL validation and normalization (kept for playlist/YouTube-specific handling)
 YOUTUBE_URL_PATTERN = re.compile(
     r"^https?://(www\.)?(youtube\.com/(watch\?v=|embed/|v/)|youtu\.be/)[\w\-_]+.*$"
 )
 
 
-def normalize_youtube_url(url: str) -> str:
-    """Normalize YouTube URL to standard format for duplicate detection.
+def normalize_media_url(url: str) -> str:
+    """Normalize media URL for duplicate detection.
 
-    Extracts the video ID or playlist ID from various YouTube URL formats and converts them
-    to a canonical format for consistent duplicate detection and processing.
+    For YouTube URLs, extracts the video ID or playlist ID and converts them
+    to a canonical format. For other platforms, returns the URL stripped of whitespace.
 
     Args:
-        url: YouTube URL in any supported format (watch, embed, short, playlist, etc.).
+        url: Media URL from any supported platform.
 
     Returns:
-        str: Normalized YouTube URL in standard format.
-             Video format: "https://www.youtube.com/watch?v={video_id}"
-             Playlist format: "https://www.youtube.com/playlist?list={playlist_id}"
+        str: Normalized URL for duplicate detection.
+             YouTube videos: "https://www.youtube.com/watch?v={video_id}"
+             YouTube playlists: "https://www.youtube.com/playlist?list={playlist_id}"
+             Other platforms: Original URL stripped of whitespace
 
     Example:
-        >>> normalize_youtube_url("https://youtu.be/dQw4w9WgXcQ")
+        >>> normalize_media_url("https://youtu.be/dQw4w9WgXcQ")
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        >>> normalize_youtube_url("https://youtube.com/playlist?list=PLxxx&si=yyy")
-        "https://www.youtube.com/playlist?list=PLxxx"
+        >>> normalize_media_url("https://vimeo.com/123456789")
+        "https://vimeo.com/123456789"
     """
     url = url.strip()
 
-    # Check if it's a playlist URL first
+    # Check if it's a YouTube playlist URL first
     playlist_match = re.search(r"[?&]list=([\w\-_]+)", url)
     if playlist_match and "youtube.com/playlist" in url:
         playlist_id = playlist_match.group(1)
@@ -123,17 +130,22 @@ def normalize_youtube_url(url: str) -> str:
             video_id = match.group(1)
             return f"https://www.youtube.com/watch?v={video_id}"
 
+    # For non-YouTube URLs, return as-is (stripped)
     return url
 
 
-def _validate_youtube_url(url: str) -> tuple[str, YouTubeService]:
-    """Validate and normalize a YouTube URL.
+# Backward compatibility alias
+normalize_youtube_url = normalize_media_url
+
+
+def _validate_media_url(url: str) -> tuple[str, MediaDownloadService]:
+    """Validate and normalize a media URL.
 
     Args:
-        url: Raw YouTube URL from the request.
+        url: Raw media URL from the request.
 
     Returns:
-        Tuple of (normalized_url, youtube_service).
+        Tuple of (normalized_url, media_service).
 
     Raises:
         HTTPException: If URL is missing or invalid.
@@ -141,13 +153,22 @@ def _validate_youtube_url(url: str) -> tuple[str, YouTubeService]:
     if not url:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL is required")
 
-    normalized_url = normalize_youtube_url(url)
-    youtube_service = YouTubeService()
+    normalized_url = normalize_media_url(url)
+    media_service = MediaDownloadService()
 
-    if not youtube_service.is_valid_youtube_url(normalized_url):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL")
+    if not media_service.is_valid_media_url(normalized_url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid URL. Please enter a valid HTTP or HTTPS URL.",
+        )
 
-    return normalized_url, youtube_service
+    return normalized_url, media_service
+
+
+# Backward compatibility alias
+def _validate_youtube_url(url: str) -> tuple[str, MediaDownloadService]:
+    """Backward compatibility alias for _validate_media_url."""
+    return _validate_media_url(url)
 
 
 def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistProcessingResponse:
@@ -187,71 +208,90 @@ def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistPr
 
 
 def _extract_video_info(
-    youtube_service: YouTubeService, normalized_url: str
+    media_service: MediaDownloadService, normalized_url: str
 ) -> tuple[str, str, dict[str, Any]]:
-    """Extract video ID and title from a YouTube URL.
+    """Extract video ID and title from a media URL.
 
     Args:
-        youtube_service: YouTubeService instance.
-        normalized_url: Normalized YouTube video URL.
+        media_service: MediaDownloadService instance.
+        normalized_url: Normalized media URL.
 
     Returns:
-        Tuple of (youtube_id, video_title, video_info).
+        Tuple of (video_id, video_title, video_info).
 
     Raises:
         HTTPException: If video info extraction fails.
     """
     try:
-        video_info = youtube_service.extract_video_info(normalized_url)
-        youtube_id = video_info.get("id")
-        video_title = video_info.get("title", "YouTube Video")
+        video_info = media_service.extract_video_info(normalized_url)
+        video_id = video_info.get("id")
+        video_title = video_info.get("title", "Media Video")
+    except HTTPException:
+        # Re-raise HTTPExceptions (they already have proper error messages)
+        raise
     except Exception as e:
         logger.error(f"Error extracting video info from {normalized_url}: {e}")
+        # Create user-friendly error message
+        user_friendly_error = create_user_friendly_error(str(e), normalized_url)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to extract video information. Please check the URL.",
+            detail=f"Failed to extract video information: {user_friendly_error}",
         ) from e
 
-    if not youtube_id:
+    if not video_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not extract YouTube video ID",
+            detail="Could not extract video ID from URL",
         )
 
-    return youtube_id, video_title, video_info
+    return video_id, video_title, video_info
 
 
-def _check_duplicate_video(db: Session, user_id: int, youtube_id: str, normalized_url: str) -> None:
+def _check_duplicate_video(db: Session, user_id: int, video_id: str, normalized_url: str) -> None:
     """Check if the video already exists for this user.
 
     Args:
         db: Database session.
         user_id: User ID to check against.
-        youtube_id: YouTube video ID.
-        normalized_url: Normalized YouTube URL.
+        video_id: Video ID from the platform.
+        normalized_url: Normalized media URL.
 
     Raises:
         HTTPException: If a duplicate video is found (409 Conflict).
     """
-    # Check by metadata_raw first
+    existing_video = None
+
+    # Check by source_url first (works for all platforms)
     existing_video = (
         db.query(MediaFile)
         .filter(
             MediaFile.user_id == user_id,
-            text("metadata_raw->>'youtube_id' = :youtube_id"),
+            MediaFile.source_url == normalized_url,
         )
-        .params(youtube_id=youtube_id)
         .first()
     )
 
-    # Also check by source_url as a backup
+    # Also check by metadata_raw video_id (for backward compatibility with YouTube)
     if not existing_video:
         existing_video = (
             db.query(MediaFile)
             .filter(
                 MediaFile.user_id == user_id,
-                MediaFile.source_url == normalized_url,
+                text("metadata_raw->>'video_id' = :video_id"),
             )
+            .params(video_id=video_id)
+            .first()
+        )
+
+    # Check by youtube_id for backward compatibility
+    if not existing_video:
+        existing_video = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.user_id == user_id,
+                text("metadata_raw->>'youtube_id' = :youtube_id"),
+            )
+            .params(youtube_id=video_id)
             .first()
         )
 
@@ -259,7 +299,7 @@ def _check_duplicate_video(db: Session, user_id: int, youtube_id: str, normalize
         return
 
     logger.info(
-        f"Found existing YouTube video with ID {youtube_id} for user {user_id}: "
+        f"Found existing video with ID {video_id} for user {user_id}: "
         f"MediaFile ID {existing_video.id}, status: {existing_video.status}"
     )
 
@@ -287,13 +327,13 @@ def _raise_duplicate_error(existing_video: MediaFile) -> None:
         video_name = existing_video.title or existing_video.filename
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This YouTube video is already being processed: {video_name}",
+            detail=f"This video is already being processed: {video_name}",
         )
 
     video_name = existing_video.title or existing_video.filename
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail=f"This YouTube video already exists in your library: {video_name}",
+        detail=f"This video already exists in your library: {video_name}",
     )
 
 
@@ -301,29 +341,38 @@ def _create_media_file_record(
     db: Session,
     user_id: int,
     normalized_url: str,
-    youtube_id: str,
+    video_id: str,
     video_title: str,
     video_info: dict[str, Any],
 ) -> MediaFile:
-    """Create a placeholder MediaFile record for the YouTube video.
+    """Create a placeholder MediaFile record for the media video.
 
     Args:
         db: Database session.
         user_id: User ID.
-        normalized_url: Normalized YouTube URL.
-        youtube_id: YouTube video ID.
+        normalized_url: Normalized media URL.
+        video_id: Video ID from the platform.
         video_title: Video title.
-        video_info: Full video info dict from YouTube.
+        video_info: Full video info dict from yt-dlp.
 
     Returns:
         Created MediaFile instance.
     """
+    # Get source platform from extractor
+    source = video_info.get("extractor", "unknown").lower()
+
     placeholder_metadata = {
-        "youtube_id": youtube_id,
-        "youtube_url": normalized_url,
+        "video_id": video_id,
+        "source": source,
+        "source_url": normalized_url,
         "title": video_title,
         "processing": True,
     }
+
+    # Add YouTube-specific fields for backward compatibility
+    if "youtube" in source:
+        placeholder_metadata["youtube_id"] = video_id
+        placeholder_metadata["youtube_url"] = normalized_url
 
     media_file = MediaFile(
         user_id=user_id,
@@ -351,12 +400,12 @@ def _create_media_file_record(
 def _dispatch_video_task(
     db: Session, media_file: MediaFile, normalized_url: str, user_id: int
 ) -> None:
-    """Dispatch the YouTube video processing background task.
+    """Dispatch the video processing background task.
 
     Args:
         db: Database session.
         media_file: MediaFile record to process.
-        normalized_url: Normalized YouTube URL.
+        normalized_url: Normalized media URL.
         user_id: User ID.
 
     Raises:
@@ -367,15 +416,15 @@ def _dispatch_video_task(
             url=normalized_url, user_id=user_id, file_uuid=str(media_file.uuid)
         )
         logger.info(
-            f"Dispatched YouTube processing task {task_result.id} for MediaFile {media_file.id}"
+            f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
         )
     except Exception as e:
-        logger.error(f"Failed to dispatch YouTube processing task: {e}")
+        logger.error(f"Failed to dispatch media processing task: {e}")
         db.delete(media_file)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start YouTube processing. Please try again.",
+            detail="Failed to start video processing. Please try again.",
         ) from e
 
 
@@ -395,7 +444,7 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
             data={
                 "file_id": str(media_file.uuid),
                 "file": {
-                    "id": str(media_file.uuid),
+                    "uuid": str(media_file.uuid),
                     "filename": media_file.filename,
                     "status": media_file.status.value,
                     "display_status": FormattingService.format_status(media_file.status),
@@ -415,16 +464,19 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
 
 
 @router.post("/process-url", response_model=URLProcessingResponse)
-async def process_youtube_url(
+async def process_media_url(
     request_data: URLProcessingRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> URLProcessingResponse:
     """
-    Process a YouTube URL (video or playlist) by dispatching background tasks.
+    Process a media URL by dispatching background tasks.
+
+    Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
+    YouTube playlists are also supported.
 
     Args:
-        request_data: URLProcessingRequest containing the YouTube URL
+        request_data: URLProcessingRequest containing the media URL
         db: Database session
         current_user: Authenticated user
 
@@ -435,37 +487,41 @@ async def process_youtube_url(
 
     Raises:
         HTTPException:
-            - 400 if URL is missing or invalid
+            - 400 if URL is missing, invalid, or unsupported
             - 409 if URL already exists for user (single videos only)
             - 401 if user is not authenticated
             - 500 for server errors
 
     Examples:
-        Single video request:
+        YouTube video:
             POST /process-url
             {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}
 
-        Playlist request:
+        YouTube playlist:
             POST /process-url
             {"url": "https://youtube.com/playlist?list=PLClBBDzHMVijJfoN2EY_3OpmHfRIv4eGO"}
+
+        Vimeo video:
+            POST /process-url
+            {"url": "https://vimeo.com/123456789"}
     """
     try:
         # Validate and normalize URL
-        normalized_url, youtube_service = _validate_youtube_url(request_data.url)
+        normalized_url, media_service = _validate_media_url(request_data.url)
 
-        # Handle playlist processing (early return)
-        if youtube_service.is_playlist_url(normalized_url):
+        # Handle playlist processing (early return) - currently YouTube only
+        if media_service.is_playlist_url(normalized_url):
             return _handle_playlist_processing(normalized_url, current_user.id)
 
         # Extract video info
-        youtube_id, video_title, video_info = _extract_video_info(youtube_service, normalized_url)
+        video_id, video_title, video_info = _extract_video_info(media_service, normalized_url)
 
         # Check for duplicate video
-        _check_duplicate_video(db, current_user.id, youtube_id, normalized_url)
+        _check_duplicate_video(db, current_user.id, video_id, normalized_url)
 
         # Create placeholder MediaFile record
         media_file = _create_media_file_record(
-            db, current_user.id, normalized_url, youtube_id, video_title, video_info
+            db, current_user.id, normalized_url, video_id, video_title, video_info
         )
 
         # Dispatch background task
@@ -474,14 +530,18 @@ async def process_youtube_url(
         # Send WebSocket notification
         await _send_file_created_notification(media_file, current_user.id)
 
-        logger.info(f"Created placeholder MediaFile {media_file.id} for YouTube URL processing")
+        logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
         return media_file
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error processing YouTube URL: {e}", exc_info=True)
+        logger.error(f"Unexpected error processing media URL: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error processing YouTube URL",
+            detail="Internal server error processing media URL",
         ) from e
+
+
+# Backward compatibility alias
+process_youtube_url = process_media_url

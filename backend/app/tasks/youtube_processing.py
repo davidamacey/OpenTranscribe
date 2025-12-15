@@ -1,9 +1,11 @@
 """
-YouTube processing task for background video downloading and processing.
+Media URL processing task for background video downloading and processing.
 
-This module provides Celery tasks for handling YouTube video downloads and processing
+This module provides Celery tasks for handling media video downloads and processing
 asynchronously to prevent UI blocking during video import operations. It includes
 progress tracking, error handling, and automatic transcription initiation.
+
+Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
 """
 
 import json
@@ -20,7 +22,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.formatting_service import FormattingService
-from app.services.youtube_service import YouTubeService
+from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
 from app.tasks.waveform import generate_waveform_task
@@ -149,7 +151,7 @@ def process_youtube_url_task(
                     "file_id": file_id,
                 }
 
-            youtube_service = YouTubeService()
+            media_service = MediaDownloadService()
 
             # Process the YouTube URL
             try:
@@ -164,7 +166,7 @@ def process_youtube_url_task(
                     )
 
                 # Process using synchronous version
-                updated_media_file = youtube_service.process_youtube_url_sync(
+                updated_media_file = media_service.process_media_url_sync(
                     url=url,
                     db=db,
                     user=user,
@@ -479,7 +481,7 @@ def _process_playlist_with_db(url: str, user_id: int) -> YouTubePlaylistProcessi
             _send_playlist_notification(user_id, "processing", message, progress, data)
 
         try:
-            result = YouTubeService().process_youtube_playlist_sync(
+            result = MediaDownloadService().process_youtube_playlist_sync(
                 url=url, db=db, user=user, progress_callback=progress_callback
             )
             return _handle_playlist_result(result, user_id, db)

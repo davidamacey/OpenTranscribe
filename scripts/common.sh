@@ -85,14 +85,57 @@ fix_model_cache_permissions() {
 #######################
 
 # Print access information for all services
+# Detects NGINX configuration and shows appropriate URLs
 print_access_info() {
-  echo "🌐 Access the application at:"
-  echo "   - Frontend: http://localhost:5173"
-  echo "   - API: http://localhost:5174/api"
-  echo "   - API Documentation: http://localhost:5174/docs"
-  echo "   - MinIO Console: http://localhost:5179"
-  echo "   - Flower Dashboard: http://localhost:5175/flower"
-  echo "   - OpenSearch Dashboards: http://localhost:5182"
+  # Check if NGINX is configured (via NGINX_SERVER_NAME env var or .env file)
+  local domain=""
+  local protocol="https"
+  local https_port="${NGINX_HTTPS_PORT:-443}"
+
+  # Check environment variable first
+  if [ -n "$NGINX_SERVER_NAME" ]; then
+    domain="$NGINX_SERVER_NAME"
+  # Then check .env file
+  elif [ -f .env ]; then
+    domain=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+    https_port=$(grep '^NGINX_HTTPS_PORT=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+    https_port="${https_port:-443}"
+  fi
+
+  echo ""
+  if [ -n "$domain" ]; then
+    # NGINX reverse proxy mode - single entry point with HTTPS
+    local port_suffix=""
+    if [ "$https_port" != "443" ]; then
+      port_suffix=":$https_port"
+    fi
+
+    echo "🔒 NGINX Reverse Proxy Mode (HTTPS)"
+    echo "🌐 Access the application at:"
+    echo "   - Frontend:          ${protocol}://${domain}${port_suffix}"
+    echo "   - API:               ${protocol}://${domain}${port_suffix}/api"
+    echo "   - API Documentation: ${protocol}://${domain}${port_suffix}/api/docs"
+    echo "   - Flower Dashboard:  ${protocol}://${domain}${port_suffix}/flower/"
+    echo "   - MinIO Console:     ${protocol}://${domain}${port_suffix}/minio/"
+    echo ""
+    echo "📝 Note: Browser microphone recording is now available via HTTPS!"
+    echo "   If you see certificate warnings, trust the certificate on your device."
+    echo "   See: docs/NGINX_SETUP.md for instructions"
+  else
+    # Direct container access mode (development default)
+    echo "🌐 Access the application at:"
+    echo "   - Frontend:            http://localhost:5173"
+    echo "   - API:                 http://localhost:5174/api"
+    echo "   - API Documentation:   http://localhost:5174/docs"
+    echo "   - MinIO Console:       http://localhost:5179"
+    echo "   - Flower Dashboard:    http://localhost:5175/flower"
+    echo "   - OpenSearch:          http://localhost:5180"
+    echo ""
+    echo "📝 Note: Microphone recording only works on localhost in this mode."
+    echo "   For HTTPS access from other devices, set NGINX_SERVER_NAME in .env"
+    echo "   See: docs/NGINX_SETUP.md for instructions"
+  fi
+  echo ""
 }
 
 #######################

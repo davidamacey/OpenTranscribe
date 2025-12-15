@@ -720,26 +720,25 @@ For production use, ensure you:
    # Configure backup strategies
    ```
 
-3. **Reverse Proxy Setup**
-   ```nginx
-   # Example NGINX configuration
-   server {
-       listen 80;
-       server_name your-domain.com;
+3. **HTTPS/SSL Setup** (Required for microphone recording from other devices)
 
-       location / {
-           proxy_pass http://localhost:5173;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
+   OpenTranscribe includes built-in NGINX reverse proxy support with SSL/TLS:
 
-       location /api {
-           proxy_pass http://localhost:5174;
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-       }
-   }
+   ```bash
+   # Quick setup for homelab/local network
+   ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip
+
+   # Add to .env
+   NGINX_SERVER_NAME=opentranscribe.local
+
+   # Start with HTTPS enabled
+   ./opentr.sh start dev
    ```
+
+   For detailed instructions including Let's Encrypt setup, see [docs/NGINX_SETUP.md](docs/NGINX_SETUP.md).
+
+   > **Note**: Modern browsers require HTTPS for microphone access. Without NGINX/SSL setup,
+   > microphone recording will only work when accessing via `localhost`.
 
 ## 🧪 Development
 

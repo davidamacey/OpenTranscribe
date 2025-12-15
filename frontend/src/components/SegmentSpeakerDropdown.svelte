@@ -4,14 +4,61 @@
   import type { Speaker, Segment } from '$lib/types/speaker';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import axiosInstance from '$lib/axios';
 
   export let segment: Segment;
   export let speakers: Speaker[] = [];
+  export let mediaFileUuid: string = '';
 
   const dispatch = createEventDispatcher();
   let triggerButton: HTMLButtonElement;
   let portalContainer: HTMLDivElement | null = null;
   let isOpen = false;
+  let isCreatingSpeaker = false;
+
+  // Compute the next speaker name (e.g., SPEAKER_03 if SPEAKER_00, SPEAKER_01, SPEAKER_02 exist)
+  function getNextSpeakerName(): string {
+    let maxNumber = -1;
+    for (const speaker of speakers) {
+      const match = speaker.name?.match(/^SPEAKER_(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNumber) maxNumber = num;
+      }
+    }
+    const nextNum = maxNumber + 1;
+    return `SPEAKER_${nextNum.toString().padStart(2, '0')}`;
+  }
+
+  async function handleCreateNewSpeaker() {
+    if (!mediaFileUuid || isCreatingSpeaker) return;
+
+    isCreatingSpeaker = true;
+    const newSpeakerName = getNextSpeakerName();
+
+    try {
+      const response = await axiosInstance.post(`/speakers/?media_file_uuid=${mediaFileUuid}`, {
+        name: newSpeakerName
+      });
+
+      const newSpeaker = response.data;
+
+      // Dispatch event to notify parent that a new speaker was created
+      dispatch('speakerCreated', { speaker: newSpeaker });
+
+      // Auto-select the new speaker for this segment
+      dispatch('change', {
+        segmentUuid: segment.uuid,
+        speakerUuid: newSpeaker.uuid
+      });
+
+      closeDropdown();
+    } catch (error) {
+      console.error('Failed to create new speaker:', error);
+    } finally {
+      isCreatingSpeaker = false;
+    }
+  }
 
   // Create portal container on mount
   onMount(() => {
@@ -66,7 +113,7 @@
 
   function handleSpeakerSelect(speakerUuid: string | null) {
     dispatch('change', {
-      segmentUuid: segment.uuid || segment.id,
+      segmentUuid: segment.uuid,
       speakerUuid
     });
     closeDropdown();
@@ -74,7 +121,7 @@
 
   function isCurrentSpeaker(speakerUuid: string): boolean {
     if (!segment.speaker) return false;
-    return segment.speaker.uuid === speakerUuid || segment.speaker.id === speakerUuid;
+    return segment.speaker.uuid === speakerUuid;
   }
 
   function getMenuPosition(): { top: number; left: number } {
@@ -103,7 +150,7 @@
     }
 
     const pos = getMenuPosition();
-    const currentSpeakerUuid = segment.speaker?.uuid || segment.speaker?.id;
+    const currentSpeakerUuid = segment.speaker?.uuid;
 
     // Build menu HTML
     let menuHtml = `
@@ -133,6 +180,23 @@
       `;
     }
 
+    // Add "Create New Speaker" button if mediaFileUuid is available
+    if (mediaFileUuid) {
+      const nextSpeakerName = getNextSpeakerName();
+      menuHtml += `
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item create-speaker-btn" data-action="create-speaker">
+          <div class="speaker-option">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>${$t('speaker.createNew')} ${nextSpeakerName}</span>
+          </div>
+        </button>
+      `;
+    }
+
     menuHtml += '</div>';
     portalContainer.innerHTML = menuHtml;
 
@@ -141,6 +205,11 @@
     buttons.forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const action = (btn as HTMLElement).dataset.action;
+        if (action === 'create-speaker') {
+          handleCreateNewSpeaker();
+          return;
+        }
         const uuid = (btn as HTMLElement).dataset.speakerUuid;
         handleSpeakerSelect(uuid === '' ? null : uuid || null);
       });
@@ -227,6 +296,19 @@
     .speaker-dropdown-portal .speaker-color-indicator.no-speaker {
       background: var(--border-color, #475569);
       border-color: var(--border-hover, #64748b);
+    }
+
+    .speaker-dropdown-portal .create-speaker-btn {
+      color: var(--primary-color, #3b82f6);
+    }
+
+    .speaker-dropdown-portal .create-speaker-btn:hover {
+      background: rgba(59, 130, 246, 0.1);
+    }
+
+    .speaker-dropdown-portal .create-speaker-btn svg {
+      color: var(--primary-color, #3b82f6);
+      margin-right: 4px;
     }
 
     .speaker-dropdown-portal .dropdown-menu::-webkit-scrollbar {

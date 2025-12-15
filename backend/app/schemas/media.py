@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
@@ -373,18 +374,29 @@ class CommentUpdate(BaseModel):
     timestamp: Optional[float] = None
 
 
+class CommentUser(BaseModel):
+    """Nested user info for comments"""
+
+    uuid: UUID
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class Comment(CommentBase, UUIDBaseSchema):
     """Comment with UUID as public identifier"""
 
     media_file_id: UUID
     user_id: UUID
+    user: Optional[CommentUser] = None
     created_at: datetime
 
 
 class MediaFileInfo(BaseModel):
     """Schema for simplified media file information that gets included in tasks"""
 
-    id: UUID
+    uuid: UUID  # Public UUID identifier
     filename: str
     file_size: Optional[int] = None
     content_type: Optional[str] = None

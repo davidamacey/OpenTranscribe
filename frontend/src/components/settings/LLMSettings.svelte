@@ -60,7 +60,7 @@
         activeConfigurationId = configurationsResponse.active_configuration_id || null;
 
         if (activeConfigurationId && savedConfigurations.length > 0) {
-          currentSettings = savedConfigurations.find(c => c.id === activeConfigurationId) || null;
+          currentSettings = savedConfigurations.find(c => c.uuid === activeConfigurationId) || null;
           hasSettings = true;
 
           // Check initial status if settings exist and update the central store
@@ -84,8 +84,10 @@
       // Only show error for serious provider loading issues
       console.error('Error loading LLM providers:', err);
       // Only show error if it's not related to missing user configurations
-      if (!err.message?.includes('LLM') && !err.response?.data?.detail?.includes('configuration')) {
-        const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.loadProvidersError');
+      const detail = err.response?.data?.detail;
+      const detailStr = typeof detail === 'string' ? detail : '';
+      if (!err.message?.includes('LLM') && !detailStr.includes('configuration')) {
+        const errorMsg = detailStr || $t('settings.llmProvider.loadProvidersError');
         toastStore.error(errorMsg, 5000);
       }
     } finally {
@@ -122,7 +124,8 @@
       }
     } catch (err: any) {
       connectionStatus = 'disconnected';
-      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.testFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
       statusMessage = errorMsg;
       statusLastChecked = new Date();
 
@@ -161,7 +164,7 @@
 
       // Update local state
       activeConfigurationId = configId;
-      currentSettings = savedConfigurations.find(c => c.id === configId) || null;
+      currentSettings = savedConfigurations.find(c => c.uuid === configId) || null;
       hasSettings = true;
 
       // Check status of newly activated configuration
@@ -174,7 +177,8 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.activateFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.activateFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -185,7 +189,7 @@
     testing = true;
 
     try {
-      const result = await LLMSettingsApi.testConfiguration(config.id);
+      const result = await LLMSettingsApi.testConfiguration(config.uuid);
 
       if (result.success) {
         toastStore.success(`${config.name}: ${result.message}`, 5000);
@@ -193,7 +197,8 @@
         toastStore.error(`${config.name}: ${result.message}`, 8000);
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.testFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.testFailed');
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       testing = false;
@@ -211,13 +216,13 @@
     saving = true;
 
     try {
-      await LLMSettingsApi.deleteConfiguration(configToDelete.id);
+      await LLMSettingsApi.deleteConfiguration(configToDelete.uuid);
 
       // Remove from saved configurations
-      savedConfigurations = savedConfigurations.filter(c => c.id !== configToDelete.id);
+      savedConfigurations = savedConfigurations.filter(c => c.uuid !== configToDelete.uuid);
 
       // If this was the active configuration, clear it
-      if (configToDelete.id === activeConfigurationId) {
+      if (configToDelete.uuid === activeConfigurationId) {
         activeConfigurationId = null;
         currentSettings = null;
         hasSettings = false;
@@ -236,7 +241,8 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.deleteFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.deleteFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -279,7 +285,8 @@
         onSettingsChange();
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || $t('settings.llmProvider.deleteAllFailed');
+      const detail = err.response?.data?.detail;
+      const errorMsg = typeof detail === 'string' ? detail : $t('settings.llmProvider.deleteAllFailed');
       toastStore.error(errorMsg, 5000);
     } finally {
       saving = false;
@@ -292,7 +299,7 @@
     // Update the configurations list
     if (editingConfiguration) {
       // Update existing configuration
-      const index = savedConfigurations.findIndex(c => c.id === savedConfig.id);
+      const index = savedConfigurations.findIndex(c => c.uuid === savedConfig.uuid);
       if (index !== -1) {
         savedConfigurations[index] = savedConfig;
         savedConfigurations = [...savedConfigurations];
@@ -382,7 +389,7 @@
       {#if savedConfigurations.length > 0}
         <div class="config-list">
           {#each savedConfigurations as config}
-            <div class="config-item" class:active={config.id === activeConfigurationId}>
+            <div class="config-item" class:active={config.uuid === activeConfigurationId}>
               <div class="config-info">
                 <div class="config-name">{config.name}</div>
                 <div class="config-provider">{getProviderDisplayName(config.provider)} • {config.model_name}</div>
@@ -392,7 +399,7 @@
               </div>
 
               <div class="config-actions">
-                {#if config.id === activeConfigurationId}
+                {#if config.uuid === activeConfigurationId}
                   <div class="config-status currently-active" title={statusMessage}>
                     <div class="status-indicator">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -404,7 +411,7 @@
                 {:else}
                   <button
                     class="activate-button"
-                    on:click={() => activateConfiguration(config.id)}
+                    on:click={() => activateConfiguration(config.uuid)}
                     disabled={saving}
                     title={$t('settings.llmProvider.activateTooltip')}
                   >

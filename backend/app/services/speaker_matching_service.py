@@ -156,7 +156,7 @@ class SpeakerMatchingService:
             profile_speaker = (
                 self.db.query(Speaker)
                 .filter(
-                    Speaker.profile_id == best_match["profile_id"],
+                    Speaker.profile_id == profile.id,  # Use integer profile.id
                     Speaker.user_id == user_id,
                     Speaker.verified,
                     Speaker.display_name.isnot(None),
@@ -174,7 +174,8 @@ class SpeakerMatchingService:
                 "confidence": confidence,
                 "confidence_level": self.get_confidence_level(confidence),
                 "auto_accept": confidence >= ConfidenceLevel.HIGH,
-                "profile_id": best_match["profile_id"],
+                "profile_id": profile.id,  # Return integer ID for database operations
+                "profile_uuid": str(profile.uuid),  # Also return UUID for API responses
                 "source": "profile_embedding",
                 "embedding_count": best_match["embedding_count"],
             }
@@ -304,11 +305,16 @@ class SpeakerMatchingService:
         if not match:
             return None
 
+        # Check if matched speaker has a profile
+        profile_id = match.get("profile_id")
+        if not profile_id:
+            return None
+
         # Get the speaker profile from database
         profile = (
             self.db.query(SpeakerProfile)
             .filter(
-                SpeakerProfile.id == match["speaker_id"],
+                SpeakerProfile.id == profile_id,
                 SpeakerProfile.user_id == user_id,
             )
             .first()

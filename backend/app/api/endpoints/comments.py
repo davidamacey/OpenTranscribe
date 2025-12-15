@@ -25,12 +25,19 @@ def get_comments_for_file_nested(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get all comments for a specific media file (nested route)"""
+    from sqlalchemy.orm import joinedload
+
     # Verify file exists and belongs to user
     media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
     file_id = media_file.id
 
-    # Get comments for this file
-    comments = db.query(Comment).filter(Comment.media_file_id == file_id).all()
+    # Get comments for this file with user relationship loaded
+    comments = (
+        db.query(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.media_file))
+        .filter(Comment.media_file_id == file_id)
+        .all()
+    )
     return comments
 
 

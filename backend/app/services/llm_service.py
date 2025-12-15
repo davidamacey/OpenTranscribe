@@ -23,6 +23,16 @@ from app.core.constants import LLM_OUTPUT_LANGUAGES
 
 logger = logging.getLogger(__name__)
 
+# OpenAI reasoning models that don't support temperature/sampling parameters
+# These models use internal reasoning processes incompatible with temperature control
+# See: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/reasoning
+OPENAI_REASONING_MODEL_PREFIXES = (
+    "o1",  # o1, o1-mini, o1-preview
+    "o3",  # o3, o3-mini
+    "o4",  # o4-mini
+    "gpt-5",  # gpt-5 series
+)
+
 
 class LLMProvider(str, Enum):
     OPENAI = "openai"
@@ -127,6 +137,20 @@ class LLMService:
             f"context_window={self.user_context_window}"
         )
 
+    def _is_reasoning_model(self) -> bool:
+        """
+        Check if the current model is an OpenAI reasoning model.
+
+        OpenAI reasoning models (o1, o3, o4, gpt-5 series) don't support
+        temperature, top_p, presence_penalty, or frequency_penalty parameters.
+        These parameters must be omitted entirely from API requests.
+        """
+        if self.config.provider not in [LLMProvider.OPENAI, LLMProvider.OPENROUTER]:
+            return False
+
+        model_lower = self.config.model.lower()
+        return any(model_lower.startswith(prefix) for prefix in OPENAI_REASONING_MODEL_PREFIXES)
+
     def _get_headers(self) -> dict[str, str]:
         """
         Get headers for API request based on provider.
@@ -228,6 +252,8 @@ class LLMService:
                 "options": {
                     "temperature": kwargs.get("temperature", self.config.temperature),
                     "num_predict": kwargs.get("max_tokens", self.config.response_tokens),
+                    # Force Ollama to honor the user's configured context window
+                    "num_ctx": kwargs.get("num_ctx", self.user_context_window),
                 },
             }
             # Add format parameter for structured output if provided
@@ -240,9 +266,18 @@ class LLMService:
             "model": self.config.model,
             "messages": messages,
             "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
-            "temperature": kwargs.get("temperature", self.config.temperature),
             "stream": False,
         }
+
+        # OpenAI reasoning models (o1, o3, o4, gpt-5) don't support temperature
+        # or other sampling parameters - they must be omitted entirely
+        if self._is_reasoning_model():
+            logger.info(
+                f"Reasoning model detected ({self.config.model}): "
+                f"omitting temperature and sampling parameters"
+            )
+        else:
+            payload["temperature"] = kwargs.get("temperature", self.config.temperature)
 
         # Provider-specific adjustments
         if self.config.provider == LLMProvider.VLLM:

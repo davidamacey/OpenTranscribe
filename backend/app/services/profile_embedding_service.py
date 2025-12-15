@@ -216,7 +216,8 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
 
         matches.append(
             {
-                "profile_id": profile_uuid or str(profile_id),  # Use UUID for external API
+                "profile_id": profile_id,  # Integer ID for internal database operations
+                "profile_uuid": profile_uuid or str(profile_id),  # UUID for external API responses
                 "profile_name": profile_name,
                 "similarity": float(score),
                 "embedding_count": source.get("speaker_count", 1),

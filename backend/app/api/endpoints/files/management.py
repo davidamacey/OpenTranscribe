@@ -356,7 +356,7 @@ async def get_stuck_files(
                 db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
                 stuck_files.append(
                     {
-                        "id": str(db_file.uuid),  # Use UUID for frontend
+                        "uuid": str(db_file.uuid),
                         "filename": db_file.filename,
                         "status": db_file.status,
                         "active_task_id": db_file.active_task_id,

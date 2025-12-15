@@ -454,6 +454,9 @@ create_production_compose() {
             if [ -s docker-compose.prod.yml ] && grep -q "services:" docker-compose.prod.yml; then
                 echo "  ✓ Downloaded production docker-compose.prod.yml"
 
+                # Download GPU overlay for NVIDIA acceleration (non-fatal)
+                download_gpu_overlay
+
                 # Download optional gpu-scale overlay (non-fatal)
                 download_gpu_scale_overlay
 
@@ -477,6 +480,28 @@ create_production_compose() {
     echo "Please check your internet connection and try again."
     echo "Alternative: You can manually download from: $prod_url"
     exit 1
+}
+
+download_gpu_overlay() {
+    # Download docker-compose.gpu.yml for NVIDIA GPU support
+    # This enables GPU acceleration when NVIDIA Container Toolkit is detected
+    echo "  Downloading docker-compose.gpu.yml (GPU acceleration support)..."
+
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local gpu_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.gpu.yml"
+
+    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_url" -o docker-compose.gpu.yml 2>/dev/null; then
+        if [ -s docker-compose.gpu.yml ] && grep -q "celery-worker:" docker-compose.gpu.yml; then
+            echo "  ✓ Downloaded docker-compose.gpu.yml (GPU acceleration)"
+        else
+            echo "  ⚠️  Downloaded gpu file appears invalid, removing..."
+            rm -f docker-compose.gpu.yml
+        fi
+    else
+        echo "  ℹ️  docker-compose.gpu.yml not available (GPU support optional)"
+    fi
 }
 
 download_gpu_scale_overlay() {
