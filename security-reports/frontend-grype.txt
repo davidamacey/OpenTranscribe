@@ -1,4 +1,5 @@
-NAME  INSTALLED  TYPE  VULNERABILITY   SEVERITY  EPSS          RISK   
-tiff  4.7.1-r0   apk   CVE-2023-52356  High      0.4% (58th)   0.3    
-tiff  4.7.1-r0   apk   CVE-2023-6277   Medium    0.4% (61st)   0.2    
-tiff  4.7.1-r0   apk   CVE-2023-6228   Medium    < 0.1% (2nd)  < 0.1
+NAME    INSTALLED  FIXED IN   TYPE  VULNERABILITY   SEVERITY  EPSS           RISK   
+tiff    4.7.1-r0              apk   CVE-2023-52356  High      0.4% (58th)    0.3    
+tiff    4.7.1-r0              apk   CVE-2023-6277   Medium    0.4% (61st)    0.2    
+c-ares  1.34.5-r0  1.34.6-r0  apk   CVE-2025-62408  Medium    < 0.1% (16th)  < 0.1  
+tiff    4.7.1-r0              apk   CVE-2023-6228   Medium    < 0.1% (2nd)   < 0.1

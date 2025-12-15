@@ -59,6 +59,7 @@ libtiff6           4.7.0-3+deb13u1                                    deb     CV
 libopenjp2-7       2.5.3-2.1~deb13u1                                  deb     CVE-2016-9113        Negligible  0.4% (62nd)    < 0.1  
 libopenjp2-7       2.5.3-2.1~deb13u1                     (won't fix)  deb     CVE-2023-39327       Medium      < 0.1% (14th)  < 0.1  
 libx264-164        2:0.164.3108+git31e19f9-2+b1                       deb     CVE-2025-25467       Negligible  0.4% (61st)    < 0.1  
+libelf1t64         0.192-4                                            deb     CVE-2025-1352        Negligible  0.4% (59th)    < 0.1  
 libopenjp2-7       2.5.3-2.1~deb13u1                                  deb     CVE-2016-9580        Negligible  0.4% (59th)    < 0.1  
 libglib2.0-0t64    2.84.4-3~deb13u1                      (won't fix)  deb     CVE-2025-14512       Medium      < 0.1% (9th)   < 0.1  
 libopenjp2-7       2.5.3-2.1~deb13u1                                  deb     CVE-2016-9115        Negligible  0.4% (58th)    < 0.1  
@@ -70,7 +71,6 @@ libc6              2.41-12                                            deb     CV
 libopenjp2-7       2.5.3-2.1~deb13u1                                  deb     CVE-2016-9581        Negligible  0.4% (57th)    < 0.1  
 libc-bin           2.41-12                                            deb     CVE-2019-1010023     Negligible  0.3% (56th)    < 0.1  
 libc6              2.41-12                                            deb     CVE-2019-1010023     Negligible  0.3% (56th)    < 0.1  
-libelf1t64         0.192-4                                            deb     CVE-2025-1352        Negligible  0.3% (56th)    < 0.1  
 libmbedcrypto16    3.6.4-2                                            deb     CVE-2023-43615       Negligible  0.3% (53rd)    < 0.1  
 libjxl0.11         0.11.1-4                                           deb     CVE-2021-36691       Negligible  0.3% (53rd)    < 0.1  
 libsndfile1        1.2.2-2+b1                            (won't fix)  deb     CVE-2024-50613       Medium      < 0.1% (6th)   < 0.1  
@@ -89,7 +89,7 @@ libperl5.40        5.40.1-6                                           deb     CV
 perl               5.40.1-6                                           deb     CVE-2011-4116        Negligible  0.2% (42nd)    < 0.1  
 perl-base          5.40.1-6                                           deb     CVE-2011-4116        Negligible  0.2% (42nd)    < 0.1  
 perl-modules-5.40  5.40.1-6                                           deb     CVE-2011-4116        Negligible  0.2% (42nd)    < 0.1  
-liblcms2-2         2.16-2                                             deb     CVE-2025-29070       Negligible  0.2% (41st)    < 0.1  
+liblcms2-2         2.16-2                                             deb     CVE-2025-29070       Negligible  0.2% (40th)    < 0.1  
 libgbm1            25.0.7-2                                           deb     CVE-2023-45931       Negligible  0.2% (40th)    < 0.1  
 libgl1-mesa-dri    25.0.7-2                                           deb     CVE-2023-45931       Negligible  0.2% (40th)    < 0.1  
 libglx-mesa0       25.0.7-2                                           deb     CVE-2023-45931       Negligible  0.2% (40th)    < 0.1  
@@ -115,6 +115,7 @@ libgl1             1.7.0-1+b2                                         deb     CV
 libglvnd0          1.7.0-1+b2                                         deb     CVE-2023-45924       Negligible  0.1% (32nd)    < 0.1  
 libglx0            1.7.0-1+b2                                         deb     CVE-2023-45924       Negligible  0.1% (32nd)    < 0.1  
 libslang2          2.3.3-5+b2                                         deb     CVE-2023-45927       Negligible  0.1% (29th)    < 0.1  
+libelf1t64         0.192-4                                            deb     CVE-2025-1372        Negligible  0.1% (29th)    < 0.1  
 libmbedcrypto16    3.6.4-2                                            deb     CVE-2018-1000520     Negligible  0.1% (29th)    < 0.1  
 libncursesw6       6.5+20250216-2                        (won't fix)  deb     CVE-2025-6141        Low         < 0.1% (2nd)   < 0.1  
 libtinfo6          6.5+20250216-2                        (won't fix)  deb     CVE-2025-6141        Low         < 0.1% (2nd)   < 0.1  
@@ -123,7 +124,6 @@ ncurses-bin        6.5+20250216-2                        (won't fix)  deb     CV
 libexpat1          2.7.1-2                               (won't fix)  deb     CVE-2025-66382       Low         < 0.1% (3rd)   < 0.1  
 libsystemd0        257.9-1~deb13u1                                    deb     CVE-2023-31438       Negligible  0.1% (28th)    < 0.1  
 libudev1           257.9-1~deb13u1                                    deb     CVE-2023-31438       Negligible  0.1% (28th)    < 0.1  
-libelf1t64         0.192-4                                            deb     CVE-2025-1372        Negligible  < 0.1% (27th)  < 0.1  
 libslang2          2.3.3-5+b2                                         deb     CVE-2023-45929       Negligible  < 0.1% (27th)  < 0.1  
 libsystemd0        257.9-1~deb13u1                                    deb     CVE-2023-31439       Negligible  < 0.1% (26th)  < 0.1  
 libudev1           257.9-1~deb13u1                                    deb     CVE-2023-31439       Negligible  < 0.1% (26th)  < 0.1  
@@ -145,7 +145,7 @@ mesa-libgallium    25.0.7-2                                           deb     CV
 libsystemd0        257.9-1~deb13u1                                    deb     CVE-2013-4392        Negligible  < 0.1% (17th)  < 0.1  
 libudev1           257.9-1~deb13u1                                    deb     CVE-2013-4392        Negligible  < 0.1% (17th)  < 0.1  
 coreutils          9.7-3                                              deb     CVE-2017-18018       Negligible  < 0.1% (17th)  < 0.1  
-libelf1t64         0.192-4                                            deb     CVE-2025-1371        Negligible  < 0.1% (16th)  < 0.1  
+libelf1t64         0.192-4                                            deb     CVE-2025-1371        Negligible  < 0.1% (17th)  < 0.1  
 libtiff6           4.7.0-3+deb13u1                                    deb     CVE-2022-1210        Negligible  < 0.1% (15th)  < 0.1  
 libtiff6           4.7.0-3+deb13u1                                    deb     CVE-2025-8534        Negligible  < 0.1% (11th)  < 0.1  
 libmbedcrypto16    3.6.4-2                                            deb     CVE-2024-45157       Negligible  < 0.1% (11th)  < 0.1  
