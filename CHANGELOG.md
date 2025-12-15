@@ -5,6 +5,84 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-12-15
+
+### Overview
+Major feature release integrating valuable contributions from the [@vfilon](https://github.com/vfilon) fork, along with critical UUID/ID standardization fixes and production infrastructure improvements.
+
+### Added
+
+#### Universal Media URL Support
+- **1800+ Platform Support** - Expand beyond YouTube to support virtually any video platform via yt-dlp
+- **Dynamic Source Detection** - Automatically detect source platform from yt-dlp metadata
+- **User-Friendly Error Handling** - Clear messages for authentication-required platforms
+- **Platform Guidance** - Helpful messages for common platforms (Vimeo, Instagram, TikTok, etc.)
+- **Recommended Platforms** - YouTube, Dailymotion, Twitter/X highlighted as best supported
+
+#### NGINX Reverse Proxy with SSL/TLS (Closes [#72](https://github.com/davidamacey/OpenTranscribe/issues/72))
+- **Production-Ready SSL** - Full NGINX reverse proxy configuration for HTTPS deployments
+- **docker-compose.nginx.yml** - Optional overlay for production environments
+- **SSL Certificate Generation** - Script for self-signed certificates (`scripts/generate-ssl-cert.sh`)
+- **WebSocket Proxy** - Full WebSocket support through NGINX
+- **Large File Uploads** - 2GB upload support for large media files
+- **Service Proxying** - Flower dashboard and MinIO console accessible through NGINX
+- **Browser Microphone Recording** - Enabled on remote/network access via HTTPS
+
+#### Infrastructure Improvements
+- **GPU Overlay Separation** - `docker-compose.gpu.yml` for optional GPU support on cross-platform systems
+- **Task Status Reconciliation** - Better handling of stuck tasks with multiple timestamp fallbacks
+- **Auto-Refresh Analytics** - Analytics refresh when segment speaker changes
+- **Ollama Context Window** - Configurable `num_ctx` parameter for Ollama LLM provider
+- **Model-Aware Temperature** - Temperature handling based on model capabilities
+- **Explicit Docker Image Names** - Cache efficiency with named images
+
+#### Documentation
+- **NGINX Setup Guide** - Comprehensive `docs/NGINX_SETUP.md` documentation
+- **Fork Comparison** - `docs/FORK_COMPARISON_vfilon.md` with detailed analysis
+- **Implementation Plan** - `docs/FORK_IMPLEMENTATION_PLAN.md` checklist
+- **Test Videos** - `docs/testing/media_url_test_videos.md` with platform test URLs
+
+### Changed
+
+#### Backend
+- **Service Rename** - `youtube_service.py` → `media_download_service.py` for platform-agnostic naming
+- **URL Validation** - Generic HTTP/HTTPS URL pattern instead of YouTube-specific
+- **Minio Version** - Updated minimum version to 7.2.18
+
+#### Frontend
+- **Media URL UI** - Renamed `youtubeUrl` → `mediaUrl` throughout FileUploader
+- **Notification Text** - Changed "YouTube Processing" → "Video Processing" (all 7 languages)
+- **Platform Info** - Added collapsible "Supported Platforms" section with limitations warning
+- **WebSocket Token Encoding** - Added `encodeURIComponent()` for auth tokens
+
+### Fixed
+
+#### UUID/ID Standardization (60+ files)
+- **Speaker Recommendations** - Fixed recommendations not showing for new videos
+- **Profile Embedding Service** - Fixed returning UUID as `profile_id` when integer expected
+- **Consistent ID Handling** - Backend uses integer IDs for DB, UUIDs for API responses
+- **Frontend UUIDs** - All entity references now use UUID strings consistently
+- **Comment System** - Fixed UUID handling in comments
+- **Password Reset** - Fixed password reset flow
+- **Transcript Segments** - Fixed segment update UUID handling
+
+### Contributors
+
+Special thanks to:
+- **[@vfilon](https://github.com/vfilon)** - Original fork contributions (Universal Media URL concept, NGINX configuration, task reconciliation)
+
+### Upgrade Notes
+
+Users running self-hosted deployments should pull the latest images:
+```bash
+docker pull davidamacey/opentranscribe-frontend:v0.3.0
+docker pull davidamacey/opentranscribe-backend:v0.3.0
+```
+
+For NGINX/SSL setup, see `docs/NGINX_SETUP.md`.
+
+---
+
 ## [0.2.1] - 2025-12-13
 
 ### Overview
