@@ -1,8 +1,9 @@
 """
-YouTube processing service for downloading and processing YouTube videos.
+Media download service for downloading and processing media from various platforms.
 
-This service handles all YouTube-related operations including URL validation,
+This service handles all media URL-related operations including URL validation,
 video downloading, metadata extraction, and integration with the media processing pipeline.
+Supports YouTube, Vimeo, Twitter/X, TikTok, and 1800+ other platforms via yt-dlp.
 """
 
 import io
@@ -31,6 +32,155 @@ from app.services.minio_service import upload_file
 from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
+
+# Authentication and access error patterns with user-friendly messages
+AUTH_ERROR_PATTERNS = {
+    "logged-in": "requires a logged-in account",
+    "log in": "requires login",
+    "sign in": "requires sign-in",
+    "credentials": "requires authentication credentials",
+    "cookies": "requires browser cookies for authentication",
+    "private": "is private or restricted",
+    "age": "is age-restricted and requires verification",
+    "geo": "is not available in your region (geo-restricted)",
+    "removed": "has been removed or is unavailable",
+    "unavailable": "is currently unavailable",
+    "blocked": "is blocked or restricted",
+    "premium": "requires a premium subscription",
+    "members only": "is members-only content",
+    "subscriber": "requires a subscription",
+}
+
+# Platform-specific guidance messages
+PLATFORM_GUIDANCE = {
+    "vimeo": "Most Vimeo videos require authentication. Try YouTube or Dailymotion instead.",
+    "instagram": "Instagram videos typically require login. Try a different platform.",
+    "facebook": "Facebook videos often require authentication.",
+    "twitter": "Some Twitter/X videos may require login to access.",
+    "x": "Some X (Twitter) videos may require login to access.",
+    "tiktok": "Some TikTok videos may be region-restricted or require authentication.",
+    "linkedin": "LinkedIn videos require authentication.",
+    "patreon": "Patreon videos require a subscription to access.",
+    "onlyfans": "OnlyFans content requires a subscription.",
+    "twitch": "Some Twitch VODs may be subscriber-only.",
+}
+
+# Recommended platforms for public video downloads (YouTube is most reliable)
+RECOMMENDED_PLATFORMS = ["YouTube", "Dailymotion", "Twitter/X"]
+
+
+def _detect_auth_error(error_message: str) -> tuple[bool, str]:
+    """
+    Detect if an error message indicates an authentication-related issue.
+
+    Args:
+        error_message: The error message from yt-dlp
+
+    Returns:
+        Tuple of (is_auth_error, matched_reason)
+    """
+    error_lower = error_message.lower()
+    for pattern, reason in AUTH_ERROR_PATTERNS.items():
+        if pattern in error_lower:
+            return True, reason
+    return False, ""
+
+
+def _get_platform_from_error(error_message: str) -> str:
+    """
+    Try to extract platform name from error message or URL in the error.
+
+    Args:
+        error_message: The error message from yt-dlp
+
+    Returns:
+        Platform name or empty string
+    """
+    error_lower = error_message.lower()
+
+    # Check for known platform names in the error
+    platforms = [
+        "vimeo",
+        "instagram",
+        "facebook",
+        "twitter",
+        "x.com",
+        "tiktok",
+        "linkedin",
+        "patreon",
+        "twitch",
+        "youtube",
+    ]
+    for platform in platforms:
+        if platform in error_lower:
+            # Normalize x.com to twitter
+            return "twitter" if platform == "x.com" else platform
+    return ""
+
+
+def create_user_friendly_error(error_message: str, url: str = "") -> str:
+    """
+    Create a user-friendly error message from a yt-dlp error.
+
+    Detects authentication-related errors and provides helpful guidance
+    about platform limitations.
+
+    Args:
+        error_message: The raw error message from yt-dlp
+        url: The original URL (optional, for platform detection)
+
+    Returns:
+        User-friendly error message with guidance
+    """
+    is_auth_error, auth_reason = _detect_auth_error(error_message)
+
+    # Try to detect platform from error message or URL
+    platform = _get_platform_from_error(error_message)
+    if not platform and url:
+        platform = _get_platform_from_error(url)
+
+    if is_auth_error:
+        # Build user-friendly message
+        if platform:
+            platform_title = platform.title() if platform != "x" else "X (Twitter)"
+            guidance = PLATFORM_GUIDANCE.get(platform.lower(), "")
+
+            if guidance:
+                return (
+                    f"This {platform_title} video {auth_reason}. {guidance} "
+                    f"For best results, try {', '.join(RECOMMENDED_PLATFORMS)}."
+                )
+            return (
+                f"This {platform_title} video {auth_reason}. "
+                f"For best results, try publicly accessible videos on "
+                f"{', '.join(RECOMMENDED_PLATFORMS)}."
+            )
+
+        # Generic auth error without platform
+        return (
+            f"This video {auth_reason}. Some platforms restrict video downloads "
+            f"to authenticated users. For best results, try publicly accessible "
+            f"videos on {', '.join(RECOMMENDED_PLATFORMS)}."
+        )
+
+    # Not an auth error - return the original message but cleaned up
+    # Remove common yt-dlp prefixes
+    cleaned = error_message
+    prefixes_to_remove = [
+        "ERROR: ",
+        "DownloadError: ",
+        "[download] ",
+        "[generic] ",
+    ]
+    for prefix in prefixes_to_remove:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :]
+
+    return cleaned
+
+
+# Generic URL pattern - accepts any HTTP/HTTPS URL
+GENERIC_URL_PATTERN = re.compile(r"^https?://.+$")
 
 # YouTube URL validation regex - supports both videos and playlists
 YOUTUBE_URL_PATTERN = re.compile(
@@ -72,21 +222,21 @@ def _find_downloaded_file(output_path: str, clean_title: str, ext: str) -> str:
     raise FileNotFoundError("Downloaded file not found")
 
 
-def _resolve_thumbnail_url(youtube_info: dict[str, Any]) -> Optional[str]:
+def _resolve_thumbnail_url(media_info: dict[str, Any]) -> Optional[str]:
     """
-    Resolve the best thumbnail URL from YouTube metadata.
+    Resolve the best thumbnail URL from media metadata.
 
     Args:
-        youtube_info: YouTube metadata from yt-dlp
+        media_info: Media metadata from yt-dlp
 
     Returns:
         Best available thumbnail URL or None
     """
-    thumbnails = youtube_info.get("thumbnails", [])
+    thumbnails = media_info.get("thumbnails", [])
 
     # Fallback to single thumbnail URL if no thumbnails list
     if not thumbnails:
-        return youtube_info.get("thumbnail")
+        return media_info.get("thumbnail")
 
     # Find the highest quality thumbnail
     max_width = 0
@@ -100,16 +250,17 @@ def _resolve_thumbnail_url(youtube_info: dict[str, Any]) -> Optional[str]:
     if thumbnail_url:
         return thumbnail_url
 
-    # Fallback to standard YouTube thumbnail URLs
-    return _get_fallback_thumbnail_url(youtube_info.get("id"))
+    # Fallback to standard YouTube thumbnail URLs if it's a YouTube video
+    return _get_fallback_thumbnail_url(media_info.get("id"), media_info.get("extractor", ""))
 
 
-def _get_fallback_thumbnail_url(video_id: Optional[str]) -> Optional[str]:
+def _get_fallback_thumbnail_url(video_id: Optional[str], extractor: str) -> Optional[str]:
     """
-    Try standard YouTube thumbnail URLs as fallback.
+    Try standard thumbnail URLs as fallback for known platforms.
 
     Args:
-        video_id: YouTube video ID
+        video_id: Video ID
+        extractor: Platform extractor name
 
     Returns:
         Working thumbnail URL or None
@@ -117,36 +268,38 @@ def _get_fallback_thumbnail_url(video_id: Optional[str]) -> Optional[str]:
     if not video_id:
         return None
 
-    potential_urls = [
-        f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
-        f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-        f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg",
-    ]
+    # YouTube-specific fallback URLs
+    if "youtube" in extractor.lower():
+        potential_urls = [
+            f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+            f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+            f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg",
+        ]
 
-    for test_url in potential_urls:
-        try:
-            response = requests.head(test_url, timeout=10)
-            if response.status_code == 200:
-                return test_url
-        except requests.exceptions.RequestException as e:
-            logger.debug(f"Thumbnail URL test failed for {test_url}: {e}")
+        for test_url in potential_urls:
+            try:
+                response = requests.head(test_url, timeout=10)
+                if response.status_code == 200:
+                    return test_url
+            except requests.exceptions.RequestException as e:
+                logger.debug(f"Thumbnail URL test failed for {test_url}: {e}")
 
     return None
 
 
 def _get_thumbnail_with_fallback(
-    youtube_service: "YouTubeService",
-    youtube_info: dict[str, Any],
+    media_service: "MediaDownloadService",
+    media_info: dict[str, Any],
     user_id: int,
     media_file_id: int,
     video_path: str,
 ) -> Optional[str]:
     """
-    Get thumbnail from YouTube or generate from video as fallback.
+    Get thumbnail from media source or generate from video as fallback.
 
     Args:
-        youtube_service: YouTubeService instance
-        youtube_info: YouTube metadata
+        media_service: MediaDownloadService instance
+        media_info: Media metadata
         user_id: User ID
         media_file_id: Media file ID
         video_path: Path to downloaded video
@@ -155,13 +308,13 @@ def _get_thumbnail_with_fallback(
         Thumbnail storage path or None
     """
     try:
-        thumbnail_path = youtube_service._download_youtube_thumbnail_sync(youtube_info, user_id)
+        thumbnail_path = media_service._download_media_thumbnail_sync(media_info, user_id)
         if thumbnail_path:
-            logger.debug(f"Successfully downloaded YouTube thumbnail: {thumbnail_path}")
+            logger.debug(f"Successfully downloaded media thumbnail: {thumbnail_path}")
             return thumbnail_path
-        logger.warning("Failed to download YouTube thumbnail, will generate from video")
+        logger.warning("Failed to download media thumbnail, will generate from video")
     except Exception as e:
-        logger.error(f"Error downloading YouTube thumbnail: {e}")
+        logger.error(f"Error downloading media thumbnail: {e}")
 
     # Fallback to generating thumbnail from video
     try:
@@ -336,10 +489,10 @@ def _create_playlist_video_placeholder(
     return media_file
 
 
-def _update_media_file_with_youtube_data(
+def _update_media_file_with_download_data(
     media_file: MediaFile,
-    youtube_info: dict[str, Any],
-    youtube_metadata: dict[str, Any],
+    media_info: dict[str, Any],
+    media_metadata: dict[str, Any],
     technical_metadata: dict[str, Any],
     storage_path: str,
     file_size: int,
@@ -348,34 +501,34 @@ def _update_media_file_with_youtube_data(
     source_url: str,
 ) -> None:
     """
-    Update MediaFile record with YouTube and technical metadata.
+    Update MediaFile record with downloaded media and technical metadata.
 
     Args:
         media_file: MediaFile to update
-        youtube_info: YouTube video info from yt-dlp
-        youtube_metadata: Prepared YouTube metadata dict
+        media_info: Media video info from yt-dlp
+        media_metadata: Prepared media metadata dict
         technical_metadata: Technical metadata from file
         storage_path: Storage path in MinIO
         file_size: File size in bytes
         thumbnail_path: Path to thumbnail
         original_filename: Original filename
-        source_url: Original YouTube URL
+        source_url: Original media URL
     """
-    media_file.filename = youtube_info.get("title", original_filename)[:255]
+    media_file.filename = media_info.get("title", original_filename)[:255]
     media_file.storage_path = storage_path
     media_file.file_size = file_size
     media_file.content_type = technical_metadata.get("content_type", "video/mp4")
-    media_file.duration = technical_metadata.get("duration") or youtube_info.get("duration")
+    media_file.duration = technical_metadata.get("duration") or media_info.get("duration")
     media_file.status = FileStatus.PENDING
     media_file.thumbnail_path = thumbnail_path
 
-    # YouTube-specific metadata
-    media_file.title = youtube_info.get("title")
-    media_file.author = youtube_info.get("uploader")
-    media_file.description = youtube_info.get("description")
+    # Media-specific metadata
+    media_file.title = media_info.get("title")
+    media_file.author = media_info.get("uploader")
+    media_file.description = media_info.get("description")
     media_file.source_url = source_url
-    media_file.metadata_raw = youtube_metadata
-    media_file.metadata_important = youtube_metadata
+    media_file.metadata_raw = media_metadata
+    media_file.metadata_important = media_metadata
 
     # Technical metadata from extraction
     media_file.media_format = technical_metadata.get("format")
@@ -387,21 +540,33 @@ def _update_media_file_with_youtube_data(
     media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
 
 
-class YouTubeService:
-    """Service for processing YouTube videos."""
+class MediaDownloadService:
+    """Service for processing media from various platforms via yt-dlp."""
 
     def __init__(self):
         pass
 
-    def is_valid_youtube_url(self, url: str) -> bool:
+    def is_valid_media_url(self, url: str) -> bool:
         """
-        Validate if URL is a valid YouTube URL (video or playlist).
+        Validate if URL is a valid media URL (any HTTP/HTTPS URL).
 
         Args:
             url: URL to validate
 
         Returns:
-            True if valid YouTube URL, False otherwise
+            True if valid media URL, False otherwise
+        """
+        return bool(GENERIC_URL_PATTERN.match(url.strip()))
+
+    def is_youtube_url(self, url: str) -> bool:
+        """
+        Check if URL is a YouTube URL (for backward compatibility and special handling).
+
+        Args:
+            url: URL to check
+
+        Returns:
+            True if YouTube URL, False otherwise
         """
         return bool(YOUTUBE_URL_PATTERN.match(url.strip()))
 
@@ -422,7 +587,7 @@ class YouTubeService:
         Extract video metadata without downloading.
 
         Args:
-            url: YouTube URL
+            url: Media URL
 
         Returns:
             Dictionary with video information
@@ -440,11 +605,21 @@ class YouTubeService:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return info
-        except Exception as e:
-            logger.error(f"Error extracting video info from {url}: {e}")
+        except yt_dlp.DownloadError as e:
+            error_msg = str(e)
+            logger.error(f"Error extracting video info from {url}: {error_msg}")
+            # Create user-friendly error message
+            user_friendly_error = create_user_friendly_error(error_msg, url)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to extract video information: {str(e)}",
+                detail=f"Failed to extract video information: {user_friendly_error}",
+            ) from e
+        except Exception as e:
+            logger.error(f"Error extracting video info from {url}: {e}")
+            user_friendly_error = create_user_friendly_error(str(e), url)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to extract video information: {user_friendly_error}",
             ) from e
 
     def extract_playlist_info(self, url: str) -> dict[str, Any]:
@@ -521,10 +696,10 @@ class YouTubeService:
         progress_callback: Optional[Callable[[int, str], None]] = None,
     ) -> dict[str, Any]:
         """
-        Download video from YouTube URL.
+        Download video from media URL.
 
         Args:
-            url: YouTube URL
+            url: Media URL
             output_path: Directory to save downloaded file
             progress_callback: Optional callback for progress updates
 
@@ -625,16 +800,20 @@ class YouTubeService:
                 }
 
         except yt_dlp.DownloadError as e:
-            logger.error(f"yt-dlp download error for {url}: {e}")
+            error_msg = str(e)
+            logger.error(f"yt-dlp download error for {url}: {error_msg}")
+            # Create user-friendly error message
+            user_friendly_error = create_user_friendly_error(error_msg, url)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to download video: {str(e)}",
+                detail=f"Failed to download video: {user_friendly_error}",
             ) from e
         except Exception as e:
             logger.error(f"Unexpected error downloading {url}: {e}")
+            user_friendly_error = create_user_friendly_error(str(e), url)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Unexpected error during download: {str(e)}",
+                detail=f"Unexpected error during download: {user_friendly_error}",
             ) from e
 
     def _extract_technical_metadata(self, file_path: str) -> dict[str, Any]:
@@ -706,7 +885,7 @@ class YouTubeService:
             Dictionary with basic metadata
         """
         try:
-            import ffmpeg
+            import ffmpeg  # type: ignore[import-untyped]
 
             probe = ffmpeg.probe(file_path)
             format_info = probe.get("format", {})
@@ -751,49 +930,73 @@ class YouTubeService:
             logger.warning(f"Failed to extract basic metadata: {e}")
             return {"content_type": "video/mp4"}
 
-    def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
+    def _prepare_media_metadata(self, url: str, media_info: dict[str, Any]) -> dict[str, Any]:
         """
-        Prepare YouTube-specific metadata for storage.
+        Prepare media-specific metadata for storage.
 
         Args:
-            url: Original YouTube URL
-            youtube_info: Information extracted from yt-dlp
+            url: Original media URL
+            media_info: Information extracted from yt-dlp
 
         Returns:
-            Dictionary with YouTube metadata
+            Dictionary with media metadata
         """
-        return {
-            "source": "youtube",
+        # Detect the source platform dynamically
+        source = media_info.get("extractor", "unknown").lower()
+
+        # Build metadata with platform-agnostic keys plus platform-specific ones
+        metadata = {
+            "source": source,
             "original_url": url,
-            "youtube_id": youtube_info.get("id"),
-            "youtube_title": youtube_info.get("title"),
-            "youtube_description": youtube_info.get("description"),
-            "youtube_uploader": youtube_info.get("uploader"),
-            "youtube_upload_date": youtube_info.get("upload_date"),
-            "youtube_duration": youtube_info.get("duration"),
-            "youtube_view_count": youtube_info.get("view_count"),
-            "youtube_like_count": youtube_info.get("like_count"),
-            "youtube_thumbnail": youtube_info.get("thumbnail"),
-            "youtube_tags": youtube_info.get("tags", []),
-            "youtube_categories": youtube_info.get("categories", []),
+            "video_id": media_info.get("id"),
+            "title": media_info.get("title"),
+            "description": media_info.get("description"),
+            "uploader": media_info.get("uploader"),
+            "upload_date": media_info.get("upload_date"),
+            "duration": media_info.get("duration"),
+            "view_count": media_info.get("view_count"),
+            "like_count": media_info.get("like_count"),
+            "thumbnail": media_info.get("thumbnail"),
+            "tags": media_info.get("tags", []),
+            "categories": media_info.get("categories", []),
         }
 
-    def _download_youtube_thumbnail_sync(self, youtube_info: dict[str, Any], user_id: int) -> str:
+        # Add YouTube-specific fields for backward compatibility
+        if "youtube" in source:
+            metadata.update(
+                {
+                    "youtube_id": media_info.get("id"),
+                    "youtube_title": media_info.get("title"),
+                    "youtube_description": media_info.get("description"),
+                    "youtube_uploader": media_info.get("uploader"),
+                    "youtube_upload_date": media_info.get("upload_date"),
+                    "youtube_duration": media_info.get("duration"),
+                    "youtube_view_count": media_info.get("view_count"),
+                    "youtube_like_count": media_info.get("like_count"),
+                    "youtube_thumbnail": media_info.get("thumbnail"),
+                    "youtube_tags": media_info.get("tags", []),
+                    "youtube_categories": media_info.get("categories", []),
+                }
+            )
+
+        return metadata
+
+    def _download_media_thumbnail_sync(self, media_info: dict[str, Any], user_id: int) -> str:
         """
-        Download YouTube thumbnail and upload to storage (synchronous version).
+        Download media thumbnail and upload to storage (synchronous version).
 
         Args:
-            youtube_info: YouTube metadata from yt-dlp
+            media_info: Media metadata from yt-dlp
             user_id: User ID for storage path
 
         Returns:
             Storage path of uploaded thumbnail or None if failed
         """
         try:
-            thumbnail_url = _resolve_thumbnail_url(youtube_info)
+            thumbnail_url = _resolve_thumbnail_url(media_info)
 
             if not thumbnail_url:
-                logger.warning("No thumbnail URL found in YouTube metadata")
+                logger.warning("No thumbnail URL found in media metadata")
                 return None
 
             # Download the thumbnail
@@ -806,8 +1009,9 @@ class YouTubeService:
                 return None
 
             # Generate storage path and upload
-            video_id = youtube_info.get("id", "unknown")
-            storage_path = f"user_{user_id}/youtube_{video_id}/thumbnail.jpg"
+            video_id = media_info.get("id", "unknown")
+            source = media_info.get("extractor", "media").lower()
+            storage_path = f"user_{user_id}/{source}_{video_id}/thumbnail.jpg"
 
             upload_file(
                 file_content=io.BytesIO(thumbnail_data),
@@ -816,14 +1020,14 @@ class YouTubeService:
                 content_type="image/jpeg",
             )
 
-            logger.info(f"Successfully downloaded and uploaded YouTube thumbnail: {storage_path}")
+            logger.info(f"Successfully downloaded and uploaded media thumbnail: {storage_path}")
             return storage_path
 
         except Exception as e:
-            logger.error(f"Error downloading YouTube thumbnail: {e}")
+            logger.error(f"Error downloading media thumbnail: {e}")
             return None
 
-    def process_youtube_url_sync(
+    def process_media_url_sync(
         self,
         url: str,
         db: Session,
@@ -832,10 +1036,10 @@ class YouTubeService:
         progress_callback: Optional[Callable[[int, str], None]] = None,
     ) -> MediaFile:
         """
-        Process a YouTube URL by downloading the video and updating the MediaFile record (synchronous).
+        Process a media URL by downloading the video and updating the MediaFile record (synchronous).
 
         Args:
-            url: YouTube URL to process
+            url: Media URL to process
             db: Database session
             user: User requesting the processing
             media_file: Pre-created MediaFile to update
@@ -847,32 +1051,30 @@ class YouTubeService:
         Raises:
             HTTPException: If processing fails
         """
-        if not self.is_valid_youtube_url(url):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid YouTube URL"
-            )
+        if not self.is_valid_media_url(url):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid media URL")
 
-        # Extract video info first to get YouTube ID
+        # Extract video info first to get video ID
         logger.debug(f"Extracting video information for URL: {url}")
         video_info = self.extract_video_info(url)
-        youtube_id = video_info.get("id")
+        video_id = video_info.get("id")
 
-        if not youtube_id:
+        if not video_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Could not extract YouTube video ID",
+                detail="Could not extract video ID from URL",
             )
 
         # Create temporary directory for download in configured TEMP_DIR
         # This ensures the non-root container user has write permissions
-        temp_dir = tempfile.mkdtemp(prefix="youtube_download_", dir=str(settings.TEMP_DIR))
+        temp_dir = tempfile.mkdtemp(prefix="media_download_", dir=str(settings.TEMP_DIR))
 
         try:
             if progress_callback:
                 progress_callback(15, "Preparing for download...")
 
             # Download the video using the already extracted info (this will use 20-60% progress range)
-            logger.info(f"Starting YouTube download for URL: {url}")
+            logger.info(f"Starting media download for URL: {url}")
             download_result = self.download_video(url, temp_dir, progress_callback)
 
             if progress_callback:
@@ -880,7 +1082,7 @@ class YouTubeService:
 
             downloaded_file = download_result["file_path"]
             original_filename = download_result["filename"]
-            youtube_info = video_info  # Use the info we already extracted
+            media_info = video_info  # Use the info we already extracted
 
             # Get file stats
             file_stats = os.stat(downloaded_file)
@@ -911,20 +1113,20 @@ class YouTubeService:
             if progress_callback:
                 progress_callback(85, "Processing thumbnails...")
 
-            # Download and upload YouTube thumbnail with fallback
+            # Download and upload media thumbnail with fallback
             thumbnail_path = _get_thumbnail_with_fallback(
-                self, youtube_info, user.id, media_file.id, downloaded_file
+                self, media_info, user.id, media_file.id, downloaded_file
             )
 
             if progress_callback:
                 progress_callback(95, "Finalizing and updating database...")
 
-            # Prepare YouTube metadata and update the MediaFile record
-            youtube_metadata = self._prepare_youtube_metadata(url, youtube_info)
-            _update_media_file_with_youtube_data(
+            # Prepare media metadata and update the MediaFile record
+            media_metadata = self._prepare_media_metadata(url, media_info)
+            _update_media_file_with_download_data(
                 media_file=media_file,
-                youtube_info=youtube_info,
-                youtube_metadata=youtube_metadata,
+                media_info=media_info,
+                media_metadata=media_metadata,
                 technical_metadata=technical_metadata,
                 storage_path=storage_path,
                 file_size=file_size,
@@ -937,7 +1139,7 @@ class YouTubeService:
             db.commit()
             db.refresh(media_file)
 
-            logger.info(f"Updated MediaFile record {media_file.id} for YouTube video")
+            logger.info(f"Updated MediaFile record {media_file.id} for media video")
 
             return media_file
 
@@ -1047,3 +1249,31 @@ class YouTubeService:
             "skipped_count": len(skipped_videos),
             "total_videos": video_count,
         }
+
+    # Backward compatibility aliases
+    def is_valid_youtube_url(self, url: str) -> bool:
+        """Alias for is_valid_media_url for backward compatibility."""
+        return self.is_valid_media_url(url)
+
+    def process_youtube_url_sync(
+        self,
+        url: str,
+        db: Session,
+        user: User,
+        media_file: MediaFile,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+    ) -> MediaFile:
+        """Alias for process_media_url_sync for backward compatibility."""
+        return self.process_media_url_sync(url, db, user, media_file, progress_callback)
+
+    def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
+        """Alias for _prepare_media_metadata for backward compatibility."""
+        return self._prepare_media_metadata(url, youtube_info)
+
+    def _download_youtube_thumbnail_sync(self, youtube_info: dict[str, Any], user_id: int) -> str:
+        """Alias for _download_media_thumbnail_sync for backward compatibility."""
+        return self._download_media_thumbnail_sync(youtube_info, user_id)
+
+
+# Backward compatibility alias
+YouTubeService = MediaDownloadService

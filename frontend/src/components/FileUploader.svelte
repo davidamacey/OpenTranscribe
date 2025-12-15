@@ -75,7 +75,7 @@
   let token = ''; // Store the auth token
 
   // URL processing state (no inline messages - use toast notifications only)
-  let youtubeUrl = '';
+  let mediaUrl = '';
   let processingUrl = false;
 
   // Local recording UI state
@@ -219,8 +219,8 @@
     uploadError: { error: string };
   }>();
 
-  // URL validation regex for YouTube (supports both videos and playlists)
-  const YOUTUBE_URL_REGEX = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.*$/;
+  // URL validation regex - accepts any HTTP/HTTPS URL
+  const MEDIA_URL_REGEX = /^https?:\/\/.+$/;
 
   // Track allowed file types with more comprehensive list
   const allowedTypes = [
@@ -1272,7 +1272,7 @@
 
   // Reset URL processing state
   function resetUrlState() {
-    youtubeUrl = '';
+    mediaUrl = '';
     processingUrl = false;
     // URL state reset (no inline messages)
     currentFileId = null;
@@ -1307,9 +1307,9 @@
   }
 
 
-  // Validate YouTube URL
-  function isValidYouTubeUrl(url: string): boolean {
-    return YOUTUBE_URL_REGEX.test(url.trim());
+  // Validate media URL - accepts any HTTP/HTTPS URL
+  function isValidMediaUrl(url: string): boolean {
+    return MEDIA_URL_REGEX.test(url.trim());
   }
 
   // Paste URL from clipboard - optimized for single-click experience
@@ -1332,7 +1332,7 @@
       const text = await navigator.clipboard.readText();
 
       if (text && text.trim()) {
-        youtubeUrl = text.trim();
+        mediaUrl = text.trim();
         // Validation passed
         toastStore.success($t('uploader.pastedFromClipboard'));
       } else {
@@ -1356,7 +1356,7 @@
 
   // Seamless fallback that focuses input for keyboard paste
   function fallbackToKeyboardPaste() {
-    const input = document.getElementById('youtube-url') as HTMLInputElement;
+    const input = document.getElementById('media-url') as HTMLInputElement;
     if (input) {
       input.focus();
       input.select(); // Select any existing text for easy replacement
@@ -1370,15 +1370,15 @@
     }
   }
 
-  // Process YouTube URL
-  async function processYouTubeUrl() {
-    if (!youtubeUrl.trim()) {
-      toastStore.error($t('uploader.enterYoutubeUrl'));
+  // Process Media URL (YouTube, Vimeo, Twitter/X, TikTok, and 1800+ more)
+  async function processMediaUrl() {
+    if (!mediaUrl.trim()) {
+      toastStore.error($t('uploader.enterMediaUrl'));
       return;
     }
 
-    if (!isValidYouTubeUrl(youtubeUrl)) {
-      toastStore.error($t('uploader.validYoutubeUrlRequired'));
+    if (!isValidMediaUrl(mediaUrl)) {
+      toastStore.error($t('uploader.invalidMediaUrl'));
       return;
     }
 
@@ -1392,14 +1392,14 @@
     try {
       // Call the API endpoint directly for immediate processing
       const response = await axiosInstance.post('/files/process-url', {
-        url: youtubeUrl.trim()
+        url: mediaUrl.trim()
       });
 
       // Get the response data
       const responseData = response.data;
 
       // Clear form immediately after successful submission
-      youtubeUrl = '';
+      mediaUrl = '';
 
       // Check if this is a playlist or single video response
       if (responseData.type === 'playlist') {
@@ -1416,20 +1416,22 @@
         dispatch('uploadComplete', { fileId: mediaFile.uuid, isUrl: true });
 
         // Show success toast with more descriptive message
-        toastStore.success($t('uploader.youtubeVideoAdded', { title: mediaFile.title || 'video' }));
+        toastStore.success($t('uploader.mediaVideoAdded', { title: mediaFile.title || 'video' }));
       }
 
     } catch (error: unknown) {
-      // YouTube processing error - show user-friendly messages via toast only
+      // Media URL processing error - show user-friendly messages via toast only
+      // Errors include platform-specific messages from yt-dlp
       const axiosError = error as any;
 
       // Handle different types of errors
       if (axiosError.response?.status === 409) {
         // Duplicate video
-        toastStore.warning(axiosError.response.data.detail || $t('uploader.duplicateYoutubeVideo'));
+        toastStore.warning(axiosError.response.data.detail || $t('uploader.duplicateMediaVideo'));
       } else if (axiosError.response?.status === 400) {
-        // Bad request (invalid URL, etc.)
-        toastStore.error(axiosError.response.data.detail || $t('uploader.invalidYoutubeUrl'));
+        // Bad request (invalid URL, unsupported platform, etc.)
+        // The backend returns the actual yt-dlp error message for platform-specific issues
+        toastStore.error(axiosError.response.data.detail || $t('uploader.invalidMediaUrl'));
       } else {
         // Other errors
         toastStore.error($t('uploader.failedToProcessUrl'));
@@ -1585,13 +1587,13 @@
       class="tab-button {activeTab === 'url' ? 'active' : ''}"
       on:click={() => switchTab('url')}
       disabled={!$isOnline}
-      title={$isOnline ? $t('uploader.youtubeUrlTooltipOnline') : $t('uploader.youtubeUrlTooltipOffline')}
+      title={$isOnline ? $t('uploader.mediaUrlTooltipOnline') : $t('uploader.mediaUrlTooltipOffline')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
       </svg>
-      {$t('uploader.youtubeUrl')}
+      {$t('uploader.mediaUrl')}
     </button>
     <button
       class="tab-button {activeTab === 'record' ? 'active' : ''}"
@@ -1869,25 +1871,25 @@
           </div>
           <div class="message-content">
             <strong>{$t('uploader.noInternet')}</strong><br />
-            {$t('uploader.youtubeNeedsInternet')}
+            {$t('uploader.mediaNeedsInternet')}
           </div>
         </div>
       {/if}
       <div class="url-input-section">
-        <label for="youtube-url" class="url-label">
+        <label for="media-url" class="url-label">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
-            <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
           </svg>
-          {$t('uploader.youtubeUrl')}
+          {$t('uploader.mediaUrl')}
         </label>
         <div class="url-input-wrapper">
           <input
-            id="youtube-url"
+            id="media-url"
             type="url"
-            placeholder={$t('uploader.youtubeUrlPlaceholder')}
+            placeholder={$t('uploader.mediaUrlPlaceholder')}
             class="url-input"
-            bind:value={youtubeUrl}
+            bind:value={mediaUrl}
             disabled={processingUrl || !$isOnline}
           />
           <button
@@ -1919,9 +1921,9 @@
           </button>
           <button
             class="process-url-button"
-            on:click={processYouTubeUrl}
-            disabled={processingUrl || !youtubeUrl.trim() || !$isOnline}
-            title={$isOnline ? $t('uploader.processYoutubeTooltip') : $t('uploader.internetRequired')}
+            on:click={processMediaUrl}
+            disabled={processingUrl || !mediaUrl.trim() || !$isOnline}
+            title={$isOnline ? $t('uploader.processMediaTooltip') : $t('uploader.internetRequired')}
           >
             {processingUrl ? $t('uploader.processing') : $t('uploader.processVideo')}
           </button>
@@ -1930,11 +1932,23 @@
 
       <div class="url-info">
         <p class="url-description">
-          {$t('uploader.youtubeDescription')}
+          {$t('uploader.mediaUrlDescription')}
         </p>
-        <div class="supported-formats">
-          <p>{$t('uploader.youtubeSupported')}</p>
-        </div>
+        <p class="url-recommendation">
+          {$t('uploader.recommendedPlatforms')}
+        </p>
+        <details class="supported-platforms-details">
+          <summary class="supported-platforms-summary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 16v-4"></path>
+              <path d="M12 8h.01"></path>
+            </svg>
+            {$t('uploader.supportedPlatforms')}
+          </summary>
+          <p class="supported-platforms-list">{$t('uploader.supportedPlatformsList')}</p>
+          <p class="platform-limitations">{$t('uploader.platformLimitations')}</p>
+        </details>
       </div>
     </div>
   {:else}
@@ -2318,6 +2332,70 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--text-secondary);
+  }
+
+  /* Supported platforms collapsible section */
+  .supported-platforms-details {
+    margin-top: 0.75rem;
+    text-align: center;
+  }
+
+  .supported-platforms-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--primary-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+
+  .supported-platforms-summary:hover {
+    background-color: var(--hover-color);
+  }
+
+  .supported-platforms-summary .info-icon {
+    flex-shrink: 0;
+  }
+
+  .supported-platforms-list {
+    margin: 0.5rem 0 0;
+    padding: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background-color: var(--surface-alt);
+    border-radius: 6px;
+    line-height: 1.5;
+    text-align: left;
+  }
+
+  :global(.dark) .supported-platforms-list {
+    background-color: var(--surface-color);
+  }
+
+  .url-recommendation {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: var(--success-color, #10b981);
+    font-weight: 500;
+    text-align: center;
+  }
+
+  .platform-limitations {
+    margin: 0.5rem 0 0;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    color: var(--warning-color, #f59e0b);
+    background-color: rgba(245, 158, 11, 0.1);
+    border-radius: 4px;
+    border-left: 3px solid var(--warning-color, #f59e0b);
+    text-align: left;
+  }
+
+  :global(.dark) .platform-limitations {
+    background-color: rgba(245, 158, 11, 0.15);
   }
 
   .selected-file {
