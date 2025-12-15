@@ -25,3 +25,6 @@ services:
 
   celery-worker-gpu-scaled:
     pull_policy: never
+
+  frontend:
+    pull_policy: never
