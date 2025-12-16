@@ -493,6 +493,94 @@ docker compose exec celery-worker nvidia-smi
 sudo chown -R 1000:1000 ./models
 ```
 
+## HTTPS/SSL Setup
+
+HTTPS is required for browser microphone recording when accessing from devices other than localhost (browser security requirement).
+
+### Quick Setup
+
+```bash
+# Run the SSL setup command
+./opentranscribe.sh setup-ssl
+```
+
+This interactive command will:
+1. Prompt for your hostname (e.g., `opentranscribe.local`)
+2. Generate self-signed SSL certificates
+3. Configure NGINX reverse proxy
+4. Update your `.env` file
+
+### DNS Configuration
+
+After SSL setup, configure DNS:
+
+**Router DNS:** Add a DNS entry pointing your hostname to your server's IP.
+
+**Local hosts file:** Add to `/etc/hosts` (Linux/Mac) or `C:\Windows\System32\drivers\etc\hosts` (Windows):
+```
+192.168.1.100  opentranscribe.local
+```
+
+### Trust the Certificate
+
+Import `nginx/ssl/server.crt` on each client device:
+
+- **Windows:** Double-click → Install Certificate → Trusted Root CAs
+- **macOS:** Double-click → Keychain → Always Trust
+- **Linux Chrome:** `chrome://settings/certificates` → Import
+- **iOS:** Install profile → Settings → Certificate Trust Settings
+- **Android:** Settings → Security → Install certificate
+
+### Restart with HTTPS
+
+```bash
+./opentranscribe.sh restart
+```
+
+Access at `https://your-hostname`. All services are available through the reverse proxy:
+- Frontend: `https://your-hostname`
+- API: `https://your-hostname/api`
+- Flower: `https://your-hostname/flower/`
+- MinIO Console: `https://your-hostname/minio/`
+
+See [NGINX Setup Guide](/docs/configuration/nginx-setup) for advanced configuration including Let's Encrypt certificates.
+
+## Updating OpenTranscribe
+
+### Check for Updates
+
+```bash
+./opentranscribe.sh version
+```
+
+Shows current version and checks GitHub for newer releases.
+
+### Update Containers Only
+
+```bash
+./opentranscribe.sh update
+```
+
+Pulls latest Docker images and restarts services. Fast update when only containers changed.
+
+### Full Update (Recommended)
+
+```bash
+./opentranscribe.sh update-full
+```
+
+Updates everything:
+- Docker container images
+- Docker Compose configuration files
+- NGINX configuration
+- Management and helper scripts
+
+**Preserved during updates:**
+- `.env` configuration
+- SSL certificates
+- Database and transcriptions
+- Model cache
+
 ## Next Steps
 
 - **[Hardware Requirements](./hardware-requirements.md)** - Optimize for your hardware

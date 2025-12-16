@@ -619,6 +619,22 @@ check_health() {
   echo "📋 MinIO health:"
   docker compose exec -T minio curl -s http://localhost:9000/minio/health/live > /dev/null && echo "OK" || echo "⚠️ MinIO health check failed."
 
+  # NGINX health (only if configured)
+  if [ -n "$NGINX_SERVER_NAME" ]; then
+    echo "📋 NGINX health:"
+    if curl -s -k https://localhost:${NGINX_HTTPS_PORT:-443}/health > /dev/null 2>&1 || \
+       curl -s http://localhost:${NGINX_HTTP_PORT:-80}/health > /dev/null 2>&1; then
+      echo "OK (https://$NGINX_SERVER_NAME)"
+    else
+      # Check if container is running but not responding
+      if docker compose ps nginx 2>/dev/null | grep -q "Up"; then
+        echo "⚠️ NGINX running but not responding"
+      else
+        echo "⚠️ NGINX not running"
+      fi
+    fi
+  fi
+
   echo "✅ Health check complete."
 }
 

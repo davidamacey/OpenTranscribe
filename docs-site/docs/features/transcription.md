@@ -167,6 +167,26 @@ Choose model based on your needs:
 
 ## Advanced Features
 
+### Auto-Cleanup Garbage Segments (New in v0.2.0)
+
+Automatically detects and removes erroneous transcription artifacts:
+
+**What It Cleans**:
+- Random special characters and symbols
+- Gibberish text from audio noise
+- Extremely short nonsense segments
+- Repeated characters/patterns
+
+**Configuration** (Settings → Transcription):
+- **Enable/Disable**: Toggle garbage cleanup on/off
+- **Threshold**: Set maximum word length for detection
+
+**Default**: Enabled with sensible thresholds
+
+:::tip
+Enable this feature for cleaner transcripts, especially with noisy audio or music in the background.
+:::
+
 ### Custom Vocabulary
 
 - Technical terms recognized

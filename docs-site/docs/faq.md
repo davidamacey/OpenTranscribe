@@ -250,13 +250,21 @@ Yes! OpenTranscribe uses Celery workers to process multiple files in parallel:
 - Plan **~10% of original file size** for processed data
 - Example: 100 hours of audio (10GB) → ~11GB total storage needed
 
-### Can I download YouTube videos?
+### Can I download videos from YouTube and other platforms?
 
-Yes! OpenTranscribe includes yt-dlp integration:
-- Paste any YouTube URL
-- Supports playlists (processes all videos)
+Yes! OpenTranscribe supports **1800+ platforms** via yt-dlp integration:
+- **Best supported**: YouTube (including playlists), Dailymotion, Twitter/X
+- **Limited support**: Vimeo, Instagram, Facebook, TikTok (may require authentication)
 - Automatically downloads and transcribes
-- Extracts audio from videos (saves space)
+- User-friendly error messages for authentication-required videos
+
+### How do I view system statistics?
+
+System statistics (CPU, memory, disk, GPU usage) are visible to all authenticated users in the **navbar** - look for the system stats icon. This shows real-time resource usage of your OpenTranscribe server.
+
+### How does pagination work for large transcripts?
+
+For transcripts with thousands of segments (3+ hour recordings), OpenTranscribe automatically paginates the display to prevent browser slowdown. Segments load progressively as you scroll through the transcript.
 
 ## Performance & Optimization
 

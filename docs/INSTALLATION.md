@@ -91,6 +91,67 @@ cd opentranscribe
 - API Documentation: http://localhost:8080/docs
 - Task Monitor: http://localhost:5555/flower
 
+## 🔒 HTTPS/SSL Setup (For Network Access)
+
+**Why HTTPS?** Browser microphone recording requires HTTPS when accessing from devices other than localhost. This is a browser security requirement, not an OpenTranscribe limitation.
+
+### Option 1: Configure During Installation
+
+During the one-line installation, you'll be prompted:
+```
+Do you want to set up HTTPS with self-signed certificates? (y/N)
+```
+
+If you answer **yes**, the installer will:
+- Ask for a hostname (e.g., `opentranscribe.local`)
+- Generate SSL certificates automatically
+- Configure NGINX reverse proxy
+- Update your `.env` file
+
+### Option 2: Configure After Installation
+
+```bash
+cd opentranscribe
+./opentranscribe.sh setup-ssl
+```
+
+This interactive command will:
+1. Prompt for your hostname
+2. Generate SSL certificates
+3. Update your configuration
+4. Show next steps for DNS setup
+
+### DNS Configuration
+
+After SSL setup, add your hostname to DNS:
+
+**Option A: Router DNS**
+Add a DNS entry pointing your hostname to your server's IP.
+
+**Option B: Local hosts file**
+Add to `/etc/hosts` (Linux/Mac) or `C:\Windows\System32\drivers\etc\hosts` (Windows):
+```
+192.168.1.100  opentranscribe.local
+```
+
+### Trust the Certificate
+
+Self-signed certificates require trusting on each client device:
+- **Copy** `nginx/ssl/server.crt` to client devices
+- **Import** into browser/system certificate store
+
+See [NGINX_SETUP.md](docs/NGINX_SETUP.md) for detailed platform-specific instructions.
+
+### Access via HTTPS
+
+After setup, access at: `https://your-hostname`
+
+All services are available through the NGINX reverse proxy:
+- Web Interface: `https://your-hostname`
+- API: `https://your-hostname/api`
+- Flower: `https://your-hostname/flower/`
+- MinIO: `https://your-hostname/minio/`
+
 ## 🛠️ Edge Cases & Troubleshooting
 
 ### **Issue: Permission Denied**
@@ -241,6 +302,31 @@ export HUGGINGFACE_TOKEN=your_token_here
 export WHISPER_MODEL=base
 curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
+
+## 🔄 Updating OpenTranscribe
+
+### Check for Updates
+```bash
+./opentranscribe.sh version
+```
+
+### Update Docker Containers Only
+```bash
+./opentranscribe.sh update
+```
+This pulls the latest Docker images and restarts services. Your configuration and data are preserved.
+
+### Full Update (Recommended)
+```bash
+./opentranscribe.sh update-full
+```
+This updates:
+- Docker container images
+- Configuration files (docker-compose, nginx)
+- Management scripts
+- Helper scripts
+
+Your `.env` configuration, SSL certificates, database, and transcriptions are preserved.
 
 ---
 

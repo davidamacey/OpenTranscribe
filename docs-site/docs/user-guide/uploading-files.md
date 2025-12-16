@@ -28,10 +28,25 @@ Learn how to upload and process media files in OpenTranscribe.
 2. Select file(s)
 3. Confirm upload
 
-### YouTube URL
-1. Paste YouTube URL
-2. Supports playlists
-3. Auto-downloads and processes
+### Media URL (1800+ Platforms)
+1. Paste video URL from supported platforms
+2. Supported: YouTube, Dailymotion, Twitter/X, TikTok, Vimeo, and 1800+ more
+3. Auto-downloads in web-compatible format and processes
+
+**Best supported platforms:**
+- YouTube (including playlists)
+- Dailymotion
+- Twitter/X
+
+**Limited support** (may require authentication):
+- Vimeo, Instagram, Facebook, TikTok
+
+:::tip Platform Guidance
+If a video fails to download, OpenTranscribe provides helpful error messages with platform-specific suggestions. Common issues include:
+- **Authentication required** - Video requires login (try YouTube or Dailymotion instead)
+- **Age/geo-restricted** - Content blocked in your region
+- **Premium content** - Requires subscription on source platform
+:::
 
 ## Upload Manager
 

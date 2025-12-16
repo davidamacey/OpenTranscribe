@@ -5,6 +5,48 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-12-16
+
+### Overview
+Patch release with enhanced setup scripts, HTTPS/SSL support improvements, and comprehensive documentation updates for v0.2.0 and v0.3.0 features.
+
+### Added
+
+#### Setup Script Enhancements
+- **HTTPS/SSL Setup Command** - New `./opentranscribe.sh setup-ssl` interactive command for easy SSL configuration
+- **Version Command** - New `./opentranscribe.sh version` to check current version and available updates
+- **Update Commands** - New `update` (containers only) and `update-full` (containers + config files) commands
+- **NGINX Auto-Detection** - Automatic NGINX overlay loading when `NGINX_SERVER_NAME` is configured
+- **NGINX Health Check** - Added NGINX health monitoring to `./opentr.sh health`
+
+#### Documentation
+- **NGINX Setup Guide** - Comprehensive `docs-site/docs/configuration/nginx-setup.md` with homelab and Let's Encrypt instructions
+- **Universal Media URL Docs** - Updated documentation to reflect 1800+ platform support via yt-dlp
+- **Garbage Cleanup Docs** - Added documentation for auto-cleanup of erroneous transcription segments
+- **System Statistics FAQ** - Added FAQ entry explaining how to view system resource usage
+- **Large Transcript Pagination FAQ** - Added FAQ entry about automatic pagination for long transcripts
+
+### Changed
+
+- **Setup Script** - Downloads NGINX configuration files during initial setup
+- **Management Script** - Displays HTTPS URLs when NGINX/SSL is configured
+- **Documentation** - Updated all README and Docusaurus docs to cover v0.2.0 and v0.3.0 features
+
+### Upgrade Notes
+
+For existing installations, run the full update to get new scripts:
+```bash
+./opentranscribe.sh update-full
+```
+
+Or manually update scripts:
+```bash
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/opentranscribe.sh -o opentranscribe.sh
+chmod +x opentranscribe.sh
+```
+
+---
+
 ## [0.3.0] - 2025-12-15
 
 ### Overview

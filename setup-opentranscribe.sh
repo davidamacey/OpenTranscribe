@@ -5,6 +5,7 @@ YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Helper functions for colored output
@@ -397,6 +398,9 @@ create_configuration_files() {
     # Download opentranscribe.sh management script
     download_management_script
 
+    # Download NGINX/SSL configuration files
+    download_nginx_files
+
     # Download model downloader scripts
     download_model_downloader_scripts
 
@@ -562,6 +566,135 @@ download_management_script() {
 
     echo -e "${YELLOW}⚠️  Failed to download opentranscribe.sh after $max_retries attempts${NC}"
     echo "You can manually download from: $download_url"
+}
+
+download_nginx_files() {
+    echo "✓ Downloading NGINX/SSL configuration files..."
+
+    local max_retries=3
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    local encoded_branch
+    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+
+    # Create nginx directory structure
+    mkdir -p nginx/ssl
+    touch nginx/ssl/.gitkeep
+
+    # Download docker-compose.nginx.yml
+    echo "  Downloading docker-compose.nginx.yml..."
+    local retry_count=0
+    local nginx_compose_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/docker-compose.nginx.yml"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_compose_url" -o docker-compose.nginx.yml; then
+            if [ -s docker-compose.nginx.yml ] && grep -q "nginx:" docker-compose.nginx.yml; then
+                echo "  ✓ Downloaded docker-compose.nginx.yml"
+                break
+            else
+                echo "  ⚠️  Downloaded nginx compose file appears invalid, retrying..."
+                rm -f docker-compose.nginx.yml
+            fi
+        else
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $max_retries ]; then
+        echo "  ⚠️  Could not download docker-compose.nginx.yml (HTTPS support optional)"
+    fi
+
+    # Download nginx/site.conf.template
+    echo "  Downloading nginx/site.conf.template..."
+    retry_count=0
+    local nginx_conf_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/nginx/site.conf.template"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_conf_url" -o nginx/site.conf.template; then
+            if [ -s nginx/site.conf.template ] && grep -q "server" nginx/site.conf.template; then
+                echo "  ✓ Downloaded nginx/site.conf.template"
+                break
+            else
+                echo "  ⚠️  Downloaded nginx config appears invalid, retrying..."
+                rm -f nginx/site.conf.template
+            fi
+        else
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $max_retries ]; then
+        echo "  ⚠️  Could not download nginx/site.conf.template (HTTPS support optional)"
+    fi
+
+    # Download scripts/generate-ssl-cert.sh
+    echo "  Downloading scripts/generate-ssl-cert.sh..."
+    retry_count=0
+    local ssl_script_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/generate-ssl-cert.sh"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$ssl_script_url" -o scripts/generate-ssl-cert.sh; then
+            if [ -s scripts/generate-ssl-cert.sh ] && grep -q "SSL Certificate" scripts/generate-ssl-cert.sh; then
+                chmod +x scripts/generate-ssl-cert.sh
+                echo "  ✓ Downloaded scripts/generate-ssl-cert.sh"
+                break
+            else
+                echo "  ⚠️  Downloaded SSL script appears invalid, retrying..."
+                rm -f scripts/generate-ssl-cert.sh
+            fi
+        else
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $max_retries ]; then
+        echo "  ⚠️  Could not download scripts/generate-ssl-cert.sh (HTTPS support optional)"
+    fi
+
+    # Download scripts/fix-model-permissions.sh
+    echo "  Downloading scripts/fix-model-permissions.sh..."
+    retry_count=0
+    local fix_perms_url="https://raw.githubusercontent.com/davidamacey/OpenTranscribe/${encoded_branch}/scripts/fix-model-permissions.sh"
+
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -fsSL --connect-timeout 10 --max-time 30 "$fix_perms_url" -o scripts/fix-model-permissions.sh; then
+            if [ -s scripts/fix-model-permissions.sh ] && grep -q "Permission" scripts/fix-model-permissions.sh; then
+                chmod +x scripts/fix-model-permissions.sh
+                echo "  ✓ Downloaded scripts/fix-model-permissions.sh"
+                break
+            else
+                echo "  ⚠️  Downloaded fix-permissions script appears invalid, retrying..."
+                rm -f scripts/fix-model-permissions.sh
+            fi
+        else
+            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $max_retries ]; then
+        echo "  ⚠️  Could not download scripts/fix-model-permissions.sh"
+    fi
+
+    echo "✓ NGINX/SSL files download complete"
 }
 
 download_model_downloader_scripts() {
@@ -1144,6 +1277,143 @@ create_env_file() {
     echo "✓ Environment configured for $DETECTED_DEVICE with $COMPUTE_TYPE precision"
 }
 
+configure_https_settings() {
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}🔒 HTTPS/SSL Configuration${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "HTTPS is required for:"
+    echo "  • Browser microphone recording from other devices"
+    echo "  • Secure access from your local network"
+    echo "  • Production/homelab deployments"
+    echo ""
+    echo "Without HTTPS:"
+    echo "  • Microphone recording only works on localhost"
+    echo "  • Other devices on your network can't use recording"
+    echo ""
+
+    read -p "Do you want to set up HTTPS with self-signed certificates? (y/N) " -n 1 -r </dev/tty
+    echo
+    echo
+
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Skipping HTTPS setup - you can configure later"
+        echo "To enable HTTPS later:"
+        echo "  1. Run: cd $PROJECT_DIR && ./opentranscribe.sh setup-ssl"
+        echo "  2. Or follow: docs/NGINX_SETUP.md (if downloaded)"
+        echo ""
+        NGINX_SERVER_NAME=""
+        return 0
+    fi
+
+    # Prompt for hostname
+    echo -e "${CYAN}Enter a hostname for your OpenTranscribe installation:${NC}"
+    echo "(e.g., opentranscribe.local, transcribe.home, your-hostname.lan)"
+    echo ""
+    read -p "Hostname [opentranscribe.local]: " user_hostname </dev/tty
+    NGINX_SERVER_NAME="${user_hostname:-opentranscribe.local}"
+
+    # Validate hostname (basic check)
+    if [[ ! "$NGINX_SERVER_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$ ]]; then
+        print_warning "Hostname appears invalid, using default: opentranscribe.local"
+        NGINX_SERVER_NAME="opentranscribe.local"
+    fi
+
+    echo ""
+    print_success "Hostname set to: $NGINX_SERVER_NAME"
+
+    # Update .env file with NGINX_SERVER_NAME
+    if [ -f .env ]; then
+        # Check if NGINX_SERVER_NAME already exists in .env
+        if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
+            # Update existing entry (commented or not)
+            sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$NGINX_SERVER_NAME|g" .env
+        else
+            # Add new entry
+            echo "" >> .env
+            echo "# HTTPS/SSL Configuration" >> .env
+            echo "NGINX_SERVER_NAME=$NGINX_SERVER_NAME" >> .env
+        fi
+        rm -f .env.bak
+        echo "✓ Updated .env with NGINX_SERVER_NAME=$NGINX_SERVER_NAME"
+    fi
+
+    # Check if SSL certificate generation script exists
+    if [ -f "scripts/generate-ssl-cert.sh" ]; then
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}📜 SSL Certificate Generation${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        # Check for existing certificates
+        if [ -f "nginx/ssl/server.crt" ] && [ -f "nginx/ssl/server.key" ]; then
+            echo -e "${YELLOW}⚠️  Existing SSL certificates detected!${NC}"
+            echo "   nginx/ssl/server.crt and nginx/ssl/server.key already exist."
+            echo ""
+            read -p "Overwrite existing certificates? (y/N) " -n 1 -r </dev/tty
+            echo
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_info "Keeping existing certificates"
+                SSL_CONFIGURED=true
+                return 0
+            fi
+            echo ""
+        fi
+
+        read -p "Generate SSL certificates now? (Y/n) " -n 1 -r </dev/tty
+        echo
+        echo
+
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo -e "${BLUE}Generating SSL certificates...${NC}"
+            echo ""
+
+            # Run the SSL certificate generation script with auto-IP detection
+            if bash scripts/generate-ssl-cert.sh "$NGINX_SERVER_NAME" --auto-ip; then
+                echo ""
+                print_success "SSL certificates generated successfully!"
+                SSL_CONFIGURED=true
+            else
+                print_warning "SSL certificate generation failed"
+                echo "You can generate certificates later with:"
+                echo "  cd $PROJECT_DIR && ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
+                SSL_CONFIGURED=false
+            fi
+        else
+            print_info "Skipping certificate generation"
+            echo "Generate certificates later with:"
+            echo "  cd $PROJECT_DIR && ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
+            SSL_CONFIGURED=false
+        fi
+    else
+        print_warning "SSL certificate generation script not found"
+        echo "You may need to manually create certificates."
+        SSL_CONFIGURED=false
+    fi
+
+    # Show next steps for DNS configuration
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}📋 HTTPS Setup Next Steps${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "To complete HTTPS setup:"
+    echo ""
+    echo "1. Configure DNS (choose one):"
+    echo "   • Router DNS: Add $NGINX_SERVER_NAME → your server IP"
+    echo "   • /etc/hosts: Add 'YOUR_SERVER_IP  $NGINX_SERVER_NAME'"
+    echo ""
+    echo "2. Trust the certificate on each device:"
+    echo "   • Copy nginx/ssl/server.crt to client devices"
+    echo "   • Import into browser/system trust store"
+    echo ""
+    echo "3. Access at: https://$NGINX_SERVER_NAME"
+    echo ""
+}
+
 #######################
 # MODEL DOWNLOADING
 #######################
@@ -1458,6 +1728,16 @@ display_summary() {
     echo "   • Whisper Model: $WHISPER_MODEL"
     echo "   • Speaker Diarization: $([[ -n "$HUGGINGFACE_TOKEN" ]] && echo "✅ Enabled" || echo "⚠️  Not configured")"
     echo "   • LLM Provider: ${LLM_PROVIDER:-vllm}"
+    # Show HTTPS status with more detail based on SSL_CONFIGURED
+    if [[ -n "$NGINX_SERVER_NAME" ]]; then
+        if [[ "$SSL_CONFIGURED" == "true" ]]; then
+            echo "   • HTTPS/SSL: ✅ Ready ($NGINX_SERVER_NAME)"
+        else
+            echo "   • HTTPS/SSL: ⚠️  Hostname set ($NGINX_SERVER_NAME) - certificates pending"
+        fi
+    else
+        echo "   • HTTPS/SSL: ⚠️  Not configured"
+    fi
     echo "   • Project Location: $PROJECT_DIR"
     echo ""
 
@@ -1476,7 +1756,13 @@ display_summary() {
     echo -e "${GREEN}3. Wait 30-60 seconds for services to initialize${NC}"
     echo ""
     echo -e "${GREEN}4. Open your browser and visit:${NC}"
-    echo -e "   ${BLUE}http://localhost:${FRONTEND_PORT:-5173}${NC}"
+    if [[ -n "$NGINX_SERVER_NAME" ]]; then
+        echo -e "   ${BLUE}https://$NGINX_SERVER_NAME${NC}"
+        echo ""
+        echo -e "${YELLOW}   Note: Add '$NGINX_SERVER_NAME' to your DNS or /etc/hosts${NC}"
+    else
+        echo -e "   ${BLUE}http://localhost:${FRONTEND_PORT:-5173}${NC}"
+    fi
     echo ""
     echo -e "${GREEN}5. Login with default credentials:${NC}"
     echo -e "   Email:    ${BLUE}admin@example.com${NC}"
@@ -1488,10 +1774,19 @@ display_summary() {
 
     # Access URLs
     echo -e "${BLUE}🌐 Service URLs (after starting)${NC}"
-    echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
-    echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
-    echo "  • Task Monitor:      http://localhost:${FLOWER_PORT:-5175}/flower"
-    echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
+    if [[ -n "$NGINX_SERVER_NAME" ]]; then
+        echo "  🔒 HTTPS Mode (via NGINX reverse proxy)"
+        echo "  • Web Interface:     https://$NGINX_SERVER_NAME"
+        echo "  • API:               https://$NGINX_SERVER_NAME/api"
+        echo "  • API Documentation: https://$NGINX_SERVER_NAME/api/docs"
+        echo "  • Task Monitor:      https://$NGINX_SERVER_NAME/flower/"
+        echo "  • MinIO Console:     https://$NGINX_SERVER_NAME/minio/"
+    else
+        echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+        echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
+        echo "  • Task Monitor:      http://localhost:${FLOWER_PORT:-5175}/flower"
+        echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
+    fi
     echo ""
 
     # Management commands
@@ -1543,6 +1838,7 @@ main() {
     setup_project_directory
     create_configuration_files
     configure_environment
+    configure_https_settings
     download_ai_models
     validate_setup
     pull_docker_images

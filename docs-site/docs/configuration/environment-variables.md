@@ -70,6 +70,27 @@ MINIO_CONSOLE_PORT=5179
 OPENSEARCH_PORT=5180
 ```
 
+## HTTPS/SSL Configuration
+
+Enable HTTPS with NGINX reverse proxy for secure access and browser microphone recording from network devices.
+
+```bash
+# Set hostname to enable HTTPS (triggers NGINX reverse proxy)
+NGINX_SERVER_NAME=opentranscribe.local
+
+# Optional: Custom ports (defaults shown)
+NGINX_HTTP_PORT=80
+NGINX_HTTPS_PORT=443
+
+# Optional: Custom certificate paths (defaults shown)
+NGINX_CERT_FILE=./nginx/ssl/server.crt
+NGINX_CERT_KEY=./nginx/ssl/server.key
+```
+
+**Quick setup:** Run `./opentranscribe.sh setup-ssl` to configure interactively.
+
+See [NGINX Setup Guide](/docs/configuration/nginx-setup) for full documentation.
+
 ## Next Steps
 
 - [GPU Setup](../installation/gpu-setup.md)

@@ -177,11 +177,14 @@ See [Search & Filters](../user-guide/search-and-filters.md) for tips.
 ### Updating OpenTranscribe
 
 ```bash
-# Pull latest images
-docker compose pull
+# Check current version and available updates
+./opentranscribe.sh version
 
-# Restart services
-./opentranscribe.sh restart
+# Update containers only (quick)
+./opentranscribe.sh update
+
+# Full update including config files (recommended)
+./opentranscribe.sh update-full
 ```
 
 ## Troubleshooting

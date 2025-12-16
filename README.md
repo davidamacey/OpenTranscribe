@@ -51,7 +51,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🎬 **Rich Media Support**
 - **Universal Format Support**: Audio (MP3, WAV, FLAC, M4A) and Video (MP4, MOV, AVI, MKV)
-- **YouTube Integration**: Direct URL processing with automatic playlist support
+- **Universal Media URL Support**: Process videos from 1800+ platforms via yt-dlp (YouTube, Dailymotion, Twitter/X, TikTok, and more)
+- **Smart Platform Handling**: User-friendly error messages with platform-specific guidance for authentication-required videos
 - **YouTube Playlist Processing**: Extract and queue all videos from playlists for batch transcription
 - **Large File Support**: Upload files up to 4GB for GoPro and high-quality video content
 - **Interactive Media Player**: Click transcript to navigate playback
@@ -380,7 +381,8 @@ GPU_SCALE_WORKERS=4         # Number of parallel workers (default: 4)
 2. **Upload or Record Content**
    - **File Upload**: Click \"Upload Files\" or drag-and-drop media files (up to 4GB)
    - **Direct Recording**: Use the microphone button in the navbar for browser-based recording
-   - **URL Processing**: Paste YouTube or media URLs for automatic processing
+   - **URL Processing**: Paste video URLs from 1800+ platforms (YouTube, Dailymotion, Twitter/X, TikTok, etc.)
+   - **Playlist Support**: Import entire YouTube playlists with one URL
    - Supported formats: MP3, WAV, MP4, MOV, and more
    - Files are automatically queued for concurrent processing
 
