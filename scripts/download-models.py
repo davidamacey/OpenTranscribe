@@ -19,6 +19,26 @@ import hashlib
 from pathlib import Path
 from datetime import datetime
 
+# PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
+# Patch torch.load to default to weights_only=False for trusted HuggingFace models
+# This mirrors the fix in backend/app/core/celery.py (added by Wes Brown)
+try:
+    import torch
+
+    _original_torch_load = torch.load
+
+    def _patched_torch_load(*args, **kwargs):
+        # Handle both missing weights_only AND weights_only=None (which PyTorch 2.8 treats as True)
+        if kwargs.get("weights_only") is None:
+            kwargs["weights_only"] = False
+        return _original_torch_load(*args, **kwargs)
+
+    torch.load = _patched_torch_load
+    print("ℹ️  PyTorch 2.6+ compatibility: Patched torch.load for weights_only=False")
+except ImportError:
+    # torch not available yet, will be imported later
+    pass
+
 def print_header(text):
     """Print formatted header"""
     print(f"\n{'='*60}")
