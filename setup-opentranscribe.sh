@@ -576,8 +576,9 @@ download_nginx_files() {
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
 
-    # Create nginx directory structure
+    # Create nginx and scripts directory structure
     mkdir -p nginx/ssl
+    mkdir -p scripts
     touch nginx/ssl/.gitkeep
 
     # Download docker-compose.nginx.yml
