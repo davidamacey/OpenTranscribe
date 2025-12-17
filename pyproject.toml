@@ -2,7 +2,7 @@
 
 [project]
 name = "opentranscribe"
-version = "0.3.1"
+version = "0.3.2"
 description = "AI-powered transcription application with speaker diarization and LLM features"
 authors = [
     {name = "OpenTranscribe Contributors"}
