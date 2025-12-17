@@ -57,6 +57,15 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 - [ ] **Blog Post**: Create `docs-site/blog/YYYY-MM-DD-vX.Y.Z-release.md`
   - Use appropriate template (feature release vs security release)
   - Include: slug, title, authors, tags, truncate marker, highlights, how to update
+  - **Authors**: Must use authors defined in `docs-site/blog/authors.yml` (e.g., `opentranscribe`, `davidamacey`)
+  - **Tags**: Must use tags defined in `docs-site/blog/tags.yml` (if new tags needed, add them first)
+
+- [ ] **Verify Docs Build**: Build documentation locally to catch errors before commit
+  ```bash
+  cd docs-site && npm ci && npm run build
+  ```
+  - If build fails, fix any issues (missing authors, undefined tags, broken links)
+  - Do NOT proceed until build succeeds
 
 - [ ] **README.md**: Update if needed (new features, changed installation, etc.)
 
@@ -138,6 +147,7 @@ EOF
 4. **Blog post**: Required for major/minor releases, recommended for security patches
 5. **CHANGELOG**: Required for ALL releases
 6. **Commit messages**: Include Claude Code attribution and Co-Author
+7. **Docs build**: ALWAYS run `npm run build` in docs-site/ before committing blog posts to catch missing authors/tags
 
 ## Troubleshooting
 
