@@ -5,6 +5,32 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-12-17
+
+### Overview
+Patch release fixing critical bugs in the one-liner installation script that prevented successful setup on fresh installations.
+
+**Note:** This is a scripts-only release. No Docker container rebuild required.
+
+### Fixed
+
+#### Setup Script Fixes
+- **Scripts Directory Creation** - Fixed curl error 23 ("Failure writing output to destination") when downloading SSL and permission scripts by creating the `scripts/` directory before download attempts
+- **PyTorch 2.6+ Compatibility** - Applied `torch.load` patch to `download-models.py` for PyTorch 2.6+ compatibility, mirroring the fix already present in the backend (from Wes Brown's commit 8929cd6)
+  - PyTorch 2.6 changed `weights_only` default to `True`, causing omegaconf deserialization errors during model downloads
+  - The patch sets `weights_only=False` for trusted HuggingFace models
+
+### Upgrade Notes
+
+For existing installations, no action required - Docker containers already have the PyTorch fix.
+
+For new installations, the one-liner setup script will now work correctly:
+```bash
+curl -fsSL https://raw.githubusercontent.com/davidamacey/OpenTranscribe/master/setup-opentranscribe.sh | bash
+```
+
+---
+
 ## [0.3.1] - 2025-12-16
 
 ### Overview
