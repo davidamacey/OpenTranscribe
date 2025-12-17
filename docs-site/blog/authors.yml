@@ -3,3 +3,9 @@ opentranscribe:
   title: OpenTranscribe Development Team
   url: https://github.com/davidamacey/OpenTranscribe
   image_url: /img/logo.png
+
+davidamacey:
+  name: David Macey
+  title: Project Maintainer
+  url: https://github.com/davidamacey
+  image_url: https://github.com/davidamacey.png

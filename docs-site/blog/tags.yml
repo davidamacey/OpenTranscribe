@@ -47,3 +47,58 @@ i18n:
   label: i18n
   permalink: /i18n
   description: Internationalization features
+
+infrastructure:
+  label: Infrastructure
+  permalink: /infrastructure
+  description: Server and deployment infrastructure
+
+nginx:
+  label: NGINX
+  permalink: /nginx
+  description: NGINX reverse proxy and configuration
+
+media-url:
+  label: Media URL
+  permalink: /media-url
+  description: URL-based media import features
+
+fork-integration:
+  label: Fork Integration
+  permalink: /fork-integration
+  description: Community fork integrations
+
+security:
+  label: Security
+  permalink: /security
+  description: Security updates and patches
+
+patch:
+  label: Patch
+  permalink: /patch
+  description: Bug fixes and patches
+
+containers:
+  label: Containers
+  permalink: /containers
+  description: Docker and container topics
+
+docker:
+  label: Docker
+  permalink: /docker
+  description: Docker-specific content
+
+scripts:
+  label: Scripts
+  permalink: /scripts
+  description: Setup and utility scripts
+
+bugfix:
+  label: Bug Fix
+  permalink: /bugfix
+  description: Bug fix releases
+
+setup:
+  label: Setup
+  permalink: /setup
+  description: Installation and setup topics
