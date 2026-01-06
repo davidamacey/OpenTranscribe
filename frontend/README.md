@@ -54,7 +54,7 @@ A modern Svelte-based frontend for the OpenTranscribe AI-powered transcription a
 - **Responsive Design** - Works seamlessly across desktop and mobile
 - **Real-time Updates** - WebSocket integration for live transcription progress
 - **Dark/Light Mode** - Automatic theme switching with user preference
-- **Internationalization (i18n)** - UI available in 7 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese)
+- **Internationalization (i18n)** - UI available in 7 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese, Russian)
 - **Advanced Upload System** - Floating, draggable upload manager with concurrent processing
 - **Upload Progress Tracking** - Real-time progress with estimated time remaining
 - **Intelligent Upload Management** - Queue control, retry logic, and duplicate detection
@@ -262,7 +262,8 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'de', name: 'German', nativeName: 'Deutsch' },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
   { code: 'zh', name: 'Chinese', nativeName: '中文' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語' }
+  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
+  { code: "ru", name: 'Russian', nativeName: 'Русский' },
 ];
 export const t = derived(locale, ...); // Translation function
 ```
@@ -271,7 +272,7 @@ export const t = derived(locale, ...); // Translation function
 
 ### Overview
 
-OpenTranscribe frontend supports 7 languages with a simple, efficient i18n system.
+OpenTranscribe frontend supports 8 languages with a simple, efficient i18n system.
 
 ### Supported Languages
 
@@ -282,6 +283,7 @@ OpenTranscribe frontend supports 7 languages with a simple, efficient i18n syste
 - **Portuguese** (pt) - Português
 - **Chinese** (zh) - 中文
 - **Japanese** (ja) - 日本語
+- **Russian** (ru) - Русский
 
 ### Usage in Components
 

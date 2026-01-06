@@ -13,6 +13,7 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: "pt", name: "Portuguese", nativeName: "Português", direction: "ltr" },
   { code: "zh", name: "Chinese", nativeName: "中文", direction: "ltr" },
   { code: "ja", name: "Japanese", nativeName: "日本語", direction: "ltr" },
+  { code: "ru", name: "Russian", nativeName: "Русский", direction: "ltr" },
 ];
 
 export const DEFAULT_LANGUAGE = "en";

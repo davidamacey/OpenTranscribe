@@ -129,6 +129,7 @@ Configure language settings in: **Settings → Transcription → Language Settin
 - Portuguese (Portugu\u00eas)
 - Chinese (\u4e2d\u6587)
 - Japanese (\u65e5\u672c\u8a9e)
+- Russian (\u0420\u0443\u0441\u0441\u043a\u0438\u0439)
 
 Change the UI language in: **Settings → Language**
 
