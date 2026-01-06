@@ -9,6 +9,7 @@ import de from "./locales/de.json";
 import pt from "./locales/pt.json";
 import zh from "./locales/zh.json";
 import ja from "./locales/ja.json";
+import ru from "./locales/ru.json";
 
 const resources = {
   en: { translation: en },
@@ -18,6 +19,7 @@ const resources = {
   pt: { translation: pt },
   zh: { translation: zh },
   ja: { translation: ja },
+  ru: { translation: ru },
 };
 
 export async function initI18n(

@@ -140,7 +140,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### 📱 **Enhanced User Experience**
 - **Progressive Web App**: Installable app experience with offline capabilities
 - **Responsive Design**: Optimized for desktop, tablet, and mobile devices
-- **UI Internationalization**: Interface available in 7 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese)
+- **UI Internationalization**: Interface available in 8 languages (English, Spanish, French, German, Portuguese, Chinese, Japanese, Russian)
 - **Interactive Waveform Player**: Click-to-seek audio visualization with precise timing
 - **Floating Upload Manager**: Draggable upload interface with real-time progress
 - **Smart Modal System**: Consistent modal design with improved accessibility
