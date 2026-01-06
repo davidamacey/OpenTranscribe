@@ -230,6 +230,15 @@ class HardwareConfig:
             logger.debug(f"VRAM monitoring unavailable: {vram.get('error', 'unknown')}")
             return
 
+        # Non cuda devices don't have the keys we need
+        required_keys = {"allocated_mb", "reserved_mb", "total_mb", "usage_percent"}
+        if not required_keys.issubset(vram.keys()):
+            logger.debug(
+                "VRAM monitoring skipped: stats unavailable "
+                f"(device={vram.get('device', 'unknown')}, message={vram.get('message', 'n/a')})"
+            )
+            return
+
         logger.info(
             f"VRAM Usage [{context}]: "
             f"{vram['allocated_mb']:.0f}MB allocated, "
