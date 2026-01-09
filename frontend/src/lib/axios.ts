@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
-const axiosInstance = axios.create({
+export const axiosInstance = axios.create({
   baseURL: "/api",
   headers: {
     "Content-Type": "application/json",
@@ -14,6 +14,8 @@ const axiosInstance = axios.create({
   // Enable automatic redirect following
   maxRedirects: 5,
 });
+
+export default axiosInstance;
 
 // Request interceptor for consistent URL handling and logging
 axiosInstance.interceptors.request.use(
@@ -98,5 +100,3 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(error);
   },
 );
-
-export default axiosInstance;

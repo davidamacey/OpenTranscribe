@@ -29,6 +29,8 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.minio_service import upload_file
+from app.services.protected_media_providers import PROTECTED_MEDIA_PROVIDERS
+from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.thumbnail import generate_and_upload_thumbnail_sync
 
 logger = logging.getLogger(__name__)
@@ -541,10 +543,28 @@ def _update_media_file_with_download_data(
 
 
 class MediaDownloadService:
-    """Service for processing media from various platforms via yt-dlp."""
+    """Service for processing media from various platforms.
+
+    Uses yt-dlp for public platforms and a pluggable registry of
+    ProtectedMediaProvider implementations for authenticated sites
+    (for example, internal corporate media portals).
+    """
 
     def __init__(self):
         pass
+
+    def _get_protected_provider(self, url: str) -> Optional[ProtectedMediaProvider]:
+        """Return a protected media provider that can handle this URL, if any."""
+        for provider in PROTECTED_MEDIA_PROVIDERS:
+            try:
+                if provider.can_handle(url):
+                    return provider
+            except Exception as e:
+                logger.warning(
+                    f"Protected media provider {provider.__class__.__name__} "
+                    f"failed in can_handle for {url}: {e}"
+                )
+        return None
 
     def is_valid_media_url(self, url: str) -> bool:
         """
@@ -582,19 +602,36 @@ class MediaDownloadService:
         """
         return bool(YOUTUBE_PLAYLIST_PATTERN.match(url.strip()))
 
-    def extract_video_info(self, url: str) -> dict[str, Any]:
+    def extract_video_info(
+        self,
+        url: str,
+        media_username: Optional[str] = None,
+        media_password: Optional[str] = None,
+    ) -> dict[str, Any]:
         """
         Extract video metadata without downloading.
 
+        For generic public platforms this uses yt-dlp. For URLs handled by
+        a ProtectedMediaProvider, it delegates to that provider's custom API-based logic.
+
         Args:
             url: Media URL
-
+            media_username: Optional username for protected media sources
+            media_password: Optional password for protected media sources
+            
         Returns:
             Dictionary with video information
 
         Raises:
             HTTPException: If unable to extract video information
         """
+        # Try protected media providers first (authenticated corporate sites, etc.)
+        provider = self._get_protected_provider(url)
+        if provider is not None:
+            return provider.extract_info(
+                url, username=media_username, password=media_password
+            )
+
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
@@ -694,9 +731,14 @@ class MediaDownloadService:
         url: str,
         output_path: str,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        media_username: Optional[str] = None,
+        media_password: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         Download video from media URL.
+
+        For public platforms uses yt-dlp; for URLs recognized by a
+        ProtectedMediaProvider it delegates to that provider.
 
         Args:
             url: Media URL
@@ -709,6 +751,17 @@ class MediaDownloadService:
         Raises:
             HTTPException: If download fails
         """
+
+        # First, try pluggable protected-media providers
+        provider = self._get_protected_provider(url)
+        if provider is not None:
+            return provider.download(
+                url,
+                output_path,
+                progress_callback=progress_callback,
+                username=media_username,
+                password=media_password,
+            )
 
         # Create progress hook function
         def progress_hook(d):
@@ -1034,6 +1087,8 @@ class MediaDownloadService:
         user: User,
         media_file: MediaFile,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        media_username: Optional[str] = None,
+        media_password: Optional[str] = None,
     ) -> MediaFile:
         """
         Process a media URL by downloading the video and updating the MediaFile record (synchronous).
@@ -1056,7 +1111,11 @@ class MediaDownloadService:
 
         # Extract video info first to get video ID
         logger.debug(f"Extracting video information for URL: {url}")
-        video_info = self.extract_video_info(url)
+        video_info = self.extract_video_info(
+            url,
+            media_username=media_username,
+            media_password=media_password,
+        )
         video_id = video_info.get("id")
 
         if not video_id:
@@ -1075,7 +1134,13 @@ class MediaDownloadService:
 
             # Download the video using the already extracted info (this will use 20-60% progress range)
             logger.info(f"Starting media download for URL: {url}")
-            download_result = self.download_video(url, temp_dir, progress_callback)
+            download_result = self.download_video(
+                url,
+                temp_dir,
+                progress_callback=progress_callback,
+                media_username=media_username,
+                media_password=media_password,
+            )
 
             if progress_callback:
                 progress_callback(65, "Video downloaded, processing metadata...")

@@ -21,6 +21,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
+from app.services.protected_media_providers import get_protected_media_auth_config
 
 logger = logging.getLogger(__name__)
 
@@ -242,4 +243,21 @@ async def get_system_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving system statistics: {str(e)}",
+        ) from e
+
+
+@router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
+async def get_protected_media_auth(current_user: User = Depends(get_current_user)):
+    """Return public auth configuration for protected media providers.
+
+    Used by the frontend to decide when to prompt for username/password
+    (or other credentials) when processing media URLs.
+    """
+    try:
+        return get_protected_media_auth_config()
+    except Exception as e:
+        logger.error(f"Error getting protected media auth config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving protected media configuration",
         ) from e
