@@ -14,6 +14,7 @@
   import { uploadsStore } from '../stores/uploads';
   import { toastStore } from '../stores/toast';
   import { settingsModalStore } from '../stores/settingsModalStore';
+  import { loadProtectedMediaAuthConfig, getAuthConfigForHost, type ProtectedMediaAuthConfig } from '../lib/services/configService';
 
   // Import audio extraction types, service, and settings API
   import type { ExtractedAudio } from '../lib/types/audioExtraction';
@@ -124,6 +125,8 @@
   onMount(() => {
     token = localStorage.getItem('token') || '';
     dragDropCleanup = initDragAndDrop();
+    // Fire-and-forget: load protected media auth config for URL uploads
+    void loadProtectedMediaAuthConfig();
     loadRecordingSettings();
 
     // Load audio extraction settings (async, no return value needed)
@@ -1270,9 +1273,29 @@
     uploadStartTime = 0;
   }
 
+  let mediaUsername: string = '';
+  let mediaPassword: string = '';
+
+  let currentAuthConfig: ProtectedMediaAuthConfig | null = null;
+
+  // Derived flag: show username/password fields only for providers
+  // that explicitly declare auth_type === 'user_password'.
+  $: showProtectedMediaAuth = (() => {
+    try {
+      const url = new URL(mediaUrl);
+      currentAuthConfig = getAuthConfigForHost(url.hostname);
+      return currentAuthConfig?.auth_type === 'user_password';
+    } catch {
+      currentAuthConfig = null;
+      return false;
+    }
+  })();
+
   // Reset URL processing state
   function resetUrlState() {
     mediaUrl = '';
+    mediaUsername = '';
+    mediaPassword = '';
     processingUrl = false;
     // URL state reset (no inline messages)
     currentFileId = null;
@@ -1390,16 +1413,27 @@
     processingUrl = true;
 
     try {
-      // Call the API endpoint directly for immediate processing
-      const response = await axiosInstance.post('/files/process-url', {
+      // Build request payload
+      const payload: any = {
         url: mediaUrl.trim()
-      });
+      };
+
+      // Only send credentials if user explicitly provided them
+      if (mediaUsername || mediaPassword) {
+        payload.media_username = mediaUsername || undefined;
+        payload.media_password = mediaPassword || undefined;
+      }
+
+      // Call the API endpoint directly for immediate processing
+      const response = await axiosInstance.post('/files/process-url', payload);
 
       // Get the response data
       const responseData = response.data;
 
       // Clear form immediately after successful submission
       mediaUrl = '';
+      mediaUsername = '';
+      mediaPassword = '';
 
       // Check if this is a playlist or single video response
       if (responseData.type === 'playlist') {
@@ -1909,6 +1943,37 @@
             </svg>
           </button>
         </div>
+        {#if showProtectedMediaAuth}
+          <div class="protected-media-auth">
+            <div class="protected-media-header">{$t('uploader.protectedMediaCredentialsTitle')}</div>
+            <div class="protected-media-fields">
+              <div class="protected-media-field">
+                <label for="media-username">{$t('uploader.protectedMediaUsernameLabel')}</label>
+                <input
+                  id="media-username"
+                  type="text"
+                  class="protected-input"
+                  bind:value={mediaUsername}
+                  autocomplete="username"
+                  disabled={processingUrl || !$isOnline}
+                />
+              </div>
+              <div class="protected-media-field">
+                <label for="media-password">{$t('uploader.protectedMediaPasswordLabel')}</label>
+                <input
+                  id="media-password"
+                  type="password"
+                  class="protected-input"
+                  bind:value={mediaPassword}
+                  autocomplete="current-password"
+                  disabled={processingUrl || !$isOnline}
+                />
+              </div>
+            </div>
+            <p class="protected-media-hint">{$t('uploader.protectedMediaHint')}</p>
+          </div>
+        {/if}
+
         <div class="url-actions">
           <button
             type="button"
@@ -2839,6 +2904,60 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+  }
+
+  .protected-media-auth {
+    border-radius: 8px;
+    padding: 0.75rem 0.75rem 0.5rem 0.75rem;
+    background-color: var(--surface-color);
+    border: 1px dashed var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .protected-media-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .protected-media-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.5rem 1rem;
+  }
+
+  .protected-media-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .protected-media-field label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .protected-input {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+  }
+
+  .protected-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .protected-media-hint {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin: 0;
   }
 
   .url-label {

@@ -51,6 +51,21 @@ class URLProcessingRequest(BaseModel):
         min_length=1,
     )
 
+    media_username: str | None = Field(
+        default=None,
+        description=(
+            "Optional username for protected media sources. "
+            "Used only for authenticated downloads of protected media URLs."
+        ),
+    )
+    media_password: str | None = Field(
+        default=None,
+        description=(
+            "Optional password for protected media sources "
+            "(never stored, only used for this request)"
+        ),
+    )
+
 
 # Response models for URL processing
 class PlaylistProcessingResponse(BaseModel):
@@ -208,7 +223,10 @@ def _handle_playlist_processing(normalized_url: str, user_id: int) -> PlaylistPr
 
 
 def _extract_video_info(
-    media_service: MediaDownloadService, normalized_url: str
+    media_service: MediaDownloadService,
+    normalized_url: str,
+    media_username: str | None = None,
+    media_password: str | None = None,
 ) -> tuple[str, str, dict[str, Any]]:
     """Extract video ID and title from a media URL.
 
@@ -223,7 +241,11 @@ def _extract_video_info(
         HTTPException: If video info extraction fails.
     """
     try:
-        video_info = media_service.extract_video_info(normalized_url)
+        video_info = media_service.extract_video_info(
+            normalized_url,
+            media_username=media_username,
+            media_password=media_password,
+        )
         video_id = video_info.get("id")
         video_title = video_info.get("title", "Media Video")
     except HTTPException:
@@ -353,7 +375,7 @@ def _create_media_file_record(
         normalized_url: Normalized media URL.
         video_id: Video ID from the platform.
         video_title: Video title.
-        video_info: Full video info dict from yt-dlp.
+        video_info: Full video info dict from yt-dlp or custom extractor.
 
     Returns:
         Created MediaFile instance.
@@ -398,7 +420,12 @@ def _create_media_file_record(
 
 
 def _dispatch_video_task(
-    db: Session, media_file: MediaFile, normalized_url: str, user_id: int
+    db: Session,
+    media_file: MediaFile,
+    normalized_url: str,
+    user_id: int,
+    media_username: str | None = None,
+    media_password: str | None = None,
 ) -> None:
     """Dispatch the video processing background task.
 
@@ -413,7 +440,11 @@ def _dispatch_video_task(
     """
     try:
         task_result = process_youtube_url_task.delay(
-            url=normalized_url, user_id=user_id, file_uuid=str(media_file.uuid)
+            url=normalized_url,
+            user_id=user_id,
+            file_uuid=str(media_file.uuid),
+            media_username=media_username,
+            media_password=media_password,
         )
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"
@@ -514,7 +545,12 @@ async def process_media_url(
             return _handle_playlist_processing(normalized_url, current_user.id)
 
         # Extract video info
-        video_id, video_title, video_info = _extract_video_info(media_service, normalized_url)
+        video_id, video_title, video_info = _extract_video_info(
+            media_service,
+            normalized_url,
+            media_username=request_data.media_username,
+            media_password=request_data.media_password,
+        )
 
         # Check for duplicate video
         _check_duplicate_video(db, current_user.id, video_id, normalized_url)
@@ -524,8 +560,15 @@ async def process_media_url(
             db, current_user.id, normalized_url, video_id, video_title, video_info
         )
 
-        # Dispatch background task
-        _dispatch_video_task(db, media_file, normalized_url, current_user.id)
+        # Dispatch background task (pass credentials only for this processing request)
+        _dispatch_video_task(
+            db,
+            media_file,
+            normalized_url,
+            current_user.id,
+            media_username=request_data.media_username,
+            media_password=request_data.media_password,
+        )
 
         # Send WebSocket notification
         await _send_file_created_notification(media_file, current_user.id)

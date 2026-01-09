@@ -90,7 +90,12 @@ class YouTubeProcessingResult(TypedDict):
 
 @celery_app.task(name="process_youtube_url_task", bind=True)
 def process_youtube_url_task(
-    self, url: str, user_id: int, file_uuid: str
+    self,
+    url: str,
+    user_id: int,
+    file_uuid: str,
+    media_username: str | None = None,
+    media_password: str | None = None,
 ) -> YouTubeProcessingResult:
     """Background task to process YouTube URL by downloading and creating media file.
 
@@ -172,6 +177,8 @@ def process_youtube_url_task(
                     user=user,
                     media_file=media_file,
                     progress_callback=progress_callback,
+                    media_username=media_username,
+                    media_password=media_password,
                 )
 
                 # Update status to pending for transcription
@@ -414,7 +421,9 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db) -> bool:
     try:
         video_url = media_file.source_url
         process_youtube_url_task.delay(
-            url=video_url, user_id=user_id, file_uuid=str(media_file.uuid)
+            url=video_url,
+            user_id=user_id,
+            file_uuid=str(media_file.uuid),
         )
         logger.info(f"Dispatched YouTube processing task for video: {media_file.title}")
         return True
