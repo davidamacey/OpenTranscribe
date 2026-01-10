@@ -26,6 +26,7 @@
 
   // Import i18n
   import { t } from '../stores/locale';
+  import { getFlowerUrl } from '$lib/utils/url';
 
   // Create event dispatcher for gallery actions
   const dispatch = createEventDispatcher();
@@ -567,16 +568,8 @@
             <button
               class="dropdown-item"
               on:click={() => {
-                // Get the current protocol and host
-                const protocol = window.location.protocol;
-                const host = window.location.hostname;
-                const port = import.meta.env.VITE_FLOWER_PORT || '5175';
-                const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-
-                // Construct the URL properly with trailing slash
-                const url = urlPrefix
-                  ? `${protocol}//${host}:${port}/${urlPrefix}/`
-                  : `${protocol}//${host}:${port}/`;
+                // Dynamically construct Flower URL from current location
+                const url = getFlowerUrl();
 
                 // Open Flower in a new tab with the correct URL
                 window.open(url, '_blank');
