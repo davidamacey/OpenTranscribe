@@ -5,6 +5,7 @@
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
   import { t } from '../stores/locale';
+  import { getFlowerUrl } from '$lib/utils/url';
 
   // Helper function to translate status values
   function translateStatus(status: string): string {
@@ -157,13 +158,8 @@
   }
 
   function openFlowerDashboard() {
-    const protocol = window.location.protocol;
-    const host = window.location.hostname;
-    const port = import.meta.env.VITE_FLOWER_PORT || '5175';
-    const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-    const url = urlPrefix
-      ? `${protocol}//${host}:${port}/${urlPrefix}/`
-      : `${protocol}//${host}:${port}/`;
+    // Dynamically construct Flower URL from current location
+    const url = getFlowerUrl();
     window.open(url, '_blank');
   }
 

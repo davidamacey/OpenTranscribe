@@ -23,6 +23,7 @@
   import { isLLMAvailable } from '$stores/llmStatus';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
+  import { getAppBaseUrl, getVideoUrl } from '$lib/utils/url';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
@@ -464,7 +465,7 @@
     const hasTranscript = file?.status === 'completed';
 
     // Always use the original video for playback - we'll add subtitles via WebVTT tracks
-    videoUrl = `${apiBaseUrl}/api/files/${fileId}/simple-video`;
+    videoUrl = getVideoUrl(fileId);
 
     // Ensure URL has proper formatting
     if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
@@ -1961,8 +1962,8 @@
     // Add click-outside listener for reprocess dropdown
     document.addEventListener('click', handleReprocessClickOutside);
 
-    // Use the correct backend API base URL (port 5174, not frontend port 5173)
-    apiBaseUrl = window.location.protocol + '//' + window.location.hostname + ':5174';
+    // Use dynamic URL based on current location (works with reverse proxy)
+    apiBaseUrl = getAppBaseUrl();
 
     // Load user transcription preferences
     loadTranscriptionPreferences();
