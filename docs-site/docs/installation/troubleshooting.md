@@ -391,6 +391,48 @@ psql -U postgres -l
 ./opentr.sh reset dev
 ```
 
+**6. Or just reset Postgres password if you want to retain the data:**
+
+When
+```bash
+./opentranscribe.sh logs postgres
+```
+shows error:
+
+     FATAL:  password authentication failed for user "postgres"
+
+Connect to the postgres container, install nano
+```bash
+docker exec -it opentranscribe-postgres /bin/bash
+apk add nano
+```
+Edit pg_hba.conf and change last line from
+
+    host all all all scram-sha-256
+
+to 
+
+    host all all all trust
+```bash
+nano /var/lib/postgresql/data/pg_hba.conf
+```
+save file
+restart container
+Reconnect and update Postgres password to match POSTGRES_ .env
+```bash
+psql -U postgres
+ALTER USER postgres WITH PASSWORD 'Replace-with-same-password-in-POSTGRES_ .env';
+/q
+```
+Restart container, reconnect and return pg_hba.conf last line to original auth value of scram-sha-256
+Restart OpenTranscribe
+```bash
+./opentranscribe.sh restart
+```
+Check Postgresstatus
+```bash
+./opentranscribe.sh logs postgres
+```
 ### Database Schema Errors
 
 **Symptoms**:
