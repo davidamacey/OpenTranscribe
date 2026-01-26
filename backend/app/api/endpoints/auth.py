@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.direct_auth import direct_authenticate_user
+from app.auth.ldap_auth import AUTH_TYPE_LOCAL
 from app.auth.ldap_auth import ldap_authenticate
 from app.auth.ldap_auth import sync_ldap_user_to_db
 from app.core.config import settings
@@ -359,7 +360,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
     )
 
     # If local user exists with auth_type='local', try local auth
-    if local_user and local_user.auth_type == "local":
+    if local_user and local_user.auth_type == AUTH_TYPE_LOCAL:
         result = _authenticate_local_user(db, username, password)
         if result:
             return result
@@ -487,7 +488,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
         full_name=user_in.full_name,
         hashed_password=get_password_hash(user_in.password),
         role="user",
-        auth_type="local",
+        auth_type=AUTH_TYPE_LOCAL,
         is_active=True,
         is_superuser=False,
     )

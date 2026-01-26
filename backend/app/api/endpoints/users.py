@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.ldap_auth import AUTH_TYPE_LOCAL
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -96,7 +97,7 @@ def update_current_user(
 
     # Hash password if it's provided
     if "password" in update_data:
-        if current_user.auth_type != "local":
+        if current_user.auth_type != AUTH_TYPE_LOCAL:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change password for non-local users",
@@ -160,7 +161,7 @@ def update_user(
 
     # Hash password if it's provided
     if "password" in update_data:
-        if user.auth_type != "local":
+        if user.auth_type != AUTH_TYPE_LOCAL:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change password for non-local users",
