@@ -56,11 +56,23 @@ def get_password_hash(password: str) -> str:
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     """
-    Authenticate a user by email and password
+    Authenticate a user by email and password.
+
+    Note: LDAP users cannot authenticate via this function - they must use
+    LDAP authentication. This function is for local users only.
     """
     user = db.query(User).filter(User.email == email).first()
     if not user:
         return None
+
+    # LDAP users cannot authenticate via password - they have no local password
+    if user.auth_type != "local":
+        return None
+
+    # Empty password hash means user cannot authenticate locally
+    if not user.hashed_password:
+        return None
+
     if not verify_password(password, user.hashed_password):
         return None
     return user
