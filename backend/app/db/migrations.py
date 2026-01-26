@@ -51,33 +51,55 @@ def run_migrations() -> None:
         inspector = inspect(engine)
         tables = inspector.get_table_names()
 
-        if current_rev:
-            # Alembic already tracking - just upgrade
-            logger.info(f"Current migration version: {current_rev}")
-        elif "user" in tables:
-            # Existing database without Alembic tracking
-            if "system_settings" in tables:
-                # Has v0.2.0 schema - stamp as current
-                logger.info("Existing v0.2.0 database detected, stamping version...")
-                config = get_alembic_config()
-                command.stamp(config, "v020_add_system_settings")
-                return
-            else:
-                # v0.1.0 database - stamp baseline
-                logger.info("Existing v0.1.0 database detected, stamping baseline...")
-                config = get_alembic_config()
-                command.stamp(config, "v010_baseline")
-        elif tables:
-            # Fresh install with init_db.sql tables - stamp head
-            logger.info("Fresh database detected, stamping current version...")
-            config = get_alembic_config()
-            command.stamp(config, "head")
-            return
-        else:
-            # Empty database - let Alembic create everything
-            logger.info("Empty database detected, running full migration...")
+        # Check for LDAP columns (v0.3.0)
+        has_ldap_columns = False
+        if "user" in tables:
+            from sqlalchemy import text
 
-    # Apply any pending migrations
-    config = get_alembic_config()
-    command.upgrade(config, "head")
+            result = conn.execute(
+                text(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name='user' AND column_name='auth_type')"
+                )
+            )
+            has_ldap_columns = result.scalar()
+
+    # Determine what action to take (connection is now closed)
+    if current_rev:
+        # Alembic already tracking - just upgrade
+        logger.info(f"Current migration version: {current_rev}")
+        config = get_alembic_config()
+        command.upgrade(config, "head")
+    elif "user" in tables:
+        # Existing database without Alembic tracking
+        if has_ldap_columns:
+            # Has v0.3.0 schema - stamp as current
+            logger.info("Existing v0.3.0 database detected, stamping version...")
+            config = get_alembic_config()
+            command.stamp(config, "v030_add_ldap_auth")
+        elif "system_settings" in tables:
+            # Has v0.2.0 schema - stamp and upgrade
+            logger.info("Existing v0.2.0 database detected, stamping and upgrading...")
+            config = get_alembic_config()
+            command.stamp(config, "v020_add_system_settings")
+            logger.info("Applying migrations to upgrade to current version...")
+            command.upgrade(config, "head")
+        else:
+            # v0.1.0 database - stamp baseline then upgrade
+            logger.info("Existing v0.1.0 database detected, stamping baseline...")
+            config = get_alembic_config()
+            command.stamp(config, "v010_baseline")
+            logger.info("Applying migrations to upgrade to current version...")
+            command.upgrade(config, "head")
+    elif tables:
+        # Fresh install with init_db.sql tables - stamp head
+        logger.info("Fresh database detected, stamping current version...")
+        config = get_alembic_config()
+        command.stamp(config, "head")
+    else:
+        # Empty database - let Alembic create everything
+        logger.info("Empty database detected, running full migration...")
+        config = get_alembic_config()
+        command.upgrade(config, "head")
+
     logger.info("Database migrations complete")

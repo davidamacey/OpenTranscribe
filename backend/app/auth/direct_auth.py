@@ -92,7 +92,7 @@ def direct_authenticate_user(email: str, password: str):
 
         # Query the user
         cursor.execute(
-            'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser FROM "user" WHERE email = %s',
+            'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type FROM "user" WHERE email = %s',
             (email,),
         )
 
@@ -110,7 +110,15 @@ def direct_authenticate_user(email: str, password: str):
             role,
             is_active,
             is_superuser,
+            auth_type,
         ) = user
+
+        # LDAP users cannot authenticate via password
+        if auth_type == "ldap":
+            logger.info(
+                f"Authentication failed: user {email} is LDAP type, cannot use password auth"
+            )
+            return None
 
         # Verify password
         if not verify_password(password, hashed_password):

@@ -26,21 +26,28 @@
     if (emailInput) emailInput.focus();
   });
 
-  // Validate email format
+  // Validate login identifier (email or username for LDAP)
   /**
-   * Validates an email address format
-   * @param {string} email - The email address to validate
-   * @returns {boolean} True if the email is valid, false otherwise
+   * Validates a login identifier - can be email or username
+   * @param {string} identifier - The email or username to validate
+   * @returns {boolean} True if the identifier is valid, false otherwise
    */
-  function validateEmail(email: string) {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(String(email).toLowerCase());
+  function validateLoginIdentifier(identifier: string) {
+    // Accept either a valid email OR a username
+    // Username regex is permissive to support various LDAP naming conventions:
+    // - Alphanumeric, dots, underscores, hyphens
+    // - Backslashes for DOMAIN\username format
+    // - At signs for user@domain format (handled by email regex too)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const usernameRegex = /^[a-zA-Z0-9._\\@-]{2,}$/;
+    const trimmed = String(identifier).trim();
+    return emailRegex.test(trimmed) || usernameRegex.test(trimmed);
   }
 
   // Check form validity
   function validateForm() {
     formSubmitted = true;
-    emailValid = email.trim() !== '' && validateEmail(email);
+    emailValid = email.trim() !== '' && validateLoginIdentifier(email);
     passwordValid = password.trim() !== '';
 
     return emailValid && passwordValid;
@@ -52,13 +59,13 @@
 
     // Validate required fields first
     if (!email.trim()) {
-      toastStore.error($t('auth.emailRequired'));
+      toastStore.error($t('auth.identifierRequired'));
       document.getElementById('email')?.focus();
       return;
     }
 
-    if (!validateEmail(email.trim())) {
-      toastStore.error($t('auth.validEmailRequired'));
+    if (!validateLoginIdentifier(email.trim())) {
+      toastStore.error($t('auth.validIdentifierRequired'));
       document.getElementById('email')?.focus();
       return;
     }
@@ -136,17 +143,17 @@
       {/if}
 
       <div class="form-group {!emailValid && formSubmitted ? 'has-error' : ''}">
-        <label for="email">{$t('auth.email')}</label>
+        <label for="email">{$t('auth.emailOrUsername')}</label>
         <input
-          type="email"
+          type="text"
           id="email"
           bind:value={email}
-          placeholder={$t('auth.emailPlaceholder')}
+          placeholder={$t('auth.emailOrUsernamePlaceholder')}
           aria-invalid={!emailValid && formSubmitted}
-          autocomplete="email"
+          autocomplete="username"
         />
         {#if !emailValid && formSubmitted}
-          <div class="field-error">{$t('auth.validEmailRequired')}</div>
+          <div class="field-error">{$t('auth.validIdentifierRequired')}</div>
         {/if}
       </div>
 

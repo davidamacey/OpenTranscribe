@@ -38,6 +38,8 @@ class UserInDB(UserBase, UUIDBaseSchema):
     updated_at: datetime
     is_active: bool
     is_superuser: bool
+    auth_type: str
+    ldap_uid: Optional[str] = None
 
 
 class User(UserInDB):

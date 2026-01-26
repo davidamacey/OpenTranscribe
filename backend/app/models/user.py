@@ -27,6 +27,8 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
     role = Column(String, default="user", nullable=False)  # "user" or "admin"
+    auth_type = Column(String, default="local", nullable=False)  # "local" or "ldap"
+    ldap_uid = Column(String, nullable=True, index=True)  # sAMAccountName from AD
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 

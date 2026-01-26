@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.ldap_auth import AUTH_TYPE_LOCAL
 from app.core.security import get_password_hash
+from app.core.security import verify_password
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
@@ -95,7 +97,29 @@ def update_current_user(
 
     # Hash password if it's provided
     if "password" in update_data:
+        if current_user.auth_type != AUTH_TYPE_LOCAL:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change password for non-local users",
+            )
+
+        # Require current password verification before allowing password change
+        current_password = update_data.pop("current_password", None)
+        if not current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is required to change password",
+            )
+        if not verify_password(current_password, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect",
+            )
+
         update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+    else:
+        # Remove current_password if no password change is being made
+        update_data.pop("current_password", None)
 
     for field, value in update_data.items():
         setattr(current_user, field, value)
@@ -137,6 +161,11 @@ def update_user(
 
     # Hash password if it's provided
     if "password" in update_data:
+        if user.auth_type != AUTH_TYPE_LOCAL:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot change password for non-local users",
+            )
         update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
 
     # Remove current_password from update_data as it's not a model field

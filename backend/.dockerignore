@@ -100,8 +100,6 @@ Dockerfile*
 # Development and testing
 tests/
 scripts/
-alembic/
-alembic.ini
 pyproject.toml
 
 # OS generated files

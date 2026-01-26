@@ -15,6 +15,7 @@
    * @property {string|null} [last_login]
    * @property {boolean} [is_active]
    * @property {string} [full_name]
+   * @property {string} [auth_type]
    */
 
   /** @type {Array<User>} */
@@ -450,6 +451,7 @@
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
+                  {#if currentUser.auth_type === 'local'}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
@@ -460,6 +462,7 @@
                       <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                     </svg>
                   </button>
+                  {/if}
                   <button
                     class="icon-button recover-button"
                     on:click={() => onUserRecovery(currentUser.uuid)}

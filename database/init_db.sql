@@ -12,9 +12,13 @@ CREATE TABLE IF NOT EXISTS "user" (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
     role VARCHAR(50) DEFAULT 'user',
+    auth_type VARCHAR(10) DEFAULT 'local' NOT NULL,
+    ldap_uid VARCHAR(255) UNIQUE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_user_ldap_uid ON "user" (ldap_uid);
 
 -- Media files table
 CREATE TABLE IF NOT EXISTS media_file (

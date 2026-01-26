@@ -21,6 +21,9 @@ httpx>=0.24.1
 python-dotenv>=1.0.0
 pytest>=7.4.2
 
+# LDAP/Active Directory Authentication
+ldap3>=2.9.1
+
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - fully compatible with PyTorch 2.8+, CTranslate2 4.6+, PyAnnote 3.4+
 numpy>=1.25.2

@@ -27,6 +27,7 @@
   $: isOpen = $settingsModalStore.isOpen;
   $: activeSection = $settingsModalStore.activeSection;
   $: isAdmin = $userStore?.role === 'admin';
+  $: isLocalUser = $userStore?.auth_type === 'local';
 
   // User Profile section
   let fullName = '';
@@ -748,6 +749,7 @@
               </form>
 
               <!-- Password Change Section -->
+              {#if isLocalUser}
               <div class="password-section-divider">
                 <h4 class="subsection-title">{$t('settings.profile.changePassword')}</h4>
               </div>
@@ -869,6 +871,7 @@
                   </button>
                 </div>
               </form>
+              {/if}
             </div>
           {/if}
 
