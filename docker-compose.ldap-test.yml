@@ -1,0 +1,41 @@
+# LDAP Test Environment for PR #119 Testing
+# This creates a simple LDAP server with a web UI for managing users
+#
+# Usage:
+#   1. First start OpenTranscribe: ./opentr.sh start dev
+#   2. Then start LLDAP: docker compose -f docker-compose.ldap-test.yml up -d
+#
+# Access:
+#   - LLDAP Web UI: http://localhost:17170
+#   - Login: admin / admin_password
+#
+# LDAP Connection (from host):
+#   - Server: ldap://localhost:3890
+#   - Bind DN: uid=admin,ou=people,dc=example,dc=com
+#   - Search Base: dc=example,dc=com
+#
+# LDAP Connection (from backend container):
+#   - Server: ldap://lldap-test:3890
+
+services:
+  lldap:
+    image: lldap/lldap:stable
+    container_name: lldap-test
+    ports:
+      - "3890:3890"   # LDAP port
+      - "17170:17170" # Web UI port
+    environment:
+      - LLDAP_JWT_SECRET=supersecretjwttokenfortest
+      - LLDAP_LDAP_USER_PASS=admin_password
+      - LLDAP_LDAP_BASE_DN=dc=example,dc=com
+    volumes:
+      - lldap_data:/data
+    networks:
+      - transcribe-app_default  # Join OpenTranscribe's network
+
+volumes:
+  lldap_data:
+
+networks:
+  transcribe-app_default:
+    external: true
