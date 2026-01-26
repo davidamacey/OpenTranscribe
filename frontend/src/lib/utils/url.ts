@@ -11,13 +11,13 @@
  */
 export function getAppBaseUrl(): string {
   if (typeof window === 'undefined') return '';
-  
+
   const viteApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
   if (viteApiBaseUrl) {
     // Remove /api suffix if present to get clean host
     return viteApiBaseUrl.replace(/\/api\/?$/, '');
   }
-  
+
   // Production/nginx mode: use current location without port
   return window.location.origin;
 }
@@ -29,10 +29,10 @@ export function getAppBaseUrl(): string {
  */
 export function getFlowerUrl(): string {
   if (typeof window === 'undefined') return '';
-  
+
   const viteFlowerPort = import.meta.env.VITE_FLOWER_PORT;
   const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
-  
+
   // Localhost mode: use specific port if defined
   if (viteFlowerPort) {
     const protocol = window.location.protocol;
@@ -42,7 +42,7 @@ export function getFlowerUrl(): string {
     const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
     return `${protocol}//${host}:${viteFlowerPort}/${cleanPrefix}/`;
   }
-  
+
   // Production/nginx mode: use current origin with prefix
   const cleanPrefix = urlPrefix.replace(/^\/+|\/+$/g, '');
   return `${window.location.origin}/${cleanPrefix}/`;

@@ -76,7 +76,7 @@ def _get_user_llm_output_language(db: Session, user_id: int) -> str:
     )
 
     if setting:
-        return setting.setting_value
+        return str(setting.setting_value)
     return DEFAULT_LLM_OUTPUT_LANGUAGE
 
 
@@ -161,9 +161,9 @@ def identify_speakers_llm_task(self, file_uuid: str):
         if not media_file:
             raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = media_file.id
+        file_id = int(media_file.id)
 
-        create_task_record(db, task_id, media_file.user_id, file_id, "speaker_identification")
+        create_task_record(db, task_id, int(media_file.user_id), file_id, "speaker_identification")
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
         transcript_segments = (
@@ -185,12 +185,12 @@ def identify_speakers_llm_task(self, file_uuid: str):
 
         full_transcript = _build_full_transcript(transcript_segments)
         speaker_segments = _build_speaker_segments(transcript_segments)
-        known_speakers = _get_known_speakers(db, media_file.user_id)
+        known_speakers = _get_known_speakers(db, int(media_file.user_id))
 
         update_task_status(db, task_id, "in_progress", progress=0.5)
 
         predictions = _generate_predictions(
-            file_id, media_file.user_id, db, full_transcript, speaker_segments, known_speakers
+            file_id, int(media_file.user_id), db, full_transcript, speaker_segments, known_speakers
         )
 
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)

@@ -189,6 +189,85 @@ class LLMService:
 
         return headers
 
+    def _prepare_claude_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+        """Prepare payload for Claude/Anthropic API."""
+        system_message = ""
+        user_messages = []
+
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_message = msg.get("content", "")
+            elif msg.get("role") in ["user", "assistant"]:
+                user_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        # Add response prefilling for JSON output if requested
+        if (
+            kwargs.get("prefill_json", False)
+            and user_messages
+            and user_messages[-1]["role"] == "user"
+        ):
+            user_messages.append({"role": "assistant", "content": "{"})
+
+        payload = {
+            "model": self.config.model,
+            "messages": user_messages,
+            "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
+            "temperature": kwargs.get("temperature", self.config.temperature),
+        }
+
+        if system_message:
+            payload["system"] = system_message
+
+        return payload
+
+    def _prepare_ollama_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+        """Prepare payload for Ollama native API."""
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": kwargs.get("temperature", self.config.temperature),
+                "num_predict": kwargs.get("max_tokens", self.config.response_tokens),
+                "num_ctx": kwargs.get("num_ctx", self.user_context_window),
+            },
+        }
+
+        if "format" in kwargs:
+            payload["format"] = kwargs["format"]
+
+        return payload
+
+    def _prepare_openai_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
+        """Prepare payload for OpenAI-compatible APIs."""
+        payload = {
+            "model": self.config.model,
+            "messages": messages,
+            "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
+            "stream": False,
+        }
+
+        # Reasoning models don't support temperature
+        if not self._is_reasoning_model():
+            payload["temperature"] = kwargs.get("temperature", self.config.temperature)
+        else:
+            logger.info(
+                f"Reasoning model detected ({self.config.model}): "
+                f"omitting temperature and sampling parameters"
+            )
+
+        # Add vLLM-specific parameters
+        if self.config.provider == LLMProvider.VLLM:
+            payload.update(
+                {
+                    "top_p": kwargs.get("top_p", 0.9),
+                    "frequency_penalty": kwargs.get("frequency_penalty", 0.0),
+                    "presence_penalty": kwargs.get("presence_penalty", 0.0),
+                }
+            )
+
+        return payload
+
     def _prepare_payload(self, messages: list[dict[str, str]], **kwargs) -> dict[str, Any]:
         """
         Prepare request payload for the API based on provider requirements.
@@ -210,86 +289,13 @@ class LLMService:
             - Other providers: Use standard OpenAI format with provider-specific params
             - Response prefilling: For Claude, adds assistant message with "{" to force JSON
         """
-
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
-            # Convert OpenAI format messages to Claude format
-            system_message = ""
-            user_messages = []
+            return self._prepare_claude_payload(messages, **kwargs)
 
-            for msg in messages:
-                if msg.get("role") == "system":
-                    system_message = msg.get("content", "")
-                elif msg.get("role") in ["user", "assistant"]:
-                    user_messages.append({"role": msg["role"], "content": msg["content"]})
+        if self.config.provider == LLMProvider.OLLAMA:
+            return self._prepare_ollama_payload(messages, **kwargs)
 
-            # Add response prefilling for JSON output if requested
-            # This forces Claude to start response with "{" (bypasses preamble)
-            if (
-                kwargs.get("prefill_json", False)
-                and user_messages
-                and user_messages[-1]["role"] == "user"
-            ):
-                user_messages.append({"role": "assistant", "content": "{"})
-
-            payload = {
-                "model": self.config.model,
-                "messages": user_messages,
-                "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
-                "temperature": kwargs.get("temperature", self.config.temperature),
-            }
-
-            if system_message:
-                payload["system"] = system_message
-
-            return payload
-
-        elif self.config.provider == LLMProvider.OLLAMA:
-            # Ollama native /api/chat format
-            payload = {
-                "model": self.config.model,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": kwargs.get("temperature", self.config.temperature),
-                    "num_predict": kwargs.get("max_tokens", self.config.response_tokens),
-                    # Force Ollama to honor the user's configured context window
-                    "num_ctx": kwargs.get("num_ctx", self.user_context_window),
-                },
-            }
-            # Add format parameter for structured output if provided
-            if "format" in kwargs:
-                payload["format"] = kwargs["format"]
-            return payload
-
-        # Standard OpenAI-compatible format
-        payload = {
-            "model": self.config.model,
-            "messages": messages,
-            "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
-            "stream": False,
-        }
-
-        # OpenAI reasoning models (o1, o3, o4, gpt-5) don't support temperature
-        # or other sampling parameters - they must be omitted entirely
-        if self._is_reasoning_model():
-            logger.info(
-                f"Reasoning model detected ({self.config.model}): "
-                f"omitting temperature and sampling parameters"
-            )
-        else:
-            payload["temperature"] = kwargs.get("temperature", self.config.temperature)
-
-        # Provider-specific adjustments
-        if self.config.provider == LLMProvider.VLLM:
-            payload.update(
-                {
-                    "top_p": kwargs.get("top_p", 0.9),
-                    "frequency_penalty": kwargs.get("frequency_penalty", 0.0),
-                    "presence_penalty": kwargs.get("presence_penalty", 0.0),
-                }
-            )
-
-        return payload
+        return self._prepare_openai_payload(messages, **kwargs)
 
     def _extract_claude_response(self, data: dict) -> tuple[str, Optional[int], Optional[str]]:
         """Extract content, usage tokens, and finish reason from Claude/Anthropic response."""
@@ -359,7 +365,9 @@ class LLMService:
         else:
             return self._extract_openai_response(data)
 
-    def _send_llm_request(self, url: str, payload: dict, headers: dict, timeout: int) -> dict:
+    def _send_llm_request(
+        self, url: str, payload: dict, headers: dict, timeout: int
+    ) -> dict[str, Any]:
         """Send HTTP request to LLM provider and return parsed JSON response."""
         start_time = time.time()
         response = self.session.post(url, json=payload, headers=headers, timeout=timeout)
@@ -375,7 +383,8 @@ class LLMService:
             raise Exception(f"LLM API error: {response.status_code} - {response.text}")
 
         try:
-            return response.json()
+            result: dict[str, Any] = response.json()
+            return result
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response: {response.text}")
             raise Exception(f"Invalid JSON response: {e}") from e
@@ -385,6 +394,8 @@ class LLMService:
         Send chat completion request to LLM provider
         """
         url = self.endpoints[self.config.provider]
+        if url is None:
+            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
         headers = self._get_headers()
         payload = self._prepare_payload(messages, **kwargs)
 
@@ -611,7 +622,7 @@ class LLMService:
     def _process_single_chunk(
         self,
         transcript: str,
-        speaker_data: dict,
+        speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
     ) -> dict[str, Any]:
@@ -643,7 +654,7 @@ class LLMService:
     def _process_multiple_chunks(
         self,
         chunks: list[str],
-        speaker_data: dict,
+        speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
     ) -> dict[str, Any]:
@@ -681,7 +692,7 @@ class LLMService:
         chunk: str,
         section_num: int,
         total_sections: int,
-        speaker_data: dict,
+        speaker_data: dict[str, Any] | None,
         prompt_template: str,
         output_language_name: str = "English",
     ) -> dict[str, Any]:
@@ -718,7 +729,8 @@ class LLMService:
             elif content.startswith("```") and content.endswith("```"):
                 content = content[3:-3].strip()
 
-            return json.loads(content)
+            parsed_result: dict[str, Any] = json.loads(content)
+            return parsed_result
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse section {section_num} JSON: {e}")
             return {
@@ -731,8 +743,8 @@ class LLMService:
 
     def _combine_sections(
         self,
-        sections: list[dict],
-        speaker_data: dict,
+        sections: list[dict[str, Any]],
+        speaker_data: dict[str, Any] | None,
         prompt_template: str,
         total_sections: int,
         output_language_name: str = "English",
@@ -788,7 +800,10 @@ class LLMService:
             }
 
     def _parse_summary_response(
-        self, response: LLMResponse, transcript_length: int, extra_metadata: dict = None
+        self,
+        response: LLMResponse,
+        transcript_length: int,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Parse LLM response into flexible structured summary.
@@ -811,7 +826,7 @@ class LLMService:
                 content = content[3:-3].strip()
 
             # Parse JSON - accept ANY structure
-            summary_data = json.loads(content)
+            summary_data: dict[str, Any] = json.loads(content)
 
             # NO FIELD VALIDATION - accept any structure from custom prompts
 
@@ -898,14 +913,14 @@ class LLMService:
                 logger.debug(
                     f"Testing connection to {self.config.provider}: {models_url} (derived from {chat_endpoint})"
                 )
-                response = self.session.get(models_url, headers=headers, timeout=10)
+                http_response = self.session.get(models_url, headers=headers, timeout=10)
 
-                if response.status_code == 200:
+                if http_response.status_code == 200:
                     return True, f"Connection successful (tested {models_url})"
                 else:
                     return (
                         False,
-                        f"Connection test failed with status {response.status_code} at {models_url}",
+                        f"Connection test failed with status {http_response.status_code} at {models_url}",
                     )
 
         except Exception as e:
@@ -1319,7 +1334,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             # Decrypt API key if present
             api_key = None
             if user_settings.api_key:
-                api_key = decrypt_api_key(user_settings.api_key)
+                api_key = decrypt_api_key(str(user_settings.api_key))
                 if not api_key and user_settings.api_key:
                     logger.error(f"Failed to decrypt API key for user {user_id}")
                     return LLMService.create_from_system_settings()
@@ -1330,10 +1345,10 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
 
             config = LLMConfig(
                 provider=provider,
-                model=user_settings.model_name,
+                model=str(user_settings.model_name),
                 api_key=api_key,
-                base_url=user_settings.base_url,
-                max_tokens=user_settings.max_tokens,  # USER'S CONTEXT WINDOW - NO INFERENCE
+                base_url=str(user_settings.base_url) if user_settings.base_url else None,
+                max_tokens=int(user_settings.max_tokens),  # USER'S CONTEXT WINDOW - NO INFERENCE
                 temperature=temperature_float,
             )
 
@@ -1363,7 +1378,7 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         Returns:
             Tuple of (model, api_key, base_url) if valid, None if validation fails.
         """
-        provider_settings = {
+        provider_settings: dict[LLMProvider, dict[str, Any]] = {
             LLMProvider.VLLM: {
                 "model": settings.VLLM_MODEL_NAME,
                 "api_key": settings.VLLM_API_KEY,
@@ -1413,9 +1428,10 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return None
 
         cfg = provider_settings[provider]
-        model = cfg["model"]
-        api_key = cfg["api_key"] or None
-        base_url = cfg["base_url"]
+        model = str(cfg["model"])
+        api_key_value = cfg["api_key"]
+        api_key = str(api_key_value) if api_key_value else None
+        base_url = str(cfg["base_url"])
 
         # Validate model
         if not model or not model.strip():

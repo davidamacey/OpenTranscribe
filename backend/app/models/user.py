@@ -27,8 +27,23 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
     role = Column(String, default="user", nullable=False)  # "user" or "admin"
-    auth_type = Column(String, default="local", nullable=False)  # "local" or "ldap"
+    auth_type = Column(
+        String, default="local", nullable=False
+    )  # "local", "ldap", "keycloak", "pki"
     ldap_uid = Column(String, nullable=True, index=True)  # sAMAccountName from AD
+    keycloak_id = Column(String(255), unique=True, nullable=True, index=True)  # Keycloak subject ID
+    pki_subject_dn = Column(
+        String(512), unique=True, nullable=True, index=True
+    )  # X.509 certificate DN
+
+    # FedRAMP compliance fields
+    password_hash_version = Column(String(20), default="bcrypt", nullable=True)  # bcrypt, pbkdf2
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)  # For password expiration
+    must_change_password = Column(Boolean, default=False, nullable=False)  # Force password change
+    last_login_at = Column(DateTime(timezone=True), nullable=True)  # For account inactivity
+    account_expires_at = Column(DateTime(timezone=True), nullable=True)  # Account expiration date
+    banner_acknowledged_at = Column(DateTime(timezone=True), nullable=True)  # Login banner ack
+
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -44,3 +59,18 @@ class User(Base):
     llm_settings = relationship("UserLLMSettings", back_populates="user")
     # Topic extraction relationships
     topic_suggestions = relationship("TopicSuggestion", back_populates="user")
+    # Refresh tokens for session management (FedRAMP AC-12)
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    # MFA configuration (FedRAMP IA-2)
+    mfa = relationship(
+        "UserMFA", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    # Password history for reuse prevention (FedRAMP IA-5)
+    password_history = relationship(
+        "PasswordHistory",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="desc(PasswordHistory.created_at)",
+    )

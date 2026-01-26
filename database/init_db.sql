@@ -12,13 +12,73 @@ CREATE TABLE IF NOT EXISTS "user" (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
     role VARCHAR(50) DEFAULT 'user',
-    auth_type VARCHAR(10) DEFAULT 'local' NOT NULL,
+    auth_type VARCHAR(20) DEFAULT 'local' NOT NULL,
     ldap_uid VARCHAR(255) UNIQUE NULL,
+    keycloak_id VARCHAR(255) UNIQUE NULL,
+    pki_subject_dn VARCHAR(512) UNIQUE NULL,
+    -- FedRAMP compliance fields
+    password_hash_version VARCHAR(20) DEFAULT 'bcrypt',
+    password_changed_at TIMESTAMP WITH TIME ZONE NULL,
+    must_change_password BOOLEAN DEFAULT FALSE,
+    last_login_at TIMESTAMP WITH TIME ZONE NULL,
+    account_expires_at TIMESTAMP WITH TIME ZONE NULL,
+    banner_acknowledged_at TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT users_auth_type_check CHECK (auth_type IN ('local', 'ldap', 'keycloak', 'pki'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_ldap_uid ON "user" (ldap_uid);
+CREATE INDEX IF NOT EXISTS idx_user_keycloak_id ON "user" (keycloak_id);
+CREATE INDEX IF NOT EXISTS idx_user_pki_subject_dn ON "user" (pki_subject_dn);
+
+-- User MFA table (FedRAMP IA-2 Multi-Factor Authentication)
+CREATE TABLE IF NOT EXISTS user_mfa (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    totp_secret VARCHAR(255) NOT NULL,
+    totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    backup_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TIMESTAMP WITH TIME ZONE NULL,
+    CONSTRAINT user_mfa_user_id_unique UNIQUE (user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_mfa_uuid ON user_mfa(uuid);
+CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
+
+-- Refresh tokens table (FedRAMP AC-12 Token Management)
+CREATE TABLE IF NOT EXISTS refresh_token (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) UNIQUE NOT NULL,
+    jti VARCHAR(36) UNIQUE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked_at TIMESTAMP WITH TIME ZONE NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    user_agent VARCHAR(512) NULL,
+    ip_address VARCHAR(45) NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_token_user_id ON refresh_token(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_token_token_hash ON refresh_token(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refresh_token_jti ON refresh_token(jti);
+CREATE INDEX IF NOT EXISTS idx_refresh_token_expires_at ON refresh_token(expires_at);
+
+-- Password history table (FedRAMP IA-5 password reuse prevention)
+CREATE TABLE IF NOT EXISTS password_history (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_history_uuid ON password_history(uuid);
+CREATE INDEX IF NOT EXISTS idx_password_history_user_id ON password_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_password_history_created_at ON password_history(created_at);
 
 -- Media files table
 CREATE TABLE IF NOT EXISTS media_file (

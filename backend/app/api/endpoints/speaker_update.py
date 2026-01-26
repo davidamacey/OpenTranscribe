@@ -88,7 +88,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 from app.services.profile_embedding_service import ProfileEmbeddingService
 
                 ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, existing_profile.id
+                    db, int(speaker.id), int(existing_profile.id)
                 )
             except Exception as e:
                 logger.warning(f"Failed to update profile embedding: {e}")
@@ -104,9 +104,9 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
 
                 update_speaker_profile(
                     speaker_uuid=str(speaker.uuid),
-                    profile_id=speaker.profile_id,
+                    profile_id=int(speaker.profile_id) if speaker.profile_id else None,
                     profile_uuid=profile_uuid,
-                    verified=speaker.verified,
+                    verified=bool(speaker.verified),
                 )
                 logger.info(f"Synced speaker {speaker.uuid} profile assignment to OpenSearch")
             except Exception as e:
@@ -134,7 +134,7 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
                 from app.services.profile_embedding_service import ProfileEmbeddingService
 
                 ProfileEmbeddingService.add_speaker_to_profile_embedding(
-                    db, speaker.id, new_profile.id
+                    db, int(speaker.id), int(new_profile.id)
                 )
             except Exception as e:
                 logger.warning(f"Failed to initialize profile embedding: {e}")
@@ -145,9 +145,9 @@ def auto_create_or_assign_profile(speaker: Speaker, display_name: str, db: Sessi
 
                 update_speaker_profile(
                     speaker_uuid=str(speaker.uuid),
-                    profile_id=speaker.profile_id,
+                    profile_id=int(speaker.profile_id) if speaker.profile_id else None,
                     profile_uuid=str(new_profile.uuid),
-                    verified=speaker.verified,
+                    verified=bool(speaker.verified),
                 )
                 logger.info(f"Synced speaker {speaker.uuid} new profile assignment to OpenSearch")
             except Exception as e:
@@ -176,13 +176,17 @@ def _sync_speaker_to_opensearch(speaker: Speaker, db: Session) -> None:
         from app.services.opensearch_service import update_speaker_display_name
         from app.services.opensearch_service import update_speaker_profile
 
-        update_speaker_display_name(str(speaker.uuid), speaker.display_name)
-        profile_uuid = _get_profile_uuid(db, speaker.profile_id)
+        update_speaker_display_name(
+            str(speaker.uuid), str(speaker.display_name) if speaker.display_name else None
+        )
+        profile_uuid = _get_profile_uuid(
+            db, int(speaker.profile_id) if speaker.profile_id else None
+        )
         update_speaker_profile(
             speaker_uuid=str(speaker.uuid),
-            profile_id=speaker.profile_id,
+            profile_id=int(speaker.profile_id) if speaker.profile_id else None,
             profile_uuid=profile_uuid,
-            verified=speaker.verified,
+            verified=bool(speaker.verified),
         )
         logger.info(
             f"Synced speaker {speaker.id} to OpenSearch: "
@@ -204,12 +208,12 @@ def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> 
 
 def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db: Session) -> None:
     """Apply automatic labeling for high confidence matches (75%+)."""
-    speaker.display_name = updated_speaker.display_name
-    speaker.verified = True
+    speaker.display_name = updated_speaker.display_name  # type: ignore[assignment]
+    speaker.verified = True  # type: ignore[assignment]
 
     if updated_speaker.profile_id:
-        speaker.profile_id = updated_speaker.profile_id
-        _update_profile_embedding(db, speaker.id, updated_speaker.profile_id)
+        speaker.profile_id = updated_speaker.profile_id  # type: ignore[assignment]
+        _update_profile_embedding(db, int(speaker.id), int(updated_speaker.profile_id))
 
     _sync_speaker_to_opensearch(speaker, db)
     logger.info(
@@ -256,9 +260,9 @@ def _process_speaker_match(
         return (0, 0)
 
     # Update confidence and suggestion in PostgreSQL
-    speaker.confidence = similarity
-    speaker.suggested_name = updated_speaker.display_name
-    store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
+    speaker.confidence = similarity  # type: ignore[assignment]
+    speaker.suggested_name = updated_speaker.display_name  # type: ignore[assignment]
+    store_speaker_match(int(updated_speaker.id), int(speaker.id), similarity, db)
 
     if similarity >= 0.75:
         _apply_high_confidence_match(speaker, updated_speaker, db)
@@ -309,11 +313,11 @@ def _send_bulk_update_notification(
 
         asyncio.create_task(
             publish_notification(
-                user_id=updated_speaker.user_id,
+                user_id=int(updated_speaker.user_id),
                 notification_type="speakers_bulk_updated",
                 data={
-                    "trigger_speaker_id": updated_speaker.id,
-                    "display_name": updated_speaker.display_name,
+                    "trigger_speaker_id": int(updated_speaker.id),
+                    "display_name": str(updated_speaker.display_name),
                     "auto_applied_count": auto_applied_count,
                     "suggested_count": suggested_count,
                     "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
@@ -436,7 +440,7 @@ def store_speaker_match(speaker1_id: int, speaker2_id: int, confidence: float, d
     if existing_match:
         # Update confidence if higher
         if confidence > existing_match.confidence:
-            existing_match.confidence = confidence
+            existing_match.confidence = confidence  # type: ignore[assignment]
     else:
         # Create new match
         speaker_match = SpeakerMatch(

@@ -1,20 +1,21 @@
-import { writable } from "svelte/store";
+import { writable } from 'svelte/store';
 
 export type SettingsSection =
   // User sections
-  | "profile"
-  | "language"
-  | "recording"
-  | "audio-extraction"
-  | "transcription"
-  | "ai-prompts"
-  | "llm-provider"
+  | 'profile'
+  | 'security'
+  | 'language'
+  | 'recording'
+  | 'audio-extraction'
+  | 'transcription'
+  | 'ai-prompts'
+  | 'llm-provider'
   // System sections (visible to all users)
-  | "system-statistics"
+  | 'system-statistics'
   // Admin sections
-  | "admin-users"
-  | "admin-task-health"
-  | "admin-settings";
+  | 'admin-users'
+  | 'admin-task-health'
+  | 'admin-settings';
 
 interface SettingsModalState {
   isOpen: boolean;
@@ -24,19 +25,20 @@ interface SettingsModalState {
 
 const initialState: SettingsModalState = {
   isOpen: false,
-  activeSection: "profile",
+  activeSection: 'profile',
   dirtyState: {
     profile: false,
+    security: false,
     language: false,
     recording: false,
-    "audio-extraction": false,
+    'audio-extraction': false,
     transcription: false,
-    "ai-prompts": false,
-    "llm-provider": false,
-    "system-statistics": false,
-    "admin-users": false,
-    "admin-task-health": false,
-    "admin-settings": false,
+    'ai-prompts': false,
+    'llm-provider': false,
+    'system-statistics': false,
+    'admin-users': false,
+    'admin-task-health': false,
+    'admin-settings': false,
   },
 };
 
@@ -49,7 +51,7 @@ function createSettingsModalStore() {
       update((state) => ({
         ...state,
         isOpen: true,
-        activeSection: section || "profile",
+        activeSection: section || 'profile',
       }));
     },
     close: () => {
@@ -90,7 +92,7 @@ function createSettingsModalStore() {
             acc[key as SettingsSection] = false;
             return acc;
           },
-          {} as Record<SettingsSection, boolean>,
+          {} as Record<SettingsSection, boolean>
         ),
       }));
     },

@@ -4,6 +4,8 @@ from typing import Optional
 from pydantic import BaseModel
 from pydantic import EmailStr
 from pydantic import Field
+from pydantic import field_validator
+from pydantic import model_validator
 
 from app.schemas.base import UUIDBaseSchema
 
@@ -14,10 +16,44 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    """Schema for creating a new user with password policy validation.
+
+    Password validation is performed against the configured password policy
+    when PASSWORD_POLICY_ENABLED is true. The policy enforces:
+    - Minimum length (default: 12 characters)
+    - Character complexity (uppercase, lowercase, digits, special chars)
+    - No user information in password (email username, name parts)
+    """
+
+    password: str = Field(..., min_length=8)  # Base minimum for backward compatibility
     role: Optional[str] = "user"
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
+
+    @model_validator(mode="after")
+    def validate_password_policy(self) -> "UserCreate":
+        """Validate password against the configured password policy.
+
+        This validator runs after all field validators, so we have access
+        to both email and full_name for comprehensive validation.
+
+        Raises:
+            ValueError: If password doesn't meet policy requirements
+        """
+        from app.auth.password_policy import validate_password
+
+        result = validate_password(
+            password=self.password,
+            email=self.email,
+            full_name=self.full_name,
+        )
+
+        if not result.is_valid:
+            # Combine all errors into a single message
+            error_msg = "; ".join(result.errors)
+            raise ValueError(f"Password does not meet policy requirements: {error_msg}")
+
+        return self
 
 
 class UserUpdate(BaseModel):
@@ -38,8 +74,16 @@ class UserInDB(UserBase, UUIDBaseSchema):
     updated_at: datetime
     is_active: bool
     is_superuser: bool
-    auth_type: str
+    auth_type: str  # "local", "ldap", "keycloak", "pki"
     ldap_uid: Optional[str] = None
+    keycloak_id: Optional[str] = None
+    pki_subject_dn: Optional[str] = None
+
+    # FedRAMP compliance fields
+    password_changed_at: Optional[datetime] = None
+    must_change_password: bool = False
+    last_login_at: Optional[datetime] = None
+    account_expires_at: Optional[datetime] = None
 
 
 class User(UserInDB):
@@ -49,8 +93,95 @@ class User(UserInDB):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None  # Access token expiration in seconds
+
+
+class TokenRefreshRequest(BaseModel):
+    """Request body for token refresh endpoint."""
+
+    refresh_token: str
 
 
 class TokenPayload(BaseModel):
     sub: Optional[str] = None
     exp: Optional[int] = None
+    jti: Optional[str] = None
+    role: Optional[str] = None
+    type: Optional[str] = None  # 'access' or 'refresh'
+
+
+# ===== MFA Schemas (FedRAMP IA-2) =====
+
+
+class MFASetupResponse(BaseModel):
+    """Response from MFA setup initiation."""
+
+    secret: str  # Base32-encoded TOTP secret (for manual entry)
+    provisioning_uri: str  # otpauth:// URI for QR code
+    qr_code_base64: str  # Base64-encoded PNG QR code image
+
+
+class MFAVerifySetupRequest(BaseModel):
+    """Request to verify MFA setup with initial TOTP code."""
+
+    code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code")
+
+    @field_validator("code")
+    @classmethod
+    def validate_code_format(cls, v: str) -> str:
+        """Ensure code contains only digits."""
+        if not v.isdigit():
+            raise ValueError("Code must contain only digits")
+        return v
+
+
+class MFAVerifySetupResponse(BaseModel):
+    """Response from successful MFA setup verification."""
+
+    success: bool
+    backup_codes: list[str]  # One-time use backup codes (shown only once)
+    message: str
+
+
+class MFAVerifyRequest(BaseModel):
+    """Request to verify MFA code during login."""
+
+    mfa_token: str  # Short-lived token from initial login
+    code: str = Field(
+        ..., min_length=6, max_length=8, description="6-digit TOTP code or 8-char backup code"
+    )
+
+
+class MFAVerifyResponse(BaseModel):
+    """Response from successful MFA verification during login."""
+
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
+class MFADisableRequest(BaseModel):
+    """Request to disable MFA for current user."""
+
+    code: str = Field(
+        ..., min_length=6, max_length=8, description="6-digit TOTP code or 8-char backup code"
+    )
+
+
+class MFAStatusResponse(BaseModel):
+    """Response indicating MFA status for current user."""
+
+    mfa_enabled: bool
+    mfa_configured: bool  # True if user has started MFA setup
+    mfa_required: bool  # True if system requires MFA
+    can_setup_mfa: bool  # True if user can set up MFA (not PKI/Keycloak)
+
+
+class MFALoginResponse(BaseModel):
+    """Response when MFA is required during login."""
+
+    mfa_required: bool = True
+    mfa_token: str  # Short-lived token for MFA verification step
+    message: str = "MFA verification required"

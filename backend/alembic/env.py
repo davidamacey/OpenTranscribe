@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from alembic import context
+from alembic import context  # type: ignore[attr-defined]
 from app.db.base import Base
 
 # NOTE: OpenTranscribe uses init_db.sql as the source of truth for database schema

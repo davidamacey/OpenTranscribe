@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 def generate_thumbnail(
     video_path: Union[str, Path],
-    output_path: Optional[Union[str, Path]] = None,
+    output_path: Union[str, Path, None] = None,
     timestamp: float = 1.0,
     size: tuple[int, int] = (320, 180),  # 16:9 aspect ratio thumbnail
-) -> Optional[Union[str, bytes]]:
+) -> str | bytes | None:
     """
     Generate a thumbnail from a video file at the specified timestamp.
 
@@ -65,7 +65,7 @@ def generate_thumbnail(
             os.unlink(output_path)
             return result
 
-        return output_path
+        return str(output_path)
 
     except ffmpeg.Error as e:
         logger.error(
@@ -99,7 +99,7 @@ async def generate_and_upload_thumbnail(
         # Generate thumbnail
         thumbnail_bytes = generate_thumbnail(video_path, timestamp=timestamp)
 
-        if not thumbnail_bytes:
+        if not thumbnail_bytes or isinstance(thumbnail_bytes, str):
             logger.error(f"Failed to generate thumbnail for file {media_file_id}")
             return None
 
@@ -151,7 +151,7 @@ def generate_and_upload_thumbnail_sync(
         # Generate thumbnail
         thumbnail_bytes = generate_thumbnail(video_path, timestamp=timestamp)
 
-        if not thumbnail_bytes:
+        if not thumbnail_bytes or isinstance(thumbnail_bytes, str):
             logger.error(f"Failed to generate thumbnail for file {media_file_id}")
             return None
 

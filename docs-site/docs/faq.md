@@ -398,6 +398,113 @@ Yes! OpenTranscribe is designed for privacy-sensitive use cases:
 
 All processing is local, nothing is sent to cloud services (except optional LLM calls, which you control).
 
+## Authentication
+
+### What authentication methods are supported?
+
+OpenTranscribe supports multiple authentication methods:
+
+- **Local** - Username/password stored in PostgreSQL (default)
+- **LDAP/Active Directory** - Authenticate against existing AD infrastructure
+- **OIDC/Keycloak** - Single Sign-On via OpenID Connect
+- **PKI/X.509** - Certificate-based authentication (CAC/PIV card support)
+
+Multiple methods can be enabled simultaneously for hybrid deployments.
+
+See [Authentication Overview](./authentication/overview.md) for details.
+
+### Does OpenTranscribe support MFA?
+
+Yes! OpenTranscribe supports TOTP-based multi-factor authentication:
+- Works with Google Authenticator, Authy, and other TOTP apps
+- QR code setup for easy configuration
+- Backup codes for account recovery
+- Per-user enablement
+
+Enable MFA in your `.env` file:
+```bash
+MFA_ENABLED=true
+MFA_ISSUER_NAME=OpenTranscribe
+```
+
+### Can I integrate with Active Directory?
+
+Yes! OpenTranscribe supports LDAP/Active Directory authentication:
+- Users authenticate with AD credentials
+- Accounts auto-created on first login
+- Admin roles configurable via `LDAP_ADMIN_USERS`
+- Hybrid mode supports both local and AD users
+
+See the [LDAP Setup Guide](/docs/LDAP_AUTH.md) for configuration.
+
+### What password policies are available?
+
+OpenTranscribe includes FedRAMP-compliant password policies:
+- **Minimum length** (default: 12 characters)
+- **Complexity requirements** (uppercase, lowercase, digits, special characters)
+- **Password history** (prevent reuse of last 24 passwords)
+- **Password expiration** (default: 60 days)
+- **Common pattern detection** (blocks weak passwords)
+
+Configure in `.env`:
+```bash
+PASSWORD_POLICY_ENABLED=true
+PASSWORD_MIN_LENGTH=12
+PASSWORD_HISTORY_COUNT=24
+PASSWORD_MAX_AGE_DAYS=60
+```
+
+### Is there account lockout protection?
+
+Yes! OpenTranscribe implements NIST AC-7 compliant account lockout:
+- Lock account after failed attempts (default: 5)
+- Progressive lockout durations (15 min, 30 min, 60 min, 24 hours)
+- Admin unlock capability
+- Automatic unlock after lockout expires
+
+Configure in `.env`:
+```bash
+ACCOUNT_LOCKOUT_ENABLED=true
+ACCOUNT_LOCKOUT_THRESHOLD=5
+ACCOUNT_LOCKOUT_DURATION_MINUTES=15
+ACCOUNT_LOCKOUT_PROGRESSIVE=true
+```
+
+### Does OpenTranscribe support SSO?
+
+Yes! OpenTranscribe supports Single Sign-On via Keycloak/OIDC:
+- Integrate with your existing identity provider
+- Support for LDAP/AD federation through Keycloak
+- Social login (Google, GitHub, etc.) via Keycloak
+- Role synchronization from Keycloak
+
+See the [Keycloak Setup Guide](/docs/KEYCLOAK_SETUP.md) for configuration.
+
+### Can I use CAC/PIV cards for authentication?
+
+Yes! OpenTranscribe supports PKI/X.509 certificate authentication:
+- Client certificate authentication via mutual TLS
+- CAC/PIV smart card support
+- No passwords required
+- Admin designation via certificate DN
+
+See the [PKI Setup Guide](/docs/PKI_SETUP.md) for configuration.
+
+### How is audit logging handled?
+
+OpenTranscribe includes FedRAMP-compliant audit logging:
+- Structured JSON or CEF format
+- All authentication events logged
+- Optional OpenSearch integration for analysis
+- Tracks logins, logouts, failed attempts, MFA events, admin actions
+
+Configure in `.env`:
+```bash
+AUDIT_LOG_ENABLED=true
+AUDIT_LOG_FORMAT=json
+AUDIT_LOG_TO_OPENSEARCH=false
+```
+
 ## Development & Contribution
 
 ### How can I contribute?

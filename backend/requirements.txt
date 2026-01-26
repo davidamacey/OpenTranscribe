@@ -24,6 +24,16 @@ pytest>=7.4.2
 # LDAP/Active Directory Authentication
 ldap3>=2.9.1
 
+# Rate Limiting
+slowapi>=0.1.9
+
+# PKI/X.509 Certificate Authentication
+cryptography>=42.0.0
+
+# MFA/TOTP Authentication (FedRAMP IA-2)
+pyotp>=2.9.0
+qrcode[pil]>=7.4.0
+
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - fully compatible with PyTorch 2.8+, CTranslate2 4.6+, PyAnnote 3.4+
 numpy>=1.25.2

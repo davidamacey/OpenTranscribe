@@ -5,12 +5,12 @@
   import { user, authStore } from "../stores/auth";
   import { websocketStore } from "$stores/websocket";
   import { toastStore } from "$stores/toast";
-  
+
   // Explicitly declare router props to prevent warnings
   export const location = null;
   export const navigate = null;
   export const condition = true;
-  
+
   interface MediaFile {
     id: string;  // UUID
     filename: string;
@@ -39,49 +39,49 @@
   }
 
   let tasks: Task[] = [];
-  
+
   /** @type {boolean} */
   let loading = true;
-  
+
   /** @type {number | null} */
   let refreshInterval: number | null = null;
-  
+
   // Track which metadata popups are open
   /** @type {string|null} */
   let openMetadataId: string | null = null;
-  
+
   // Track last processed notification to avoid duplicate processing
   let lastProcessedNotificationId = '';
-  
+
   // Subscribe to WebSocket notifications for real-time task updates
   let wsUnsubscribe: any = null;
-  
+
   function setupWebSocketSubscription() {
     if (wsUnsubscribe) {
       wsUnsubscribe();
     }
-    
+
     wsUnsubscribe = websocketStore.subscribe(($ws) => {
       if ($ws.notifications.length > 0) {
         const latestNotification = $ws.notifications[0];
-        
+
         // Only process if this is a new notification we haven't handled
         if (latestNotification.id !== lastProcessedNotificationId) {
           lastProcessedNotificationId = latestNotification.id;
-          
+
           // Check if this notification is for transcription status
           if (latestNotification.type === 'transcription_status' && latestNotification.data?.file_id) {
             const fileId = String(latestNotification.data.file_id);
             const status = latestNotification.data.status;
             const progress = latestNotification.data.progress;
-            
+
             // Update any tasks that match this file
             tasks = tasks.map(task => {
               if (task.media_file && String(task.media_file.id) === fileId) {
                 // Convert file status to task status
                 let newTaskStatus;
                 let newProgress;
-                
+
                 if (status === 'completed') {
                   newTaskStatus = 'completed';
                   newProgress = 1.0;
@@ -92,7 +92,7 @@
                   newTaskStatus = 'failed';
                   newProgress = 0;
                 }
-                
+
                 // Update task with new status and progress
                 if (newTaskStatus) {
                   return {
@@ -104,13 +104,13 @@
               }
               return task;
             });
-            
+
           }
         }
       }
     });
   }
-  
+
   /**
    * Fetch all tasks for the current user
    */
@@ -130,7 +130,7 @@
       loading = false;
     }
   }
-  
+
   /**
    * Format date string to a more readable format
    * @param {string} dateString - ISO date string
@@ -138,7 +138,7 @@
    */
   function formatDate(dateString: string) {
     if (!dateString) return 'N/A';
-    
+
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
@@ -148,7 +148,7 @@
       minute: '2-digit'
     }).format(date);
   }
-  
+
   /**
    * Format duration in seconds to human readable format
    * @param {number} seconds - Duration in seconds
@@ -159,7 +159,7 @@
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = Math.floor(seconds % 60);
-    
+
     let result = "";
     if (hours > 0) {
       result += `${hours.toString().padStart(2, "0")}:`;
@@ -167,7 +167,7 @@
     result += `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
     return result;
   }
-  
+
   /**
    * Calculate time elapsed since a date
    * @param {string} dateString - ISO date string
@@ -175,11 +175,11 @@
    */
   function timeElapsed(dateString: string) {
     if (!dateString) return 'N/A';
-    
+
     const date = new Date(dateString);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
+
     if (diffInSeconds < 60) {
       return `${diffInSeconds} seconds ago`;
     } else if (diffInSeconds < 3600) {
@@ -190,7 +190,7 @@
       return `${Math.floor(diffInSeconds / 86400)} days ago`;
     }
   }
-  
+
   /**
    * Get appropriate color class based on task status
    * @param {string} status - Task status
@@ -210,7 +210,7 @@
         return '';
     }
   }
-  
+
   /**
    * Format file size in bytes to human readable format
    * @param {number|string} bytes - File size in bytes
@@ -219,16 +219,16 @@
   function formatFileSize(bytes: number | string) {
     // Convert to number if it's a string
     const sizeInBytes = typeof bytes === 'string' ? Number(bytes) : bytes;
-    
+
     if (!sizeInBytes || isNaN(sizeInBytes)) return 'Unknown';
-    
+
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (sizeInBytes === 0) return '0 Bytes';
-    
+
     const i = Math.floor(Math.log(sizeInBytes) / Math.log(1024));
     return parseFloat((sizeInBytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
   }
-  
+
   /**
    * Toggle metadata info display for a specific task
    * @param {string} taskId - Task ID
@@ -240,33 +240,33 @@
     } else {
       openMetadataId = taskId;
     }
-    
+
     // Update task objects to include showMetadata property
     tasks = tasks.map(task => ({
       ...task,
       showMetadata: task.id === openMetadataId
     }));
   }
-  
+
   // Lifecycle hooks
   onMount(() => {
     // Setup WebSocket subscription for real-time updates
     setupWebSocketSubscription();
-    
+
     fetchTasks();
     // Refresh tasks every 30 seconds as a fallback
     refreshInterval = window.setInterval(fetchTasks, 30000);
-    
+
     return () => {
       if (refreshInterval) window.clearInterval(refreshInterval);
     };
   });
-  
+
   onDestroy(() => {
     if (refreshInterval) {
       clearInterval(refreshInterval);
     }
-    
+
     // Unsubscribe from WebSocket updates
     if (wsUnsubscribe) {
       wsUnsubscribe();
@@ -277,18 +277,18 @@
 <div class="tasks-container">
   <div class="tasks-header">
     <h1>Tasks</h1>
-    
+
     <div class="tasks-actions">
-      <button 
-        class="flower-link" 
+      <button
+        class="flower-link"
         on:click={() => {
           const protocol = window.location.protocol;
           const host = window.location.hostname;
           const port = import.meta.env.VITE_FLOWER_PORT || '5175';
           const urlPrefix = import.meta.env.VITE_FLOWER_URL_PREFIX || 'flower';
           // Construct the URL properly with trailing slash
-          const url = urlPrefix 
-            ? `${protocol}//${host}:${port}/${urlPrefix}/` 
+          const url = urlPrefix
+            ? `${protocol}//${host}:${port}/${urlPrefix}/`
             : `${protocol}//${host}:${port}/`;
           window.open(url, '_blank');
         }}
@@ -300,8 +300,8 @@
         </svg>
         Flower Dashboard
       </button>
-      <button 
-        class="refresh-button" 
+      <button
+        class="refresh-button"
         on:click={fetchTasks}
         title="Refresh the tasks list to see the latest status updates"
       >
@@ -315,7 +315,7 @@
       </button>
     </div>
   </div>
-  
+
   {#if loading && tasks.length === 0}
     <div class="loading-container">
       <div class="loading-spinner"></div>
@@ -390,11 +390,11 @@
                 </svg>
                 Failed
               {/if}
-              
+
               <!-- Info button -->
               {#if task.media_file}
-                <button 
-                  class="info-button" 
+                <button
+                  class="info-button"
                   on:click|stopPropagation={() => toggleMetadataInfo(task.id)}
                   title="View detailed task metadata and file information"
                 >
@@ -407,12 +407,12 @@
               {/if}
             </div>
           </div>
-          
+
           <div class="task-info">
             {#if task.media_file}
               <!-- Media info moved to task-dates section -->
             {/if}
-            
+
 
 
             <!-- Metadata popup -->
@@ -724,49 +724,49 @@
     font-weight: 500;
     gap: 0.5rem;
   }
-  
+
   .task-type {
     font-weight: 500;
     color: var(--text-secondary-color);
   }
-  
+
   .file-name-row {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
     margin-bottom: 0.75rem;
   }
-  
+
   /* Removed file-info-rows class as we now use consistent info-row styling */
-  
+
   .info-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .info-label {
     font-weight: 600;
     color: var(--text-secondary-color);
     font-size: 0.85rem;
   }
-  
+
   .detail-value {
     font-weight: 500;
   }
-  
+
   .timing-section {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .highlight-row {
     background-color: rgba(var(--primary-color-rgb), 0.1);
     border-radius: 6px;
     padding: 0.5rem;
   }
-  
+
   .info-button {
     background: none;
     border: none;
@@ -780,12 +780,12 @@
     justify-content: center;
     transition: all 0.2s ease;
   }
-  
+
   .info-button:hover {
     background-color: rgba(0, 0, 0, 0.05);
     color: var(--primary-color);
   }
-  
+
   .metadata-popup {
     margin-top: 1rem;
     padding: 1rem;
@@ -794,73 +794,73 @@
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
-  
+
   .metadata-popup h4 {
     margin-top: 0;
     margin-bottom: 0.75rem;
     font-weight: 600;
     color: var(--text-color);
   }
-  
+
   .metadata-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 0.75rem;
   }
-  
+
   .metadata-item {
     display: flex;
     flex-direction: column;
   }
-  
+
   .metadata-label {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary-color);
   }
-  
+
   .metadata-value {
     font-size: 0.9rem;
     font-weight: 500;
     color: var(--text-color);
   }
-  
+
   .error-details {
     background-color: rgba(var(--error-color-rgb), 0.05);
     border-radius: 4px;
     padding: 0.75rem;
     margin-top: 0.5rem;
   }
-  
+
   .error-details .info-label {
     color: var(--error-color);
   }
-  
+
   .error-details .error-message {
     margin-top: 0.5rem;
     font-family: monospace;
     white-space: pre-wrap;
     font-size: 0.85rem;
   }
-  
+
   .progress-bar-container {
     height: 6px;
     background-color: #e9ecef;
   }
-  
+
   .progress-bar {
     height: 100%;
     background-color: var(--primary-color);
     transition: width 0.3s ease;
   }
-  
+
   @media (max-width: 768px) {
     .tasks-header {
       flex-direction: column;
       align-items: flex-start;
       gap: 1rem;
     }
-    
+
     .tasks-list {
       grid-template-columns: 1fr;
     }

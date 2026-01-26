@@ -1,0 +1,435 @@
+"""
+Structured Audit Logging Service for FedRAMP AU-2/AU-3 Compliance.
+
+This module provides JSON-structured audit logging with optional OpenSearch integration.
+Supports logging of authentication events, security events, and administrative actions.
+"""
+
+import json
+import logging
+import uuid
+from contextvars import ContextVar
+from datetime import datetime
+from datetime import timezone
+from enum import Enum
+from typing import Any
+from typing import Optional
+
+from app.core.config import settings
+
+# Context variable for request ID (set by middleware)
+request_id_var: ContextVar[str] = ContextVar("request_id", default="")
+
+
+class AuditEventType(str, Enum):
+    """Audit event types for FedRAMP compliance."""
+
+    # Authentication events
+    AUTH_LOGIN_SUCCESS = "auth.login.success"
+    AUTH_LOGIN_FAILURE = "auth.login.failure"
+    AUTH_LOGOUT = "auth.logout"
+    AUTH_LOGOUT_ALL = "auth.logout.all"
+
+    # MFA events
+    AUTH_MFA_SETUP = "auth.mfa.setup"
+    AUTH_MFA_VERIFY = "auth.mfa.verify"
+    AUTH_MFA_DISABLE = "auth.mfa.disable"
+    AUTH_MFA_BACKUP_USED = "auth.mfa.backup_used"
+
+    # Password events (event type names, not passwords)
+    AUTH_PASSWORD_CHANGE = "auth.password.change"  # noqa: S105 # nosec B105
+    AUTH_PASSWORD_RESET_REQUEST = "auth.password.reset_request"  # noqa: S105 # nosec B105
+    AUTH_PASSWORD_RESET_COMPLETE = "auth.password.reset_complete"  # noqa: S105 # nosec B105
+    AUTH_PASSWORD_EXPIRED = "auth.password.expired"  # noqa: S105 # nosec B105
+
+    # Account events
+    AUTH_ACCOUNT_LOCKOUT = "auth.account.lockout"
+    AUTH_ACCOUNT_UNLOCK = "auth.account.unlock"
+    AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
+    AUTH_ACCOUNT_EXPIRED = "auth.account.expired"
+
+    # Token events (event type names, not passwords)
+    AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 # nosec B105
+    AUTH_TOKEN_REVOKE = "auth.token.revoke"  # noqa: S105 # nosec B105
+
+    # Session events
+    AUTH_SESSION_CREATED = "auth.session.created"
+    AUTH_SESSION_EXPIRED = "auth.session.expired"
+    AUTH_SESSION_LIMIT_EXCEEDED = "auth.session.limit_exceeded"
+
+    # Administrative events
+    ADMIN_USER_CREATE = "admin.user.create"
+    ADMIN_USER_UPDATE = "admin.user.update"
+    ADMIN_USER_DELETE = "admin.user.delete"
+    ADMIN_ROLE_CHANGE = "admin.role.change"
+    ADMIN_SETTINGS_CHANGE = "admin.settings.change"
+
+    # Banner acknowledgment
+    AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
+
+
+class AuditOutcome(str, Enum):
+    """Audit event outcomes."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+    PARTIAL = "partial"
+
+
+class AuditLogger:
+    """
+    Structured audit logging service.
+
+    Provides JSON-formatted audit logs compliant with FedRAMP AU-2/AU-3 requirements.
+    """
+
+    def __init__(self):
+        """Initialize the audit logger."""
+        self._logger = logging.getLogger("audit")
+        self._opensearch_client = None
+
+        # Configure audit logger if not already configured
+        if not self._logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(message)s"))
+            self._logger.addHandler(handler)
+            self._logger.setLevel(logging.INFO)
+            self._logger.propagate = False
+
+    def _get_opensearch_client(self):
+        """Get or create OpenSearch client for audit indexing."""
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            return None
+
+        if self._opensearch_client is None:
+            try:
+                from opensearchpy import OpenSearch
+
+                self._opensearch_client = OpenSearch(
+                    hosts=[
+                        {
+                            "host": settings.OPENSEARCH_HOST,
+                            "port": int(settings.OPENSEARCH_PORT),
+                        }
+                    ],
+                    http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+                    use_ssl=False,
+                    verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+                )
+            except Exception as e:
+                self._logger.warning(f"Failed to initialize OpenSearch client: {e}")
+                return None
+
+        return self._opensearch_client
+
+    def _format_json(self, event: dict) -> str:
+        """Format event as JSON string."""
+        return json.dumps(event, default=str, ensure_ascii=False)
+
+    def _format_cef(self, event: dict) -> str:
+        """Format event as CEF (Common Event Format) string.
+
+        CEF Format: CEF:Version|Device Vendor|Device Product|Device Version|Signature ID|Name|Severity|Extension
+        """
+        severity_map = {
+            AuditOutcome.SUCCESS: 3,
+            AuditOutcome.FAILURE: 7,
+            AuditOutcome.PARTIAL: 5,
+        }
+
+        outcome = event.get("outcome")
+        severity = severity_map.get(outcome, 5) if outcome in severity_map else 5  # type: ignore[comparison-overlap]
+
+        # Build extension fields
+        extensions = []
+        if event.get("source_ip"):
+            extensions.append(f"src={event['source_ip']}")
+        if event.get("user_id"):
+            extensions.append(f"duid={event['user_id']}")
+        if event.get("username"):
+            extensions.append(f"suser={event['username']}")
+        if event.get("request_id"):
+            extensions.append(f"externalId={event['request_id']}")
+
+        extension_str = " ".join(extensions)
+
+        return (
+            f"CEF:0|OpenTranscribe|AuthService|1.0|"
+            f"{event.get('event_type', 'unknown')}|"
+            f"{event.get('event_type', 'unknown')}|"
+            f"{severity}|{extension_str}"
+        )
+
+    def _index_to_opensearch(self, event: dict) -> None:
+        """Index audit event to OpenSearch."""
+        client = self._get_opensearch_client()
+        if client is None:
+            return
+
+        try:
+            index_name = f"audit-logs-{datetime.now(timezone.utc).strftime('%Y.%m')}"
+
+            # Ensure index exists with proper mappings
+            if not client.indices.exists(index=index_name):
+                client.indices.create(
+                    index=index_name,
+                    body={
+                        "mappings": {
+                            "properties": {
+                                "timestamp": {"type": "date"},
+                                "event_type": {"type": "keyword"},
+                                "outcome": {"type": "keyword"},
+                                "user_id": {"type": "integer"},
+                                "username": {"type": "keyword"},
+                                "source_ip": {"type": "ip"},
+                                "user_agent": {"type": "text"},
+                                "request_id": {"type": "keyword"},
+                                "error_code": {"type": "keyword"},
+                                "details": {"type": "object", "enabled": True},
+                            }
+                        },
+                        "settings": {
+                            "number_of_shards": 1,
+                            "number_of_replicas": 0,
+                        },
+                    },
+                )
+
+            client.index(index=index_name, body=event)
+        except Exception as e:
+            self._logger.warning(f"Failed to index audit event to OpenSearch: {e}")
+
+    def log(
+        self,
+        event_type: AuditEventType,
+        outcome: AuditOutcome,
+        user_id: Optional[int] = None,
+        username: Optional[str] = None,
+        source_ip: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        error_code: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log an audit event.
+
+        Args:
+            event_type: The type of audit event
+            outcome: The outcome of the event (success/failure/partial)
+            user_id: The user's database ID (if known)
+            username: The username or email (for failed logins where user_id unknown)
+            source_ip: The client's IP address
+            user_agent: The client's User-Agent header
+            error_code: Error code if applicable
+            details: Additional event-specific details
+        """
+        if not settings.AUDIT_LOG_ENABLED:
+            return
+
+        event = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id_var.get() or str(uuid.uuid4()),
+            "event_type": event_type.value
+            if isinstance(event_type, AuditEventType)
+            else event_type,
+            "outcome": outcome.value if isinstance(outcome, AuditOutcome) else outcome,
+            "user_id": user_id,
+            "username": username,
+            "source_ip": source_ip,
+            "user_agent": user_agent,
+            "error_code": error_code,
+            "details": details or {},
+        }
+
+        # Log in configured format
+        if settings.AUDIT_LOG_FORMAT.lower() == "cef":
+            self._logger.info(self._format_cef(event))
+        else:
+            self._logger.info(self._format_json(event))
+
+        # Index to OpenSearch if enabled
+        if settings.AUDIT_LOG_TO_OPENSEARCH:
+            self._index_to_opensearch(event)
+
+    def log_login_success(
+        self,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        auth_method: str,
+    ) -> None:
+        """Log a successful login."""
+        self.log(
+            event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            details={"auth_method": auth_method},
+        )
+
+    def log_login_failure(
+        self,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        error_code: str,
+        auth_method: str,
+        lockout_count: int = 0,
+    ) -> None:
+        """Log a failed login attempt."""
+        self.log(
+            event_type=AuditEventType.AUTH_LOGIN_FAILURE,
+            outcome=AuditOutcome.FAILURE,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            error_code=error_code,
+            details={"auth_method": auth_method, "lockout_count": lockout_count},
+        )
+
+    def log_logout(
+        self,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        all_sessions: bool = False,
+    ) -> None:
+        """Log a logout event."""
+        event_type = AuditEventType.AUTH_LOGOUT_ALL if all_sessions else AuditEventType.AUTH_LOGOUT
+        self.log(
+            event_type=event_type,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            details={"all_sessions": all_sessions},
+        )
+
+    def log_mfa_event(
+        self,
+        event_type: AuditEventType,
+        outcome: AuditOutcome,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        error_code: Optional[str] = None,
+    ) -> None:
+        """Log an MFA-related event."""
+        self.log(
+            event_type=event_type,
+            outcome=outcome,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            error_code=error_code,
+        )
+
+    def log_password_change(
+        self,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        forced: bool = False,
+    ) -> None:
+        """Log a password change event."""
+        self.log(
+            event_type=AuditEventType.AUTH_PASSWORD_CHANGE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            details={"forced": forced},
+        )
+
+    def log_account_lockout(
+        self,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        lockout_duration_minutes: int,
+        failed_attempts: int,
+    ) -> None:
+        """Log an account lockout event."""
+        self.log(
+            event_type=AuditEventType.AUTH_ACCOUNT_LOCKOUT,
+            outcome=AuditOutcome.SUCCESS,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            details={
+                "lockout_duration_minutes": lockout_duration_minutes,
+                "failed_attempts": failed_attempts,
+            },
+        )
+
+    def log_token_refresh(
+        self,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+    ) -> None:
+        """Log a token refresh event."""
+        self.log(
+            event_type=AuditEventType.AUTH_TOKEN_REFRESH,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+        )
+
+    def log_admin_action(
+        self,
+        event_type: AuditEventType,
+        admin_user_id: int,
+        admin_username: str,
+        source_ip: str,
+        user_agent: str,
+        target_user_id: Optional[int] = None,
+        details: Optional[dict] = None,
+    ) -> None:
+        """Log an administrative action."""
+        event_details = details or {}
+        if target_user_id:
+            event_details["target_user_id"] = target_user_id
+
+        self.log(
+            event_type=event_type,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=admin_user_id,
+            username=admin_username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            details=event_details,
+        )
+
+    def log_banner_acknowledged(
+        self,
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+    ) -> None:
+        """Log login banner acknowledgment."""
+        self.log(
+            event_type=AuditEventType.AUTH_BANNER_ACKNOWLEDGED,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+        )
+
+
+# Global audit logger instance
+audit_logger = AuditLogger()

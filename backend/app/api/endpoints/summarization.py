@@ -7,7 +7,7 @@ summary generation, search, analytics, and speaker identification suggestions.
 
 import logging
 from typing import Any
-from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -67,8 +67,8 @@ async def trigger_summarization(
     - **Follow-up Items**: Future discussion points
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     # Check if file has completed transcription
     if not media_file.transcript_segments:
@@ -78,7 +78,7 @@ async def trigger_summarization(
         )
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=current_user.id)
+    llm_available = await is_llm_available(user_id=int(current_user.id))
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -100,7 +100,7 @@ async def trigger_summarization(
         from app.tasks.summarization import send_summary_notification
 
         send_summary_notification(
-            current_user.id,
+            int(current_user.id),
             file_id,
             "queued",
             f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
@@ -157,13 +157,15 @@ async def get_file_summary(
     - Search-optimized content for highlighting
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     try:
         # Try to get structured summary from OpenSearch
         summary_service = OpenSearchSummaryService()
-        opensearch_result = await summary_service.get_summary_by_file_id(file_id, current_user.id)
+        opensearch_result = await summary_service.get_summary_by_file_id(
+            file_id, int(current_user.id)
+        )
 
         if opensearch_result and opensearch_result.get("summary_data"):
             # Return flexible summary structure - no field normalization needed
@@ -171,7 +173,7 @@ async def get_file_summary(
             summary_data = opensearch_result.get("summary_data", {})
 
             return SummaryResponse(
-                file_id=media_file.uuid,
+                file_id=UUID(str(media_file.uuid)),
                 summary_data=summary_data,
                 source="opensearch",
                 document_id=opensearch_result.get("document_id"),
@@ -183,8 +185,8 @@ async def get_file_summary(
         if media_file.summary_data:
             logger.info(f"Returning summary from PostgreSQL for file {file_id}")
             return SummaryResponse(
-                file_id=media_file.uuid,
-                summary_data=media_file.summary_data,
+                file_id=UUID(str(media_file.uuid)),
+                summary_data=dict(media_file.summary_data),
                 source="postgresql",
             )
 
@@ -243,7 +245,7 @@ async def search_summaries(
         # Execute search
         results = await summary_service.search_summaries(
             query=search_params,
-            user_id=current_user.id,
+            user_id=int(current_user.id),
             size=search_request.size,
             from_=search_request.offset,
         )
@@ -263,8 +265,8 @@ async def search_summaries(
 
 @router.get("/analytics", response_model=SummaryAnalyticsResponse)
 async def get_summary_analytics(
-    date_from: Optional[str] = Query(None, description="Start date filter (YYYY-MM-DD)"),
-    date_to: Optional[str] = Query(None, description="End date filter (YYYY-MM-DD)"),
+    date_from: str | None = Query(None, description="Start date filter (YYYY-MM-DD)"),
+    date_to: str | None = Query(None, description="End date filter (YYYY-MM-DD)"),
     current_user: User = Depends(get_current_active_user),
 ):
     """
@@ -302,7 +304,7 @@ async def get_summary_analytics(
 
         # Get analytics data
         analytics = await summary_service.get_summary_analytics(
-            user_id=current_user.id, filters=filters
+            user_id=int(current_user.id), filters=filters
         )
 
         return SummaryAnalyticsResponse(**analytics)
@@ -345,15 +347,15 @@ async def identify_speakers(
     - Provide context clues for manual identification
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     # Check if file has speakers to identify
     if not media_file.speakers:
         raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=current_user.id)
+    llm_available = await is_llm_available(user_id=int(current_user.id))
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -369,7 +371,7 @@ async def identify_speakers(
         return SpeakerIdentificationResponse(
             message="Speaker identification task started",
             task_id=task.id,
-            file_id=file_id,
+            file_id=UUID(str(media_file.uuid)),
             speaker_count=len(media_file.speakers),
         )
 
@@ -401,8 +403,8 @@ async def delete_summary(
     - Search index entries
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     try:
         summary_service = OpenSearchSummaryService()
@@ -411,15 +413,15 @@ async def delete_summary(
         # Delete from OpenSearch if document ID exists
         if hasattr(media_file, "summary_opensearch_id") and media_file.summary_opensearch_id:
             opensearch_deleted = await summary_service.delete_summary(
-                media_file.summary_opensearch_id
+                str(media_file.summary_opensearch_id)
             )
             if opensearch_deleted:
-                media_file.summary_opensearch_id = None
+                media_file.summary_opensearch_id = None  # type: ignore[assignment]
                 deleted = True
 
         # Clear PostgreSQL summary
         if media_file.summary_data:
-            media_file.summary_data = None
+            media_file.summary_data = None  # type: ignore[assignment]
             deleted = True
 
         if deleted:

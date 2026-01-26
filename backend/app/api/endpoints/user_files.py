@@ -88,12 +88,25 @@ def get_user_file_status(
                         "age_hours": file_age.total_seconds() / 3600,
                         "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
                         # Add formatted fields for frontend display
-                        "formatted_duration": FormattingService.format_duration(file.duration),
-                        "formatted_file_age": FormattingService.format_file_age(file.upload_time),
-                        "formatted_file_size": FormattingService.format_bytes_detailed(
-                            file.file_size
+                        "formatted_duration": FormattingService.format_duration(
+                            float(file.duration) if file.duration is not None else None
                         ),
-                        "display_status": FormattingService.format_status(file.status),
+                        "formatted_file_age": FormattingService.format_file_age(
+                            datetime(
+                                file.upload_time.year,
+                                file.upload_time.month,
+                                file.upload_time.day,
+                                file.upload_time.hour,
+                                file.upload_time.minute,
+                                file.upload_time.second,
+                                file.upload_time.microsecond,
+                                tzinfo=file.upload_time.tzinfo,
+                            )
+                        ),
+                        "formatted_file_size": FormattingService.format_bytes_detailed(
+                            int(file.file_size) if file.file_size is not None else None
+                        ),
+                        "display_status": FormattingService.format_status(FileStatus(file.status)),
                         "status_badge_class": FormattingService.get_status_badge_class(
                             file.status.value
                         ),
@@ -111,12 +124,25 @@ def get_user_file_status(
                         "duration": file.duration,
                         "age_hours": file_age.total_seconds() / 3600,
                         # Add formatted fields for frontend display
-                        "formatted_duration": FormattingService.format_duration(file.duration),
-                        "formatted_file_age": FormattingService.format_file_age(file.upload_time),
-                        "formatted_file_size": FormattingService.format_bytes_detailed(
-                            file.file_size
+                        "formatted_duration": FormattingService.format_duration(
+                            float(file.duration) if file.duration is not None else None
                         ),
-                        "display_status": FormattingService.format_status(file.status),
+                        "formatted_file_age": FormattingService.format_file_age(
+                            datetime(
+                                file.upload_time.year,
+                                file.upload_time.month,
+                                file.upload_time.day,
+                                file.upload_time.hour,
+                                file.upload_time.minute,
+                                file.upload_time.second,
+                                file.upload_time.microsecond,
+                                tzinfo=file.upload_time.tzinfo,
+                            )
+                        ),
+                        "formatted_file_size": FormattingService.format_bytes_detailed(
+                            int(file.file_size) if file.file_size is not None else None
+                        ),
+                        "display_status": FormattingService.format_status(FileStatus(file.status)),
                         "status_badge_class": FormattingService.get_status_badge_class(
                             file.status.value
                         ),
@@ -156,8 +182,8 @@ def get_file_detailed_status(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-        file_id = media_file.id
+        media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+        file_id = int(media_file.id)
 
         # Get task summary
         task_summary = get_task_summary_for_media_file(db, file_id)
@@ -179,7 +205,28 @@ def get_file_detailed_status(
                     "error_message": task.error_message,
                     # Add formatted processing time
                     "formatted_processing_time": FormattingService.format_processing_time(
-                        task.created_at, task.completed_at
+                        datetime(
+                            task.created_at.year,
+                            task.created_at.month,
+                            task.created_at.day,
+                            task.created_at.hour,
+                            task.created_at.minute,
+                            task.created_at.second,
+                            task.created_at.microsecond,
+                            tzinfo=task.created_at.tzinfo,
+                        ),
+                        datetime(
+                            task.completed_at.year,
+                            task.completed_at.month,
+                            task.completed_at.day,
+                            task.completed_at.hour,
+                            task.completed_at.minute,
+                            task.completed_at.second,
+                            task.completed_at.microsecond,
+                            tzinfo=task.completed_at.tzinfo,
+                        )
+                        if task.completed_at
+                        else None,
                     ),
                     "status_display": task.status.title(),
                 }
@@ -208,11 +255,24 @@ def get_file_detailed_status(
                 "language": media_file.language,
                 # Add formatted fields for frontend display
                 "formatted_file_size": FormattingService.format_bytes_detailed(
-                    media_file.file_size
+                    int(media_file.file_size) if media_file.file_size is not None else None
                 ),
-                "formatted_duration": FormattingService.format_duration(media_file.duration),
-                "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
-                "display_status": FormattingService.format_status(media_file.status),
+                "formatted_duration": FormattingService.format_duration(
+                    float(media_file.duration) if media_file.duration is not None else None
+                ),
+                "formatted_file_age": FormattingService.format_file_age(
+                    datetime(
+                        media_file.upload_time.year,
+                        media_file.upload_time.month,
+                        media_file.upload_time.day,
+                        media_file.upload_time.hour,
+                        media_file.upload_time.minute,
+                        media_file.upload_time.second,
+                        media_file.upload_time.microsecond,
+                        tzinfo=media_file.upload_time.tzinfo,
+                    )
+                ),
+                "display_status": FormattingService.format_status(FileStatus(media_file.status)),
                 "status_badge_class": FormattingService.get_status_badge_class(
                     media_file.status.value
                 ),
@@ -222,7 +282,9 @@ def get_file_detailed_status(
             "file_age_hours": file_age.total_seconds() / 3600,
             "can_retry": can_retry,
             "is_stuck": is_stuck,
-            "suggestions": _get_file_suggestions(media_file, task_summary, file_age),
+            "suggestions": _get_file_suggestions(
+                media_file, task_summary, timedelta(seconds=file_age.total_seconds())
+            ),
         }
 
     except HTTPException:
@@ -248,8 +310,8 @@ async def retry_file_processing(
     """
     try:
         # Get the file (ensure user owns it)
-        media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-        file_id = media_file.id
+        media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+        file_id = int(media_file.id)
 
         # Check if retry is appropriate
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
@@ -294,9 +356,9 @@ async def retry_file_processing(
             )
 
             for task in old_tasks:
-                task.status = "failed"
-                task.error_message = "Task marked as failed for user retry"
-                task.completed_at = datetime.now(timezone.utc)
+                task.status = "failed"  # type: ignore[assignment]
+                task.error_message = "Task marked as failed for user retry"  # type: ignore[assignment]
+                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
             db.commit()
 

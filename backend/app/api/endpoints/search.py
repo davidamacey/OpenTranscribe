@@ -40,7 +40,7 @@ def search(
     # Call the OpenSearch service
     results = search_transcripts(
         query=q,
-        user_id=current_user.id,
+        user_id=int(current_user.id),
         speaker=speaker,
         tags=tags,
         use_semantic=semantic,
@@ -99,8 +99,8 @@ def advanced_search(
     speaker = speakers[0] if speakers and len(speakers) > 0 else None
 
     results = search_transcripts(
-        query=q,
-        user_id=current_user.id,
+        query=q or "",
+        user_id=int(current_user.id),
         speaker=speaker,
         tags=tags,
         use_semantic=semantic,

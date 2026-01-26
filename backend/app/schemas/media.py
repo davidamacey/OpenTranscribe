@@ -226,6 +226,7 @@ class TranscriptSegmentCreate(TranscriptSegmentBase):
 
 
 class TranscriptSegmentUpdate(BaseModel):
+    id: int
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     text: Optional[str] = None

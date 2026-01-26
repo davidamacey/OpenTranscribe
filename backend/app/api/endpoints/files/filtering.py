@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 import sqlalchemy as sa
 from sqlalchemy import Float
@@ -16,7 +15,7 @@ from app.models.media import Tag
 from app.models.media import TranscriptSegment
 
 
-def apply_search_filter(query: Query, search: Optional[str]) -> Query:
+def apply_search_filter(query: Query, search: str | None) -> Query:
     """
     Apply search filter for filename and title.
 
@@ -28,16 +27,15 @@ def apply_search_filter(query: Query, search: Optional[str]) -> Query:
         Filtered query
     """
     if search:
-        query = query.filter(
-            sa.or_(
-                MediaFile.filename.ilike(f"%{search}%"),
-                MediaFile.title.ilike(f"%{search}%") if MediaFile.title else False,
-            )
-        )
+        # Build conditions for search
+        conditions = [MediaFile.filename.ilike(f"%{search}%")]
+        if MediaFile.title is not None:
+            conditions.append(MediaFile.title.ilike(f"%{search}%"))
+        query = query.filter(sa.or_(*conditions))
     return query
 
 
-def apply_tag_filter(query: Query, tag: Optional[list[str]]) -> Query:
+def apply_tag_filter(query: Query, tag: list[str] | None) -> Query:
     """
     Apply tag filter - supports multiple tags.
 
@@ -58,7 +56,7 @@ def apply_tag_filter(query: Query, tag: Optional[list[str]]) -> Query:
     return query
 
 
-def apply_speaker_filter(query: Query, speaker: Optional[list[str]]) -> Query:
+def apply_speaker_filter(query: Query, speaker: list[str] | None) -> Query:
     """
     Apply speaker filter using display name or original name.
 
@@ -84,9 +82,7 @@ def apply_speaker_filter(query: Query, speaker: Optional[list[str]]) -> Query:
     return query
 
 
-def apply_date_filters(
-    query: Query, from_date: Optional[datetime], to_date: Optional[datetime]
-) -> Query:
+def apply_date_filters(query: Query, from_date: datetime | None, to_date: datetime | None) -> Query:
     """
     Apply date range filters.
 
@@ -108,7 +104,7 @@ def apply_date_filters(
 
 
 def apply_duration_filters(
-    query: Query, min_duration: Optional[float], max_duration: Optional[float]
+    query: Query, min_duration: float | None, max_duration: float | None
 ) -> Query:
     """
     Apply duration range filters.
@@ -131,7 +127,7 @@ def apply_duration_filters(
 
 
 def apply_file_size_filters(
-    query: Query, min_file_size: Optional[int], max_file_size: Optional[int]
+    query: Query, min_file_size: int | None, max_file_size: int | None
 ) -> Query:
     """
     Apply file size range filters (MB to bytes conversion).
@@ -153,7 +149,7 @@ def apply_file_size_filters(
     return query
 
 
-def apply_file_type_filter(query: Query, file_type: Optional[list[str]]) -> Query:
+def apply_file_type_filter(query: Query, file_type: list[str] | None) -> Query:
     """
     Apply file type filter (audio/video).
 
@@ -177,7 +173,7 @@ def apply_file_type_filter(query: Query, file_type: Optional[list[str]]) -> Quer
     return query
 
 
-def apply_status_filter(query: Query, status: Optional[list[str]]) -> Query:
+def apply_status_filter(query: Query, status: list[str] | None) -> Query:
     """
     Apply status filter.
 
@@ -198,7 +194,7 @@ def apply_status_filter(query: Query, status: Optional[list[str]]) -> Query:
     return query
 
 
-def apply_transcript_search_filter(query: Query, transcript_search: Optional[str]) -> Query:
+def apply_transcript_search_filter(query: Query, transcript_search: str | None) -> Query:
     """
     Apply transcript content search filter.
 
@@ -282,8 +278,11 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         .first()
     )
 
-    min_duration = duration_range[0] if duration_range[0] is not None else 0
-    max_duration = duration_range[1] if duration_range[1] is not None else 0
+    min_duration = 0.0
+    max_duration = 0.0
+    if duration_range is not None:
+        min_duration = duration_range[0] if duration_range[0] is not None else 0.0
+        max_duration = duration_range[1] if duration_range[1] is not None else 0.0
 
     # Get resolution ranges
     width_range = (
@@ -304,10 +303,18 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         .first()
     )
 
-    min_width = width_range[0] if width_range[0] is not None else 0
-    max_width = width_range[1] if width_range[1] is not None else 0
-    min_height = height_range[0] if height_range[0] is not None else 0
-    max_height = height_range[1] if height_range[1] is not None else 0
+    min_width = 0
+    max_width = 0
+    min_height = 0
+    max_height = 0
+
+    if width_range is not None:
+        min_width = width_range[0] if width_range[0] is not None else 0
+        max_width = width_range[1] if width_range[1] is not None else 0
+
+    if height_range is not None:
+        min_height = height_range[0] if height_range[0] is not None else 0
+        max_height = height_range[1] if height_range[1] is not None else 0
 
     return {
         "formats": formats,

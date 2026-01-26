@@ -39,12 +39,12 @@ async def get_summary_status(
     # Get file by UUID
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id
 
     try:
         # Check LLM availability for current user
-        llm_available = await is_llm_available(user_id=current_user.id)
+        llm_available = await is_llm_available(user_id=int(current_user.id))
     except Exception as e:
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
@@ -79,7 +79,7 @@ async def retry_summary(
     # Get file by UUID with permission check
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id
 
     # Check if retry is needed and possible
@@ -97,7 +97,7 @@ async def retry_summary(
 
     # Check LLM availability for current user
     try:
-        llm_available = await is_llm_available(user_id=current_user.id)
+        llm_available = await is_llm_available(user_id=int(current_user.id))
     except Exception as e:
         logger.error(f"Failed to check LLM availability for retry of file {file_id}: {e}")
         raise HTTPException(
@@ -112,7 +112,7 @@ async def retry_summary(
         )
 
     # Attempt to retry
-    success = retry_summary_if_available(db, file_id)
+    success = retry_summary_if_available(db, str(file_id))
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

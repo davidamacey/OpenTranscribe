@@ -95,7 +95,7 @@ class SpeakerEmbeddingService:
                 # Extract embedding from the whole file
                 embedding = self.inference(audio_path)
 
-            return embedding
+            return embedding  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
@@ -181,7 +181,7 @@ class SpeakerEmbeddingService:
 
         # Stack all embeddings and compute mean
         stacked = np.vstack(embeddings)
-        return np.mean(stacked, axis=0)
+        return np.mean(stacked, axis=0)  # type: ignore[no-any-return]
 
     def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """

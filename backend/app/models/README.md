@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
-  
+
   # Data Models Documentation
 </div>
 
@@ -42,26 +42,26 @@ The main user entity for authentication and authorization.
 ```python
 class User(Base):
     __tablename__ = "user"
-    
+
     # Primary Key
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # Authentication
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
-    
+
     # Profile
     full_name: Mapped[Optional[str]] = mapped_column(String)
-    
+
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[str] = mapped_column(String, default="user")
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-    
+
     # Relationships
     media_files: Mapped[List["MediaFile"]] = relationship("MediaFile", back_populates="user")
     comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="user")
@@ -84,47 +84,47 @@ Central entity representing uploaded audio/video files.
 ```python
 class MediaFile(Base):
     __tablename__ = "media_file"
-    
+
     # Primary Key
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # File Information
     filename: Mapped[str] = mapped_column(String, nullable=False)
     file_size: Mapped[int] = mapped_column(Integer)
     content_type: Mapped[str] = mapped_column(String)
     storage_path: Mapped[str] = mapped_column(String)
-    
+
     # Processing Status
     status: Mapped[FileStatus] = mapped_column(Enum(FileStatus), default=FileStatus.PENDING)
-    
+
     # Media Metadata
     duration: Mapped[Optional[float]] = mapped_column(Float)
     language: Mapped[Optional[str]] = mapped_column(String)
-    
+
     # AI Processing Results
     summary: Mapped[Optional[str]] = mapped_column(Text)
     translated_text: Mapped[Optional[str]] = mapped_column(Text)
-    
+
     # Rich Metadata (JSON fields)
     metadata: Mapped[Optional[dict]] = mapped_column(JSON)  # Full ExifTool output
     metadata_important: Mapped[Optional[dict]] = mapped_column(JSON)  # Curated fields
-    
+
     # Video-specific
     resolution_width: Mapped[Optional[int]] = mapped_column(Integer)
     resolution_height: Mapped[Optional[int]] = mapped_column(Integer)
     frame_rate: Mapped[Optional[float]] = mapped_column(Float)
     codec: Mapped[Optional[str]] = mapped_column(String)
-    
+
     # Audio-specific
     audio_channels: Mapped[Optional[int]] = mapped_column(Integer)
     audio_sample_rate: Mapped[Optional[int]] = mapped_column(Integer)
     audio_bit_depth: Mapped[Optional[int]] = mapped_column(Integer)
-    
+
     # Ownership & Timestamps
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     upload_time: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
+
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="media_files")
     transcript_segments: Mapped[List["TranscriptSegment"]] = relationship("TranscriptSegment", back_populates="media_file")
@@ -148,31 +148,31 @@ Individual segments of transcribed text with timing and speaker information.
 ```python
 class TranscriptSegment(Base):
     __tablename__ = "transcript_segment"
-    
+
     # Primary Key
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # Foreign Keys
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
     speaker_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("speaker.id"))
-    
+
     # Timing Information
     start_time: Mapped[float] = mapped_column(Float, nullable=False)
     end_time: Mapped[float] = mapped_column(Float, nullable=False)
-    
+
     # Content
     text: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[Optional[float]] = mapped_column(Float)
-    
+
     # Word-level Data (JSON)
     words: Mapped[Optional[dict]] = mapped_column(JSON)  # Word-level timing from WhisperX
-    
+
     # Ordering
     segment_index: Mapped[Optional[int]] = mapped_column(Integer)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    
+
     # Relationships
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="transcript_segments")
     speaker: Mapped[Optional["Speaker"]] = relationship("Speaker", back_populates="transcript_segments")
@@ -191,27 +191,27 @@ Speaker identification and management from AI diarization.
 ```python
 class Speaker(Base):
     __tablename__ = "speaker"
-    
+
     # Primary Key
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # Speaker Identity
     name: Mapped[str] = mapped_column(String, nullable=False)  # AI-generated (SPEAKER_01)
     display_name: Mapped[Optional[str]] = mapped_column(String)  # User-assigned
     uuid: Mapped[str] = mapped_column(String, nullable=False)  # Cross-file speaker tracking
-    
+
     # Voice Characteristics (for future ML features)
     voice_embedding: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
     characteristics: Mapped[Optional[dict]] = mapped_column(JSON)
-    
+
     # User Management
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-    
+
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speakers")
     transcript_segments: Mapped[List["TranscriptSegment"]] = relationship("TranscriptSegment", back_populates="speaker")
@@ -230,27 +230,27 @@ Background task tracking for long-running AI operations.
 ```python
 class Task(Base):
     __tablename__ = "task"
-    
+
     # Primary Key (matches Celery task ID)
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    
+
     # Task Information
     task_type: Mapped[str] = mapped_column(String, nullable=False)  # transcription, analysis, etc.
     status: Mapped[str] = mapped_column(String, default="pending")
     progress: Mapped[float] = mapped_column(Float, default=0.0)
-    
+
     # Error Handling
     error_message: Mapped[Optional[str]] = mapped_column(Text)
-    
+
     # Foreign Keys
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    
+
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="tasks")
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="tasks")
@@ -269,22 +269,22 @@ User annotations and comments on media files.
 ```python
 class Comment(Base):
     __tablename__ = "comment"
-    
+
     # Primary Key
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
+
     # Content
     text: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[Optional[float]] = mapped_column(Float)  # Position in media file
-    
+
     # Foreign Keys
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
-    
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
-    
+
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="comments")
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="comments")
@@ -296,21 +296,21 @@ Flexible tagging system for file organization.
 ```python
 class Tag(Base):
     __tablename__ = "tag"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     color: Mapped[Optional[str]] = mapped_column(String)
-    
+
     # Relationships
     file_tags: Mapped[List["FileTag"]] = relationship("FileTag", back_populates="tag")
 
 class FileTag(Base):
     __tablename__ = "file_tag"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"))
     tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tag.id"))
-    
+
     # Relationships
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="file_tags")
     tag: Mapped["Tag"] = relationship("Tag", back_populates="file_tags")
@@ -322,21 +322,21 @@ Processing analytics and insights for media files.
 ```python
 class Analytics(Base):
     __tablename__ = "analytics"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"))
-    
+
     # Transcript Analytics
     word_count: Mapped[Optional[int]] = mapped_column(Integer)
     speaker_count: Mapped[Optional[int]] = mapped_column(Integer)
     segment_count: Mapped[Optional[int]] = mapped_column(Integer)
-    
+
     # Processing Metrics
     processing_time: Mapped[Optional[float]] = mapped_column(Float)
-    
+
     # AI Insights (JSON for flexibility)
     insights: Mapped[Optional[dict]] = mapped_column(JSON)
-    
+
     # Relationships
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="analytics")
 ```

@@ -133,7 +133,7 @@ class SpeakerStatusService:
         Returns:
             Best available display name
         """
-        return speaker.display_name or speaker.name or "Unknown Speaker"
+        return str(speaker.display_name or speaker.name or "Unknown Speaker")
 
     @staticmethod
     def compute_status_for_speakers(db: Session, speakers: list[Speaker]) -> list[dict]:
@@ -198,10 +198,10 @@ class SpeakerStatusService:
             status_info = SpeakerStatusService.compute_speaker_status(speaker)
 
             # Update computed fields
-            speaker.computed_status = status_info["computed_status"]
-            speaker.status_text = status_info["status_text"]
-            speaker.status_color = status_info["status_color"]
-            speaker.resolved_display_name = status_info["resolved_display_name"]
+            speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
+            speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
+            speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
+            speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]
 
             db.commit()
             logger.info(
@@ -235,7 +235,7 @@ class SpeakerStatusService:
             updated_count = 0
 
             for speaker in speakers:
-                if SpeakerStatusService.update_speaker_status_in_db(db, speaker.id):
+                if SpeakerStatusService.update_speaker_status_in_db(db, int(speaker.id)):
                     updated_count += 1
 
             logger.info(f"Refreshed status for {updated_count} speakers")
@@ -256,7 +256,7 @@ class SpeakerStatusService:
         status_info = SpeakerStatusService.compute_speaker_status(speaker)
 
         # Add computed fields to the speaker object
-        speaker.computed_status = status_info["computed_status"]
-        speaker.status_text = status_info["status_text"]
-        speaker.status_color = status_info["status_color"]
-        speaker.resolved_display_name = status_info["resolved_display_name"]
+        speaker.computed_status = status_info["computed_status"]  # type: ignore[assignment]
+        speaker.status_text = status_info["status_text"]  # type: ignore[assignment]
+        speaker.status_color = status_info["status_color"]  # type: ignore[assignment]
+        speaker.resolved_display_name = status_info["resolved_display_name"]  # type: ignore[assignment]

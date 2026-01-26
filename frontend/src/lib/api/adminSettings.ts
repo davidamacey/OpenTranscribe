@@ -71,7 +71,9 @@ export class AdminSettingsApi {
   /**
    * Update garbage cleanup configuration (admin only)
    */
-  static async updateGarbageCleanupConfig(config: GarbageCleanupConfigUpdate): Promise<GarbageCleanupConfig> {
+  static async updateGarbageCleanupConfig(
+    config: GarbageCleanupConfigUpdate
+  ): Promise<GarbageCleanupConfig> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/settings/garbage-cleanup`, config);
     return response.data;
   }

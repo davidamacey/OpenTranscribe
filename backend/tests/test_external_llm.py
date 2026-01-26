@@ -472,25 +472,27 @@ class TestResourceManagement:
 
         try:
             # Attempt connections sequentially (sync methods can't use asyncio.gather)
-            results = []
+            results: list[tuple[bool, str] | Exception] = []
             for service in services:
                 try:
                     result = service.validate_connection()
                     results.append(result)
                 except Exception as e:
-                    results.append(e)
+                    results.append(e)  # type: ignore[arg-type]
 
             # Should handle all requests without crashing
             assert len(results) == 5
 
-            for result in results:
+            for result in results:  # type: ignore[assignment]
                 if isinstance(result, Exception):
                     # Exceptions are acceptable for failed connections
                     continue
-                else:
-                    success, message = result
-                    assert isinstance(success, bool)
-                    assert isinstance(message, str)
+                # At this point, result must be tuple[bool, str]
+                if not isinstance(result, tuple):  # type: ignore[misc]
+                    continue
+                success, message = result  # type: ignore[misc]
+                assert isinstance(success, bool)
+                assert isinstance(message, str)
         finally:
             # Cleanup all services
             for service in services:

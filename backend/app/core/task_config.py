@@ -13,7 +13,7 @@ class TaskRecoveryConfig:
     """Configuration for task recovery operations."""
 
     # Maximum allowed duration for different task types (in seconds)
-    MAX_TASK_DURATIONS: dict[str, int] = None
+    MAX_TASK_DURATIONS: dict[str, int] | None = None
 
     # Time before considering a task stale (in seconds)
     STALENESS_THRESHOLD: int = 300  # 5 minutes

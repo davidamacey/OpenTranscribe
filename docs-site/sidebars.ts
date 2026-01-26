@@ -58,10 +58,19 @@ const sidebars: SidebarsConfig = {
         'features/transcription',
         'features/speaker-diarization',
         'features/llm-integration',
+        'features/authentication',
         // TODO: Add more feature pages
         // 'features/search',
         // 'features/analytics',
         // 'features/pwa',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Authentication',
+      items: [
+        'authentication/overview',
+        // Detailed guides are in main docs/ folder, linked from overview
       ],
     },
     {

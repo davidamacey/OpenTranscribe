@@ -93,7 +93,7 @@ class OpenSearchSummaryService:
         except Exception as e:
             logger.error(f"Error creating summary index: {e}")
 
-    async def index_summary(self, summary_data: dict[str, Any]) -> str:
+    async def index_summary(self, summary_data: dict[str, Any]) -> str | None:
         """
         Index a summary document in OpenSearch with flexible structure support.
 
@@ -307,17 +307,17 @@ class OpenSearchSummaryService:
                         "fuzziness": "AUTO",
                     }
                 }
-                search_body["query"]["bool"]["should"].append(text_query)
-                search_body["query"]["bool"]["minimum_should_match"] = 1
+                search_body["query"]["bool"]["should"].append(text_query)  # type: ignore[index]
+                search_body["query"]["bool"]["minimum_should_match"] = 1  # type: ignore[index]
 
             # Add date range filter
             if query.get("date_from") or query.get("date_to"):
-                date_filter = {"range": {"created_at": {}}}
+                date_filter: dict[str, Any] = {"range": {"created_at": {}}}
                 if query.get("date_from"):
                     date_filter["range"]["created_at"]["gte"] = query["date_from"]
                 if query.get("date_to"):
                     date_filter["range"]["created_at"]["lte"] = query["date_to"]
-                search_body["query"]["bool"]["filter"].append(date_filter)
+                search_body["query"]["bool"]["filter"].append(date_filter)  # type: ignore[index]
 
             # Add action item filter
             if query.get("has_pending_actions"):
@@ -329,7 +329,7 @@ class OpenSearchSummaryService:
                         },
                     }
                 }
-                search_body["query"]["bool"]["filter"].append(action_filter)
+                search_body["query"]["bool"]["filter"].append(action_filter)  # type: ignore[index]
 
             # Execute search
             response = self.client.search(index=self.index_name, body=search_body)
@@ -366,7 +366,7 @@ class OpenSearchSummaryService:
             return {"hits": [], "total": 0}
 
     async def get_summary_analytics(
-        self, user_id: int, filters: dict[str, Any] = None
+        self, user_id: int, filters: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Get analytics and aggregations for summaries
@@ -440,7 +440,7 @@ class OpenSearchSummaryService:
                 date_filter = {"range": {"created_at": {"gte": filters["date_from"]}}}
                 if filters.get("date_to"):
                     date_filter["range"]["created_at"]["lte"] = filters["date_to"]
-                agg_query["query"]["bool"]["must"].append(date_filter)
+                agg_query["query"]["bool"]["must"].append(date_filter)  # type: ignore[index]
 
             response = self.client.search(index=self.index_name, body=agg_query)
 
@@ -592,7 +592,7 @@ class OpenSearchSummaryService:
             # Skip numbers, booleans, etc.
 
         # Extract all text content for searchable_content
-        searchable_parts = []
+        searchable_parts: list[str] = []
         extract_text_recursively(summary_data, searchable_parts)
 
         # Separate metadata and summary content

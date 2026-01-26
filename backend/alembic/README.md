@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="200">
-  
+
   # Alembic Database Migration Management
 </div>
 

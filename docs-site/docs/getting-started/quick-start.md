@@ -119,6 +119,17 @@ Set up LLM integration for AI-powered summarization:
 
 See [LLM Integration](../features/llm-integration.md) for details.
 
+### Enterprise Authentication (Optional)
+
+For enterprise deployments, OpenTranscribe supports:
+
+- **LDAP/Active Directory** - Integrate with existing AD
+- **Keycloak/OIDC** - Single Sign-On
+- **PKI/X.509** - Certificate-based authentication
+- **MFA** - TOTP-based multi-factor authentication
+
+See [Authentication Overview](../authentication/overview.md) for setup guides.
+
 ### Manage Speakers
 
 OpenTranscribe automatically detects speakers, but you can improve accuracy:

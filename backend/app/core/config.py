@@ -4,7 +4,78 @@ from typing import Optional
 from typing import Union
 
 from pydantic import field_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+
+def _validate_ldap_settings(settings: "Settings") -> None:
+    """Validate LDAP configuration when LDAP authentication is enabled.
+
+    Args:
+        settings: The Settings instance to validate.
+
+    Raises:
+        ValueError: If LDAP_ENABLED is true but required LDAP fields are missing.
+    """
+    if not settings.LDAP_ENABLED:
+        return
+
+    missing_ldap = []
+    if not settings.LDAP_SERVER:
+        missing_ldap.append("LDAP_SERVER")
+    if not settings.LDAP_BIND_DN:
+        missing_ldap.append("LDAP_BIND_DN")
+    if not settings.LDAP_BIND_PASSWORD:
+        missing_ldap.append("LDAP_BIND_PASSWORD")
+    if not settings.LDAP_SEARCH_BASE:
+        missing_ldap.append("LDAP_SEARCH_BASE")
+    if missing_ldap:
+        raise ValueError(
+            f"LDAP_ENABLED=true but the following required settings are missing: "
+            f"{', '.join(missing_ldap)}"
+        )
+
+
+def _validate_keycloak_settings(settings: "Settings") -> None:
+    """Validate Keycloak/OIDC configuration when Keycloak authentication is enabled.
+
+    Args:
+        settings: The Settings instance to validate.
+
+    Raises:
+        ValueError: If KEYCLOAK_ENABLED is true but required Keycloak fields are missing.
+    """
+    if not settings.KEYCLOAK_ENABLED:
+        return
+
+    missing_keycloak = []
+    if not settings.KEYCLOAK_SERVER_URL:
+        missing_keycloak.append("KEYCLOAK_SERVER_URL")
+    if not settings.KEYCLOAK_CLIENT_ID:
+        missing_keycloak.append("KEYCLOAK_CLIENT_ID")
+    if not settings.KEYCLOAK_CALLBACK_URL:
+        missing_keycloak.append("KEYCLOAK_CALLBACK_URL")
+    if missing_keycloak:
+        raise ValueError(
+            f"KEYCLOAK_ENABLED=true but the following required settings are missing: "
+            f"{', '.join(missing_keycloak)}"
+        )
+
+
+def _validate_pki_settings(settings: "Settings") -> None:
+    """Validate PKI configuration when PKI authentication with revocation checking is enabled.
+
+    Args:
+        settings: The Settings instance to validate.
+
+    Raises:
+        ValueError: If PKI_ENABLED and PKI_VERIFY_REVOCATION are true but PKI_CA_CERT_PATH is missing.
+    """
+    if settings.PKI_ENABLED and settings.PKI_VERIFY_REVOCATION and not settings.PKI_CA_CERT_PATH:
+        raise ValueError(
+            "PKI_VERIFY_REVOCATION=true but PKI_CA_CERT_PATH is not set. "
+            "CA certificate is required for OCSP revocation checking."
+        )
 
 
 class Settings(BaseSettings):
@@ -16,10 +87,104 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = ENVIRONMENT == "development"
 
-    # JWT Token settings
+    # JWT Token settings (NIST SP 800-63B compliant)
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "this_should_be_changed_in_production")
     JWT_ALGORITHM: str = "HS256"
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    # Access token expiration: 60 minutes (NIST recommended for moderate assurance)
+    # Can be reduced to 15-30 minutes for high-security environments
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    # Refresh token expiration: 7 days (for token refresh flow, future implementation)
+    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = int(
+        os.getenv("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", "10080")
+    )
+    # Session idle timeout: 15 minutes (NIST moderate assurance, DoD STIG compliant)
+    SESSION_IDLE_TIMEOUT_MINUTES: int = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "15"))
+    # Session absolute timeout: 8 hours (force re-authentication)
+    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = int(
+        os.getenv("SESSION_ABSOLUTE_TIMEOUT_MINUTES", "480")
+    )
+
+    # ===== FIPS 140-2 Password Hashing =====
+    # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
+    FIPS_MODE: bool = os.getenv("FIPS_MODE", "false").lower() == "true"
+    # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
+    PBKDF2_ITERATIONS: int = int(os.getenv("PBKDF2_ITERATIONS", "210000"))
+
+    # ===== Password Policy (FedRAMP IA-5) =====
+    # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
+    PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
+    # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
+    PASSWORD_MIN_LENGTH: int = int(os.getenv("PASSWORD_MIN_LENGTH", "12"))
+    # Require at least one uppercase letter
+    PASSWORD_REQUIRE_UPPERCASE: bool = (
+        os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
+    )
+    # Require at least one lowercase letter
+    PASSWORD_REQUIRE_LOWERCASE: bool = (
+        os.getenv("PASSWORD_REQUIRE_LOWERCASE", "true").lower() == "true"
+    )
+    # Require at least one digit
+    PASSWORD_REQUIRE_DIGIT: bool = os.getenv("PASSWORD_REQUIRE_DIGIT", "true").lower() == "true"
+    # Require at least one special character
+    PASSWORD_REQUIRE_SPECIAL: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL", "true").lower() == "true"
+    # Number of previous passwords to prevent reuse (FedRAMP requires 24)
+    PASSWORD_HISTORY_COUNT: int = int(os.getenv("PASSWORD_HISTORY_COUNT", "24"))
+    # Maximum password age in days before forced reset (FedRAMP requires 60)
+    PASSWORD_MAX_AGE_DAYS: int = int(os.getenv("PASSWORD_MAX_AGE_DAYS", "60"))
+
+    # ===== Rate Limiting Settings (OWASP recommended) =====
+    # Rate limit authentication endpoints per IP address
+    RATE_LIMIT_AUTH_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_AUTH_PER_MINUTE", "10"))
+    # Rate limit for general API endpoints
+    RATE_LIMIT_API_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_API_PER_MINUTE", "100"))
+    # Enable rate limiting (disable for testing)
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    # Trusted proxy IPs for rate limiting (comma-separated)
+    # Only trust X-Forwarded-For headers from these IPs
+    # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    RATE_LIMIT_TRUSTED_PROXIES: str = os.getenv("RATE_LIMIT_TRUSTED_PROXIES", "")
+
+    # ===== Token Management (FedRAMP AC-12) =====
+    # Refresh token expiration in days (7 days default for refresh token flow)
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    # Enable token revocation checking via Redis blacklist
+    TOKEN_REVOCATION_ENABLED: bool = os.getenv("TOKEN_REVOCATION_ENABLED", "true").lower() == "true"
+
+    # ===== Account Lockout Settings (NIST AC-7 compliant) =====
+    # Number of failed login attempts before lockout
+    ACCOUNT_LOCKOUT_THRESHOLD: int = int(os.getenv("ACCOUNT_LOCKOUT_THRESHOLD", "5"))
+    # Initial lockout duration in minutes (progressive: 15 -> 30 -> 60 -> 1440)
+    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = int(os.getenv("ACCOUNT_LOCKOUT_DURATION_MINUTES", "15"))
+    # Enable progressive lockout (doubles duration for each subsequent lockout)
+    ACCOUNT_LOCKOUT_PROGRESSIVE: bool = (
+        os.getenv("ACCOUNT_LOCKOUT_PROGRESSIVE", "true").lower() == "true"
+    )
+    # Maximum lockout duration in minutes (24 hours)
+    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = int(
+        os.getenv("ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", "1440")
+    )
+    # Enable account lockout (disable for testing)
+    ACCOUNT_LOCKOUT_ENABLED: bool = os.getenv("ACCOUNT_LOCKOUT_ENABLED", "true").lower() == "true"
+
+    # ===== Audit Logging (FedRAMP AU-2/AU-3) =====
+    AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
+    AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
+    AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
+    AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365"))
+
+    # ===== Login Banner (FedRAMP AC-8) =====
+    LOGIN_BANNER_ENABLED: bool = os.getenv("LOGIN_BANNER_ENABLED", "false").lower() == "true"
+    LOGIN_BANNER_TEXT: str = os.getenv("LOGIN_BANNER_TEXT", "")
+    LOGIN_BANNER_CLASSIFICATION: str = os.getenv("LOGIN_BANNER_CLASSIFICATION", "UNCLASSIFIED")
+
+    # ===== Account Expiration (FedRAMP AC-2) =====
+    ACCOUNT_INACTIVE_DAYS: int = int(os.getenv("ACCOUNT_INACTIVE_DAYS", "90"))
+    ACCOUNT_EXPIRATION_ENABLED: bool = (
+        os.getenv("ACCOUNT_EXPIRATION_ENABLED", "false").lower() == "true"
+    )
+
+    # ===== Concurrent Session Limits (FedRAMP AC-10) =====
+    MAX_CONCURRENT_SESSIONS: int = int(os.getenv("MAX_CONCURRENT_SESSIONS", "0"))  # 0 = unlimited
 
     # Encryption settings for sensitive data (API keys, etc.)
     ENCRYPTION_KEY: str = os.getenv(
@@ -71,7 +236,8 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = REDIS_URL
 
     # CORS settings
-    CORS_ORIGINS: list[str] = ["*", "http://localhost:5173", "http://127.0.0.1:5173"]
+    # Note: Remove "*" in production and specify exact origins for security
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -81,6 +247,20 @@ class Settings(BaseSettings):
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
+
+    @model_validator(mode="after")
+    def validate_auth_settings(self) -> "Settings":
+        """Validate that required fields are set when authentication features are enabled.
+
+        Delegates to helper functions for each authentication type.
+
+        Raises:
+            ValueError: If a required field is missing when its feature is enabled.
+        """
+        _validate_ldap_settings(self)
+        _validate_keycloak_settings(self)
+        _validate_pki_settings(self)
+        return self
 
     # Hardware Detection Settings (auto-detected by default)
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
@@ -100,9 +280,8 @@ class Settings(BaseSettings):
     MIN_SPEAKERS: int = int(os.getenv("MIN_SPEAKERS", "1"))
     MAX_SPEAKERS: int = int(os.getenv("MAX_SPEAKERS", "20"))
     # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
-    NUM_SPEAKERS: Optional[int] = (
-        int(os.getenv("NUM_SPEAKERS")) if os.getenv("NUM_SPEAKERS") else None
-    )
+    _NUM_SPEAKERS_STR: Optional[str] = os.getenv("NUM_SPEAKERS")
+    NUM_SPEAKERS: Optional[int] = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
 
     # LLM Configuration - Users configure through web UI, stored in database
     # These are system fallbacks for quick access when no user settings exist
@@ -127,6 +306,87 @@ class Settings(BaseSettings):
     LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
     LDAP_TIMEOUT: int = int(os.getenv("LDAP_TIMEOUT", "10"))
     LDAP_ADMIN_USERS: str = os.getenv("LDAP_ADMIN_USERS", "")
+    # LDAP Group-based RBAC (alternative to LDAP_ADMIN_USERS)
+    # Comma-separated list of group DNs that grant admin role
+    LDAP_ADMIN_GROUPS: str = os.getenv("LDAP_ADMIN_GROUPS", "")
+    # Comma-separated list of group DNs required for user access (empty = allow all)
+    LDAP_USER_GROUPS: str = os.getenv("LDAP_USER_GROUPS", "")
+    # Enable recursive group membership (nested groups via LDAP_MATCHING_RULE_IN_CHAIN)
+    LDAP_RECURSIVE_GROUPS: bool = os.getenv("LDAP_RECURSIVE_GROUPS", "false").lower() == "true"
+    # Attribute to check for group membership (default: memberOf for AD)
+    LDAP_GROUP_ATTR: str = os.getenv("LDAP_GROUP_ATTR", "memberOf")
+
+    # ===== OIDC/Keycloak Configuration =====
+    KEYCLOAK_ENABLED: bool = os.getenv("KEYCLOAK_ENABLED", "false").lower() == "true"
+    KEYCLOAK_SERVER_URL: str = os.getenv("KEYCLOAK_SERVER_URL", "")  # e.g., http://localhost:8180
+    # Internal URL for backend-to-Keycloak communication (Docker networking)
+    # If not set, falls back to KEYCLOAK_SERVER_URL
+    KEYCLOAK_INTERNAL_URL: str = os.getenv("KEYCLOAK_INTERNAL_URL", "")
+    KEYCLOAK_REALM: str = os.getenv("KEYCLOAK_REALM", "opentranscribe")
+    KEYCLOAK_CLIENT_ID: str = os.getenv("KEYCLOAK_CLIENT_ID", "")
+    KEYCLOAK_CLIENT_SECRET: str = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+    KEYCLOAK_CALLBACK_URL: str = os.getenv(
+        "KEYCLOAK_CALLBACK_URL", ""
+    )  # e.g., http://localhost:5174/api/auth/keycloak/callback
+    KEYCLOAK_ADMIN_ROLE: str = os.getenv(
+        "KEYCLOAK_ADMIN_ROLE", "admin"
+    )  # Keycloak role that grants admin access
+    KEYCLOAK_TIMEOUT: int = int(os.getenv("KEYCLOAK_TIMEOUT", "30"))
+    # OIDC Security: Enable audience (aud) claim validation (OWASP recommended)
+    # Default to True for security - validates tokens are intended for this client
+    KEYCLOAK_VERIFY_AUDIENCE: bool = os.getenv("KEYCLOAK_VERIFY_AUDIENCE", "true").lower() == "true"
+    # Expected audience claim value (usually the client ID)
+    KEYCLOAK_AUDIENCE: str = os.getenv("KEYCLOAK_AUDIENCE", "")
+    # Enable PKCE (Proof Key for Code Exchange) for OAuth 2.1 compliance
+    KEYCLOAK_USE_PKCE: bool = os.getenv("KEYCLOAK_USE_PKCE", "true").lower() == "true"
+    # Enable issuer (iss) claim validation (OWASP recommended)
+    # Validates that the token was issued by the expected Keycloak realm
+    KEYCLOAK_VERIFY_ISSUER: bool = os.getenv("KEYCLOAK_VERIFY_ISSUER", "true").lower() == "true"
+
+    # ===== MFA Settings (FedRAMP IA-2) =====
+    # MFA is disabled by default for air-gapped deployments
+    MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"
+    # When MFA_REQUIRED is true, users must set up MFA on first login
+    MFA_REQUIRED: bool = os.getenv("MFA_REQUIRED", "false").lower() == "true"
+    # Issuer name shown in authenticator apps
+    MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
+    # Number of backup codes to generate (one-time use)
+    MFA_BACKUP_CODE_COUNT: int = int(os.getenv("MFA_BACKUP_CODE_COUNT", "10"))
+    # MFA token expiry in minutes (short-lived token for MFA verification step)
+    MFA_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("MFA_TOKEN_EXPIRE_MINUTES", "5"))
+
+    # ===== PKI/X.509 Certificate Configuration =====
+    PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
+    PKI_CA_CERT_PATH: str = os.getenv(
+        "PKI_CA_CERT_PATH", ""
+    )  # Path to CA certificate for validation
+    PKI_VERIFY_REVOCATION: bool = (
+        os.getenv("PKI_VERIFY_REVOCATION", "false").lower() == "true"
+    )  # Check CRL/OCSP
+    PKI_CERT_HEADER: str = os.getenv(
+        "PKI_CERT_HEADER", "X-Client-Cert"
+    )  # Header name from reverse proxy
+    PKI_CERT_DN_HEADER: str = os.getenv(
+        "PKI_CERT_DN_HEADER", "X-Client-Cert-DN"
+    )  # Distinguished Name header
+    PKI_ADMIN_DNS: str = os.getenv(
+        "PKI_ADMIN_DNS", ""
+    )  # Comma-separated list of admin certificate DNs
+    # OCSP/CRL revocation checking settings
+    PKI_OCSP_TIMEOUT_SECONDS: int = int(os.getenv("PKI_OCSP_TIMEOUT_SECONDS", "5"))
+    PKI_CRL_CACHE_SECONDS: int = int(
+        os.getenv("PKI_CRL_CACHE_SECONDS", "3600")
+    )  # Cache CRL for 1 hour
+    # Soft-fail allows authentication if revocation check fails (network issues)
+    PKI_REVOCATION_SOFT_FAIL: bool = os.getenv("PKI_REVOCATION_SOFT_FAIL", "true").lower() == "true"
+    # Maximum cache size for OCSP responses (LRU eviction when exceeded)
+    PKI_OCSP_CACHE_MAX_SIZE: int = int(os.getenv("PKI_OCSP_CACHE_MAX_SIZE", "1000"))
+    # Maximum cache size for CRLs (LRU eviction when exceeded)
+    PKI_CRL_CACHE_MAX_SIZE: int = int(os.getenv("PKI_CRL_CACHE_MAX_SIZE", "1000"))
+    # Trusted proxy IPs for PKI certificate headers (comma-separated)
+    # Only accept PKI certificate headers from these IPs
+    # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    PKI_TRUSTED_PROXIES: str = os.getenv("PKI_TRUSTED_PROXIES", "")
 
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")

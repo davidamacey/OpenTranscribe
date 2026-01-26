@@ -1,9 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { login, authStore, isAuthenticated } from "$stores/auth";
-  import { onMount } from 'svelte';
+  import { page } from '$app/stores';
+  import { login, authStore, isAuthenticated, getAuthMethods, loginWithKeycloak, handleKeycloakCallback, loginWithPKI, verifyMFA, type AuthMethods } from "$stores/auth";
+  import { onMount, onDestroy } from 'svelte';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { browser } from '$app/environment';
+  import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -12,18 +15,140 @@
   let email = "";
   let password = "";
   let loading = false;
+  let keycloakLoading = false;
+  let pkiLoading = false;
   let formSubmitted = false;
   let showPassword = false;
   let successMessage = "";
+
+  // MFA state
+  let mfaRequired = false;
+  let mfaToken = "";
+  let mfaCode = "";
+  let mfaLoading = false;
+  let useBackupCode = false;
+
+  // Banner state
+  let bannerAcknowledged = false;
+  let showBannerConsent = false;
+  let bannerEnabled = false;
+  let bannerText = "";
+  let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
+
+  // Authentication methods
+  let authMethods: AuthMethods = {
+    methods: ["local"],
+    keycloak_enabled: false,
+    pki_enabled: false,
+    ldap_enabled: false,
+    mfa_enabled: false,
+    mfa_required: false,
+    login_banner_enabled: false,
+    login_banner_text: "",
+    login_banner_classification: "UNCLASSIFIED",
+  };
 
   // Validation
   let emailValid = true;
   let passwordValid = true;
 
-  // Focus the email field on mount
-  onMount(() => {
+  // Focus the email field on mount and fetch auth methods
+  onMount(async () => {
+    // Reset loading states on mount (handles browser back button)
+    keycloakLoading = false;
+    pkiLoading = false;
+    loading = false;
+
+    // Check for Keycloak callback parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+
+    if (code && state) {
+      // Clear URL parameters immediately to prevent double-processing on refresh
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+      // Check if we already processed this callback (prevents double toast)
+      const processedKey = `keycloak_callback_${state}`;
+      if (sessionStorage.getItem(processedKey)) {
+        // Already processed this callback, skip
+        window.location.href = "/";
+        return;
+      }
+      sessionStorage.setItem(processedKey, 'true');
+
+      // Handle Keycloak callback
+      keycloakLoading = true;
+      const result = await handleKeycloakCallback(code, state);
+      keycloakLoading = false;
+
+      if (result.success) {
+        successMessage = $t('auth.loginSuccess');
+        toastStore.success($t('auth.loginSuccess'));
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1000);
+        return;
+      } else {
+        // Only show error if it's not a state-related issue (likely double-request)
+        if (!result.message?.includes('state')) {
+          toastStore.error(result.message || $t('auth.loginFailed'));
+        } else {
+          // State error but user might already be logged in, check and redirect
+          const token = localStorage.getItem('token');
+          if (token) {
+            window.location.href = "/";
+            return;
+          }
+          toastStore.error(result.message || $t('auth.loginFailed'));
+        }
+      }
+    }
+
+    // Fetch available auth methods
+    authMethods = await getAuthMethods();
+
+    // Check for banner settings
+    if (authMethods.login_banner_enabled) {
+      bannerEnabled = true;
+      bannerText = authMethods.login_banner_text || "";
+      bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
+
+      // Check if user has previously acknowledged banner (session-based)
+      const acknowledged = sessionStorage.getItem('banner_acknowledged');
+      if (!acknowledged) {
+        showBannerConsent = true;
+      } else {
+        bannerAcknowledged = true;
+      }
+    }
+
     const emailInput = document.getElementById('email');
-    if (emailInput) emailInput.focus();
+    if (emailInput && !showBannerConsent) emailInput.focus();
+
+    // Handle page visibility change (user returns via back button)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Reset loading states when page becomes visible again
+        keycloakLoading = false;
+        pkiLoading = false;
+      }
+    };
+
+    if (browser) {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      // Also handle popstate (browser back/forward)
+      window.addEventListener('pageshow', () => {
+        keycloakLoading = false;
+        pkiLoading = false;
+      });
+    }
+
+    return () => {
+      if (browser) {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
   });
 
   // Validate login identifier (email or username for LDAP)
@@ -86,6 +211,14 @@
       // Call the login function from our auth store
       const result = await login(email.trim(), password);
 
+      // Check if MFA is required
+      if (result.mfa_required && result.mfa_token) {
+        mfaRequired = true;
+        mfaToken = result.mfa_token;
+        loading = false;
+        return;
+      }
+
       if (result.success) {
         successMessage = $t('auth.loginSuccess');
         toastStore.success($t('auth.loginSuccess'));
@@ -120,9 +253,123 @@
   function togglePasswordVisibility() {
     showPassword = !showPassword;
   }
+
+  // Handle Keycloak login with timeout
+  async function handleKeycloakLogin() {
+    keycloakLoading = true;
+
+    try {
+      // Add timeout to prevent infinite spinner if Keycloak is down
+      const timeoutPromise = new Promise<{ success: false; message: string }>((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timeout')), 10000)
+      );
+
+      const result = await Promise.race([
+        loginWithKeycloak(),
+        timeoutPromise
+      ]);
+
+      // If successful, user will be redirected to Keycloak
+      // If failed, show error
+      if (!result.success) {
+        keycloakLoading = false;
+        toastStore.error(result.message || $t('auth.loginFailed'));
+      }
+      // Note: keycloakLoading stays true during redirect to Keycloak
+    } catch (error) {
+      keycloakLoading = false;
+      toastStore.error('Unable to connect to Keycloak. Please try again later.');
+    }
+  }
+
+  // Handle PKI login
+  async function handlePKILogin() {
+    pkiLoading = true;
+    const result = await loginWithPKI();
+    pkiLoading = false;
+
+    if (result.success) {
+      successMessage = $t('auth.loginSuccess');
+      toastStore.success($t('auth.loginSuccess'));
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    } else {
+      toastStore.error(result.message || $t('auth.loginFailed'));
+    }
+  }
+
+  // Handle MFA verification
+  async function handleMFASubmit() {
+    if (!mfaCode.trim()) {
+      toastStore.error($t('auth.mfaCodeRequired') || 'Please enter your verification code');
+      return;
+    }
+
+    mfaLoading = true;
+
+    try {
+      const result = await verifyMFA(mfaToken, mfaCode.trim(), useBackupCode);
+
+      if (result.success) {
+        successMessage = $t('auth.loginSuccess');
+        toastStore.success($t('auth.loginSuccess'));
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 1000);
+      } else {
+        toastStore.error(result.message || $t('auth.mfaVerificationFailed') || 'Verification failed');
+        mfaCode = "";
+      }
+    } catch (err) {
+      console.error("MFA verification error:", err);
+      toastStore.error($t('auth.unexpectedError'));
+      mfaCode = "";
+    } finally {
+      mfaLoading = false;
+    }
+  }
+
+  // Cancel MFA and return to login
+  function cancelMFA() {
+    mfaRequired = false;
+    mfaToken = "";
+    mfaCode = "";
+    useBackupCode = false;
+    password = "";
+  }
+
+  // Handle banner acknowledgment
+  function handleBannerAcknowledge() {
+    bannerAcknowledged = true;
+    showBannerConsent = false;
+    sessionStorage.setItem('banner_acknowledged', 'true');
+    // Focus email field after acknowledgment
+    setTimeout(() => {
+      document.getElementById('email')?.focus();
+    }, 100);
+  }
+
+  // Handle banner decline
+  function handleBannerDecline() {
+    // Close the window or redirect away
+    window.location.href = 'about:blank';
+  }
 </script>
 
-<div class="auth-container">
+<!-- Classification Banner -->
+{#if bannerEnabled}
+  <ClassificationBanner
+    classification={bannerClassification}
+    bannerText={bannerText}
+    requireAcknowledgment={showBannerConsent}
+    position="top"
+    on:acknowledge={handleBannerAcknowledge}
+    on:decline={handleBannerDecline}
+  />
+{/if}
+
+<div class="auth-container" class:banner-offset={bannerEnabled}>
   <div class="auth-card">
     <div class="auth-header">
       <div class="auth-logo">
@@ -132,7 +379,84 @@
       <p>{$t('auth.signInToAccount')}</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit} class="auth-form">
+    <!-- MFA Verification Form -->
+    {#if mfaRequired}
+      <div class="mfa-form">
+        <div class="mfa-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            <circle cx="12" cy="16" r="1"/>
+          </svg>
+        </div>
+        <h2>{$t('auth.mfaRequired') || 'Multi-Factor Authentication Required'}</h2>
+        <p class="mfa-description">
+          {#if useBackupCode}
+            {$t('auth.mfaEnterBackupCode') || 'Enter one of your backup codes'}
+          {:else}
+            {$t('auth.mfaEnterCode') || 'Enter the 6-digit code from your authenticator app'}
+          {/if}
+        </p>
+
+        <form on:submit|preventDefault={handleMFASubmit} class="auth-form">
+          <div class="form-group">
+            <label for="mfaCode">
+              {#if useBackupCode}
+                {$t('auth.backupCode') || 'Backup Code'}
+              {:else}
+                {$t('auth.mfaCode') || 'Authentication Code'}
+              {/if}
+            </label>
+            <input
+              type="text"
+              id="mfaCode"
+              bind:value={mfaCode}
+              placeholder={useBackupCode ? 'XXXX-XXXX' : '000000'}
+              autocomplete="one-time-code"
+              inputmode={useBackupCode ? 'text' : 'numeric'}
+              pattern={useBackupCode ? '[A-Za-z0-9]{4}-[A-Za-z0-9]{4}' : '[0-9]{6}'}
+              maxlength={useBackupCode ? 9 : 6}
+              autofocus
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="auth-button"
+            disabled={mfaLoading}
+          >
+            {#if mfaLoading}
+              <span class="spinner"></span> {$t('auth.verifying') || 'Verifying...'}
+            {:else}
+              {$t('auth.mfaVerify') || 'Verify'}
+            {/if}
+          </button>
+        </form>
+
+        <div class="mfa-options">
+          <button
+            type="button"
+            class="text-button"
+            on:click={() => useBackupCode = !useBackupCode}
+          >
+            {#if useBackupCode}
+              {$t('auth.useAuthenticatorApp') || 'Use authenticator app'}
+            {:else}
+              {$t('auth.useBackupCode') || 'Use a backup code'}
+            {/if}
+          </button>
+          <button
+            type="button"
+            class="text-button cancel-button"
+            on:click={cancelMFA}
+          >
+            {$t('auth.cancel') || 'Cancel'}
+          </button>
+        </div>
+      </div>
+    {:else}
+      <!-- Normal Login Form -->
+      <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if successMessage}
         <div class="success-message" role="alert" aria-live="polite">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -222,12 +546,59 @@
       </button>
     </form>
 
+    {#if authMethods.keycloak_enabled || authMethods.pki_enabled}
+      <div class="auth-divider">
+        <span>{$t('auth.orContinueWith') || 'Or continue with'}</span>
+      </div>
+
+      <div class="external-auth-buttons">
+        {#if authMethods.keycloak_enabled}
+          <button
+            type="button"
+            class="external-auth-button keycloak-button"
+            on:click={handleKeycloakLogin}
+            disabled={keycloakLoading || loading}
+          >
+            {#if keycloakLoading}
+              <span class="spinner"></span>
+            {:else}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+              </svg>
+            {/if}
+            <span>{$t('auth.loginWithKeycloak') || 'Sign in with Keycloak'}</span>
+          </button>
+        {/if}
+
+        {#if authMethods.pki_enabled}
+          <button
+            type="button"
+            class="external-auth-button pki-button"
+            on:click={handlePKILogin}
+            disabled={pkiLoading || loading}
+          >
+            {#if pkiLoading}
+              <span class="spinner"></span>
+            {:else}
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <circle cx="12" cy="16" r="1"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            {/if}
+            <span>{$t('auth.loginWithCertificate') || 'Sign in with Certificate'}</span>
+          </button>
+        {/if}
+      </div>
+    {/if}
+
     <div class="auth-links">
       <a
         href="/register"
         class="auth-link"
       >{$t('auth.needAccount')}</a>
     </div>
+    {/if}
   </div>
 </div>
 
@@ -411,5 +782,155 @@
     width: auto;
     object-fit: contain;
     border-radius: 8px;
+  }
+
+  /* Divider for external auth */
+  .auth-divider {
+    display: flex;
+    align-items: center;
+    margin: 1.5rem 0;
+  }
+
+  .auth-divider::before,
+  .auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background-color: var(--border-color);
+  }
+
+  .auth-divider span {
+    padding: 0 1rem;
+    color: var(--text-light);
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  /* External auth buttons */
+  .external-auth-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .external-auth-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .external-auth-button:hover:not(:disabled) {
+    background-color: var(--surface-hover, rgba(0, 0, 0, 0.03));
+    border-color: var(--primary-color);
+  }
+
+  .external-auth-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .external-auth-button svg {
+    flex-shrink: 0;
+  }
+
+  .keycloak-button {
+    border-color: #4d4d4d;
+  }
+
+  .keycloak-button:hover:not(:disabled) {
+    border-color: #666;
+    background-color: rgba(77, 77, 77, 0.05);
+  }
+
+  .pki-button {
+    border-color: #059669;
+  }
+
+  .pki-button:hover:not(:disabled) {
+    border-color: #10b981;
+    background-color: rgba(5, 150, 105, 0.05);
+  }
+
+  .pki-button svg {
+    color: #059669;
+  }
+
+  /* Banner offset for classification banner */
+  .banner-offset {
+    padding-top: 30px;
+  }
+
+  /* MFA Form Styles */
+  .mfa-form {
+    text-align: center;
+  }
+
+  .mfa-icon {
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+  }
+
+  .mfa-form h2 {
+    font-size: 1.25rem;
+    color: var(--text-color);
+    margin-bottom: 0.5rem;
+  }
+
+  .mfa-description {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .mfa-form .form-group {
+    text-align: left;
+  }
+
+  .mfa-form input {
+    text-align: center;
+    font-size: 1.25rem;
+    letter-spacing: 0.25em;
+    font-family: monospace;
+  }
+
+  .mfa-options {
+    margin-top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .text-button {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    transition: color 0.2s;
+  }
+
+  .text-button:hover {
+    color: var(--primary-color-dark, #2563eb);
+    text-decoration: underline;
+  }
+
+  .text-button.cancel-button {
+    color: var(--text-light);
+  }
+
+  .text-button.cancel-button:hover {
+    color: var(--text-color);
   }
 </style>

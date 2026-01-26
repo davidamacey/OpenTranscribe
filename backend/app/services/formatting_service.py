@@ -170,27 +170,33 @@ class FormattingService:
         file_data = MediaFileSchema.model_validate(media_file)
 
         # Add basic formatted fields
-        file_data.formatted_duration = FormattingService.format_duration(media_file.duration)
+        file_data.formatted_duration = FormattingService.format_duration(
+            float(media_file.duration) if media_file.duration is not None else None
+        )
         file_data.formatted_upload_date = FormattingService.format_upload_date(
-            media_file.upload_time
+            media_file.upload_time  # type: ignore[arg-type]
         )
-        file_data.formatted_file_age = FormattingService.format_file_age(media_file.upload_time)
+        file_data.formatted_file_age = FormattingService.format_file_age(media_file.upload_time)  # type: ignore[arg-type]
         file_data.formatted_file_size = FormattingService.format_bytes_detailed(
-            media_file.file_size
+            int(media_file.file_size) if media_file.file_size is not None else None
         )
-        file_data.display_status = FormattingService.format_status(media_file.status)
+        file_data.display_status = FormattingService.format_status(media_file.status)  # type: ignore[arg-type]
         file_data.status_badge_class = FormattingService.get_status_badge_class(
-            media_file.status.value
+            media_file.status.value  # type: ignore[arg-type]
         )
 
         # Add error categorization for failed files
         if media_file.status == FileStatus.ERROR and hasattr(media_file, "last_error_message"):
-            error_info = ErrorCategorizationService.get_error_info(media_file.last_error_message)
+            error_info = ErrorCategorizationService.get_error_info(
+                str(media_file.last_error_message)
+                if media_file.last_error_message is not None
+                else None
+            )
             file_data.error_category = error_info["category"]
             file_data.error_suggestions = error_info["suggestions"]
             file_data.is_retryable = error_info["is_retryable"]
 
-        return file_data
+        return file_data  # type: ignore[no-any-return]
 
     @staticmethod
     def format_transcript_segment(
@@ -249,7 +255,7 @@ class FormattingService:
             segment_data.speaker_label = "Unknown"
             segment_data.resolved_speaker_name = "Unknown"
 
-        return segment_data
+        return segment_data  # type: ignore[no-any-return]
 
     @staticmethod
     def format_file_size(file_size: Optional[int]) -> Optional[str]:
@@ -286,7 +292,7 @@ class FormattingService:
         Returns:
             Display name for the speaker
         """
-        return speaker.display_name or speaker.name or "Unknown"
+        return str(speaker.display_name or speaker.name or "Unknown")
 
     @staticmethod
     def get_speaker_number(speaker_name: str) -> int:

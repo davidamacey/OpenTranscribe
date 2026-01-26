@@ -14,7 +14,9 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
-from typing import Any, Callable, Optional, Protocol
+from typing import Any
+from typing import Callable
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +34,8 @@ class ProtectedMediaProvider(Protocol):
     def extract_info(
         self,
         url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> dict[str, Any]:
         """Return a yt-dlp-like info dict for the media without downloading.
 
@@ -50,9 +52,9 @@ class ProtectedMediaProvider(Protocol):
         self,
         url: str,
         output_path: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> dict[str, Any]:
         """Download media file for this URL into output_path.
 

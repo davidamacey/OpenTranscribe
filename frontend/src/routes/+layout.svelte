@@ -10,7 +10,7 @@
   import "../styles/tables.css";
 
   // Import auth store
-  import { authStore, isAuthenticated, initAuth, authReady } from "$stores/auth";
+  import { authStore, isAuthenticated, initAuth, authReady, getAuthMethods } from "$stores/auth";
   import { theme } from "../stores/theme";
   import { locale } from "../stores/locale";
   import { llmStatusStore } from "../stores/llmStatus";
@@ -23,6 +23,11 @@
   import UploadManager from "../components/UploadManager.svelte";
   import AppContent from "../components/AppContent.svelte";
   import SettingsModal from "../components/SettingsModal.svelte";
+  import ClassificationBanner from "$lib/components/ClassificationBanner.svelte";
+
+  // Classification banner state
+  let bannerEnabled = false;
+  let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
 
   // Initialize auth state when the component mounts
   onMount(async () => {
@@ -34,6 +39,17 @@
 
     // Initialize network connectivity monitoring
     networkStore.initialize();
+
+    // Fetch auth methods to get banner settings
+    try {
+      const authMethods = await getAuthMethods();
+      if (authMethods.login_banner_enabled) {
+        bannerEnabled = true;
+        bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || 'UNCLASSIFIED';
+      }
+    } catch (error) {
+      console.warn('[Layout] Failed to fetch auth methods for banner:', error);
+    }
 
     try {
       await initAuth();
@@ -70,7 +86,15 @@
 </script>
 
 {#if $authReady}
-  <div class="app">
+  <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
+  {#if bannerEnabled && $isAuthenticated}
+    <ClassificationBanner
+      classification={bannerClassification}
+      position="top"
+    />
+  {/if}
+
+  <div class="app" class:has-banner={bannerEnabled && $isAuthenticated} style="--banner-offset: {bannerEnabled && $isAuthenticated ? '28px' : '0px'}">
     <ToastContainer />
     {#if $isAuthenticated}
       <Navbar />
@@ -98,6 +122,16 @@
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+  }
+
+  /* Offset for classification banner (approx 28px) */
+  .app.has-banner {
+    padding-top: 28px;
+  }
+
+  /* Push navbar down when banner is present */
+  :global(.app.has-banner .navbar) {
+    top: 28px !important;
   }
 
   .content {

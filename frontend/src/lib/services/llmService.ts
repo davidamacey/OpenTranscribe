@@ -2,9 +2,9 @@
  * LLM Service for checking availability and status
  */
 
-import axiosInstance from "$lib/axios";
-import { get } from "svelte/store";
-import { t } from "$stores/locale";
+import axiosInstance from '$lib/axios';
+import { get } from 'svelte/store';
+import { t } from '$stores/locale';
 
 export interface LLMStatus {
   available: boolean;
@@ -52,7 +52,7 @@ export class LLMService {
       const status = await this.getStatus(forceRefresh);
       return status.available;
     } catch (error) {
-      console.warn("LLM availability check failed:", error);
+      console.warn('LLM availability check failed:', error);
       return false;
     }
   }
@@ -69,35 +69,26 @@ export class LLMService {
       : this.FAST_CACHE_DURATION;
 
     // Return cached status if still valid
-    if (
-      !forceRefresh &&
-      this.statusCache &&
-      now - this.lastCheck < cacheDuration
-    ) {
+    if (!forceRefresh && this.statusCache && now - this.lastCheck < cacheDuration) {
       return this.statusCache;
     }
 
     try {
-      const response = await axiosInstance.get("/api/llm/status");
+      const response = await axiosInstance.get('/api/llm/status');
       this.statusCache = response.data;
       this.lastCheck = now;
       return this.statusCache as LLMStatus;
     } catch (error: any) {
-      console.error("[LLM Service] Error getting LLM status:", error);
-      console.error(
-        "[LLM Service] Error details:",
-        error.response?.status,
-        error.response?.data,
-      );
+      console.error('[LLM Service] Error getting LLM status:', error);
+      console.error('[LLM Service] Error details:', error.response?.status, error.response?.data);
 
       // Return default unavailable status on error
       const errorStatus: LLMStatus = {
         available: false,
-        user_id: "0",
+        user_id: '0',
         provider: null,
         model: null,
-        message:
-          error.response?.data?.detail || get(t)("llm.unableToCheckStatus"),
+        message: error.response?.data?.detail || get(t)('llm.unableToCheckStatus'),
       };
 
       this.statusCache = errorStatus;
@@ -111,13 +102,11 @@ export class LLMService {
    */
   async getProviders(): Promise<LLMProviders> {
     try {
-      const response = await axiosInstance.get("/api/llm/providers");
+      const response = await axiosInstance.get('/api/llm/providers');
       return response.data;
     } catch (error: any) {
-      console.error("Error getting LLM providers:", error);
-      throw new Error(
-        error.response?.data?.detail || get(t)("llm.providersLoadFailed"),
-      );
+      console.error('Error getting LLM providers:', error);
+      throw new Error(error.response?.data?.detail || get(t)('llm.providersLoadFailed'));
     }
   }
 
@@ -126,15 +115,14 @@ export class LLMService {
    */
   async testConnection(): Promise<LLMConnectionTest> {
     try {
-      const response = await axiosInstance.post("/api/llm/test-connection");
+      const response = await axiosInstance.post('/api/llm/test-connection');
       return response.data;
     } catch (error: any) {
-      console.error("Error testing LLM connection:", error);
+      console.error('Error testing LLM connection:', error);
       return {
         success: false,
-        message:
-          error.response?.data?.detail || get(t)("llm.connectionTestFailed"),
-        details: get(t)("llm.unableToReach"),
+        message: error.response?.data?.detail || get(t)('llm.connectionTestFailed'),
+        details: get(t)('llm.unableToReach'),
       };
     }
   }
@@ -160,12 +148,12 @@ export class LLMService {
    */
   getAvailabilityMessage(status: LLMStatus): string {
     if (status.available) {
-      return get(t)("llm.featuresAvailable", {
+      return get(t)('llm.featuresAvailable', {
         provider: status.provider,
         model: status.model,
       });
     } else {
-      return status.message || get(t)("llm.featuresUnavailable");
+      return status.message || get(t)('llm.featuresUnavailable');
     }
   }
 
@@ -173,7 +161,7 @@ export class LLMService {
    * Get CSS class for status indicator
    */
   getStatusClass(available: boolean): string {
-    return available ? "llm-available" : "llm-unavailable";
+    return available ? 'llm-available' : 'llm-unavailable';
   }
 }
 

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
-  
+
   # Background Tasks Documentation
 </div>
 
@@ -62,7 +62,7 @@ Main orchestrator that coordinates the entire transcription pipeline:
 def transcribe_audio_task(self, file_id: int):
     """
     Process an audio/video file with WhisperX for transcription and PyAnnote for diarization.
-    
+
     Pipeline:
     1. Download file from MinIO storage
     2. Extract comprehensive metadata with ExifTool
@@ -88,11 +88,11 @@ Extracts comprehensive media metadata using ExifTool:
 ```python
 def extract_media_metadata(file_path: str) -> Optional[Dict[str, Any]]:
     """Extract metadata from media file using ExifTool."""
-    
+
 def get_important_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """Filter and normalize important metadata fields."""
-    
-def update_media_file_metadata(media_file, extracted_metadata: Dict[str, Any], 
+
+def update_media_file_metadata(media_file, extracted_metadata: Dict[str, Any],
                               content_type: str, file_path: str) -> None:
     """Update MediaFile object with extracted metadata."""
 ```
@@ -108,13 +108,13 @@ def update_media_file_metadata(media_file, extracted_metadata: Dict[str, Any],
 Handles audio extraction and format conversion:
 
 ```python
-def prepare_audio_for_transcription(temp_file_path: str, content_type: str, 
+def prepare_audio_for_transcription(temp_file_path: str, content_type: str,
                                   temp_dir: str) -> str:
     """Prepare audio file for transcription by extracting from video or converting format."""
-    
+
 def extract_audio_from_video(video_path: str, output_path: str) -> None:
     """Extract audio from video using FFmpeg."""
-    
+
 def convert_audio_format(input_path: str, output_path: str) -> None:
     """Convert audio to WAV format for optimal WhisperX processing."""
 ```
@@ -132,13 +132,13 @@ Manages the AI transcription pipeline using WhisperX:
 class WhisperXService:
     def process_full_pipeline(self, audio_file_path: str, hf_token: str = None) -> Dict[str, Any]:
         """Run complete WhisperX pipeline: transcription, alignment, and diarization."""
-    
+
     def transcribe_audio(self, audio_file_path: str) -> Dict[str, Any]:
         """Transcribe audio using WhisperX."""
-    
+
     def align_transcription(self, transcription_result: Dict[str, Any], audio) -> Dict[str, Any]:
         """Align transcription with precise word-level timestamps."""
-    
+
     def perform_speaker_diarization(self, audio, hf_token: str = None) -> Dict[str, Any]:
         """Perform speaker diarization on audio."""
 ```
@@ -156,11 +156,11 @@ Manages speaker identification and database operations:
 ```python
 def extract_unique_speakers(segments: List[Dict[str, Any]]) -> Set[str]:
     """Extract unique speaker IDs from transcription segments."""
-    
+
 def create_speaker_mapping(db: Session, user_id: int, unique_speakers: Set[str]) -> Dict[str, int]:
     """Create mapping of speaker labels to database IDs."""
-    
-def process_segments_with_speakers(segments: List[Dict[str, Any]], 
+
+def process_segments_with_speakers(segments: List[Dict[str, Any]],
                                  speaker_mapping: Dict[str, int]) -> List[Dict[str, Any]]:
     """Process transcription segments and add speaker database IDs."""
 ```
@@ -177,8 +177,8 @@ Handles all database operations for transcription results:
 ```python
 def save_transcript_segments(db: Session, file_id: int, segments: List[Dict[str, Any]]) -> None:
     """Save transcript segments to database."""
-    
-def update_media_file_transcription_status(db: Session, file_id: int, 
+
+def update_media_file_transcription_status(db: Session, file_id: int,
                                          segments: List[Dict[str, Any]], language: str = "en") -> None:
     """Update media file with transcription completion metadata."""
 ```
@@ -193,13 +193,13 @@ def update_media_file_transcription_status(db: Session, file_id: int,
 Real-time WebSocket notifications for UI updates:
 
 ```python
-def send_notification_with_retry(user_id: int, file_id: int, status: FileStatus, 
+def send_notification_with_retry(user_id: int, file_id: int, status: FileStatus,
                                 message: str, progress: int = 0, max_retries: int = 3) -> bool:
     """Send notification with retry logic."""
-    
+
 def send_processing_notification(user_id: int, file_id: int) -> None:
     """Send processing started notification."""
-    
+
 def send_completion_notification(user_id: int, file_id: int) -> None:
     """Send transcription completed notification."""
 ```
@@ -220,7 +220,7 @@ Generate insights and analytics from transcribed content:
 def analyze_transcript_task(file_id: int):
     """
     Analyze a transcript for additional metadata and insights.
-    
+
     Generates:
     - Word count statistics
     - Speaker distribution
@@ -245,10 +245,10 @@ Generate comprehensive BLUF-format summaries using multi-provider LLMs with inte
 def summarize_transcript_task(file_id: int):
     """
     Generate AI-powered summary with intelligent section processing.
-    
+
     Workflow:
     1. Retrieve transcript and speaker data from database
-    2. Query LLM model for context length capabilities  
+    2. Query LLM model for context length capabilities
     3. Automatically chunk long transcripts at natural boundaries
     4. Process each section individually for comprehensive analysis
     5. Stitch section summaries into final BLUF format
@@ -267,12 +267,12 @@ if len(chunks) == 1:
     # Single-pass processing
     summary = await llm_service.generate_summary(transcript_chunks[0])
 else:
-    # Multi-section processing  
+    # Multi-section processing
     section_summaries = []
     for i, chunk in enumerate(transcript_chunks):
         section_summary = await llm_service.summarize_transcript_section(chunk, i+1, len(chunks))
         section_summaries.append(section_summary)
-    
+
     # Stitch into comprehensive BLUF summary
     summary = await llm_service.stitch_section_summaries(section_summaries)
 ```
@@ -296,7 +296,7 @@ Automated background tasks for system maintenance, file recovery, and health mon
 def run_periodic_cleanup(self):
     """
     Periodic task to clean up stuck files and maintain system health.
-    
+
     This task should be run regularly (e.g., every 30 minutes) to:
     - Detect and recover stuck files
     - Mark orphaned files for cleanup
@@ -307,7 +307,7 @@ def run_periodic_cleanup(self):
 def run_deep_cleanup(self, dry_run: bool = False):
     """
     Deep cleanup task for removing orphaned files (admin-triggered).
-    
+
     Args:
         dry_run: If True, only preview what would be cleaned up
     """
@@ -322,7 +322,7 @@ def system_health_check(self):
 def emergency_file_recovery(self, file_ids: list):
     """
     Emergency recovery task for specific files (admin-triggered).
-    
+
     Args:
         file_ids: List of file IDs to attempt recovery on
     """
@@ -471,10 +471,10 @@ def handle_task_failure(task_id: str, file_id: int, user_id: int, error: Excepti
         with session_scope() as db:
             update_task_status(db, task_id, "failed", error_message=str(error))
             update_media_file_status(db, file_id, FileStatus.ERROR)
-        
+
         # Notify user
         send_error_notification(user_id, file_id, str(error))
-        
+
     except Exception as cleanup_error:
         logger.error(f"Error during failure cleanup: {cleanup_error}")
 ```
@@ -531,10 +531,10 @@ def test_transcription_task_success(celery_app, db_session, sample_file):
     # Mock external dependencies
     with patch('app.services.minio_service.download_file') as mock_download:
         mock_download.return_value = (sample_audio_data, 1024, "audio/wav")
-        
+
         # Execute task
         result = transcribe_audio_task.apply(args=[sample_file.id])
-        
+
         # Verify results
         assert result.successful()
         assert result.result["status"] == "success"
@@ -542,7 +542,7 @@ def test_transcription_task_success(celery_app, db_session, sample_file):
 def test_transcription_task_failure(celery_app, db_session, invalid_file):
     """Test transcription task failure handling."""
     result = transcribe_audio_task.apply(args=[invalid_file.id])
-    
+
     assert result.failed()
     # Verify error handling and cleanup
 ```
@@ -554,7 +554,7 @@ def test_full_transcription_pipeline(client, auth_headers, sample_video):
     # 1. Upload file
     response = client.post("/api/files", files={"file": sample_video}, headers=auth_headers)
     file_id = response.json()["id"]
-    
+
     # 2. Wait for processing (with timeout)
     # 3. Verify transcription results
     # 4. Check database state
@@ -578,41 +578,41 @@ def test_full_transcription_pipeline(client, auth_headers, sample_video):
 def new_task(self, input_data: Dict[str, Any]):
     """
     New task description.
-    
+
     Args:
         input_data: Task input parameters
-        
+
     Returns:
         Dict with task results
     """
     task_id = self.request.id
-    
+
     try:
         # 1. Initialize and validate
         validate_input(input_data)
-        
+
         # 2. Update progress
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.1)
-        
+
         # 3. Perform main processing
         result = perform_main_operation(input_data)
-        
+
         # 4. Update progress
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=0.8)
-        
+
         # 5. Finalize and return
         with session_scope() as db:
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-        
+
         return {"status": "success", "result": result}
-        
+
     except Exception as e:
         # Error handling
         with session_scope() as db:
             update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-        
+
         logger.error(f"Task {task_id} failed: {e}")
         return {"status": "error", "message": str(e)}
 ```

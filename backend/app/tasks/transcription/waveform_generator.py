@@ -37,8 +37,8 @@ class WaveformGenerator:
         """Check that required dependencies (FFmpeg) are available."""
         try:
             # Using hardcoded ffmpeg/ffprobe commands, not user input
-            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603, S607
-            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603, S607
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603 S607 # nosec B603 B607
+            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603 S607 # nosec B603 B607
         except (
             subprocess.CalledProcessError,
             FileNotFoundError,
@@ -104,7 +104,7 @@ class WaveformGenerator:
         ]
 
         # Using hardcoded ffprobe command with validated file path, not user input
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)  # noqa: S603
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)  # noqa: S603 # nosec B603
         probe_data = json.loads(result.stdout)
 
         # Find audio stream
@@ -166,7 +166,7 @@ class WaveformGenerator:
 
         logger.debug(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
         # Using hardcoded ffmpeg command with validated file path, not user input
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=300)  # noqa: S603
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, check=True, timeout=300)  # noqa: S603 # nosec B603
 
         # Convert bytes to numpy array
         audio_data = np.frombuffer(result.stdout, dtype=np.int16)
@@ -197,7 +197,10 @@ class WaveformGenerator:
                 f"Audio has fewer samples ({total_samples}) than target ({target_samples})"
             )
             indices = np.linspace(0, total_samples - 1, target_samples)
-            return np.interp(indices, np.arange(total_samples), np.abs(audio_data)).tolist()
+            interpolated: list[float] = np.interp(
+                indices, np.arange(total_samples), np.abs(audio_data)
+            ).tolist()
+            return interpolated
 
         # Downsample: group audio samples into chunks
         chunk_size = total_samples / target_samples
@@ -287,8 +290,8 @@ class WaveformGenerator:
 
             # Compute waveform samples and normalize
             actual_duration = extracted_duration if extracted_duration > 0 else duration
-            waveform = self._compute_waveform_samples(audio_data, target_samples)
-            waveform = self._normalize_waveform(waveform, target_samples)
+            waveform_float = self._compute_waveform_samples(audio_data, target_samples)
+            waveform = self._normalize_waveform(waveform_float, target_samples)
 
             return {
                 "waveform": waveform,

@@ -1,6 +1,7 @@
 import logging
 from functools import wraps
 from typing import Callable
+from typing import cast
 
 from fastapi import HTTPException
 from fastapi import status
@@ -28,12 +29,16 @@ def require_file_ownership(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Extract parameters from kwargs
-        db = kwargs.get("db")
-        current_user = kwargs.get("current_user")
+        db: Session | None = kwargs.get("db")
+        current_user: User | None = kwargs.get("current_user")
         file_id = kwargs.get("file_id")
 
         if not all([db, current_user, file_id]):
             raise ValueError("Function must have 'db', 'current_user', and 'file_id' parameters")
+
+        # Type narrowing: after validation, we know these are not None
+        db = cast(Session, db)
+        current_user = cast(User, current_user)
 
         # Check if user owns the file
         file_exists = (
@@ -71,14 +76,18 @@ def require_admin_or_ownership(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            db = kwargs.get("db")
-            current_user = kwargs.get("current_user")
+            db: Session | None = kwargs.get("db")
+            current_user: User | None = kwargs.get("current_user")
             resource_id = kwargs.get(id_param)
 
             if not all([db, current_user, resource_id]):
                 raise ValueError(
                     f"Function must have 'db', 'current_user', and '{id_param}' parameters"
                 )
+
+            # Type narrowing: after validation, we know these are not None
+            db = cast(Session, db)
+            current_user = cast(User, current_user)
 
             # Check if user is admin
             if current_user.is_admin:
@@ -193,7 +202,7 @@ class AuthorizationHelper:
                 detail="File not found or access denied",
             )
 
-        return file_obj
+        return file_obj  # type: ignore[no-any-return]
 
     @staticmethod
     def check_admin_or_owner(resource, user: User, owner_field: str = "user_id") -> bool:
@@ -211,7 +220,7 @@ class AuthorizationHelper:
         if user.is_admin:
             return True
 
-        return getattr(resource, owner_field, None) == user.id
+        return getattr(resource, owner_field, None) == user.id  # type: ignore[no-any-return]
 
     @staticmethod
     def require_resource_access(

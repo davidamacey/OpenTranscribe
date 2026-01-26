@@ -109,9 +109,9 @@ class TaskFilteringService:
         }
 
         if age_filter in age_thresholds:
-            return diff_hours <= age_thresholds[age_filter]
+            return diff_hours <= age_thresholds[age_filter]  # type: ignore[no-any-return]
         elif age_filter == "older":
-            return diff_hours > 24 * 30
+            return diff_hours > 24 * 30  # type: ignore[no-any-return]
 
         return True
 
@@ -285,4 +285,4 @@ class TaskFilteringService:
             "completed": "Completed",
             "failed": "Failed",
         }
-        return status_map.get(status, status.title())
+        return status_map.get(status, status.title())  # type: ignore[no-any-return]

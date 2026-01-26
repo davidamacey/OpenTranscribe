@@ -1,20 +1,20 @@
-import { get } from "svelte/store";
-import axiosInstance from "$lib/axios";
-import { authStore } from "$stores/auth";
-import { toastStore } from "$stores/toast";
-import { t } from "$stores/locale";
-import axios, { type AxiosProgressEvent } from "axios";
+import { get } from 'svelte/store';
+import axiosInstance from '$lib/axios';
+import { authStore } from '$stores/auth';
+import { toastStore } from '$stores/toast';
+import { t } from '$stores/locale';
+import axios, { type AxiosProgressEvent } from 'axios';
 
 // Upload item types
-export type UploadType = "file" | "url" | "recording" | "extracted-audio";
+export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
 export type UploadStatus =
-  | "queued"
-  | "preparing"
-  | "uploading"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  | 'queued'
+  | 'preparing'
+  | 'uploading'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface UploadItem {
   id: string;
@@ -49,13 +49,13 @@ const QUEUE_PROCESS_DELAY_MS = 100;
 
 // Event types for upload lifecycle
 export type UploadEventType =
-  | "added"
-  | "started"
-  | "progress"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "retry";
+  | 'added'
+  | 'started'
+  | 'progress'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'retry';
 
 export interface UploadEvent {
   type: UploadEventType;
@@ -66,11 +66,9 @@ export interface UploadEvent {
 // Hash calculation for duplicate detection
 async function calculateFileHash(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
-  const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   return hashHex;
 }
 
@@ -109,7 +107,7 @@ class UploadService {
       minSpeakers?: number | null;
       maxSpeakers?: number | null;
       numSpeakers?: number | null;
-    },
+    }
   ): string {
     const id = this.generateId();
     const uploadName = name || this.getSourceName(source);
@@ -120,7 +118,7 @@ class UploadService {
       source,
       name: uploadName,
       size: source instanceof File ? source.size : undefined,
-      status: "queued",
+      status: 'queued',
       progress: 0,
       retryCount: 0,
       minSpeakers: speakerParams?.minSpeakers,
@@ -132,7 +130,7 @@ class UploadService {
     this.processingQueue.push(id);
     this.persistUploads();
 
-    this.emit("added", id, upload);
+    this.emit('added', id, upload);
 
     // Start processing if we have capacity
     this.processQueue();
@@ -144,7 +142,7 @@ class UploadService {
     const uploadIds: string[] = [];
 
     files.forEach((file) => {
-      const id = this.addUpload("file", file);
+      const id = this.addUpload('file', file);
       uploadIds.push(id);
     });
 
@@ -155,17 +153,17 @@ class UploadService {
     audioBlob: Blob,
     filename: string,
     extractionMetadata: any,
-    compressionRatio: number,
+    compressionRatio: number
   ): string {
     const id = this.generateId();
 
     const upload: UploadItem = {
       id,
-      type: "extracted-audio",
+      type: 'extracted-audio',
       source: audioBlob,
       name: filename,
       size: audioBlob.size,
-      status: "queued",
+      status: 'queued',
       progress: 0,
       retryCount: 0,
       extractionMetadata,
@@ -176,7 +174,7 @@ class UploadService {
     this.processingQueue.push(id);
     this.persistUploads();
 
-    this.emit("added", id, upload);
+    this.emit('added', id, upload);
 
     // Start processing if we have capacity
     this.processQueue();
@@ -191,9 +189,7 @@ class UploadService {
     }
 
     const nextUploadId = this.processingQueue.find(
-      (id) =>
-        !this.activeUploads.has(id) &&
-        this.uploads.get(id)?.status === "queued",
+      (id) => !this.activeUploads.has(id) && this.uploads.get(id)?.status === 'queued'
     );
 
     if (!nextUploadId) {
@@ -224,64 +220,60 @@ class UploadService {
     try {
       // Set status to preparing with 0% progress
       this.updateUpload(uploadId, {
-        status: "preparing",
+        status: 'preparing',
         startTime: Date.now(),
         progress: 0,
         estimatedTime: undefined,
       });
-      this.emit("started", uploadId);
+      this.emit('started', uploadId);
 
       let result;
       switch (upload.type) {
-        case "file":
-        case "recording":
+        case 'file':
+        case 'recording':
           result = await this.uploadFile(uploadId, upload.source as File);
           break;
-        case "extracted-audio":
+        case 'extracted-audio':
           result = await this.uploadExtractedAudio(
             uploadId,
             upload.source as Blob,
-            upload.extractionMetadata,
+            upload.extractionMetadata
           );
           break;
-        case "url":
+        case 'url':
           result = await this.processUrl(uploadId, upload.source as string);
           break;
         default:
-          throw new Error(get(t)("upload.unknownType", { type: upload.type }));
+          throw new Error(get(t)('upload.unknownType', { type: upload.type }));
       }
 
       // Upload completed successfully - show 100% with green checkmark
       this.updateUpload(uploadId, {
-        status: "completed",
+        status: 'completed',
         progress: 100,
         fileId: result.uuid,
         isDuplicate: result.isDuplicate,
         estimatedTime: undefined,
       });
 
-      this.emit("completed", uploadId, result);
+      this.emit('completed', uploadId, result);
 
       // Show appropriate toast based on duplicate status
       if (result.isDuplicate) {
-        toastStore.warning(
-          get(t)("upload.fileAlreadyExists", { name: upload.name }),
-        );
+        toastStore.warning(get(t)('upload.fileAlreadyExists', { name: upload.name }));
       } else {
-        toastStore.success(
-          get(t)("upload.uploadCompleted", { name: upload.name }),
-        );
+        toastStore.success(get(t)('upload.uploadCompleted', { name: upload.name }));
       }
     } catch (error: any) {
       // Log error through proper error handling below
 
       const errorMessage = this.getErrorMessage(error);
       this.updateUpload(uploadId, {
-        status: "failed",
+        status: 'failed',
         error: errorMessage,
       });
 
-      this.emit("failed", uploadId, { error: errorMessage });
+      this.emit('failed', uploadId, { error: errorMessage });
 
       // Handle retry logic
       if (upload.retryCount < MAX_RETRIES && !axios.isCancel(error)) {
@@ -289,14 +281,14 @@ class UploadService {
           () => {
             this.retryUpload(uploadId);
           },
-          RETRY_BASE_DELAY_MS * Math.pow(2, upload.retryCount),
+          RETRY_BASE_DELAY_MS * Math.pow(2, upload.retryCount)
         );
       } else {
         toastStore.error(
-          get(t)("upload.uploadFailed", {
+          get(t)('upload.uploadFailed', {
             name: upload.name,
             error: errorMessage,
-          }),
+          })
         );
       }
     }
@@ -316,9 +308,9 @@ class UploadService {
     if (file instanceof File) {
       try {
         this.updateUpload(uploadId, {
-          status: "preparing",
+          status: 'preparing',
           progress: 0,
-          estimatedTime: get(t)("upload.calculatingHash"),
+          estimatedTime: get(t)('upload.calculatingHash'),
         });
         fileHash = await calculateFileHash(file);
       } catch (err) {
@@ -327,10 +319,10 @@ class UploadService {
     }
 
     // Step 1: Prepare the upload
-    const prepareResponse = await axiosInstance.post("/files/prepare", {
+    const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: file.size,
-      content_type: file instanceof File ? file.type : "audio/webm",
+      content_type: file instanceof File ? file.type : 'audio/webm',
       file_hash: fileHash,
     });
 
@@ -342,34 +334,34 @@ class UploadService {
 
     // Step 2: Upload the file
     this.updateUpload(uploadId, {
-      status: "uploading",
+      status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: "Uploading...",
+      estimatedTime: 'Uploading...',
     });
 
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append('file', file);
 
     // Build headers with speaker parameters if provided
     const headers: Record<string, string> = {
-      "Content-Type": "multipart/form-data",
-      "X-File-ID": fileId,
-      "X-File-Hash": fileHash || "",
+      'Content-Type': 'multipart/form-data',
+      'X-File-ID': fileId,
+      'X-File-Hash': fileHash || '',
     };
 
     // Add speaker diarization parameters to headers if provided
     if (upload.minSpeakers !== null && upload.minSpeakers !== undefined) {
-      headers["X-Min-Speakers"] = upload.minSpeakers.toString();
+      headers['X-Min-Speakers'] = upload.minSpeakers.toString();
     }
     if (upload.maxSpeakers !== null && upload.maxSpeakers !== undefined) {
-      headers["X-Max-Speakers"] = upload.maxSpeakers.toString();
+      headers['X-Max-Speakers'] = upload.maxSpeakers.toString();
     }
     if (upload.numSpeakers !== null && upload.numSpeakers !== undefined) {
-      headers["X-Num-Speakers"] = upload.numSpeakers.toString();
+      headers['X-Num-Speakers'] = upload.numSpeakers.toString();
     }
 
-    await axiosInstance.post("/files", formData, {
+    await axiosInstance.post('/files', formData, {
       headers,
       timeout: UPLOAD_TIMEOUT_MS,
       maxContentLength: Infinity,
@@ -379,20 +371,17 @@ class UploadService {
         if (progressEvent.total) {
           // Calculate progress percentage but cap at 99% during upload
           // Only show 100% when upload is completely finished and processed
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
-          );
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           const progress = Math.min(percentCompleted, 99);
 
           this.updateUpload(uploadId, { progress });
-          this.emit("progress", uploadId, { progress });
+          this.emit('progress', uploadId, { progress });
 
           // Calculate estimated time remaining
           const elapsed = Date.now() - (upload.startTime || Date.now());
           if (elapsed > 0) {
             const rate = progressEvent.loaded / elapsed; // bytes per ms
-            const remaining =
-              (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
+            const remaining = (progressEvent.total - progressEvent.loaded) / rate; // ms remaining
             const estimatedTime = this.formatTimeRemaining(remaining);
             this.updateUpload(uploadId, { estimatedTime });
           }
@@ -406,7 +395,7 @@ class UploadService {
   private async uploadExtractedAudio(
     uploadId: string,
     audioBlob: Blob,
-    extractionMetadata: any,
+    extractionMetadata: any
   ): Promise<any> {
     const upload = this.uploads.get(uploadId)!;
 
@@ -418,10 +407,10 @@ class UploadService {
     const originalFileHash = extractionMetadata?.originalFileHash || null;
 
     // Step 1: Prepare the upload with extraction metadata
-    const prepareResponse = await axiosInstance.post("/files/prepare", {
+    const prepareResponse = await axiosInstance.post('/files/prepare', {
       filename: upload.name,
       file_size: audioBlob.size,
-      content_type: audioBlob.type || "audio/opus",
+      content_type: audioBlob.type || 'audio/opus',
       file_hash: originalFileHash,
       extracted_from_video: extractionMetadata?.videoMetadata || null,
     });
@@ -434,21 +423,21 @@ class UploadService {
 
     // Step 2: Upload the extracted audio file
     this.updateUpload(uploadId, {
-      status: "uploading",
+      status: 'uploading',
       fileId,
       progress: 0,
-      estimatedTime: "Uploading extracted audio...",
+      estimatedTime: 'Uploading extracted audio...',
     });
 
     const formData = new FormData();
-    formData.append("file", audioBlob, upload.name);
+    formData.append('file', audioBlob, upload.name);
 
-    await axiosInstance.post("/files", formData, {
+    await axiosInstance.post('/files', formData, {
       headers: {
-        "Content-Type": "multipart/form-data",
-        "X-File-ID": fileId,
-        "X-File-Hash": originalFileHash || "",
-        "X-Extracted-Audio": "true", // Flag for backend to know this is extracted audio
+        'Content-Type': 'multipart/form-data',
+        'X-File-ID': fileId,
+        'X-File-Hash': originalFileHash || '',
+        'X-Extracted-Audio': 'true', // Flag for backend to know this is extracted audio
       },
       timeout: UPLOAD_TIMEOUT_MS,
       maxContentLength: Infinity,
@@ -456,20 +445,17 @@ class UploadService {
       cancelToken: cancelToken.token,
       onUploadProgress: (progressEvent: AxiosProgressEvent) => {
         if (progressEvent.total) {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total,
-          );
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           const progress = Math.min(percentCompleted, 99);
 
           this.updateUpload(uploadId, { progress });
-          this.emit("progress", uploadId, { progress });
+          this.emit('progress', uploadId, { progress });
 
           // Calculate estimated time remaining
           const elapsed = Date.now() - (upload.startTime || Date.now());
           if (elapsed > 0) {
             const rate = progressEvent.loaded / elapsed;
-            const remaining =
-              (progressEvent.total - progressEvent.loaded) / rate;
+            const remaining = (progressEvent.total - progressEvent.loaded) / rate;
             const estimatedTime = this.formatTimeRemaining(remaining);
             this.updateUpload(uploadId, { estimatedTime });
           }
@@ -485,11 +471,11 @@ class UploadService {
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, {
       cancelToken,
-      status: "processing",
+      status: 'processing',
     });
 
     const response = await axiosInstance.post(
-      "/files/process-url",
+      '/files/process-url',
       {
         url: url.trim(),
       },
@@ -498,14 +484,12 @@ class UploadService {
         cancelToken: cancelToken.token,
         onUploadProgress: (progressEvent: AxiosProgressEvent) => {
           if (progressEvent.total) {
-            const progress = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total,
-            );
+            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             this.updateUpload(uploadId, { progress });
-            this.emit("progress", uploadId, { progress });
+            this.emit('progress', uploadId, { progress });
           }
         },
-      },
+      }
     );
 
     return { uuid: response.data.uuid, isDuplicate: false };
@@ -517,7 +501,7 @@ class UploadService {
     if (!upload) return;
 
     this.updateUpload(uploadId, {
-      status: "queued",
+      status: 'queued',
       progress: 0,
       error: undefined,
       retryCount: upload.retryCount + 1,
@@ -525,7 +509,7 @@ class UploadService {
     });
 
     this.processingQueue.push(uploadId);
-    this.emit("retry", uploadId);
+    this.emit('retry', uploadId);
     this.processQueue();
     this.persistUploads();
   }
@@ -536,12 +520,12 @@ class UploadService {
 
     // Cancel the request if it has a cancel token
     if (upload.cancelToken) {
-      upload.cancelToken.cancel("Upload cancelled by user");
+      upload.cancelToken.cancel('Upload cancelled by user');
     }
 
     this.updateUpload(uploadId, {
-      status: "cancelled",
-      error: "Cancelled by user",
+      status: 'cancelled',
+      error: 'Cancelled by user',
     });
 
     // Remove from active uploads and queue
@@ -551,7 +535,7 @@ class UploadService {
       this.processingQueue.splice(queueIndex, 1);
     }
 
-    this.emit("cancelled", uploadId);
+    this.emit('cancelled', uploadId);
     this.persistUploads();
 
     // Continue processing queue
@@ -563,7 +547,7 @@ class UploadService {
     if (!upload) return;
 
     // Cancel if still active
-    if (upload.status === "uploading" || upload.status === "processing") {
+    if (upload.status === 'uploading' || upload.status === 'processing') {
       this.cancelUpload(uploadId);
     }
 
@@ -573,7 +557,7 @@ class UploadService {
 
   clearCompleted() {
     const completedIds = Array.from(this.uploads.entries())
-      .filter(([_, upload]) => upload.status === "completed")
+      .filter(([_, upload]) => upload.status === 'completed')
       .map(([id, _]) => id);
 
     completedIds.forEach((id) => this.uploads.delete(id));
@@ -592,14 +576,14 @@ class UploadService {
   getActiveUploads(): UploadItem[] {
     return this.getAllUploads().filter(
       (upload) =>
-        upload.status === "uploading" ||
-        upload.status === "processing" ||
-        upload.status === "preparing",
+        upload.status === 'uploading' ||
+        upload.status === 'processing' ||
+        upload.status === 'preparing'
     );
   }
 
   getQueuedUploads(): UploadItem[] {
-    return this.getAllUploads().filter((upload) => upload.status === "queued");
+    return this.getAllUploads().filter((upload) => upload.status === 'queued');
   }
 
   // Helper methods
@@ -613,37 +597,33 @@ class UploadService {
 
   private generateId(): string {
     return (
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15)
+      Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
     );
   }
 
   private getSourceName(source: File | string | Blob): string {
     if (source instanceof File) {
       return source.name;
-    } else if (typeof source === "string") {
+    } else if (typeof source === 'string') {
       try {
         const url = new URL(source);
         // Try to extract YouTube video title or use a more descriptive name
-        if (
-          url.hostname.includes("youtube.com") ||
-          url.hostname.includes("youtu.be")
-        ) {
-          return "YouTube Video";
+        if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+          return 'YouTube Video';
         }
-        return url.pathname.split("/").pop() || "Video URL";
+        return url.pathname.split('/').pop() || 'Video URL';
       } catch {
-        return "Video URL";
+        return 'Video URL';
       }
     } else {
       // Blob (recording)
-      return `recording_${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
+      return `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
     }
   }
 
   private getErrorMessage(error: any): string {
     if (axios.isCancel(error)) {
-      return "Upload cancelled";
+      return 'Upload cancelled';
     }
 
     if (error?.response?.data?.detail) {
@@ -654,11 +634,11 @@ class UploadService {
       return error.message;
     }
 
-    return "Unknown error occurred";
+    return 'Unknown error occurred';
   }
 
   private formatTimeRemaining(ms: number): string {
-    if (!ms || ms <= 0) return "";
+    if (!ms || ms <= 0) return '';
 
     const seconds = Math.ceil(ms / 1000);
     if (seconds < 60) return `${seconds}s`;
@@ -667,9 +647,7 @@ class UploadService {
     const remainingSeconds = seconds % 60;
 
     if (minutes < 60) {
-      return remainingSeconds > 0
-        ? `${minutes}m ${remainingSeconds}s`
-        : `${minutes}m`;
+      return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
     }
 
     const hours = Math.floor(minutes / 60);
@@ -680,18 +658,16 @@ class UploadService {
   // Persistence
   private persistUploads() {
     try {
-      const uploadsData = Array.from(this.uploads.entries()).map(
-        ([id, upload]) => [
-          id,
-          {
-            ...upload,
-            // Don't persist source data or cancel tokens
-            source: upload.type === "url" ? upload.source : null,
-            cancelToken: undefined,
-          },
-        ],
-      );
-      localStorage.setItem("upload_queue", JSON.stringify(uploadsData));
+      const uploadsData = Array.from(this.uploads.entries()).map(([id, upload]) => [
+        id,
+        {
+          ...upload,
+          // Don't persist source data or cancel tokens
+          source: upload.type === 'url' ? upload.source : null,
+          cancelToken: undefined,
+        },
+      ]);
+      localStorage.setItem('upload_queue', JSON.stringify(uploadsData));
     } catch (error) {
       // localStorage persistence is optional
     }
@@ -699,20 +675,20 @@ class UploadService {
 
   private loadPersistedUploads() {
     try {
-      const stored = localStorage.getItem("upload_queue");
+      const stored = localStorage.getItem('upload_queue');
       if (stored) {
         const uploadsData = JSON.parse(stored);
         uploadsData.forEach(([id, upload]: [string, UploadItem]) => {
           // Only restore queued or failed uploads that can be retried
-          if (upload.status === "queued" || upload.status === "failed") {
+          if (upload.status === 'queued' || upload.status === 'failed') {
             // Reset to queued state for retry
-            upload.status = "queued";
+            upload.status = 'queued';
             upload.progress = 0;
             upload.error = undefined;
             this.uploads.set(id, upload);
 
             // Only add URL uploads back to queue (files would need re-selection)
-            if (upload.type === "url" && upload.source) {
+            if (upload.type === 'url' && upload.source) {
               this.processingQueue.push(id);
             }
           }

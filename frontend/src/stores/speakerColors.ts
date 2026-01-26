@@ -38,9 +38,9 @@ export function getSpeakerColorFromStore(speakerId: string) {
   const color = getSpeakerColor(speakerId);
 
   // Store the color for future consistency
-  speakerColorMappings.update(mappings => ({
+  speakerColorMappings.update((mappings) => ({
     ...mappings,
-    [speakerId]: color
+    [speakerId]: color,
   }));
 
   return color;
@@ -65,10 +65,10 @@ export { speakerColorMappings };
 export function getSpeakerColorSmart(speakerData: any) {
   // Try different ways to get the original speaker ID
   const speakerId =
-    speakerData?.speaker_label ||  // For transcript segments (now contains original ID)
-    speakerData?.name ||           // For speaker objects
-    speakerData?.speaker?.name ||  // For nested speaker objects
-    speakerData ||                 // If speakerData is just a string
+    speakerData?.speaker_label || // For transcript segments (now contains original ID)
+    speakerData?.name || // For speaker objects
+    speakerData?.speaker?.name || // For nested speaker objects
+    speakerData || // If speakerData is just a string
     'Unknown';
 
   return getSpeakerColorFromStore(speakerId);

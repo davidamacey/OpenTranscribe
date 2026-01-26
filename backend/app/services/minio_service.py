@@ -113,14 +113,14 @@ def _get_object_total_length(object_name: str, logger) -> int | None:
     try:
         stats = minio_client.stat_object(settings.MEDIA_BUCKET_NAME, object_name)
         logger.info(f"File size for {object_name}: {stats.size} bytes")
-        return stats.size
+        return stats.size  # type: ignore[no-any-return]
     except Exception as e:
         logger.error(f"Error getting object stats: {e}")
         return None
 
 
 def _parse_range_header(
-    range_header: str, total_length: int | None, logger
+    range_header: str | None, total_length: int | None, logger
 ) -> tuple[int, int | None]:
     """
     Parse HTTP Range header and return start and end bytes.
@@ -231,7 +231,7 @@ def _create_chunk_generator(response, chunk_size: int, max_bytes: int | None, lo
             logger.error(f"Error closing MinIO response: {e}")
 
 
-def get_file_stream(object_name: str, range_header: str = None):
+def get_file_stream(object_name: str, range_header: str | None = None):
     """
     Get a file stream from MinIO for efficient streaming of large files with adaptive chunking.
     Implements robust range request handling for YouTube-like video streaming experience.
@@ -249,21 +249,31 @@ def get_file_stream(object_name: str, range_header: str = None):
         total_length = _get_object_total_length(object_name, logger)
         start_byte, end_byte = _parse_range_header(range_header, total_length, logger)
 
-        kwargs = {"bucket_name": settings.MEDIA_BUCKET_NAME, "object_name": object_name}
-
         # Add offset and length parameters for MinIO if we have a range
         if range_header and range_header.startswith("bytes="):
-            kwargs["offset"] = start_byte
-            if end_byte is not None:
-                kwargs["length"] = end_byte - start_byte + 1  # +1 because range is inclusive
+            offset = start_byte
+            length = (
+                (end_byte - start_byte + 1) if end_byte is not None else 0
+            )  # +1 because range is inclusive
             logger.info(
                 f"Streaming with range: start={start_byte}, "
                 f"end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
             )
+            response = minio_client.get_object(
+                bucket_name=settings.MEDIA_BUCKET_NAME,
+                object_name=object_name,
+                offset=offset,
+                length=length,
+            )
+            max_bytes: int | None = length if length > 0 else None
+        else:
+            response = minio_client.get_object(
+                bucket_name=settings.MEDIA_BUCKET_NAME,
+                object_name=object_name,
+            )
+            max_bytes = None
 
-        response = minio_client.get_object(**kwargs)
         chunk_size = _determine_chunk_size(total_length)
-        max_bytes = kwargs.get("length")
 
         return (
             _create_chunk_generator(response, chunk_size, max_bytes, logger),
@@ -308,9 +318,12 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
             )
         except Exception as inner_e:
             logger.info(f"First attempt failed: {inner_e}, trying alternative method")
-            # If that fails, try using the raw method with seconds
+            # If that fails, try using the raw method with timedelta
             url = minio_client.get_presigned_url(
-                "GET", settings.MEDIA_BUCKET_NAME, object_name, expires=expires
+                "GET",
+                settings.MEDIA_BUCKET_NAME,
+                object_name,
+                expires=datetime.timedelta(seconds=expires),
             )
 
         # Verify the URL is valid
@@ -334,7 +347,7 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
         # Log the generated URL (truncated for security)
         logger.info(f"Generated presigned URL: {url[:50]}...")
 
-        return url
+        return url  # type: ignore[no-any-return]
     except Exception as e:
         # Catch all exceptions, not just S3Error
         logger.error(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
@@ -368,23 +381,27 @@ class MinIOService:
         file_path: str,
         bucket_name: str,
         object_name: str,
-        content_type: str = None,
+        content_type: str | None = None,
     ):
         """Upload a file to MinIO bucket."""
         try:
             with open(file_path, "rb") as file_data:
                 file_size = os.path.getsize(file_path)
+                # Use default content type if not provided
+                effective_content_type = (
+                    content_type if content_type is not None else "application/octet-stream"
+                )
                 self.client.put_object(
                     bucket_name=bucket_name,
                     object_name=object_name,
                     data=file_data,
                     length=file_size,
-                    content_type=content_type,
+                    content_type=effective_content_type,
                 )
         except Exception as e:
             raise Exception(f"Error uploading file: {e}") from e
 
-    def download_file(self, object_name: str, file_path: str, bucket_name: str = None):
+    def download_file(self, object_name: str, file_path: str, bucket_name: str | None = None):
         """Download a file from MinIO to local path."""
         bucket = bucket_name or settings.MEDIA_BUCKET_NAME
         try:
@@ -421,7 +438,7 @@ class MinIOService:
         except Exception as e:
             raise Exception(f"Error deleting object: {e}") from e
 
-    def list_objects(self, bucket_name: str, prefix: str = None, recursive: bool = False):
+    def list_objects(self, bucket_name: str, prefix: str | None = None, recursive: bool = False):
         """List objects in a bucket."""
         try:
             return self.client.list_objects(bucket_name, prefix=prefix, recursive=recursive)
@@ -445,7 +462,7 @@ class MinIOService:
     def bucket_exists(self, bucket_name: str) -> bool:
         """Check if bucket exists."""
         try:
-            return self.client.bucket_exists(bucket_name)
+            return self.client.bucket_exists(bucket_name)  # type: ignore[no-any-return]
         except Exception as e:
             raise Exception(f"Error checking bucket existence: {e}") from e
 

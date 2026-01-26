@@ -7,7 +7,6 @@ with type conversion and caching support.
 
 import logging
 from typing import Any
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +15,7 @@ from app.models.system_settings import SystemSettings
 logger = logging.getLogger(__name__)
 
 
-def get_setting(db: Session, key: str, default: Any = None) -> Optional[str]:
+def get_setting(db: Session, key: str, default: Any = None) -> str | None:
     """
     Get a system setting by key.
 
@@ -30,8 +29,8 @@ def get_setting(db: Session, key: str, default: Any = None) -> Optional[str]:
     """
     setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
     if setting is None:
-        return default
-    return setting.value
+        return default  # type: ignore[no-any-return]
+    return str(setting.value) if setting.value is not None else None
 
 
 def get_setting_int(db: Session, key: str, default: int = 0) -> int:
@@ -77,7 +76,7 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
 
 
 def set_setting(
-    db: Session, key: str, value: Any, description: Optional[str] = None
+    db: Session, key: str, value: Any, description: str | None = None
 ) -> SystemSettings:
     """
     Set a system setting.
@@ -99,13 +98,13 @@ def set_setting(
         setting = SystemSettings(key=key, value=str_value, description=description)
         db.add(setting)
     else:
-        setting.value = str_value
+        setting.value = str_value  # type: ignore[assignment]
         if description is not None:
-            setting.description = description
+            setting.description = description  # type: ignore[assignment]
 
     db.commit()
     db.refresh(setting)
-    return setting
+    return setting  # type: ignore[no-any-return]
 
 
 def get_all_settings(db: Session) -> dict[str, dict]:
@@ -117,7 +116,7 @@ def get_all_settings(db: Session) -> dict[str, dict]:
     """
     settings = db.query(SystemSettings).all()
     return {
-        s.key: {
+        str(s.key): {
             "value": s.value,
             "description": s.description,
             "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -160,11 +159,11 @@ def should_retry_file(db: Session, retry_count: int) -> bool:
 
     # Check against the system-wide max retries
     max_retries = config["max_retries"]
-    return retry_count < max_retries
+    return bool(retry_count < max_retries)
 
 
 def update_retry_config(
-    db: Session, max_retries: Optional[int] = None, retry_limit_enabled: Optional[bool] = None
+    db: Session, max_retries: int | None = None, retry_limit_enabled: bool | None = None
 ) -> dict:
     """
     Update retry configuration.
@@ -215,8 +214,8 @@ def get_garbage_cleanup_config(db: Session) -> dict:
 
 def update_garbage_cleanup_config(
     db: Session,
-    garbage_cleanup_enabled: Optional[bool] = None,
-    max_word_length: Optional[int] = None,
+    garbage_cleanup_enabled: bool | None = None,
+    max_word_length: int | None = None,
 ) -> dict:
     """
     Update garbage cleanup configuration.

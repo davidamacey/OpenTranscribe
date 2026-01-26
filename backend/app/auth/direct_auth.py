@@ -3,25 +3,18 @@ Direct database authentication module for troubleshooting purposes.
 This bypasses the SQLAlchemy ORM relationships to ensure login works.
 """
 
+import logging
 import os
 from datetime import datetime
 from datetime import timedelta
+from datetime import timezone
 
 import psycopg2
 from jose import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
-
-# Password hashing with bcrypt_sha256 to handle long passwords properly
-# bcrypt_sha256 pre-hashes with SHA256 to work around bcrypt's 72-byte limitation
-# We keep "bcrypt" in the list to verify existing hashes, but new hashes use bcrypt_sha256
-pwd_context = CryptContext(
-    schemes=["bcrypt_sha256", "bcrypt"],  # bcrypt_sha256 for new, bcrypt for legacy
-    deprecated=["bcrypt"],  # Mark plain bcrypt as deprecated (will auto-upgrade on verify)
-    bcrypt_sha256__default_rounds=12,
-    bcrypt__default_rounds=12,
-)
+from app.core.security import pwd_context
+from app.core.security import verify_and_update_password
 
 # Database connection parameters
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -39,31 +32,149 @@ def get_db_connection():
     return conn
 
 
-def verify_password(plain_password, hashed_password):
+def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return pwd_context.verify(plain_password, hashed_password)  # type: ignore[no-any-return]
 
 
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    """Create a JWT access token."""
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Create a JWT access token.
+
+    Args:
+        data: Dictionary of claims to encode in the token
+        expires_delta: Optional custom expiration time
+
+    Returns:
+        Encoded JWT token string
+    """
+    import uuid
+
     to_encode = data.copy()
+    now = datetime.now(timezone.utc)
 
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "jti": str(uuid.uuid4()),  # JWT ID for token revocation support
+        }
+    )
+    encoded_jwt: str = jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )  # type: ignore[no-any-return]
     return encoded_jwt
 
 
-def direct_authenticate_user(email: str, password: str):
+logger = logging.getLogger(__name__)
+
+
+def _mask_identifier(identifier: str) -> str:
+    """Mask an identifier (email/username) for secure logging.
+
+    Args:
+        identifier: Email or username to mask
+
+    Returns:
+        Masked string showing only first 2 and last 2 characters
+    """
+    if not identifier or len(identifier) < 5:
+        return "***"
+    return f"{identifier[:2]}***{identifier[-2:]}"
+
+
+def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:
+    """Fetch user record from database by email.
+
+    Args:
+        conn: Database connection
+        cursor: Database cursor
+        email: Normalized email address
+
+    Returns:
+        User tuple (id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type)
+        or None if not found
+    """
+    cursor.execute(
+        'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type FROM "user" WHERE email = %s',
+        (email,),
+    )
+    return cursor.fetchone()  # type: ignore[no-any-return]
+
+
+def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> bool:
+    """Check if user can authenticate with password (not LDAP-only).
+
+    Args:
+        user_tuple: User record tuple from database
+        masked_email: Masked email for logging
+
+    Returns:
+        True if user can authenticate with password, False otherwise
+    """
+    auth_type = user_tuple[7]  # auth_type is at index 7
+    if auth_type == "ldap":
+        logger.info(
+            f"Authentication failed: user {masked_email} is LDAP type, cannot use password auth"
+        )
+        return False
+    return True
+
+
+def _verify_and_upgrade_password(
+    conn, cursor, user_id: str, password: str, hashed_password: str, masked_email: str
+) -> bool:
+    """Verify password and upgrade hash if needed for FIPS compliance.
+
+    Args:
+        conn: Database connection
+        cursor: Database cursor
+        user_id: User's database ID
+        password: Plaintext password to verify
+        hashed_password: Current password hash from database
+        masked_email: Masked email for logging
+
+    Returns:
+        True if password is valid, False otherwise
+    """
+    is_valid, new_hash = verify_and_update_password(password, hashed_password)
+
+    if not is_valid:
+        logger.warning(f"Authentication failed: incorrect password for user {masked_email}")
+        return False
+
+    if not new_hash:
+        return True
+
+    # Upgrade password hash (FIPS compliance auto-upgrade)
+    try:
+        cursor.execute(
+            'UPDATE "user" SET hashed_password = %s, updated_at = %s WHERE id = %s',
+            (new_hash, datetime.now(timezone.utc), user_id),
+        )
+        conn.commit()
+        logger.info(f"Password hash upgraded for user {masked_email}")
+    except Exception as upgrade_error:
+        # Log but don't fail authentication if upgrade fails
+        logger.warning(f"Failed to upgrade password hash: {str(upgrade_error)}")
+        conn.rollback()
+
+    return True
+
+
+def direct_authenticate_user(email: str, password: str) -> dict | None:
     """
     Directly authenticate a user by email and password using a raw database connection.
 
     This function provides a direct database authentication mechanism that bypasses
     the SQLAlchemy ORM, which can sometimes have relationship loading issues.
+
+    Supports automatic password hash upgrade for FIPS compliance when
+    FIPS_MODE is enabled.
 
     Args:
         email: The user's email address
@@ -73,33 +184,21 @@ def direct_authenticate_user(email: str, password: str):
         dict: User data if authentication is successful
         None: If authentication fails
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    # Basic input validation
     if not email or not password:
         logger.warning("Authentication attempt with empty email or password")
         return None
 
-    # Normalize email to lowercase and trim whitespace
     email = email.lower().strip()
+    masked_email = _mask_identifier(email)
 
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Query the user
-        cursor.execute(
-            'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type FROM "user" WHERE email = %s',
-            (email,),
-        )
-
-        user = cursor.fetchone()
-
+        user = _fetch_user_by_email(conn, cursor, email)
         if not user:
-            logger.info(f"Authentication failed: no user found with email {email}")
+            logger.info(f"Authentication failed: no user found with email {masked_email}")
             return None
 
         (
@@ -113,24 +212,19 @@ def direct_authenticate_user(email: str, password: str):
             auth_type,
         ) = user
 
-        # LDAP users cannot authenticate via password
-        if auth_type == "ldap":
-            logger.info(
-                f"Authentication failed: user {email} is LDAP type, cannot use password auth"
-            )
+        if not _validate_user_can_authenticate(user, masked_email):
             return None
 
-        # Verify password
-        if not verify_password(password, hashed_password):
-            logger.warning(f"Authentication failed: incorrect password for user {email}")
+        if not _verify_and_upgrade_password(
+            conn, cursor, user_id, password, hashed_password, masked_email
+        ):
             return None
 
-        # Check if user is active
         if not is_active:
-            logger.warning(f"Authentication failed: user {email} is inactive")
+            logger.warning(f"Authentication failed: user {masked_email} is inactive")
             return None
 
-        logger.info(f"Authentication successful for user {email}")
+        logger.info(f"Authentication successful for user {masked_email}")
         return {
             "id": user_id,
             "email": user_email,
@@ -144,7 +238,6 @@ def direct_authenticate_user(email: str, password: str):
         logger.error(f"Database authentication error: {str(e)}")
         return None
     finally:
-        # Ensure connections are always closed
         if conn:
             try:
                 cursor.close()

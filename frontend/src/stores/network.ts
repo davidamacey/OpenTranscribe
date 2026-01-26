@@ -4,7 +4,7 @@
  * and online/offline events for real-time updates
  */
 
-import { writable, derived } from "svelte/store";
+import { writable, derived } from 'svelte/store';
 
 export interface NetworkState {
   online: boolean;
@@ -13,7 +13,7 @@ export interface NetworkState {
 
 // Initial state based on current browser status
 const initialState: NetworkState = {
-  online: typeof navigator !== "undefined" ? navigator.onLine : true,
+  online: typeof navigator !== 'undefined' ? navigator.onLine : true,
   lastChecked: new Date(),
 };
 
@@ -27,7 +27,7 @@ function createNetworkStore() {
 
     // Initialize event listeners
     initialize() {
-      if (initialized || typeof window === "undefined") {
+      if (initialized || typeof window === 'undefined') {
         return;
       }
 
@@ -49,8 +49,8 @@ function createNetworkStore() {
       };
 
       // Listen to browser events
-      window.addEventListener("online", handleOnline);
-      window.addEventListener("offline", handleOffline);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
 
       // Set initial state
       set({
@@ -62,15 +62,15 @@ function createNetworkStore() {
 
       // Return cleanup function
       return () => {
-        window.removeEventListener("online", handleOnline);
-        window.removeEventListener("offline", handleOffline);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
         initialized = false;
       };
     },
 
     // Manual refresh of status
     refresh() {
-      if (typeof navigator !== "undefined") {
+      if (typeof navigator !== 'undefined') {
         update((state) => ({
           ...state,
           online: navigator.onLine,

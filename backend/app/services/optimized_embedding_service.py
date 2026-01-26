@@ -13,7 +13,6 @@ No backwards compatibility - designed for modern infrastructure.
 import logging
 from collections.abc import Iterator
 from typing import Any
-from typing import Optional
 from typing import Union
 
 import numpy as np
@@ -30,7 +29,7 @@ class OptimizedEmbeddingService:
 
     @staticmethod
     def bulk_store_embeddings(
-        embeddings_data: list[dict[str, Any]], index_name: str = "speakers"
+        embeddings_data: list[dict[str, Any]], index_name: str | None = None
     ) -> dict[str, Any]:
         """
         Store multiple embeddings in OpenSearch using bulk indexing for optimal performance.
@@ -47,6 +46,10 @@ class OptimizedEmbeddingService:
 
         if not embeddings_data:
             return {"stored": 0, "errors": []}
+
+        if not opensearch_client:
+            logger.error("OpenSearch client not initialized")
+            return {"stored": 0, "errors": ["OpenSearch client not initialized"]}
 
         try:
             # Prepare bulk operations
@@ -87,8 +90,8 @@ class OptimizedEmbeddingService:
 
     @staticmethod
     def bulk_retrieve_embeddings(
-        ids: list[int], index_name: str = "speakers"
-    ) -> dict[int, Optional[list[float]]]:
+        ids: list[int], index_name: str | None = None
+    ) -> dict[int, list[float] | None]:
         """
         Retrieve multiple embeddings using OpenSearch mget for optimal performance.
 
@@ -103,6 +106,10 @@ class OptimizedEmbeddingService:
 
         if not ids:
             return {}
+
+        if not opensearch_client:
+            logger.error("OpenSearch client not initialized")
+            return {id_: None for id_ in ids}
 
         try:
             # Use multi-get for efficient bulk retrieval
@@ -194,7 +201,7 @@ class OptimizedEmbeddingService:
 
     @staticmethod
     def optimize_embeddings_for_search(
-        embeddings: list[Union[np.ndarray, torch.Tensor]], target_dimension: Optional[int] = None
+        embeddings: list[Union[np.ndarray, torch.Tensor]], target_dimension: int | None = None
     ) -> list[torch.Tensor]:
         """
         Optimize embeddings for search performance using GPU acceleration.
@@ -248,13 +255,14 @@ class OptimizedEmbeddingService:
                 optimized = normalized
 
             # Convert back to list of tensors
-            result = [optimized[i].cpu() for i in range(optimized.shape[0])]
+            result: list[torch.Tensor] = [optimized[i].cpu() for i in range(optimized.shape[0])]
 
             return result
 
         except Exception as e:
             logger.error(f"Error optimizing embeddings: {e}")
-            return embeddings
+            # Return empty list on error since we can't safely cast mixed types
+            return []  # type: ignore[return-value]
 
     @staticmethod
     def stream_embeddings_from_index(
@@ -272,6 +280,10 @@ class OptimizedEmbeddingService:
             Batches of embedding documents
         """
         from app.services.opensearch_service import opensearch_client
+
+        if not opensearch_client:
+            logger.error("OpenSearch client not initialized")
+            return
 
         try:
             # Use scroll API for efficient large dataset iteration

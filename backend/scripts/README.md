@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
-  
+
   # Backend Utility Scripts
 </div>
 
@@ -39,7 +39,7 @@ This directory contains utility scripts for OpenTranscribe backend operations.
 ### Development & Debugging
 Scripts for development workflow and troubleshooting:
 - `create_admin.py` - Manual admin user creation
-- `db_inspect.py` - Database state inspection  
+- `db_inspect.py` - Database state inspection
 - `query_tags.py` - Tag system debugging
 
 ### Infrastructure Setup
@@ -74,7 +74,7 @@ MINIO_ROOT_PASSWORD=minioadmin
 MINIO_BUCKET_NAME=transcribe-app
 ```
 
-### For OpenSearch Scripts  
+### For OpenSearch Scripts
 ```bash
 OPENSEARCH_HOST=localhost
 OPENSEARCH_PORT=9200

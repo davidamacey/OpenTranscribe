@@ -32,13 +32,13 @@ def analyze_transcript_task(self, file_uuid: str):
         if not media_file:
             raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = media_file.id  # Get internal ID for database operations
+        file_id = int(media_file.id)  # Get internal ID for database operations
 
         # Create task record
         from app.utils.task_utils import create_task_record
         from app.utils.task_utils import update_task_status
 
-        create_task_record(db, task_id, media_file.user_id, file_id, "analytics")
+        create_task_record(db, task_id, int(media_file.user_id), file_id, "analytics")
 
         # Update task status
         update_task_status(db, task_id, "in_progress", progress=0.1)

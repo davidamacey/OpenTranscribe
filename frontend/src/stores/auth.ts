@@ -1,16 +1,29 @@
-import { writable, derived, get } from "svelte/store";
-import axios from "axios";
-import axiosInstance from "../lib/axios";
+import { writable, derived, get } from 'svelte/store';
+import axios from 'axios';
+import axiosInstance from '../lib/axios';
 
 // Define user interface
 export interface User {
   uuid: string;
   email: string;
   full_name: string;
-  role: "user" | "admin";
-  auth_type: "local" | "ldap"; // Authentication type for password change UI
+  role: 'user' | 'admin';
+  auth_type: 'local' | 'ldap' | 'keycloak' | 'pki'; // Authentication type for password change UI
   created_at: string;
   updated_at: string;
+}
+
+// Available authentication methods
+export interface AuthMethods {
+  methods: string[];
+  keycloak_enabled: boolean;
+  pki_enabled: boolean;
+  ldap_enabled: boolean;
+  mfa_enabled: boolean;
+  mfa_required: boolean;
+  login_banner_enabled: boolean;
+  login_banner_text: string;
+  login_banner_classification: string;
 }
 
 // Define auth store interface
@@ -25,7 +38,7 @@ export interface AuthState {
 type AuthStore = {
   subscribe: (
     run: (value: AuthState) => void,
-    invalidate?: (value?: AuthState) => void,
+    invalidate?: (value?: AuthState) => void
   ) => () => void;
   set: (value: AuthState) => void;
   update: (updater: (value: AuthState) => AuthState) => void;
@@ -52,7 +65,7 @@ const createAuthStore = (): AuthStore => {
       store.update((state) => ({ ...state, user: userData }));
       // Always update localStorage when user data changes
       if (userData) {
-        localStorage.setItem("user", JSON.stringify(userData));
+        localStorage.setItem('user', JSON.stringify(userData));
       }
     },
     setToken: (tokenValue: string | null) => {
@@ -81,10 +94,7 @@ export const authStore = createAuthStore();
 
 // Create convenience derived stores
 export const user = derived(authStore, ($store) => $store.user);
-export const isAuthenticated = derived(
-  authStore,
-  ($store) => $store.isAuthenticated,
-);
+export const isAuthenticated = derived(authStore, ($store) => $store.isAuthenticated);
 export const authReady = derived(authStore, ($store) => $store.ready);
 export const token = derived(authStore, ($store) => $store.token);
 
@@ -93,25 +103,25 @@ export async function initAuth() {
   authStore.setReady(false);
 
   const resetAndFinalize = (reason: string) => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     authStore.reset();
   };
 
   try {
-    const storedToken = localStorage.getItem("token");
+    const storedToken = localStorage.getItem('token');
 
     if (!storedToken) {
-      resetAndFinalize("No token found");
+      resetAndFinalize('No token found');
       return;
     }
 
     try {
-      const tokenParts = storedToken.split(".");
-      if (tokenParts.length !== 3) throw new Error("Invalid token format");
+      const tokenParts = storedToken.split('.');
+      if (tokenParts.length !== 3) throw new Error('Invalid token format');
       const tokenPayload = JSON.parse(atob(tokenParts[1]));
       if (tokenPayload.exp && tokenPayload.exp < Date.now() / 1000) {
-        resetAndFinalize("Token expired");
+        resetAndFinalize('Token expired');
         return;
       }
     } catch (e) {
@@ -122,7 +132,7 @@ export async function initAuth() {
 
     authStore.setToken(storedToken);
 
-    const storedUser = localStorage.getItem("user");
+    const storedUser = localStorage.getItem('user');
     let userDataSet = false;
     if (storedUser) {
       try {
@@ -131,8 +141,8 @@ export async function initAuth() {
         userDataSet = true;
       } catch (error) {
         console.warn(
-          "auth.ts: initAuth - Failed to parse stored user. Will attempt to fetch from API.",
-          error,
+          'auth.ts: initAuth - Failed to parse stored user. Will attempt to fetch from API.',
+          error
         );
       }
     }
@@ -141,9 +151,7 @@ export async function initAuth() {
       const fetchedUser = await fetchUserInfo();
       if (!fetchedUser) {
         if (!get(authStore).ready) {
-          resetAndFinalize(
-            "fetchUserInfo failed and ready state was not set by reset",
-          );
+          resetAndFinalize('fetchUserInfo failed and ready state was not set by reset');
         }
         return;
       }
@@ -161,44 +169,61 @@ export async function initAuth() {
 // Fetch current user info from API
 export async function fetchUserInfo() {
   try {
-    const response = await axiosInstance.get("auth/me");
+    const response = await axiosInstance.get('auth/me');
     const userData = response.data;
 
     authStore.setUser(userData);
 
-    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem('user', JSON.stringify(userData));
 
     return userData;
   } catch (error: any) {
-    console.error("auth.ts: Failed to fetch user info:", error);
+    console.error('auth.ts: Failed to fetch user info:', error);
     logout();
     return null;
   }
 }
 
-// Login function
-export async function login(email: string, password: string) {
+// Login function - returns mfa_required and mfa_token if MFA is needed
+export async function login(
+  email: string,
+  password: string
+): Promise<{
+  success: boolean;
+  message?: string;
+  mfa_required?: boolean;
+  mfa_token?: string;
+}> {
   try {
     const params = new URLSearchParams();
-    params.append("username", email);
-    params.append("password", password);
+    params.append('username', email);
+    params.append('password', password);
 
     // Use the axiosInstance which handles URL formats consistently
     // But we need to customize headers for this specific request
-    const response = await axiosInstance.post("auth/login", params, {
+    const response = await axiosInstance.post('auth/login', params, {
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
     });
 
+    // Check if MFA is required
+    if (response.status === 200 && response.data.mfa_required) {
+      return {
+        success: false,
+        mfa_required: true,
+        mfa_token: response.data.mfa_token,
+      };
+    }
+
     if (response.status !== 200 || !response.data.access_token) {
-      console.error("auth.ts: Invalid login response");
-      return { success: false, message: "Invalid login response from server" };
+      console.error('auth.ts: Invalid login response');
+      return { success: false, message: 'Invalid login response from server' };
     }
 
     const tokenValue = response.data.access_token;
 
-    localStorage.setItem("token", tokenValue);
+    localStorage.setItem('token', tokenValue);
 
     authStore.setToken(tokenValue);
 
@@ -208,50 +233,45 @@ export async function login(email: string, password: string) {
 
     return { success: true };
   } catch (err: any) {
-    console.error("auth.ts: Login error:", err);
+    console.error('auth.ts: Login error:', err);
 
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     authStore.reset();
 
     // Extract meaningful error message from backend response
-    let errorMessage =
-      "Login failed. Please check your credentials and try again.";
+    let errorMessage = 'Login failed. Please check your credentials and try again.';
 
     if (err.response) {
       // Server responded with an error status
       switch (err.response.status) {
         case 401:
           errorMessage =
-            err.response.data?.detail ||
-            "Invalid email or password. Please try again.";
+            err.response.data?.detail || 'Invalid email or password. Please try again.';
           break;
         case 400:
-          errorMessage =
-            err.response.data?.detail ||
-            "Invalid request. Please check your input.";
+          errorMessage = err.response.data?.detail || 'Invalid request. Please check your input.';
           break;
         case 429:
-          errorMessage = "Too many login attempts. Please try again later.";
+          errorMessage = 'Too many login attempts. Please try again later.';
           break;
         case 500:
         case 502:
         case 503:
-          errorMessage = "Server error. Please try again later.";
+          errorMessage = 'Server error. Please try again later.';
           break;
         default:
           errorMessage =
             err.response.data?.detail ||
             err.response.data?.message ||
-            "Login failed. Please try again.";
+            'Login failed. Please try again.';
       }
     } else if (err.request) {
       // Network error - no response received
-      errorMessage =
-        "Unable to connect to the server. Please check your internet connection.";
+      errorMessage = 'Unable to connect to the server. Please check your internet connection.';
     } else if (err.message) {
       // Something else happened
-      errorMessage = "An unexpected error occurred. Please try again.";
+      errorMessage = 'An unexpected error occurred. Please try again.';
     }
 
     return {
@@ -262,14 +282,10 @@ export async function login(email: string, password: string) {
 }
 
 // Register function
-export async function register(
-  email: string,
-  fullName: string,
-  password: string,
-) {
+export async function register(email: string, fullName: string, password: string) {
   try {
     // Use consistent URL format without leading slash
-    const response = await axiosInstance.post("auth/register", {
+    const response = await axiosInstance.post('auth/register', {
       email,
       full_name: fullName,
       password,
@@ -277,21 +293,199 @@ export async function register(
 
     return { success: true, user: response.data };
   } catch (error: any) {
-    console.error("auth.ts: Registration error:", error);
+    console.error('auth.ts: Registration error:', error);
+
+    // Handle validation errors (array) vs simple error messages (string)
+    let errorMessage = 'Registration failed. Please try again.';
+    const detail = error.response?.data?.detail;
+
+    if (detail) {
+      if (typeof detail === 'string') {
+        errorMessage = detail;
+      } else if (Array.isArray(detail)) {
+        // Pydantic validation errors - extract messages
+        errorMessage = detail.map((err: any) => err.msg || err.message || String(err)).join('. ');
+      } else if (typeof detail === 'object') {
+        errorMessage = detail.msg || detail.message || JSON.stringify(detail);
+      }
+    }
 
     return {
       success: false,
-      message:
-        error.response?.data?.detail ||
-        "Registration failed. Please try again.",
+      message: errorMessage,
     };
   }
 }
 
 // Logout function
 export function logout() {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
 
   authStore.reset();
+}
+
+// Get available authentication methods
+export async function getAuthMethods(): Promise<AuthMethods> {
+  try {
+    const response = await axiosInstance.get('auth/methods');
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch auth methods:', error);
+    // Return default methods if fetch fails
+    return {
+      methods: ['local'],
+      keycloak_enabled: false,
+      pki_enabled: false,
+      ldap_enabled: false,
+      mfa_enabled: false,
+      mfa_required: false,
+      login_banner_enabled: false,
+      login_banner_text: '',
+      login_banner_classification: 'UNCLASSIFIED',
+    };
+  }
+}
+
+// Initiate Keycloak login
+export async function loginWithKeycloak(): Promise<{
+  success: boolean;
+  message?: string;
+}> {
+  try {
+    const response = await axiosInstance.get('auth/keycloak/login');
+    const { authorization_url } = response.data;
+
+    if (authorization_url) {
+      // Redirect to Keycloak login page
+      window.location.href = authorization_url;
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      message: 'Failed to get Keycloak authorization URL',
+    };
+  } catch (error: any) {
+    console.error('Keycloak login error:', error);
+    return {
+      success: false,
+      message: error.response?.data?.detail || 'Failed to initiate Keycloak login',
+    };
+  }
+}
+
+// Handle Keycloak callback (called after redirect back from Keycloak)
+export async function handleKeycloakCallback(
+  code: string,
+  state: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await axiosInstance.get('auth/keycloak/callback', {
+      params: { code, state },
+    });
+
+    if (response.status === 200 && response.data.access_token) {
+      const tokenValue = response.data.access_token;
+      localStorage.setItem('token', tokenValue);
+      authStore.setToken(tokenValue);
+
+      await fetchUserInfo();
+      authStore.setReady(true);
+
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      message: 'Invalid response from Keycloak callback',
+    };
+  } catch (error: any) {
+    console.error('Keycloak callback error:', error);
+    return {
+      success: false,
+      message: error.response?.data?.detail || 'Failed to complete Keycloak authentication',
+    };
+  }
+}
+
+// Authenticate with PKI certificate
+export async function loginWithPKI(): Promise<{
+  success: boolean;
+  message?: string;
+}> {
+  try {
+    const response = await axiosInstance.post('auth/pki/authenticate');
+
+    if (response.status === 200 && response.data.access_token) {
+      const tokenValue = response.data.access_token;
+      localStorage.setItem('token', tokenValue);
+      authStore.setToken(tokenValue);
+
+      await fetchUserInfo();
+      authStore.setReady(true);
+
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      message: 'Invalid response from PKI authentication',
+    };
+  } catch (error: any) {
+    console.error('PKI login error:', error);
+
+    let message = 'PKI authentication failed';
+    if (error.response?.status === 401) {
+      message = 'Invalid or missing client certificate';
+    } else if (error.response?.status === 400) {
+      message = error.response?.data?.detail || 'PKI authentication is not enabled';
+    }
+
+    return { success: false, message };
+  }
+}
+
+// Verify MFA code during login
+export async function verifyMFA(
+  mfaToken: string,
+  code: string,
+  isBackupCode: boolean = false
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await axiosInstance.post('auth/mfa/verify', {
+      mfa_token: mfaToken,
+      code: code,
+      is_backup_code: isBackupCode,
+    });
+
+    if (response.status === 200 && response.data.access_token) {
+      const tokenValue = response.data.access_token;
+      localStorage.setItem('token', tokenValue);
+      authStore.setToken(tokenValue);
+
+      await fetchUserInfo();
+      authStore.setReady(true);
+
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      message: 'Invalid response from MFA verification',
+    };
+  } catch (error: any) {
+    console.error('MFA verification error:', error);
+
+    let message = 'MFA verification failed';
+    if (error.response?.status === 401) {
+      message = error.response?.data?.detail || 'Invalid verification code';
+    } else if (error.response?.status === 400) {
+      message = error.response?.data?.detail || 'Invalid MFA token or code';
+    } else if (error.response?.status === 429) {
+      message = 'Too many verification attempts. Please try again later.';
+    }
+
+    return { success: false, message };
+  }
 }

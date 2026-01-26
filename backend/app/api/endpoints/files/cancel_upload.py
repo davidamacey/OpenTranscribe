@@ -51,7 +51,7 @@ async def cancel_upload(
         # Delete the file from storage if it was partially uploaded
         if db_file.storage_path:
             try:
-                delete_file(db_file.storage_path)
+                delete_file(str(db_file.storage_path))
                 logger.info(f"Deleted partial upload: {db_file.storage_path}")
             except Exception as e:
                 logger.error(f"Error deleting file {db_file.storage_path}: {e}")

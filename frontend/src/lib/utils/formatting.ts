@@ -48,7 +48,7 @@ export function formatTimestampWithMillis(timestamp: string | number | Date): st
     const milliseconds = String(date.getMilliseconds()).padStart(3, '0');
     return `${mainPart}.${milliseconds}`;
   } catch (error) {
-    console.error("Error formatting timestamp:", error);
+    console.error('Error formatting timestamp:', error);
     return 'Invalid Date';
   }
 }

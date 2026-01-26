@@ -13,7 +13,7 @@ function createUploadStore() {
   const initialState: UploadStoreState = {
     uploads: [],
     isExpanded: false,
-    hasNewActivity: false
+    hasNewActivity: false,
   };
 
   const { subscribe, set, update } = writable<UploadStoreState>(initialState);
@@ -23,7 +23,7 @@ function createUploadStore() {
 
   // Listen to upload service events
   eventListenerCleanup = uploadService.addEventListener((event: UploadEvent) => {
-    update(state => {
+    update((state) => {
       const uploads = uploadService.getAllUploads();
       let hasNewActivity = state.hasNewActivity;
 
@@ -35,55 +35,59 @@ function createUploadStore() {
       return {
         ...state,
         uploads,
-        hasNewActivity
+        hasNewActivity,
       };
     });
   });
 
   // Initialize with current uploads
-  update(state => ({
+  update((state) => ({
     ...state,
-    uploads: uploadService.getAllUploads()
+    uploads: uploadService.getAllUploads(),
   }));
 
   return {
     subscribe,
-    
+
     // Actions
     expand() {
-      update(state => ({
+      update((state) => ({
         ...state,
         isExpanded: true,
-        hasNewActivity: false // Clear new activity when expanded
+        hasNewActivity: false, // Clear new activity when expanded
       }));
     },
 
     collapse() {
-      update(state => ({
+      update((state) => ({
         ...state,
-        isExpanded: false
+        isExpanded: false,
       }));
     },
 
     toggle() {
-      update(state => ({
+      update((state) => ({
         ...state,
         isExpanded: !state.isExpanded,
-        hasNewActivity: state.isExpanded ? state.hasNewActivity : false // Clear if expanding
+        hasNewActivity: state.isExpanded ? state.hasNewActivity : false, // Clear if expanding
       }));
     },
 
     clearNewActivity() {
-      update(state => ({
+      update((state) => ({
         ...state,
-        hasNewActivity: false
+        hasNewActivity: false,
       }));
     },
 
     // Upload actions (delegate to service)
     addFile(
       file: File,
-      speakerParams?: { minSpeakers?: number | null; maxSpeakers?: number | null; numSpeakers?: number | null }
+      speakerParams?: {
+        minSpeakers?: number | null;
+        maxSpeakers?: number | null;
+        numSpeakers?: number | null;
+      }
     ) {
       return uploadService.addUpload('file', file, undefined, speakerParams);
     },
@@ -100,8 +104,18 @@ function createUploadStore() {
       return uploadService.addUpload('recording', blob, name);
     },
 
-    addExtractedAudio(audioBlob: Blob, filename: string, extractionMetadata: any, compressionRatio: number) {
-      return uploadService.addExtractedAudio(audioBlob, filename, extractionMetadata, compressionRatio);
+    addExtractedAudio(
+      audioBlob: Blob,
+      filename: string,
+      extractionMetadata: any,
+      compressionRatio: number
+    ) {
+      return uploadService.addExtractedAudio(
+        audioBlob,
+        filename,
+        extractionMetadata,
+        compressionRatio
+      );
     },
 
     retry(uploadId: string) {
@@ -110,25 +124,25 @@ function createUploadStore() {
 
     cancel(uploadId: string) {
       uploadService.cancelUpload(uploadId);
-      update(state => ({
+      update((state) => ({
         ...state,
-        uploads: uploadService.getAllUploads()
+        uploads: uploadService.getAllUploads(),
       }));
     },
 
     remove(uploadId: string) {
       uploadService.removeUpload(uploadId);
-      update(state => ({
+      update((state) => ({
         ...state,
-        uploads: uploadService.getAllUploads()
+        uploads: uploadService.getAllUploads(),
       }));
     },
 
     clearCompleted() {
       uploadService.clearCompleted();
-      update(state => ({
+      update((state) => ({
         ...state,
-        uploads: uploadService.getAllUploads()
+        uploads: uploadService.getAllUploads(),
       }));
     },
 
@@ -138,7 +152,7 @@ function createUploadStore() {
         eventListenerCleanup();
         eventListenerCleanup = null;
       }
-    }
+    },
   };
 }
 
@@ -146,98 +160,72 @@ function createUploadStore() {
 export const uploadsStore = createUploadStore();
 
 // Derived stores for convenience
-export const activeUploads = derived(
-  uploadsStore,
-  $store => $store.uploads.filter(upload => 
-    upload.status === 'uploading' || 
-    upload.status === 'processing' || 
-    upload.status === 'preparing'
+export const activeUploads = derived(uploadsStore, ($store) =>
+  $store.uploads.filter(
+    (upload) =>
+      upload.status === 'uploading' ||
+      upload.status === 'processing' ||
+      upload.status === 'preparing'
   )
 );
 
-export const queuedUploads = derived(
-  uploadsStore,
-  $store => $store.uploads.filter(upload => upload.status === 'queued')
+export const queuedUploads = derived(uploadsStore, ($store) =>
+  $store.uploads.filter((upload) => upload.status === 'queued')
 );
 
-export const completedUploads = derived(
-  uploadsStore,
-  $store => $store.uploads.filter(upload => upload.status === 'completed')
+export const completedUploads = derived(uploadsStore, ($store) =>
+  $store.uploads.filter((upload) => upload.status === 'completed')
 );
 
-export const failedUploads = derived(
-  uploadsStore,
-  $store => $store.uploads.filter(upload => upload.status === 'failed')
+export const failedUploads = derived(uploadsStore, ($store) =>
+  $store.uploads.filter((upload) => upload.status === 'failed')
 );
 
-export const uploadCount = derived(
-  uploadsStore,
-  $store => $store.uploads.length
-);
+export const uploadCount = derived(uploadsStore, ($store) => $store.uploads.length);
 
-export const activeUploadCount = derived(
-  activeUploads,
-  $uploads => $uploads.length
-);
+export const activeUploadCount = derived(activeUploads, ($uploads) => $uploads.length);
 
-export const totalProgress = derived(
-  activeUploads,
-  $uploads => {
-    if ($uploads.length === 0) return 0;
-    
-    const totalProgress = $uploads.reduce((sum, upload) => sum + upload.progress, 0);
-    return Math.round(totalProgress / $uploads.length);
-  }
-);
+export const totalProgress = derived(activeUploads, ($uploads) => {
+  if ($uploads.length === 0) return 0;
 
-export const hasActiveUploads = derived(
-  activeUploadCount,
-  $count => $count > 0
-);
+  const totalProgress = $uploads.reduce((sum, upload) => sum + upload.progress, 0);
+  return Math.round(totalProgress / $uploads.length);
+});
 
-export const isExpanded = derived(
-  uploadsStore,
-  $store => $store.isExpanded
-);
+export const hasActiveUploads = derived(activeUploadCount, ($count) => $count > 0);
 
-export const hasNewActivity = derived(
-  uploadsStore,
-  $store => $store.hasNewActivity
-);
+export const isExpanded = derived(uploadsStore, ($store) => $store.isExpanded);
+
+export const hasNewActivity = derived(uploadsStore, ($store) => $store.hasNewActivity);
 
 // Overall upload statistics
-export const uploadStats = derived(
-  uploadsStore,
-  $store => {
-    const uploads = $store.uploads;
-    return {
-      total: uploads.length,
-      active: uploads.filter(u => ['uploading', 'processing', 'preparing'].includes(u.status)).length,
-      queued: uploads.filter(u => u.status === 'queued').length,
-      completed: uploads.filter(u => u.status === 'completed').length,
-      failed: uploads.filter(u => u.status === 'failed').length,
-      cancelled: uploads.filter(u => u.status === 'cancelled').length
-    };
-  }
-);
+export const uploadStats = derived(uploadsStore, ($store) => {
+  const uploads = $store.uploads;
+  return {
+    total: uploads.length,
+    active: uploads.filter((u) => ['uploading', 'processing', 'preparing'].includes(u.status))
+      .length,
+    queued: uploads.filter((u) => u.status === 'queued').length,
+    completed: uploads.filter((u) => u.status === 'completed').length,
+    failed: uploads.filter((u) => u.status === 'failed').length,
+    cancelled: uploads.filter((u) => u.status === 'cancelled').length,
+  };
+});
 
 // Estimated time remaining for all active uploads
-export const estimatedTimeRemaining = derived(
-  activeUploads,
-  $uploads => {
-    const timesRemaining = $uploads
-      .map(upload => upload.estimatedTime)
-      .filter(time => time && time !== '');
-    
-    if (timesRemaining.length === 0) return '';
-    
-    // Return the longest estimated time (most conservative estimate)
-    return timesRemaining.reduce((longest, current) => {
-      if (!longest) return current;
-      if (!current) return longest;
-      
-      // Simple comparison - in a real app you'd parse and compare properly
-      return current.length > longest.length ? current : longest;
-    }, '');
-  }
-);
+export const estimatedTimeRemaining = derived(activeUploads, ($uploads) => {
+  const timesRemaining = $uploads
+    .map((upload) => upload.estimatedTime)
+    .filter((time) => time && time !== '');
+
+  if (timesRemaining.length === 0) return '';
+
+  // Return the longest estimated time (most conservative estimate)
+  return timesRemaining.reduce((longest, current) => {
+    if (!longest) return current;
+    if (!current) return longest;
+
+    // Simple comparison - in a real app you'd parse and compare properly
+    return current.length > longest.length ? current : longest;
+  }, '');
+});

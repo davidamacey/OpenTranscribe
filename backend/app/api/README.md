@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
-  
+
   # API Layer Documentation
 </div>
 
@@ -149,7 +149,7 @@ POST   /files/management/cleanup-orphaned # Clean up orphaned files (admin only)
 
 **New File Status States:**
 - `PENDING` → File uploaded, waiting for processing
-- `PROCESSING` → AI transcription/diarization in progress  
+- `PROCESSING` → AI transcription/diarization in progress
 - `COMPLETED` → Successfully processed with transcript available
 - `ERROR` → Processing failed, can be retried
 - `CANCELLING` → User requested cancellation (NEW)
@@ -485,10 +485,10 @@ async def async_operation(
     """Async endpoint for I/O bound operations."""
     # Use async for I/O operations
     await some_async_operation()
-    
+
     # Use background tasks for fire-and-forget
     background_tasks.add_task(send_notification)
-    
+
     return {"status": "success"}
 ```
 

@@ -156,6 +156,16 @@ MODEL_CACHE_DIR=./models
 
 See [Environment Variables](../configuration/environment-variables.md) for all options.
 
+**Optional: Configure Authentication**
+
+OpenTranscribe supports multiple authentication methods. For enterprise deployments, you may want to configure:
+
+- **LDAP/Active Directory** - `LDAP_ENABLED=true`
+- **Keycloak/OIDC** - `KEYCLOAK_ENABLED=true`
+- **PKI/X.509** - `PKI_ENABLED=true`
+
+See [Authentication Overview](../authentication/overview.md) for setup guides.
+
 ### Step 4: Set Up HuggingFace
 
 **This step is CRITICAL for speaker diarization**

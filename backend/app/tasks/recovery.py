@@ -51,7 +51,7 @@ def startup_recovery_task(self):
             # Step 2: Retry abandoned files
             retry_count = 0
             for media_file in abandoned_files[:reset_count]:  # Only retry successfully reset files
-                if task_recovery_service.schedule_file_retry(media_file.id):
+                if task_recovery_service.schedule_file_retry(int(media_file.id)):
                     retry_count += 1
             summary["files_retried"] = retry_count
 
@@ -71,13 +71,13 @@ def startup_recovery_task(self):
 
     except Exception as e:
         logger.error(f"Error in startup recovery: {str(e)}")
-        summary["error"] = str(e)
+        summary["error"] = str(e)  # type: ignore[assignment]
 
     return summary
 
 
 @celery_app.task(name="recover_user_files", bind=True)
-def recover_user_files_task(self, user_id: int = None):
+def recover_user_files_task(self, user_id: int | None = None):
     """
     Task to recover files for a specific user or all users.
     Useful when a user reports missing/stuck files.
@@ -122,7 +122,7 @@ def recover_user_files_task(self, user_id: int = None):
 
     except Exception as e:
         logger.error(f"Error in user file recovery: {str(e)}")
-        summary["error"] = str(e)
+        summary["error"] = str(e)  # type: ignore[assignment]
 
     return summary
 
@@ -203,6 +203,6 @@ def periodic_health_check_task(self):
 
     except Exception as e:
         logger.error(f"Error in periodic health check: {str(e)}")
-        summary["error"] = str(e)
+        summary["error"] = str(e)  # type: ignore[assignment]
 
     return summary

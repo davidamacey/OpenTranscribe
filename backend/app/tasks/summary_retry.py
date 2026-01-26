@@ -49,9 +49,9 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
 
     try:
         # Reset summary fields
-        media_file.summary_data = None
-        media_file.summary_opensearch_id = None
-        media_file.summary_status = "pending"
+        media_file.summary_data = None  # type: ignore[assignment]
+        media_file.summary_opensearch_id = None  # type: ignore[assignment]
+        media_file.summary_status = "pending"  # type: ignore[assignment]
 
         db.commit()
         logger.info(f"Reset summary status for file {file_id}")
@@ -132,7 +132,7 @@ def get_failed_summary_count() -> int:
     """
     db = SessionLocal()
     try:
-        return (
+        return (  # type: ignore[no-any-return]
             db.query(MediaFile)
             .filter(MediaFile.summary_status == "failed", MediaFile.status == "completed")
             .count()

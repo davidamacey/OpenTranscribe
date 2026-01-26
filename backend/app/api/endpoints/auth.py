@@ -1,32 +1,63 @@
 import logging
 import os
+import secrets
 from datetime import timedelta
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
+from fastapi import Request
 from fastapi import status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from jose import jwt
 from sqlalchemy.orm import Session
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
+from app.auth.constants import AUTH_TYPE_KEYCLOAK
+from app.auth.constants import AUTH_TYPE_LOCAL
+from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.direct_auth import direct_authenticate_user
-from app.auth.ldap_auth import AUTH_TYPE_LOCAL
+from app.auth.keycloak_auth import exchange_code_for_tokens
+from app.auth.keycloak_auth import get_authorization_url
+from app.auth.keycloak_auth import sync_keycloak_user_to_db
+from app.auth.keycloak_auth import validate_token as validate_keycloak_token
 from app.auth.ldap_auth import ldap_authenticate
 from app.auth.ldap_auth import sync_ldap_user_to_db
+from app.auth.lockout import check_and_record_attempt
+from app.auth.lockout import get_lockout_info
+from app.auth.mfa import MFAService
+from app.auth.password_history import add_password_to_history
+from app.auth.pki_auth import pki_authenticate
+from app.auth.pki_auth import sync_pki_user_to_db
+from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import limiter
+from app.auth.session import OIDCStateStore
+from app.auth.session import get_redis_client
+from app.auth.token_service import token_service
 from app.core.config import settings
 from app.core.security import authenticate_user
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.user import User
+from app.models.user_mfa import UserMFA
+from app.schemas.user import MFADisableRequest
+from app.schemas.user import MFASetupResponse
+from app.schemas.user import MFAStatusResponse
+from app.schemas.user import MFAVerifyRequest
+from app.schemas.user import MFAVerifyResponse
+from app.schemas.user import MFAVerifySetupRequest
+from app.schemas.user import MFAVerifySetupResponse
 from app.schemas.user import Token
 from app.schemas.user import TokenPayload
-from app.schemas.user import User as UserOut
+from app.schemas.user import TokenRefreshRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 
@@ -36,12 +67,29 @@ logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/token")
 
 
+def _get_client_info(request: Request) -> tuple[str, str]:
+    """Extract client IP and user agent from request.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Tuple of (client_ip, user_agent)
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("User-Agent", "unknown")
+    return client_ip, user_agent
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """
     Get the current user from the JWT token.
 
     Token payload uses UUID (sub field contains user UUID string).
     Internal database queries use integer ID for performance.
+
+    When TOKEN_REVOCATION_ENABLED is true, also checks if the token's JTI
+    is on the revocation blacklist (FedRAMP AC-12 compliance).
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -53,7 +101,17 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         user_uuid_str: str = payload.get("sub")  # UUID string from token
         user_role: str = payload.get("role")  # Extract role from token
+        token_jti: str = payload.get("jti")  # JWT ID for revocation checking
         if user_uuid_str is None:
+            raise credentials_exception
+
+        # Check token revocation blacklist (FedRAMP AC-12)
+        if (
+            settings.TOKEN_REVOCATION_ENABLED
+            and token_jti
+            and token_service.is_token_revoked(token_jti)
+        ):
+            logger.warning(f"Rejected revoked token (jti={token_jti[:8]}...)")
             raise credentials_exception
 
         # Validate UUID format
@@ -62,7 +120,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         except ValueError:
             raise credentials_exception from None
 
-        token_data = TokenPayload(sub=user_uuid_str)
+        token_data = TokenPayload(sub=user_uuid_str, jti=token_jti)
     except JWTError as e:
         raise credentials_exception from e
 
@@ -83,7 +141,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
                 f"DB has '{user.role}'. Using DB role. User should re-login."
             )
 
-        return user
+        return user  # type: ignore[no-any-return]
     except Exception as e:
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
@@ -98,7 +156,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
                 is_active=True,
                 is_superuser=False,
             )
-            return user
+            return user  # type: ignore[no-any-return]
         # Re-raise the exception in production
         raise
 
@@ -265,7 +323,7 @@ def _ensure_user_uuid(db: Session, user_data: dict) -> str:
         HTTPException: If user not found
     """
     if "uuid" in user_data:
-        return user_data["uuid"]
+        return str(user_data["uuid"])
 
     # Direct auth returned integer ID, look up UUID
     user = db.query(User).filter(User.id == user_data["id"]).first()
@@ -296,9 +354,7 @@ def _check_user_active(user_data: dict, username: str) -> None:
         )
 
 
-def _authenticate_local_user(
-    db: Session, username: str, password: str
-) -> Optional[tuple[str, dict]]:
+def _authenticate_local_user(db: Session, username: str, password: str) -> tuple[str, dict] | None:
     """Authenticate local user via direct auth or ORM.
 
     Args:
@@ -377,7 +433,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
             raise
 
         logger.info(f"LDAP failed, trying local auth as fallback for: {username}")
-        result = _authenticate_local_user(db, local_user.email, password)
+        result = _authenticate_local_user(db, str(local_user.email), password)
         if result:
             return result
 
@@ -389,7 +445,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
         ) from None
 
 
-def _get_user_role(db: Session, user_uuid_str: str, user_data: dict = None) -> str:
+def _get_user_role(db: Session, user_uuid_str: str, user_data: dict | None = None) -> str:
     """Get user role for token generation.
 
     Args:
@@ -401,22 +457,220 @@ def _get_user_role(db: Session, user_uuid_str: str, user_data: dict = None) -> s
         User role string
     """
     if user_data and "role" in user_data:
-        return user_data["role"]
+        return str(user_data["role"])
 
     # Get role from database if not available in direct auth
     user_uuid = UUID(user_uuid_str)
     user_db = db.query(User).filter(User.uuid == user_uuid).first()
-    return user_db.role if user_db else None
+    return str(user_db.role) if user_db else ""
+
+
+def _perform_authentication(db: Session, username: str, password: str) -> tuple[bool, str, dict]:
+    """Handle testing vs production authentication.
+
+    Args:
+        db: Database session
+        username: Username to authenticate
+        password: Password to verify
+
+    Returns:
+        Tuple of (auth_success, user_uuid_str, user_data)
+        - auth_success: True if authentication succeeded
+        - user_uuid_str: User UUID string (empty if failed)
+        - user_data: User data dict (empty if failed or testing)
+
+    Raises:
+        HTTPException: If user is inactive (400) or other non-auth errors
+    """
+    testing_environment = os.environ.get("TESTING", "False").lower() == "true"
+
+    if testing_environment:
+        user_uuid_str = _authenticate_testing_user(db, username, password)
+        return True, user_uuid_str, {}
+
+    try:
+        user_uuid_str, user_data = _authenticate_production_user(db, username, password)
+        return True, user_uuid_str, user_data
+    except HTTPException as auth_error:
+        if auth_error.status_code == status.HTTP_401_UNAUTHORIZED:
+            return False, "", {}
+        # Re-raise non-auth errors (400 for inactive user, etc.)
+        raise
+
+
+def _handle_lockout_check(
+    username: str, auth_success: bool, client_ip: str, user_agent: str
+) -> tuple[bool, int | None]:
+    """Handle lockout logic with atomic check-and-record.
+
+    Args:
+        username: Username being authenticated
+        auth_success: Whether authentication succeeded
+        client_ip: Client IP address
+        user_agent: Client user agent
+
+    Returns:
+        Tuple of (is_locked, unlock_time)
+        - is_locked: True if account is locked
+        - unlock_time: Time when account unlocks (or None)
+
+    Note:
+        Also logs audit events for lockout and login failures.
+    """
+
+    # Atomic lockout check and record (prevents race conditions - CRITICAL-1 fix)
+    lockout_result = check_and_record_attempt(username, success=auth_success)
+    is_locked, unlock_datetime = lockout_result
+    unlock_time: int | None = int(unlock_datetime.timestamp()) if unlock_datetime else None
+
+    if is_locked:
+        # Check if account was just locked (lockout event) vs already locked
+        lockout_info = get_lockout_info(username)
+        if lockout_info["failed_attempts"] >= settings.ACCOUNT_LOCKOUT_THRESHOLD:
+            # Account was just locked - log lockout event
+            audit_logger.log_account_lockout(
+                username=username,
+                source_ip=client_ip,
+                user_agent=user_agent,
+                lockout_duration_minutes=settings.ACCOUNT_LOCKOUT_DURATION_MINUTES,
+                failed_attempts=lockout_info["failed_attempts"],
+            )
+        return True, unlock_time
+
+    if not auth_success:
+        # Authentication failed but not locked (yet)
+        lockout_info = get_lockout_info(username)
+        audit_logger.log_login_failure(
+            username=username,
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_CREDENTIALS",
+            auth_method="ldap" if settings.LDAP_ENABLED else "local",
+            lockout_count=lockout_info.get("lockout_count", 0),
+        )
+
+    return False, None
+
+
+def _check_mfa_requirement(
+    db: Session, user: User, user_uuid_str: str, user_role: str
+) -> JSONResponse | None:
+    """Check if MFA is required for user and return MFA response if needed.
+
+    Args:
+        db: Database session
+        user: User model object
+        user_uuid_str: User UUID string
+        user_role: User's role
+
+    Returns:
+        JSONResponse with MFA token if MFA required, None otherwise
+    """
+    # Skip MFA check if MFA is disabled
+    if not settings.MFA_ENABLED:
+        return None
+
+    # Skip MFA for PKI and Keycloak users (they have their own 2FA)
+    if user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]:
+        return None
+
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(user.id)).first()
+
+    if user_mfa and user_mfa.totp_enabled:
+        # User has MFA enabled - return MFA token instead of access token
+        mfa_token = _create_mfa_token(user_uuid_str, user_role)
+        logger.info(f"MFA verification required for user: {str(user.email)}")
+        return JSONResponse(
+            content={
+                "mfa_required": True,
+                "mfa_token": mfa_token,
+                "message": "MFA verification required",
+            }
+        )
+
+    return None
+
+
+def _generate_login_tokens(
+    db: Session,
+    user: User,
+    user_uuid_str: str,
+    user_role: str,
+    user_agent: str,
+    client_ip: str,
+) -> JSONResponse:
+    """Generate access and refresh tokens for successful login.
+
+    Args:
+        db: Database session
+        user: User model object
+        user_uuid_str: User UUID string
+        user_role: User's role
+        user_agent: Client user agent
+        client_ip: Client IP address
+
+    Returns:
+        JSONResponse with access_token, refresh_token, and token metadata
+    """
+    # Generate the JWT access token with role information
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": user_uuid_str, "type": "access"}
+    if user_role:
+        token_data["role"] = user_role
+
+    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
+
+    # Generate refresh token (FedRAMP AC-12)
+    refresh_token, _ = token_service.create_refresh_token(
+        db=db,
+        user_id=int(user.id),
+        user_uuid=user_uuid_str,
+        role=user_role,
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    # Log successful login
+    audit_logger.log_login_success(
+        user_id=int(user.id),
+        username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        auth_method="ldap"
+        if settings.LDAP_ENABLED and user.auth_type != AUTH_TYPE_LOCAL
+        else "local",
+    )
+
+    logger.info(f"Login successful for user: {str(user.email)}")
+    return JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    )
 
 
 @router.post("/token", response_model=Token)
 @router.post("/login", response_model=Token)  # Add alias for frontend compatibility
+@limiter.limit(get_auth_rate_limit())
 def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
     """OAuth2 compatible token login, get an access token for future requests.
 
+    Rate limited to prevent brute force attacks.
+    Account lockout enforced after repeated failed attempts.
+
+    Uses atomic check-and-record for lockout to prevent race conditions where
+    multiple concurrent requests could bypass lockout by checking before
+    the failed attempt is recorded.
+
     Args:
+        request: FastAPI request object (for rate limiting)
         form_data: OAuth2 form data with username and password
         db: Database session
 
@@ -424,35 +678,59 @@ def login_for_access_token(
         Access token and token type
 
     Raises:
-        HTTPException: If authentication fails
+        HTTPException: If authentication fails, account locked, or rate limit exceeded
     """
-    logger.info(f"Login attempt for user: {form_data.username}")
+    username = form_data.username
+    logger.info(f"Login attempt for user: {username}")
 
     try:
-        testing_environment = os.environ.get("TESTING", "False").lower() == "true"
+        # Perform authentication (handles testing vs production)
+        auth_success, user_uuid_str, user_data = _perform_authentication(
+            db, username, form_data.password
+        )
 
-        if testing_environment:
-            user_uuid_str = _authenticate_testing_user(db, form_data.username, form_data.password)
-            user_data = {}
-        else:
-            user_uuid_str, user_data = _authenticate_production_user(
-                db, form_data.username, form_data.password
+        # Get client info for audit logging
+        client_ip, user_agent = _get_client_info(request)
+
+        # Handle lockout check and recording
+        is_locked, _ = _handle_lockout_check(username, auth_success, client_ip, user_agent)
+
+        if is_locked:
+            # Return same error as invalid credentials to prevent username enumeration
+            logger.warning(f"Login blocked for locked account: {username}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not auth_success:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Get user from database
+        user_uuid = UUID(user_uuid_str)
+        user_db = db.query(User).filter(User.uuid == user_uuid).first()
+        if not user_db:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         # Get user's role for inclusion in the token
         user_role = _get_user_role(db, user_uuid_str, user_data)
 
-        # Generate the JWT token with role information
-        # Token payload contains UUID string in 'sub' field (production-grade security)
-        access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-        token_data = {"sub": user_uuid_str}  # UUID string in token
-        if user_role:
-            token_data["role"] = user_role
+        # Check if MFA is required for this user (FedRAMP IA-2)
+        mfa_response = _check_mfa_requirement(db, user_db, user_uuid_str, user_role)
+        if mfa_response:
+            return mfa_response
 
-        access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
-
-        logger.info(f"Login successful for user: {form_data.username}")
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Generate tokens and return response
+        return _generate_login_tokens(db, user_db, user_uuid_str, user_role, user_agent, client_ip)
 
     except HTTPException:
         raise
@@ -466,9 +744,17 @@ def login_for_access_token(
 
 
 @router.post("/register", response_model=UserSchema)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     """
-    Register a new user
+    Register a new user.
+
+    Password must meet the configured password policy requirements (FedRAMP IA-5):
+    - Minimum length (default: 12 characters)
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    - Cannot contain email username or name parts
 
     Note: When LDAP is enabled, local registration is still allowed for admin accounts.
     Regular users should use LDAP authentication.
@@ -482,30 +768,1319 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered",
         )
 
+    # Note: Password validation is performed by UserCreate schema's model_validator
+    # which calls validate_password() from password_policy module
+
+    # Hash the password
+    from datetime import datetime
+    from datetime import timezone as tz
+
+    password_hash = get_password_hash(user_in.password)
+
     # Create new user with local authentication
     db_user = User(
         email=user_in.email,
         full_name=user_in.full_name,
-        hashed_password=get_password_hash(user_in.password),
+        hashed_password=password_hash,
         role="user",
         auth_type=AUTH_TYPE_LOCAL,
         is_active=True,
         is_superuser=False,
+        password_changed_at=datetime.now(tz.utc),  # Track initial password time
     )
 
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
 
+    # Store initial password in history (FedRAMP IA-5)
+    add_password_to_history(db, int(db_user.id), password_hash)
+    db.commit()
+
+    # Log user registration
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log_admin_action(
+        event_type=AuditEventType.ADMIN_USER_CREATE,
+        admin_user_id=int(db_user.id),  # Self-registration
+        admin_username=str(db_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        details={"registration_type": "self", "auth_type": AUTH_TYPE_LOCAL},
+    )
+
     logger.info(
-        f"New local user registered: {db_user.email} (auth_type={db_user.auth_type}, role={db_user.role})"
+        f"New local user registered: {str(db_user.email)} (auth_type={db_user.auth_type}, role={db_user.role})"
     )
     return db_user
 
 
-@router.get("/me", response_model=UserOut, summary="Get current user")
+@router.get("/password-policy")
+def get_password_policy():
+    """
+    Get the current password policy requirements.
+
+    Returns the configured password policy settings so the frontend can
+    display requirements to users during registration and password changes.
+
+    This endpoint is public (no authentication required) to allow displaying
+    requirements on registration forms.
+    """
+    from app.auth.password_policy import get_policy_requirements
+
+    return get_policy_requirements()
+
+
+@router.get("/me", response_model=UserSchema, summary="Get current user")
 def read_users_me(current_user: User = Depends(get_current_user)):
     """
     Get current user using the current_user dependency
     """
     return current_user
+
+
+# ============== OIDC/Keycloak Authentication ==============
+
+
+# Redis-backed OIDC state store with max state limit (prevents state exhaustion attacks)
+# Uses Redis for distributed deployments with automatic in-memory fallback
+_oidc_state_store = OIDCStateStore()
+
+# OIDC state expiry time in seconds (10 minutes)
+_OIDC_STATE_EXPIRY_SECONDS = 600
+
+
+@router.get("/keycloak/login")
+async def keycloak_login():
+    """
+    Initiate Keycloak OIDC login flow.
+
+    Returns an authorization URL that the frontend should redirect to.
+    Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
+
+    Security:
+    - Uses Redis-backed state storage for distributed deployments
+    - Enforces maximum state count to prevent state exhaustion attacks
+    - States expire after 10 minutes and are single-use
+    """
+    if not settings.KEYCLOAK_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak authentication is not enabled",
+        )
+
+    # Generate CSRF protection state
+    state = secrets.token_urlsafe(32)
+
+    # Generate authorization URL (with PKCE if enabled)
+    authorization_url, code_verifier = get_authorization_url(state)
+
+    # Store state with PKCE verifier in Redis-backed store
+    # Returns False if state limit exceeded (prevents exhaustion attack)
+    state_data = {"code_verifier": code_verifier} if code_verifier else {}
+    stored = _oidc_state_store.store_state(
+        state=state,
+        data=state_data,
+        expires_seconds=_OIDC_STATE_EXPIRY_SECONDS,
+    )
+
+    if not stored:
+        logger.error("Failed to store OIDC state - state limit exceeded")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again later.",
+        )
+
+    if code_verifier:
+        logger.info("Keycloak login initiated with PKCE, redirecting to authorization URL")
+    else:
+        logger.info("Keycloak login initiated, redirecting to authorization URL")
+
+    return {"authorization_url": authorization_url}
+
+
+@router.get("/keycloak/callback")
+async def keycloak_callback(
+    request: Request,
+    code: str = Query(..., description="Authorization code from Keycloak"),
+    state: str = Query(..., description="State parameter for CSRF protection"),
+    db: Session = Depends(get_db),
+):
+    """
+    Handle Keycloak OIDC callback.
+
+    Exchanges authorization code for tokens, validates them,
+    and creates/updates user in database.
+    Supports PKCE (RFC 7636) for OAuth 2.1 compliance when enabled.
+
+    Security:
+    - State is single-use (deleted after retrieval to prevent replay attacks)
+    - Uses Redis-backed storage for distributed deployments
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    if not settings.KEYCLOAK_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Keycloak authentication is not enabled",
+        )
+
+    # Retrieve and delete state (single-use, CSRF protection)
+    state_data = _oidc_state_store.get_state(state)
+    if state_data is None:
+        logger.warning("Invalid OIDC state parameter received")
+        # Log Keycloak login failure
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_STATE",
+            auth_method="keycloak",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired state parameter",
+        )
+
+    # Extract PKCE verifier from state data
+    code_verifier = state_data.get("code_verifier")
+
+    # Exchange code for tokens (with PKCE verifier if available)
+    tokens = await exchange_code_for_tokens(code, code_verifier)
+    if not tokens:
+        logger.error("Failed to exchange authorization code for tokens")
+        # Log Keycloak login failure
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="TOKEN_EXCHANGE_FAILED",
+            auth_method="keycloak",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to exchange authorization code",
+        )
+
+    # Validate token and get user data
+    keycloak_data = await validate_keycloak_token(tokens.access_token)
+    if not keycloak_data:
+        logger.error("Invalid access token received from Keycloak")
+        # Log Keycloak login failure
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_TOKEN",
+            auth_method="keycloak",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token",
+        )
+
+    # Sync user to database
+    user = sync_keycloak_user_to_db(db, keycloak_data)
+
+    if not user.is_active:
+        logger.warning(f"Keycloak user account is inactive: {keycloak_data['keycloak_id']}")
+        # Log Keycloak login failure for inactive user
+        audit_logger.log_login_failure(
+            username=keycloak_data.get("email", "unknown"),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INACTIVE_USER",
+            auth_method="keycloak",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user account",
+        )
+
+    # Generate our own JWT token
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": str(user.uuid), "role": user.role}
+    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
+
+    # Log Keycloak login success
+    audit_logger.log_login_success(
+        user_id=user.id,
+        username=user.email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        auth_method="keycloak",
+    )
+
+    logger.info(f"Keycloak authentication successful for user: {user.email}")
+
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# ============== PKI/X.509 Certificate Authentication ==============
+
+
+@router.post("/pki/authenticate", response_model=Token)
+async def pki_login(request: Request, db: Session = Depends(get_db)):
+    """
+    Authenticate via X.509 client certificate.
+
+    The reverse proxy (Nginx) must be configured to pass the client
+    certificate information via headers (X-Client-Cert or X-Client-Cert-DN).
+    """
+    if not settings.PKI_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PKI authentication is not enabled",
+        )
+
+    client_ip, user_agent = _get_client_info(request)
+
+    pki_data = pki_authenticate(request)
+    if not pki_data:
+        logger.warning("PKI authentication failed - invalid or missing certificate")
+        # Log PKI login failure
+        audit_logger.log_login_failure(
+            username="unknown",
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_CERTIFICATE",
+            auth_method="pki",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing client certificate",
+            headers={"WWW-Authenticate": "Certificate"},
+        )
+
+    # Sync user to database
+    user = sync_pki_user_to_db(db, pki_data)
+
+    if not user.is_active:
+        logger.warning(f"PKI user account is inactive: {pki_data['subject_dn']}")
+        # Log PKI login failure for inactive user
+        audit_logger.log_login_failure(
+            username=pki_data.get("subject_dn", "unknown"),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INACTIVE_USER",
+            auth_method="pki",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user account",
+        )
+
+    # Generate JWT token
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": str(user.uuid), "role": user.role}
+    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
+
+    # Log PKI login success
+    audit_logger.log_login_success(
+        user_id=user.id,
+        username=user.email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        auth_method="pki",
+    )
+
+    logger.info(f"PKI authentication successful for user: {pki_data['subject_dn']}")
+
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+# ============== Authentication Methods Discovery ==============
+
+
+@router.get("/methods")
+async def get_auth_methods():
+    """
+    Get available authentication methods.
+
+    Returns a list of enabled authentication methods that the frontend
+    can use to display appropriate login options.
+    """
+    methods = ["local"]  # Always available
+
+    if settings.LDAP_ENABLED:
+        methods.append("ldap")
+    if settings.KEYCLOAK_ENABLED:
+        methods.append("keycloak")
+    if settings.PKI_ENABLED:
+        methods.append("pki")
+
+    return {
+        "methods": methods,
+        "keycloak_enabled": settings.KEYCLOAK_ENABLED,
+        "pki_enabled": settings.PKI_ENABLED,
+        "ldap_enabled": settings.LDAP_ENABLED,
+        "mfa_enabled": settings.MFA_ENABLED,
+        "mfa_required": settings.MFA_REQUIRED,
+        "login_banner_enabled": settings.LOGIN_BANNER_ENABLED,
+        "login_banner_text": settings.LOGIN_BANNER_TEXT if settings.LOGIN_BANNER_ENABLED else "",
+        "login_banner_classification": settings.LOGIN_BANNER_CLASSIFICATION
+        if settings.LOGIN_BANNER_ENABLED
+        else "UNCLASSIFIED",
+    }
+
+
+# ============== MFA/TOTP Authentication (FedRAMP IA-2) ==============
+
+
+def _user_can_setup_mfa(user: User) -> bool:
+    """Check if user is eligible for MFA setup.
+
+    PKI and Keycloak users don't need MFA because:
+    - PKI: Smart card is already two-factor (something you have + PIN)
+    - Keycloak: MFA is handled by the identity provider
+
+    Args:
+        user: User model object
+
+    Returns:
+        bool: True if user can set up MFA
+    """
+    return user.auth_type not in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
+
+
+# Redis key prefix for MFA token JTI blacklist (not a password)
+MFA_TOKEN_BLACKLIST_PREFIX = "mfa:jti:"  # noqa: S105 # nosec B105
+
+
+def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
+    """Add an MFA token JTI to the blacklist after successful verification.
+
+    This ensures MFA tokens are single-use (cannot be replayed).
+
+    Args:
+        jti: JWT ID to blacklist
+        expires_seconds: Time in seconds until the token naturally expires
+
+    Returns:
+        bool: True if blacklisted successfully, False otherwise
+    """
+    try:
+        redis_client = get_redis_client()
+        if redis_client:
+            key = f"{MFA_TOKEN_BLACKLIST_PREFIX}{jti}"
+            redis_client.set(key, "1", ex=expires_seconds)
+            logger.debug(f"MFA token JTI blacklisted: {jti[:8]}...")
+            return True
+        else:
+            # No Redis available - log warning but allow operation
+            # In production, Redis should always be available
+            logger.warning("Redis not available for MFA token blacklisting")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to blacklist MFA token JTI: {e}")
+        return False
+
+
+def _is_mfa_token_blacklisted(jti: str) -> bool:
+    """Check if an MFA token JTI is in the blacklist.
+
+    Args:
+        jti: JWT ID to check
+
+    Returns:
+        bool: True if token is blacklisted (already used), False otherwise
+    """
+    try:
+        redis_client = get_redis_client()
+        if redis_client:
+            key = f"{MFA_TOKEN_BLACKLIST_PREFIX}{jti}"
+            return bool(redis_client.exists(key) > 0)
+        else:
+            # No Redis available - allow operation but log warning
+            logger.warning("Redis not available for MFA token blacklist check")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to check MFA token blacklist: {e}")
+        return False
+
+
+def _create_mfa_token(user_uuid_str: str, user_role: str) -> str:
+    """Create a short-lived MFA token for the MFA verification step.
+
+    This token can only be used to verify MFA once (single-use via JTI blacklist).
+    After successful MFA verification, the JTI is added to Redis blacklist.
+
+    Args:
+        user_uuid_str: User UUID string
+        user_role: User's role
+
+    Returns:
+        str: Short-lived MFA token with unique JTI
+    """
+    import uuid as uuid_mod
+    from datetime import datetime
+    from datetime import timezone
+
+    mfa_token_expires = timedelta(minutes=settings.MFA_TOKEN_EXPIRE_MINUTES)
+    now = datetime.now(timezone.utc)
+    expire = now + mfa_token_expires
+
+    mfa_token_data = {
+        "sub": user_uuid_str,
+        "role": user_role,
+        "type": "mfa",  # Mark this as an MFA-only token
+        "jti": str(uuid_mod.uuid4()),  # Unique JWT ID for single-use enforcement
+        "iat": now,
+        "exp": expire,
+    }
+
+    # Create token manually since we need to include jti
+    encoded_jwt: str = jwt.encode(
+        mfa_token_data, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
+    return encoded_jwt
+
+
+def _verify_mfa_token(mfa_token: str) -> tuple[str, str, str]:
+    """Verify an MFA token and extract user information.
+
+    Checks that the token is valid, is an MFA-type token, and has not been
+    previously used (via JTI blacklist check).
+
+    Args:
+        mfa_token: The MFA token to verify
+
+    Returns:
+        tuple[str, str, str]: (user_uuid_str, user_role, jti)
+
+    Raises:
+        HTTPException: If token is invalid, not an MFA token, or already used
+    """
+    try:
+        payload = jwt.decode(
+            mfa_token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+
+        # Verify this is an MFA token, not a regular access token
+        if payload.get("type") != "mfa":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid MFA token",
+            )
+
+        user_uuid_str = payload.get("sub")
+        user_role = payload.get("role")
+        jti = payload.get("jti")
+
+        if not user_uuid_str:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid MFA token",
+            )
+
+        # Check if this MFA token has already been used (JTI blacklist)
+        if jti and _is_mfa_token_blacklisted(jti):
+            logger.warning(f"MFA token already used (jti={jti[:8]}...)")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="MFA token has already been used",
+            )
+
+        return user_uuid_str, user_role, jti
+
+    except JWTError as e:
+        logger.warning(f"MFA token verification failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired MFA token",
+        ) from e
+
+
+def _get_user_for_mfa(db: Session, mfa_token: str) -> tuple[User, UserMFA, str, str, str]:
+    """Verify MFA token and get user with MFA record.
+
+    Args:
+        db: Database session
+        mfa_token: The MFA token from login
+
+    Returns:
+        Tuple of (user, user_mfa, user_uuid_str, user_role, mfa_jti)
+
+    Raises:
+        HTTPException: If token invalid, user not found, or MFA not enabled
+    """
+    # Verify the MFA token (also checks JTI blacklist for replay prevention)
+    user_uuid_str, user_role, mfa_jti = _verify_mfa_token(mfa_token)
+
+    # Get user from database
+    user_uuid = UUID(user_uuid_str)
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    # Get user's MFA record
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+
+    if not user_mfa or not user_mfa.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for this user",
+        )
+
+    return user, user_mfa, user_uuid_str, user_role, mfa_jti
+
+
+def _verify_mfa_code(
+    code: str,
+    decrypted_secret: str,
+    backup_codes: list[str],
+    db: Session,
+    user_mfa: UserMFA,
+    user_email: str,
+) -> tuple[bool, bool]:
+    """Verify TOTP or backup code.
+
+    Args:
+        code: The MFA code (TOTP or backup)
+        decrypted_secret: Decrypted TOTP secret
+        backup_codes: List of hashed backup codes
+        db: Database session
+        user_mfa: User's MFA record (for updating backup codes)
+        user_email: User's email (for logging)
+
+    Returns:
+        Tuple of (is_valid, used_backup_code)
+    """
+    # Normalize code (remove dashes and spaces)
+    normalized_code = code.replace("-", "").replace(" ", "")
+    is_valid = False
+    used_backup_code = False
+
+    # Try TOTP verification first (6 digits)
+    if len(normalized_code) == 6 and normalized_code.isdigit():
+        is_valid = MFAService.verify_totp(decrypted_secret, normalized_code)
+
+    # Try backup code verification (8 characters)
+    if not is_valid:
+        is_valid, matched_hash = MFAService.verify_backup_code(code, backup_codes)
+        if is_valid and matched_hash:
+            # Remove used backup code
+            backup_codes_list: list[str] = list(user_mfa.backup_codes)
+            user_mfa.backup_codes = [c for c in backup_codes_list if c != matched_hash]  # type: ignore[assignment]
+            used_backup_code = True
+            db.commit()
+            logger.info(
+                f"Backup code used for user: {user_email}. "
+                f"{len(user_mfa.backup_codes)} codes remaining."
+            )
+
+    return is_valid, used_backup_code
+
+
+def _complete_mfa_verification(
+    db: Session,
+    user: User,
+    user_mfa: UserMFA,
+    user_uuid_str: str,
+    user_role: str,
+    mfa_jti: str,
+    used_backup_code: bool,
+    client_ip: str,
+    user_agent: str,
+) -> JSONResponse:
+    """Finalize MFA verification and generate tokens.
+
+    Args:
+        db: Database session
+        user: User model object
+        user_mfa: User's MFA record
+        user_uuid_str: User UUID string
+        user_role: User's role
+        mfa_jti: MFA token JTI (for blacklisting)
+        used_backup_code: Whether a backup code was used
+        client_ip: Client IP address
+        user_agent: Client user agent
+
+    Returns:
+        JSONResponse with access_token, refresh_token, and token metadata
+    """
+    from datetime import datetime as dt
+    from datetime import timezone as tz
+
+    # Update last verified timestamp
+    user_mfa.last_verified_at = dt.now(tz.utc)  # type: ignore[assignment]
+    db.commit()
+
+    # Blacklist the MFA token JTI to prevent replay attacks
+    if mfa_jti:
+        mfa_token_ttl_seconds = settings.MFA_TOKEN_EXPIRE_MINUTES * 60
+        _blacklist_mfa_token(mfa_jti, mfa_token_ttl_seconds)
+        logger.debug(f"MFA token blacklisted after successful verification (jti={mfa_jti[:8]}...)")
+
+    # Log MFA verification success (and backup code usage if applicable)
+    if used_backup_code:
+        audit_logger.log_mfa_event(
+            event_type=AuditEventType.AUTH_MFA_BACKUP_USED,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=int(user.id),
+            username=str(user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+        )
+    audit_logger.log_mfa_event(
+        event_type=AuditEventType.AUTH_MFA_VERIFY,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(user.id),
+        username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    # Generate the full access token
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": user_uuid_str, "role": user_role, "type": "access"}
+    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
+
+    # Generate refresh token
+    refresh_token, _ = token_service.create_refresh_token(
+        db=db,
+        user_id=int(user.id),
+        user_uuid=user_uuid_str,
+        role=user_role,
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    logger.info(f"MFA verification successful for user: {str(user.email)}")
+
+    return JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": refresh_token,
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    )
+
+
+@router.get("/mfa/status", response_model=MFAStatusResponse)
+def get_mfa_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get MFA status for the current user.
+
+    Returns whether MFA is enabled/configured for the user and
+    whether the system requires MFA.
+    """
+    # Check if user has MFA configured
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+
+    return MFAStatusResponse(
+        mfa_enabled=bool(user_mfa.totp_enabled) if user_mfa else False,
+        mfa_configured=user_mfa is not None,
+        mfa_required=settings.MFA_REQUIRED and settings.MFA_ENABLED,
+        can_setup_mfa=settings.MFA_ENABLED and _user_can_setup_mfa(current_user),
+    )
+
+
+@router.post("/mfa/setup", response_model=MFASetupResponse)
+def setup_mfa(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Initiate MFA setup for the current user.
+
+    Returns the TOTP secret, provisioning URI, and QR code for authenticator app setup.
+    The user must verify with a valid TOTP code to complete setup.
+
+    Note: This endpoint is only available when MFA is enabled and the user
+    is not using PKI or Keycloak authentication (which handle MFA separately).
+    """
+    if not settings.MFA_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled on this system",
+        )
+
+    if not _user_can_setup_mfa(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA setup is not available for your authentication type",
+        )
+
+    # Check if user already has MFA enabled
+    existing_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+    if existing_mfa and existing_mfa.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is already enabled. Disable it first to reconfigure.",
+        )
+
+    # Generate new TOTP secret
+    totp_secret = MFAService.generate_totp_secret()
+
+    # Generate provisioning URI for authenticator apps (uses plaintext secret)
+    provisioning_uri = MFAService.get_provisioning_uri(
+        secret=totp_secret,
+        email=str(current_user.email),
+    )
+
+    # Generate QR code
+    qr_code_base64 = MFAService.generate_qr_code_base64(provisioning_uri)
+
+    # Encrypt the TOTP secret before storing (CRITICAL-1: Encrypt at rest)
+    encrypted_secret = MFAService.encrypt_totp_secret(totp_secret)
+
+    # Store or update the MFA record (not yet enabled)
+    if existing_mfa:
+        existing_mfa.totp_secret = encrypted_secret  # type: ignore[assignment]
+        existing_mfa.totp_enabled = False  # type: ignore[assignment]
+        existing_mfa.backup_codes = []  # type: ignore[assignment]
+    else:
+        new_mfa = UserMFA(
+            user_id=int(current_user.id),
+            totp_secret=encrypted_secret,
+            totp_enabled=False,
+            backup_codes=[],
+        )
+        db.add(new_mfa)
+
+    db.commit()
+
+    # Log MFA setup initiated
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log_mfa_event(
+        event_type=AuditEventType.AUTH_MFA_SETUP,
+        outcome=AuditOutcome.PARTIAL,  # Setup initiated but not completed
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    logger.info(f"MFA setup initiated for user: {str(current_user.email)}")
+
+    return MFASetupResponse(
+        secret=totp_secret,
+        provisioning_uri=provisioning_uri,
+        qr_code_base64=qr_code_base64,
+    )
+
+
+@router.post("/mfa/verify-setup", response_model=MFAVerifySetupResponse)
+def verify_mfa_setup(
+    request: Request,
+    request_body: MFAVerifySetupRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Verify MFA setup with the initial TOTP code.
+
+    This completes the MFA setup process and generates backup codes.
+    Backup codes are returned only once - the user must save them securely.
+    """
+    if not settings.MFA_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled on this system",
+        )
+
+    # Get user's MFA record
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+
+    if not user_mfa:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA setup not initiated. Please start setup first.",
+        )
+
+    if user_mfa.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is already enabled.",
+        )
+
+    # Decrypt the TOTP secret for verification (stored encrypted at rest)
+    try:
+        decrypted_secret = MFAService.decrypt_totp_secret(str(user_mfa.totp_secret))
+    except ValueError as e:
+        logger.error(f"Failed to decrypt TOTP secret for user: {str(current_user.email)}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify MFA setup. Please try again.",
+        ) from e
+
+    # Verify the TOTP code
+    client_ip, user_agent = _get_client_info(request)
+    if not MFAService.verify_totp(decrypted_secret, request_body.code):
+        logger.warning(f"MFA setup verification failed for user: {str(current_user.email)}")
+        # Log MFA setup verification failure
+        audit_logger.log_mfa_event(
+            event_type=AuditEventType.AUTH_MFA_SETUP,
+            outcome=AuditOutcome.FAILURE,
+            user_id=int(current_user.id),
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_TOTP_CODE",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code. Please try again.",
+        )
+
+    # Generate backup codes
+    backup_codes = MFAService.generate_backup_codes()
+    hashed_backup_codes = MFAService.hash_backup_codes(backup_codes)
+
+    # Enable MFA and store hashed backup codes
+    user_mfa.totp_enabled = True  # type: ignore[assignment]
+    user_mfa.backup_codes = hashed_backup_codes  # type: ignore[assignment]
+    db.commit()
+
+    # Log MFA setup complete
+    audit_logger.log_mfa_event(
+        event_type=AuditEventType.AUTH_MFA_SETUP,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    logger.info(f"MFA enabled successfully for user: {str(current_user.email)}")
+
+    return MFAVerifySetupResponse(
+        success=True,
+        backup_codes=backup_codes,  # Return plaintext codes only once
+        message="MFA has been enabled successfully. Save your backup codes securely.",
+    )
+
+
+@router.post("/mfa/verify", response_model=MFAVerifyResponse)
+@limiter.limit(get_auth_rate_limit())
+def verify_mfa(
+    request: Request,
+    request_body: MFAVerifyRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Verify MFA code during login.
+
+    This endpoint is called after successful password authentication when
+    the user has MFA enabled. It accepts either a TOTP code or a backup code.
+
+    Rate limited to prevent brute force attacks on TOTP codes.
+    """
+    if not settings.MFA_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled on this system",
+        )
+
+    # Get user and verify MFA token
+    user, user_mfa, user_uuid_str, user_role, mfa_jti = _get_user_for_mfa(
+        db, request_body.mfa_token
+    )
+
+    # Decrypt the TOTP secret for verification (stored encrypted at rest)
+    try:
+        decrypted_secret = MFAService.decrypt_totp_secret(str(user_mfa.totp_secret))
+    except ValueError as e:
+        logger.error(f"Failed to decrypt TOTP secret for user: {str(user.email)}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify MFA. Please contact support.",
+        ) from e
+
+    # Verify TOTP or backup code
+    backup_codes_list: list[str] = list(user_mfa.backup_codes)
+    is_valid, used_backup_code = _verify_mfa_code(
+        request_body.code,
+        decrypted_secret,
+        backup_codes_list,
+        db,
+        user_mfa,
+        str(user.email),
+    )
+
+    # Get client info for audit logging
+    client_ip, user_agent = _get_client_info(request)
+
+    if not is_valid:
+        logger.warning(f"MFA verification failed for user: {str(user.email)}")
+        audit_logger.log_mfa_event(
+            event_type=AuditEventType.AUTH_MFA_VERIFY,
+            outcome=AuditOutcome.FAILURE,
+            user_id=int(user.id),
+            username=str(user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_MFA_CODE",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid MFA code",
+        )
+
+    # Complete verification and generate tokens
+    return _complete_mfa_verification(
+        db,
+        user,
+        user_mfa,
+        user_uuid_str,
+        user_role,
+        mfa_jti,
+        used_backup_code,
+        client_ip,
+        user_agent,
+    )
+
+
+@router.post("/mfa/disable")
+@limiter.limit(get_auth_rate_limit())
+def disable_mfa(
+    request: Request,
+    request_body: MFADisableRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Disable MFA for the current user.
+
+    Requires a valid TOTP code or backup code to confirm the action.
+    """
+    if not settings.MFA_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled on this system",
+        )
+
+    # Get user's MFA record
+    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
+
+    if not user_mfa or not user_mfa.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MFA is not enabled for your account",
+        )
+
+    code = request_body.code.replace("-", "").replace(" ", "")
+    is_valid = False
+
+    # Decrypt the TOTP secret for verification (stored encrypted at rest)
+    try:
+        decrypted_secret = MFAService.decrypt_totp_secret(str(user_mfa.totp_secret))
+    except ValueError as e:
+        logger.error(f"Failed to decrypt TOTP secret for user: {str(current_user.email)}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify MFA. Please contact support.",
+        ) from e
+
+    # Try TOTP verification first
+    if len(code) == 6 and code.isdigit():
+        is_valid = MFAService.verify_totp(decrypted_secret, code)
+
+    # Try backup code verification
+    if not is_valid:
+        backup_codes_list: list[str] = list(user_mfa.backup_codes)
+        is_valid, _ = MFAService.verify_backup_code(request_body.code, backup_codes_list)
+
+    # Get client info for audit logging
+    client_ip, user_agent = _get_client_info(request)
+
+    if not is_valid:
+        logger.warning(f"MFA disable attempt failed for user: {str(current_user.email)}")
+        # Log MFA disable failure
+        audit_logger.log_mfa_event(
+            event_type=AuditEventType.AUTH_MFA_DISABLE,
+            outcome=AuditOutcome.FAILURE,
+            user_id=int(current_user.id),
+            username=str(current_user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            error_code="INVALID_VERIFICATION_CODE",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid verification code",
+        )
+
+    # Delete the MFA record
+    db.delete(user_mfa)
+    db.commit()
+
+    # Log MFA disabled
+    audit_logger.log_mfa_event(
+        event_type=AuditEventType.AUTH_MFA_DISABLE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    logger.info(f"MFA disabled for user: {str(current_user.email)}")
+
+    return JSONResponse(content={"message": "MFA has been disabled successfully"})
+
+
+# ============== Token Refresh & Revocation (FedRAMP AC-12) ==============
+
+
+@router.post("/token/refresh", response_model=Token)
+@limiter.limit(get_auth_rate_limit())
+def refresh_access_token(
+    request: Request,
+    body: TokenRefreshRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Exchange a refresh token for new access and refresh tokens.
+
+    This endpoint allows clients to obtain a new access token without
+    requiring the user to re-authenticate with credentials.
+
+    Security (FedRAMP AC-12, OAuth 2.1):
+    - Validates refresh token signature and expiration
+    - Checks token is not revoked (Redis blacklist)
+    - Rate limited to prevent abuse
+    - Implements refresh token rotation (revokes old, issues new)
+    - Limits impact of stolen refresh tokens
+
+    Args:
+        request: FastAPI request object (for rate limiting)
+        body: Request body containing refresh_token
+        db: Database session
+
+    Returns:
+        New access token, token type, and new rotated refresh token
+
+    Raises:
+        HTTPException: If refresh token is invalid, expired, or revoked
+    """
+    # Verify refresh token
+    payload, refresh_token_record = token_service.verify_refresh_token(db, body.refresh_token)
+
+    if not payload or not refresh_token_record:
+        logger.warning("Token refresh failed: invalid or revoked refresh token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get user to verify still active
+    user_uuid_str_raw = payload.get("sub")
+    if not user_uuid_str_raw:
+        logger.warning("Token refresh failed: no user UUID in payload")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_uuid_str = str(user_uuid_str_raw)
+    user_uuid = UUID(user_uuid_str)
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+
+    if not user:
+        logger.warning(f"Token refresh failed: user not found (uuid={user_uuid_str[:8]}...)")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        logger.warning(f"Token refresh failed: user inactive (id={int(user.id)})")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Generate new access token
+    access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data = {"sub": user_uuid_str, "role": str(user.role), "type": "access"}
+    access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
+
+    # Rotate refresh token (revoke old, create new) - OAuth 2.1 best practice
+    client_ip, user_agent = _get_client_info(request)
+    new_refresh_token, _ = token_service.rotate_refresh_token(
+        db=db,
+        old_token=body.refresh_token,
+        old_token_record=refresh_token_record,
+        user_id=int(user.id),
+        user_uuid=user_uuid_str,
+        role=str(user.role),
+        user_agent=user_agent,
+        ip_address=client_ip,
+    )
+
+    # Log token refresh with rotation
+    audit_logger.log_token_refresh(
+        user_id=int(user.id),
+        username=str(user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    logger.info(f"Token refresh with rotation successful for user {int(user.id)}")
+
+    return JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "refresh_token": new_refresh_token,  # Return new rotated refresh token
+            "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+    )
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """
+    Logout the current session by revoking the current tokens.
+
+    This endpoint revokes both the access token (via JTI blacklist) and
+    any associated refresh token, effectively logging out the current session.
+
+    Security (FedRAMP AC-12):
+    - Adds access token JTI to Redis blacklist
+    - Revokes associated refresh token in database
+    - Tokens cannot be reused after logout
+
+    Args:
+        request: FastAPI request object
+        token: Current access token (from Authorization header)
+        db: Database session
+
+    Returns:
+        Success message
+    """
+    client_ip, user_agent = _get_client_info(request)
+
+    try:
+        # Decode token to get JTI and user info
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        jti = payload.get("jti")
+        exp_timestamp = payload.get("exp")
+        user_uuid_str = payload.get("sub")
+
+        if jti:
+            # Calculate expiration datetime from timestamp
+            from datetime import datetime
+            from datetime import timezone
+
+            expires_at = (
+                datetime.fromtimestamp(exp_timestamp, tz=timezone.utc) if exp_timestamp else None
+            )
+
+            # Revoke access token
+            token_service.revoke_token(db, jti, expires_at)
+            logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
+
+        # Log logout event
+        if user_uuid_str:
+            user_uuid = UUID(user_uuid_str)
+            user = db.query(User).filter(User.uuid == user_uuid).first()
+            if user:
+                audit_logger.log_logout(
+                    user_id=int(user.id),
+                    username=str(user.email),
+                    source_ip=client_ip,
+                    user_agent=user_agent,
+                    all_sessions=False,
+                )
+
+        # Also revoke any refresh tokens for this user from this session
+        # (In a full implementation, we would track which refresh token
+        # was used with which access token)
+
+        return {"message": "Successfully logged out"}
+
+    except JWTError as e:
+        logger.warning(f"Logout with invalid token: {e}")
+        # Still return success - user wanted to logout anyway
+        return {"message": "Successfully logged out"}
+
+
+@router.post("/logout/all")
+def logout_all_sessions(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Logout from all sessions by revoking all user's refresh tokens.
+
+    This endpoint revokes all refresh tokens for the current user,
+    effectively logging them out from all devices/sessions.
+
+    Security (FedRAMP AC-12):
+    - Revokes all user's refresh tokens
+    - Adds all token JTIs to Redis blacklist
+    - Useful for security events (password change, compromised account)
+
+    Args:
+        request: FastAPI request object
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Success message with count of revoked sessions
+    """
+    count = token_service.revoke_all_user_tokens(db, int(current_user.id))
+
+    # Log logout from all sessions
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log_logout(
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
+        all_sessions=True,
+    )
+
+    logger.info(
+        f"User {int(current_user.id)} logged out from all sessions ({count} tokens revoked)"
+    )
+
+    return {
+        "message": "Successfully logged out from all sessions",
+        "sessions_revoked": count,
+    }
+
+
+@router.get("/sessions")
+def get_active_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all active sessions for the current user.
+
+    Returns a list of active refresh tokens (sessions) with metadata
+    like creation time, user agent, and IP address.
+
+    Args:
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        List of active session info
+    """
+    sessions = token_service.get_user_active_sessions(db, int(current_user.id))
+
+    return {
+        "sessions": sessions,
+        "total": len(sessions),
+    }

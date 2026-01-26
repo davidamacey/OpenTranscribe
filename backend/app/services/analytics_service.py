@@ -28,7 +28,6 @@ Classes:
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -49,7 +48,7 @@ class AnalyticsService:
     """Service for computing and managing analytics for media files."""
 
     @staticmethod
-    def compute_analytics(db: Session, media_file_id: int) -> Optional[OverallAnalytics]:
+    def compute_analytics(db: Session, media_file_id: int) -> OverallAnalytics | None:
         """
         Compute comprehensive analytics for a media file.
 
@@ -85,7 +84,7 @@ class AnalyticsService:
 
             # Compute analytics
             analytics = AnalyticsService._compute_from_segments(
-                segments, speaker_mapping, media_file.duration or 0
+                segments, speaker_mapping, float(media_file.duration or 0)
             )
 
             logger.info(
@@ -118,13 +117,13 @@ class AnalyticsService:
             the mapping will contain both:
             {"SPEAKER_01": "John Doe", "John Doe": "John Doe"}
         """
-        mapping = {}
+        mapping: dict[str, str] = {}
         for speaker in speakers:
             # Map both original name and display name to the current display name
-            display_name = speaker.display_name or speaker.name
-            mapping[speaker.name] = display_name
+            display_name = str(speaker.display_name or speaker.name)
+            mapping[str(speaker.name)] = display_name
             if speaker.display_name:
-                mapping[speaker.display_name] = display_name
+                mapping[str(speaker.display_name)] = display_name
         return mapping
 
     @staticmethod
@@ -158,14 +157,14 @@ class AnalyticsService:
             - Silence ratio is (total_duration - talk_time) / total_duration
         """
         # Initialize counters
-        speaker_times = {}
-        speaker_words = {}
-        speaker_turns = {}
-        speaker_interruptions = {}
-        speaker_questions = {}
+        speaker_times: dict[str, float] = {}
+        speaker_words: dict[str, int] = {}
+        speaker_turns: dict[str, int] = {}
+        speaker_interruptions: dict[str, int] = {}
+        speaker_questions: dict[str, int] = {}
 
         total_words = 0
-        total_talk_time = 0
+        total_talk_time = 0.0
         total_interruptions = 0
         total_questions = 0
 
@@ -176,7 +175,7 @@ class AnalyticsService:
             segment_speaker = AnalyticsService._get_analytics_speaker_key(segment)
 
             # Calculate segment duration and word count
-            segment_duration = (segment.end_time or 0) - (segment.start_time or 0)
+            segment_duration = float((segment.end_time or 0) - (segment.start_time or 0))
             words = segment.text.split() if segment.text else []
             word_count = len([word for word in words if word.strip()])
 
@@ -242,7 +241,7 @@ class AnalyticsService:
             Original speaker key (e.g., "SPEAKER_01") or "Unknown"
         """
         if segment.speaker and segment.speaker.name:
-            return segment.speaker.name
+            return str(segment.speaker.name)
         else:
             return "Unknown"
 
@@ -269,9 +268,9 @@ class AnalyticsService:
             4. "Unknown" (if no speaker information)
         """
         if segment.speaker and segment.speaker.display_name:
-            return segment.speaker.display_name
+            return str(segment.speaker.display_name)
         elif segment.speaker and segment.speaker.name:
-            return speaker_mapping.get(segment.speaker.name, segment.speaker.name)
+            return speaker_mapping.get(str(segment.speaker.name), str(segment.speaker.name))
         else:
             return "Unknown"
 
@@ -310,9 +309,9 @@ class AnalyticsService:
 
             if existing_analytics:
                 # Update existing analytics
-                existing_analytics.overall_analytics = analytics_data
-                existing_analytics.computed_at = datetime.utcnow()
-                existing_analytics.version = "1.0"
+                existing_analytics.overall_analytics = analytics_data  # type: ignore[assignment]
+                existing_analytics.computed_at = datetime.utcnow()  # type: ignore[assignment]
+                existing_analytics.version = "1.0"  # type: ignore[assignment]
             else:
                 # Create new analytics record
                 new_analytics = Analytics(

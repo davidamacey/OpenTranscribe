@@ -23,7 +23,7 @@ export interface TranscriptSegment {
  */
 export function calculateScrollbarPosition(
   currentTime: number,
-  transcriptSegments: TranscriptSegment[],
+  transcriptSegments: TranscriptSegment[]
 ): number {
   // Edge case: No segments or invalid current time
   if (
@@ -45,8 +45,7 @@ export function calculateScrollbarPosition(
     const segmentDuration = segment.end_time - segment.start_time;
     if (segmentDuration <= 0) return 0;
 
-    const progressInSegment =
-      (currentTime - segment.start_time) / segmentDuration;
+    const progressInSegment = (currentTime - segment.start_time) / segmentDuration;
     return Math.max(0, Math.min(100, progressInSegment * 100));
   }
 
@@ -55,20 +54,16 @@ export function calculateScrollbarPosition(
   let latestEnd = -Infinity;
 
   for (const segment of transcriptSegments) {
-    if (typeof segment.start_time === "number" && !isNaN(segment.start_time)) {
+    if (typeof segment.start_time === 'number' && !isNaN(segment.start_time)) {
       earliestStart = Math.min(earliestStart, segment.start_time);
     }
-    if (typeof segment.end_time === "number" && !isNaN(segment.end_time)) {
+    if (typeof segment.end_time === 'number' && !isNaN(segment.end_time)) {
       latestEnd = Math.max(latestEnd, segment.end_time);
     }
   }
 
   // Edge case: Invalid time ranges
-  if (
-    earliestStart === Infinity ||
-    latestEnd === -Infinity ||
-    latestEnd <= earliestStart
-  ) {
+  if (earliestStart === Infinity || latestEnd === -Infinity || latestEnd <= earliestStart) {
     return 0;
   }
 
@@ -105,7 +100,7 @@ export function calculateScrollbarPosition(
  */
 export function calculateScrollbarPositionBySegment(
   currentTime: number,
-  transcriptSegments: TranscriptSegment[],
+  transcriptSegments: TranscriptSegment[]
 ): number {
   if (
     !transcriptSegments ||
@@ -117,9 +112,7 @@ export function calculateScrollbarPositionBySegment(
   }
 
   // Sort segments by start time to ensure proper order
-  const sortedSegments = [...transcriptSegments].sort(
-    (a, b) => a.start_time - b.start_time,
-  );
+  const sortedSegments = [...transcriptSegments].sort((a, b) => a.start_time - b.start_time);
 
   // Get time bounds
   const firstSegment = sortedSegments[0];
@@ -160,13 +153,9 @@ export function calculateScrollbarPositionBySegment(
  */
 export function findCurrentSegment(
   currentTime: number,
-  transcriptSegments: TranscriptSegment[],
+  transcriptSegments: TranscriptSegment[]
 ): TranscriptSegment | null {
-  if (
-    !transcriptSegments ||
-    transcriptSegments.length === 0 ||
-    isNaN(currentTime)
-  ) {
+  if (!transcriptSegments || transcriptSegments.length === 0 || isNaN(currentTime)) {
     return null;
   }
 
@@ -175,8 +164,8 @@ export function findCurrentSegment(
 
   for (const segment of transcriptSegments) {
     if (
-      typeof segment.start_time === "number" &&
-      typeof segment.end_time === "number" &&
+      typeof segment.start_time === 'number' &&
+      typeof segment.end_time === 'number' &&
       currentTime >= segment.start_time - tolerance &&
       currentTime <= segment.end_time + tolerance
     ) {
@@ -194,23 +183,18 @@ export function findCurrentSegment(
 export function calculateSegmentScrollPosition(
   targetSegment: TranscriptSegment,
   transcriptSegments: TranscriptSegment[],
-  containerHeight: number = 600,
+  containerHeight: number = 600
 ): number {
-  if (
-    !targetSegment ||
-    !transcriptSegments ||
-    transcriptSegments.length === 0
-  ) {
+  if (!targetSegment || !transcriptSegments || transcriptSegments.length === 0) {
     return 0;
   }
 
   // Find the index of the target segment
   const segmentIndex = transcriptSegments.findIndex(
     (segment) =>
-      (segment.uuid || segment.id) ===
-        (targetSegment.uuid || targetSegment.id) ||
+      (segment.uuid || segment.id) === (targetSegment.uuid || targetSegment.id) ||
       (segment.start_time === targetSegment.start_time &&
-        segment.end_time === targetSegment.end_time),
+        segment.end_time === targetSegment.end_time)
   );
 
   if (segmentIndex === -1) {
@@ -219,8 +203,7 @@ export function calculateSegmentScrollPosition(
 
   // Estimate segment height (could be refined with actual measurements)
   const estimatedSegmentHeight = 60; // Based on CSS analysis of .transcript-segment
-  const totalEstimatedHeight =
-    transcriptSegments.length * estimatedSegmentHeight;
+  const totalEstimatedHeight = transcriptSegments.length * estimatedSegmentHeight;
 
   // If content is shorter than container, no scrolling needed
   if (totalEstimatedHeight <= containerHeight) {
@@ -234,8 +217,7 @@ export function calculateSegmentScrollPosition(
 
   // Convert to percentage
   const maxScrollTop = totalEstimatedHeight - containerHeight;
-  const scrollPercentage =
-    maxScrollTop > 0 ? (scrollTop / maxScrollTop) * 100 : 0;
+  const scrollPercentage = maxScrollTop > 0 ? (scrollTop / maxScrollTop) * 100 : 0;
 
   return Math.max(0, Math.min(100, scrollPercentage));
 }
@@ -246,7 +228,7 @@ export function calculateSegmentScrollPosition(
  */
 export function createThrottledPositionUpdate(
   callback: (position: number) => void,
-  delay: number = 16, // ~60fps
+  delay: number = 16 // ~60fps
 ): (position: number) => void {
   let lastCallTime = 0;
   let animationFrameId: number | null = null;
@@ -276,7 +258,7 @@ export function createThrottledPositionUpdate(
  */
 export function calculateTimeFromScrollbarPosition(
   clickPosition: number, // 0-100 percentage
-  transcriptSegments: TranscriptSegment[],
+  transcriptSegments: TranscriptSegment[]
 ): number {
   if (
     !transcriptSegments ||
@@ -292,19 +274,15 @@ export function calculateTimeFromScrollbarPosition(
   let latestEnd = -Infinity;
 
   for (const segment of transcriptSegments) {
-    if (typeof segment.start_time === "number" && !isNaN(segment.start_time)) {
+    if (typeof segment.start_time === 'number' && !isNaN(segment.start_time)) {
       earliestStart = Math.min(earliestStart, segment.start_time);
     }
-    if (typeof segment.end_time === "number" && !isNaN(segment.end_time)) {
+    if (typeof segment.end_time === 'number' && !isNaN(segment.end_time)) {
       latestEnd = Math.max(latestEnd, segment.end_time);
     }
   }
 
-  if (
-    earliestStart === Infinity ||
-    latestEnd === -Infinity ||
-    latestEnd <= earliestStart
-  ) {
+  if (earliestStart === Infinity || latestEnd === -Infinity || latestEnd <= earliestStart) {
     return 0;
   }
 
@@ -327,28 +305,28 @@ export function validateTranscriptSegments(segments: any[]): {
   const warnings: string[] = [];
 
   if (!Array.isArray(segments)) {
-    errors.push("Transcript segments must be an array");
+    errors.push('Transcript segments must be an array');
     return { isValid: false, errors, warnings };
   }
 
   if (segments.length === 0) {
-    warnings.push("Transcript segments array is empty");
+    warnings.push('Transcript segments array is empty');
     return { isValid: true, errors, warnings };
   }
 
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
 
-    if (!segment || typeof segment !== "object") {
+    if (!segment || typeof segment !== 'object') {
       errors.push(`Segment ${i} is not a valid object`);
       continue;
     }
 
-    if (typeof segment.start_time !== "number" || isNaN(segment.start_time)) {
+    if (typeof segment.start_time !== 'number' || isNaN(segment.start_time)) {
       errors.push(`Segment ${i} has invalid start_time`);
     }
 
-    if (typeof segment.end_time !== "number" || isNaN(segment.end_time)) {
+    if (typeof segment.end_time !== 'number' || isNaN(segment.end_time)) {
       errors.push(`Segment ${i} has invalid end_time`);
     }
 
@@ -356,7 +334,7 @@ export function validateTranscriptSegments(segments: any[]): {
       warnings.push(`Segment ${i} has start_time >= end_time`);
     }
 
-    if (typeof segment.text !== "string" || segment.text.trim() === "") {
+    if (typeof segment.text !== 'string' || segment.text.trim() === '') {
       warnings.push(`Segment ${i} has empty or invalid text`);
     }
   }

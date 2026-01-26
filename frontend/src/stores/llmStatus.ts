@@ -19,7 +19,7 @@ const initialState: LLMStatusState = {
   status: null,
   available: false,
   checking: false,
-  lastChecked: null
+  lastChecked: null,
 };
 
 // Main LLM status store with centralized monitoring
@@ -30,7 +30,7 @@ function createLLMStatusStore() {
 
   const store = {
     subscribe,
-    
+
     // Initialize the store and start monitoring
     async initialize() {
       if (isInitialized) {
@@ -39,31 +39,30 @@ function createLLMStatusStore() {
 
       try {
         // Get initial status
-        update(state => ({ ...state, checking: true }));
+        update((state) => ({ ...state, checking: true }));
         const status = await llmService.getStatus(true);
 
-        update(state => ({
+        update((state) => ({
           ...state,
           status,
           available: status.available,
           lastChecked: new Date(),
-          checking: false
+          checking: false,
         }));
 
         // Start periodic monitoring
         store.startMonitoring();
         isInitialized = true;
-
       } catch (error) {
         console.error('[LLM Store] Failed to initialize LLM status:', error);
-        update(state => ({ ...state, checking: false, available: false }));
+        update((state) => ({ ...state, checking: false, available: false }));
       }
     },
 
     // Start background monitoring
     startMonitoring() {
       if (monitoringTimer) clearInterval(monitoringTimer);
-      
+
       monitoringTimer = setInterval(async () => {
         const currentState = get({ subscribe });
         if (!currentState.checking) {
@@ -83,21 +82,21 @@ function createLLMStatusStore() {
     // Refresh status from backend
     async refreshStatus() {
       try {
-        update(state => ({ ...state, checking: true }));
+        update((state) => ({ ...state, checking: true }));
         const status = await llmService.getStatus(true);
 
-        update(state => ({
+        update((state) => ({
           ...state,
           status,
           available: status.available,
           lastChecked: new Date(),
-          checking: false
+          checking: false,
         }));
 
         return status;
       } catch (error) {
         console.error('[LLM Store] Error refreshing LLM status:', error);
-        update(state => ({
+        update((state) => ({
           ...state,
           checking: false,
           available: false,
@@ -106,8 +105,8 @@ function createLLMStatusStore() {
             user_id: '0',
             provider: null,
             model: null,
-            message: 'Unable to check LLM status'
-          }
+            message: 'Unable to check LLM status',
+          },
         }));
         return null;
       }
@@ -115,18 +114,18 @@ function createLLMStatusStore() {
 
     // Update the LLM status (external)
     setStatus: (status: LLMStatus) => {
-      update(state => ({
+      update((state) => ({
         ...state,
         status,
         available: status.available,
         lastChecked: new Date(),
-        checking: false
+        checking: false,
       }));
     },
 
     // Set checking state
     setChecking: (checking: boolean) => {
-      update(state => ({ ...state, checking }));
+      update((state) => ({ ...state, checking }));
     },
 
     // Clear status (reset to initial state)
@@ -141,7 +140,7 @@ function createLLMStatusStore() {
       if (type === 'llm_settings_changed' || type === 'llm_status_changed') {
         store.refreshStatus();
       }
-    }
+    },
   };
 
   return store;
@@ -150,9 +149,15 @@ function createLLMStatusStore() {
 export const llmStatusStore = createLLMStatusStore();
 
 // Derived stores for common use cases
-export const isLLMAvailable = derived(llmStatusStore, $llmStatus => {
+export const isLLMAvailable = derived(llmStatusStore, ($llmStatus) => {
   return $llmStatus.available;
 });
-export const isLLMChecking = derived(llmStatusStore, $llmStatus => $llmStatus.checking);
-export const llmStatusMessage = derived(llmStatusStore, $llmStatus => $llmStatus.status?.message || '');
-export const llmProvider = derived(llmStatusStore, $llmStatus => $llmStatus.status?.provider || null);
+export const isLLMChecking = derived(llmStatusStore, ($llmStatus) => $llmStatus.checking);
+export const llmStatusMessage = derived(
+  llmStatusStore,
+  ($llmStatus) => $llmStatus.status?.message || ''
+);
+export const llmProvider = derived(
+  llmStatusStore,
+  ($llmStatus) => $llmStatus.status?.provider || null
+);

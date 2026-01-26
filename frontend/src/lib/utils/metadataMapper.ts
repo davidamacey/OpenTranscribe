@@ -87,12 +87,9 @@ function parseMediaDate(dateStr: string | undefined): string | undefined {
  * @param file - Original File object for additional metadata
  * @returns Mapped metadata matching backend schema
  */
-export function mapFFmpegMetadata(
-  probeData: FFmpegProbeData,
-  file: File
-): VideoMetadata {
-  const videoStream = probeData.streams?.find(s => s.codec_type === 'video');
-  const audioStream = probeData.streams?.find(s => s.codec_type === 'audio');
+export function mapFFmpegMetadata(probeData: FFmpegProbeData, file: File): VideoMetadata {
+  const videoStream = probeData.streams?.find((s) => s.codec_type === 'video');
+  const audioStream = probeData.streams?.find((s) => s.codec_type === 'audio');
   const format = probeData.format;
   const formatTags = format?.tags || {};
   const videoTags = videoStream?.tags || {};
@@ -131,7 +128,9 @@ export function mapFFmpegMetadata(
   if (audioStream) {
     metadata.AudioFormat = audioStream.codec_name;
     metadata.AudioChannels = audioStream.channels;
-    metadata.AudioSampleRate = audioStream.sample_rate ? parseInt(audioStream.sample_rate) : undefined;
+    metadata.AudioSampleRate = audioStream.sample_rate
+      ? parseInt(audioStream.sample_rate)
+      : undefined;
     metadata.AudioBitsPerSample = audioStream.bits_per_sample;
   }
 
@@ -197,7 +196,7 @@ export function mapFFmpegMetadata(
   for (const [key, value] of Object.entries(formatTags)) {
     if (
       !metadata[key] &&
-      ['creator', 'copyright', 'language', 'genre', 'album', 'track'].some(term =>
+      ['creator', 'copyright', 'language', 'genre', 'album', 'track'].some((term) =>
         key.toLowerCase().includes(term)
       )
     ) {
@@ -232,10 +231,7 @@ export function estimateAudioSize(duration: number, bitrate: number = 32): numbe
  * @param compressedSize - Compressed audio file size in bytes
  * @returns Compression ratio as percentage (0-100)
  */
-export function calculateCompressionRatio(
-  originalSize: number,
-  compressedSize: number
-): number {
+export function calculateCompressionRatio(originalSize: number, compressedSize: number): number {
   if (originalSize === 0) return 0;
   const ratio = ((originalSize - compressedSize) / originalSize) * 100;
   return Math.round(Math.max(0, Math.min(100, ratio)));

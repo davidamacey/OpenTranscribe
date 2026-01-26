@@ -5,8 +5,8 @@
  * Handles metadata preservation, progress tracking, and error handling
  */
 
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL, fetchFile } from "@ffmpeg/util";
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL, fetchFile } from '@ffmpeg/util';
 import type {
   ExtractedAudio,
   ExtractedAudioMetadata,
@@ -14,16 +14,16 @@ import type {
   ExtractionError,
   AudioExtractionConfig,
   VideoMetadata,
-} from "../types/audioExtraction";
-import { DEFAULT_EXTRACTION_CONFIG } from "../types/audioExtraction";
+} from '../types/audioExtraction';
+import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
 import {
   mapFFmpegMetadata,
   estimateAudioSize,
   calculateCompressionRatio,
-} from "../utils/metadataMapper";
-import { websocketStore } from "../../stores/websocket";
-import { get } from "svelte/store";
-import { t } from "../../stores/locale";
+} from '../utils/metadataMapper';
+import { websocketStore } from '../../stores/websocket';
+import { get } from 'svelte/store';
+import { t } from '../../stores/locale';
 
 /**
  * Audio Extraction Service Class
@@ -37,8 +37,7 @@ class AudioExtractionService {
   private loadPromise: Promise<void> | null = null;
 
   // Event handlers
-  private progressHandlers: Set<(progress: ExtractionProgress) => void> =
-    new Set();
+  private progressHandlers: Set<(progress: ExtractionProgress) => void> = new Set();
   private errorHandlers: Set<(error: ExtractionError) => void> = new Set();
 
   // Current extraction tracking for notifications
@@ -60,12 +59,12 @@ class AudioExtractionService {
   public isSupported(): boolean {
     // FFmpeg.wasm works in single-threaded mode without SharedArrayBuffer
     // Just check if we have the basic APIs we need
-    if (typeof WebAssembly === "undefined") {
+    if (typeof WebAssembly === 'undefined') {
       return false;
     }
 
     // Check for Worker support (needed for FFmpeg.wasm)
-    if (typeof Worker === "undefined") {
+    if (typeof Worker === 'undefined') {
       return false;
     }
 
@@ -106,44 +105,36 @@ class AudioExtractionService {
       this.ffmpeg = new FFmpeg();
 
       // Set up progress logging - only log errors to avoid console spam
-      this.ffmpeg.on("log", ({ message }) => {
+      this.ffmpeg.on('log', ({ message }) => {
         // Only log errors, not info messages or warnings
-        if (message.toLowerCase().includes("error")) {
-          console.error("[FFmpeg Error]", message);
+        if (message.toLowerCase().includes('error')) {
+          console.error('[FFmpeg Error]', message);
         }
       });
 
       // Set up progress events
-      this.ffmpeg.on("progress", ({ progress }) => {
+      this.ffmpeg.on('progress', ({ progress }) => {
         // FFmpeg progress is 0-1, convert to 0-100
         const percentage = Math.round(progress * 100);
         this.emitProgress({
-          stage: "extracting",
+          stage: 'extracting',
           percentage,
           message: `Extracting audio... ${percentage}%`,
         });
       });
 
       // Load FFmpeg core from local files (bundled in frontend/public/ffmpeg/)
-      const baseURL = "/ffmpeg";
+      const baseURL = '/ffmpeg';
       await this.ffmpeg.load({
-        coreURL: await toBlobURL(
-          `${baseURL}/ffmpeg-core.js`,
-          "text/javascript",
-        ),
-        wasmURL: await toBlobURL(
-          `${baseURL}/ffmpeg-core.wasm`,
-          "application/wasm",
-        ),
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
       });
 
-      console.log("[AudioExtractionService] FFmpeg loaded successfully");
+      console.log('[AudioExtractionService] FFmpeg loaded successfully');
     } catch (error) {
-      console.error("[AudioExtractionService] Failed to load FFmpeg:", error);
+      console.error('[AudioExtractionService] Failed to load FFmpeg:', error);
       throw new Error(
-        `Failed to load FFmpeg: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to load FFmpeg: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -153,16 +144,16 @@ class AudioExtractionService {
    */
   private getAudioExtension(codec: string): string {
     const codecMap: Record<string, string> = {
-      aac: "m4a",
-      mp3: "mp3",
-      opus: "opus",
-      vorbis: "ogg",
-      flac: "flac",
-      pcm_s16le: "wav",
-      pcm_s24le: "wav",
-      pcm_s32le: "wav",
+      aac: 'm4a',
+      mp3: 'mp3',
+      opus: 'opus',
+      vorbis: 'ogg',
+      flac: 'flac',
+      pcm_s16le: 'wav',
+      pcm_s24le: 'wav',
+      pcm_s32le: 'wav',
     };
-    return codecMap[codec.toLowerCase()] || "m4a"; // Default to m4a for unknown codecs
+    return codecMap[codec.toLowerCase()] || 'm4a'; // Default to m4a for unknown codecs
   }
 
   /**
@@ -170,16 +161,16 @@ class AudioExtractionService {
    */
   private getAudioMimeType(codec: string): string {
     const mimeMap: Record<string, string> = {
-      aac: "audio/mp4",
-      mp3: "audio/mpeg",
-      opus: "audio/opus",
-      vorbis: "audio/ogg",
-      flac: "audio/flac",
-      pcm_s16le: "audio/wav",
-      pcm_s24le: "audio/wav",
-      pcm_s32le: "audio/wav",
+      aac: 'audio/mp4',
+      mp3: 'audio/mpeg',
+      opus: 'audio/opus',
+      vorbis: 'audio/ogg',
+      flac: 'audio/flac',
+      pcm_s16le: 'audio/wav',
+      pcm_s24le: 'audio/wav',
+      pcm_s32le: 'audio/wav',
     };
-    return mimeMap[codec.toLowerCase()] || "audio/mp4";
+    return mimeMap[codec.toLowerCase()] || 'audio/mp4';
   }
 
   /**
@@ -187,19 +178,19 @@ class AudioExtractionService {
    */
   public async extractMetadata(file: File): Promise<VideoMetadata> {
     if (!this.isSupported()) {
-      throw new Error("FFmpeg is not supported in this browser");
+      throw new Error('FFmpeg is not supported in this browser');
     }
 
     await this.load();
     if (!this.ffmpeg) {
-      throw new Error("FFmpeg not initialized");
+      throw new Error('FFmpeg not initialized');
     }
 
     try {
       this.emitProgress({
-        stage: "metadata",
+        stage: 'metadata',
         percentage: 5,
-        message: "Reading video metadata...",
+        message: 'Reading video metadata...',
       });
 
       // Capture FFmpeg metadata output
@@ -208,18 +199,18 @@ class AudioExtractionService {
 
       const logHandler = ({ message }: { message: string }) => {
         // Start capturing when we see "Metadata:" line
-        if (message.trim() === "Metadata:") {
+        if (message.trim() === 'Metadata:') {
           captureMetadata = true;
           return;
         }
 
         // Stop capturing when we see Duration or Stream
-        if (message.includes("Duration:") || message.includes("Stream #")) {
+        if (message.includes('Duration:') || message.includes('Stream #')) {
           captureMetadata = false;
         }
 
         // Capture metadata fields
-        if (captureMetadata && message.includes(":")) {
+        if (captureMetadata && message.includes(':')) {
           const match = message.match(/^\s+(\w+)\s*:\s*(.+)$/);
           if (match) {
             const [, key, value] = match;
@@ -228,10 +219,8 @@ class AudioExtractionService {
         }
 
         // Capture duration
-        if (message.includes("Duration:")) {
-          const durationMatch = message.match(
-            /Duration: (\d+):(\d+):(\d+\.\d+)/,
-          );
+        if (message.includes('Duration:')) {
+          const durationMatch = message.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
           if (durationMatch) {
             const [, hours, minutes, seconds] = durationMatch;
             metadataFromFFmpeg.duration = `${hours}:${minutes}:${seconds}`;
@@ -239,7 +228,7 @@ class AudioExtractionService {
         }
 
         // Capture audio codec from stream info
-        if (message.includes("Stream #") && message.includes("Audio:")) {
+        if (message.includes('Stream #') && message.includes('Audio:')) {
           const codecMatch = message.match(/Audio:\s*(\w+)/);
           if (codecMatch) {
             metadataFromFFmpeg.audio_codec = codecMatch[1];
@@ -248,37 +237,27 @@ class AudioExtractionService {
       };
 
       // Temporarily add log handler
-      this.ffmpeg.on("log", logHandler);
+      this.ffmpeg.on('log', logHandler);
 
       // Write file to FFmpeg filesystem temporarily to trigger metadata reading
-      const tempFileName = `metadata_${Date.now()}${this.getFileExtension(
-        file.name,
-      )}`;
+      const tempFileName = `metadata_${Date.now()}${this.getFileExtension(file.name)}`;
       await this.ffmpeg.writeFile(tempFileName, await fetchFile(file));
 
       // Run ffmpeg to read metadata (very fast, doesn't process the whole file)
       // Use -c copy to avoid decoding, just read container metadata
-      await this.ffmpeg.exec([
-        "-i",
-        tempFileName,
-        "-c",
-        "copy",
-        "-f",
-        "null",
-        "-",
-      ]);
+      await this.ffmpeg.exec(['-i', tempFileName, '-c', 'copy', '-f', 'null', '-']);
 
       // Clean up
       await this.ffmpeg.deleteFile(tempFileName);
-      this.ffmpeg.off("log", logHandler);
+      this.ffmpeg.off('log', logHandler);
 
       // Build metadata object
       const metadata: VideoMetadata = {
         FileName: file.name,
         FileSize: file.size,
         MIMEType: file.type,
-        FileType: file.type.split("/")[1],
-        FileTypeExtension: file.name.split(".").pop(),
+        FileType: file.type.split('/')[1],
+        FileTypeExtension: file.name.split('.').pop(),
         CreateDate: new Date(file.lastModified).toISOString(),
         ModifyDate: new Date(file.lastModified).toISOString(),
         // Add FFmpeg extracted metadata
@@ -293,24 +272,21 @@ class AudioExtractionService {
       };
 
       this.emitProgress({
-        stage: "metadata",
+        stage: 'metadata',
         percentage: 10,
-        message: "Metadata extracted successfully",
+        message: 'Metadata extracted successfully',
       });
 
       return metadata;
     } catch (error) {
-      console.error(
-        "[AudioExtractionService] Metadata extraction failed:",
-        error,
-      );
+      console.error('[AudioExtractionService] Metadata extraction failed:', error);
       // Fall back to basic metadata if extraction fails
       return {
         FileName: file.name,
         FileSize: file.size,
         MIMEType: file.type,
-        FileType: file.type.split("/")[1],
-        FileTypeExtension: file.name.split(".").pop(),
+        FileType: file.type.split('/')[1],
+        FileTypeExtension: file.name.split('.').pop(),
         CreateDate: new Date(file.lastModified).toISOString(),
         ModifyDate: new Date(file.lastModified).toISOString(),
       };
@@ -322,11 +298,9 @@ class AudioExtractionService {
    */
   private async calculateFileHash(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
     return hashHex;
   }
 
@@ -335,7 +309,7 @@ class AudioExtractionService {
    */
   public async extractAudio(
     file: File,
-    config: Partial<AudioExtractionConfig> = {},
+    config: Partial<AudioExtractionConfig> = {}
   ): Promise<ExtractedAudio> {
     // Add to queue and return a promise
     return new Promise<ExtractedAudio>((resolve, reject) => {
@@ -375,13 +349,13 @@ class AudioExtractionService {
    */
   private async _extractAudioInternal(
     file: File,
-    config: Partial<AudioExtractionConfig> = {},
+    config: Partial<AudioExtractionConfig> = {}
   ): Promise<ExtractedAudio> {
     if (!this.isSupported()) {
       throw this.createError(
-        "UNSUPPORTED_BROWSER",
-        "Your browser does not support audio extraction. Please use a modern browser like Chrome, Edge, or Firefox.",
-        "initializing",
+        'UNSUPPORTED_BROWSER',
+        'Your browser does not support audio extraction. Please use a modern browser like Chrome, Edge, or Firefox.',
+        'initializing'
       );
     }
 
@@ -394,50 +368,46 @@ class AudioExtractionService {
     // Check file size
     if (file.size > finalConfig.maxFileSize) {
       throw this.createError(
-        "FILE_TOO_LARGE",
+        'FILE_TOO_LARGE',
         `File is too large (${Math.round(
-          file.size / (1024 * 1024 * 1024),
-        )}GB). Maximum size is ${Math.round(
-          finalConfig.maxFileSize / (1024 * 1024 * 1024),
-        )}GB.`,
-        "initializing",
+          file.size / (1024 * 1024 * 1024)
+        )}GB). Maximum size is ${Math.round(finalConfig.maxFileSize / (1024 * 1024 * 1024))}GB.`,
+        'initializing'
       );
     }
 
     const startTime = Date.now();
 
     // Set up tracking for notifications - use unique ID for each extraction
-    const extractionId = `extraction-${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
+    const extractionId = `extraction-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const fileName = file.name;
 
     try {
       // Load FFmpeg if not already loaded
       this.emitProgress(
         {
-          stage: "initializing",
+          stage: 'initializing',
           percentage: 0,
-          message: "Initializing audio extraction...",
+          message: 'Initializing audio extraction...',
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       await this.load();
       if (!this.ffmpeg) {
-        throw new Error("FFmpeg not initialized");
+        throw new Error('FFmpeg not initialized');
       }
 
       // Calculate original file hash for duplicate detection
       this.emitProgress(
         {
-          stage: "metadata",
+          stage: 'metadata',
           percentage: 2,
-          message: get(t)("upload.calculatingHash"),
+          message: get(t)('upload.calculatingHash'),
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       const originalFileHash = await this.calculateFileHash(file);
@@ -446,25 +416,23 @@ class AudioExtractionService {
       const metadata = await this.extractMetadata(file);
 
       // Detect audio codec to determine output extension
-      const audioCodec = metadata.RawMetadata?.audio_codec || "aac";
+      const audioCodec = metadata.RawMetadata?.audio_codec || 'aac';
       const outputExtension = this.getAudioExtension(audioCodec);
 
       // Write input file to FFmpeg virtual filesystem
       this.emitProgress(
         {
-          stage: "extracting",
+          stage: 'extracting',
           percentage: 15,
-          message: "Loading video file...",
+          message: 'Loading video file...',
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       // Use unique filenames based on extractionId to support concurrent extractions
-      const uniqueId = extractionId.split("-")[1]; // Use timestamp portion for shorter name
-      const inputFileName = `input_${uniqueId}${this.getFileExtension(
-        file.name,
-      )}`;
+      const uniqueId = extractionId.split('-')[1]; // Use timestamp portion for shorter name
+      const inputFileName = `input_${uniqueId}${this.getFileExtension(file.name)}`;
       const outputFileName = `output_${uniqueId}.${outputExtension}`;
 
       await this.ffmpeg.writeFile(inputFileName, await fetchFile(file));
@@ -472,21 +440,21 @@ class AudioExtractionService {
       // Build FFmpeg command for audio extraction
       this.emitProgress(
         {
-          stage: "extracting",
+          stage: 'extracting',
           percentage: 20,
-          message: "Extracting audio...",
+          message: 'Extracting audio...',
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       // Use stream copy for fast extraction without re-encoding
       const ffmpegArgs = [
-        "-i",
+        '-i',
         inputFileName,
-        "-vn", // No video
-        "-c:a",
-        "copy", // Copy audio stream without re-encoding
+        '-vn', // No video
+        '-c:a',
+        'copy', // Copy audio stream without re-encoding
         outputFileName,
       ];
 
@@ -495,21 +463,19 @@ class AudioExtractionService {
       // Read output file
       this.emitProgress(
         {
-          stage: "finalizing",
+          stage: 'finalizing',
           percentage: 95,
-          message: "Finalizing audio file...",
+          message: 'Finalizing audio file...',
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       const audioData = await this.ffmpeg.readFile(outputFileName);
       // Ensure proper BlobPart compatibility - readFile returns Uint8Array or string
       // Use slice() to create a new ArrayBuffer that is not SharedArrayBuffer
       const blobData =
-        typeof audioData === "string"
-          ? new TextEncoder().encode(audioData)
-          : audioData.slice();
+        typeof audioData === 'string' ? new TextEncoder().encode(audioData) : audioData.slice();
       const audioBlob = new Blob([blobData], {
         type: this.getAudioMimeType(audioCodec),
       });
@@ -520,10 +486,7 @@ class AudioExtractionService {
 
       // Build complete metadata
       const extractionDuration = Date.now() - startTime;
-      const compressionRatio = calculateCompressionRatio(
-        file.size,
-        audioBlob.size,
-      );
+      const compressionRatio = calculateCompressionRatio(file.size, audioBlob.size);
 
       const extractedMetadata: ExtractedAudioMetadata = {
         originalFileName: file.name,
@@ -532,10 +495,7 @@ class AudioExtractionService {
         originalLastModified: file.lastModified,
         originalFileHash: originalFileHash,
         extractedAudioSize: audioBlob.size,
-        extractedFileName: file.name.replace(
-          /\.[^.]+$/,
-          `.${finalConfig.outputFormat}`,
-        ),
+        extractedFileName: file.name.replace(/\.[^.]+$/, `.${finalConfig.outputFormat}`),
         extractedFileType: audioBlob.type,
         compressionRatio,
         extractionDate: new Date().toISOString(),
@@ -545,12 +505,12 @@ class AudioExtractionService {
 
       this.emitProgress(
         {
-          stage: "finalizing",
+          stage: 'finalizing',
           percentage: 100,
-          message: "Audio extraction complete!",
+          message: 'Audio extraction complete!',
         },
         extractionId,
-        fileName,
+        fileName
       );
 
       return {
@@ -559,15 +519,14 @@ class AudioExtractionService {
         metadata: extractedMetadata,
       };
     } catch (error) {
-      console.error("[AudioExtractionService] Extraction failed:", error);
+      console.error('[AudioExtractionService] Extraction failed:', error);
 
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       throw this.createError(
-        "EXTRACTION_FAILED",
+        'EXTRACTION_FAILED',
         `Audio extraction failed: ${errorMessage}`,
-        "extracting",
-        error as Error,
+        'extracting',
+        error as Error
       );
     }
   }
@@ -575,9 +534,7 @@ class AudioExtractionService {
   /**
    * Register progress handler
    */
-  public onProgress(
-    handler: (progress: ExtractionProgress) => void,
-  ): () => void {
+  public onProgress(handler: (progress: ExtractionProgress) => void): () => void {
     this.progressHandlers.add(handler);
     return () => this.progressHandlers.delete(handler);
   }
@@ -596,7 +553,7 @@ class AudioExtractionService {
   private emitProgress(
     progress: ExtractionProgress,
     extractionId?: string,
-    fileName?: string,
+    fileName?: string
   ): void {
     // Emit to local handlers
     this.progressHandlers.forEach((handler) => handler(progress));
@@ -604,8 +561,8 @@ class AudioExtractionService {
     // Send to notification panel if we have extraction tracking info
     if (extractionId && fileName) {
       websocketStore.addNotification({
-        type: "audio_extraction_status",
-        title: "Audio Extraction",
+        type: 'audio_extraction_status',
+        title: 'Audio Extraction',
         message: fileName,
         progressId: extractionId,
         currentStep: progress.message,
@@ -614,7 +571,7 @@ class AudioExtractionService {
           total: 100,
           percentage: progress.percentage,
         },
-        status: progress.percentage === 100 ? "completed" : "processing",
+        status: progress.percentage === 100 ? 'completed' : 'processing',
         dismissible: progress.percentage === 100,
         silent: false,
       });
@@ -634,8 +591,8 @@ class AudioExtractionService {
   private createError(
     code: string,
     message: string,
-    stage: ExtractionProgress["stage"],
-    originalError?: Error,
+    stage: ExtractionProgress['stage'],
+    originalError?: Error
   ): ExtractionError {
     return {
       code,
@@ -649,8 +606,8 @@ class AudioExtractionService {
    * Get file extension from filename
    */
   private getFileExtension(filename: string): string {
-    const ext = filename.split(".").pop();
-    return ext ? `.${ext}` : ".mp4";
+    const ext = filename.split('.').pop();
+    return ext ? `.${ext}` : '.mp4';
   }
 
   /**

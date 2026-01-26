@@ -68,7 +68,7 @@ def check_tasks_health(self):
 
     except Exception as e:
         logger.error(f"Error in task health check: {str(e)}")
-        summary["error"] = str(e)
+        summary["error"] = str(e)  # type: ignore[assignment]
 
     return summary
 
@@ -108,9 +108,10 @@ def update_gpu_stats(self):
 
             # Use nvidia-smi for accurate memory usage (includes all processes)
             # Format: memory.used,memory.total,memory.free (in MiB)
-            # Using hardcoded nvidia-smi command, not user input
-            result = subprocess.run(  # noqa: S603
-                [  # noqa: S607
+            # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
+            # Only dynamic parameter is device_id (integer), preventing command injection.
+            result = subprocess.run(
+                [  # noqa: S603 S607 # nosec B603 B607 - hardcoded nvidia-smi, integer device_id
                     "nvidia-smi",
                     "--query-gpu=memory.used,memory.total,memory.free",
                     "--format=csv,noheader,nounits",

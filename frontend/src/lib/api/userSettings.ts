@@ -1,6 +1,6 @@
 /**
  * API service for user settings management
- * 
+ *
  * This module provides TypeScript interfaces and API methods for managing
  * user settings that persist across sessions and devices.
  */
@@ -84,7 +84,7 @@ export class RecordingSettingsHelper {
     const labels: Record<string, string> = {
       standard: 'Standard (64 kbps)',
       high: 'High (128 kbps)',
-      maximum: 'Maximum (256 kbps)'
+      maximum: 'Maximum (256 kbps)',
     };
     return labels[quality] || quality;
   }
@@ -138,12 +138,17 @@ export class RecordingSettingsHelper {
       const localSettings = localStorage.getItem('recordingSettings');
       if (localSettings) {
         const parsed = JSON.parse(localSettings);
-        
+
         // Map old localStorage format to new API format
         const migrated: RecordingSettings = {
-          max_recording_duration: parsed.maxRecordingDuration || DEFAULT_RECORDING_SETTINGS.max_recording_duration,
-          recording_quality: parsed.recordingQuality || DEFAULT_RECORDING_SETTINGS.recording_quality,
-          auto_stop_enabled: parsed.autoStopEnabled !== undefined ? parsed.autoStopEnabled : DEFAULT_RECORDING_SETTINGS.auto_stop_enabled
+          max_recording_duration:
+            parsed.maxRecordingDuration || DEFAULT_RECORDING_SETTINGS.max_recording_duration,
+          recording_quality:
+            parsed.recordingQuality || DEFAULT_RECORDING_SETTINGS.recording_quality,
+          auto_stop_enabled:
+            parsed.autoStopEnabled !== undefined
+              ? parsed.autoStopEnabled
+              : DEFAULT_RECORDING_SETTINGS.auto_stop_enabled,
         };
 
         // Validate migrated settings
@@ -157,7 +162,7 @@ export class RecordingSettingsHelper {
     } catch (error) {
       console.warn('Error migrating recording settings from localStorage:', error);
     }
-    
+
     return null;
   }
 

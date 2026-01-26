@@ -106,7 +106,7 @@ class TaskDetectionService:
                 if not active_tasks:
                     # Before marking the file as stuck, try to reconcile its status from task history.
                     # This prevents false positives where tasks completed but file status wasn't updated.
-                    refreshed_file = update_media_file_from_task_status(db, media_file.id)
+                    refreshed_file = update_media_file_from_task_status(db, int(media_file.id))
                     if refreshed_file and refreshed_file.status in [
                         FileStatus.COMPLETED,
                         FileStatus.ERROR,
@@ -150,7 +150,7 @@ class TaskDetectionService:
                             # File has completed tasks but status wasn't updated
                             # Attempt to reconcile status and skip recovery
                             refreshed_file = update_media_file_from_task_status(
-                                db, media_file.id
+                                db, int(media_file.id)
                             )
                             if refreshed_file and refreshed_file.status in [
                                 FileStatus.COMPLETED,
@@ -226,7 +226,7 @@ class TaskDetectionService:
         )
 
         logger.info(f"Identified {len(orphaned_tasks)} orphaned tasks")
-        return orphaned_tasks
+        return orphaned_tasks  # type: ignore[no-any-return]
 
     def identify_abandoned_files(self, db: Session) -> list[MediaFile]:
         """
@@ -260,7 +260,7 @@ class TaskDetectionService:
         logger.info(f"Identified {len(truly_abandoned)} abandoned files")
         return truly_abandoned
 
-    def find_user_problem_files(self, db: Session, user_id: int = None) -> list[MediaFile]:
+    def find_user_problem_files(self, db: Session, user_id: int | None = None) -> list[MediaFile]:
         """
         Find files that may need recovery for a specific user or all users.
 
@@ -297,11 +297,12 @@ class TaskDetectionService:
             return False
 
         duration = (now - task.created_at).total_seconds()
-        max_duration = self.config.MAX_TASK_DURATIONS.get(
-            task.task_type, self.config.MAX_TASK_DURATIONS["default"]
-        )
+        task_durations = self.config.MAX_TASK_DURATIONS
+        if task_durations is None:
+            return False
+        max_duration = task_durations.get(str(task.task_type), task_durations["default"])
 
-        return duration > max_duration
+        return bool(duration > max_duration)
 
     def _find_processing_files_without_tasks(self, db: Session) -> list[MediaFile]:
         """Find files in PROCESSING state with no active tasks."""
@@ -329,7 +330,7 @@ class TaskDetectionService:
         """Find files that have been in PENDING state for too long."""
         stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
 
-        return (
+        return (  # type: ignore[no-any-return]
             db.query(MediaFile)
             .filter(
                 MediaFile.status == FileStatus.PENDING,

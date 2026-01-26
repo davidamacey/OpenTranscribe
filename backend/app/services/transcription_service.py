@@ -126,7 +126,7 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return (
+            return (  # type: ignore[no-any-return]
                 self.db.query(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)
                 .order_by(TranscriptSegment.start_time)
@@ -195,7 +195,7 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return (
+            return (  # type: ignore[no-any-return]
                 self.db.query(Speaker)
                 .join(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)
@@ -229,13 +229,13 @@ class TranscriptionService:
             if not speaker:
                 raise ErrorHandler.not_found_error("Speaker")
 
-            speaker.display_name = display_name
-            speaker.verified = True  # Mark as verified when user updates
+            speaker.display_name = display_name  # type: ignore[assignment]
+            speaker.verified = True  # type: ignore[assignment]
 
             self.db.commit()
             self.db.refresh(speaker)
 
-            return speaker
+            return speaker  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Error updating speaker info: {e}")
@@ -282,7 +282,8 @@ class TranscriptionService:
             self.db.delete(secondary)
             self.db.commit()
 
-            return primary
+            self.db.refresh(primary)
+            return primary  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Error merging speakers: {e}")
@@ -383,7 +384,7 @@ class TranscriptionService:
             # Verify user access
             AuthorizationHelper.check_file_access(self.db, file_id, user)
 
-            return (
+            return (  # type: ignore[no-any-return]
                 self.db.query(TranscriptSegment)
                 .filter(
                     TranscriptSegment.media_file_id == file_id,

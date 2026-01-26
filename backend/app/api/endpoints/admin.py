@@ -371,12 +371,12 @@ async def get_admin_stats(
         failed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_FAILED).count()
 
         # Calculate success rate
-        success_rate = 0
+        success_rate: float = 0.0
         if total_tasks > 0:
             success_rate = round((completed_tasks / total_tasks) * 100, 2)
 
         # Calculate average processing time for completed tasks
-        avg_processing_time = 0
+        avg_processing_time: float = 0.0
         completed_task_list = (
             db.query(Task)
             .filter(
@@ -394,7 +394,7 @@ async def get_admin_stats(
                 if task.completed_at and task.created_at
             )
             avg_processing_time = (
-                total_time / len(completed_task_list) if completed_task_list else 0
+                total_time / len(completed_task_list) if completed_task_list else 0.0
             )
 
         # Get recent tasks (last 10)
@@ -582,13 +582,13 @@ def delete_admin_user(
 
         # Delete related data in order
         try:
-            _delete_user_speakers(db, user_id)
+            _delete_user_speakers(db, int(user_id))
         except Exception as speaker_error:
             logger.error(f"Error deleting speakers: {speaker_error}")
             raise
 
         try:
-            _delete_user_media_files(db, user_id)
+            _delete_user_media_files(db, int(user_id))
         except Exception as media_error:
             logger.error(f"Error deleting media files: {media_error}")
             raise

@@ -1,8 +1,8 @@
-import { writable, derived } from "svelte/store";
+import { writable, derived } from 'svelte/store';
 
 // Types for gallery state
 export interface GalleryState {
-  activeTab: "gallery" | "status";
+  activeTab: 'gallery' | 'status';
   isSelecting: boolean;
   selectedFiles: Set<string>; // UUIDs
   files: any[];
@@ -10,7 +10,7 @@ export interface GalleryState {
 }
 
 export interface GalleryActions {
-  setActiveTab: (tab: "gallery" | "status") => void;
+  setActiveTab: (tab: 'gallery' | 'status') => void;
   toggleSelection: () => void;
   setSelecting: (selecting: boolean) => void;
   toggleFileSelection: (fileId: string) => void; // UUID
@@ -26,7 +26,7 @@ export interface GalleryActions {
 
 // Initial state
 const initialState: GalleryState = {
-  activeTab: "gallery",
+  activeTab: 'gallery',
   isSelecting: false,
   selectedFiles: new Set<string>(), // UUIDs
   files: [],
@@ -46,7 +46,7 @@ function createGalleryStore() {
   return {
     subscribe,
     // State management actions
-    setActiveTab: (tab: "gallery" | "status") => {
+    setActiveTab: (tab: 'gallery' | 'status') => {
       update((state) => ({ ...state, activeTab: tab }));
     },
 
@@ -62,9 +62,7 @@ function createGalleryStore() {
       update((state) => ({
         ...state,
         isSelecting: !state.isSelecting,
-        selectedFiles: !state.isSelecting
-          ? state.selectedFiles
-          : new Set<string>(),
+        selectedFiles: !state.isSelecting ? state.selectedFiles : new Set<string>(),
       }));
     },
 
@@ -170,17 +168,9 @@ export const galleryStore = createGalleryStore();
 
 // Derived stores for convenient access
 export const galleryState = derived(galleryStore, ($store) => $store);
-export const isGalleryPage = derived(
-  galleryStore,
-  ($store) => $store.activeTab === "gallery",
-);
-export const selectedCount = derived(
-  galleryStore,
-  ($store) => $store.selectedFiles.size,
-);
+export const isGalleryPage = derived(galleryStore, ($store) => $store.activeTab === 'gallery');
+export const selectedCount = derived(galleryStore, ($store) => $store.selectedFiles.size);
 export const allFilesSelected = derived(
   galleryStore,
-  ($store) =>
-    $store.files.length > 0 &&
-    $store.selectedFiles.size === $store.files.length,
+  ($store) => $store.files.length > 0 && $store.selectedFiles.size === $store.files.length
 );

@@ -91,6 +91,66 @@ cd opentranscribe
 - API Documentation: http://localhost:8080/docs
 - Task Monitor: http://localhost:5555/flower
 
+## 🔐 Authentication Configuration
+
+OpenTranscribe supports multiple authentication methods for different deployment scenarios:
+
+### Authentication Methods
+
+| Method | Use Case | Documentation |
+|--------|----------|---------------|
+| **Local** | Default, standalone deployments | Built-in (bcrypt password hashing) |
+| **LDAP/AD** | Enterprise with Active Directory | [LDAP_AUTH.md](LDAP_AUTH.md) |
+| **OIDC/Keycloak** | SSO, OAuth 2.0 with PKCE | [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md) |
+| **PKI/X.509** | Government, CAC/PIV smart cards | [PKI_SETUP.md](PKI_SETUP.md) |
+
+### Quick Configuration
+
+**Local Authentication (Default):**
+```bash
+# No additional configuration required
+# Users register via /api/auth/register or are created by admins
+```
+
+**LDAP/Active Directory:**
+```bash
+# Add to .env
+LDAP_ENABLED=true
+LDAP_SERVER=ldaps://your-ad-server.domain.com
+LDAP_PORT=636
+LDAP_BIND_DN=CN=service-account,CN=Users,DC=domain,DC=com
+LDAP_BIND_PASSWORD=your-service-account-password
+LDAP_SEARCH_BASE=DC=domain,DC=com
+```
+
+**OIDC/Keycloak:**
+```bash
+# Add to .env
+OIDC_ENABLED=true
+OIDC_DISCOVERY_URL=https://keycloak.example.com/realms/opentranscribe/.well-known/openid-configuration
+OIDC_CLIENT_ID=opentranscribe
+OIDC_CLIENT_SECRET=your-client-secret
+```
+
+**PKI/X.509 Certificates:**
+```bash
+# Add to .env
+PKI_ENABLED=true
+PKI_CA_CERT_PATH=/path/to/ca-certificates.pem
+PKI_HEADER_NAME=X-SSL-Client-Cert
+```
+
+### Security Features
+
+All authentication methods support:
+- **MFA/TOTP**: Two-factor authentication with backup codes
+- **Password Policies**: Configurable complexity, history, and expiration
+- **Account Lockout**: Automatic lockout after failed attempts
+- **Session Management**: Token rotation and secure session handling
+- **Audit Logging**: Comprehensive logging of all auth events
+
+See [SECURITY.md](SECURITY.md) for detailed security configuration and [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md) for verification procedures.
+
 ## 🔒 HTTPS/SSL Setup (For Network Access)
 
 **Why HTTPS?** Browser microphone recording requires HTTPS when accessing from devices other than localhost. This is a browser security requirement, not an OpenTranscribe limitation.

@@ -3,6 +3,7 @@ Celery tasks for file cleanup and system maintenance.
 """
 
 import logging
+from typing import Any
 
 from celery import shared_task
 
@@ -129,7 +130,7 @@ def emergency_file_recovery(self, file_uuids: list):
     try:
         logger.info(f"Starting emergency recovery for files: {file_uuids}")
 
-        results = {
+        results: dict[str, Any] = {
             "files_processed": len(file_uuids),
             "recovered": 0,
             "failed": 0,
@@ -143,7 +144,7 @@ def emergency_file_recovery(self, file_uuids: list):
                 try:
                     # Convert UUID to internal ID
                     media_file = get_file_by_uuid(db, file_uuid)
-                    file_id = media_file.id
+                    file_id = int(media_file.id)
 
                     success = recover_stuck_file(db, file_id)
                     if success:

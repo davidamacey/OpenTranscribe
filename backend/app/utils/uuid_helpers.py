@@ -11,7 +11,6 @@ Performance Notes:
 - UUIDs only exposed in API layer (Pydantic schemas)
 """
 
-from typing import Optional
 from typing import TypeVar
 from uuid import UUID
 
@@ -35,7 +34,7 @@ def get_by_uuid(
     db: Session,
     model: type[T],
     uuid: UUID | str,
-    error_message: Optional[str] = None,
+    error_message: str | None = None,
 ) -> T:
     """
     Get a database record by UUID.
@@ -63,7 +62,7 @@ def get_by_uuid(
             ) from None
 
     # Query by UUID
-    instance = db.query(model).filter(model.uuid == uuid).first()
+    instance = db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined]
 
     if not instance:
         model_name = model.__name__
@@ -73,14 +72,14 @@ def get_by_uuid(
             detail=message,
         )
 
-    return instance
+    return instance  # type: ignore[no-any-return]
 
 
 def get_by_uuid_optional(
     db: Session,
     model: type[T],
     uuid: UUID | str | None,
-) -> Optional[T]:
+) -> T | None:
     """
     Get a database record by UUID, returning None if not found.
 
@@ -102,7 +101,7 @@ def get_by_uuid_optional(
         except ValueError:
             return None
 
-    return db.query(model).filter(model.uuid == uuid).first()
+    return db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined, no-any-return]
 
 
 def uuid_to_id(db: Session, model: type[T], uuid: UUID | str) -> int:
@@ -123,7 +122,7 @@ def uuid_to_id(db: Session, model: type[T], uuid: UUID | str) -> int:
         HTTPException: 404 if not found
     """
     instance = get_by_uuid(db, model, uuid)
-    return instance.id
+    return int(instance.id)  # type: ignore[attr-defined]
 
 
 def validate_uuids(uuids: list[str]) -> list[UUID]:

@@ -1,0 +1,58 @@
+# Keycloak and PKI development environment (standalone)
+#
+# Usage:
+#   Keycloak only:  docker compose -f docker-compose.keycloak.yml up -d keycloak
+#   With PKI:       docker compose -f docker-compose.keycloak.yml --profile pki up -d
+#   Stop all:       docker compose -f docker-compose.keycloak.yml --profile pki down
+#
+# Keycloak admin console: http://localhost:8180
+# Default credentials: admin / admin
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    networks:
+      - transcribe-app_default
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo -e \"GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n\" >&3;grep -q '200 OK' <&3"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Step CA for PKI testing (dev only)
+  # Start with: docker compose -f docker-compose.keycloak.yml --profile pki up -d
+  step-ca:
+    image: smallstep/step-ca:latest
+    profiles: ["pki"]
+    environment:
+      DOCKER_STEPCA_INIT_NAME: OpenTranscribe Dev CA
+      DOCKER_STEPCA_INIT_DNS_NAMES: localhost,step-ca
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: admin
+    ports:
+      - "${STEP_CA_PORT:-9000}:9000"
+    volumes:
+      - step_ca_data:/home/step
+    networks:
+      - transcribe-app_default
+
+volumes:
+  keycloak_data:
+  step_ca_data:
+
+networks:
+  transcribe-app_default:
+    external: true

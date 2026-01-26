@@ -23,11 +23,11 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
     """
     try:
         # Clear transcript-related fields that exist on the MediaFile model
-        media_file.summary_data = None
-        media_file.summary_opensearch_id = None  # Clear OpenSearch summary ID for regeneration
-        media_file.summary_status = "pending"  # Reset summary status for regeneration
-        media_file.translated_text = None
-        media_file.waveform_data = None  # Clear waveform data for regeneration
+        media_file.summary_data = None  # type: ignore[assignment]
+        media_file.summary_opensearch_id = None  # type: ignore[assignment]  # Clear OpenSearch summary ID for regeneration
+        media_file.summary_status = "pending"  # type: ignore[assignment]  # Reset summary status for regeneration
+        media_file.translated_text = None  # type: ignore[assignment]
+        media_file.waveform_data = None  # type: ignore[assignment]  # Clear waveform data for regeneration
 
         # Clear existing transcript segments
         from app.models.media import Analytics
@@ -66,9 +66,9 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
 
 def start_reprocessing_task(
     file_uuid: str,
-    min_speakers: int = None,
-    max_speakers: int = None,
-    num_speakers: int = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ) -> None:
     """
     Start the background reprocessing task.
@@ -97,9 +97,9 @@ async def process_file_reprocess(
     file_uuid: str,
     db: Session,
     current_user: User,
-    min_speakers: int = None,
-    max_speakers: int = None,
-    num_speakers: int = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ) -> MediaFile:
     """
     Process file reprocessing request with enhanced error handling.
@@ -129,9 +129,9 @@ async def process_file_reprocess(
         if is_admin:
             media_file = get_file_by_uuid(db, file_uuid)
         else:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
 
-        file_id = media_file.id  # Get internal ID for task operations
+        file_id = int(media_file.id)  # Get internal ID for task operations
 
         # Check if file is currently processing
         if media_file.status == FileStatus.PROCESSING and media_file.active_task_id:
@@ -139,7 +139,7 @@ async def process_file_reprocess(
             logger.info(
                 f"Cancelling active task {media_file.active_task_id} before reprocessing file {file_id}"
             )
-            cancel_active_task(db, file_id)
+            cancel_active_task(db, int(file_id))
 
         # Check if file exists in storage
         if not media_file.storage_path:
@@ -150,7 +150,7 @@ async def process_file_reprocess(
 
         # Check retry limits based on system settings (unless admin)
         if not is_admin and not system_settings_service.should_retry_file(
-            db, media_file.retry_count
+            db, int(media_file.retry_count)
         ):
             config = system_settings_service.get_retry_config(db)
             raise HTTPException(
@@ -163,7 +163,7 @@ async def process_file_reprocess(
         )
 
         # Use the enhanced retry logic
-        success = reset_file_for_retry(db, file_id, reset_retry_count=False)
+        success = reset_file_for_retry(db, int(file_id), reset_retry_count=False)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

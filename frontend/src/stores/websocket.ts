@@ -1,25 +1,25 @@
-import { writable, derived, get, type Writable } from "svelte/store";
-import * as authStore from "./auth";
-import { downloadStore } from "./downloads";
-import { t } from "$stores/locale";
+import { writable, derived, get, type Writable } from 'svelte/store';
+import * as authStore from './auth';
+import { downloadStore } from './downloads';
+import { t } from '$stores/locale';
 
 // Define notification types
 export type NotificationType =
-  | "transcription_status"
-  | "summarization_status"
-  | "topic_extraction_status"
-  | "youtube_processing_status"
-  | "playlist_processing_status"
-  | "analytics_status"
-  | "download_progress"
-  | "audio_extraction_status"
-  | "connection_established"
-  | "echo"
-  | "file_upload"
-  | "file_created"
-  | "file_updated"
-  | "file_deleted"
-  | "speaker_updated";
+  | 'transcription_status'
+  | 'summarization_status'
+  | 'topic_extraction_status'
+  | 'youtube_processing_status'
+  | 'playlist_processing_status'
+  | 'analytics_status'
+  | 'download_progress'
+  | 'audio_extraction_status'
+  | 'connection_established'
+  | 'echo'
+  | 'file_upload'
+  | 'file_created'
+  | 'file_updated'
+  | 'file_deleted'
+  | 'speaker_updated';
 
 // Notification interface
 export interface Notification {
@@ -38,17 +38,13 @@ export interface Notification {
     total: number;
     percentage: number;
   };
-  status?: "processing" | "completed" | "error";
+  status?: 'processing' | 'completed' | 'error';
   dismissible?: boolean; // false while processing
   silent?: boolean; // if true, don't show in notification panel (for gallery-only updates)
 }
 
 // WebSocket connection status
-export type ConnectionStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "error";
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 // Store state interface
 interface WebSocketState {
@@ -61,9 +57,9 @@ interface WebSocketState {
 
 // Load notifications from localStorage if available
 const loadNotificationsFromStorage = (): Notification[] => {
-  if (typeof window !== "undefined") {
+  if (typeof window !== 'undefined') {
     try {
-      const stored = localStorage.getItem("notifications");
+      const stored = localStorage.getItem('notifications');
       if (stored) {
         const parsed = JSON.parse(stored);
         // Convert timestamp strings back to Date objects
@@ -73,7 +69,7 @@ const loadNotificationsFromStorage = (): Notification[] => {
         }));
       }
     } catch (error) {
-      console.warn("Failed to load notifications from localStorage:", error);
+      console.warn('Failed to load notifications from localStorage:', error);
     }
   }
   return [];
@@ -81,11 +77,11 @@ const loadNotificationsFromStorage = (): Notification[] => {
 
 // Save notifications to localStorage
 const saveNotificationsToStorage = (notifications: Notification[]) => {
-  if (typeof window !== "undefined") {
+  if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem("notifications", JSON.stringify(notifications));
+      localStorage.setItem('notifications', JSON.stringify(notifications));
     } catch (error) {
-      console.warn("Failed to save notifications to localStorage:", error);
+      console.warn('Failed to save notifications to localStorage:', error);
     }
   }
 };
@@ -93,7 +89,7 @@ const saveNotificationsToStorage = (notifications: Notification[]) => {
 // Initial state
 const initialState: WebSocketState = {
   socket: null,
-  status: "disconnected",
+  status: 'disconnected',
   notifications: loadNotificationsFromStorage(),
   reconnectAttempts: 0,
   error: null,
@@ -109,8 +105,7 @@ function createWebSocketStore() {
   // Generate notification ID
   const generateId = () => {
     return (
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15)
+      Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
     );
   };
 
@@ -145,24 +140,22 @@ function createWebSocketStore() {
       try {
         // Always construct WebSocket URL dynamically based on current location
         // This ensures it works in dev, production, and when accessed from different computers
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/ws?token=${encodeURIComponent(
-          token,
-        )}`;
+        const wsUrl = `${protocol}//${host}/api/ws?token=${encodeURIComponent(token)}`;
 
         // Create new WebSocket
         const socket = new WebSocket(wsUrl);
 
         // Set connecting status
-        state.status = "connecting";
+        state.status = 'connecting';
         state.socket = socket;
         state.error = null;
 
         // WebSocket event handlers
         socket.onopen = () => {
           update((s: WebSocketState) => {
-            s.status = "connected";
+            s.status = 'connected';
             s.reconnectAttempts = 0;
             return s;
           });
@@ -170,14 +163,14 @@ function createWebSocketStore() {
 
         socket.onclose = (event) => {
           update((s: WebSocketState) => {
-            s.status = "disconnected";
+            s.status = 'disconnected';
             s.socket = null;
 
             // Don't attempt to reconnect if closed cleanly or if page is hidden
             const shouldReconnect =
               event.code !== 1000 &&
               event.code !== 1001 &&
-              (typeof document === "undefined" || !document.hidden);
+              (typeof document === 'undefined' || !document.hidden);
 
             if (shouldReconnect) {
               tryReconnect(token);
@@ -189,8 +182,8 @@ function createWebSocketStore() {
 
         socket.onerror = () => {
           update((s: WebSocketState) => {
-            s.status = "error";
-            s.error = "WebSocket connection error";
+            s.status = 'error';
+            s.error = 'WebSocket connection error';
             return s;
           });
         };
@@ -200,13 +193,13 @@ function createWebSocketStore() {
             const data = JSON.parse(event.data);
 
             // Handle different message types
-            if (data.type === "connection_established") {
+            if (data.type === 'connection_established') {
               // Just a connection confirmation, no notification needed
               return;
-            } else if (data.type === "echo") {
+            } else if (data.type === 'echo') {
               // Echo messages are just for debugging/heartbeat
               return;
-            } else if (data.type === "download_progress") {
+            } else if (data.type === 'download_progress') {
               // Handle download progress messages specially
               handleDownloadProgress(data);
               return;
@@ -214,27 +207,26 @@ function createWebSocketStore() {
 
             // Handle progressive notifications
             const isProgressiveType =
-              data.type === "transcription_status" ||
-              data.type === "summarization_status" ||
-              data.type === "topic_extraction_status" ||
-              data.type === "youtube_processing_status" ||
-              data.type === "playlist_processing_status";
+              data.type === 'transcription_status' ||
+              data.type === 'summarization_status' ||
+              data.type === 'topic_extraction_status' ||
+              data.type === 'youtube_processing_status' ||
+              data.type === 'playlist_processing_status';
 
             // Handle silent notifications (gallery-only updates)
-            const isSilentType =
-              data.type === "file_created" || data.type === "file_updated";
+            const isSilentType = data.type === 'file_created' || data.type === 'file_updated';
 
             if (
               isProgressiveType &&
-              (data.data.file_id || data.type === "playlist_processing_status")
+              (data.data.file_id || data.type === 'playlist_processing_status')
             ) {
               // For playlists, use a special progress ID since there's no single file_id
               const progressId =
-                data.type === "playlist_processing_status"
-                  ? `playlist_processing_${data.data.playlist_id || "unknown"}`
+                data.type === 'playlist_processing_status'
+                  ? `playlist_processing_${data.data.playlist_id || 'unknown'}`
                   : `${data.type}_${data.data.file_id}`;
-              const currentStep = data.data.message || "Processing...";
-              const status = data.data.status || "processing";
+              const currentStep = data.data.message || 'Processing...';
+              const status = data.data.status || 'processing';
               const progress = {
                 current: Math.floor(data.data.progress || 0),
                 total: 100,
@@ -243,9 +235,7 @@ function createWebSocketStore() {
 
               update((s: WebSocketState) => {
                 // Find existing progressive notification
-                const existingIndex = s.notifications.findIndex(
-                  (n) => n.progressId === progressId,
-                );
+                const existingIndex = s.notifications.findIndex((n) => n.progressId === progressId);
 
                 if (existingIndex !== -1) {
                   // Update existing notification with new data (important for summary completion)
@@ -255,14 +245,13 @@ function createWebSocketStore() {
                     timestamp: new Date(),
                     currentStep,
                     progress,
-                    status: status as "processing" | "completed" | "error",
+                    status: status as 'processing' | 'completed' | 'error',
                     dismissible:
-                      status === "completed" ||
-                      status === "failed" ||
-                      status === "error" ||
-                      status === "not_configured" ||
-                      (data.type === "youtube_processing_status" &&
-                        status === "pending"),
+                      status === 'completed' ||
+                      status === 'failed' ||
+                      status === 'error' ||
+                      status === 'not_configured' ||
+                      (data.type === 'youtube_processing_status' && status === 'pending'),
                     read: false, // Mark as unread for updates
                     data: {
                       ...s.notifications[existingIndex].data,
@@ -286,19 +275,15 @@ function createWebSocketStore() {
                     data: data.data,
                     currentStep,
                     progress,
-                    status: status as "processing" | "completed" | "error",
+                    status: status as 'processing' | 'completed' | 'error',
                     dismissible:
-                      status === "completed" ||
-                      status === "failed" ||
-                      status === "error" ||
-                      (data.type === "youtube_processing_status" &&
-                        status === "pending"),
+                      status === 'completed' ||
+                      status === 'failed' ||
+                      status === 'error' ||
+                      (data.type === 'youtube_processing_status' && status === 'pending'),
                   };
 
-                  s.notifications = [
-                    notification,
-                    ...s.notifications.slice(0, 99),
-                  ];
+                  s.notifications = [notification, ...s.notifications.slice(0, 99)];
                 }
 
                 saveNotificationsToStorage(s.notifications);
@@ -310,7 +295,7 @@ function createWebSocketStore() {
                 id: generateId(),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
-                message: data.data.message || "Gallery update",
+                message: data.data.message || 'Gallery update',
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -320,10 +305,7 @@ function createWebSocketStore() {
 
               // Add notification (MediaLibrary will see it, but NotificationsPanel will filter it out)
               update((s: WebSocketState) => {
-                s.notifications = [
-                  notification,
-                  ...s.notifications.slice(0, 99),
-                ];
+                s.notifications = [notification, ...s.notifications.slice(0, 99)];
                 // Don't save silent notifications to localStorage to keep it clean
                 return s;
               });
@@ -333,7 +315,7 @@ function createWebSocketStore() {
                 id: generateId(),
                 type: data.type as NotificationType,
                 title: getNotificationTitle(data.type),
-                message: data.data.message || "No message provided",
+                message: data.data.message || 'No message provided',
                 timestamp: new Date(),
                 read: false,
                 data: data.data,
@@ -342,22 +324,19 @@ function createWebSocketStore() {
 
               // Add notification
               update((s: WebSocketState) => {
-                s.notifications = [
-                  notification,
-                  ...s.notifications.slice(0, 99),
-                ]; // Keep max 100 notifications
+                s.notifications = [notification, ...s.notifications.slice(0, 99)]; // Keep max 100 notifications
                 saveNotificationsToStorage(s.notifications);
                 return s;
               });
             }
           } catch (error) {
-            console.error("Error processing WebSocket message:", error);
+            console.error('Error processing WebSocket message:', error);
           }
         };
       } catch (error) {
-        state.status = "error";
-        state.error = "Failed to connect to WebSocket server";
-        console.error("WebSocket connection error:", error);
+        state.status = 'error';
+        state.error = 'Failed to connect to WebSocket server';
+        console.error('WebSocket connection error:', error);
       }
 
       return state;
@@ -374,7 +353,7 @@ function createWebSocketStore() {
     // Calculate backoff time (max 30 seconds)
     const backoffTime = Math.min(
       Math.pow(2, Math.min(10, getState().reconnectAttempts)) * 1000,
-      30000,
+      30000
     );
 
     reconnectTimeout = setTimeout(() => {
@@ -386,7 +365,7 @@ function createWebSocketStore() {
   const disconnect = () => {
     update((state: WebSocketState) => {
       if (state.socket) {
-        state.socket.close(1000, "User logged out");
+        state.socket.close(1000, 'User logged out');
         state.socket = null;
       }
 
@@ -395,7 +374,7 @@ function createWebSocketStore() {
         reconnectTimeout = null;
       }
 
-      state.status = "disconnected";
+      state.status = 'disconnected';
       return state;
     });
   };
@@ -403,10 +382,10 @@ function createWebSocketStore() {
   // Send message
   const send = (message: any) => {
     update((state: WebSocketState) => {
-      if (state.socket && state.status === "connected") {
+      if (state.socket && state.status === 'connected') {
         state.socket.send(JSON.stringify(message));
       } else {
-        console.warn("Cannot send message, WebSocket not connected");
+        console.warn('Cannot send message, WebSocket not connected');
       }
       return state;
     });
@@ -415,21 +394,19 @@ function createWebSocketStore() {
   // Mark notification as read (with auto-regeneration for processing notifications)
   const markAsRead = (id: string) => {
     update((state: WebSocketState) => {
-      const index = state.notifications.findIndex(
-        (n: Notification) => n.id === id,
-      );
+      const index = state.notifications.findIndex((n: Notification) => n.id === id);
       if (index !== -1) {
         const notification = state.notifications[index];
 
         // If it's a processing notification, auto-regenerate it
-        if (notification.status === "processing" && !notification.dismissible) {
+        if (notification.status === 'processing' && !notification.dismissible) {
           // Mark as read but keep the notification
           state.notifications[index].read = true;
           // Re-add as unread after a short delay (simulated by creating a duplicate)
           setTimeout(() => {
             update((s: WebSocketState) => {
               const stillExists = s.notifications.find(
-                (n) => n.id === id && n.status === "processing",
+                (n) => n.id === id && n.status === 'processing'
               );
               if (stillExists) {
                 stillExists.read = false;
@@ -483,39 +460,37 @@ function createWebSocketStore() {
   const getNotificationTitle = (type: string): string => {
     const translate = get(t);
     switch (type) {
-      case "transcription_status":
-        return translate("notifications.transcriptionUpdate");
-      case "summarization_status":
-        return translate("notifications.summarizationUpdate");
-      case "topic_extraction_status":
-        return translate("notifications.topicExtraction");
-      case "youtube_processing_status":
-        return translate("notifications.youtubeProcessing");
-      case "playlist_processing_status":
-        return translate("notifications.playlistProcessing");
-      case "analytics_status":
-        return translate("notifications.analyticsUpdate");
-      case "download_progress":
-        return translate("notifications.downloadProgress");
-      case "audio_extraction_status":
-        return translate("notifications.audioExtraction");
-      case "file_upload":
-        return translate("notifications.fileUpload");
-      case "file_created":
-        return translate("notifications.fileCreated");
-      case "file_updated":
-        return translate("notifications.fileUpdated");
-      case "file_deleted":
-        return translate("notifications.fileDeleted");
+      case 'transcription_status':
+        return translate('notifications.transcriptionUpdate');
+      case 'summarization_status':
+        return translate('notifications.summarizationUpdate');
+      case 'topic_extraction_status':
+        return translate('notifications.topicExtraction');
+      case 'youtube_processing_status':
+        return translate('notifications.youtubeProcessing');
+      case 'playlist_processing_status':
+        return translate('notifications.playlistProcessing');
+      case 'analytics_status':
+        return translate('notifications.analyticsUpdate');
+      case 'download_progress':
+        return translate('notifications.downloadProgress');
+      case 'audio_extraction_status':
+        return translate('notifications.audioExtraction');
+      case 'file_upload':
+        return translate('notifications.fileUpload');
+      case 'file_created':
+        return translate('notifications.fileCreated');
+      case 'file_updated':
+        return translate('notifications.fileUpdated');
+      case 'file_deleted':
+        return translate('notifications.fileDeleted');
       default:
-        return translate("notifications.notification");
+        return translate('notifications.notification');
     }
   };
 
   // Add a notification manually (for client-side events like audio extraction)
-  const addNotification = (
-    notification: Omit<Notification, "id" | "timestamp" | "read">,
-  ) => {
+  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     update((state: WebSocketState) => {
       const newNotification: Notification = {
         ...notification,
@@ -527,7 +502,7 @@ function createWebSocketStore() {
       // If this is a progressive notification, check if we should update existing one
       if (notification.progressId) {
         const existingIndex = state.notifications.findIndex(
-          (n) => n.progressId === notification.progressId,
+          (n) => n.progressId === notification.progressId
         );
         if (existingIndex !== -1) {
           // Update existing notification
@@ -552,14 +527,9 @@ function createWebSocketStore() {
   };
 
   // Update an existing notification (for progressive updates)
-  const updateNotification = (
-    progressId: string,
-    updates: Partial<Notification>,
-  ) => {
+  const updateNotification = (progressId: string, updates: Partial<Notification>) => {
     update((state: WebSocketState) => {
-      const existingIndex = state.notifications.findIndex(
-        (n) => n.progressId === progressId,
-      );
+      const existingIndex = state.notifications.findIndex((n) => n.progressId === progressId);
       if (existingIndex !== -1) {
         state.notifications[existingIndex] = {
           ...state.notifications[existingIndex],
@@ -576,19 +546,13 @@ function createWebSocketStore() {
     update((state: WebSocketState) => {
       const notification = state.notifications.find((n) => n.id === id);
 
-      if (
-        notification &&
-        notification.status === "processing" &&
-        !notification.dismissible
-      ) {
+      if (notification && notification.status === 'processing' && !notification.dismissible) {
         // Auto-regenerate processing notifications
         setTimeout(() => {
           update((s: WebSocketState) => {
             // Only re-add if it doesn't already exist
             const exists = s.notifications.find(
-              (n) =>
-                n.progressId === notification.progressId &&
-                n.status === "processing",
+              (n) => n.progressId === notification.progressId && n.status === 'processing'
             );
             if (!exists) {
               const regenerated: Notification = {
@@ -633,9 +597,7 @@ export const websocketStore = createWebSocketStore();
 export const unreadCount = derived(
   websocketStore,
   ($websocketStore: WebSocketState) =>
-    $websocketStore.notifications.filter(
-      (n: Notification) => !n.read && !n.silent,
-    ).length,
+    $websocketStore.notifications.filter((n: Notification) => !n.read && !n.silent).length
 );
 
 // Initialize WebSocket when auth changes
@@ -648,16 +610,16 @@ authStore.token.subscribe((token: string | null) => {
 });
 
 // Handle page visibility changes to reconnect when page becomes visible
-if (typeof document !== "undefined") {
-  document.addEventListener("visibilitychange", () => {
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       // Page became visible, check if we need to reconnect
       let shouldReconnect = false;
       let token: string | null = null;
 
       const unsubscribe = websocketStore.subscribe((state: WebSocketState) => {
-        if (state.status === "disconnected" || state.status === "error") {
-          token = localStorage.getItem("token");
+        if (state.status === 'disconnected' || state.status === 'error') {
+          token = localStorage.getItem('token');
           if (token) {
             shouldReconnect = true;
           }

@@ -1,0 +1,33 @@
+# PKI/mTLS Authentication Overlay
+#
+# Adds browser-based PKI certificate authentication to any environment.
+# Works with both dev and prod modes.
+#
+# Usage with local build (recommended for testing):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d
+#
+# Or use opentr.sh then add PKI:
+#   ./opentr.sh start prod --build
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d frontend
+#
+# Setup:
+#   1. Generate test certificates: ./scripts/pki/setup-test-pki.sh
+#   2. Generate server cert:
+#      cd scripts/pki/test-certs && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#        -keyout nginx/server.key -out nginx/server.crt -subj "/CN=localhost"
+#   3. Import .p12 into browser (password: changeit)
+#   4. Access: https://localhost:8443
+#
+
+services:
+  frontend:
+    volumes:
+      # Mount PKI nginx config (replaces default)
+      - ./frontend/nginx-pki.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount certificates
+      - ./scripts/pki/test-certs/nginx/server.crt:/etc/nginx/certs/server.crt:ro
+      - ./scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro
+      - ./scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro
+    ports:
+      # Add HTTPS port for mTLS (in addition to existing ports)
+      - "${PKI_HTTPS_PORT:-5182}:8443"

@@ -7,6 +7,7 @@ import logging
 import time
 import uuid
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -42,7 +43,7 @@ def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None
     )
 
     if existing_setting:
-        existing_setting.setting_value = str(config_id)
+        existing_setting.setting_value = str(config_id)  # type: ignore[assignment]
         db.add(existing_setting)
     else:
         new_setting = models.UserSetting(
@@ -141,7 +142,7 @@ def get_user_configurations(
         .first()
     )
 
-    active_config_uuid = None
+    active_config_uuid: UUID | None = None
     if active_setting and active_setting.setting_value:
         with contextlib.suppress(ValueError):
             active_config_id = int(active_setting.setting_value)
@@ -152,13 +153,13 @@ def get_user_configurations(
                 .first()
             )
             if active_config:
-                active_config_uuid = active_config.uuid
+                active_config_uuid = UUID(str(active_config.uuid))
 
     # Convert to public schemas
-    public_configs = []
+    public_configs: list[schemas.UserLLMSettingsPublic] = []
     for config in configurations:
         # Let FastAPI handle the conversion automatically
-        public_configs.append(config)
+        public_configs.append(config)  # type: ignore[arg-type]
 
     return schemas.UserLLMConfigurationsList(
         configurations=public_configs,
@@ -299,7 +300,7 @@ def create_user_llm_configuration(
     )
 
     if existing_count == 1:  # This is the first config
-        _set_active_configuration(db, current_user.id, user_config.id)
+        _set_active_configuration(db, int(current_user.id), int(user_config.id))
 
     return user_config
 
@@ -397,7 +398,7 @@ def set_active_configuration(
         )
 
     # Set as active using the integer ID (internal)
-    _set_active_configuration(db, current_user.id, user_config.id)
+    _set_active_configuration(db, int(current_user.id), int(user_config.id))
 
     return user_config
 
@@ -453,7 +454,7 @@ def delete_user_llm_configuration(
 
         if remaining_config:
             # Set the first remaining config as active
-            _set_active_configuration(db, current_user.id, remaining_config.id)
+            _set_active_configuration(db, int(current_user.id), int(remaining_config.id))
         else:
             # No configurations left, remove the active setting
             if active_setting:
@@ -527,7 +528,7 @@ async def test_llm_connection(
                 )
                 if config and config.api_key:
                     # Decrypt the stored API key
-                    effective_api_key = decrypt_api_key(config.api_key)
+                    effective_api_key = decrypt_api_key(str(config.api_key))
             except Exception as e:
                 logger.warning(
                     f"Could not retrieve stored API key for config {test_request.config_id}: {e}"
@@ -537,7 +538,7 @@ async def test_llm_connection(
         service_provider = ServiceLLMProvider(test_request.provider.value)
 
         # Create LLM config for testing
-        config = LLMConfig(
+        llm_config = LLMConfig(
             provider=service_provider,
             model=test_request.model_name,
             api_key=effective_api_key,
@@ -545,7 +546,7 @@ async def test_llm_connection(
         )
 
         # Create and test LLM service
-        llm_service = LLMService(config)
+        llm_service = LLMService(llm_config)
         try:
             # Test the connection
             actual_url = llm_service.endpoints[service_provider]
@@ -626,16 +627,16 @@ async def test_active_configuration(
     # Decrypt API key
     api_key = None
     if user_config.api_key:
-        api_key = decrypt_api_key(user_config.api_key)
+        api_key = decrypt_api_key(str(user_config.api_key))
         if not api_key and user_config.api_key:  # Decryption failed
             raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
     # Test connection
     test_request = schemas.ConnectionTestRequest(
         provider=schemas.LLMProvider(user_config.provider),
-        model_name=user_config.model_name,
+        model_name=str(user_config.model_name),
         api_key=api_key,
-        base_url=user_config.base_url,
+        base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)
@@ -643,9 +644,9 @@ async def test_active_configuration(
     # Update test status in database
     from sqlalchemy import text
 
-    user_config.test_status = result.status.value
-    user_config.test_message = result.message
-    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()
+    user_config.test_status = result.status.value  # type: ignore[assignment]
+    user_config.test_message = result.message  # type: ignore[assignment]
+    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()  # type: ignore[assignment]
 
     db.add(user_config)
     db.commit()
@@ -673,16 +674,16 @@ async def test_specific_configuration(
     # Decrypt API key
     api_key = None
     if user_config.api_key:
-        api_key = decrypt_api_key(user_config.api_key)
+        api_key = decrypt_api_key(str(user_config.api_key))
         if not api_key and user_config.api_key:  # Decryption failed
             raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
     # Test connection
     test_request = schemas.ConnectionTestRequest(
         provider=schemas.LLMProvider(user_config.provider),
-        model_name=user_config.model_name,
+        model_name=str(user_config.model_name),
         api_key=api_key,
-        base_url=user_config.base_url,
+        base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
     result = await test_llm_connection(test_request=test_request, current_user=current_user)
@@ -690,9 +691,9 @@ async def test_specific_configuration(
     # Update test status in database
     from sqlalchemy import text
 
-    user_config.test_status = result.status.value
-    user_config.test_message = result.message
-    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()
+    user_config.test_status = result.status.value  # type: ignore[assignment]
+    user_config.test_message = result.message  # type: ignore[assignment]
+    user_config.last_tested = db.execute(text("SELECT NOW()")).scalar()  # type: ignore[assignment]
 
     db.add(user_config)
     db.commit()
@@ -722,7 +723,7 @@ async def get_config_api_key(
         return {"api_key": None}
 
     # Decrypt API key
-    api_key = decrypt_api_key(user_config.api_key)
+    api_key = decrypt_api_key(str(user_config.api_key))
     if not api_key:
         raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 
@@ -806,7 +807,7 @@ async def get_ollama_models(
 
 
 def _model_discovery_response(
-    success: bool, model_list: list = None, message: str = ""
+    success: bool, model_list: list[Any] | None = None, message: str = ""
 ) -> dict[str, Any]:
     """Create a standardized model discovery response."""
     return {
@@ -830,7 +831,7 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
             .first()
         )
         if config and config.api_key:
-            return decrypt_api_key(config.api_key)
+            return decrypt_api_key(str(config.api_key))
     except (ValueError, Exception) as e:
         logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
     return None
@@ -918,7 +919,7 @@ async def get_openai_compatible_models(
     # Resolve effective API key
     effective_api_key = api_key
     if not effective_api_key and config_id:
-        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+        effective_api_key = _get_stored_api_key(db, config_id, int(current_user.id))
 
     # Build models URL
     clean_url = base_url.strip().rstrip("/")
@@ -985,7 +986,7 @@ async def _fetch_and_parse_models(models_url: str, headers: dict, base_url: str)
             return _model_discovery_response(False, message=error_msg)
 
         # Parse each model entry
-        model_list = [parsed for m in raw_models if (parsed := _parse_model_entry(m))]
+        model_list = [parsed for m in (raw_models or []) if (parsed := _parse_model_entry(m))]
 
         if not model_list and raw_models:
             logger.warning(
@@ -1053,7 +1054,7 @@ async def get_anthropic_models(
     # Resolve effective API key
     effective_api_key = api_key
     if not effective_api_key and config_id:
-        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+        effective_api_key = _get_stored_api_key(db, config_id, int(current_user.id))
 
     if not effective_api_key:
         return _model_discovery_response(

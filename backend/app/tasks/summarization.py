@@ -2,13 +2,15 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Any
 
 import redis
+from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.db.base import SessionLocal
+from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
 from app.services.opensearch_summary_service import OpenSearchSummaryService
@@ -17,7 +19,7 @@ from app.services.opensearch_summary_service import OpenSearchSummaryService
 logger = logging.getLogger(__name__)
 
 
-def _get_speaker_name(segment) -> str:
+def _get_speaker_name(segment: TranscriptSegment) -> str:
     """Get the best available speaker name from a segment."""
     if not segment.speaker:
         return "Unknown Speaker"
@@ -25,17 +27,19 @@ def _get_speaker_name(segment) -> str:
     speaker = segment.speaker
     # Use display_name if verified, otherwise use suggested_name or fallback to original name
     if speaker.display_name and speaker.verified:
-        return speaker.display_name
+        return str(speaker.display_name)
     if speaker.suggested_name and speaker.confidence and speaker.confidence >= 0.75:
         return f"{speaker.suggested_name} (suggested)"
-    return speaker.name  # Original diarization label
+    return str(speaker.name)  # Original diarization label
 
 
-def _build_transcript_and_stats(transcript_segments) -> tuple[str, dict]:
+def _build_transcript_and_stats(
+    transcript_segments: list[TranscriptSegment],
+) -> tuple[str, dict[str, Any]]:
     """Build full transcript text and speaker statistics from segments."""
     full_transcript = ""
-    current_speaker = None
-    speaker_stats = {}
+    current_speaker: str | None = None
+    speaker_stats: dict[str, Any] = {}
 
     for segment in transcript_segments:
         speaker_name = _get_speaker_name(segment)
@@ -71,10 +75,10 @@ def _build_transcript_and_stats(transcript_segments) -> tuple[str, dict]:
     return full_transcript, speaker_stats
 
 
-def _handle_force_regeneration(media_file, db) -> None:
+def _handle_force_regeneration(media_file: MediaFile, db: Session) -> None:
     """Handle force regeneration by clearing existing summaries."""
     logger.info(
-        f"Force regenerate requested - clearing existing summaries for file {media_file.id}"
+        f"Force regenerate requested - clearing existing summaries for file {int(media_file.id)}"
     )
 
     # Clear OpenSearch summary if it exists
@@ -86,22 +90,24 @@ def _handle_force_regeneration(media_file, db) -> None:
             logger.warning(f"Could not clear OpenSearch summary: {e}")
 
     # Clear PostgreSQL summary fields
-    media_file.summary_data = None
-    media_file.summary_opensearch_id = None
+    media_file.summary_data = None  # type: ignore[assignment]
+    media_file.summary_opensearch_id = None  # type: ignore[assignment]
 
 
-def _handle_no_llm_configured(media_file, file_id: int, task_id: str, db) -> dict:
+def _handle_no_llm_configured(
+    media_file: MediaFile, file_id: int, task_id: str, db: Session
+) -> dict[str, Any]:
     """Handle case when no LLM provider is configured."""
     from app.utils.task_utils import update_task_status
 
     logger.info("No LLM provider configured - skipping AI summary generation")
 
-    media_file.summary_status = "not_configured"
-    media_file.summary_data = None
+    media_file.summary_status = "not_configured"  # type: ignore[assignment]
+    media_file.summary_data = None  # type: ignore[assignment]
     db.commit()
 
     send_summary_notification(
-        media_file.user_id,
+        int(media_file.user_id),
         file_id,
         "not_configured",
         "AI summary not available - no LLM provider configured in settings",
@@ -111,7 +117,7 @@ def _handle_no_llm_configured(media_file, file_id: int, task_id: str, db) -> dic
     update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
     logger.info(
-        f"Transcription completed for file {media_file.filename} (no LLM summary generated)"
+        f"Transcription completed for file {str(media_file.filename)} (no LLM summary generated)"
     )
     return {
         "status": "success",
@@ -135,12 +141,12 @@ def _create_user_friendly_error(error_msg: str) -> str:
 
 def _handle_llm_error(
     e: Exception,
-    media_file,
+    media_file: MediaFile,
     file_id: int,
     full_transcript: str,
-    llm_provider: Optional[str],
-    llm_model: Optional[str],
-    db,
+    llm_provider: str | None,
+    llm_model: str | None,
+    db: Session,
 ) -> None:
     """Handle LLM summarization errors."""
     error_type = type(e).__name__
@@ -149,14 +155,14 @@ def _handle_llm_error(
     logger.error(f"Full error details: {repr(e)}")
     logger.error(f"Transcript length: {len(full_transcript)} chars")
     logger.error(f"Provider: {llm_provider or 'unknown'}, Model: {llm_model or 'unknown'}")
-    logger.error(f"User ID: {media_file.user_id}")
+    logger.error(f"User ID: {int(media_file.user_id)}")
 
-    media_file.summary_status = "failed"
+    media_file.summary_status = "failed"  # type: ignore[assignment]
     db.commit()
 
     detailed_error = _create_user_friendly_error(error_msg)
     send_summary_notification(
-        media_file.user_id,
+        int(media_file.user_id),
         file_id,
         "failed",
         f"AI summary generation failed: {detailed_error}",
@@ -168,7 +174,9 @@ def _handle_llm_error(
     ) from e
 
 
-def _store_summary_to_opensearch(summary_data: dict, media_file, file_id: int) -> Optional[str]:
+def _store_summary_to_opensearch(
+    summary_data: dict[str, Any], media_file: MediaFile, file_id: int
+) -> str | None:
     """Store summary to OpenSearch and return document ID."""
     summary_service = OpenSearchSummaryService()
 
@@ -176,7 +184,7 @@ def _store_summary_to_opensearch(summary_data: dict, media_file, file_id: int) -
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     max_version = loop.run_until_complete(
-        summary_service.get_max_version(file_id, media_file.user_id)
+        summary_service.get_max_version(file_id, int(media_file.user_id))
     )
     loop.close()
 
@@ -185,7 +193,7 @@ def _store_summary_to_opensearch(summary_data: dict, media_file, file_id: int) -
     opensearch_data.update(
         {
             "file_id": file_id,
-            "user_id": media_file.user_id,
+            "user_id": int(media_file.user_id),
             "summary_version": max_version + 1,
             "provider": summary_data["metadata"].get("provider", "unknown"),
             "model": summary_data["metadata"].get("model", "unknown"),
@@ -202,7 +210,11 @@ def _store_summary_to_opensearch(summary_data: dict, media_file, file_id: int) -
 
 
 def _send_completion_notification(
-    media_file, file_id: int, summary_data: dict, document_id: Optional[str], message: str
+    media_file: MediaFile,
+    file_id: int,
+    summary_data: dict[str, Any],
+    document_id: str | None,
+    message: str,
 ) -> None:
     """Send completion notification with summary preview."""
     summary_preview = (
@@ -211,7 +223,7 @@ def _send_completion_notification(
         or "Summary generated successfully"
     )
     send_summary_notification(
-        media_file.user_id,
+        int(media_file.user_id),
         file_id,
         "completed",
         message,
@@ -221,15 +233,17 @@ def _send_completion_notification(
     )
 
 
-def _finalize_summary_storage(summary_data: dict, media_file, file_id: int, db) -> Optional[str]:
+def _finalize_summary_storage(
+    summary_data: dict[str, Any], media_file: MediaFile, file_id: int, db: Session
+) -> str | None:
     """Store summary to OpenSearch and handle all completion scenarios."""
     try:
         document_id = _store_summary_to_opensearch(summary_data, media_file, file_id)
 
         if document_id:
-            media_file.summary_opensearch_id = document_id
+            media_file.summary_opensearch_id = document_id  # type: ignore[assignment]
             logger.info(f"Summary indexed in OpenSearch: {document_id}")
-            media_file.summary_status = "completed"
+            media_file.summary_status = "completed"  # type: ignore[assignment]
             db.commit()
             _send_completion_notification(
                 media_file,
@@ -240,7 +254,7 @@ def _finalize_summary_storage(summary_data: dict, media_file, file_id: int, db) 
             )
         else:
             logger.warning("OpenSearch client not available, summary saved to PostgreSQL only")
-            media_file.summary_status = "completed"
+            media_file.summary_status = "completed"  # type: ignore[assignment]
             db.commit()
             _send_completion_notification(
                 media_file,
@@ -254,7 +268,7 @@ def _finalize_summary_storage(summary_data: dict, media_file, file_id: int, db) 
     except Exception as e:
         logger.error(f"Failed to store summary in OpenSearch: {e}")
         logger.info("Summary generated successfully but OpenSearch indexing failed")
-        media_file.summary_status = "completed"
+        media_file.summary_status = "completed"  # type: ignore[assignment]
         db.commit()
         _send_completion_notification(
             media_file,
@@ -266,13 +280,13 @@ def _finalize_summary_storage(summary_data: dict, media_file, file_id: int, db) 
         return None
 
 
-def _log_error_context(media_file) -> None:
+def _log_error_context(media_file: MediaFile | None) -> None:
     """Log additional context for debugging errors."""
     try:
         if media_file:
             logger.error(
-                f"Media file details: ID={media_file.id}, filename={media_file.filename}, "
-                f"user_id={media_file.user_id}"
+                f"Media file details: ID={int(media_file.id)}, filename={str(media_file.filename)}, "
+                f"user_id={int(media_file.user_id)}"
             )
             if hasattr(media_file, "duration"):
                 logger.error(
@@ -288,8 +302,8 @@ def send_summary_notification(
     status: str,
     message: str,
     progress: int = 0,
-    summary_data: dict = None,
-    summary_opensearch_id: str = None,
+    summary_data: dict[str, Any] | str | None = None,
+    summary_opensearch_id: str | None = None,
 ) -> bool:
     """
     Send summary status notification via Redis pub/sub from synchronous context (like Celery worker).
@@ -350,7 +364,7 @@ def send_summary_notification(
         return False
 
 
-def _get_user_llm_output_language(db, user_id: int) -> str:
+def _get_user_llm_output_language(db: Session, user_id: int) -> str:
     """
     Retrieve user's LLM output language setting from the database.
 
@@ -374,17 +388,22 @@ def _get_user_llm_output_language(db, user_id: int) -> str:
     )
 
     if setting:
-        return setting.setting_value
+        return str(setting.setting_value)
     return DEFAULT_LLM_OUTPUT_LANGUAGE
 
 
 def _generate_llm_summary(
-    media_file, file_id: int, full_transcript: str, speaker_stats: dict, task_id: str, db
-) -> dict:
+    media_file: MediaFile,
+    file_id: int,
+    full_transcript: str,
+    speaker_stats: dict[str, Any],
+    task_id: str,
+    db: Session,
+) -> dict[str, Any] | None:
     """Generate LLM summary and return summary data."""
     start_time = time.time()
-    llm_provider = None
-    llm_model = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
 
     # Log transcript details for debugging
     transcript_length = len(full_transcript)
@@ -397,13 +416,13 @@ def _generate_llm_summary(
     # Get user's LLM output language preference
     output_language = "en"
     if media_file.user_id:
-        output_language = _get_user_llm_output_language(db, media_file.user_id)
+        output_language = _get_user_llm_output_language(db, int(media_file.user_id))
     logger.info(f"LLM output language: {output_language}")
 
     # Create LLM service using user settings or system settings
     if media_file.user_id:
-        llm_service = LLMService.create_from_user_settings(media_file.user_id)
-        logger.info(f"Attempted to load user LLM settings for user {media_file.user_id}")
+        llm_service = LLMService.create_from_user_settings(int(media_file.user_id))
+        logger.info(f"Attempted to load user LLM settings for user {int(media_file.user_id)}")
     else:
         llm_service = LLMService.create_from_system_settings()
         logger.info("Attempted to load system LLM settings")
@@ -420,11 +439,12 @@ def _generate_llm_summary(
         summary_data = llm_service.generate_summary(
             transcript=full_transcript,
             speaker_data=speaker_stats,
-            user_id=media_file.user_id,
+            user_id=int(media_file.user_id),
             output_language=output_language,
         )
     except Exception as e:
         _handle_llm_error(e, media_file, file_id, full_transcript, llm_provider, llm_model, db)
+        return None  # This line won't be reached due to the raise in _handle_llm_error, but satisfies type checker
     finally:
         llm_service.close()
 
@@ -438,7 +458,9 @@ def _generate_llm_summary(
     return summary_data
 
 
-def _handle_task_error(e: Exception, media_file, file_id: int, task_id: str, db) -> dict:
+def _handle_task_error(
+    e: Exception, media_file: MediaFile | None, file_id: int, task_id: str, db: Session
+) -> dict[str, Any]:
     """Handle task-level errors and return error result."""
     from app.utils.task_utils import update_task_status
 
@@ -451,16 +473,16 @@ def _handle_task_error(e: Exception, media_file, file_id: int, task_id: str, db)
 
     # Set summary status to failed if not already set
     try:
-        if media_file and media_file.summary_status != "failed":
+        if media_file and str(media_file.summary_status) != "failed":
             user_error_msg = _create_user_friendly_error(error_msg)
             send_summary_notification(
-                media_file.user_id,
+                int(media_file.user_id),
                 file_id,
                 "failed",
                 f"AI summary generation failed: {user_error_msg}",
                 0,
             )
-            media_file.summary_status = "failed"
+            media_file.summary_status = "failed"  # type: ignore[assignment]
             db.commit()
     except Exception as cleanup_e:
         logger.error(
@@ -493,27 +515,27 @@ def summarize_transcript_task(
 
     task_id = self.request.id
     db = SessionLocal()
-    media_file = None
-    file_id = None
+    media_file: MediaFile | None = None
+    file_id: int | None = None
 
     try:
         media_file = get_file_by_uuid(db, file_uuid)
         if not media_file:
             raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = media_file.id
-        create_task_record(db, task_id, media_file.user_id, file_id, "summarization")
+        file_id = int(media_file.id)
+        create_task_record(db, task_id, int(media_file.user_id), file_id, "summarization")
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
         if force_regenerate:
             _handle_force_regeneration(media_file, db)
 
-        media_file.summary_status = "processing"
+        media_file.summary_status = "processing"  # type: ignore[assignment]
         db.commit()
 
         action = "regeneration" if force_regenerate else "generation"
         send_summary_notification(
-            media_file.user_id, file_id, "processing", f"AI summary {action} started", 10
+            int(media_file.user_id), file_id, "processing", f"AI summary {action} started", 10
         )
 
         # Get and validate transcript segments
@@ -530,15 +552,15 @@ def summarize_transcript_task(
 
         update_task_status(db, task_id, "in_progress", progress=0.3)
         send_summary_notification(
-            media_file.user_id, file_id, "processing", "Analyzing speakers and content", 30
+            int(media_file.user_id), file_id, "processing", "Analyzing speakers and content", 30
         )
 
         logger.info(
-            f"Generating LLM summary for file {media_file.filename} "
+            f"Generating LLM summary for file {str(media_file.filename)} "
             f"(length: {len(full_transcript)} chars)"
         )
         send_summary_notification(
-            media_file.user_id, file_id, "processing", "Generating AI summary with LLM", 50
+            int(media_file.user_id), file_id, "processing", "Generating AI summary with LLM", 50
         )
 
         start_time = time.time()
@@ -550,21 +572,27 @@ def summarize_transcript_task(
             return _handle_no_llm_configured(media_file, file_id, task_id, db)
 
         update_task_status(db, task_id, "in_progress", progress=0.7)
-        media_file.summary_data = summary_data
-        media_file.summary_schema_version = 1
+        media_file.summary_data = summary_data  # type: ignore[assignment]
+        media_file.summary_schema_version = 1  # type: ignore[assignment]
 
         _finalize_summary_storage(summary_data, media_file, file_id, db)
 
         logger.info("=== Summarization Task Completed Successfully ===")
         logger.info(f"Total processing time: {int((time.time() - start_time) * 1000)}ms")
-        logger.info(
-            f"Final summary data keys: "
-            f"{list(media_file.summary_data.keys()) if media_file.summary_data else 'None'}"
-        )
-        logger.info(f"Summary status: {media_file.summary_status}")
+
+        # Get summary_data for logging (with type handling)
+        summary_data_value = media_file.summary_data
+        if summary_data_value and isinstance(summary_data_value, dict):
+            logger.info(f"Final summary data keys: {list(summary_data_value.keys())}")
+        else:
+            logger.info("Final summary data keys: None")
+
+        logger.info(f"Summary status: {str(media_file.summary_status)}")
 
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
-        logger.info(f"Successfully generated comprehensive summary for file {media_file.filename}")
+        logger.info(
+            f"Successfully generated comprehensive summary for file {str(media_file.filename)}"
+        )
 
         return {
             "status": "success",
@@ -578,7 +606,8 @@ def summarize_transcript_task(
         }
 
     except Exception as e:
-        return _handle_task_error(e, media_file, file_id, task_id, db)
+        # file_id might be None if error occurred before it was set
+        return _handle_task_error(e, media_file, file_id if file_id is not None else 0, task_id, db)
 
     finally:
         db.close()
