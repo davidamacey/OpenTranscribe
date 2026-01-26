@@ -421,6 +421,32 @@ WHERE email LIKE '%@domain.com';
 -- Note: Users must have matching sAMAccountName in AD
 ```
 
+### Important Migration Considerations
+
+**Existing Local Users Protection:**
+- When an LDAP user logs in with an email matching an existing local user, the system does NOT convert them to LDAP
+- The local user's `auth_type` remains 'local', preserving their local password
+- This prevents accidental account takeover by LDAP users with matching emails
+- To convert, manually update `auth_type` in the database after verification
+
+**Admin Role Management:**
+- Admin status is determined by `LDAP_ADMIN_USERS` on each login
+- If a user is removed from `LDAP_ADMIN_USERS`, they are demoted to regular user on next login
+- If a user is added to `LDAP_ADMIN_USERS`, they are promoted to admin on next login
+- Changes take effect immediately upon next successful LDAP authentication
+
+**Race Condition Handling:**
+- Concurrent first-time logins by the same LDAP user are handled gracefully
+- If two logins occur simultaneously, one creates the user, the other fetches the existing record
+- No duplicate users will be created due to IntegrityError handling
+- Both sessions will succeed and receive valid tokens
+
+**Token and Role Synchronization:**
+- JWT tokens contain the role at time of login
+- Database is the source of truth for roles (not the token)
+- If role changes while token is valid, user should re-login to get updated token
+- Token manipulation cannot escalate privileges (database role is always checked)
+
 ## Performance Considerations
 
 - **LDAP search caching**: ldap3 caches connections

@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     LDAP_SERVER: str = os.getenv("LDAP_SERVER", "")
     LDAP_PORT: int = int(os.getenv("LDAP_PORT", "636"))
     LDAP_USE_SSL: bool = os.getenv("LDAP_USE_SSL", "true").lower() == "true"
+    # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
+    # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
     LDAP_USE_TLS: bool = os.getenv("LDAP_USE_TLS", "false").lower() == "true"
     LDAP_BIND_DN: str = os.getenv("LDAP_BIND_DN", "")
     LDAP_BIND_PASSWORD: str = os.getenv("LDAP_BIND_PASSWORD", "")

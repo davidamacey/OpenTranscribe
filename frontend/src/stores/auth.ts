@@ -6,8 +6,9 @@ import axiosInstance from "../lib/axios";
 export interface User {
   uuid: string;
   email: string;
-  full_name: string; // Added full_name field
+  full_name: string;
   role: "user" | "admin";
+  auth_type: "local" | "ldap"; // Authentication type for password change UI
   created_at: string;
   updated_at: string;
 }

@@ -33,10 +33,14 @@
    * @returns {boolean} True if the identifier is valid, false otherwise
    */
   function validateLoginIdentifier(identifier: string) {
-    // Accept either a valid email OR a username (alphanumeric with dots, underscores, hyphens)
+    // Accept either a valid email OR a username
+    // Username regex is permissive to support various LDAP naming conventions:
+    // - Alphanumeric, dots, underscores, hyphens
+    // - Backslashes for DOMAIN\username format
+    // - At signs for user@domain format (handled by email regex too)
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const usernameRegex = /^[a-zA-Z0-9._-]{2,}$/;
-    const trimmed = String(identifier).toLowerCase().trim();
+    const usernameRegex = /^[a-zA-Z0-9._\\@-]{2,}$/;
+    const trimmed = String(identifier).trim();
     return emailRegex.test(trimmed) || usernameRegex.test(trimmed);
   }
 
