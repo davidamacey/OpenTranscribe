@@ -73,7 +73,7 @@ def get_user_active_prompt(user_id: Optional[int] = None, db: Optional[Session] 
             )
             return get_system_default_prompt(db)
 
-        return active_prompt.prompt_text
+        return str(active_prompt.prompt_text)
 
     except Exception as e:
         logger.error(f"Error getting user active prompt for user {user_id}: {e}")
@@ -115,7 +115,7 @@ def get_system_default_prompt(db: Session) -> str:
 
         if default_prompt:
             logger.info(f"Found universal system prompt: {default_prompt.name}")
-            return default_prompt.prompt_text
+            return str(default_prompt.prompt_text)
 
         # If no universal prompt found, fallback to any general system prompt
         logger.info("No universal prompt found, trying any general system prompt")
@@ -133,7 +133,7 @@ def get_system_default_prompt(db: Session) -> str:
 
         if default_prompt:
             logger.info(f"Found general system prompt: {default_prompt.name}")
-            return default_prompt.prompt_text
+            return str(default_prompt.prompt_text)
 
         # Final fallback: any active system prompt
         logger.warning("No general system prompt found, using any available system prompt")
@@ -147,7 +147,7 @@ def get_system_default_prompt(db: Session) -> str:
             logger.warning(
                 f"Using fallback system prompt: {any_system_prompt.name} (type: {any_system_prompt.content_type})"
             )
-            return any_system_prompt.prompt_text
+            return str(any_system_prompt.prompt_text)
         else:
             logger.error("No active system default prompts found in database at all!")
             raise ValueError("No active system default prompt found in database")
@@ -197,7 +197,7 @@ def get_prompt_for_content_type(
         )
 
         if content_type_prompt:
-            return content_type_prompt.prompt_text
+            return str(content_type_prompt.prompt_text)
 
         # Fall back to general system default
         return get_system_default_prompt(db)
@@ -315,7 +315,7 @@ def set_user_active_prompt(user_id: int, prompt_id: int, db: Optional[Session] =
         )
 
         if setting:
-            setting.setting_value = str(prompt_id)
+            setting.setting_value = str(prompt_id)  # type: ignore[assignment]
         else:
             setting = UserSetting(
                 user_id=user_id,

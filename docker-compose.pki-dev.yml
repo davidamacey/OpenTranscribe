@@ -1,0 +1,52 @@
+# PKI/mTLS Authentication Overlay for Development
+#
+# Uses local containers (not Docker Hub) with PKI support.
+#
+# Usage:
+#   1. Generate certificates:
+#      ./scripts/pki/setup-test-pki.sh
+#
+#   2. Generate server cert (if not done):
+#      cd scripts/pki/test-certs && openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#        -keyout nginx/server.key -out nginx/server.crt -subj "/CN=localhost"
+#
+#   3. Start dev with PKI:
+#      docker compose -f docker-compose.yml -f docker-compose.pki-dev.yml up -d
+#
+#   4. Access: https://localhost:8443
+#
+
+services:
+  # Override frontend to add PKI/mTLS support
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    volumes:
+      # Mount PKI nginx config
+      - ./frontend/nginx-pki.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount certificates
+      - ./scripts/pki/test-certs/nginx/server.crt:/etc/nginx/certs/server.crt:ro
+      - ./scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro
+      - ./scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro
+    ports:
+      - "${FRONTEND_PORT:-5173}:8080"
+      - "${PKI_HTTPS_PORT:-8443}:8443"
+    environment:
+      - NODE_ENV=production
+    networks:
+      - transcribe-network
+
+  # Use local backend build
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/app
+    networks:
+      - transcribe-network
+
+networks:
+  transcribe-network:
+    driver: bridge

@@ -110,7 +110,7 @@ def create_or_get_speaker(
             db.add(speaker)
             db.flush()
 
-    return speaker
+    return speaker  # type: ignore[no-any-return]
 
 
 def create_speaker_mapping(
@@ -132,7 +132,7 @@ def create_speaker_mapping(
 
     for speaker_id in unique_speakers:
         speaker = create_or_get_speaker(db, user_id, media_file_id, speaker_id)
-        speaker_mapping[speaker_id] = speaker.id
+        speaker_mapping[speaker_id] = int(speaker.id)
 
     return speaker_mapping
 

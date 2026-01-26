@@ -103,12 +103,12 @@ def _get_media_file_context(file_uuid: str, task_id: str) -> TranscriptionContex
 
         ctx = TranscriptionContext(
             task_id=task_id,
-            file_id=media_file.id,
+            file_id=int(media_file.id),
             file_uuid=file_uuid,
-            user_id=media_file.user_id,
-            file_path=media_file.storage_path,
-            file_name=media_file.filename,
-            content_type=media_file.content_type,
+            user_id=int(media_file.user_id),
+            file_path=str(media_file.storage_path),
+            file_name=str(media_file.filename),
+            content_type=str(media_file.content_type),
         )
         update_media_file_status(db, ctx.file_id, FileStatus.PROCESSING)
         return ctx
@@ -269,7 +269,7 @@ def _run_whisperx_pipeline(
 
     whisperx_service = WhisperXService(
         model_name=os.getenv("WHISPER_MODEL", "large-v2"),
-        models_dir=settings.MODEL_BASE_DIR,
+        models_dir=str(settings.MODEL_BASE_DIR),
         source_language=source_language,
         translate_to_english=translate_to_english,
     )
@@ -520,7 +520,7 @@ def _handle_outer_exception(
                 update_media_file_status(db, file_id, FileStatus.ERROR)
             update_task_status(db, task_id, "failed", error_message=str(error), completed=True)
 
-        if user_id:
+        if user_id and file_id:
             send_error_notification(user_id, file_id, str(error))
     except Exception as update_err:
         logger.error(f"Error updating task status: {update_err}")
@@ -532,9 +532,9 @@ def _handle_outer_exception(
 def transcribe_audio_task(
     self,
     file_uuid: str,
-    min_speakers: int = None,
-    max_speakers: int = None,
-    num_speakers: int = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ):
     """
     Process an audio/video file with WhisperX for transcription and Pyannote for diarization.

@@ -14,7 +14,6 @@ The service provides intelligent embedding aggregation that:
 import logging
 from datetime import datetime
 from typing import Any
-from typing import Optional
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -31,7 +30,7 @@ def _clear_profile_embedding_from_opensearch(profile_id: int) -> None:
     try:
         from app.services.opensearch_service import remove_profile_embedding
 
-        remove_profile_embedding(profile_id)
+        remove_profile_embedding(str(profile_id))
     except Exception as e:
         logger.warning(f"Could not clear profile {profile_id} embedding from OpenSearch: {e}")
 
@@ -62,18 +61,19 @@ def _store_profile_embedding_to_opensearch(
 
 def _collect_speaker_embeddings(speakers: list[Speaker]) -> dict[int, list[float]]:
     """Collect embeddings for all speakers, keyed by speaker ID."""
-    speaker_embeddings = {}
+    speaker_embeddings: dict[int, list[float]] = {}
     for speaker in speakers:
         embedding = get_speaker_embedding(str(speaker.uuid))
         if embedding:
-            speaker_embeddings[speaker.id] = embedding
+            speaker_embeddings[int(speaker.id)] = embedding
     return speaker_embeddings
 
 
 def _calculate_average_embedding(embeddings: list[list[float]]) -> list[float]:
     """Calculate the average of multiple embeddings."""
     embeddings_array = np.array(embeddings)
-    return np.mean(embeddings_array, axis=0).tolist()
+    avg_array: Any = np.mean(embeddings_array, axis=0)
+    return list(avg_array.tolist())
 
 
 def _process_profile_with_no_speakers(
@@ -81,8 +81,8 @@ def _process_profile_with_no_speakers(
     profile_id: int,
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
-    profile.embedding_count = 0
-    profile.last_embedding_update = datetime.utcnow()
+    profile.embedding_count = 0  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
     _clear_profile_embedding_from_opensearch(profile_id)
     return True
 
@@ -95,16 +95,16 @@ def _process_profile_with_embeddings(
     """Process a profile that has valid embeddings."""
     averaged_embedding = _calculate_average_embedding(embeddings)
 
-    profile.embedding_count = len(embeddings)
-    profile.last_embedding_update = datetime.utcnow()
+    profile.embedding_count = len(embeddings)  # type: ignore[assignment]
+    profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
 
     _store_profile_embedding_to_opensearch(
         profile_id=profile_id,
         profile_uuid=str(profile.uuid),
-        profile_name=profile.name,
+        profile_name=str(profile.name),
         embedding=averaged_embedding,
         speaker_count=len(embeddings),
-        user_id=profile.user_id,
+        user_id=int(profile.user_id),
     )
 
     logger.info(f"Updated profile {profile_id} embedding with {len(embeddings)} speaker embeddings")
@@ -258,15 +258,15 @@ class ProfileEmbeddingService:
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
                 # Clear the profile embedding if no speakers are assigned
-                profile.embedding_count = 0
-                profile.last_embedding_update = datetime.utcnow()
+                profile.embedding_count = 0  # type: ignore[assignment]
+                profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
                 db.commit()
 
                 # Clear from OpenSearch as well
                 try:
                     from app.services.opensearch_service import remove_profile_embedding
 
-                    remove_profile_embedding(profile_id)
+                    remove_profile_embedding(str(profile_id))
                     logger.info(f"Cleared profile {profile_id} embedding from OpenSearch")
                 except Exception as e:
                     logger.warning(f"Could not clear profile embedding from OpenSearch: {e}")
@@ -293,8 +293,8 @@ class ProfileEmbeddingService:
             averaged_embedding = np.mean(embeddings_array, axis=0)
 
             # Update the profile metadata
-            profile.embedding_count = len(embeddings)
-            profile.last_embedding_update = datetime.utcnow()
+            profile.embedding_count = len(embeddings)  # type: ignore[assignment]
+            profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
 
             db.commit()
 
@@ -305,10 +305,10 @@ class ProfileEmbeddingService:
                 store_profile_embedding(
                     profile_id=profile_id,
                     profile_uuid=str(profile.uuid),
-                    profile_name=profile.name,
+                    profile_name=str(profile.name),
                     embedding=averaged_embedding.tolist(),
                     speaker_count=len(embeddings),
-                    user_id=profile.user_id,
+                    user_id=int(profile.user_id),
                 )
                 logger.info(f"Stored profile {profile_id} embedding in OpenSearch")
             except Exception as e:
@@ -360,8 +360,9 @@ class ProfileEmbeddingService:
                 return False
 
             # Update embedding count and timestamp (vectors stored in OpenSearch)
-            profile.embedding_count = profile.embedding_count + 1 if profile.embedding_count else 1
-            profile.last_embedding_update = datetime.utcnow()
+            current_count = int(profile.embedding_count) if profile.embedding_count else 0
+            profile.embedding_count = current_count + 1  # type: ignore[assignment]
+            profile.last_embedding_update = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
 
             # Store/update embedding in OpenSearch for optimal vector similarity performance
@@ -371,10 +372,10 @@ class ProfileEmbeddingService:
                 store_profile_embedding(
                     profile_id=profile_id,
                     profile_uuid=str(profile.uuid),
-                    profile_name=profile.name,
+                    profile_name=str(profile.name),
                     embedding=speaker_embedding,
-                    speaker_count=profile.embedding_count,
-                    user_id=profile.user_id,
+                    speaker_count=int(profile.embedding_count),
+                    user_id=int(profile.user_id),
                 )
                 logger.info(f"Updated profile {profile_id} embedding in OpenSearch")
             except Exception as e:
@@ -425,9 +426,10 @@ class ProfileEmbeddingService:
         """Group speakers by their profile ID."""
         speakers_by_profile: dict[int, list[Speaker]] = {}
         for speaker in speakers:
-            if speaker.profile_id not in speakers_by_profile:
-                speakers_by_profile[speaker.profile_id] = []
-            speakers_by_profile[speaker.profile_id].append(speaker)
+            profile_id = int(speaker.profile_id)
+            if profile_id not in speakers_by_profile:
+                speakers_by_profile[profile_id] = []
+            speakers_by_profile[profile_id].append(speaker)
         return speakers_by_profile
 
     @staticmethod
@@ -442,9 +444,9 @@ class ProfileEmbeddingService:
             return _process_profile_with_no_speakers(profile, profile_id)
 
         embeddings = [
-            speaker_embeddings[speaker.id]
+            speaker_embeddings[int(speaker.id)]
             for speaker in speakers
-            if speaker.id in speaker_embeddings
+            if int(speaker.id) in speaker_embeddings
         ]
 
         if not embeddings:
@@ -478,7 +480,9 @@ class ProfileEmbeddingService:
         try:
             # Bulk fetch all profiles and speakers
             profiles = db.query(SpeakerProfile).filter(SpeakerProfile.id.in_(profile_ids)).all()
-            profile_map = {profile.id: profile for profile in profiles}
+            profile_map: dict[int, SpeakerProfile] = {
+                int(profile.id): profile for profile in profiles
+            }
 
             all_speakers = db.query(Speaker).filter(Speaker.profile_id.in_(profile_ids)).all()
             speakers_by_profile = ProfileEmbeddingService._group_speakers_by_profile(all_speakers)
@@ -514,7 +518,7 @@ class ProfileEmbeddingService:
         return results
 
     @staticmethod
-    def get_profile_embedding(db: Session, profile_id: int) -> Optional[list[float]]:
+    def get_profile_embedding(db: Session, profile_id: int) -> list[float] | None:
         """
         Get the consolidated embedding for a speaker profile.
 
@@ -537,7 +541,8 @@ class ProfileEmbeddingService:
             # Get embedding from OpenSearch (primary storage for vectors) using UUID
             from app.services.opensearch_service import get_profile_embedding
 
-            return get_profile_embedding(str(profile.uuid))
+            result = get_profile_embedding(str(profile.uuid))
+            return list(result) if result else None
 
         except Exception as e:
             logger.error(f"Error retrieving profile embedding for profile {profile_id}: {e}")

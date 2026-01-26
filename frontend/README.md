@@ -344,7 +344,7 @@ User language preference is stored in localStorage and restored on page load.
 }
 
 /* Dark theme */
-[data-theme="dark"] {
+[data-theme='dark'] {
   --primary-color: #3b82f6;
   --background-color: #111827;
   --text-color: #f9fafb;
@@ -381,7 +381,7 @@ User language preference is stored in localStorage and restored on page load.
 ```typescript
 // Configured Axios instance with authentication
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: '/api',
   timeout: 10000,
 });
 
@@ -422,12 +422,12 @@ export function connectWebSocket() {
 
 ```typescript
 // Service worker registration
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/service-worker.js");
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js');
 }
 
 // Install prompt
-window.addEventListener("beforeinstallprompt", (e) => {
+window.addEventListener('beforeinstallprompt', (e) => {
   // Show custom install prompt
 });
 ```
@@ -552,9 +552,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:5174",
-      "/ws": {
-        target: "ws://localhost:5174",
+      '/api': 'http://localhost:5174',
+      '/ws': {
+        target: 'ws://localhost:5174',
         ws: true,
       },
     },

@@ -40,7 +40,7 @@ async def get_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> TopicSuggestionResponse:
     """
     Get AI tag and collection suggestions for a media file
 
@@ -53,8 +53,8 @@ async def get_topic_suggestions(
         Tag and collection suggestions from AI
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     # Get suggestion from PostgreSQL
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
@@ -66,30 +66,41 @@ async def get_topic_suggestions(
         )
 
     # Convert JSONB to Pydantic models
-    suggested_tags = [SuggestedTag(**tag) for tag in (suggestion.suggested_tags or [])]
+    suggested_tags_data = suggestion.suggested_tags if suggestion.suggested_tags is not None else []
+    suggested_collections_data = (
+        suggestion.suggested_collections if suggestion.suggested_collections is not None else []
+    )
+
+    suggested_tags = [SuggestedTag(**tag) for tag in suggested_tags_data]  # type: ignore[arg-type,attr-defined]
     suggested_collections = [
-        SuggestedCollection(**coll) for coll in (suggestion.suggested_collections or [])
+        SuggestedCollection(**coll)
+        for coll in suggested_collections_data  # type: ignore[arg-type,attr-defined]
     ]
 
     # Build response
+    from datetime import datetime
+    from uuid import UUID
+
     return TopicSuggestionResponse(
-        uuid=suggestion.uuid,
-        media_file_id=media_file.uuid,
-        user_id=current_user.uuid,
+        uuid=UUID(str(suggestion.uuid)),
+        media_file_id=UUID(str(media_file.uuid)),
+        user_id=UUID(str(current_user.uuid)),
         suggested_tags=suggested_tags,
         suggested_collections=suggested_collections,
-        status=suggestion.status,
-        created_at=suggestion.created_at,
+        status=str(suggestion.status),
+        created_at=datetime.fromisoformat(str(suggestion.created_at))
+        if isinstance(suggestion.created_at, str)
+        else suggestion.created_at,  # type: ignore[arg-type]
     )
 
 
 @router.post("/{file_uuid}/extract", status_code=status.HTTP_202_ACCEPTED)
 async def extract_topics(
     file_uuid: str,
-    request_data: ExtractTopicsRequest = Body(default=ExtractTopicsRequest()),
+    request_data: ExtractTopicsRequest = Body(default=ExtractTopicsRequest(force_regenerate=False)),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> dict[str, str]:
     """
     Extract AI suggestions from a transcript (or regenerate existing)
 
@@ -106,7 +117,7 @@ async def extract_topics(
         Acknowledgment that extraction has been triggered
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
 
     # Check if file has transcript
     if not media_file.transcript_segments:
@@ -116,7 +127,9 @@ async def extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
+    extraction_service = TopicExtractionService.create_from_settings(
+        user_id=int(current_user.id), db=db
+    )
 
     if not extraction_service:
         raise HTTPException(
@@ -126,7 +139,9 @@ async def extract_topics(
 
     # Check if suggestion already exists
     existing = (
-        db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == media_file.id).first()
+        db.query(TopicSuggestion)
+        .filter(TopicSuggestion.media_file_id == int(media_file.id))
+        .first()
     )
 
     if existing and not request_data.force_regenerate:
@@ -156,7 +171,7 @@ async def apply_topic_suggestions(
     request_data: ApplyTopicSuggestionsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> dict[str, int | str]:
     """
     Apply user-approved AI suggestions
 
@@ -173,8 +188,8 @@ async def apply_topic_suggestions(
         Summary of actions taken
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     # Get suggestion
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
@@ -188,7 +203,7 @@ async def apply_topic_suggestions(
     # Track user decisions
     extraction_service = TopicExtractionService(db)
     success = extraction_service.apply_suggestions(
-        suggestion_id=suggestion.id,
+        suggestion_id=int(suggestion.id),
         accepted_collections=request_data.accepted_collections,
         accepted_tags=request_data.accepted_tags,
     )
@@ -211,7 +226,7 @@ async def dismiss_topic_suggestions(
     file_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> None:
     """
     Dismiss/reject AI suggestions
 
@@ -224,8 +239,8 @@ async def dismiss_topic_suggestions(
         current_user: Authenticated user
     """
     # Get file and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
-    file_id = media_file.id
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+    file_id = int(media_file.id)
 
     # Get suggestion
     suggestion = db.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == file_id).first()
@@ -237,8 +252,8 @@ async def dismiss_topic_suggestions(
         )
 
     # Update status
-    suggestion.status = "rejected"
-    suggestion.user_decisions = {"rejected": True}
+    suggestion.status = "rejected"  # type: ignore[assignment]
+    suggestion.user_decisions = {"rejected": True}  # type: ignore[assignment]
     db.commit()
 
     logger.info(f"Dismissed AI suggestions for file {file_uuid}")
@@ -250,7 +265,7 @@ async def batch_extract_topics(
     force_regenerate: bool = Body(False, embed=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
+) -> dict[str, str | int | list[str]]:
     """
     Extract AI suggestions for multiple files in batch
 
@@ -267,7 +282,7 @@ async def batch_extract_topics(
     verified_uuids = []
     for file_uuid in file_uuids:
         try:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
             else:
@@ -282,7 +297,9 @@ async def batch_extract_topics(
         )
 
     # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
+    extraction_service = TopicExtractionService.create_from_settings(
+        user_id=int(current_user.id), db=db
+    )
 
     if not extraction_service:
         raise HTTPException(

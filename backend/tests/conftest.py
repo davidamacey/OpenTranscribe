@@ -14,11 +14,12 @@ os.environ["SKIP_REDIS"] = "True"
 os.environ["SKIP_WEBSOCKET"] = "True"
 os.environ["SKIP_OPENSEARCH"] = "True"
 
-from app.core.security import get_password_hash
-from app.db.base import Base
-from app.db.base import get_db
-from app.main import app
-from app.models.user import User
+# Import app modules after setting environment variables (they check env during import)
+from app.core.security import get_password_hash  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.db.base import get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.user import User  # noqa: E402
 
 # Create in-memory SQLite database for testing
 SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"

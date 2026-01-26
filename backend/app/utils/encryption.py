@@ -172,3 +172,30 @@ def decrypt_if_not_empty(value: Optional[str]) -> Optional[str]:
     if not value or not value.strip():
         return None
     return decrypt_api_key(value)
+
+
+# Generic aliases for encrypting any sensitive value (MFA secrets, etc.)
+def encrypt_value(value: str) -> Optional[str]:
+    """
+    Encrypt any sensitive value for secure storage.
+
+    Args:
+        value: Plain text value to encrypt
+
+    Returns:
+        Encrypted value as base64 string, or None if encryption fails
+    """
+    return encrypt_api_key(value)
+
+
+def decrypt_value(encrypted_value: str) -> Optional[str]:
+    """
+    Decrypt a stored sensitive value.
+
+    Args:
+        encrypted_value: Encrypted value from database
+
+    Returns:
+        Decrypted value as plain text, or None if decryption fails
+    """
+    return decrypt_api_key(encrypted_value)

@@ -35,11 +35,11 @@ class TestEncryption:
 
     def test_encryption_empty_key(self):
         """Test encryption with empty/None keys"""
-        assert encrypt_api_key(None) is None
+        assert encrypt_api_key(None) is None  # type: ignore[arg-type]
         assert encrypt_api_key("") is None
         assert encrypt_api_key("   ") is None
 
-        assert decrypt_api_key(None) is None
+        assert decrypt_api_key(None) is None  # type: ignore[arg-type]
         assert decrypt_api_key("") is None
         assert decrypt_api_key("   ") is None
 
@@ -446,8 +446,8 @@ class TestLLMSettingsIntegration:
         assert service.config.provider.value == "openai"
         assert service.config.model == "gpt-4o-mini"
         assert service.config.max_tokens == 4000
-        assert float(service.config.temperature) == 0.5
-        assert service.config.timeout == 120
+        assert float(service.config.temperature) == 0.5  # type: ignore[arg-type]
+        # Note: timeout is not part of LLMConfig, it's a session parameter
 
 
 if __name__ == "__main__":

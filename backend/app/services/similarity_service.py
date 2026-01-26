@@ -179,6 +179,10 @@ class SimilarityService:
             "min_score": threshold,
         }
 
+        if opensearch_client is None:
+            logger.warning("OpenSearch client is not available")
+            return []
+
         response = opensearch_client.search(index=index_name, body=search_body)
 
         # Process results - scores are already normalized by our script
@@ -296,7 +300,7 @@ class SimilarityService:
         # Convert back to original indices
         results = []
         for i, sim_val in zip(top_k_indices_in_valid, top_k_values):
-            original_idx = valid_indices[i].item()
+            original_idx = int(valid_indices[i].item())
             similarity = float(sim_val.item())
             results.append((original_idx, similarity))
 

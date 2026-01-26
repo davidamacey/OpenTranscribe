@@ -39,7 +39,7 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    - Git
    - Node.js (v18+) for frontend development
    - Python (3.11+) for backend development
-   
+
    # Recommended
    - NVIDIA GPU with CUDA support (for AI processing)
    - 16GB+ RAM (for large models)
@@ -52,7 +52,7 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    # Clone your fork
    git clone https://github.com/yourusername/OpenTranscribe.git
    cd OpenTranscribe
-   
+
    # Add upstream remote
    git remote add upstream https://github.com/original/OpenTranscribe.git
    ```
@@ -61,11 +61,11 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    ```bash
    # Make utility script executable
    chmod +x opentr.sh
-   
+
    # Copy environment template
    cp .env.example .env
    # Edit .env with your settings if needed
-   
+
    # Start development environment
    ./opentr.sh start dev
    ```
@@ -74,7 +74,7 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
    ```bash
    # Check all services are running
    ./opentr.sh status
-   
+
    # Access the application
    # Frontend: http://localhost:5173
    # API: http://localhost:8080/docs
@@ -189,13 +189,13 @@ def process_file(file_id: int, user: User) -> ProcessResult:
 def transcribe_audio(audio_path: str) -> Dict[str, Any]:
     """
     Transcribe audio file using WhisperX.
-    
+
     Args:
         audio_path: Path to the audio file
-        
+
     Returns:
         Dictionary containing transcription results
-        
+
     Raises:
         TranscriptionError: If transcription fails
     """

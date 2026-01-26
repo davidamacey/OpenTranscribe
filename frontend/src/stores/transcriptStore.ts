@@ -1,4 +1,4 @@
-import { writable, derived } from "svelte/store";
+import { writable, derived } from 'svelte/store';
 
 export interface TranscriptSegment {
   uuid: string; // UUID identifier
@@ -44,7 +44,7 @@ const createTranscriptStore = () => {
     loadTranscriptData: (
       fileId: string,
       segments: TranscriptSegment[],
-      speakers: SpeakerInfo[],
+      speakers: SpeakerInfo[]
     ) => {
       set({
         fileId,
@@ -58,9 +58,7 @@ const createTranscriptStore = () => {
       update((data) => {
         // Update speaker in speakers array
         const updatedSpeakers = data.speakers.map((speaker) =>
-          speaker.uuid === speakerId
-            ? { ...speaker, display_name: newDisplayName }
-            : speaker,
+          speaker.uuid === speakerId ? { ...speaker, display_name: newDisplayName } : speaker
         );
 
         // Update all segments for this speaker
@@ -139,73 +137,69 @@ const createTranscriptStore = () => {
 export const transcriptStore = createTranscriptStore();
 
 // Derived store for processed segments suitable for TranscriptModal display
-export const processedTranscriptSegments = derived(
-  transcriptStore,
-  ($transcriptStore) => {
-    if (!$transcriptStore.segments.length) {
-      return [];
-    }
+export const processedTranscriptSegments = derived(transcriptStore, ($transcriptStore) => {
+  if (!$transcriptStore.segments.length) {
+    return [];
+  }
 
-    // Sort segments by start_time
-    const sortedSegments = [...$transcriptStore.segments].sort((a, b) => {
-      const aStart = parseFloat(String(a.start_time || 0));
-      const bStart = parseFloat(String(b.start_time || 0));
-      return aStart - bStart;
-    });
+  // Sort segments by start_time
+  const sortedSegments = [...$transcriptStore.segments].sort((a, b) => {
+    const aStart = parseFloat(String(a.start_time || 0));
+    const bStart = parseFloat(String(b.start_time || 0));
+    return aStart - bStart;
+  });
 
-    // Group consecutive segments from the same speaker for display
-    const groupedSegments = [];
-    let currentSpeaker = null;
-    let currentSpeakerLabel = null;
-    let currentText = [];
-    let currentStartTime = null;
-    let currentEndTime = null;
+  // Group consecutive segments from the same speaker for display
+  const groupedSegments = [];
+  let currentSpeaker = null;
+  let currentSpeakerLabel = null;
+  let currentText = [];
+  let currentStartTime = null;
+  let currentEndTime = null;
 
-    sortedSegments.forEach((segment) => {
-      // Use the latest speaker display name from the store
-      const speakerName =
-        segment.resolved_speaker_name ||
-        segment.speaker?.display_name ||
-        segment.speaker?.name ||
-        segment.speaker_label ||
-        "Unknown Speaker";
-      const speakerLabel =
-        segment.speaker_label || segment.speaker?.name || "Unknown";
-      const startTime = parseFloat(String(segment.start_time || 0));
-      const endTime = parseFloat(String(segment.end_time || 0));
+  sortedSegments.forEach((segment) => {
+    // Use the latest speaker display name from the store
+    const speakerName =
+      segment.resolved_speaker_name ||
+      segment.speaker?.display_name ||
+      segment.speaker?.name ||
+      segment.speaker_label ||
+      'Unknown Speaker';
+    const speakerLabel = segment.speaker_label || segment.speaker?.name || 'Unknown';
+    const startTime = parseFloat(String(segment.start_time || 0));
+    const endTime = parseFloat(String(segment.end_time || 0));
 
-      if (speakerName !== currentSpeaker) {
-        if (currentSpeaker && currentText.length > 0) {
-          groupedSegments.push({
-            speakerName: currentSpeaker,
-            speaker_label: currentSpeakerLabel, // Original ID for color mapping
-            text: currentText.join(" "),
-            startTime: currentStartTime,
-            endTime: currentEndTime,
-          });
-        }
-        currentSpeaker = speakerName;
-        currentSpeakerLabel = speakerLabel; // Store original speaker ID (e.g., "SPEAKER_01")
-        currentText = [segment.text];
-        currentStartTime = startTime;
-        currentEndTime = endTime;
-      } else {
-        currentText.push(segment.text);
-        currentEndTime = endTime; // Update end time to last segment
+    if (speakerName !== currentSpeaker) {
+      if (currentSpeaker && currentText.length > 0) {
+        groupedSegments.push({
+          speakerName: currentSpeaker,
+          speaker_label: currentSpeakerLabel, // Original ID for color mapping
+          text: currentText.join(' '),
+          startTime: currentStartTime,
+          endTime: currentEndTime,
+        });
       }
-    });
-
-    // Add the last speaker block
-    if (currentSpeaker && currentText.length > 0) {
-      groupedSegments.push({
-        speakerName: currentSpeaker,
-        speaker_label: currentSpeakerLabel, // Preserve for color mapping
-        text: currentText.join(" "),
-        startTime: currentStartTime,
-        endTime: currentEndTime,
-      });
+      currentSpeaker = speakerName;
+      currentSpeakerLabel = speakerLabel; // Store original speaker ID (e.g., "SPEAKER_01")
+      currentText = [segment.text];
+      currentStartTime = startTime;
+      currentEndTime = endTime;
+    } else {
+      currentText.push(segment.text);
+      currentEndTime = endTime; // Update end time to last segment
     }
+  });
 
-    return groupedSegments;
-  },
-);
+  // Add the last speaker block
+  if (currentSpeaker && currentText.length > 0) {
+    groupedSegments.push({
+      speakerName: currentSpeaker,
+      speaker_label: currentSpeakerLabel, // Preserve for color mapping
+      text: currentText.join(' '),
+      startTime: currentStartTime,
+      endTime: currentEndTime,
+    });
+  }
+
+  return groupedSegments;
+});

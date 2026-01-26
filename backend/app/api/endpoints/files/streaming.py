@@ -35,7 +35,7 @@ def create_content_disposition_header(filename: str) -> str:
     return f"inline; filename*=UTF-8''{safe_filename}"
 
 
-def create_mock_response(db_file: MediaFile) -> dict:
+def create_mock_response(db_file: MediaFile) -> StreamingResponse:
     """
     Create a mock response for test environment.
 
@@ -43,9 +43,11 @@ def create_mock_response(db_file: MediaFile) -> dict:
         db_file: MediaFile object
 
     Returns:
-        Mock response dictionary
+        Mock response StreamingResponse
     """
-    return {"content": "Mock video content", "content_type": db_file.content_type}
+    return StreamingResponse(
+        content=io.BytesIO(b"Mock video content"), media_type=str(db_file.content_type)
+    )
 
 
 def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
@@ -60,16 +62,16 @@ def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
     """
     if os.environ.get("SKIP_S3", "False").lower() == "true":
         return StreamingResponse(
-            content=io.BytesIO(b"Mock file content"), media_type=db_file.content_type
+            content=io.BytesIO(b"Mock file content"), media_type=str(db_file.content_type)
         )
 
     try:
-        file_content_io, content_length, content_type = download_file(db_file.storage_path)
+        file_content_io, content_length, content_type = download_file(str(db_file.storage_path))
         return StreamingResponse(
             content=file_content_io,
-            media_type=content_type or db_file.content_type,
+            media_type=content_type or str(db_file.content_type),
             headers={
-                "Content-Disposition": f'attachment; filename="{db_file.filename}"',
+                "Content-Disposition": f'attachment; filename="{str(db_file.filename)}"',
                 "Content-Length": str(content_length),
             },
         )
@@ -81,7 +83,9 @@ def get_content_streaming_response(db_file: MediaFile) -> StreamingResponse:
         ) from e
 
 
-def get_video_streaming_response(db_file: MediaFile, range_header: str = None) -> StreamingResponse:
+def get_video_streaming_response(
+    db_file: MediaFile, range_header: str | None = None
+) -> StreamingResponse:
     """
     Get streaming response for video playback with range support.
 
@@ -100,17 +104,17 @@ def get_video_streaming_response(db_file: MediaFile, range_header: str = None) -
             logger.info(f"Range header received: {range_header}")
 
         # Get the file from MinIO with range handling
-        file_stream = get_file_stream(db_file.storage_path, range_header)
+        file_stream = get_file_stream(str(db_file.storage_path), range_header)  # type: ignore[arg-type]
 
         # Set appropriate headers for video streaming with proper CORS support
         headers = {
-            "Content-Disposition": create_content_disposition_header(db_file.filename),
+            "Content-Disposition": create_content_disposition_header(str(db_file.filename)),
             "Accept-Ranges": "bytes",
             "Cache-Control": "max-age=3600",  # Allow caching for 1 hour
             "Access-Control-Allow-Origin": "*",  # Allow access from any origin
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "Range, Content-Type, Accept",
-            "Content-Type": db_file.content_type,
+            "Content-Type": str(db_file.content_type),
         }
 
         # Determine status code based on range request
@@ -119,7 +123,7 @@ def get_video_streaming_response(db_file: MediaFile, range_header: str = None) -
         # Return the video as a streaming response
         return StreamingResponse(
             content=file_stream,
-            media_type=db_file.content_type,
+            media_type=str(db_file.content_type),
             headers=headers,
             status_code=status_code,
         )
@@ -132,7 +136,7 @@ def get_video_streaming_response(db_file: MediaFile, range_header: str = None) -
 
 
 def get_enhanced_video_streaming_response(
-    db_file: MediaFile, range_header: str = None
+    db_file: MediaFile, range_header: str | None = None
 ) -> StreamingResponse:
     """
     Get enhanced streaming response with YouTube-like streaming capabilities.
@@ -159,12 +163,13 @@ def get_enhanced_video_streaming_response(
             logger.info(f"Range request: {range_header} for file {db_file.id}")
 
         # Set media type based on file content type with fallback to mp4
-        media_type = db_file.content_type or "video/mp4"
+        media_type = str(db_file.content_type) if db_file.content_type else "video/mp4"
 
         # Get file content as a stream with range information
-        logger.info(f"Streaming file: id={db_file.id}, path={db_file.storage_path}")
+        logger.info(f"Streaming file: id={int(db_file.id)}, path={str(db_file.storage_path)}")
         file_stream, start_byte, end_byte, total_length = get_file_stream(
-            db_file.storage_path, range_header
+            str(db_file.storage_path),
+            range_header,  # type: ignore[arg-type]
         )
 
         # Determine response status code (206 Partial Content for range requests)
@@ -172,7 +177,7 @@ def get_enhanced_video_streaming_response(
 
         # Set comprehensive response headers for optimal streaming
         headers = {
-            "Content-Disposition": create_content_disposition_header(db_file.filename),
+            "Content-Disposition": create_content_disposition_header(str(db_file.filename)),
             "Content-Type": media_type,
             "Accept-Ranges": "bytes",  # Inform client we support range requests
             "Access-Control-Allow-Origin": "*",  # Allow any origin for development
@@ -198,12 +203,12 @@ def get_enhanced_video_streaming_response(
 
         # Add caching headers based on content type
         if media_type.startswith(("video/", "audio/")):
-            headers["Cache-Control"] = (
-                "public, max-age=86400, stale-while-revalidate=604800"  # 1 day cache, 7 day stale
-            )
+            headers[
+                "Cache-Control"
+            ] = "public, max-age=86400, stale-while-revalidate=604800"  # 1 day cache, 7 day stale
             # Add ETag if available to support conditional requests
             if hasattr(db_file, "md5_hash") and db_file.md5_hash:
-                headers["ETag"] = f'"{db_file.md5_hash}"'
+                headers["ETag"] = f'"{str(db_file.md5_hash)}"'
         else:
             # Other media types get shorter cache times
             headers["Cache-Control"] = "public, max-age=3600"  # 1 hour cache
@@ -266,13 +271,13 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
 
     try:
         # download_file returns a tuple of (BytesIO, content_length, content_type)
-        thumbnail_io, content_length, _ = download_file(db_file.thumbnail_path)
+        thumbnail_io, content_length, _ = download_file(str(db_file.thumbnail_path))
 
         return StreamingResponse(
             content=thumbnail_io,
             media_type="image/jpeg",  # Thumbnails are generated as JPEG
             headers={
-                "Content-Disposition": f'inline; filename="{os.path.basename(db_file.thumbnail_path)}"',
+                "Content-Disposition": f'inline; filename="{os.path.basename(str(db_file.thumbnail_path))}"',
                 "Cache-Control": "public, max-age=86400",  # Cache thumbnails for 1 day
                 "Content-Length": str(content_length),
             },

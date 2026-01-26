@@ -5,7 +5,6 @@ Handles movie-style formatting with proper line lengths and speaker labels.
 
 import re
 import textwrap
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -54,7 +53,7 @@ class SubtitleService:
         return min(optimal_time, SubtitleService.MAX_DISPLAY_TIME)
 
     @staticmethod
-    def _get_speaker_prefix(speaker_name: Optional[str]) -> str:
+    def _get_speaker_prefix(speaker_name: str | None) -> str:
         """Get formatted speaker prefix from speaker name."""
         if not speaker_name or speaker_name.upper() == "UNKNOWN":
             return ""
@@ -120,7 +119,7 @@ class SubtitleService:
 
     @staticmethod
     def format_text_for_subtitles(
-        text: str, speaker_name: Optional[str] = None, format_type: str = "srt"
+        text: str, speaker_name: str | None = None, format_type: str = "srt"
     ) -> list[str]:
         """Format text for movie-style subtitles with proper line breaks and speaker continuity."""
         # Clean the text
@@ -154,12 +153,12 @@ class SubtitleService:
     @staticmethod
     def split_long_segment(
         segment: TranscriptSegment,
-        speaker_name: Optional[str] = None,
+        speaker_name: str | None = None,
         format_type: str = "srt",
     ) -> list[tuple[float, float, str]]:
         """Split long transcript segments into properly timed subtitle chunks with speaker continuity."""
-        text = segment.text.strip()
-        duration = segment.end_time - segment.start_time
+        text = str(segment.text).strip()
+        duration = float(segment.end_time) - float(segment.start_time)
 
         # Format text and handle multi-part subtitles
         formatted_subtitles = SubtitleService.format_text_for_subtitles(
@@ -172,17 +171,18 @@ class SubtitleService:
             actual_duration = min(duration, optimal_duration)
             return [
                 (
-                    segment.start_time,
-                    segment.start_time + actual_duration,
+                    float(segment.start_time),
+                    float(segment.start_time) + actual_duration,
                     formatted_subtitles[0],
                 )
             ]
 
         # Handle multiple subtitle parts with proper timing distribution
-        subtitle_parts = []
+        subtitle_parts: list[tuple[float, float, str]] = []
         total_chars = sum(len(subtitle) for subtitle in formatted_subtitles)
 
-        current_time = segment.start_time
+        current_time = float(segment.start_time)
+        segment_end_time = float(segment.end_time)
         for i, subtitle_text in enumerate(formatted_subtitles):
             # Calculate time allocation based on text length (proportional distribution)
             text_ratio = len(subtitle_text) / total_chars
@@ -197,20 +197,20 @@ class SubtitleService:
             end_time = current_time + actual_duration
 
             # Ensure we don't exceed the original segment end time
-            if end_time > segment.end_time:
-                end_time = segment.end_time
+            if end_time > segment_end_time:
+                end_time = segment_end_time
 
             # Ensure minimum gap between subtitles for readability
             if i < len(formatted_subtitles) - 1:  # Not the last subtitle
                 min_gap = 0.1  # 100ms gap
-                if end_time + min_gap > segment.end_time:
-                    end_time = segment.end_time - min_gap
+                if end_time + min_gap > segment_end_time:
+                    end_time = segment_end_time - min_gap
 
             subtitle_parts.append((current_time, end_time, subtitle_text))
             current_time = end_time + 0.1  # Small gap between subtitles
 
             # Prevent overlapping with segment end
-            if current_time >= segment.end_time:
+            if current_time >= segment_end_time:
                 break
 
         return subtitle_parts
@@ -245,7 +245,9 @@ class SubtitleService:
                 speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
                 if speaker:
                     # Use display name if available, otherwise use original name
-                    speaker_name = speaker.display_name or speaker.name
+                    speaker_name = (
+                        str(speaker.display_name) if speaker.display_name else str(speaker.name)
+                    )
 
             # Split long segments into properly formatted subtitles for WebVTT
             subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
@@ -288,7 +290,9 @@ class SubtitleService:
                 speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
                 if speaker:
                     # Use display name if available, otherwise use original name
-                    speaker_name = speaker.display_name or speaker.name
+                    speaker_name = (
+                        str(speaker.display_name) if speaker.display_name else str(speaker.name)
+                    )
 
             # Split long segments into properly formatted subtitles
             subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
@@ -309,7 +313,7 @@ class SubtitleService:
         db: Session,
         media_file_id: int,
         include_speakers: bool = True,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
     ) -> str:
         """Generate SRT file and optionally save to disk."""
         srt_content = SubtitleService.generate_srt_content(db, media_file_id, include_speakers)
@@ -334,19 +338,22 @@ class SubtitleService:
 
         prev_end = 0.0
         for i, segment in enumerate(segments):
+            start_time = float(segment.start_time)
+            end_time = float(segment.end_time)
+
             # Check for negative duration
-            if segment.end_time <= segment.start_time:
+            if end_time <= start_time:
                 issues.append(f"Segment {i + 1}: Invalid duration (end <= start)")
 
             # Check for overlapping segments
-            if segment.start_time < prev_end:
+            if start_time < prev_end:
                 issues.append(f"Segment {i + 1}: Overlaps with previous segment")
 
             # Check for extremely short segments
-            duration = segment.end_time - segment.start_time
+            duration = end_time - start_time
             if duration < 0.1:  # Less than 100ms
                 issues.append(f"Segment {i + 1}: Very short duration ({duration:.2f}s)")
 
-            prev_end = segment.end_time
+            prev_end = end_time
 
         return issues

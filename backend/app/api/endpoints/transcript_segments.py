@@ -1,7 +1,6 @@
 """API endpoints for transcript segment operations."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -65,7 +64,7 @@ def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> bool:
 
 def _get_new_speaker_id(
     db: Session, update: SegmentSpeakerUpdate, segment: TranscriptSegment, current_user: User
-) -> Optional[int]:
+) -> int | None:
     """
     Resolve and validate the new speaker ID from the update request.
 
@@ -102,13 +101,13 @@ def _get_new_speaker_id(
             detail="Not authorized to use this speaker",
         )
 
-    return speaker.id
+    return int(speaker.id)
 
 
 def _handle_speaker_change(
     db: Session,
-    original_speaker_id: Optional[int],
-    new_speaker_id: Optional[int],
+    original_speaker_id: int | None,
+    new_speaker_id: int | None,
     media_file_id: int,
 ) -> None:
     """
@@ -185,18 +184,18 @@ def update_segment_speaker(
         )
 
     # Track original speaker_id for change detection
-    original_speaker_id = segment.speaker_id
+    original_speaker_id: int | None = int(segment.speaker_id) if segment.speaker_id else None
 
     # Resolve and validate the new speaker
     new_speaker_id = _get_new_speaker_id(db, update, segment, current_user)
 
     # Update the segment's speaker
-    segment.speaker_id = new_speaker_id
+    segment.speaker_id = new_speaker_id  # type: ignore[assignment]
     db.commit()
     db.refresh(segment)
 
     # Handle side effects of speaker change (cleanup orphans, refresh analytics)
-    _handle_speaker_change(db, original_speaker_id, new_speaker_id, media_file.id)
+    _handle_speaker_change(db, original_speaker_id, new_speaker_id, int(media_file.id))
 
     # Format the response with speaker details
     def format_timestamp(seconds: float) -> str:
@@ -210,15 +209,15 @@ def update_segment_speaker(
         return f"{minutes}:{secs:02d}"
 
     response_data = TranscriptSegmentSchema(
-        uuid=segment.uuid,
-        media_file_id=media_file.uuid,
-        start_time=segment.start_time,
-        end_time=segment.end_time,
-        text=segment.text,
+        uuid=segment.uuid,  # type: ignore[arg-type]
+        media_file_id=media_file.uuid,  # type: ignore[arg-type]
+        start_time=float(segment.start_time),
+        end_time=float(segment.end_time),
+        text=str(segment.text),
         speaker_id=segment.speaker.uuid if segment.speaker else None,
         speaker=segment.speaker,
-        formatted_timestamp=format_timestamp(segment.start_time),
-        display_timestamp=format_timestamp(segment.start_time),
+        formatted_timestamp=format_timestamp(float(segment.start_time)),
+        display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),  # Original speaker ID
         resolved_speaker_name=(
             segment.speaker.display_name or segment.speaker.name if segment.speaker else None

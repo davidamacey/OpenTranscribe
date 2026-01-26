@@ -1,22 +1,22 @@
-import { writable, derived, get } from "svelte/store";
-import i18next from "i18next";
+import { writable, derived, get } from 'svelte/store';
+import i18next from 'i18next';
 import {
   DEFAULT_LANGUAGE,
   isValidLanguageCode,
   SUPPORTED_LANGUAGES,
   type Language,
-} from "$lib/i18n/languages";
+} from '$lib/i18n/languages';
 
 // Get initial locale (mirrors theme.js pattern)
 const getInitialLocale = (): string => {
-  if (typeof window !== "undefined") {
-    const savedLocale = localStorage.getItem("locale");
+  if (typeof window !== 'undefined') {
+    const savedLocale = localStorage.getItem('locale');
     if (savedLocale && isValidLanguageCode(savedLocale)) {
       return savedLocale;
     }
 
     // Check browser preference
-    const browserLang = navigator.language?.split("-")[0];
+    const browserLang = navigator.language?.split('-')[0];
     if (browserLang && isValidLanguageCode(browserLang)) {
       return browserLang;
     }
@@ -26,7 +26,7 @@ const getInitialLocale = (): string => {
 };
 
 // Immediately apply locale before DOM is fully loaded (prevent flash)
-if (typeof window !== "undefined") {
+if (typeof window !== 'undefined') {
   const initialLocale = getInitialLocale();
   document.documentElement.lang = initialLocale;
 }
@@ -43,8 +43,8 @@ const createLocaleStore = () => {
         set(newLocale);
 
         // Persist to localStorage
-        if (typeof window !== "undefined") {
-          localStorage.setItem("locale", newLocale);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('locale', newLocale);
         }
 
         // Update i18next language
@@ -53,7 +53,7 @@ const createLocaleStore = () => {
         }
 
         // Update document lang attribute for accessibility
-        if (typeof document !== "undefined") {
+        if (typeof document !== 'undefined') {
           document.documentElement.lang = newLocale;
         }
       }
@@ -64,11 +64,11 @@ const createLocaleStore = () => {
       const currentLocale = get({ subscribe });
 
       // Import and initialize i18n
-      const { initI18n } = await import("$lib/i18n");
+      const { initI18n } = await import('$lib/i18n');
       await initI18n(currentLocale);
 
       // Set up listener for i18next language changes
-      i18next.on("languageChanged", (lng) => {
+      i18next.on('languageChanged', (lng) => {
         update(() => lng);
       });
     },

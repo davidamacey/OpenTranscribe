@@ -47,7 +47,7 @@ class MediaFile(Base):
     content_type = Column(String, nullable=False)  # MIME type
     is_public = Column(Boolean, default=False)  # Whether file is publicly accessible
     language = Column(String, nullable=True)  # Detected language code
-    status = Column(Enum(FileStatus), default=FileStatus.PENDING)
+    status: Column[FileStatus] = Column(Enum(FileStatus), default=FileStatus.PENDING)
     summary_data = Column(JSON, nullable=True)  # Complete structured AI summary (flexible format)
     summary_opensearch_id = Column(String, nullable=True)  # OpenSearch document ID for summary
     summary_status = Column(

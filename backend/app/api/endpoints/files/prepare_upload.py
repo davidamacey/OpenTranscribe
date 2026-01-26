@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -31,10 +31,15 @@ class FileMetadata:
         extracted_from_video: Optional metadata from original video if audio was extracted client-side
     """
 
-    def __init__(self, filename, content_type, extracted_from_video=None):
+    def __init__(
+        self,
+        filename: str,
+        content_type: str,
+        extracted_from_video: dict[str, Any] | None = None,
+    ):
         self.filename = filename
         self.content_type = content_type
-        self.file_hash = None
+        self.file_hash: str | None = None
         self.extracted_from_video = extracted_from_video
 
 
@@ -52,12 +57,14 @@ async def prepare_upload(
     """
     try:
         # If file hash is provided, check for duplicates
-        duplicate_id: Optional[int] = None
+        duplicate_id: str | None = None
         if request.file_hash:
             # First clean up any failed files with the same hash to allow re-upload
-            await cleanup_failed_duplicates(db, request.file_hash, current_user.id)
+            await cleanup_failed_duplicates(db, request.file_hash, int(current_user.id))
 
-            duplicate_id = await check_duplicate_by_hash(db, request.file_hash, current_user.id)
+            duplicate_id = await check_duplicate_by_hash(
+                db, request.file_hash, int(current_user.id)
+            )
 
             if duplicate_id:
                 logger.info(
@@ -74,11 +81,11 @@ async def prepare_upload(
         file_metadata.file_hash = request.file_hash
 
         # Create the database record
-        db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)
+        db_file = create_media_file_record(db, file_metadata, current_user, request.file_size)  # type: ignore[arg-type]
 
         # If this is extracted audio, store the video metadata in metadata_important
         if request.extracted_from_video:
-            db_file.metadata_important = request.extracted_from_video
+            db_file.metadata_important = request.extracted_from_video  # type: ignore[assignment]
             db.commit()
             logger.info(f"Stored extracted video metadata for {request.filename}")
 

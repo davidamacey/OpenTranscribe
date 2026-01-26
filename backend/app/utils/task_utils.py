@@ -59,8 +59,8 @@ def update_task_status(
     db: Session,
     task_id: str,
     status: str,
-    progress: float = None,
-    error_message: str = None,
+    progress: float | None = None,
+    error_message: str | None = None,
     completed: bool = False,
 ) -> Optional[Task]:
     """Update task status in the database."""
@@ -73,20 +73,21 @@ def update_task_status(
     logger.debug(f"Task {task_id} state change: {task.status} -> {status}")
 
     # Update task fields
-    task.status = status
+    task.status = status  # type: ignore[assignment]
     if progress is not None:
-        task.progress = progress
+        task.progress = progress  # type: ignore[assignment]
     if error_message:
-        task.error_message = error_message
+        task.error_message = error_message  # type: ignore[assignment]
     if completed:
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
     # Always update the timestamp for task state changes
-    task.updated_at = datetime.now(timezone.utc)
+    task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
     # Update media file task tracking
-    if task.media_file_id:
-        media_file = get_refreshed_object(db, MediaFile, task.media_file_id)
+    media_file_id = task.media_file_id
+    if media_file_id:
+        media_file = get_refreshed_object(db, MediaFile, int(media_file_id))
         if media_file:
             media_file.task_last_update = datetime.now(timezone.utc)
             if error_message:
@@ -101,10 +102,11 @@ def update_task_status(
     db.refresh(task)
 
     # If task is completed or failed, check if we need to update the media file status
-    if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED] and task.media_file_id:
-        update_media_file_from_task_status(db, task.media_file_id)
+    task_media_file_id = task.media_file_id
+    if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED] and task_media_file_id:
+        update_media_file_from_task_status(db, int(task_media_file_id))
 
-    return task
+    return task  # type: ignore[no-any-return]
 
 
 def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> Optional[MediaFile]:
@@ -126,7 +128,7 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> O
 
     db.commit()
     db.refresh(media_file)
-    return media_file
+    return media_file  # type: ignore[no-any-return]
 
 
 def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[MediaFile]:
@@ -152,16 +154,16 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
 
     # Skip if the file is already in a terminal state
     if media_file.status in [FileStatus.COMPLETED, FileStatus.ERROR]:
-        return media_file
+        return media_file  # type: ignore[no-any-return]
 
     # Get all tasks for this media file
     tasks = db.query(Task).filter(Task.media_file_id == file_id).all()
     if not tasks:
         logger.warning(f"No tasks found for media file {file_id}")
-        return media_file
+        return media_file  # type: ignore[no-any-return]
 
     # Count task statuses
-    counts = {
+    counts: dict[str, int] = {
         TASK_STATUS_PENDING: 0,
         TASK_STATUS_IN_PROGRESS: 0,
         TASK_STATUS_COMPLETED: 0,
@@ -169,7 +171,8 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
     }
 
     for task in tasks:
-        counts[task.status] = counts.get(task.status, 0) + 1
+        task_status = str(task.status)
+        counts[task_status] = counts.get(task_status, 0) + 1
 
     # Determine the appropriate media file status
     if counts[TASK_STATUS_PENDING] > 0 or counts[TASK_STATUS_IN_PROGRESS] > 0:
@@ -186,7 +189,7 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
     if media_file.status != new_status:
         return update_media_file_status(db, file_id, new_status)
 
-    return media_file
+    return media_file  # type: ignore[no-any-return]
 
 
 def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]:
@@ -216,8 +219,9 @@ def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]
     # Count tasks by status and calculate overall progress
     total_progress = 0.0
     for task in tasks:
-        summary[task.status] = summary.get(task.status, 0) + 1
-        total_progress += task.progress
+        task_status = str(task.status)
+        summary[task_status] = summary.get(task_status, 0) + 1
+        total_progress += float(task.progress)
 
     summary["overall_progress"] = total_progress / len(tasks)
 
@@ -245,9 +249,9 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
         # Update task status in database
         task = db.query(Task).filter(Task.id == media_file.active_task_id).first()
         if task:
-            task.status = TASK_STATUS_FAILED
-            task.error_message = "Task cancelled by user"
-            task.completed_at = datetime.now(timezone.utc)
+            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
+            task.error_message = "Task cancelled by user"  # type: ignore[assignment]
+            task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
         # Update media file status
         media_file.status = FileStatus.CANCELLED
@@ -303,7 +307,9 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     all_failed_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ERROR).all()
     # Filter based on system retry settings
     failed_files = [
-        f for f in all_failed_files if system_settings_service.should_retry_file(db, f.retry_count)
+        f
+        for f in all_failed_files
+        if system_settings_service.should_retry_file(db, int(f.retry_count))
     ]
 
     # Check for orphaned files that need recovery
@@ -312,27 +318,28 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     # Combine all lists
     stuck_files = processing_stuck_files + pending_stuck_files + failed_files + orphaned_files
 
-    stuck_file_ids = []
+    stuck_file_ids: list[int] = []
     for file in stuck_files:
         # Double-check by querying Celery task status if we have an active task ID
-        if file.active_task_id:
+        active_task_id = file.active_task_id
+        if active_task_id:
             try:
-                task_result = AsyncResult(file.active_task_id)
+                task_result = AsyncResult(str(active_task_id))
                 if task_result.state in ["FAILURE", "REVOKED", "RETRY"]:
-                    stuck_file_ids.append(file.id)
+                    stuck_file_ids.append(int(file.id))
                 elif task_result.state == "SUCCESS":
                     # Task completed but file status wasn't updated
-                    file.status = FileStatus.COMPLETED
-                    file.active_task_id = None
-                    file.task_started_at = None
+                    file.status = FileStatus.COMPLETED  # type: ignore[assignment]
+                    file.active_task_id = None  # type: ignore[assignment]
+                    file.task_started_at = None  # type: ignore[assignment]
                     db.commit()
             except Exception as e:
-                logger.warning(f"Could not check task status for {file.active_task_id}: {e}")
-                stuck_file_ids.append(file.id)
+                logger.warning(f"Could not check task status for {active_task_id}: {e}")
+                stuck_file_ids.append(int(file.id))
         else:
             # No active task but still processing - definitely stuck
             # OR it's a pending file that never started processing
-            stuck_file_ids.append(file.id)
+            stuck_file_ids.append(int(file.id))
 
     return stuck_file_ids
 
@@ -365,7 +372,7 @@ def _recover_pending_file(db: Session, media_file: MediaFile) -> bool:
         True if recovery was successful
     """
     logger.info(f"File {media_file.id} stuck in pending, restarting processing")
-    _start_transcription_task(str(media_file.uuid), media_file.id, "pending")
+    _start_transcription_task(str(media_file.uuid), int(media_file.id), "pending")
     return True
 
 
@@ -380,12 +387,12 @@ def _recover_failed_file(db: Session, media_file: MediaFile) -> bool:
         True if recovery was successful, False otherwise
     """
     logger.info(
-        f"File {media_file.id} failed, attempting retry (attempt {media_file.retry_count + 1})"
+        f"File {media_file.id} failed, attempting retry (attempt {int(media_file.retry_count) + 1})"
     )
 
-    success = reset_file_for_retry(db, media_file.id, reset_retry_count=False)
+    success = reset_file_for_retry(db, int(media_file.id), reset_retry_count=False)
     if success:
-        _start_transcription_task(str(media_file.uuid), media_file.id, "failed")
+        _start_transcription_task(str(media_file.uuid), int(media_file.id), "failed")
         return True
     return False
 
@@ -403,12 +410,12 @@ def _recover_orphaned_file(db: Session, media_file: MediaFile) -> bool:
     logger.info(f"File {media_file.id} orphaned, attempting recovery restart")
 
     # Reset status to pending and try again
-    media_file.status = FileStatus.PENDING
-    media_file.active_task_id = None
-    media_file.task_started_at = None
+    media_file.status = FileStatus.PENDING  # type: ignore[assignment]
+    media_file.active_task_id = None  # type: ignore[assignment]
+    media_file.task_started_at = None  # type: ignore[assignment]
     db.commit()
 
-    _start_transcription_task(str(media_file.uuid), media_file.id, "orphaned")
+    _start_transcription_task(str(media_file.uuid), int(media_file.id), "orphaned")
     return True
 
 
@@ -419,10 +426,10 @@ def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
         db: Database session
         media_file: The media file to update
     """
-    media_file.recovery_attempts += 1
-    media_file.last_recovery_attempt = datetime.now(timezone.utc)
-    media_file.active_task_id = None
-    media_file.task_started_at = None
+    media_file.recovery_attempts += 1  # type: ignore[assignment]
+    media_file.last_recovery_attempt = datetime.now(timezone.utc)  # type: ignore[assignment]
+    media_file.active_task_id = None  # type: ignore[assignment]
+    media_file.task_started_at = None  # type: ignore[assignment]
     db.commit()
 
 
@@ -450,7 +457,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
             return _recover_pending_file(db, media_file)
 
         if media_file.status == FileStatus.ERROR and system_settings_service.should_retry_file(
-            db, media_file.retry_count
+            db, int(media_file.retry_count)
         ):
             return _recover_failed_file(db, media_file)
 
@@ -491,19 +498,20 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
         return False, "File not found"
 
     # Check if file has an active task
-    if media_file.active_task_id and media_file.status == FileStatus.PROCESSING:
+    active_task_id = media_file.active_task_id
+    if active_task_id and media_file.status == FileStatus.PROCESSING:
         # Double-check with Celery
         try:
-            task_result = AsyncResult(media_file.active_task_id)
+            task_result = AsyncResult(str(active_task_id))
             if task_result.state in ["PENDING", "STARTED", "RETRY"]:
                 return (
                     False,
-                    f"File is currently being processed (task: {media_file.active_task_id})",
+                    f"File is currently being processed (task: {active_task_id})",
                 )
         except Exception as e:
             # If we can't check task status, assume it's safe
             logger.warning(
-                f"Could not check Celery task status for {media_file.active_task_id}: {e}. "
+                f"Could not check Celery task status for {active_task_id}: {e}. "
                 "Assuming file is safe to delete."
             )
 

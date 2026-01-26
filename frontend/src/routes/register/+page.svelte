@@ -122,7 +122,26 @@
 
       <div class="form-group">
         <div class="password-header">
-          <label for="password">{$t('auth.password')}</label>
+          <div class="label-with-info">
+            <label for="password">{$t('auth.password')}</label>
+            <div class="info-tooltip">
+              <svg class="info-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+              </svg>
+              <div class="tooltip-content">
+                <strong>{$t('auth.passwordRequirements')}</strong>
+                <ul>
+                  <li>{$t('auth.passwordReqLength')}</li>
+                  <li>{$t('auth.passwordReqUppercase')}</li>
+                  <li>{$t('auth.passwordReqLowercase')}</li>
+                  <li>{$t('auth.passwordReqNumber')}</li>
+                  <li>{$t('auth.passwordReqSpecial')}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
             class="toggle-password"
@@ -368,5 +387,81 @@
 
   .toggle-password:hover {
     background-color: var(--surface-hover, rgba(0, 0, 0, 0.05));
+  }
+
+  .label-with-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .info-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .info-icon {
+    color: var(--text-light);
+    cursor: help;
+    transition: color 0.2s;
+  }
+
+  .info-icon:hover {
+    color: var(--primary-color);
+  }
+
+  .tooltip-content {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    width: 250px;
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+  }
+
+  .info-tooltip:hover .tooltip-content {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .tooltip-content::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: var(--border-color);
+  }
+
+  .tooltip-content strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-color);
+  }
+
+  .tooltip-content ul {
+    margin: 0;
+    padding-left: 1.25rem;
+    font-size: 0.75rem;
+    color: var(--text-light);
+  }
+
+  .tooltip-content li {
+    margin-bottom: 0.25rem;
+  }
+
+  .tooltip-content li:last-child {
+    margin-bottom: 0;
   }
 </style>

@@ -6,13 +6,14 @@
 // Mock file data with all necessary properties
 export const mockFileData = {
   id: 1,
-  filename: "test_interview.mp4",
-  storage_path: "/uploads/test_interview.mp4",
-  upload_time: "2025-05-13T10:30:00Z",
+  filename: 'test_interview.mp4',
+  storage_path: '/uploads/test_interview.mp4',
+  upload_time: '2025-05-13T10:30:00Z',
   duration: 120.5,
-  language: "en",
-  status: "completed",
-  summary: "This is a test interview discussing various topics including project management and team collaboration.",
+  language: 'en',
+  status: 'completed',
+  summary:
+    'This is a test interview discussing various topics including project management and team collaboration.',
   transcript: {
     segments: [
       {
@@ -20,26 +21,26 @@ export const mockFileData = {
         media_file_id: 1,
         start_time: 0,
         end_time: 5.2,
-        text: "Hello and welcome to this interview.",
+        text: 'Hello and welcome to this interview.',
         speaker_id: 1,
         speaker: {
           id: 1,
-          name: "Interviewer",
-          user_id: 1
-        }
+          name: 'Interviewer',
+          user_id: 1,
+        },
       },
       {
         id: 2,
         media_file_id: 1,
         start_time: 5.5,
         end_time: 10.8,
-        text: "Thank you for having me today.",
+        text: 'Thank you for having me today.',
         speaker_id: 2,
         speaker: {
           id: 2,
-          name: "Guest",
-          user_id: 1
-        }
+          name: 'Guest',
+          user_id: 1,
+        },
       },
       {
         id: 3,
@@ -50,23 +51,23 @@ export const mockFileData = {
         speaker_id: 1,
         speaker: {
           id: 1,
-          name: "Interviewer",
-          user_id: 1
-        }
-      }
-    ]
+          name: 'Interviewer',
+          user_id: 1,
+        },
+      },
+    ],
   },
   tags: [
     {
       id: 1,
-      name: "interview"
+      name: 'interview',
     },
     {
       id: 2,
-      name: "project management"
-    }
+      name: 'project management',
+    },
   ],
-  user_id: 1
+  user_id: 1,
 };
 
 // Mock comments data
@@ -75,26 +76,26 @@ export const mockComments = [
     id: 1,
     media_file_id: 1,
     user_id: 1,
-    text: "This is an important point about project management.",
+    text: 'This is an important point about project management.',
     timestamp: 12.5,
-    created_at: "2025-05-13T11:00:00Z",
+    created_at: '2025-05-13T11:00:00Z',
     user: {
       id: 1,
-      username: "testuser"
-    }
+      username: 'testuser',
+    },
   },
   {
     id: 2,
     media_file_id: 1,
     user_id: 2,
-    text: "Good question about team collaboration.",
+    text: 'Good question about team collaboration.',
     timestamp: 45.2,
-    created_at: "2025-05-13T11:05:00Z",
+    created_at: '2025-05-13T11:05:00Z',
     user: {
       id: 2,
-      username: "admin"
-    }
-  }
+      username: 'admin',
+    },
+  },
 ];
 
 // Mock auth store data
@@ -102,10 +103,10 @@ export const mockAuthData = {
   isAuthenticated: true,
   user: {
     id: 1,
-    username: "testuser",
-    email: "test@example.com"
+    username: 'testuser',
+    email: 'test@example.com',
   },
-  token: "mock-jwt-token"
+  token: 'mock-jwt-token',
 };
 
 // Mock blob for media content
@@ -117,9 +118,9 @@ export const createMockMediaBlob = () => {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, 1, 1);
-  
-  return new Promise(resolve => {
-    canvas.toBlob(blob => {
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
       resolve(blob);
     }, 'video/mp4');
   });
@@ -129,11 +130,11 @@ export const createMockMediaBlob = () => {
 export const mockApiResponses = {
   getFile: {
     status: 200,
-    data: mockFileData
+    data: mockFileData,
   },
   getComments: {
     status: 200,
-    data: mockComments
+    data: mockComments,
   },
   addComment: {
     status: 201,
@@ -141,16 +142,16 @@ export const mockApiResponses = {
       id: 3,
       media_file_id: 1,
       user_id: 1,
-      text: "New test comment",
+      text: 'New test comment',
       timestamp: 30.0,
-      created_at: "2025-05-13T12:00:00Z"
-    }
+      created_at: '2025-05-13T12:00:00Z',
+    },
   },
   getMediaContent: {
     status: 200,
     data: null, // Will be set to blob in tests
     headers: {
-      'content-type': 'video/mp4'
-    }
-  }
+      'content-type': 'video/mp4',
+    },
+  },
 };

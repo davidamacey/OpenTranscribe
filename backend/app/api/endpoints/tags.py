@@ -91,7 +91,7 @@ def list_unused_tags(
         used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
 
         # Then find all tags not in that list
-        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()
+        unused_tags = db.query(Tag).filter(~Tag.id.in_(used_tag_ids)).all()  # type: ignore[arg-type]
 
         return unused_tags
     except Exception as e:
@@ -119,7 +119,7 @@ def cleanup_unused_tags(
         used_tag_ids = db.query(FileTag.tag_id).distinct().subquery()
 
         # Delete all tags not in use
-        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids))
+        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids))  # type: ignore[arg-type]
 
         # Get the count for the response
         count = delete_query.count()
@@ -154,7 +154,7 @@ async def add_tag_to_file(
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id  # Get internal ID for database operations
 
     # Log detailed information about the request for debugging
@@ -175,13 +175,13 @@ async def add_tag_to_file(
     Add a tag to a media file
     """
     # Verify file exists and belongs to user
-    media_file = (
+    media_file_verify = (
         db.query(MediaFile)
         .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
         .first()
     )
 
-    if not media_file:
+    if not media_file_verify:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     # Check if tag exists, create if not
@@ -220,7 +220,7 @@ def remove_tag_from_file(
     # Get file by UUID with permission check
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id
 
     # Find the tag

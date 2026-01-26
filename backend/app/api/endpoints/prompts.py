@@ -4,13 +4,14 @@ API endpoints for AI summarization prompt management
 
 import contextlib
 from typing import Any
-from typing import Optional
+from typing import cast
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy import and_
+from sqlalchemy import not_
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -29,7 +30,7 @@ def get_prompts(
     current_user: models.User = Depends(get_current_active_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    content_type: Optional[str] = Query(None, description="Filter by content type"),
+    content_type: str | None = Query(None, description="Filter by content type"),
     include_system: bool = Query(True, description="Include system prompts"),
     include_user: bool = Query(True, description="Include user's custom prompts"),
 ) -> Any:
@@ -65,12 +66,12 @@ def get_prompts(
     # Filter by ownership
     ownership_conditions = []
     if include_system:
-        ownership_conditions.append(models.SummaryPrompt.is_system_default)
+        ownership_conditions.append(models.SummaryPrompt.is_system_default)  # type: ignore[arg-type]
     if include_user:
         ownership_conditions.append(
-            and_(
+            and_(  # type: ignore[arg-type]
                 models.SummaryPrompt.user_id == current_user.id,
-                ~models.SummaryPrompt.is_system_default,
+                not_(models.SummaryPrompt.is_system_default),
             )
         )
 
@@ -97,7 +98,7 @@ def get_prompts(
     )
 
     return schemas.SummaryPromptList(
-        prompts=prompts,
+        prompts=cast(list[schemas.SummaryPrompt], prompts),  # type: ignore[arg-type]
         total=total,
         page=skip // limit + 1 if limit > 0 else 1,
         size=len(prompts),
@@ -159,7 +160,7 @@ def get_prompts_by_content_type(
             and_(
                 models.SummaryPrompt.content_type == content_type,
                 models.SummaryPrompt.user_id == current_user.id,
-                not models.SummaryPrompt.is_system_default,
+                not_(models.SummaryPrompt.is_system_default),
                 models.SummaryPrompt.is_active,
             )
         )
@@ -190,13 +191,13 @@ def get_prompts_by_content_type(
                 .first()
             )
             if active_prompt:
-                active_prompt_uuid = active_prompt.uuid
+                active_prompt_uuid = str(active_prompt.uuid)
 
     return schemas.ContentTypePromptsResponse(
         content_type=content_type,
-        system_prompts=system_prompts,
-        user_prompts=user_prompts,
-        active_prompt_id=active_prompt_uuid,
+        system_prompts=cast(list[schemas.SummaryPrompt], system_prompts),  # type: ignore[arg-type]
+        user_prompts=cast(list[schemas.SummaryPrompt], user_prompts),  # type: ignore[arg-type]
+        active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
     )
 
 
@@ -359,7 +360,7 @@ def get_active_prompt(
     )
 
     active_prompt = None
-    active_prompt_uuid = None
+    active_prompt_uuid: str | None = None
 
     if active_setting and active_setting.setting_value:
         try:
@@ -370,7 +371,7 @@ def get_active_prompt(
                 .first()
             )
             if active_prompt:
-                active_prompt_uuid = active_prompt.uuid
+                active_prompt_uuid = str(active_prompt.uuid)
         except (ValueError, TypeError):
             pass
 
@@ -421,10 +422,11 @@ def get_active_prompt(
             )
 
         # Get UUID if we found a fallback prompt
-        active_prompt_uuid = active_prompt.uuid if active_prompt else None
+        active_prompt_uuid = str(active_prompt.uuid) if active_prompt else None
 
     return schemas.ActivePromptResponse(
-        active_prompt_id=active_prompt_uuid, active_prompt=active_prompt
+        active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
+        active_prompt=active_prompt,
     )
 
 
@@ -468,7 +470,7 @@ def set_active_prompt(
     )
 
     if setting:
-        setting.setting_value = str(prompt.id)  # Store internal ID
+        setting.setting_value = str(prompt.id)  # type: ignore[assignment]
     else:
         setting = models.UserSetting(
             user_id=current_user.id,
@@ -480,4 +482,4 @@ def set_active_prompt(
     db.commit()
     db.refresh(prompt)
 
-    return schemas.ActivePromptResponse(active_prompt_id=prompt.uuid, active_prompt=prompt)
+    return schemas.ActivePromptResponse(active_prompt_id=str(prompt.uuid), active_prompt=prompt)  # type: ignore[arg-type]

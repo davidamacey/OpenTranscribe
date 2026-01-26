@@ -478,7 +478,9 @@ async def _send_file_created_notification(media_file: MediaFile, user_id: int) -
                     "uuid": str(media_file.uuid),
                     "filename": media_file.filename,
                     "status": media_file.status.value,
-                    "display_status": FormattingService.format_status(media_file.status),
+                    "display_status": FormattingService.format_status(
+                        FileStatus(media_file.status)
+                    ),
                     "content_type": media_file.content_type,
                     "file_size": media_file.file_size,
                     "title": media_file.title,
@@ -542,7 +544,7 @@ async def process_media_url(
 
         # Handle playlist processing (early return) - currently YouTube only
         if media_service.is_playlist_url(normalized_url):
-            return _handle_playlist_processing(normalized_url, current_user.id)
+            return _handle_playlist_processing(normalized_url, int(current_user.id))
 
         # Extract video info
         video_id, video_title, video_info = _extract_video_info(
@@ -553,11 +555,11 @@ async def process_media_url(
         )
 
         # Check for duplicate video
-        _check_duplicate_video(db, current_user.id, video_id, normalized_url)
+        _check_duplicate_video(db, int(current_user.id), video_id, normalized_url)
 
         # Create placeholder MediaFile record
         media_file = _create_media_file_record(
-            db, current_user.id, normalized_url, video_id, video_title, video_info
+            db, int(current_user.id), normalized_url, video_id, video_title, video_info
         )
 
         # Dispatch background task (pass credentials only for this processing request)
@@ -565,13 +567,13 @@ async def process_media_url(
             db,
             media_file,
             normalized_url,
-            current_user.id,
+            int(current_user.id),
             media_username=request_data.media_username,
             media_password=request_data.media_password,
         )
 
         # Send WebSocket notification
-        await _send_file_created_notification(media_file, current_user.id)
+        await _send_file_created_notification(media_file, int(current_user.id))
 
         logger.info(f"Created placeholder MediaFile {media_file.id} for media URL processing")
         return media_file

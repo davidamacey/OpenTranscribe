@@ -29,7 +29,7 @@ def _get_storage_path(file_id: int) -> str | None:
         if not media_file.storage_path:
             logger.error(f"No storage path for file {file_id}")
             return None
-        return media_file.storage_path
+        return str(media_file.storage_path)  # type: ignore[no-any-return]
 
 
 def _download_to_temp_file(storage_path: str) -> str | None:

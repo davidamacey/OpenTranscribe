@@ -21,7 +21,7 @@ export interface ContentSection {
 
 export interface MajorTopic {
   topic: string;
-  importance: "high" | "medium" | "low";
+  importance: 'high' | 'medium' | 'low';
   key_points: string[];
   participants: string[];
 }
@@ -30,9 +30,9 @@ export interface ActionItem {
   text: string;
   assigned_to: string | null;
   due_date: string | null;
-  priority: "high" | "medium" | "low";
+  priority: 'high' | 'medium' | 'low';
   context: string;
-  status?: "pending" | "completed" | "cancelled";
+  status?: 'pending' | 'completed' | 'cancelled';
 }
 
 export interface SummaryMetadata {
@@ -74,7 +74,7 @@ export interface SummaryData {
 export interface SummaryResponse {
   file_id: string; // UUID
   summary_data: SummaryData; // Flexible structure
-  source: "opensearch" | "postgresql";
+  source: 'opensearch' | 'postgresql';
   document_id?: string;
   created_at?: string;
   updated_at?: string;
@@ -119,7 +119,7 @@ export interface SummaryModalState {
 
 export interface SummaryTask {
   task_id: string;
-  status: "pending" | "in_progress" | "completed" | "failed";
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
   progress?: number;
   error_message?: string;
 }

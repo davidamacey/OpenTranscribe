@@ -158,7 +158,7 @@ IMPORTANT GUIDELINES:
         )
 
         if setting:
-            return setting.setting_value
+            return str(setting.setting_value)
         return DEFAULT_LLM_OUTPUT_LANGUAGE
 
     def _get_language_name(self, language_code: str) -> str:
@@ -223,7 +223,7 @@ IMPORTANT GUIDELINES:
             logger.info(
                 f"Topic suggestion already exists for file {media_file_id}, use force_regenerate to re-extract"
             )
-            return existing
+            return existing  # type: ignore[no-any-return]
 
         # Notify: Reading transcript
         if progress_callback:
@@ -236,13 +236,13 @@ IMPORTANT GUIDELINES:
             return None
 
         # Create LLM service
-        llm_service = LLMService.create_from_settings(user_id=media_file.user_id)
+        llm_service = LLMService.create_from_settings(user_id=int(media_file.user_id))
         if not llm_service:
             logger.warning(f"LLM not configured for user {media_file.user_id}")
             return None
 
         # Get user's LLM output language preference
-        output_language = self._get_user_llm_output_language(media_file.user_id)
+        output_language = self._get_user_llm_output_language(int(media_file.user_id))
         output_language_name = self._get_language_name(output_language)
         logger.info(f"Topic extraction output language: {output_language} ({output_language_name})")
 
@@ -263,7 +263,7 @@ IMPORTANT GUIDELINES:
             llm_service=llm_service,
             transcript=transcript,
             file_id=media_file_id,
-            duration=media_file.duration or 0,
+            duration=float(media_file.duration or 0),
             output_language=output_language,
         )
 
@@ -311,7 +311,7 @@ IMPORTANT GUIDELINES:
         try:
             # Keep status as "pending" so suggestions remain available
             # Track what user has accepted in user_decisions for analytics
-            existing_decisions = suggestion.user_decisions or {}
+            existing_decisions: dict[str, list[str]] = suggestion.user_decisions or {}  # type: ignore[assignment]
             existing_decisions.setdefault("accepted_collections", []).extend(accepted_collections)
             existing_decisions.setdefault("accepted_tags", []).extend(accepted_tags)
 
@@ -321,7 +321,7 @@ IMPORTANT GUIDELINES:
             )
             existing_decisions["accepted_tags"] = list(set(existing_decisions["accepted_tags"]))
 
-            suggestion.user_decisions = existing_decisions
+            suggestion.user_decisions = existing_decisions  # type: ignore[assignment]
 
             self.db.commit()
 
@@ -507,9 +507,9 @@ IMPORTANT GUIDELINES:
 
             if existing:
                 # Update existing
-                existing.suggested_tags = suggested_tags
-                existing.suggested_collections = suggested_collections
-                existing.status = "pending"
+                existing.suggested_tags = suggested_tags  # type: ignore[assignment]
+                existing.suggested_collections = suggested_collections  # type: ignore[assignment]
+                existing.status = "pending"  # type: ignore[assignment]
                 suggestion = existing
             else:
                 # Create new suggestion
@@ -529,7 +529,7 @@ IMPORTANT GUIDELINES:
                 f"Stored {len(suggested_tags)} tags and {len(suggested_collections)} collections for file {media_file.id}"
             )
 
-            return suggestion
+            return suggestion  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Error storing suggestion: {e}")

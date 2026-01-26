@@ -8,6 +8,7 @@ from audio and video files for use in the frontend player interface.
 import logging
 import os
 import tempfile
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -91,10 +92,10 @@ def _get_cached_waveform(db_file: MediaFile, cache_key: str) -> dict | None:
     result = cached_data.copy()
     result["file_id"] = str(db_file.uuid)
     result["cached"] = True
-    return result
+    return result  # type: ignore[no-any-return]
 
 
-def _download_to_temp_file(storage_path: str, temp_file) -> None:
+def _download_to_temp_file(storage_path: str, temp_file: Any) -> None:
     """
     Download file content from storage to a temporary file.
 
@@ -165,7 +166,7 @@ def _generate_and_cache_waveform(
     temp_file_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            _download_to_temp_file(db_file.storage_path, temp_file)
+            _download_to_temp_file(str(db_file.storage_path), temp_file)
             temp_file_path = temp_file.name
 
         # Extract waveform data using the WaveformGenerator
@@ -177,7 +178,7 @@ def _generate_and_cache_waveform(
 
         # Cache the waveform data in database
         if not db_file.waveform_data:
-            db_file.waveform_data = {}
+            db_file.waveform_data = {}  # type: ignore[assignment]
         db_file.waveform_data[cache_key] = waveform_data.copy()
         db.commit()
 
@@ -258,8 +259,8 @@ async def get_audio_waveform(
     """
     # Get the media file and verify user access
     is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
+    file_id = int(db_file.id)
 
     # Validate the file is suitable for waveform generation
     _validate_media_file_for_waveform(db_file)
@@ -297,8 +298,8 @@ async def get_audio_waveform_peaks(
     """
     # Get the media file and verify user access
     is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=bool(is_admin))
+    file_id = int(db_file.id)
 
     # Validate the file is suitable for waveform generation
     _validate_media_file_for_waveform(db_file)
@@ -308,7 +309,7 @@ async def get_audio_waveform_peaks(
 
     # Extract waveform data
     try:
-        waveform_data = _extract_waveform_from_file(db_file.storage_path, target_samples)
+        waveform_data = _extract_waveform_from_file(str(db_file.storage_path), target_samples)
     except Exception as e:
         logger.error(f"Error generating waveform peaks for file {file_id}: {e}", exc_info=True)
         raise HTTPException(
@@ -344,8 +345,10 @@ async def generate_waveform_for_file(
     try:
         # Verify user access to the file
         is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for task trigger
+        db_file = get_media_file_by_uuid(
+            db, file_uuid, int(current_user.id), is_admin=bool(is_admin)
+        )
+        file_id = int(db_file.id)  # Get internal ID for task trigger
 
         # Check if file is audio/video
         is_audio_video = db_file.content_type.startswith(
@@ -359,7 +362,9 @@ async def generate_waveform_for_file(
             )
 
         # Trigger waveform generation task for this specific file
-        task_id = trigger_waveform_generation(file_id=file_id, skip_existing=not force_regenerate)
+        task_id = trigger_waveform_generation(
+            file_uuid=file_uuid, skip_existing=not force_regenerate
+        )
 
         action = "regeneration" if force_regenerate else "generation"
         return {
@@ -421,7 +426,7 @@ async def generate_waveforms_for_files(
             }
 
         # Trigger the background task
-        task_id = trigger_waveform_generation(file_id=None, skip_existing=not force_regenerate)
+        task_id = trigger_waveform_generation(file_uuid=None, skip_existing=not force_regenerate)  # type: ignore[arg-type]
 
         logger.info(
             f"User {current_user.id} triggered waveform generation for {len(files_to_process)} files"

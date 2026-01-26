@@ -2,7 +2,6 @@ import datetime
 import logging
 import os
 from typing import Any
-from typing import Optional
 
 from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
@@ -15,6 +14,7 @@ from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 logger = logging.getLogger(__name__)
 
 # Initialize the OpenSearch client
+opensearch_client: OpenSearch | None
 try:
     opensearch_client = OpenSearch(
         hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
@@ -133,8 +133,8 @@ def index_transcript(
     transcript_text: str,
     speakers: list[str],
     title: str,
-    tags: list[str] = None,
-    embedding: list[float] = None,
+    tags: list[str] | None = None,
+    embedding: list[float] | None = None,
 ):
     """
     Index a transcript in OpenSearch
@@ -234,12 +234,12 @@ def add_speaker_embedding(
     user_id: int,
     name: str,
     embedding: list[float],
-    profile_id: Optional[int] = None,
-    profile_uuid: Optional[str] = None,
-    collection_ids: Optional[list[int]] = None,
-    media_file_id: Optional[int] = None,
+    profile_id: int | None = None,
+    profile_uuid: str | None = None,
+    collection_ids: list[int] | None = None,
+    media_file_id: int | None = None,
     segment_count: int = 1,
-    display_name: Optional[str] = None,
+    display_name: str | None = None,
 ):
     """
     Add a speaker embedding to OpenSearch with collection support
@@ -340,24 +340,21 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
             )
 
             # Document
-            bulk_body.append(
-                {
-                    "speaker_id": data["speaker_id"],
-                    "speaker_uuid": str(data["speaker_uuid"]),
-                    "profile_id": data.get("profile_id"),
-                    "profile_uuid": str(data.get("profile_uuid"))
-                    if data.get("profile_uuid")
-                    else None,
-                    "user_id": data["user_id"],
-                    "name": data["name"],
-                    "collection_ids": data.get("collection_ids", []),
-                    "media_file_id": data.get("media_file_id"),
-                    "segment_count": data.get("segment_count", 1),
-                    "created_at": datetime.datetime.now().isoformat(),
-                    "updated_at": datetime.datetime.now().isoformat(),
-                    "embedding": data["embedding"],
-                }
-            )
+            doc_data: dict[str, Any] = {
+                "speaker_id": data["speaker_id"],
+                "speaker_uuid": str(data["speaker_uuid"]),
+                "profile_id": data.get("profile_id"),
+                "profile_uuid": str(data.get("profile_uuid")) if data.get("profile_uuid") else None,
+                "user_id": data["user_id"],
+                "name": data["name"],
+                "collection_ids": data.get("collection_ids", []),
+                "media_file_id": data.get("media_file_id"),
+                "segment_count": data.get("segment_count", 1),
+                "created_at": datetime.datetime.now().isoformat(),
+                "updated_at": datetime.datetime.now().isoformat(),
+                "embedding": data["embedding"],
+            }
+            bulk_body.append(doc_data)
 
         # Execute bulk operation
         response = opensearch_client.bulk(body=bulk_body)
@@ -376,8 +373,8 @@ def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
 def search_transcripts(  # noqa: C901
     query: str,
     user_id: int,
-    speaker: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    speaker: str | None = None,
+    tags: list[str] | None = None,
     limit: int = 10,
     use_semantic: bool = True,
 ) -> list[dict[str, Any]]:
@@ -413,7 +410,7 @@ def search_transcripts(  # noqa: C901
 
     try:
         # Build the search query
-        must_conditions = [
+        must_conditions: list[dict[str, Any]] = [
             {"term": {"user_id": user_id}}  # Restrict to user's files
         ]
 
@@ -480,10 +477,14 @@ def search_transcripts(  # noqa: C901
                 query_embedding = [0.0] * SENTENCE_TRANSFORMER_DIMENSION
 
             # Add kNN query
-            knn_query = {"knn": {"embedding": {"vector": query_embedding, "k": limit}}}
+            knn_query: dict[str, Any] = {
+                "knn": {"embedding": {"vector": query_embedding, "k": limit}}
+            }
 
             # Combine text search with vector search
-            search_body["query"]["bool"]["should"] = [knn_query]
+            search_body_query = search_body["query"]
+            if isinstance(search_body_query, dict) and "bool" in search_body_query:
+                search_body_query["bool"]["should"] = [knn_query]
 
         # Execute search
         response = opensearch_client.search(
@@ -523,9 +524,9 @@ def find_matching_speaker(
     embedding: list[float],
     user_id: int,
     threshold: float = 0.5,
-    collection_ids: Optional[list[int]] = None,
-    exclude_speaker_ids: Optional[list[int]] = None,
-) -> Optional[dict[str, Any]]:
+    collection_ids: list[int] | None = None,
+    exclude_speaker_ids: list[int] | None = None,
+) -> dict[str, Any] | None:
     """
     Find a matching speaker for a given embedding with confidence score
 
@@ -548,7 +549,7 @@ def find_matching_speaker(
         ensure_indices_exist()
 
         # Build filter conditions
-        filters = [{"term": {"user_id": user_id}}]
+        filters: list[dict[str, Any]] = [{"term": {"user_id": user_id}}]
 
         # Add collection filter if specified
         if collection_ids:
@@ -638,33 +639,32 @@ def batch_find_matching_speakers(
         ensure_indices_exist()
 
         # Use multi-search for efficient batch processing
-        msearch_body = []
+        msearch_body: list[dict[str, Any]] = []
 
         for emb_data in embeddings:
             # Add search header
             msearch_body.append({"index": settings.OPENSEARCH_SPEAKER_INDEX})
 
             # Add search query with self-exclusion
-            msearch_body.append(
-                {
-                    "size": max_candidates,
-                    "query": {
-                        "bool": {
-                            "filter": [{"term": {"user_id": user_id}}],
-                            "must_not": [
-                                {"term": {"speaker_id": emb_data["id"]}},  # Exclude self
-                                {"exists": {"field": "document_type"}},  # Exclude profile documents
-                            ],
-                        }
-                    },
-                    "knn": {
-                        "embedding": {
-                            "vector": emb_data["embedding"],
-                            "k": max_candidates,
-                        }
-                    },
-                }
-            )
+            query_body: dict[str, Any] = {
+                "size": max_candidates,
+                "query": {
+                    "bool": {
+                        "filter": [{"term": {"user_id": user_id}}],
+                        "must_not": [
+                            {"term": {"speaker_id": emb_data["id"]}},  # Exclude self
+                            {"exists": {"field": "document_type"}},  # Exclude profile documents
+                        ],
+                    }
+                },
+                "knn": {
+                    "embedding": {
+                        "vector": emb_data["embedding"],
+                        "k": max_candidates,
+                    }
+                },
+            }
+            msearch_body.append(query_body)
 
         # Execute multi-search
         response = opensearch_client.msearch(body=msearch_body)
@@ -862,7 +862,7 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
 
     try:
         # Prepare bulk update operations
-        bulk_body = []
+        bulk_body: list[dict[str, Any]] = []
         for update in updates:
             # Update action using UUID as document ID
             bulk_body.append(
@@ -875,18 +875,17 @@ def bulk_update_collection_assignments(updates: list[dict[str, Any]]):
             )
 
             # Update document
-            bulk_body.append(
-                {
-                    "doc": {
-                        "profile_id": update.get("profile_id"),
-                        "profile_uuid": str(update.get("profile_uuid"))
-                        if update.get("profile_uuid")
-                        else None,
-                        "collection_ids": update.get("collection_ids", []),
-                        "updated_at": datetime.datetime.now().isoformat(),
-                    }
+            doc_update: dict[str, Any] = {
+                "doc": {
+                    "profile_id": update.get("profile_id"),
+                    "profile_uuid": str(update.get("profile_uuid"))
+                    if update.get("profile_uuid")
+                    else None,
+                    "collection_ids": update.get("collection_ids", []),
+                    "updated_at": datetime.datetime.now().isoformat(),
                 }
-            )
+            }
+            bulk_body.append(doc_update)
 
         # Execute bulk operation
         response = opensearch_client.bulk(body=bulk_body)
@@ -1049,7 +1048,7 @@ def cleanup_orphaned_embeddings(user_id: int) -> int:
         return 0
 
 
-def get_speaker_embedding(speaker_uuid: str) -> Optional[list[float]]:
+def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
     """
     Get the embedding vector for a speaker from OpenSearch
 
@@ -1072,7 +1071,10 @@ def get_speaker_embedding(speaker_uuid: str) -> Optional[list[float]]:
         )
 
         if response and "_source" in response:
-            return response["_source"].get("embedding")
+            embedding = response["_source"].get("embedding")
+            if embedding is not None:
+                return list(embedding)  # Explicit conversion to list[float]
+            return None
 
         return None
 
@@ -1081,7 +1083,7 @@ def get_speaker_embedding(speaker_uuid: str) -> Optional[list[float]]:
         return None
 
 
-def get_profile_embedding(profile_uuid: str) -> Optional[list[float]]:
+def get_profile_embedding(profile_uuid: str) -> list[float] | None:
     """
     Get the embedding vector for a speaker profile from OpenSearch
 
@@ -1105,7 +1107,10 @@ def get_profile_embedding(profile_uuid: str) -> Optional[list[float]]:
         )
 
         if response and "_source" in response:
-            return response["_source"].get("embedding")
+            embedding = response["_source"].get("embedding")
+            if embedding is not None:
+                return list(embedding)  # Explicit conversion to list[float]
+            return None
 
         return None
 
@@ -1246,7 +1251,7 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
         return False
 
 
-def update_speaker_display_name(speaker_uuid: str, display_name: Optional[str]):
+def update_speaker_display_name(speaker_uuid: str, display_name: str | None):
     """
     Update the display name of a speaker in OpenSearch
 
@@ -1283,8 +1288,8 @@ def update_speaker_display_name(speaker_uuid: str, display_name: Optional[str]):
 
 def update_speaker_profile(
     speaker_uuid: str,
-    profile_id: Optional[int],
-    profile_uuid: Optional[str],
+    profile_id: int | None,
+    profile_uuid: str | None,
     verified: bool = False,
 ):
     """

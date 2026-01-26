@@ -6,9 +6,9 @@
 {#if $toastStore.length > 0}
   <div class="toast-container">
     {#each $toastStore as toast (toast.id)}
-      <Toast 
-        message={toast.message} 
-        type={toast.type} 
+      <Toast
+        message={toast.message}
+        type={toast.type}
         duration={0}
         on:dismiss={() => toastStore.dismiss(toast.id)}
       />

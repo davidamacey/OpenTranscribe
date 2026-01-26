@@ -91,8 +91,82 @@ NGINX_CERT_KEY=./nginx/ssl/server.key
 
 See [NGINX Setup Guide](/docs/configuration/nginx-setup) for full documentation.
 
+## Authentication
+
+OpenTranscribe supports multiple authentication methods. See [Authentication Overview](../authentication/overview.md) for detailed configuration.
+
+### Authentication Methods
+
+```bash
+# LDAP/Active Directory
+LDAP_ENABLED=false
+LDAP_SERVER=ldaps://your-ad-server.domain.com
+LDAP_PORT=636
+LDAP_USE_SSL=true
+LDAP_BIND_DN=CN=service-account,CN=Users,DC=domain,DC=com
+LDAP_BIND_PASSWORD=your-service-account-password
+LDAP_SEARCH_BASE=DC=domain,DC=com
+LDAP_USERNAME_ATTR=sAMAccountName
+LDAP_ADMIN_USERS=admin1,admin2
+
+# Keycloak/OIDC
+KEYCLOAK_ENABLED=false
+KEYCLOAK_SERVER_URL=https://keycloak.yourdomain.com
+KEYCLOAK_REALM=opentranscribe
+KEYCLOAK_CLIENT_ID=opentranscribe-app
+KEYCLOAK_CLIENT_SECRET=your-client-secret
+KEYCLOAK_ADMIN_ROLE=admin
+
+# PKI/X.509 Certificates
+PKI_ENABLED=false
+PKI_CA_CERT_PATH=/path/to/ca.crt
+PKI_ADMIN_DNS=CN=Admin User,O=Company,C=US
+```
+
+### Security Features
+
+```bash
+# Password Policy (FedRAMP IA-5)
+PASSWORD_POLICY_ENABLED=true
+PASSWORD_MIN_LENGTH=12
+PASSWORD_REQUIRE_UPPERCASE=true
+PASSWORD_REQUIRE_LOWERCASE=true
+PASSWORD_REQUIRE_DIGIT=true
+PASSWORD_REQUIRE_SPECIAL=true
+PASSWORD_HISTORY_COUNT=24
+PASSWORD_MAX_AGE_DAYS=60
+
+# Account Lockout (NIST AC-7)
+ACCOUNT_LOCKOUT_ENABLED=true
+ACCOUNT_LOCKOUT_THRESHOLD=5
+ACCOUNT_LOCKOUT_DURATION_MINUTES=15
+ACCOUNT_LOCKOUT_PROGRESSIVE=true
+ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES=1440
+
+# Multi-Factor Authentication
+MFA_ENABLED=true
+MFA_ISSUER_NAME=OpenTranscribe
+MFA_BACKUP_CODE_COUNT=10
+
+# Rate Limiting
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_AUTH_PER_MINUTE=10
+RATE_LIMIT_API_PER_MINUTE=100
+
+# Audit Logging (FedRAMP AU-2/AU-3)
+AUDIT_LOG_ENABLED=true
+AUDIT_LOG_FORMAT=json  # or: cef
+AUDIT_LOG_TO_OPENSEARCH=false
+
+# Login Banner
+LOGIN_BANNER_ENABLED=false
+LOGIN_BANNER_TITLE=Security Notice
+LOGIN_BANNER_TEXT=This is a restricted system...
+```
+
 ## Next Steps
 
+- [Authentication Overview](../authentication/overview.md)
 - [GPU Setup](../installation/gpu-setup.md)
 - [Multi-GPU Scaling](./multi-gpu-scaling.md)
 - [LLM Integration](../features/llm-integration.md)

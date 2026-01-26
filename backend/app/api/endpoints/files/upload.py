@@ -2,7 +2,6 @@ import contextlib
 import io
 import logging
 import os
-from typing import Optional
 
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -40,7 +39,7 @@ def validate_file_type(file: UploadFile) -> None:
         )
 
     allowed_types = ["audio/", "video/"]
-    if not any(file.content_type.startswith(t) for t in allowed_types):
+    if not file.content_type or not any(file.content_type.startswith(t) for t in allowed_types):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be an audio or video format",
@@ -71,7 +70,7 @@ def create_media_file_record(
 
         # Create MediaFile record with essential metadata
         # Sanitize filename to prevent issues with special characters
-        sanitized_filename = sanitize_filename(file.filename)
+        sanitized_filename = sanitize_filename(file.filename or "unknown")
 
         db_file = MediaFile(
             filename=sanitized_filename,
@@ -129,9 +128,9 @@ def upload_file_to_storage(
 def start_transcription_task(
     file_id: int,
     file_uuid: str,
-    min_speakers: Optional[int] = None,
-    max_speakers: Optional[int] = None,
-    num_speakers: Optional[int] = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ) -> None:
     """
     Start the background transcription and waveform generation tasks in parallel.
@@ -165,7 +164,7 @@ def _get_or_create_file_record(
     file: UploadFile,
     current_user: User,
     file_size: int,
-    existing_file_uuid: Optional[str],
+    existing_file_uuid: str | None,
 ) -> MediaFile:
     """
     Get an existing file record or create a new one.
@@ -186,7 +185,7 @@ def _get_or_create_file_record(
         return db_file
 
     # Look up file by UUID
-    db_file = (
+    db_file_result = (
         db.query(MediaFile)
         .filter(
             MediaFile.uuid == existing_file_uuid,
@@ -195,16 +194,16 @@ def _get_or_create_file_record(
         .first()
     )
 
-    if not db_file:
+    if not db_file_result:
         logger.warning(
             f"Existing file UUID {existing_file_uuid} not found for user {current_user.id}"
         )
         return create_media_file_record(db, file, current_user, file_size)
 
     logger.info(f"Using existing file record with UUID={existing_file_uuid}")
-    db_file.status = FileStatus.PENDING
+    db_file_result.status = FileStatus.PENDING  # type: ignore[assignment]
     db.commit()
-    return db_file
+    return db_file_result  # type: ignore[no-any-return]
 
 
 async def _read_file_content(file: UploadFile) -> tuple[bytearray, int]:
@@ -230,7 +229,7 @@ async def _read_file_content(file: UploadFile) -> tuple[bytearray, int]:
     return file_content, total_read
 
 
-def _update_file_hash(db_file: MediaFile, client_file_hash: Optional[str], filename: str) -> None:
+def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
     """
     Update file hash on the database record.
 
@@ -243,12 +242,12 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: Optional[str], filen
         # Remove 0x prefix if present for database consistency
         if client_file_hash.startswith("0x"):
             client_file_hash = client_file_hash[2:]
-        db_file.file_hash = client_file_hash
+        db_file.file_hash = client_file_hash  # type: ignore[assignment]
     elif not db_file.file_hash:
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
 
 
-def _cleanup_temp_file(temp_file_path: Optional[str]) -> None:
+def _cleanup_temp_file(temp_file_path: str | None) -> None:
     """
     Clean up a temporary file if it exists.
 
@@ -265,7 +264,7 @@ async def _generate_video_thumbnail(
     filename: str,
     current_user: User,
     db_file: MediaFile,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """
     Generate and upload a thumbnail for video files.
 
@@ -289,8 +288,8 @@ async def _generate_video_thumbnail(
             temp_file_path = temp_video.name
 
         thumbnail_path = await generate_and_upload_thumbnail(
-            user_id=current_user.id,
-            media_file_id=db_file.id,
+            user_id=int(current_user.id),
+            media_file_id=int(db_file.id),
             video_path=temp_file_path,
         )
 
@@ -309,11 +308,11 @@ async def process_file_upload(
     file: UploadFile,
     db: Session,
     current_user: User,
-    existing_file_uuid: Optional[str] = None,
-    client_file_hash: Optional[str] = None,
-    min_speakers: Optional[int] = None,
-    max_speakers: Optional[int] = None,
-    num_speakers: Optional[int] = None,
+    existing_file_uuid: str | None = None,
+    client_file_hash: str | None = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
+    num_speakers: int | None = None,
 ) -> MediaFile:
     """
     Complete file upload processing pipeline with chunked upload support for large files.
@@ -350,37 +349,41 @@ async def process_file_upload(
     db_file = _get_or_create_file_record(db, file, current_user, file_size, existing_file_uuid)
 
     # Generate storage path with sanitized filename
-    storage_path = get_safe_storage_filename(file.filename, current_user.id, db_file.id)
-    temp_file_path: Optional[str] = None
+    storage_path = get_safe_storage_filename(
+        file.filename or "unknown", int(current_user.id), int(db_file.id)
+    )
+    temp_file_path: str | None = None
 
     try:
         # Read file content in chunks
         file_content, file_size = await _read_file_content(file)
 
         # Update file hash
-        _update_file_hash(db_file, client_file_hash, file.filename)
+        _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
 
         # Upload to storage
-        upload_file_to_storage(file_content, file_size, storage_path, file.content_type)
+        upload_file_to_storage(
+            file_content, file_size, storage_path, file.content_type or "application/octet-stream"
+        )
 
         # For video files, generate and upload a thumbnail
-        if file.content_type.startswith("video/"):
+        if file.content_type and file.content_type.startswith("video/"):
             thumbnail_path, temp_file_path = await _generate_video_thumbnail(
-                file_content, file.filename, current_user, db_file
+                file_content, file.filename or "unknown", current_user, db_file
             )
             if thumbnail_path:
-                db_file.thumbnail_path = thumbnail_path
+                db_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
             _cleanup_temp_file(temp_file_path)
 
         # Update storage path, file size, and thumbnail path in database
-        db_file.storage_path = storage_path
-        db_file.file_size = file_size
+        db_file.storage_path = storage_path  # type: ignore[assignment]
+        db_file.file_size = file_size  # type: ignore[assignment]
         db.commit()
         db.refresh(db_file)
 
         # Start background transcription and waveform generation in parallel
         start_transcription_task(
-            db_file.id, str(db_file.uuid), min_speakers, max_speakers, num_speakers
+            int(db_file.id), str(db_file.uuid), min_speakers, max_speakers, num_speakers
         )
 
         logger.info(f"File processed: {file.filename} (ID: {db_file.id})")

@@ -16,7 +16,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 from typing import Callable
-from typing import Optional
 
 import requests
 import yt_dlp
@@ -224,7 +223,7 @@ def _find_downloaded_file(output_path: str, clean_title: str, ext: str) -> str:
     raise FileNotFoundError("Downloaded file not found")
 
 
-def _resolve_thumbnail_url(media_info: dict[str, Any]) -> Optional[str]:
+def _resolve_thumbnail_url(media_info: dict[str, Any]) -> str | None:
     """
     Resolve the best thumbnail URL from media metadata.
 
@@ -238,11 +237,11 @@ def _resolve_thumbnail_url(media_info: dict[str, Any]) -> Optional[str]:
 
     # Fallback to single thumbnail URL if no thumbnails list
     if not thumbnails:
-        return media_info.get("thumbnail")
+        return media_info.get("thumbnail")  # type: ignore[return-value]
 
     # Find the highest quality thumbnail
     max_width = 0
-    thumbnail_url = None
+    thumbnail_url: str | None = None
     for thumb in thumbnails:
         width = thumb.get("width", 0)
         if width > max_width and thumb.get("url"):
@@ -256,7 +255,7 @@ def _resolve_thumbnail_url(media_info: dict[str, Any]) -> Optional[str]:
     return _get_fallback_thumbnail_url(media_info.get("id"), media_info.get("extractor", ""))
 
 
-def _get_fallback_thumbnail_url(video_id: Optional[str], extractor: str) -> Optional[str]:
+def _get_fallback_thumbnail_url(video_id: str | None, extractor: str) -> str | None:
     """
     Try standard thumbnail URLs as fallback for known platforms.
 
@@ -295,7 +294,7 @@ def _get_thumbnail_with_fallback(
     user_id: int,
     media_file_id: int,
     video_path: str,
-) -> Optional[str]:
+) -> str | None:
     """
     Get thumbnail from media source or generate from video as fallback.
 
@@ -331,7 +330,7 @@ def _get_thumbnail_with_fallback(
         return None
 
 
-def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> Optional[MediaFile]:
+def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> MediaFile | None:
     """
     Check if a YouTube video already exists in the user's library.
 
@@ -345,7 +344,7 @@ def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> O
     """
     from sqlalchemy import text
 
-    return (
+    result = (
         db.query(MediaFile)
         .filter(
             MediaFile.user_id == user_id,
@@ -354,6 +353,7 @@ def _check_existing_youtube_video(db: Session, user_id: int, video_id: str) -> O
         .params(youtube_id=video_id)
         .first()
     )
+    return result  # type: ignore[no-any-return]
 
 
 def _process_playlist_videos(
@@ -363,7 +363,7 @@ def _process_playlist_videos(
     playlist_info: dict[str, Any],
     playlist_url: str,
     video_count: int,
-    progress_callback: Optional[Callable[[int, str, dict], None]] = None,
+    progress_callback: Callable[[int, str, dict], None] | None = None,
 ) -> tuple[list[MediaFile], list[dict[str, Any]]]:
     """
     Process playlist videos and create placeholders.
@@ -396,8 +396,12 @@ def _process_playlist_videos(
                 {"current_video": idx + 1, "total_videos": video_count, "video_title": video_title},
             )
 
-        # Check for existing video
-        existing_video = _check_existing_youtube_video(db, user_id, video_id)
+        # Check for existing video - ensure video_id is a string
+        if video_id:
+            existing_video = _check_existing_youtube_video(db, user_id, str(video_id))
+        else:
+            existing_video = None
+
         if existing_video:
             logger.info(f"Video already exists in library: {video_title} (YouTube ID: {video_id})")
             skipped_videos.append(
@@ -498,7 +502,7 @@ def _update_media_file_with_download_data(
     technical_metadata: dict[str, Any],
     storage_path: str,
     file_size: int,
-    thumbnail_path: Optional[str],
+    thumbnail_path: str | None,
     original_filename: str,
     source_url: str,
 ) -> None:
@@ -516,30 +520,30 @@ def _update_media_file_with_download_data(
         original_filename: Original filename
         source_url: Original media URL
     """
-    media_file.filename = media_info.get("title", original_filename)[:255]
-    media_file.storage_path = storage_path
-    media_file.file_size = file_size
-    media_file.content_type = technical_metadata.get("content_type", "video/mp4")
-    media_file.duration = technical_metadata.get("duration") or media_info.get("duration")
-    media_file.status = FileStatus.PENDING
-    media_file.thumbnail_path = thumbnail_path
+    media_file.filename = media_info.get("title", original_filename)[:255]  # type: ignore[assignment]
+    media_file.storage_path = storage_path  # type: ignore[assignment]
+    media_file.file_size = file_size  # type: ignore[assignment]
+    media_file.content_type = technical_metadata.get("content_type", "video/mp4")  # type: ignore[assignment]
+    media_file.duration = technical_metadata.get("duration") or media_info.get("duration")  # type: ignore[assignment]
+    media_file.status = FileStatus.PENDING  # type: ignore[assignment]
+    media_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
 
     # Media-specific metadata
-    media_file.title = media_info.get("title")
-    media_file.author = media_info.get("uploader")
-    media_file.description = media_info.get("description")
-    media_file.source_url = source_url
-    media_file.metadata_raw = media_metadata
-    media_file.metadata_important = media_metadata
+    media_file.title = media_info.get("title")  # type: ignore[assignment]
+    media_file.author = media_info.get("uploader")  # type: ignore[assignment]
+    media_file.description = media_info.get("description")  # type: ignore[assignment]
+    media_file.source_url = source_url  # type: ignore[assignment]
+    media_file.metadata_raw = media_metadata  # type: ignore[assignment]
+    media_file.metadata_important = media_metadata  # type: ignore[assignment]
 
     # Technical metadata from extraction
-    media_file.media_format = technical_metadata.get("format")
-    media_file.codec = technical_metadata.get("video_codec")
-    media_file.frame_rate = technical_metadata.get("frame_rate")
-    media_file.resolution_width = technical_metadata.get("width")
-    media_file.resolution_height = technical_metadata.get("height")
-    media_file.audio_channels = technical_metadata.get("audio_channels")
-    media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
+    media_file.media_format = technical_metadata.get("format")  # type: ignore[assignment]
+    media_file.codec = technical_metadata.get("video_codec")  # type: ignore[assignment]
+    media_file.frame_rate = technical_metadata.get("frame_rate")  # type: ignore[assignment]
+    media_file.resolution_width = technical_metadata.get("width")  # type: ignore[assignment]
+    media_file.resolution_height = technical_metadata.get("height")  # type: ignore[assignment]
+    media_file.audio_channels = technical_metadata.get("audio_channels")  # type: ignore[assignment]
+    media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")  # type: ignore[assignment]
 
 
 class MediaDownloadService:
@@ -553,7 +557,7 @@ class MediaDownloadService:
     def __init__(self):
         pass
 
-    def _get_protected_provider(self, url: str) -> Optional[ProtectedMediaProvider]:
+    def _get_protected_provider(self, url: str) -> ProtectedMediaProvider | None:
         """Return a protected media provider that can handle this URL, if any."""
         for provider in PROTECTED_MEDIA_PROVIDERS:
             try:
@@ -605,8 +609,8 @@ class MediaDownloadService:
     def extract_video_info(
         self,
         url: str,
-        media_username: Optional[str] = None,
-        media_password: Optional[str] = None,
+        media_username: str | None = None,
+        media_password: str | None = None,
     ) -> dict[str, Any]:
         """
         Extract video metadata without downloading.
@@ -618,7 +622,7 @@ class MediaDownloadService:
             url: Media URL
             media_username: Optional username for protected media sources
             media_password: Optional password for protected media sources
-            
+
         Returns:
             Dictionary with video information
 
@@ -628,9 +632,7 @@ class MediaDownloadService:
         # Try protected media providers first (authenticated corporate sites, etc.)
         provider = self._get_protected_provider(url)
         if provider is not None:
-            return provider.extract_info(
-                url, username=media_username, password=media_password
-            )
+            return provider.extract_info(url, username=media_username, password=media_password)
 
         ydl_opts = {
             "quiet": True,
@@ -641,7 +643,7 @@ class MediaDownloadService:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-                return info
+                return info  # type: ignore[no-any-return]
         except yt_dlp.DownloadError as e:
             error_msg = str(e)
             logger.error(f"Error extracting video info from {url}: {error_msg}")
@@ -730,9 +732,9 @@ class MediaDownloadService:
         self,
         url: str,
         output_path: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        media_username: Optional[str] = None,
-        media_password: Optional[str] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        media_username: str | None = None,
+        media_password: str | None = None,
     ) -> dict[str, Any]:
         """
         Download video from media URL.
@@ -907,7 +909,7 @@ class MediaDownloadService:
             logger.warning(f"Failed to extract technical metadata: {e}")
             return self._extract_basic_metadata(file_path)
 
-    def _safe_frame_rate_eval(self, frame_rate_str: str) -> float:
+    def _safe_frame_rate_eval(self, frame_rate_str: str) -> float | None:
         """
         Safely evaluate frame rate string like '30/1' or '29.97'.
 
@@ -1034,7 +1036,9 @@ class MediaDownloadService:
 
         return metadata
 
-    def _download_media_thumbnail_sync(self, media_info: dict[str, Any], user_id: int) -> str:
+    def _download_media_thumbnail_sync(
+        self, media_info: dict[str, Any], user_id: int
+    ) -> str | None:
         """
         Download media thumbnail and upload to storage (synchronous version).
 
@@ -1086,9 +1090,9 @@ class MediaDownloadService:
         db: Session,
         user: User,
         media_file: MediaFile,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        media_username: Optional[str] = None,
-        media_password: Optional[str] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        media_username: str | None = None,
+        media_password: str | None = None,
     ) -> MediaFile:
         """
         Process a media URL by downloading the video and updating the MediaFile record (synchronous).
@@ -1180,7 +1184,7 @@ class MediaDownloadService:
 
             # Download and upload media thumbnail with fallback
             thumbnail_path = _get_thumbnail_with_fallback(
-                self, media_info, user.id, media_file.id, downloaded_file
+                self, media_info, int(user.id), int(media_file.id), downloaded_file
             )
 
             if progress_callback:
@@ -1221,7 +1225,7 @@ class MediaDownloadService:
         url: str,
         db: Session,
         user: User,
-        progress_callback: Optional[Callable[[int, str, dict], None]] = None,
+        progress_callback: Callable[[int, str, dict], None] | None = None,
     ) -> dict[str, Any]:
         """
         Process a YouTube playlist by extracting video list and creating placeholder MediaFile records.
@@ -1286,7 +1290,7 @@ class MediaDownloadService:
         # Create placeholder MediaFile records for each video
         videos = playlist_info.get("videos", [])
         created_media_files, skipped_videos = _process_playlist_videos(
-            db, user.id, videos, playlist_info, url, video_count, progress_callback
+            db, int(user.id), videos, playlist_info, url, video_count, progress_callback
         )
 
         # Commit and refresh all placeholder records
@@ -1326,7 +1330,7 @@ class MediaDownloadService:
         db: Session,
         user: User,
         media_file: MediaFile,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
     ) -> MediaFile:
         """Alias for process_media_url_sync for backward compatibility."""
         return self.process_media_url_sync(url, db, user, media_file, progress_callback)
@@ -1335,7 +1339,9 @@ class MediaDownloadService:
         """Alias for _prepare_media_metadata for backward compatibility."""
         return self._prepare_media_metadata(url, youtube_info)
 
-    def _download_youtube_thumbnail_sync(self, youtube_info: dict[str, Any], user_id: int) -> str:
+    def _download_youtube_thumbnail_sync(
+        self, youtube_info: dict[str, Any], user_id: int
+    ) -> str | None:
         """Alias for _download_media_thumbnail_sync for backward compatibility."""
         return self._download_media_thumbnail_sync(youtube_info, user_id)
 

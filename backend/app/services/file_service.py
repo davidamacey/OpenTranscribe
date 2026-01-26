@@ -66,14 +66,14 @@ class FileService:
             List of MediaFile objects
         """
         try:
-            query = get_user_files_query(self.db, user.id)
+            query = get_user_files_query(self.db, int(user.id))
 
             if filters:
                 from app.api.endpoints.files import apply_all_filters
 
                 query = apply_all_filters(query, filters)
 
-            return query.order_by(MediaFile.upload_time.desc()).all()
+            return query.order_by(MediaFile.upload_time.desc()).all()  # type: ignore[no-any-return]
         except Exception as e:
             logger.error(f"Error getting user files: {e}")
             raise ErrorHandler.database_error("file retrieval", e) from e
@@ -137,7 +137,7 @@ class FileService:
             try:
                 from app.services.minio_service import delete_file
 
-                delete_file(file_obj.storage_path)
+                delete_file(str(file_obj.storage_path))
             except Exception as storage_error:
                 logger.warning(f"Error deleting file from storage: {storage_error}")
                 # Continue with database deletion
@@ -208,7 +208,7 @@ class FileService:
         Returns:
             Dictionary with file statistics
         """
-        return get_user_file_stats(self.db, user.id)
+        return get_user_file_stats(self.db, int(user.id))
 
     def get_files_by_status(self, user: User, status: FileStatus) -> list[MediaFile]:
         """
@@ -222,7 +222,7 @@ class FileService:
             List of MediaFile objects
         """
         try:
-            return (
+            return (  # type: ignore[no-any-return]
                 self.db.query(MediaFile)
                 .filter(MediaFile.user_id == user.id, MediaFile.status == status)
                 .all()
@@ -231,7 +231,9 @@ class FileService:
             logger.error(f"Error getting files by status: {e}")
             raise ErrorHandler.database_error("status filtering", e) from e
 
-    def update_file_status(self, file_id: int, status: FileStatus, user: User = None) -> None:
+    def update_file_status(
+        self, file_id: int, status: FileStatus, user: User | None = None
+    ) -> None:
         """
         Update file status.
 
@@ -244,11 +246,12 @@ class FileService:
             if user:
                 file_obj = self.get_file_by_id(file_id, user)
             else:
-                file_obj = safe_get_by_id(self.db, MediaFile, file_id)
-                if not file_obj:
+                file_obj_result = safe_get_by_id(self.db, MediaFile, file_id)
+                if not file_obj_result:
                     raise ErrorHandler.not_found_error("File")
+                file_obj = file_obj_result
 
-            file_obj.status = status
+            file_obj.status = status  # type: ignore[assignment]
             self.db.commit()
 
         except Exception as e:

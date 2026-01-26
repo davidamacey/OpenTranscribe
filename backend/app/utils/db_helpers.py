@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 from typing import TypeVar
 
 from sqlalchemy import and_
@@ -34,7 +33,7 @@ def get_user_files_query(db: Session, user_id: int) -> Query:
 
 
 def get_or_create(
-    db: Session, model: type[T], defaults: Optional[dict] = None, **kwargs
+    db: Session, model: type[T], defaults: dict | None = None, **kwargs
 ) -> tuple[T, bool]:
     """
     Get an object or create it if it doesn't exist.
@@ -68,8 +67,8 @@ def get_or_create(
 
 
 def safe_get_by_id(
-    db: Session, model: type[T], obj_id: int, user_id: Optional[int] = None
-) -> Optional[T]:
+    db: Session, model: type[T], obj_id: int, user_id: int | None = None
+) -> T | None:
     """
     Safely get an object by ID with optional user filtering.
 
@@ -83,13 +82,13 @@ def safe_get_by_id(
         Object if found, None otherwise
     """
     try:
-        query = db.query(model).filter(model.id == obj_id)
+        query = db.query(model).filter(model.id == obj_id)  # type: ignore[attr-defined]
 
         # Add user filtering if specified and model has user_id field
         if user_id and hasattr(model, "user_id"):
-            query = query.filter(model.user_id == user_id)
+            query = query.filter(model.user_id == user_id)  # type: ignore[attr-defined]
 
-        return query.first()
+        return query.first()  # type: ignore[no-any-return]
     except SQLAlchemyError as e:
         logger.error(f"Error getting {model.__name__} by ID {obj_id}: {e}")
         return None
@@ -123,7 +122,7 @@ def bulk_update(db: Session, model: type[T], updates: list[dict], id_field: str 
 
 def get_file_with_transcript_count(
     db: Session, file_id: int, user_id: int
-) -> tuple[MediaFile, int]:
+) -> tuple[MediaFile | None, int]:
     """
     Get a file with its transcript segment count.
 
@@ -133,7 +132,7 @@ def get_file_with_transcript_count(
         user_id: User ID
 
     Returns:
-        Tuple of (MediaFile, segment_count)
+        Tuple of (MediaFile or None, segment_count)
     """
     file_obj = safe_get_by_id(db, MediaFile, file_id, user_id)
     if not file_obj:
@@ -159,7 +158,7 @@ def get_user_speakers(db: Session, user_id: int) -> list[Speaker]:
     Returns:
         List of Speaker objects
     """
-    return db.query(Speaker).filter(Speaker.user_id == user_id).all()
+    return db.query(Speaker).filter(Speaker.user_id == user_id).all()  # type: ignore[no-any-return]
 
 
 def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
@@ -173,13 +172,14 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
     Returns:
         List of unique Speaker objects
     """
-    return (
+    result = (
         db.query(Speaker)
         .join(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == file_id)
         .distinct()
         .all()
     )
+    return result  # type: ignore[no-any-return]
 
 
 def get_file_tags(db: Session, file_id: int) -> list[str]:
@@ -279,11 +279,12 @@ def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFil
     Returns:
         List of MediaFile objects
     """
-    return (
+    result = (
         db.query(MediaFile)
         .filter(and_(MediaFile.user_id == user_id, MediaFile.status == status))
         .all()
     )
+    return result  # type: ignore[no-any-return]
 
 
 def get_user_file_stats(db: Session, user_id: int) -> dict:
@@ -328,10 +329,10 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
 
         return {
             "total_files": sum(count for _, count in status_counts),
-            "status_distribution": dict(status_counts),
+            "status_distribution": {status: count for status, count in status_counts},
             "total_size_bytes": total_size,
             "total_duration_seconds": total_duration,
-            "type_distribution": dict(type_counts),
+            "type_distribution": {content_type: count for content_type, count in type_counts},
         }
     except SQLAlchemyError as e:
         logger.error(f"Error getting file stats for user {user_id}: {e}")

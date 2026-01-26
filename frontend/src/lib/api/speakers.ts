@@ -1,8 +1,8 @@
 /**
  * API client for speaker operations
  */
-import axiosInstance from "../axios";
-import type { MergeSpeakersResponse } from "$lib/types/speaker";
+import axiosInstance from '../axios';
+import type { MergeSpeakersResponse } from '$lib/types/speaker';
 
 /**
  * Merge a source speaker into a target speaker
@@ -12,15 +12,13 @@ import type { MergeSpeakersResponse } from "$lib/types/speaker";
  */
 export async function mergeSpeakers(
   sourceUuid: string,
-  targetUuid: string,
+  targetUuid: string
 ): Promise<MergeSpeakersResponse> {
   try {
-    const response = await axiosInstance.post(
-      `/speakers/${sourceUuid}/merge/${targetUuid}`,
-    );
+    const response = await axiosInstance.post(`/speakers/${sourceUuid}/merge/${targetUuid}`);
     return response.data;
   } catch (error: unknown) {
-    console.error("Error merging speakers:", error);
+    console.error('Error merging speakers:', error);
     throw error;
   }
 }

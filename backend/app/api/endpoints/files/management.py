@@ -78,9 +78,9 @@ async def get_file_status_detail(
 ):
     """Get detailed status information for a file."""
     try:
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for task operations
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for task operations
 
         # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
@@ -122,26 +122,29 @@ async def get_file_status_detail(
 
         return FileStatusDetail(
             file_uuid=str(db_file.uuid),
-            filename=db_file.filename,
-            status=db_file.status,
+            filename=str(db_file.filename),
+            status=str(db_file.status),
             can_delete=is_safe,
             can_retry=db_file.status
             in [FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED],
-            can_cancel=db_file.status == FileStatus.PROCESSING
-            and db_file.active_task_id is not None,
+            can_cancel=bool(
+                db_file.status == FileStatus.PROCESSING and db_file.active_task_id is not None
+            ),
             is_stuck=is_stuck,
-            retry_count=db_file.retry_count,
-            max_retries=db_file.max_retries,
-            active_task_id=db_file.active_task_id,
+            retry_count=int(db_file.retry_count),
+            max_retries=int(db_file.max_retries),
+            active_task_id=str(db_file.active_task_id) if db_file.active_task_id else None,
             task_started_at=db_file.task_started_at.isoformat()
             if db_file.task_started_at
             else None,
             task_last_update=db_file.task_last_update.isoformat()
             if db_file.task_last_update
             else None,
-            last_error_message=db_file.last_error_message,
-            recovery_attempts=db_file.recovery_attempts,
-            force_delete_eligible=db_file.force_delete_eligible,
+            last_error_message=str(db_file.last_error_message)
+            if db_file.last_error_message
+            else None,
+            recovery_attempts=int(db_file.recovery_attempts),
+            force_delete_eligible=bool(db_file.force_delete_eligible),
             actions_available=actions,
             recommendations=recommendations,
         )
@@ -164,9 +167,9 @@ async def cancel_file_processing(
 ):
     """Cancel active processing for a file."""
     try:
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for task operations
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for task operations
 
         if db_file.status != FileStatus.PROCESSING:
             raise HTTPException(
@@ -208,9 +211,9 @@ async def retry_file_processing(
 ):
     """Retry processing for a failed file."""
     try:
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for task operations
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for task operations
 
         # Check if file can be retried
         if db_file.status not in [
@@ -276,9 +279,9 @@ async def recover_file(
 ):
     """Attempt to recover a stuck file."""
     try:
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for task operations
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for task operations
 
         success = recover_stuck_file(db, file_id)
         if not success:
@@ -345,7 +348,7 @@ async def get_stuck_files(
         stuck_file_ids = check_for_stuck_files(db, threshold_hours)
 
         # Get file details for user's files only (unless admin)
-        is_admin = current_user.role == "admin"
+        is_admin = bool(current_user.role == "admin")
         stuck_files = []
 
         for file_id in stuck_file_ids:
@@ -353,7 +356,7 @@ async def get_stuck_files(
                 # Use internal ID lookup for stuck files (file_id is int from check_for_stuck_files)
                 from app.api.endpoints.files.crud import get_media_file_by_id
 
-                db_file = get_media_file_by_id(db, file_id, current_user.id, is_admin=is_admin)
+                db_file = get_media_file_by_id(db, file_id, int(current_user.id), is_admin=is_admin)
                 stuck_files.append(
                     {
                         "uuid": str(db_file.uuid),
@@ -455,8 +458,8 @@ def _process_single_file_action(
     reset_retry_count: bool,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    file_id = int(db_file.id)
 
     action_handlers = {
         "delete": lambda: _handle_delete_action(db, file_uuid, current_user, force),
@@ -486,7 +489,7 @@ async def bulk_file_action(
     """Perform bulk actions on multiple files."""
     try:
         results = []
-        is_admin = current_user.role == "admin"
+        is_admin = bool(current_user.role == "admin")
 
         for file_uuid in request.file_uuids:
             try:
@@ -547,7 +550,7 @@ async def cleanup_orphaned_files(
         # Find stuck files
         stuck_file_ids = check_for_stuck_files(db, stuck_threshold_hours=6)
 
-        cleanup_results = {
+        cleanup_results: dict[str, int | list[str] | bool] = {
             "stuck_files_found": len(stuck_file_ids),
             "recovered": 0,
             "marked_orphaned": 0,
@@ -560,11 +563,17 @@ async def cleanup_orphaned_files(
                 try:
                     success = recover_stuck_file(db, file_id)
                     if success:
-                        cleanup_results["recovered"] += 1
+                        recovered_count = cleanup_results["recovered"]
+                        assert isinstance(recovered_count, int)
+                        cleanup_results["recovered"] = recovered_count + 1
                     else:
-                        cleanup_results["errors"].append(f"Failed to recover file {file_id}")
+                        errors_list = cleanup_results["errors"]
+                        if isinstance(errors_list, list):
+                            errors_list.append(f"Failed to recover file {file_id}")
                 except Exception as e:
-                    cleanup_results["errors"].append(f"Error processing file {file_id}: {str(e)}")
+                    errors_list = cleanup_results["errors"]
+                    if isinstance(errors_list, list):
+                        errors_list.append(f"Error processing file {file_id}: {str(e)}")
 
         return cleanup_results
 

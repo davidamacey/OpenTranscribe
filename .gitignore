@@ -249,3 +249,6 @@ GITHUB_OPTIMIZATION_TASKS.md
 
 # Keep security reports for transparency
 # security-reports/ - intentionally tracked in repo
+
+# PKI test certificates (generated)
+scripts/pki/test-certs/

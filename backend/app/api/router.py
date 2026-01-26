@@ -7,10 +7,10 @@ from fastapi.routing import APIRoute
 from . import websockets
 from .endpoints import admin
 from .endpoints import auth
-from .endpoints import collections
 from .endpoints import comments
 from .endpoints import llm_settings
 from .endpoints import llm_status
+from .endpoints import media_collections
 from .endpoints import prompts
 from .endpoints import search
 from .endpoints import speaker_profiles
@@ -85,7 +85,9 @@ include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])
-include_router_with_consistency(collections.router, prefix="/collections", tags=["collections"])
+include_router_with_consistency(
+    media_collections.router, prefix="/collections", tags=["collections"]
+)
 include_router_with_consistency(user_files.router, prefix="/my-files", tags=["user-files"])
 include_router_with_consistency(summarization.router, prefix="/files", tags=["summarization"])
 include_router_with_consistency(prompts.router, prefix="/prompts", tags=["prompts"])

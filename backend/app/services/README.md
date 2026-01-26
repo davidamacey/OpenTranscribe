@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="250">
-  
+
   # Services Layer Documentation
 </div>
 
@@ -49,15 +49,15 @@ services/
 ```python
 class BaseService:
     """Base service class with common patterns."""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def _validate_user_access(self, resource, user: User) -> None:
         """Common access validation pattern."""
         if resource.user_id != user.id and not user.is_superuser:
             raise ErrorHandler.unauthorized_error("Access denied")
-    
+
     def _handle_database_error(self, operation: str, error: Exception):
         """Common database error handling."""
         logger.error(f"Database error in {operation}: {error}")
@@ -72,19 +72,19 @@ def service_method(self, data: InputSchema, user: User) -> OutputModel:
     try:
         # 1. Validation
         self._validate_input(data)
-        
+
         # 2. Authorization
         self._check_permissions(user)
-        
+
         # 3. Business Logic
         result = self._perform_operation(data)
-        
+
         # 4. Database Transaction
         self.db.commit()
-        
+
         # 5. Return Result
         return result
-        
+
     except Exception as e:
         self.db.rollback()
         raise self._handle_error(e)
@@ -101,15 +101,15 @@ class FileService:
     async def upload_file(self, file: UploadFile, user: User) -> MediaFile:
         """Complete file upload pipeline."""
         # Validation, storage, database record creation
-    
+
     def get_user_files(self, user: User, filters: dict) -> List[MediaFile]:
         """Retrieve files with advanced filtering."""
         # Query building, permission checking, filtering
-    
+
     def update_file_metadata(self, file_id: int, updates: MediaFileUpdate, user: User) -> MediaFile:
         """Update file metadata with validation."""
         # Authorization, validation, database update
-    
+
     def delete_file(self, file_id: int, user: User) -> None:
         """Complete file deletion (storage + database)."""
         # Authorization, storage cleanup, database deletion
@@ -147,15 +147,15 @@ class TranscriptionService:
     def start_transcription(self, file_id: int, user: User) -> Dict[str, Any]:
         """Initiate transcription process."""
         # Validation, task creation, Celery dispatch
-    
+
     def get_transcription_status(self, file_id: int, user: User) -> Dict[str, Any]:
         """Get detailed transcription progress."""
         # Task status, progress tracking, error reporting
-    
+
     def update_transcript_segments(self, file_id: int, updates: List[TranscriptSegmentUpdate], user: User) -> List[TranscriptSegment]:
         """Bulk update transcript segments."""
         # Authorization, validation, batch updates
-    
+
     def merge_speakers(self, primary_id: int, secondary_id: int, user: User) -> Speaker:
         """Merge two speakers across all segments."""
         # Complex database operations, referential integrity
@@ -167,14 +167,14 @@ class TranscriptionService:
 def start_transcription(self, file_id: int, user: User):
     # 1. Validate file exists and is processable
     file_obj = self._validate_file_for_transcription(file_id, user)
-    
+
     # 2. Check current status
     if file_obj.status not in [FileStatus.PENDING, FileStatus.ERROR]:
         raise ValidationError("File cannot be transcribed in current state")
-    
+
     # 3. Dispatch background task
     task = transcribe_audio_task.delay(file_id)
-    
+
     # 4. Return task information
     return {"task_id": task.id, "status": "started"}
 ```
@@ -196,11 +196,11 @@ Provides unified interface for multiple LLM providers with intelligent context p
 ```python
 async def generate_summary(transcript: str, speaker_data: Dict[str, Any]) -> Dict[str, Any]:
     """Generate BLUF format summary with intelligent section processing."""
-    
+
     # Automatic context detection and chunking
     context_length = await self.get_model_context_length()
     chunks = self._chunk_transcript_intelligently(transcript, context_length)
-    
+
     if len(chunks) == 1:
         # Single-pass processing for short transcripts
         return await self._process_single_section(chunks[0])
@@ -210,7 +210,7 @@ async def generate_summary(transcript: str, speaker_data: Dict[str, Any]) -> Dic
         for chunk in chunks:
             section_summary = await self._summarize_transcript_section(chunk)
             section_summaries.append(section_summary)
-        
+
         # Stitch sections into comprehensive final summary
         return await self._stitch_section_summaries(section_summaries)
 ```
@@ -238,16 +238,16 @@ Handles all object storage operations including file upload, download, streaming
 ```python
 def upload_file(file_content: IO, file_size: int, object_name: str, content_type: str) -> None:
     """Upload file to MinIO storage."""
-    
+
 def download_file(object_name: str) -> Tuple[IO, int, str]:
     """Download file from MinIO storage."""
-    
+
 def get_file_stream(object_name: str, range_header: str = None) -> Iterator[bytes]:
     """Stream file with range support for video playback."""
-    
+
 def delete_file(object_name: str) -> None:
     """Delete file from MinIO storage."""
-    
+
 def get_file_url(object_name: str, expires: int = 3600) -> str:
     """Generate presigned URL for file access."""
 ```
@@ -279,10 +279,10 @@ Provides automated file recovery, cleanup operations, and system health monitori
 class FileCleanupService:
     def run_cleanup_cycle(self) -> Dict[str, Any]:
         """Run a complete cleanup cycle detecting and recovering stuck files."""
-        
+
     def force_cleanup_orphaned_files(self, db: Session, dry_run: bool = False) -> Dict[str, Any]:
         """Force cleanup of orphaned files (admin operation)."""
-        
+
     def get_cleanup_statistics(self, db: Session) -> Dict[str, Any]:
         """Get current cleanup statistics and system health metrics."""
 ```
@@ -297,7 +297,7 @@ def _attempt_file_recovery(self, db: Session, file_id: int) -> bool:
         media_file.status = FileStatus.ORPHANED
         media_file.force_delete_eligible = True
         return False
-    
+
     # Use enhanced recovery logic from task_utils
     return recover_stuck_file(db, file_id)
 ```
@@ -307,7 +307,7 @@ def _attempt_file_recovery(self, db: Session, file_id: int) -> bool:
 def _generate_health_recommendations(self, db: Session) -> List[str]:
     """Generate system health recommendations based on file states."""
     recommendations = []
-    
+
     # Calculate error rates and health metrics
     error_rate = status_counts.get('error', 0) / max(sum(status_counts.values()), 1)
     if error_rate > 0.1:  # More than 10% error rate
@@ -315,7 +315,7 @@ def _generate_health_recommendations(self, db: Session) -> List[str]:
             f"High error rate detected: {error_rate:.1%} of files are in error state. "
             "Consider investigating processing pipeline health."
         )
-    
+
     return recommendations
 ```
 
@@ -530,13 +530,13 @@ Manages full-text search, indexing, and search analytics for transcripts and fil
 ```python
 def index_transcript(file_id: int, user_id: int, full_transcript: str, speaker_names: List[str], file_title: str) -> None:
     """Index transcript for full-text search."""
-    
+
 def search_transcripts(user_id: int, query: str, filters: dict = None) -> List[Dict]:
     """Search across user's transcripts."""
-    
+
 def add_speaker_embedding(speaker_id: int, embedding_vector: List[float]) -> None:
     """Store speaker voice embedding for similarity search."""
-    
+
 def search_similar_speakers(embedding_vector: List[float], user_id: int) -> List[Dict]:
     """Find similar speakers using vector search."""
 ```
@@ -558,13 +558,13 @@ def build_search_query(query: str, filters: dict) -> Dict:
             "fields": {"transcript": {}}
         }
     }
-    
+
     # Add filters (date range, speakers, file types, etc.)
     if filters.get('from_date'):
         search_body["query"]["bool"]["filter"].append({
             "range": {"created_at": {"gte": filters['from_date']}}
         })
-    
+
     return search_body
 ```
 
@@ -585,20 +585,20 @@ class FileService:
         try:
             # 1. Get file information
             file_obj = self._get_file_with_permission_check(file_id, user)
-            
+
             # 2. Delete from object storage
             minio_service.delete_file(file_obj.storage_path)
-            
+
             # 3. Remove from search index
             opensearch_service.delete_document(file_id)
-            
+
             # 4. Cancel any running tasks
             transcription_service.cancel_file_tasks(file_id)
-            
+
             # 5. Delete from database (cascades to related records)
             self.db.delete(file_obj)
             self.db.commit()
-            
+
         except Exception as e:
             self.db.rollback()
             raise self._handle_deletion_error(e)
@@ -611,7 +611,7 @@ class TranscriptionService:
     def __init__(self, db: Session):
         self.db = db
         self.file_service = FileService(db)  # Dependency injection
-    
+
     def start_transcription(self, file_id: int, user: User):
         # Use file service for validation
         file_obj = self.file_service.get_file_by_id(file_id, user)
@@ -626,21 +626,21 @@ class TestFileService:
     def test_upload_file_success(self, db_session, mock_user, mock_upload_file):
         """Test successful file upload."""
         file_service = FileService(db_session)
-        
+
         # Mock external dependencies
         with patch('app.services.minio_service.upload_file'):
             result = await file_service.upload_file(mock_upload_file, mock_user)
-            
+
         assert result.filename == mock_upload_file.filename
         assert result.user_id == mock_user.id
-    
+
     def test_delete_file_unauthorized(self, db_session, mock_user, other_user_file):
         """Test unauthorized file deletion."""
         file_service = FileService(db_session)
-        
+
         with pytest.raises(HTTPException) as exc_info:
             file_service.delete_file(other_user_file.id, mock_user)
-            
+
         assert exc_info.value.status_code == 403
 ```
 
@@ -667,12 +667,12 @@ class FileService:
             MediaFile.id == file_id,
             MediaFile.user_id == user.id
         ).first()
-        
+
         if not file_obj:
             raise ErrorHandler.not_found_error("File")
-        
+
         return file_obj
-    
+
     def _handle_upload_error(self, error: Exception) -> None:
         """Handle upload-specific errors."""
         if isinstance(error, MinIOError):
@@ -734,35 +734,35 @@ from app.utils.auth_decorators import AuthorizationHelper
 
 class NewService:
     """Service for handling [specific domain] operations."""
-    
+
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create_resource(self, data: CreateSchema, user: User) -> Resource:
         """Create a new resource with validation."""
         try:
             # Validation
             self._validate_create_data(data)
-            
+
             # Business logic
             resource = self._perform_create_operation(data, user)
-            
+
             # Database transaction
             self.db.add(resource)
             self.db.commit()
             self.db.refresh(resource)
-            
+
             return resource
-            
+
         except Exception as e:
             self.db.rollback()
             raise self._handle_create_error(e)
-    
+
     def _validate_create_data(self, data: CreateSchema) -> None:
         """Private validation method."""
         # Validation logic
         pass
-    
+
     def _handle_create_error(self, error: Exception) -> None:
         """Private error handling method."""
         # Error handling logic

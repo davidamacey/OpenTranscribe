@@ -128,6 +128,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
 
+### 🔐 **Authentication & Security**
+- **Multiple Authentication Methods**: Local (username/password), LDAP/Active Directory, OIDC/Keycloak (OAuth 2.0 with PKCE), PKI/X.509 certificates (CAC/PIV support)
+- **Multi-Factor Authentication (MFA)**: TOTP-based authentication (Google Authenticator, Authy) with backup codes for account recovery
+- **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8), comprehensive audit logging (AU-2/AU-3)
+- **Enterprise Session Management**: JWT with refresh token rotation, session timeout controls, secure token storage
+- **Password Security**: Password history tracking to prevent reuse, configurable complexity requirements
+- **Rate Limiting**: Protection against brute-force attacks on authentication endpoints
+
 ### ⚡ **Performance & Scaling**
 - **Multi-GPU Worker Scaling**: Optional parallel processing on dedicated GPUs for high-throughput systems
 - **Specialized Worker Queues**: GPU (transcription), Download (YouTube), CPU (waveform), NLP (AI features)
@@ -531,6 +539,34 @@ MINIO_ROOT_PASSWORD=minioadmin
 MINIO_BUCKET_NAME=transcribe-app
 ```
 
+#### **Authentication**
+```bash
+# Authentication method: local, ldap, keycloak, pki
+AUTH_TYPE=local
+
+# LDAP/Active Directory (when AUTH_TYPE=ldap)
+LDAP_SERVER=ldap://your-ldap-server:389
+LDAP_BASE_DN=dc=example,dc=com
+LDAP_BIND_DN=cn=admin,dc=example,dc=com
+LDAP_BIND_PASSWORD=your-bind-password
+
+# OIDC/Keycloak (when AUTH_TYPE=keycloak)
+KEYCLOAK_URL=https://your-keycloak-server/auth
+KEYCLOAK_REALM=your-realm
+KEYCLOAK_CLIENT_ID=opentranscribe
+KEYCLOAK_CLIENT_SECRET=your-client-secret
+
+# PKI/X.509 (when AUTH_TYPE=pki)
+PKI_CA_CERT_PATH=/path/to/ca-cert.pem
+PKI_VERIFY_CRL=true
+
+# MFA (optional, works with any auth type)
+MFA_ENABLED=false
+MFA_ISSUER=OpenTranscribe
+```
+
+See detailed setup guides: [LDAP](docs/LDAP_AUTH.md) | [Keycloak](docs/KEYCLOAK_SETUP.md) | [PKI](docs/PKI_SETUP.md)
+
 #### **AI Processing**
 ```bash
 # Required for speaker diarization - see setup instructions below
@@ -932,6 +968,26 @@ WHISPER_MODEL=base                # Faster processing
 
 ## 🔐 Security Considerations
 
+### **Authentication Options**
+OpenTranscribe supports multiple authentication methods for enterprise and government deployments:
+- **Local Authentication**: Username/password with bcrypt hashing
+- **LDAP/Active Directory**: Enterprise directory integration - see [LDAP Authentication Guide](docs/LDAP_AUTH.md)
+- **OIDC/Keycloak**: OAuth 2.0 with PKCE for SSO - see [Keycloak Setup Guide](docs/KEYCLOAK_SETUP.md)
+- **PKI/X.509 Certificates**: CAC/PIV smart card support - see [PKI Setup Guide](docs/PKI_SETUP.md)
+
+### **Multi-Factor Authentication**
+- TOTP-based MFA with authenticator apps (Google Authenticator, Authy, etc.)
+- Backup codes for account recovery
+- Optional or enforced per deployment configuration
+
+### **FedRAMP Compliance**
+For government deployments, OpenTranscribe includes features aligned with FedRAMP controls:
+- Password complexity and history policies (IA-5)
+- Account lockout after failed login attempts
+- Classification banners for system use notifications (AC-8)
+- Comprehensive audit logging (AU-2/AU-3)
+- Session management with configurable timeouts (AC-12)
+
 ### **Data Privacy**
 - All processing happens locally - no data sent to external services
 - Optional: Disable external model downloads for air-gapped environments
@@ -941,8 +997,8 @@ WHISPER_MODEL=base                # Faster processing
 ### **Access Control**
 - Role-based permissions (admin/user)
 - File ownership validation
-- API rate limiting
-- Secure session management
+- API rate limiting on authentication endpoints
+- Secure session management with JWT refresh token rotation
 
 ### **Network Security**
 - All services run in isolated Docker network
@@ -976,6 +1032,10 @@ The AGPL-3.0 license ensures that:
   - [Backend Documentation](docs/BACKEND_DOCUMENTATION.md)
   - [Prompt Engineering Guide](docs/PROMPT_ENGINEERING_README.md) - Best practices for LLM prompts
   - [Scripts Documentation](scripts/README.md) - Docker build and deployment guide
+- 🔐 **Authentication Guides**:
+  - [LDAP/Active Directory Setup](docs/LDAP_AUTH.md) - Enterprise directory integration
+  - [Keycloak/OIDC Setup](docs/KEYCLOAK_SETUP.md) - OAuth 2.0 SSO configuration
+  - [PKI/X.509 Setup](docs/PKI_SETUP.md) - Certificate-based authentication (CAC/PIV)
 - 🛠️ **API Reference**: http://localhost:5174/docs (when running)
 - 🌺 **Task Monitor**: http://localhost:5175/flower (when running)
 - 🤝 **Contributing**: [Contribution guidelines](CONTRIBUTING.md)

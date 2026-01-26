@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Optional
-from urllib.parse import parse_qs, urlparse, urlunparse, urljoin
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import parse_qs
+from urllib.parse import urljoin
+from urllib.parse import urlparse
+from urllib.parse import urlunparse
 
 import requests
 from fastapi import HTTPException
@@ -21,12 +25,24 @@ class MediacmsProvider(ProtectedMediaProvider):
 
     Hostnames are configured via the MEDIACMS_ALLOWED_HOSTS environment
     variable (comma-separated list, e.g. "media.example.com,mediacms.internal").
+
+    SSL verification can be disabled for development environments with self-signed
+    certificates by setting MEDIACMS_VERIFY_SSL=false.
     """
 
     @property
     def allowed_hosts(self) -> set[str]:
         raw = os.getenv("MEDIACMS_ALLOWED_HOSTS", "")
         return {h.strip() for h in raw.split(",") if h.strip()}
+
+    @property
+    def verify_ssl(self) -> bool:
+        """Check if SSL verification should be enabled for MediaCMS requests.
+
+        Returns True by default for security. Set MEDIACMS_VERIFY_SSL=false
+        to disable for development environments with self-signed certificates.
+        """
+        return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def can_handle(self, url: str) -> bool:
         try:
@@ -42,7 +58,12 @@ class MediacmsProvider(ProtectedMediaProvider):
                 return True
 
             path_parts = [p for p in parsed.path.split("/") if p]
-            if len(path_parts) >= 3 and path_parts[0] == "api" and path_parts[1] == "v1" and path_parts[2] == "media":
+            if (
+                len(path_parts) >= 3
+                and path_parts[0] == "api"
+                and path_parts[1] == "v1"
+                and path_parts[2] == "media"
+            ):
                 return True
 
             return False
@@ -61,7 +82,7 @@ class MediacmsProvider(ProtectedMediaProvider):
             )
 
         query = parse_qs(parsed.query)
-        friendly_token: Optional[str] = None
+        friendly_token: str | None = None
 
         # Primary: view URL with ?m=<token>
         if "m" in query and query["m"]:
@@ -69,7 +90,12 @@ class MediacmsProvider(ProtectedMediaProvider):
         else:
             # Fallback: /api/v1/media/<token>
             path_parts = [p for p in parsed.path.split("/") if p]
-            if len(path_parts) >= 3 and path_parts[0] == "api" and path_parts[1] == "v1" and path_parts[2] == "media":
+            if (
+                len(path_parts) >= 3
+                and path_parts[0] == "api"
+                and path_parts[1] == "v1"
+                and path_parts[2] == "media"
+            ):
                 friendly_token = path_parts[3] if len(path_parts) >= 4 else None
 
         if not friendly_token:
@@ -84,8 +110,8 @@ class MediacmsProvider(ProtectedMediaProvider):
     def _login_and_get_info(
         self,
         url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> tuple[str, str, dict[str, Any]]:
         """Authenticate against MediaCMS and fetch media JSON."""
         media_user = username
@@ -108,7 +134,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                 url=f"{base_url}/api/v1/login",
                 data=auth_payload,
                 timeout=30,
-                verify=False,
+                verify=self.verify_ssl,
             )
             login_resp.raise_for_status()
             token_data = login_resp.json()
@@ -127,7 +153,7 @@ class MediacmsProvider(ProtectedMediaProvider):
                 url=f"{base_url}/api/v1/media/{friendly_token}",
                 headers=headers,
                 timeout=30,
-                verify=False,
+                verify=self.verify_ssl,
             )
             info_resp.raise_for_status()
             info = info_resp.json()
@@ -173,8 +199,8 @@ class MediacmsProvider(ProtectedMediaProvider):
     def extract_info(
         self,
         url: str,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> dict[str, Any]:
         friendly_token, base_url, info = self._login_and_get_info(
             url, username=username, password=password
@@ -185,7 +211,7 @@ class MediacmsProvider(ProtectedMediaProvider):
         # MediaCMS may return relative thumbnail paths like
         # "/media/original/thumbnails/..."; normalize them to absolute URLs.
         raw_thumbnail = info.get("thumbnail_url")
-        thumbnail_url: Optional[str] = None
+        thumbnail_url: str | None = None
         if raw_thumbnail:
             parsed_thumb = urlparse(str(raw_thumbnail))
             if parsed_thumb.scheme:
@@ -215,9 +241,9 @@ class MediacmsProvider(ProtectedMediaProvider):
         self,
         url: str,
         output_path: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> dict[str, Any]:
         friendly_token, base_url, info = self._login_and_get_info(
             url, username=username, password=password
@@ -236,17 +262,16 @@ class MediacmsProvider(ProtectedMediaProvider):
             if progress_callback:
                 progress_callback(20, "Downloading media from authenticated source...")
 
-            with requests.get(download_url, stream=True, timeout=300, verify=False) as resp:
+            with requests.get(
+                download_url, stream=True, timeout=300, verify=self.verify_ssl
+            ) as resp:
                 resp.raise_for_status()
                 total_bytes = int(resp.headers.get("Content-Length", "0")) or None
                 downloaded = 0
 
                 raw_title = info.get("title") or info.get("name") or friendly_token
                 clean_title = re.sub(r"[^\w\-_\. ]", "_", str(raw_title))[:200]
-                if "." in clean_title:
-                    filename = clean_title
-                else:
-                    filename = f"{clean_title}.mp4"
+                filename = clean_title if "." in clean_title else f"{clean_title}.mp4"
 
                 file_path = os.path.join(output_path, filename)
                 with open(file_path, "wb") as f:
@@ -264,7 +289,7 @@ class MediacmsProvider(ProtectedMediaProvider):
         except requests.exceptions.RequestException as e:
             raise HTTPException(
                 status_code=502,
-                detail=f"Failed to download media file from MediaCMS: {e}", 
+                detail=f"Failed to download media file from MediaCMS: {e}",
             ) from e
 
         # Build info dict (consistent with extract_info)

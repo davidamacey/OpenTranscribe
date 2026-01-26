@@ -125,7 +125,7 @@ def process_youtube_url_task(
         # Get internal file ID for database operations
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
-            file_id = media_file.id
+            file_id = int(media_file.id)
 
         # Send initial processing notification
         send_youtube_notification_via_redis(
@@ -153,7 +153,7 @@ def process_youtube_url_task(
                 return {
                     "status": "error",
                     "message": "User or file record not found",
-                    "file_id": file_id,
+                    "file_id": file_id if file_id is not None else 0,
                 }
 
             media_service = MediaDownloadService()
@@ -182,7 +182,7 @@ def process_youtube_url_task(
                 )
 
                 # Update status to pending for transcription
-                updated_media_file.status = FileStatus.PENDING
+                updated_media_file.status = FileStatus.PENDING  # type: ignore[assignment]
                 db.commit()
 
                 # Send completion notification
@@ -197,30 +197,36 @@ def process_youtube_url_task(
                 # Also send file_updated notification to refresh the gallery with thumbnail
                 try:
                     # Get updated file data for gallery
-                    updated_media_file = get_refreshed_object(db, MediaFile, file_id)
-                    if updated_media_file:
+                    updated_media_file_refreshed = get_refreshed_object(db, MediaFile, file_id)
+                    if updated_media_file_refreshed:
                         # Create file data for gallery update
                         file_data = {
-                            "id": str(updated_media_file.uuid),  # Use UUID for frontend
-                            "filename": updated_media_file.filename,
-                            "status": updated_media_file.status.value
-                            if updated_media_file.status
+                            "id": str(updated_media_file_refreshed.uuid),  # Use UUID for frontend
+                            "filename": str(updated_media_file_refreshed.filename),
+                            "status": updated_media_file_refreshed.status.value
+                            if updated_media_file_refreshed.status
                             else "pending",
                             "display_status": FormattingService.format_status(
-                                updated_media_file.status
+                                updated_media_file_refreshed.status  # type: ignore[arg-type]
                             )
-                            if updated_media_file.status
+                            if updated_media_file_refreshed.status
                             else "Pending",
-                            "content_type": updated_media_file.content_type,
-                            "file_size": updated_media_file.file_size,
-                            "title": updated_media_file.title,
-                            "author": updated_media_file.author,
-                            "duration": updated_media_file.duration,
-                            "thumbnail_url": f"/api/files/{updated_media_file.uuid}/thumbnail"  # Use UUID in URL
-                            if updated_media_file.thumbnail_path
+                            "content_type": str(updated_media_file_refreshed.content_type),
+                            "file_size": int(updated_media_file_refreshed.file_size),
+                            "title": str(updated_media_file_refreshed.title)
+                            if updated_media_file_refreshed.title
                             else None,
-                            "upload_time": updated_media_file.upload_time.isoformat()
-                            if updated_media_file.upload_time
+                            "author": str(updated_media_file_refreshed.author)
+                            if updated_media_file_refreshed.author
+                            else None,
+                            "duration": float(updated_media_file_refreshed.duration)
+                            if updated_media_file_refreshed.duration
+                            else None,
+                            "thumbnail_url": f"/api/files/{updated_media_file_refreshed.uuid}/thumbnail"  # Use UUID in URL
+                            if updated_media_file_refreshed.thumbnail_path
+                            else None,
+                            "upload_time": updated_media_file_refreshed.upload_time.isoformat()
+                            if updated_media_file_refreshed.upload_time
                             else None,
                         }
 
@@ -229,15 +235,15 @@ def process_youtube_url_task(
                             "user_id": user_id,
                             "type": "file_updated",
                             "data": {
-                                "file_id": str(updated_media_file.uuid),  # Use UUID
+                                "file_id": str(updated_media_file_refreshed.uuid),  # Use UUID
                                 "file": file_data,
-                                "status": updated_media_file.status.value
-                                if updated_media_file.status
+                                "status": updated_media_file_refreshed.status.value
+                                if updated_media_file_refreshed.status
                                 else "pending",
                                 "display_status": FormattingService.format_status(
-                                    updated_media_file.status
+                                    updated_media_file_refreshed.status  # type: ignore[arg-type]
                                 )
-                                if updated_media_file.status
+                                if updated_media_file_refreshed.status
                                 else "Pending",
                                 "message": "YouTube processing completed",
                             },
@@ -269,15 +275,15 @@ def process_youtube_url_task(
                 return {
                     "status": "success",
                     "message": "YouTube processing completed",
-                    "file_id": file_id,
+                    "file_id": file_id if file_id is not None else 0,
                 }
 
             except Exception as e:
                 logger.error(f"Error processing YouTube URL {url}: {e}")
 
                 # Update media file status to error
-                media_file.status = FileStatus.ERROR
-                media_file.last_error_message = str(e)
+                media_file.status = FileStatus.ERROR  # type: ignore[assignment]
+                media_file.last_error_message = str(e)  # type: ignore[assignment]
                 db.commit()
 
                 # Send error notification
@@ -289,7 +295,11 @@ def process_youtube_url_task(
                     progress=0,
                 )
 
-                return {"status": "error", "message": str(e), "file_id": file_id}
+                return {
+                    "status": "error",
+                    "message": str(e),
+                    "file_id": file_id if file_id is not None else 0,
+                }
 
     except Exception as e:
         logger.error(f"Unexpected error in YouTube processing task: {e}")
@@ -304,7 +314,11 @@ def process_youtube_url_task(
                 progress=0,
             )
 
-        return {"status": "error", "message": str(e), "file_id": file_id}
+        return {
+            "status": "error",
+            "message": str(e),
+            "file_id": file_id if file_id is not None else 0,
+        }
 
 
 class YouTubePlaylistProcessingResult(TypedDict):
@@ -380,16 +394,16 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
     try:
         file_data = {
             "id": str(media_file.uuid),
-            "filename": media_file.filename,
+            "filename": str(media_file.filename),
             "status": media_file.status.value if media_file.status else "processing",
-            "display_status": FormattingService.format_status(media_file.status)
+            "display_status": FormattingService.format_status(media_file.status)  # type: ignore[arg-type]
             if media_file.status
             else "Processing",
-            "content_type": media_file.content_type,
-            "file_size": media_file.file_size,
-            "title": media_file.title,
-            "author": media_file.author,
-            "duration": media_file.duration,
+            "content_type": str(media_file.content_type),
+            "file_size": int(media_file.file_size),
+            "title": str(media_file.title) if media_file.title else None,
+            "author": str(media_file.author) if media_file.author else None,
+            "duration": float(media_file.duration) if media_file.duration else None,
             "upload_time": media_file.upload_time.isoformat() if media_file.upload_time else None,
         }
 
@@ -419,7 +433,7 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db) -> bool:
         True if task was dispatched successfully, False otherwise.
     """
     try:
-        video_url = media_file.source_url
+        video_url = str(media_file.source_url)
         process_youtube_url_task.delay(
             url=video_url,
             user_id=user_id,
@@ -429,8 +443,8 @@ def _dispatch_video_task(media_file: MediaFile, user_id: int, db) -> bool:
         return True
     except Exception as e:
         logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
-        media_file.status = FileStatus.ERROR
-        media_file.last_error_message = f"Failed to start processing: {str(e)}"
+        media_file.status = FileStatus.ERROR  # type: ignore[assignment]
+        media_file.last_error_message = f"Failed to start processing: {str(e)}"  # type: ignore[assignment]
         db.commit()
         return False
 

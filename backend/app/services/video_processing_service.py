@@ -48,8 +48,8 @@ def _parse_range_header(range_header: str, total_length: int | None) -> tuple[in
         # Format: bytes=start-
         if parts[0]:
             start_byte = int(parts[0])
-            end_byte = total_length - 1 if total_length else None
-            return start_byte, end_byte
+            end_byte_value: int | None = total_length - 1 if total_length else None
+            return start_byte, end_byte_value
 
         # Format: bytes=-end (last N bytes)
         if parts[1]:
@@ -167,8 +167,10 @@ def _run_ffmpeg(ffmpeg_cmd: list[str], file_id: int) -> None:
     """
     logger.info(f"Running ffmpeg command: {' '.join(ffmpeg_cmd)}")
 
-    result = subprocess.run(  # noqa: S603
-        ffmpeg_cmd,
+    # Using validated ffmpeg executable path with internally generated file paths
+    # All paths are validated/sanitized by _validate_ffmpeg_paths() - not user input
+    result = subprocess.run(
+        ffmpeg_cmd,  # noqa: S603 # nosec B603 - validated paths, not user input
         capture_output=True,
         text=True,
         timeout=300,
@@ -197,8 +199,8 @@ class VideoProcessingService:
         user_id: int,
         file_id: int,
         status: str,
-        progress: int = None,
-        error: str = None,
+        progress: int | None = None,
+        error: str | None = None,
     ):
         """Send download progress update via WebSocket."""
         try:
@@ -226,8 +228,8 @@ class VideoProcessingService:
         user_id: int,
         file_id: int,
         status: str,
-        progress: int = None,
-        error: str = None,
+        progress: int | None = None,
+        error: str | None = None,
     ):
         """Synchronous wrapper for sending download progress updates."""
         try:
@@ -292,7 +294,7 @@ class VideoProcessingService:
         try:
             stats = self.minio_service.stat_object(self.cache_bucket, object_name)
             logger.info(f"Cached file size for {object_name}: {stats.size} bytes")
-            return stats.size
+            return int(stats.size)  # type: ignore[no-any-return]
         except Exception as e:
             logger.error(f"Error getting cached object stats: {e}")
             return None
@@ -328,14 +330,17 @@ class VideoProcessingService:
 
         return generate_chunks()
 
-    def _get_cache_file_stream(self, object_name: str, range_header: str = None):
+    def _get_cache_file_stream(self, object_name: str, range_header: str | None = None):
         """Get a file stream from the cache bucket."""
         try:
             total_length = self._get_object_size(object_name)
-            start_byte, end_byte = _parse_range_header(range_header, total_length)
+            start_byte, end_byte = _parse_range_header(range_header or "", total_length)
 
             # Build MinIO request kwargs
-            kwargs = {"bucket_name": self.cache_bucket, "object_name": object_name}
+            kwargs: dict[str, str | int] = {
+                "bucket_name": self.cache_bucket,
+                "object_name": object_name,
+            }
             if range_header and range_header.startswith("bytes="):
                 kwargs["offset"] = start_byte
                 if end_byte is not None:
@@ -346,8 +351,11 @@ class VideoProcessingService:
                     f"end={end_byte if end_byte is not None else 'EOF'}, total={total_length}"
                 )
 
-            response = self.minio_service.client.get_object(**kwargs)
-            chunks = self._create_chunk_generator(response, kwargs.get("length"))
+            response = self.minio_service.client.get_object(**kwargs)  # type: ignore[arg-type]
+            length_value = kwargs.get("length")
+            chunks = self._create_chunk_generator(
+                response, int(length_value) if length_value is not None else None
+            )
 
             return chunks, start_byte, end_byte, total_length
 
@@ -360,8 +368,8 @@ class VideoProcessingService:
         user_id: int | None,
         file_id: int,
         status: str,
-        progress: int = None,
-        error: str = None,
+        progress: int | None = None,
+        error: str | None = None,
     ):
         """Send progress notification if user_id is provided."""
         if user_id:
@@ -417,8 +425,8 @@ class VideoProcessingService:
             ffmpeg_cmd = _build_ffmpeg_command(
                 ffmpeg_path,
                 original_video_path,
-                subtitle_path,
-                output_path,
+                str(subtitle_path),
+                str(output_path),
                 video_codec,
                 subtitle_codec,
             )
@@ -439,7 +447,7 @@ class VideoProcessingService:
         db: Session,
         file_id: int,
         original_video_path,
-        user_id: int = None,
+        user_id: int | None = None,
         include_speakers: bool = True,
         output_format: str = "mp4",
     ) -> str:
@@ -462,7 +470,7 @@ class VideoProcessingService:
         if not db_file:
             raise Exception(f"Media file {file_id} not found")
 
-        cache_key = self.generate_cache_key(file_id, db_file.filename, include_speakers)
+        cache_key = self.generate_cache_key(file_id, str(db_file.filename), include_speakers)
 
         # Return cached version if available
         if self.is_video_cached(cache_key):
@@ -496,7 +504,7 @@ class VideoProcessingService:
         db: Session,
         file_id: int,
         original_object_name: str,
-        user_id: int = None,
+        user_id: int | None = None,
         include_speakers: bool = True,
         output_format: str = "mp4",
     ) -> str:
@@ -520,7 +528,9 @@ class VideoProcessingService:
         if not db_file_for_name:
             raise Exception(f"Media file {file_id} not found")
 
-        cache_key = self.generate_cache_key(file_id, db_file_for_name.filename, include_speakers)
+        cache_key = self.generate_cache_key(
+            file_id, str(db_file_for_name.filename), include_speakers
+        )
 
         # Check cache first
         if self.is_video_cached(cache_key):
@@ -566,7 +576,9 @@ class VideoProcessingService:
 
             # Clear both speaker variants
             for include_speakers in [True, False]:
-                cache_key = self.generate_cache_key(file_id, db_file.filename, include_speakers)
+                cache_key = self.generate_cache_key(
+                    file_id, str(db_file.filename), include_speakers
+                )
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")
@@ -589,9 +601,10 @@ class VideoProcessingService:
                 logger.warning("ffmpeg not found in system PATH")
                 return False
 
-            # Use full path for security - validated path, not user input
-            result = subprocess.run(  # noqa: S603
-                [ffmpeg_path, "-version"],
+            # Using validated ffmpeg executable path from shutil.which() with hardcoded -version flag
+            # No user input involved - only checking if ffmpeg is available on the system
+            result = subprocess.run(
+                [ffmpeg_path, "-version"],  # noqa: S603 # nosec B603 - hardcoded, no user input
                 capture_output=True,
                 text=True,
                 timeout=10,

@@ -252,9 +252,11 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
     # Fallback to command-line ExifTool if the Python library fails
     if not extracted_metadata:
         try:
-            # Using hardcoded exiftool command, not user input
-            exif_process = subprocess.run(  # noqa: S603
-                ["exiftool", "-json", "-n", file_path],  # noqa: S607
+            # Security: file_path is validated and originates from internal MinIO storage,
+            # not direct user input. The file has been uploaded to our controlled storage
+            # system and the path is generated internally by the application.
+            exif_process = subprocess.run(
+                ["exiftool", "-json", "-n", file_path],  # noqa: S603 S607 # nosec B603 B607 - validated MinIO path
                 capture_output=True,
                 text=True,
                 check=True,

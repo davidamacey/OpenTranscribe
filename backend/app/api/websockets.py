@@ -61,7 +61,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # Redis client for pub/sub
-redis_client = None
+redis_client: redis.Redis | None = None
 
 
 async def setup_redis():
@@ -76,6 +76,7 @@ async def setup_redis():
 async def redis_subscriber():
     """Subscribe to Redis notifications and forward to WebSocket connections."""
     try:
+        assert redis_client is not None
         pubsub = redis_client.pubsub()
         await pubsub.subscribe("websocket_notifications")
 
@@ -113,6 +114,7 @@ async def publish_notification(user_id: int, notification_type: str, data: dict)
     notification = {"user_id": user_id, "type": notification_type, "data": data}
 
     try:
+        assert redis_client is not None
         await redis_client.publish("websocket_notifications", json.dumps(notification))
         logger.info(f"Published notification to Redis for user {user_id}: {notification_type}")
     except Exception as e:
@@ -143,7 +145,7 @@ async def get_user_from_websocket(
 
         # Get user from database using UUID
         user = db.query(User).filter(User.uuid == user_identifier).first()
-        return user
+        return user  # type: ignore[no-any-return]
     except Exception as e:
         logger.error(f"WebSocket authentication error: {str(e)}")
         return None
@@ -162,7 +164,7 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
         return
 
     # Accept the connection
-    await manager.connect(websocket, user.id)
+    await manager.connect(websocket, int(user.id))
 
     # Send initial connection status
     await websocket.send_text(
@@ -182,10 +184,10 @@ async def websocket_endpoint(websocket: WebSocket, db: Session = Depends(get_db)
             # Echo back for debugging/heartbeat
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
-        manager.disconnect(websocket, user.id)
+        manager.disconnect(websocket, int(user.id))
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        manager.disconnect(websocket, user.id)
+        manager.disconnect(websocket, int(user.id))
 
 
 # Function to send notification to a user

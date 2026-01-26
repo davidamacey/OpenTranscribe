@@ -1,7 +1,9 @@
 /* Form element styles for both light and dark mode */
 
 /* Input fields */
-input, select, textarea {
+input,
+select,
+textarea {
   background-color: var(--input-background);
   color: var(--text-color);
   border: 1px solid var(--input-border);
@@ -14,7 +16,9 @@ input, select, textarea {
   box-sizing: border-box;
 }
 
-input:focus, select:focus, textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   border-color: var(--primary-color);
   outline: none;
   box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.25);
@@ -101,7 +105,8 @@ button:disabled {
 }
 
 /* Modal/Dialog styles */
-.modal, .dialog {
+.modal,
+.dialog {
   background-color: var(--card-background);
   color: var(--text-color);
   border-radius: 8px;
@@ -109,16 +114,19 @@ button:disabled {
   border: 1px solid var(--border-color);
 }
 
-.modal-header, .dialog-header {
+.modal-header,
+.dialog-header {
   border-bottom: 1px solid var(--border-color);
   padding: 16px;
 }
 
-.modal-body, .dialog-body {
+.modal-body,
+.dialog-body {
   padding: 16px;
 }
 
-.modal-footer, .dialog-footer {
+.modal-footer,
+.dialog-footer {
   border-top: 1px solid var(--border-color);
   padding: 16px;
 }

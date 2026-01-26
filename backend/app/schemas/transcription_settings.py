@@ -45,7 +45,7 @@ class TranscriptionSettings(BaseModel):
         description="Maximum number of speakers to detect during diarization",
     )
     speaker_prompt_behavior: SpeakerPromptBehavior = Field(
-        default=DEFAULT_SPEAKER_PROMPT_BEHAVIOR,
+        default=DEFAULT_SPEAKER_PROMPT_BEHAVIOR,  # type: ignore[arg-type]
         description="How to handle speaker count prompts: always_prompt, use_defaults, or use_custom",
     )
     garbage_cleanup_enabled: bool = Field(

@@ -56,9 +56,9 @@ TASK_STATUS_FAILED = "failed"
 def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
     """Get media files based on user permissions."""
     if current_user.role == "admin":
-        return db.query(MediaFile).all()
+        return db.query(MediaFile).all()  # type: ignore[no-any-return]
     else:
-        return db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
+        return db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()  # type: ignore[no-any-return]
 
 
 def _map_file_status_to_task_status(file_status: FileStatus) -> str:
@@ -72,7 +72,7 @@ def _map_file_status_to_task_status(file_status: FileStatus) -> str:
     return status_mapping.get(file_status, "pending")
 
 
-def _extract_file_format(content_type: str, filename: str) -> str:
+def _extract_file_format(content_type: str, filename: str) -> str | None:
     """Extract file format from content type or filename."""
     if content_type and "/" in content_type:
         return content_type.split("/")[1]
@@ -83,13 +83,13 @@ def _extract_file_format(content_type: str, filename: str) -> str:
 
 def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> dict:
     """Convert a media file to a task dictionary."""
-    task_status = _map_file_status_to_task_status(file.status)
+    task_status = _map_file_status_to_task_status(file.status)  # type: ignore[arg-type]
 
     # Handle completed_at time
     completed_at = getattr(file, "completed_at", None)
 
     # Extract file format
-    file_format = _extract_file_format(file.content_type, file.filename)
+    file_format = _extract_file_format(str(file.content_type), str(file.filename))
 
     # Calculate progress
     if file.status == FileStatus.COMPLETED:
@@ -130,11 +130,11 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
 
 @router.get("/", response_model=list[Task])
 def list_tasks(
-    status: str = None,  # Filter by task status
-    task_type: str = None,  # Filter by task type
-    age_filter: str = None,  # Filter by age: "today", "week", "month", "older"
-    date_from: str = None,  # Filter from date (YYYY-MM-DD)
-    date_to: str = None,  # Filter to date (YYYY-MM-DD)
+    status: str | None = None,  # Filter by task status
+    task_type: str | None = None,  # Filter by task type
+    age_filter: str | None = None,  # Filter by age: "today", "week", "month", "older"
+    date_from: str | None = None,  # Filter from date (YYYY-MM-DD)
+    date_to: str | None = None,  # Filter to date (YYYY-MM-DD)
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -190,7 +190,7 @@ def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> Medi
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return media_file
+    return media_file  # type: ignore[no-any-return]
 
 
 @router.get("/{task_id}", response_model=Task)
@@ -492,9 +492,9 @@ async def retry_file_processing(
 
             media_file = get_file_by_uuid(db, file_uuid)
         else:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
 
-        file_id = media_file.id
+        file_id = int(media_file.id)
 
         # Check if the file is in a state where retry makes sense
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
@@ -506,7 +506,7 @@ async def retry_file_processing(
         # Reset the file status to PENDING
         from app.utils.task_utils import update_media_file_status
 
-        update_media_file_status(db, file_id, FileStatus.PENDING)
+        update_media_file_status(db, int(file_id), FileStatus.PENDING)
 
         # Clear old tasks or mark them as failed
         old_tasks = (
@@ -519,9 +519,9 @@ async def retry_file_processing(
         )
 
         for task in old_tasks:
-            task.status = TASK_STATUS_FAILED
-            task.error_message = "Task marked as failed for retry"
-            task.completed_at = datetime.now()
+            task.status = TASK_STATUS_FAILED  # type: ignore[assignment]
+            task.error_message = "Task marked as failed for retry"  # type: ignore[assignment]
+            task.completed_at = datetime.now()  # type: ignore[assignment]
 
         db.commit()
 

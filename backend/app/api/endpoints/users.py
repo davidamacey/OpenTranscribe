@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from datetime import timezone
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -9,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.auth.ldap_auth import AUTH_TYPE_LOCAL
+from app.auth.password_history import add_password_to_history
+from app.auth.password_history import check_password_against_history
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -110,13 +115,29 @@ def update_current_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current password is required to change password",
             )
-        if not verify_password(current_password, current_user.hashed_password):
+        if not verify_password(current_password, str(current_user.hashed_password)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current password is incorrect",
             )
 
-        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+        new_password = update_data.pop("password")
+
+        # Check password history (FedRAMP IA-5)
+        if not check_password_against_history(db, int(current_user.id), new_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password has been used recently. Please choose a different password. "
+                f"(Cannot reuse last {settings.PASSWORD_HISTORY_COUNT} passwords)",
+            )
+
+        new_hash = get_password_hash(new_password)
+        update_data["hashed_password"] = new_hash
+        update_data["password_changed_at"] = datetime.now(timezone.utc)
+
+        # Store password in history after successful change
+        add_password_to_history(db, int(current_user.id), new_hash)
+        logger.info(f"Password changed for user {current_user.id}")
     else:
         # Remove current_password if no password change is being made
         update_data.pop("current_password", None)
@@ -166,7 +187,24 @@ def update_user(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change password for non-local users",
             )
-        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
+
+        new_password = update_data.pop("password")
+
+        # Check password history (FedRAMP IA-5) - admins must also comply
+        if not check_password_against_history(db, int(user.id), new_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password has been used recently. Please choose a different password. "
+                f"(Cannot reuse last {settings.PASSWORD_HISTORY_COUNT} passwords)",
+            )
+
+        new_hash = get_password_hash(new_password)
+        update_data["hashed_password"] = new_hash
+        update_data["password_changed_at"] = datetime.now(timezone.utc)
+
+        # Store password in history after successful change
+        add_password_to_history(db, int(user.id), new_hash)
+        logger.info(f"Admin {current_user.id} changed password for user {user.id}")
 
     # Remove current_password from update_data as it's not a model field
     update_data.pop("current_password", None)

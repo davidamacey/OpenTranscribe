@@ -34,7 +34,7 @@ class FileCleanupService:
         Returns:
             Dictionary with cleanup results and statistics
         """
-        results = {
+        results: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "stuck_files_checked": 0,
             "files_recovered": 0,
@@ -105,8 +105,8 @@ class FileCleanupService:
                 f"File {file_id} has exceeded max recovery attempts ({self.max_recovery_attempts})"
             )
             # Mark as permanently orphaned
-            media_file.status = FileStatus.ORPHANED
-            media_file.force_delete_eligible = True
+            media_file.status = FileStatus.ORPHANED  # type: ignore[assignment]
+            media_file.force_delete_eligible = True  # type: ignore[assignment]
             db.commit()
             return False
 
@@ -136,7 +136,7 @@ class FileCleanupService:
 
         for file in old_orphaned_files:
             # Mark as eligible for force deletion
-            file.force_delete_eligible = True
+            file.force_delete_eligible = True  # type: ignore[assignment]
             logger.warning(
                 f"File {file.id} has been orphaned for over {self.orphan_threshold_hours} hours"
             )
@@ -199,7 +199,7 @@ class FileCleanupService:
         Returns:
             Dictionary with cleanup results
         """
-        results = {
+        results: dict[str, Any] = {
             "dry_run": dry_run,
             "eligible_for_deletion": 0,
             "successfully_deleted": 0,
@@ -229,17 +229,17 @@ class FileCleanupService:
             for file in eligible_files:
                 try:
                     # Force delete the file
-                    delete_media_file(db, file.id, system_user, force=True)
+                    delete_media_file(db, str(file.id), system_user, force=True)
                     results["successfully_deleted"] += 1
                     results["files_processed"].append(
-                        {"id": file.id, "filename": file.filename, "status": "deleted"}
+                        {"id": int(file.id), "filename": file.filename, "status": "deleted"}
                     )
                 except Exception as e:
                     error_msg = f"Failed to delete file {file.id}: {str(e)}"
                     results["deletion_errors"].append(error_msg)
                     results["files_processed"].append(
                         {
-                            "id": file.id,
+                            "id": int(file.id),
                             "filename": file.filename,
                             "status": "error",
                             "error": str(e),
@@ -250,7 +250,7 @@ class FileCleanupService:
             for file in eligible_files:
                 results["files_processed"].append(
                     {
-                        "id": file.id,
+                        "id": int(file.id),
                         "filename": file.filename,
                         "status": "would_delete",
                         "current_status": file.status,
@@ -269,7 +269,7 @@ class FileCleanupService:
         Returns:
             Dictionary with statistics
         """
-        stats = {
+        stats: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "file_counts_by_status": {},
             "stuck_files_detected": 0,

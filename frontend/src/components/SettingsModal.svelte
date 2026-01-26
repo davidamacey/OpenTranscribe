@@ -13,6 +13,7 @@
   import TranscriptionSettings from '$components/settings/TranscriptionSettings.svelte';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
+  import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -118,6 +119,7 @@
       title: $t('settings.sections.userSettings'),
       items: [
         { id: 'profile' as SettingsSection, label: $t('settings.profile.title'), icon: 'user' },
+        { id: 'security' as SettingsSection, label: $t('settings.security.title'), icon: 'shield' },
         { id: 'language' as SettingsSection, label: $t('settings.language.title'), icon: 'globe' },
         { id: 'recording' as SettingsSection, label: $t('settings.recording.title'), icon: 'mic' },
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
@@ -872,6 +874,15 @@
                 </div>
               </form>
               {/if}
+            </div>
+          {/if}
+
+          <!-- Security Settings Section -->
+          {#if activeSection === 'security'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.security.title')}</h3>
+              <p class="section-description">{$t('settings.security.description')}</p>
+              <SecuritySettings />
             </div>
           {/if}
 

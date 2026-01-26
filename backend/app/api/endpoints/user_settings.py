@@ -9,6 +9,8 @@ that need to persist across sessions and devices. Supports:
 """
 
 from typing import Any
+from typing import Literal
+from typing import cast
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -99,16 +101,17 @@ def get_recording_settings(
     )
 
     # Build settings map from database results
-    settings_map = {setting.setting_key: setting.setting_value for setting in recording_settings}
+    settings_map: dict[str, str] = {
+        str(setting.setting_key): str(setting.setting_value) for setting in recording_settings
+    }
 
     # Map database keys to frontend keys and provide defaults for missing values
+    max_duration_value = settings_map.get(
+        "recording_max_duration",
+        str(DEFAULT_RECORDING_SETTINGS["max_recording_duration"]),
+    )
     settings = {
-        "max_recording_duration": int(
-            settings_map.get(
-                "recording_max_duration",
-                DEFAULT_RECORDING_SETTINGS["max_recording_duration"],
-            )
-        ),
+        "max_recording_duration": int(max_duration_value),
         "recording_quality": settings_map.get(
             "recording_quality", DEFAULT_RECORDING_SETTINGS["recording_quality"]
         ),
@@ -197,7 +200,7 @@ def update_recording_settings(
         )
 
         if existing_setting:
-            existing_setting.setting_value = db_value
+            existing_setting.setting_value = db_value  # type: ignore[assignment]
             db.add(existing_setting)
         else:
             new_setting = models.UserSetting(
@@ -269,7 +272,9 @@ def get_audio_extraction_settings(
     )
 
     # Build settings map from database results
-    settings_map = {setting.setting_key: setting.setting_value for setting in extraction_settings}
+    settings_map: dict[str, str] = {
+        str(setting.setting_key): str(setting.setting_value) for setting in extraction_settings
+    }
 
     # Map database keys to frontend keys and provide defaults for missing values
     settings = {
@@ -363,7 +368,7 @@ def update_audio_extraction_settings(
         )
 
         if existing_setting:
-            existing_setting.setting_value = db_value
+            existing_setting.setting_value = db_value  # type: ignore[assignment]
             db.add(existing_setting)
         else:
             new_setting = models.UserSetting(
@@ -526,7 +531,7 @@ def _upsert_user_setting(
     )
 
     if existing_setting:
-        existing_setting.setting_value = db_value
+        existing_setting.setting_value = db_value  # type: ignore[assignment]
         db.add(existing_setting)
     else:
         new_setting = models.UserSetting(
@@ -574,42 +579,51 @@ def get_transcription_settings(
     )
 
     # Build settings map from database results
-    settings_map = {
-        setting.setting_key: setting.setting_value for setting in transcription_settings
+    settings_map: dict[str, str] = {
+        str(setting.setting_key): str(setting.setting_value) for setting in transcription_settings
     }
 
     # Get system defaults from environment (via app_settings)
     system_min_speakers = app_settings.MIN_SPEAKERS
     system_max_speakers = app_settings.MAX_SPEAKERS
 
+    # Get values with proper type casting
+    min_speakers_value = settings_map.get("transcription_min_speakers", str(system_min_speakers))
+    max_speakers_value = settings_map.get("transcription_max_speakers", str(system_max_speakers))
+    speaker_behavior_value = settings_map.get(
+        "transcription_speaker_prompt_behavior",
+        str(DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"]),
+    )
+    garbage_threshold_value = settings_map.get(
+        "transcription_garbage_cleanup_threshold",
+        str(DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"]),
+    )
+    source_language_value = settings_map.get(
+        "transcription_source_language",
+        str(DEFAULT_TRANSCRIPTION_SETTINGS["source_language"]),
+    )
+    llm_output_language_value = settings_map.get(
+        "transcription_llm_output_language",
+        str(DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"]),
+    )
+
     # Build response with user values or defaults
     return TranscriptionSettings(
-        min_speakers=int(settings_map.get("transcription_min_speakers", system_min_speakers)),
-        max_speakers=int(settings_map.get("transcription_max_speakers", system_max_speakers)),
-        speaker_prompt_behavior=settings_map.get(
-            "transcription_speaker_prompt_behavior",
-            DEFAULT_TRANSCRIPTION_SETTINGS["speaker_prompt_behavior"],
+        min_speakers=int(min_speakers_value),
+        max_speakers=int(max_speakers_value),
+        speaker_prompt_behavior=cast(
+            Literal["always_prompt", "use_defaults", "use_custom"],
+            speaker_behavior_value,
         ),
         garbage_cleanup_enabled=settings_map.get(
             "transcription_garbage_cleanup_enabled", "true"
         ).lower()
         == "true",
-        garbage_cleanup_threshold=int(
-            settings_map.get(
-                "transcription_garbage_cleanup_threshold",
-                DEFAULT_TRANSCRIPTION_SETTINGS["garbage_cleanup_threshold"],
-            )
-        ),
-        source_language=settings_map.get(
-            "transcription_source_language",
-            DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
-        ),
+        garbage_cleanup_threshold=int(garbage_threshold_value),
+        source_language=source_language_value,
         translate_to_english=settings_map.get("transcription_translate_to_english", "false").lower()
         == "true",
-        llm_output_language=settings_map.get(
-            "transcription_llm_output_language",
-            DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
-        ),
+        llm_output_language=llm_output_language_value,
     )
 
 
@@ -642,7 +656,7 @@ def update_transcription_settings(
     update_data = settings_data.model_dump(exclude_none=True)
 
     if not update_data:
-        return get_transcription_settings(db=db, current_user=current_user)
+        return get_transcription_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
 
     # Get current settings only if needed for validation
     needs_current = ("min_speakers" in update_data) != ("max_speakers" in update_data)
@@ -672,11 +686,11 @@ def update_transcription_settings(
 
     # Update each setting in the database
     for frontend_key, value in update_data.items():
-        _upsert_user_setting(db, current_user.id, setting_mappings[frontend_key], value)
+        _upsert_user_setting(db, int(current_user.id), setting_mappings[frontend_key], value)
 
     db.commit()
 
-    return get_transcription_settings(db=db, current_user=current_user)
+    return get_transcription_settings(db=db, current_user=current_user)  # type: ignore[no-any-return]
 
 
 @router.delete("/transcription")

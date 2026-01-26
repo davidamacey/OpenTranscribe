@@ -1,7 +1,6 @@
 import logging
 import uuid
 from typing import Any
-from typing import Optional
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -33,7 +32,7 @@ router = APIRouter()
 
 @router.get("/profiles", response_model=list[dict[str, Any]])
 def list_speaker_profiles(
-    collection_uuid: Optional[str] = Query(None, description="Filter by collection UUID"),
+    collection_uuid: str | None = Query(None, description="Filter by collection UUID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -64,7 +63,7 @@ def list_speaker_profiles(
             instance_count = db.query(Speaker).filter(Speaker.profile_id == profile.id).count()
 
             # Get media files where this speaker appears
-            media_files = find_speaker_across_media(profile.id, current_user.id)
+            media_files = find_speaker_across_media(str(profile.uuid), int(current_user.id))
 
             result.append(
                 {
@@ -89,7 +88,7 @@ def list_speaker_profiles(
 @router.post("/profiles", response_model=dict[str, Any])
 def create_speaker_profile(
     name: str,
-    description: Optional[str] = None,
+    description: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -137,8 +136,8 @@ def create_speaker_profile(
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
 def update_speaker_profile(
     profile_uuid: str,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -169,10 +168,10 @@ def update_speaker_profile(
                     detail="Speaker profile with this name already exists",
                 )
 
-            profile.name = name
+            profile.name = name  # type: ignore[assignment]
 
         if description is not None:
-            profile.description = description
+            profile.description = description  # type: ignore[assignment]
 
         db.commit()
         db.refresh(profile)
@@ -196,7 +195,7 @@ def update_speaker_profile(
 def assign_speaker_to_profile(
     speaker_uuid: str,
     profile_uuid: str,
-    confidence: Optional[float] = None,
+    confidence: float | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -220,12 +219,12 @@ def assign_speaker_to_profile(
 
         # Assign speaker to profile
         updated_speaker = matching_service.assign_speaker_to_profile(
-            speaker_id, profile_id, confidence
+            int(speaker_id), int(profile_id), confidence
         )
 
         # Update collections in OpenSearch
         # For now, we'll use a default collection (could be expanded)
-        update_speaker_collections(speaker_id, profile_id, [])
+        update_speaker_collections(str(speaker.uuid), int(profile_id), str(profile.uuid), [])
 
         db.commit()
 
@@ -255,7 +254,7 @@ def _get_embedding_suggestions(
     from app.services.profile_embedding_service import ProfileEmbeddingService
     from app.services.speaker_matching_service import SpeakerMatchingService
 
-    suggestions = []
+    suggestions: list[dict[str, Any]] = []
 
     # Get speaker object to extract UUID
     from app.models.media import Speaker
@@ -267,13 +266,13 @@ def _get_embedding_suggestions(
     speaker_embedding = get_speaker_embedding(str(speaker.uuid))
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-            db, speaker_embedding, current_user.id, threshold=threshold
+            db, speaker_embedding, int(current_user.id), threshold=threshold
         )
 
         for match in profile_matches:
             confidence = match["similarity"]
-            matching_service = SpeakerMatchingService(db, None)
-            confidence_level = matching_service.get_confidence_level(confidence)
+            matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
+            confidence_level = matching_service.get_confidence_level(float(confidence))
             auto_accept = confidence >= SPEAKER_CONFIDENCE_HIGH
 
             # Generate reason based on confidence
@@ -309,7 +308,7 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
     """Get profile suggestions based on LLM analysis."""
     from app.services.speaker_matching_service import SpeakerMatchingService
 
-    suggestions = []
+    suggestions: list[dict[str, Any]] = []
     if speaker.suggested_name and speaker.confidence:
         # Check if suggested_name matches any existing profiles
         suggested_profile = (
@@ -321,35 +320,35 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
             .first()
         )
 
-        matching_service = SpeakerMatchingService(db, None)
-        confidence_level = matching_service.get_confidence_level(speaker.confidence)
+        matching_service = SpeakerMatchingService(db, None)  # type: ignore[arg-type]
+        confidence_level = matching_service.get_confidence_level(float(speaker.confidence))
 
         if suggested_profile:
             # Add LLM suggestion for existing profile
             suggestions.append(
                 {
                     "profile_id": str(suggested_profile.uuid),
-                    "profile_name": suggested_profile.name,
-                    "confidence": speaker.confidence,
+                    "profile_name": str(suggested_profile.name),
+                    "confidence": float(speaker.confidence),
                     "confidence_level": confidence_level,
-                    "auto_accept": speaker.confidence >= 0.8,
+                    "auto_accept": bool(speaker.confidence >= 0.8),
                     "reason": f"AI content analysis suggests this speaker is '{speaker.suggested_name}'",
                     "source": "llm_analysis",
-                    "suggested_name": speaker.suggested_name,
+                    "suggested_name": str(speaker.suggested_name),
                 }
             )
         else:
             # Add LLM suggestion for new profile creation
             suggestions.append(
                 {
-                    "profile_id": None,  # Indicates new profile should be created
-                    "profile_name": speaker.suggested_name,
-                    "confidence": speaker.confidence,
+                    "profile_id": None,
+                    "profile_name": str(speaker.suggested_name),
+                    "confidence": float(speaker.confidence),
                     "confidence_level": confidence_level,
-                    "auto_accept": False,  # Never auto-create new profiles
+                    "auto_accept": False,
                     "reason": f"AI content analysis suggests creating new profile for '{speaker.suggested_name}'",
                     "source": "llm_analysis",
-                    "suggested_name": speaker.suggested_name,
+                    "suggested_name": str(speaker.suggested_name),
                     "create_new": True,
                 }
             )
@@ -382,8 +381,8 @@ def get_speaker_profile_suggestions(
             return []
 
         # Get suggestions from different sources
-        suggestions = []
-        suggestions.extend(_get_embedding_suggestions(db, speaker_id, current_user, threshold))
+        suggestions: list[dict[str, Any]] = []
+        suggestions.extend(_get_embedding_suggestions(db, int(speaker_id), current_user, threshold))
         suggestions.extend(_get_llm_suggestions(db, speaker, current_user))
 
         # Sort suggestions by confidence (highest first) and source priority
@@ -420,7 +419,9 @@ def get_speaker_profile_occurrences(
         matching_service = SpeakerMatchingService(db, embedding_service)
 
         # Get occurrences
-        occurrences = matching_service.find_speaker_occurrences(profile_id, current_user.id)
+        occurrences = matching_service.find_speaker_occurrences(
+            int(profile_id), int(current_user.id)
+        )
 
         return occurrences
 
@@ -447,8 +448,8 @@ def delete_speaker_profile(
         # Unassign all speakers from this profile
         speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
         for speaker in speakers:
-            speaker.profile_id = None
-            speaker.verified = False
+            speaker.profile_id = None  # type: ignore[assignment]
+            speaker.verified = False  # type: ignore[assignment]
 
         # Delete the profile
         db.delete(profile)
@@ -505,7 +506,7 @@ def list_speaker_collections(
 @router.post("/collections", response_model=dict[str, Any])
 def create_speaker_collection(
     name: str,
-    description: Optional[str] = None,
+    description: str | None = None,
     is_public: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),

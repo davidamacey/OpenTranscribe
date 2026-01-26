@@ -43,7 +43,7 @@ class HardwareConfig:
             import torch
 
             self.torch_available = True
-            self.torch_version = torch.__version__
+            self.torch_version: str | None = torch.__version__
         except ImportError:
             self.torch_available = False
             self.torch_version = None
@@ -411,7 +411,10 @@ def get_docker_runtime_config() -> dict[str, Any]:
     """
     config = detect_hardware()
 
-    docker_config = {"environment": config.get_environment_variables(), "deploy": {}}
+    docker_config: dict[str, Any] = {
+        "environment": config.get_environment_variables(),
+        "deploy": {},
+    }
 
     if config.device == "cuda":
         # NVIDIA GPU runtime

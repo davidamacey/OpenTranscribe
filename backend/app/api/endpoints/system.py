@@ -125,9 +125,9 @@ async def get_system_stats(
         failed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_FAILED).count()
 
         # Calculate success rate
-        success_rate = 0
+        success_rate: int = 0
         if total_tasks > 0:
-            success_rate = round((completed_tasks / total_tasks) * 100, 2)
+            success_rate = int(round((completed_tasks / total_tasks) * 100, 2))
 
         # Calculate average processing time for completed tasks
         avg_processing_time = 0

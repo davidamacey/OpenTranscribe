@@ -151,6 +151,50 @@ pytest tests/        # Run tests
 alembic upgrade head # Apply migrations (production only)
 ```
 
+### Python Virtual Environment
+
+**IMPORTANT**: Always use the virtual environment at `backend/venv` for all Python operations outside of Docker containers.
+
+```bash
+# Activate the virtual environment
+source backend/venv/bin/activate
+
+# Install dependencies (if needed)
+pip install -r backend/requirements.txt
+
+# Run pre-commit hooks
+pre-commit run --all-files
+
+# Run linting tools
+ruff check backend/
+ruff format backend/
+
+# Run type checking
+mypy backend/app
+
+# Run tests
+pytest backend/tests/
+
+# Deactivate when done
+deactivate
+```
+
+**When to use the venv:**
+- Running pre-commit hooks locally
+- Running mypy, ruff, bandit, or other linting tools
+- Installing Python packages for development
+- Running pytest outside of Docker
+- Any Python CLI tools (black, isort, etc.)
+
+**Note**: The virtual environment should already be set up. If not, create it with:
+```bash
+cd backend
+python3.11 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install pre-commit mypy ruff bandit
+```
+
 ## Database Management
 
 **IMPORTANT**: During development, do NOT create Alembic migrations. Instead:
@@ -184,10 +228,56 @@ For production deployments, the backend now includes an **automatic migration sy
 - `src/lib/i18n/locales/` - Translation JSON files (en, es, fr, de, pt, zh, ja)
 
 ### Key Patterns
-- **Authentication**: JWT-based with role-based access control
+- **Authentication**: Hybrid multi-method with JWT tokens and refresh token rotation
 - **File Processing**: Upload to MinIO → Celery task → AI processing → Database storage
 - **Real-time Updates**: WebSockets for task progress notifications
 - **Error Handling**: Structured error responses with proper HTTP status codes
+
+### Authentication System
+
+OpenTranscribe supports multiple authentication methods that can be enabled simultaneously (hybrid authentication).
+
+**Available Authentication Methods:**
+- **Local (Direct)**: Username/password with bcrypt hashing
+- **LDAP/Active Directory**: Enterprise directory integration
+- **OIDC/Keycloak**: OpenID Connect with external identity providers
+- **PKI/X.509**: Certificate-based authentication for high-security environments
+
+**Authentication Module Structure:**
+```
+backend/app/auth/
+├── direct_auth.py       # Local password authentication
+├── ldap_auth.py         # LDAP/Active Directory integration
+├── keycloak_auth.py     # OIDC/Keycloak integration
+├── pki_auth.py          # PKI/X.509 certificate authentication
+├── mfa.py               # TOTP multi-factor authentication
+├── password_policy.py   # Password strength enforcement
+├── password_history.py  # Password reuse prevention
+├── rate_limit.py        # Authentication rate limiting
+├── lockout.py           # Account lockout management
+├── session.py           # Session/token management
+├── token_service.py     # JWT token operations
+├── audit.py             # Authentication audit logging
+└── constants.py         # Auth-related constants
+```
+
+**Authentication Database Models:**
+- `UserMFA` - MFA/TOTP settings per user (`backend/app/models/user_mfa.py`)
+- `PasswordHistory` - Password history tracking (`backend/app/models/password_history.py`)
+- `RefreshToken` - Refresh token management (`backend/app/models/refresh_token.py`)
+
+**Key Authentication Patterns:**
+- **Hybrid Auth**: Multiple methods can be enabled simultaneously via `AUTH_TYPE` config
+- **Token Flow**: JWT access tokens (short-lived) + refresh token rotation (long-lived)
+- **External IdP Users**: PKI/Keycloak users bypass local MFA (handled by IdP)
+- **Rate Limiting**: Per-IP and per-user rate limits to prevent brute force
+- **Account Lockout**: Configurable lockout after failed attempts
+- **Audit Logging**: All auth events logged for security compliance
+
+**Configuration:**
+- Set `AUTH_TYPE` in `.env` (local, ldap, keycloak, pki, or comma-separated for hybrid)
+- Provider-specific settings documented in `docs/KEYCLOAK_SETUP.md` and `docs/PKI_SETUP.md`
+- MFA can be enforced globally or per-user
 
 ## Development Guidelines
 

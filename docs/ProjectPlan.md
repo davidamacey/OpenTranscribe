@@ -196,7 +196,7 @@ The FastAPI backend exposes a set of RESTful API endpoints under a common prefix
         {
            "file_id": 123,
            "filename": "Meeting with Alice",
-           "snippet": "Alice: Hello, how are you? ...", 
+           "snippet": "Alice: Hello, how are you? ...",
            "match_time": 0.0
         },
         {

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="300">
-  
+
   # Application Architecture
 </div>
 
@@ -159,7 +159,7 @@ Special modular organization for complex file operations:
 class ResourceService:
     def __init__(self, db: Session):
         self.db = db
-    
+
     def create(self, data: CreateSchema, user: User) -> Resource:
         """Create a new resource with business logic."""
         # Validation
@@ -194,7 +194,7 @@ class MediaFile(Base):
 class MediaFileResponse(BaseModel):
     id: int
     filename: str
-    
+
     class Config:
         from_attributes = True  # Enable ORM mode
 ```

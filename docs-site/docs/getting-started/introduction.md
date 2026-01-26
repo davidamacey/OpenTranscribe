@@ -67,6 +67,13 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - **Multi-worker architecture** - process multiple files in parallel
 - **Offline capable** - works in airgapped environments
 
+### Enterprise Security
+- **Multiple authentication methods** - Local, LDAP/AD, OIDC/Keycloak, PKI/X.509
+- **Multi-factor authentication** - TOTP-based MFA with backup codes
+- **Password policies** - Configurable complexity, history, and expiration
+- **Audit logging** - FedRAMP-compliant structured logging
+- **Account lockout** - Progressive lockout after failed attempts
+
 ### Modern Stack
 - **React + TypeScript frontend** - responsive, PWA-enabled
 - **FastAPI backend** - high-performance Python
@@ -135,3 +142,4 @@ Or explore:
 - [Installation Guide](../installation/docker-compose.md) - Detailed installation instructions
 - [Hardware Requirements](../installation/hardware-requirements.md) - Hardware recommendations
 - [Configuration](../configuration/environment-variables.md) - Customize your setup
+- [Authentication](../authentication/overview.md) - Enterprise authentication options

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="../../../assets/logo-banner.png" alt="OpenTranscribe Logo" width="200">
-  
+
   # Utilities Documentation
 </div>
 
@@ -37,11 +37,11 @@ Provides reusable decorators and helpers for authentication and authorization ac
 @require_file_ownership
 def update_file(file_id: int, db: Session, current_user: User):
     """Decorator ensures user owns the file before proceeding."""
-    
+
 @require_admin
 def admin_operation(db: Session, current_user: User):
     """Decorator ensures user has admin privileges."""
-    
+
 @require_verified_user
 def verified_operation(db: Session, current_user: User):
     """Decorator ensures user account is verified."""
@@ -53,13 +53,13 @@ class AuthorizationHelper:
     @staticmethod
     def check_file_access(db: Session, file_id: int, user: User) -> MediaFile:
         """Check if user has access to a file and return it."""
-        
+
     @staticmethod
     def check_admin_or_owner(resource, user: User, owner_field: str = 'user_id') -> bool:
         """Check if user is admin or owns the resource."""
-        
+
     @staticmethod
-    def require_resource_access(db: Session, model_class, resource_id: int, 
+    def require_resource_access(db: Session, model_class, resource_id: int,
                                user: User, owner_field: str = 'user_id'):
         """Generic function to check resource access."""
 ```
@@ -100,25 +100,25 @@ Provides common database query patterns, utilities, and optimizations.
 ```python
 def get_user_files_query(db: Session, user_id: int) -> Query:
     """Standard query for user's files."""
-    
+
 def apply_file_filters(query: Query, **filters) -> Query:
     """Apply standard file filters to a query."""
-    
+
 def get_files_by_status(db: Session, user_id: int, status: str) -> List[MediaFile]:
     """Get files by status for a user."""
 ```
 
 #### CRUD Helpers
 ```python
-def get_or_create(db: Session, model: Type[T], defaults: Optional[dict] = None, 
+def get_or_create(db: Session, model: Type[T], defaults: Optional[dict] = None,
                   **kwargs) -> tuple[T, bool]:
     """Get an object or create it if it doesn't exist."""
-    
-def safe_get_by_id(db: Session, model: Type[T], obj_id: int, 
+
+def safe_get_by_id(db: Session, model: Type[T], obj_id: int,
                    user_id: Optional[int] = None) -> Optional[T]:
     """Safely get an object by ID with optional user filtering."""
-    
-def bulk_update(db: Session, model: Type[T], updates: List[dict], 
+
+def bulk_update(db: Session, model: Type[T], updates: List[dict],
                 id_field: str = 'id') -> bool:
     """Perform bulk updates efficiently."""
 ```
@@ -127,10 +127,10 @@ def bulk_update(db: Session, model: Type[T], updates: List[dict],
 ```python
 def get_file_with_transcript_count(db: Session, file_id: int, user_id: int) -> tuple[MediaFile, int]:
     """Get a file with its transcript segment count."""
-    
+
 def get_unique_speakers_for_file(db: Session, file_id: int) -> List[Speaker]:
     """Get unique speakers that appear in a specific file."""
-    
+
 def get_user_file_stats(db: Session, user_id: int) -> dict:
     """Get comprehensive file statistics for a user."""
 ```
@@ -139,10 +139,10 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
 ```python
 def get_file_tags(db: Session, file_id: int) -> List[str]:
     """Get tag names for a file."""
-    
+
 def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
     """Add tags to a file, creating tags if they don't exist."""
-    
+
 def remove_tags_from_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
     """Remove tags from a file."""
 ```
@@ -155,7 +155,7 @@ class FileService:
         query = get_user_files_query(self.db, user.id)
         query = apply_file_filters(query, **filters)
         return query.order_by(MediaFile.upload_time.desc()).all()
-    
+
     def ensure_tag_exists(self, tag_name: str) -> Tag:
         tag, created = get_or_create(self.db, Tag, name=tag_name)
         if created:
@@ -183,19 +183,19 @@ class ErrorHandler:
     @staticmethod
     def database_error(operation: str, error: Exception) -> HTTPException:
         """Create standardized database error response."""
-        
+
     @staticmethod
     def validation_error(message: str) -> HTTPException:
         """Create standardized validation error response."""
-        
+
     @staticmethod
     def not_found_error(resource: str) -> HTTPException:
         """Create standardized not found error response."""
-        
+
     @staticmethod
     def unauthorized_error(message: str = "Access denied") -> HTTPException:
         """Create standardized unauthorized error response."""
-        
+
     @staticmethod
     def file_processing_error(operation: str, error: Exception) -> HTTPException:
         """Create standardized file processing error response."""
@@ -205,7 +205,7 @@ class ErrorHandler:
 ```python
 def handle_database_errors(func: Callable) -> Callable:
     """Decorator to handle common database errors."""
-    
+
 def handle_not_found(resource_name: str = "Resource") -> Callable:
     """Decorator factory to handle resource not found errors."""
 ```
@@ -219,12 +219,12 @@ class FileService:
             MediaFile.id == file_id,
             MediaFile.user_id == user.id
         ).first()
-        
+
         if not file_obj:
             raise ErrorHandler.not_found_error("File")
-        
+
         return file_obj
-    
+
     def process_file_upload(self, file_data: bytes) -> MediaFile:
         try:
             # File processing logic
@@ -258,14 +258,14 @@ Provides utilities for Celery task management and monitoring.
 
 #### Task Management
 ```python
-def create_task_record(db: Session, celery_task_id: str, user_id: int, 
+def create_task_record(db: Session, celery_task_id: str, user_id: int,
                       media_file_id: int, task_type: str) -> Task:
     """Create a new task record in the database."""
-    
-def update_task_status(db: Session, task_id: str, status: str, progress: float = None, 
+
+def update_task_status(db: Session, task_id: str, status: str, progress: float = None,
                       error_message: str = None, completed: bool = False) -> None:
     """Update task status in the database."""
-    
+
 def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> None:
     """Update media file status."""
 ```
@@ -274,10 +274,10 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> N
 ```python
 def get_task_progress(db: Session, task_id: str) -> Optional[Dict[str, Any]]:
     """Get current task progress and status."""
-    
+
 def cancel_user_tasks(db: Session, user_id: int, task_type: str = None) -> int:
     """Cancel all pending tasks for a user."""
-    
+
 def cleanup_completed_tasks(db: Session, older_than_days: int = 7) -> int:
     """Clean up old completed tasks."""
 ```
@@ -289,29 +289,29 @@ class TranscriptionService:
     def start_transcription(self, file_id: int, user: User) -> Dict[str, Any]:
         # Dispatch Celery task
         task = transcribe_audio_task.delay(file_id)
-        
+
         # Create database record
         create_task_record(self.db, task.id, user.id, file_id, "transcription")
-        
+
         return {"task_id": task.id, "status": "started"}
 
 # Task progress tracking in background task
 @celery_app.task(bind=True)
 def long_running_task(self, data):
     task_id = self.request.id
-    
+
     # Initialize task
     with session_scope() as db:
         update_task_status(db, task_id, "in_progress", progress=0.0)
-    
+
     # Processing steps with progress updates
     for i, item in enumerate(data):
         process_item(item)
         progress = (i + 1) / len(data)
-        
+
         with session_scope() as db:
             update_task_status(db, task_id, "in_progress", progress=progress)
-    
+
     # Complete task
     with session_scope() as db:
         update_task_status(db, task_id, "completed", progress=1.0, completed=True)
@@ -372,10 +372,10 @@ def validate_file_upload(file: UploadFile) -> None:
     """Validate uploaded file with consistent error responses."""
     if not file.filename:
         raise ErrorHandler.validation_error("Filename is required")
-    
+
     if file.size > MAX_FILE_SIZE:
         raise ErrorHandler.validation_error(f"File size exceeds {MAX_FILE_SIZE} bytes")
-    
+
     allowed_types = ["audio/", "video/"]
     if not any(file.content_type.startswith(t) for t in allowed_types):
         raise ErrorHandler.validation_error("File must be audio or video format")
@@ -392,9 +392,9 @@ def create_test_user(db: Session, email: str = "test@example.com") -> User:
 
 def create_test_file(db: Session, user: User, filename: str = "test.mp4") -> MediaFile:
     """Create a test media file for testing."""
-    return get_or_create(db, MediaFile, 
-                        filename=filename, 
-                        user_id=user.id, 
+    return get_or_create(db, MediaFile,
+                        filename=filename,
+                        user_id=user.id,
                         storage_path=f"/test/{filename}")[0]
 
 # Mock utilities for external services
@@ -413,7 +413,7 @@ def test_with_error_handling():
     """Test error handling utilities."""
     with pytest.raises(HTTPException) as exc_info:
         raise ErrorHandler.not_found_error("TestResource")
-    
+
     assert exc_info.value.status_code == 404
     assert "TestResource not found" in str(exc_info.value.detail)
 
@@ -422,7 +422,7 @@ def test_database_helpers(db_session, test_user):
     # Test get_or_create
     tag, created = get_or_create(db_session, Tag, name="test-tag")
     assert created is True
-    
+
     # Test safe_get_by_id
     retrieved_tag = safe_get_by_id(db_session, Tag, tag.id)
     assert retrieved_tag.name == "test-tag"
@@ -480,18 +480,18 @@ T = TypeVar('T')
 def new_utility_function(db: Session, param1: str, param2: Optional[int] = None) -> T:
     """
     Description of what this utility does.
-    
+
     Args:
         db: Database session
         param1: Description of parameter
         param2: Optional parameter description
-        
+
     Returns:
         Description of return value
-        
+
     Raises:
         HTTPException: When validation fails
-        
+
     Example:
         >>> result = new_utility_function(db, "test", 123)
         >>> assert result is not None
@@ -500,13 +500,13 @@ def new_utility_function(db: Session, param1: str, param2: Optional[int] = None)
         # Validation
         if not param1:
             raise ErrorHandler.validation_error("param1 is required")
-        
+
         # Main logic
         result = perform_operation(param1, param2)
-        
+
         # Return result
         return result
-        
+
     except Exception as e:
         logger.error(f"Error in new_utility_function: {e}")
         raise ErrorHandler.database_error("utility operation", e)

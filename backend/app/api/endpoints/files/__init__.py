@@ -129,7 +129,7 @@ async def upload_media_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-    request: Request = None,
+    request: Request = None,  # type: ignore[assignment]
 ):
     """Upload a media file for transcription"""
     # Get optional headers from prepare step
@@ -299,24 +299,24 @@ def get_media_file_content(
     current_user: User = Depends(get_current_active_user),
 ):
     """Get the content of a media file"""
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     return get_content_streaming_response(db_file)
 
 
 @router.get("/{file_uuid}/download")
 def download_media_file(
     file_uuid: str,
-    token: str = None,
+    token: str | None = None,
     original: bool = Query(False, description="Download original file without subtitles"),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Download a media file (with embedded subtitles for videos by default)"""
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id  # Get internal ID for video processing
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    file_id = int(db_file.id)  # Get internal ID for video processing
 
     # Check if this is a video file with available subtitles
     is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -355,8 +355,8 @@ def download_media_file(
             cache_key = video_service.process_video_with_subtitles(
                 db=db,
                 file_id=file_id,
-                original_object_name=db_file.storage_path,
-                user_id=current_user.id,
+                original_object_name=str(db_file.storage_path),
+                user_id=int(current_user.id),
                 include_speakers=include_speakers,
                 output_format="mp4",
             )
@@ -367,11 +367,11 @@ def download_media_file(
             from fastapi.responses import StreamingResponse
 
             # Get range header for video streaming support
-            range_header = None
             # Note: request object not available here, will handle basic streaming
 
             file_stream, _, _, total_length = video_service._get_cache_file_stream(
-                cache_key, range_header
+                cache_key,
+                "",  # type: ignore[arg-type]
             )
 
             # Generate proper filename for download
@@ -439,9 +439,9 @@ def download_media_file_with_token(
             raise HTTPException(status_code=401, detail="Invalid user")
 
         # Get file and check ownership
-        is_admin = user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for video processing
+        is_admin = bool(user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for video processing
 
         # Check if this is a video file with available subtitles
         is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -477,8 +477,8 @@ def download_media_file_with_token(
                 cache_key = video_service.process_video_with_subtitles(
                     db=db,
                     file_id=file_id,
-                    original_object_name=db_file.storage_path,
-                    user_id=user.id,
+                    original_object_name=str(db_file.storage_path),
+                    user_id=int(user.id),
                     include_speakers=include_speakers,
                     output_format="mp4",
                 )
@@ -489,11 +489,11 @@ def download_media_file_with_token(
                 from fastapi.responses import StreamingResponse
 
                 # Get range header for video streaming support
-                range_header = None
                 # Note: request object not available here, will handle basic streaming
 
                 file_stream, _, _, total_length = video_service._get_cache_file_stream(
-                    cache_key, range_header
+                    cache_key,
+                    "",  # type: ignore[arg-type]
                 )
 
                 # Generate proper filename for download
@@ -545,7 +545,7 @@ async def video_file(file_uuid: str, request: Request, db: Session = Depends(get
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
-    range_header = request.headers.get("range")
+    range_header = request.headers.get("range") or ""
     return get_video_streaming_response(db_file, range_header)
 
 
@@ -559,7 +559,7 @@ async def simple_video(file_uuid: str, request: Request, db: Session = Depends(g
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
 
-    range_header = request.headers.get("range")
+    range_header = request.headers.get("range") or ""
     return get_enhanced_video_streaming_response(db_file, range_header)
 
 
@@ -581,7 +581,7 @@ def get_metadata_filters_endpoint(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, current_user.id)
+    return get_metadata_filters(db, int(current_user.id))
 
 
 @router.put("/{file_uuid}/transcript/segments/{segment_uuid}", response_model=TranscriptSegment)
@@ -619,7 +619,12 @@ async def reprocess_media_file(
     num_speakers = reprocess_request.num_speakers if reprocess_request else None
 
     return await process_file_reprocess(
-        file_uuid, db, current_user, min_speakers, max_speakers, num_speakers
+        file_uuid,
+        db,
+        current_user,
+        min_speakers,
+        max_speakers,
+        num_speakers,  # type: ignore[arg-type]
     )
 
 
@@ -636,9 +641,9 @@ def clear_video_cache(
 
     try:
         # Verify user owns the file or is admin
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for cache operations
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for cache operations
 
         # Clear the cache using video processing service
         from app.services.minio_service import MinIOService
@@ -675,9 +680,9 @@ def refresh_analytics(
 
     try:
         # Verify user owns the file or is admin
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id  # Get internal ID for analytics refresh
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)  # Get internal ID for analytics refresh
 
         # Refresh analytics using the analytics service
         from app.services.analytics_service import AnalyticsService

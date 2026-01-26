@@ -1,15 +1,15 @@
-import i18next from "i18next";
-import LanguageDetector from "i18next-browser-languagedetector";
-import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from "./languages";
+import i18next from 'i18next';
+import LanguageDetector from 'i18next-browser-languagedetector';
+import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from './languages';
 
-import en from "./locales/en.json";
-import es from "./locales/es.json";
-import fr from "./locales/fr.json";
-import de from "./locales/de.json";
-import pt from "./locales/pt.json";
-import zh from "./locales/zh.json";
-import ja from "./locales/ja.json";
-import ru from "./locales/ru.json";
+import en from './locales/en.json';
+import es from './locales/es.json';
+import fr from './locales/fr.json';
+import de from './locales/de.json';
+import pt from './locales/pt.json';
+import zh from './locales/zh.json';
+import ja from './locales/ja.json';
+import ru from './locales/ru.json';
 
 const resources = {
   en: { translation: en },
@@ -22,17 +22,15 @@ const resources = {
   ru: { translation: ru },
 };
 
-export async function initI18n(
-  savedLanguage?: string,
-): Promise<typeof i18next> {
+export async function initI18n(savedLanguage?: string): Promise<typeof i18next> {
   await i18next.use(LanguageDetector).init({
     resources,
     fallbackLng: DEFAULT_LANGUAGE,
     supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
     detection: {
-      order: ["localStorage", "navigator"],
-      lookupLocalStorage: "locale",
-      caches: ["localStorage"],
+      order: ['localStorage', 'navigator'],
+      lookupLocalStorage: 'locale',
+      caches: ['localStorage'],
     },
     lng: savedLanguage,
     interpolation: {
@@ -59,7 +57,7 @@ export function translateSpeakerLabel(name: string): string {
   if (speakerMatch) {
     const number = speakerMatch[1];
     // Return the localized speaker label with the number
-    return i18next.t("speaker.localizedLabel", { number });
+    return i18next.t('speaker.localizedLabel', { number });
   }
 
   // Return the original name if it's not a generic speaker label
@@ -71,7 +69,7 @@ export function translateSpeakerLabel(name: string): string {
  * Useful for creating new speaker labels in the user's language.
  */
 export function getSpeakerLabelPrefix(): string {
-  return i18next.t("speaker.labelPrefix");
+  return i18next.t('speaker.labelPrefix');
 }
 
 export default i18next;

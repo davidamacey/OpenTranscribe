@@ -6,14 +6,65 @@ from contextlib import suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
 from app.api.router import api_router
+from app.auth.rate_limit import limiter
+from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
+from app.middleware.audit import AuditMiddleware
 from app.middleware.route_fixer import RouteFixerMiddleware
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _validate_production_secrets():
+    """Validate that production secrets are properly configured."""
+    is_production = settings.ENVIRONMENT.lower() in ("production", "prod")
+
+    # Check JWT secret key
+    insecure_jwt_secrets = (
+        "this_should_be_changed_in_production",
+        "changeme",
+        "secret",
+        "your-secret-key",
+    )
+    if is_production and settings.JWT_SECRET_KEY.lower() in insecure_jwt_secrets:
+        logger.error(
+            "SECURITY ERROR: JWT_SECRET_KEY is using an insecure default value in production! "
+            "Set a strong, unique secret key via the JWT_SECRET_KEY environment variable."
+        )
+        raise ValueError("Insecure JWT_SECRET_KEY in production environment")
+
+    # Check encryption key
+    if is_production and "this_should_be_changed" in settings.ENCRYPTION_KEY.lower():
+        logger.error(
+            "SECURITY ERROR: ENCRYPTION_KEY is using an insecure default value in production! "
+            "Set a strong, unique encryption key via the ENCRYPTION_KEY environment variable."
+        )
+        raise ValueError("Insecure ENCRYPTION_KEY in production environment")
+
+    # Warn about Keycloak audience validation disabled in production
+    if is_production and settings.KEYCLOAK_ENABLED and not settings.KEYCLOAK_VERIFY_AUDIENCE:
+        logger.warning(
+            "SECURITY WARNING: KEYCLOAK_VERIFY_AUDIENCE is disabled in production! "
+            "This allows tokens intended for other clients to be accepted. "
+            "Set KEYCLOAK_VERIFY_AUDIENCE=true and configure KEYCLOAK_AUDIENCE for proper token validation."
+        )
+
+    # Warn about PKI enabled without trusted proxies
+    if settings.PKI_ENABLED and not settings.PKI_TRUSTED_PROXIES:
+        logger.warning(
+            "SECURITY WARNING: PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
+            "This allows any client to inject PKI certificate headers. "
+            "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
+            "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
+        )
+
+    if is_production:
+        logger.info("Production security validation passed")
 
 
 @asynccontextmanager
@@ -24,6 +75,9 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting application...")
+
+    # Validate production secrets (Phase 7 code quality fix)
+    _validate_production_secrets()
 
     # Run database migrations
     try:
@@ -140,13 +194,20 @@ app.add_middleware(
 )
 
 # Configure maximum upload size (50GB)
-app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # 50GB
+app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[attr-defined]  # 50GB
 
 # Add Route Fixer Middleware to handle inconsistent frontend/backend API calls
-app.add_middleware(RouteFixerMiddleware, api_prefix=settings.API_PREFIX)
+app.add_middleware(RouteFixerMiddleware, api_prefix=settings.API_PREFIX)  # type: ignore[arg-type]
+
+# Add Audit Middleware for request ID tracking (FedRAMP AU-2/AU-3)
+app.add_middleware(AuditMiddleware)
 
 # Include the API router
 app.include_router(api_router, prefix=settings.API_PREFIX)
+
+# Set up rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # Health check endpoint
@@ -164,4 +225,4 @@ if __name__ == "__main__":
     import uvicorn
 
     # Binding to 0.0.0.0 is required for Docker containers
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104 # nosec B104

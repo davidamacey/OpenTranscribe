@@ -274,8 +274,9 @@ def _execute_voice_knn_search(
     }
 
     response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
-    logger.info(f"Found {len(response['hits']['hits'])} voice matches for speaker {speaker_id}")
-    return response["hits"]["hits"]
+    hits: list[dict[str, Any]] = response["hits"]["hits"]  # type: ignore[no-any-return]
+    logger.info(f"Found {len(hits)} voice matches for speaker {speaker_id}")
+    return hits
 
 
 def _get_media_file_title(db: Session, media_file_id: Optional[int]) -> Optional[str]:
@@ -292,7 +293,7 @@ def _get_media_file_title(db: Session, media_file_id: Optional[int]) -> Optional
     try:
         media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
         if media_file:
-            return media_file.title or media_file.filename or f"File {media_file_id}"
+            return str(media_file.title or media_file.filename or f"File {media_file_id}")
         else:
             logger.warning(
                 f"MediaFile {media_file_id} not found in database - skipping orphaned data"
@@ -429,7 +430,7 @@ class SmartSpeakerSuggestionService:
         Returns:
             List of consolidated suggestions with clear type labels for frontend display.
         """
-        suggestions = []
+        suggestions: list[ConsolidatedSuggestion] = []
 
         # Get the speaker from database to check for LLM suggestions
         speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
@@ -608,7 +609,7 @@ class SmartSpeakerSuggestionService:
                 logger.warning(f"Source speaker {speaker_id} not found")
                 return []
 
-            source_media_file_id = source_speaker.media_file_id
+            source_media_file_id = int(source_speaker.media_file_id)
 
             # Check if there are any candidate documents to avoid KNN errors
             if not _check_voice_candidates_exist(
@@ -628,7 +629,7 @@ class SmartSpeakerSuggestionService:
             )
 
             # Process hits and group by display_name to consolidate
-            voice_matches = {}
+            voice_matches: dict[str, dict[str, Any]] = {}
             for hit in hits:
                 result = _process_voice_hit(hit, db, threshold)
                 if result is None:
@@ -742,7 +743,7 @@ class SmartSpeakerSuggestionService:
         Returns:
             List of similar speakers with metadata
         """
-        matches = []
+        matches: list[dict[str, Any]] = []
 
         try:
             from app.models.media import MediaFile

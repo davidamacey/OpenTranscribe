@@ -1,5 +1,8 @@
 import logging
 import os
+from datetime import datetime
+from typing import Any
+from typing import cast
 
 from fastapi import HTTPException
 from fastapi import status
@@ -83,7 +86,7 @@ def get_media_file_by_id(
     if not db_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
-    return db_file
+    return db_file  # type: ignore[no-any-return]
 
 
 def get_file_tags(db: Session, file_id: int) -> list[str]:
@@ -100,8 +103,12 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
     tags = []
     try:
         # Check if tag table exists first
-        inspector = inspect(db.bind)
-        if "tag" in inspector.get_table_names() and "file_tag" in inspector.get_table_names():
+        inspector = inspect(db.bind) if db.bind is not None else None
+        if (
+            inspector is not None
+            and "tag" in inspector.get_table_names()
+            and "file_tag" in inspector.get_table_names()
+        ):
             tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
         else:
             logger.warning("Tag tables don't exist yet, skipping tag retrieval")
@@ -127,9 +134,10 @@ def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
     collections = []
     try:
         # Check if collection tables exist first
-        inspector = inspect(db.bind)
+        inspector = inspect(db.bind) if db.bind is not None else None
         if (
-            "collection" in inspector.get_table_names()
+            inspector is not None
+            and "collection" in inspector.get_table_names()
             and "collection_member" in inspector.get_table_names()
         ):
             collection_objs = (
@@ -209,7 +217,7 @@ def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> An
     analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
     if analytics or file_status != "completed":
-        return analytics
+        return analytics  # type: ignore[no-any-return]
 
     # Compute analytics on-demand for completed files
     from app.services.analytics_service import AnalyticsService
@@ -219,7 +227,7 @@ def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> An
     if success:
         analytics = db.query(Analytics).filter(Analytics.media_file_id == file_id).first()
 
-    return analytics
+    return analytics  # type: ignore[no-any-return]
 
 
 def _get_transcript_segments(
@@ -274,7 +282,8 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
 
     from app.services.error_categorization_service import ErrorCategorizationService
 
-    error_info = ErrorCategorizationService.get_error_info(db_file.last_error_message)
+    error_message = str(db_file.last_error_message) if db_file.last_error_message else None
+    error_info = ErrorCategorizationService.get_error_info(error_message)
     response.error_category = error_info["category"]
     response.error_suggestions = error_info["suggestions"]
     response.is_retryable = error_info["is_retryable"]
@@ -282,19 +291,19 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
 
 def _format_transcript_segments(
     transcript_segments: list[TranscriptSegment], speakers: list[Speaker]
-) -> list[dict]:
+) -> list[Any]:
     """
     Format transcript segments with speaker labels and timestamps.
 
     Args:
-        transcript_segments: List of transcript segments
+        transcript_segments: List of transcript segments (DB models)
         speakers: List of speakers for name mapping
 
     Returns:
-        List of formatted segment dictionaries
+        List of formatted transcript segment schemas
     """
-    speaker_mapping = {
-        speaker.name: FormattingService.format_speaker_name(speaker) for speaker in speakers
+    speaker_mapping: dict[str, str] = {
+        str(speaker.name): FormattingService.format_speaker_name(speaker) for speaker in speakers
     }
 
     return [
@@ -306,7 +315,7 @@ def _format_transcript_segments(
 def _build_media_file_response(
     db_file: MediaFile,
     tags: list[str],
-    collections: list[dict],
+    collections: list[dict[Any, Any]],
     speakers: list[Speaker],
     analytics: Analytics | None,
     transcript_segments: list[TranscriptSegment],
@@ -333,8 +342,8 @@ def _build_media_file_response(
     """
     response = MediaFileDetail.model_validate(db_file)
     response.tags = tags
-    response.collections = collections
-    response.speakers = speakers
+    response.collections = collections  # type: ignore[assignment]
+    response.speakers = speakers  # type: ignore[assignment]
 
     # Convert analytics to schema if it exists
     if analytics:
@@ -345,11 +354,18 @@ def _build_media_file_response(
         response.analytics = None
 
     # Add formatted fields
-    response.formatted_duration = FormattingService.format_duration(db_file.duration)
-    response.formatted_upload_date = FormattingService.format_upload_date(db_file.upload_time)
-    response.formatted_file_age = FormattingService.format_file_age(db_file.upload_time)
-    response.formatted_file_size = FormattingService.format_bytes_detailed(db_file.file_size)
-    response.display_status = FormattingService.format_status(db_file.status)
+    # Extract values to ensure type compatibility
+    duration_val: float | None = float(db_file.duration) if db_file.duration else None
+    upload_time_val: datetime | None = (
+        cast(datetime, db_file.upload_time) if db_file.upload_time else None
+    )
+    file_size_val: int | None = int(db_file.file_size) if db_file.file_size else None
+
+    response.formatted_duration = FormattingService.format_duration(duration_val)
+    response.formatted_upload_date = FormattingService.format_upload_date(upload_time_val)
+    response.formatted_file_age = FormattingService.format_file_age(upload_time_val)
+    response.formatted_file_size = FormattingService.format_bytes_detailed(file_size_val)
+    response.display_status = FormattingService.format_status(FileStatus(db_file.status))
     response.status_badge_class = FormattingService.get_status_badge_class(db_file.status.value)
     response.speaker_summary = FormattingService.create_speaker_summary(speakers)
 
@@ -357,21 +373,22 @@ def _build_media_file_response(
     _add_error_info_to_response(response, db_file)
 
     # Format and add transcript segments
-    response.transcript_segments = _format_transcript_segments(transcript_segments, speakers)
+    formatted_segments = _format_transcript_segments(transcript_segments, speakers)
+    response.transcript_segments = formatted_segments  # type: ignore[assignment]
 
     # Add pagination metadata
     response.total_segments = total_segments
     response.segment_limit = segment_limit
     response.segment_offset = segment_offset
 
-    return response
+    return response  # type: ignore[no-any-return]
 
 
 def get_media_file_detail(
     db: Session,
     file_uuid: str,
     current_user: User,
-    segment_limit: int = None,
+    segment_limit: int | None = None,
     segment_offset: int = 0,
 ) -> MediaFileDetail:
     """
@@ -389,13 +406,13 @@ def get_media_file_detail(
     """
     try:
         # Get the file by uuid and user id (admin can access any file)
-        is_admin = current_user.role == "admin"
-        db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-        file_id = db_file.id
+        is_admin = bool(current_user.role == "admin")
+        db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+        file_id = int(db_file.id)
 
         # Get related data
         tags = get_file_tags(db, file_id)
-        collections = get_file_collections(db, file_id, current_user.id)
+        collections = get_file_collections(db, file_id, int(current_user.id))
 
         # Get speakers and add computed status
         speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
@@ -403,7 +420,7 @@ def get_media_file_detail(
             SpeakerStatusService.add_computed_status(speaker)
 
         # Get analytics (compute on-demand if needed)
-        analytics = _get_or_compute_analytics(db, file_id, db_file.status)
+        analytics = _get_or_compute_analytics(db, file_id, str(db_file.status))
 
         # Get transcript segments with pagination
         transcript_segments, total_segments = _get_transcript_segments(
@@ -459,9 +476,9 @@ def update_media_file(
     Returns:
         Updated MediaFile object
     """
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id  # Get internal ID for OpenSearch update
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    file_id = int(db_file.id)  # Get internal ID for OpenSearch update
 
     # Track if title was updated for OpenSearch reindexing
     update_data = media_file_update.model_dump(exclude_unset=True)
@@ -477,8 +494,8 @@ def update_media_file(
     # Update OpenSearch index if title was changed
     if title_updated:
         try:
-            new_title = db_file.title or db_file.filename
-            update_transcript_title(db_file.uuid, new_title)  # Use UUID not integer ID
+            new_title = str(db_file.title or db_file.filename)
+            update_transcript_title(str(db_file.uuid), new_title)  # Use UUID not integer ID
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
 
@@ -549,9 +566,9 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
     from app.utils.task_utils import cancel_active_task
     from app.utils.task_utils import is_file_safe_to_delete
 
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id  # Get internal ID for task operations
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    file_id = int(db_file.id)  # Get internal ID for task operations
 
     # Check if file is safe to delete
     is_safe, reason = is_file_safe_to_delete(db, file_id)
@@ -585,7 +602,7 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
     # Delete from MinIO (if exists)
     storage_deleted = False
     try:
-        delete_file(db_file.storage_path)
+        delete_file(str(db_file.storage_path))
         storage_deleted = True
         logger.info(f"Successfully deleted file from storage: {db_file.storage_path}")
     except Exception as e:
@@ -635,9 +652,9 @@ def update_single_transcript_segment(
         Updated TranscriptSegment object
     """
     # Verify user owns the file or is admin
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
-    file_id = db_file.id  # Get internal ID for segment query
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+    file_id = int(db_file.id)  # Get internal ID for segment query
 
     # Find the specific segment by UUID
     segment = (
@@ -661,10 +678,10 @@ def update_single_transcript_segment(
     db.commit()
     db.refresh(segment)
 
-    return segment
+    return segment  # type: ignore[no-any-return]
 
 
-def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict:
+def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict[str, Any]:
     """
     Get streaming URL information for a media file.
 
@@ -676,8 +693,8 @@ def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict
     Returns:
         Dictionary with URL and content type information
     """
-    is_admin = current_user.role == "admin"
-    db_file = get_media_file_by_uuid(db, file_uuid, current_user.id, is_admin=is_admin)
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
 
     # Skip S3 operations in test environment
     if os.environ.get("SKIP_S3", "False").lower() == "true":

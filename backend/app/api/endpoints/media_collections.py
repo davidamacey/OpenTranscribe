@@ -105,15 +105,20 @@ async def get_collection(
     current_user: User = Depends(get_current_user),
 ):
     """Get a specific collection with its media files"""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
 
     # Reload with joined data
-    collection = (
+    reloaded_collection = (
         db.query(Collection)
         .filter(Collection.id == collection.id)
         .options(joinedload(Collection.collection_members).joinedload(CollectionMember.media_file))
         .first()
     )
+
+    if reloaded_collection is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+    collection = reloaded_collection
 
     # Extract media files from collection members
     media_files = [member.media_file for member in collection.collection_members]
@@ -133,7 +138,7 @@ async def update_collection(
     current_user: User = Depends(get_current_user),
 ):
     """Update a collection"""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
     # Check if new name conflicts with existing collection
@@ -172,7 +177,7 @@ async def delete_collection(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a collection"""
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
 
     db.delete(collection)
     db.commit()
@@ -189,11 +194,11 @@ async def add_media_to_collection(
 ):
     """Add media files to a collection"""
     # Verify collection exists and belongs to user
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
     # Convert UUIDs to IDs for media files
-    media_file_uuids = validate_uuids(media_data.media_file_ids)
+    media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
     media_file_ids = []
     for file_uuid in media_file_uuids:
         file = get_file_by_uuid(db, file_uuid)
@@ -258,11 +263,11 @@ async def remove_media_from_collection(
 ):
     """Remove media files from a collection"""
     # Verify collection exists and belongs to user
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
     # Convert UUIDs to IDs for media files
-    media_file_uuids = validate_uuids(media_data.media_file_ids)
+    media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
     media_file_ids = []
     for file_uuid in media_file_uuids:
         file = get_file_by_uuid(db, file_uuid)
@@ -296,7 +301,7 @@ async def get_collection_media(
 ):
     """Get media files in a collection"""
     # Verify collection exists and belongs to user
-    collection = get_collection_by_uuid_with_permission(db, collection_uuid, current_user.id)
+    collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
     # Get media files
@@ -317,10 +322,12 @@ async def get_collection_media(
 
         # Convert to schema and add formatted fields
         file_schema = MediaFileSchema.model_validate(file)
-        file_schema.formatted_duration = FormattingService.format_duration(file.duration)
-        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)
-        file_schema.display_status = FormattingService.format_status(file.status)
-        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)
+        file_schema.formatted_duration = FormattingService.format_duration(
+            float(file.duration) if file.duration is not None else None
+        )
+        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)  # type: ignore[arg-type]
+        file_schema.display_status = FormattingService.format_status(file.status)  # type: ignore[arg-type]
+        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)  # type: ignore[union-attr]
 
         formatted_files.append(file_schema)
 

@@ -28,7 +28,7 @@ def get_comments_for_file_nested(
     from sqlalchemy.orm import joinedload
 
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id
 
     # Get comments for this file with user relationship loaded
@@ -50,7 +50,7 @@ def create_comment_for_file_nested(
 ):
     """Create a comment for a specific media file (nested route)"""
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
     file_id = media_file.id
 
     # Create comment with file_id from URL
@@ -67,14 +67,14 @@ def create_comment_for_file_nested(
     # Reload with relationships for UUID mapping
     from sqlalchemy.orm import joinedload
 
-    db_comment = (
+    db_comment_reloaded = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
         .filter(Comment.id == db_comment.id)
         .first()
     )
 
-    return CommentSchema.model_validate(db_comment)
+    return CommentSchema.model_validate(db_comment_reloaded)
 
 
 @router.get("/", response_model=list[CommentSchema])
@@ -88,7 +88,7 @@ def get_comments_for_file(
     This is an alternative to the /files/{file_uuid}/comments endpoint
     """
     # Verify file exists and belongs to user
-    media_file = get_file_by_uuid_with_permission(db, media_file_uuid, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, media_file_uuid, int(current_user.id))
     media_file_id = media_file.id
 
     # Get comments for this file
@@ -113,7 +113,7 @@ def create_comment_query_param(
     This is an alternative to the /files/{file_uuid}/comments endpoint
     """
     # Assume media_file_id in CommentCreate is now a UUID
-    media_file = get_file_by_uuid_with_permission(db, comment.media_file_id, current_user.id)
+    media_file = get_file_by_uuid_with_permission(db, comment.media_file_id, int(current_user.id))  # type: ignore[attr-defined]
     file_id = media_file.id
 
     # Create new comment
@@ -131,14 +131,14 @@ def create_comment_query_param(
     # Reload with relationships for UUID mapping
     from sqlalchemy.orm import joinedload
 
-    db_comment = (
+    db_comment_reloaded = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
         .filter(Comment.id == db_comment.id)
         .first()
     )
 
-    return CommentSchema.model_validate(db_comment)
+    return CommentSchema.model_validate(db_comment_reloaded)
 
 
 @router.get("/{comment_uuid}", response_model=CommentSchema)
@@ -193,7 +193,7 @@ def update_comment(
 
     # Reload with relationships for UUID mapping
     db.refresh(comment)
-    comment = (
+    comment_reloaded = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
         .filter(Comment.id == comment.id)
@@ -201,7 +201,7 @@ def update_comment(
     )
 
     # Use model_validate to handle UUID conversion automatically
-    return CommentSchema.model_validate(comment)
+    return CommentSchema.model_validate(comment_reloaded)
 
 
 @router.delete("/{comment_uuid}", status_code=status.HTTP_204_NO_CONTENT)

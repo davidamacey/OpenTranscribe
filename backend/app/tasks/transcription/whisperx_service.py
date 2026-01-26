@@ -15,8 +15,8 @@ class WhisperXService:
 
     def __init__(
         self,
-        model_name: str = None,
-        models_dir: str = None,
+        model_name: str | None = None,
+        models_dir: str | None = None,
         source_language: str = "auto",
         translate_to_english: bool = False,
     ):
@@ -157,7 +157,7 @@ class WhisperXService:
             detected_lang = transcription_result.get("language", "unknown")
             logger.info(f"Transcription detected language: {detected_lang}")
 
-            return transcription_result
+            return transcription_result  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error(f"Transcription failed for {audio_file_path}: {str(e)}")
@@ -165,7 +165,7 @@ class WhisperXService:
                 f"Audio transcription failed. The file may contain no speech, be corrupted, or be in an unsupported format: {str(e)}"
             ) from e
 
-    def transcribe_audio(self, audio_file_path: str) -> dict[str, Any]:
+    def transcribe_audio(self, audio_file_path: str) -> tuple[dict[str, Any], Any]:
         """
         Transcribe audio using WhisperX.
 
@@ -173,7 +173,7 @@ class WhisperXService:
             audio_file_path: Path to the audio file
 
         Returns:
-            Dictionary containing transcription result
+            Tuple of (transcription_result dict, audio data)
         """
         try:
             import whisperx
@@ -263,15 +263,15 @@ class WhisperXService:
         self.hardware_config.optimize_memory_usage()
         self.hardware_config.log_vram_usage("after alignment model deleted")
 
-        return aligned_result
+        return aligned_result  # type: ignore[no-any-return]
 
     def perform_speaker_diarization(
         self,
         audio,
-        hf_token: str = None,
+        hf_token: str | None = None,
         max_speakers: int = 20,
         min_speakers: int = 1,
-        num_speakers: int = None,
+        num_speakers: int | None = None,
     ) -> dict[str, Any]:
         """
         Perform speaker diarization on audio.
@@ -325,7 +325,7 @@ class WhisperXService:
             self.hardware_config.log_vram_usage("after diarization model deleted")
             logger.info("Diarization model cleanup completed")
 
-            return diarize_segments
+            return diarize_segments  # type: ignore[no-any-return]
 
         except Exception as e:
             error_msg = str(e)
@@ -406,16 +406,16 @@ class WhisperXService:
 
         logger.info("Assigning speaker labels to transcript...")
         result = whisperx.assign_word_speakers(diarize_segments, aligned_result)
-        return result
+        return result  # type: ignore[no-any-return]
 
     def process_full_pipeline(
         self,
         audio_file_path: str,
-        hf_token: str = None,
+        hf_token: str | None = None,
         progress_callback=None,
         min_speakers: int = 1,
         max_speakers: int = 20,
-        num_speakers: int = None,
+        num_speakers: int | None = None,
     ) -> dict[str, Any]:
         """
         Run the complete WhisperX pipeline: transcription, alignment, and diarization.

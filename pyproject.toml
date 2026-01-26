@@ -57,6 +57,12 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
@@ -70,9 +76,13 @@ warn_unused_ignores = false
 warn_no_return = true
 strict_equality = true
 ignore_missing_imports = true
+namespace_packages = true
+explicit_package_bases = true
+mypy_path = "backend"
 
 [[tool.mypy.overrides]]
 module = [
+    "alembic.*",
     "celery.*",
     "whisperx.*",
     "pyannote.*",
@@ -81,9 +91,13 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "alembic.versions.*"
+ignore_errors = true
+
 [tool.bandit]
 exclude_dirs = ["tests", "venv", ".venv", "node_modules"]
-skips = ["B101", "B601"]  # Skip assert_used and paramiko_calls
+skips = ["B101", "B404", "B601"]  # Skip assert_used, subprocess_import, paramiko_calls
 
 [tool.bandit.assert_used]
 skips = ["*_test.py", "test_*.py"]

@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/logo-banner.png" alt="OpenTranscribe Logo" width="400">
-  
+
   # Backend Documentation Index
 </div>
 
@@ -24,6 +24,32 @@ Comprehensive documentation for the OpenTranscribe backend system, organized by 
 - Development guidelines and patterns
 
 ## 📖 Component Documentation
+
+### 🔐 Authentication Module
+**Enterprise authentication with multiple identity providers**
+
+The `backend/app/auth/` module provides flexible authentication supporting:
+- **Local Authentication** (`direct_auth.py`): bcrypt_sha256 password hashing
+- **LDAP/Active Directory** (`ldap_auth.py`): Enterprise directory integration
+- **OIDC/Keycloak** (`keycloak_auth.py`): OAuth 2.0 with PKCE flow
+- **PKI/X.509** (`pki_auth.py`): Certificate-based authentication (CAC/PIV)
+
+**Security Components:**
+- `mfa.py` - TOTP multi-factor authentication with backup codes
+- `password_policy.py` - Configurable password complexity rules
+- `password_history.py` - Password reuse prevention
+- `lockout.py` - Account lockout after failed attempts
+- `rate_limit.py` - Authentication rate limiting
+- `session.py` - Session management with token rotation
+- `audit.py` - Authentication event logging
+- `token_service.py` - JWT token management
+
+**Configuration Guides:**
+- [LDAP Authentication](LDAP_AUTH.md) - Active Directory setup
+- [Keycloak/OIDC Setup](KEYCLOAK_SETUP.md) - OAuth 2.0 SSO
+- [PKI Authentication](PKI_SETUP.md) - Certificate authentication
+- [Security Overview](SECURITY.md) - Security features and FedRAMP compliance
+- [Testing Checklist](TESTING_CHECKLIST.md) - Authentication verification
 
 ### 🌐 [API Layer](backend/app/api/README.md)
 **Complete API documentation and patterns**
@@ -67,6 +93,15 @@ Comprehensive documentation for the OpenTranscribe backend system, organized by 
 - Testing patterns
 
 ## 📋 Specialized Documentation
+
+### 🔒 [Security Documentation](SECURITY.md)
+**Security features and compliance**
+- Authentication methods (Local, LDAP, OIDC, PKI)
+- Multi-factor authentication (MFA/TOTP)
+- Password policies and account lockout
+- Session management and rate limiting
+- Audit logging
+- FedRAMP compliance features (AC-8, IA-2, IA-5, AC-12, AU-2/AU-3)
 
 ### 🗃️ [Database Strategy](backend/app/db/README.md)
 **Database management approach**

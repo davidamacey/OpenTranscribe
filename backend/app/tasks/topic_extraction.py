@@ -24,7 +24,7 @@ def send_topic_extraction_notification(
     file_id: int,
     status: str,
     message: str,
-    suggestion_id: str = None,
+    suggestion_id: str | None = None,
 ) -> bool:
     """
     Send AI suggestion extraction status notification via Redis pub/sub.
@@ -103,8 +103,8 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         if not media_file:
             raise ValueError(f"Media file with UUID {file_uuid} not found")
 
-        file_id = media_file.id
-        user_id = media_file.user_id
+        file_id = int(media_file.id)
+        user_id = int(media_file.user_id)
 
         logger.info(f"Starting topic extraction for file {file_id} (user {user_id})")
 
@@ -215,8 +215,8 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             media_file = get_file_by_uuid(db, file_uuid)
             if media_file:
                 send_topic_extraction_notification(
-                    user_id=media_file.user_id,
-                    file_id=media_file.id,
+                    user_id=int(media_file.user_id),
+                    file_id=int(media_file.id),
                     status="failed",
                     message=error_msg,
                 )
@@ -245,7 +245,7 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
     Returns:
         dict: Contains total, completed, failed, skipped counts and details for each file
     """
-    results = {
+    results: dict[str, int | list[dict[str, str | None]]] = {
         "total": len(file_uuids),
         "completed": 0,
         "failed": 0,
@@ -258,13 +258,15 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
             result = extract_topics_task(file_uuid, force_regenerate)
 
             if result["status"] == "completed":
-                results["completed"] += 1
+                results["completed"] = int(results["completed"]) + 1  # type: ignore[arg-type]
             elif result["status"] == "failed":
-                results["failed"] += 1
+                results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
             elif result["status"] == "skipped":
-                results["skipped"] += 1
+                results["skipped"] = int(results["skipped"]) + 1  # type: ignore[arg-type]
 
-            results["details"].append(
+            details_list = results["details"]
+            assert isinstance(details_list, list)
+            details_list.append(
                 {
                     "file_uuid": file_uuid,
                     "status": result["status"],
@@ -275,8 +277,10 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
 
         except Exception as e:
             logger.error(f"Error in batch processing file {file_uuid}: {e}")
-            results["failed"] += 1
-            results["details"].append(
+            results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
+            details_list = results["details"]
+            assert isinstance(details_list, list)
+            details_list.append(
                 {
                     "file_uuid": file_uuid,
                     "status": "failed",

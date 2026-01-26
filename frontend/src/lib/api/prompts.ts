@@ -2,7 +2,7 @@
  * API client for prompts management
  */
 
-import axiosInstance from "../axios";
+import axiosInstance from '../axios';
 
 export interface SummaryPrompt {
   uuid: string; // UUID - primary identifier from backend
@@ -52,7 +52,7 @@ export interface ActivePromptSelection {
 }
 
 export class PromptsApi {
-  private static readonly BASE_PATH = "/prompts";
+  private static readonly BASE_PATH = '/prompts';
 
   /**
    * Get all prompts with filtering options
@@ -63,26 +63,24 @@ export class PromptsApi {
       include_user?: boolean;
       limit?: number;
       content_type?: string;
-    } = {},
+    } = {}
   ): Promise<SummaryPromptList> {
     const queryParams = new URLSearchParams();
 
     if (params.include_system !== undefined) {
-      queryParams.append("include_system", params.include_system.toString());
+      queryParams.append('include_system', params.include_system.toString());
     }
     if (params.include_user !== undefined) {
-      queryParams.append("include_user", params.include_user.toString());
+      queryParams.append('include_user', params.include_user.toString());
     }
     if (params.limit !== undefined) {
-      queryParams.append("limit", params.limit.toString());
+      queryParams.append('limit', params.limit.toString());
     }
     if (params.content_type) {
-      queryParams.append("content_type", params.content_type);
+      queryParams.append('content_type', params.content_type);
     }
 
-    const response = await axiosInstance.get(
-      `${this.BASE_PATH}/?${queryParams.toString()}`,
-    );
+    const response = await axiosInstance.get(`${this.BASE_PATH}/?${queryParams.toString()}`);
     return response.data;
   }
 
@@ -90,27 +88,21 @@ export class PromptsApi {
    * Get currently active prompt
    */
   static async getActivePrompt(): Promise<ActivePromptResponse> {
-    const response = await axiosInstance.get(
-      `${this.BASE_PATH}/active/current`,
-    );
+    const response = await axiosInstance.get(`${this.BASE_PATH}/active/current`);
     return response.data;
   }
 
   /**
    * Set active prompt
    */
-  static async setActivePrompt(
-    selection: ActivePromptSelection,
-  ): Promise<void> {
+  static async setActivePrompt(selection: ActivePromptSelection): Promise<void> {
     await axiosInstance.post(`${this.BASE_PATH}/active/set`, selection);
   }
 
   /**
    * Create a new prompt
    */
-  static async createPrompt(
-    prompt: SummaryPromptCreate,
-  ): Promise<SummaryPrompt> {
+  static async createPrompt(prompt: SummaryPromptCreate): Promise<SummaryPrompt> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/`, prompt);
     return response.data;
   }
@@ -118,10 +110,7 @@ export class PromptsApi {
   /**
    * Update an existing prompt
    */
-  static async updatePrompt(
-    id: string,
-    prompt: SummaryPromptUpdate,
-  ): Promise<SummaryPrompt> {
+  static async updatePrompt(id: string, prompt: SummaryPromptUpdate): Promise<SummaryPrompt> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/${id}`, prompt);
     return response.data;
   }

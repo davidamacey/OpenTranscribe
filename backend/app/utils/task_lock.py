@@ -7,9 +7,9 @@ instances of the same task from running simultaneously.
 
 import logging
 from contextlib import contextmanager
-from typing import Optional
 
 import redis
+from redis import Redis
 
 from app.core.config import settings
 
@@ -23,10 +23,10 @@ class TaskLockError(Exception):
 class TaskLockManager:
     """Manages distributed locks for task execution."""
 
-    def __init__(self, redis_url: Optional[str] = None):
+    def __init__(self, redis_url: str | None = None):
         """Initialize the lock manager with Redis connection."""
         self.redis_url = redis_url or settings.CELERY_BROKER_URL
-        self._redis_client = None
+        self._redis_client: Redis[str] | bool | None = None
 
     @property
     def redis_client(self):
@@ -116,7 +116,7 @@ class TaskLockManager:
             return False
 
         try:
-            return self.redis_client.exists(lock_key) > 0
+            return bool(self.redis_client.exists(lock_key) > 0)
         except Exception as e:
             logger.error(f"Error checking lock status for {lock_key}: {e}")
             return False

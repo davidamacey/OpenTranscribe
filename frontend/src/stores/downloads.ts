@@ -1,12 +1,12 @@
-import { writable, get } from "svelte/store";
-import { addNotification } from "./notifications";
-import { toastStore } from "./toast";
-import { t } from "$stores/locale";
+import { writable, get } from 'svelte/store';
+import { addNotification } from './notifications';
+import { toastStore } from './toast';
+import { t } from '$stores/locale';
 
 export interface DownloadState {
   fileId: string;
   filename: string;
-  status: "preparing" | "processing" | "downloading" | "completed" | "error";
+  status: 'preparing' | 'processing' | 'downloading' | 'completed' | 'error';
   progress?: number;
   startTime: Date;
   error?: string;
@@ -25,13 +25,8 @@ function createDownloadStore() {
       update((downloads) => {
         // Check if file is already being downloaded
         const existing = downloads[fileId];
-        if (
-          existing &&
-          ["preparing", "processing", "downloading"].includes(existing.status)
-        ) {
-          toastStore.warning(
-            get(t)("downloads.alreadyProcessing", { filename }),
-          );
+        if (existing && ['preparing', 'processing', 'downloading'].includes(existing.status)) {
+          toastStore.warning(get(t)('downloads.alreadyProcessing', { filename }));
           return downloads;
         }
 
@@ -39,18 +34,18 @@ function createDownloadStore() {
 
         // Add persistent notification
         addNotification({
-          title: get(t)("downloads.videoDownloadStarted"),
-          message: get(t)("downloads.preparingWithSubtitles", { filename }),
-          type: "info",
+          title: get(t)('downloads.videoDownloadStarted'),
+          message: get(t)('downloads.preparingWithSubtitles', { filename }),
+          type: 'info',
           read: false,
-          data: { file_id: fileId, download_type: "video_with_subtitles" },
+          data: { file_id: fileId, download_type: 'video_with_subtitles' },
         });
 
         // Create download state
         downloads[fileId] = {
           fileId,
           filename,
-          status: "preparing",
+          status: 'preparing',
           startTime: new Date(),
         };
 
@@ -62,9 +57,9 @@ function createDownloadStore() {
 
     updateStatus(
       fileId: string,
-      status: DownloadState["status"],
+      status: DownloadState['status'],
       progress?: number,
-      error?: string,
+      error?: string
     ) {
       update((downloads) => {
         const download = downloads[fileId];
@@ -76,59 +71,59 @@ function createDownloadStore() {
 
         // Update notification based on status
         switch (status) {
-          case "processing":
+          case 'processing':
             addNotification({
-              title: get(t)("downloads.processingVideo"),
-              message: get(t)("downloads.addingSubtitles", {
+              title: get(t)('downloads.processingVideo'),
+              message: get(t)('downloads.addingSubtitles', {
                 filename: download.filename,
               }),
-              type: "info",
+              type: 'info',
               read: false,
-              data: { file_id: fileId, download_type: "video_processing" },
+              data: { file_id: fileId, download_type: 'video_processing' },
             });
             break;
 
-          case "downloading":
+          case 'downloading':
             addNotification({
-              title: get(t)("downloads.processingVideo"),
-              message: get(t)("downloads.processingWithSubtitles", {
+              title: get(t)('downloads.processingVideo'),
+              message: get(t)('downloads.processingWithSubtitles', {
                 filename: download.filename,
               }),
-              type: "info",
+              type: 'info',
               read: false,
-              data: { file_id: fileId, download_type: "video_ready" },
+              data: { file_id: fileId, download_type: 'video_ready' },
             });
             break;
 
-          case "completed":
+          case 'completed':
             // Remove from active downloads after a delay
             setTimeout(() => {
               this.removeDownload(fileId);
             }, 30000); // Keep for 30 seconds
 
             toastStore.success(
-              get(t)("downloads.downloadedSuccessfully", {
+              get(t)('downloads.downloadedSuccessfully', {
                 filename: download.filename,
-              }),
+              })
             );
             break;
 
-          case "error":
+          case 'error':
             addNotification({
-              title: get(t)("downloads.downloadFailed"),
-              message: get(t)("downloads.failedToProcess", {
+              title: get(t)('downloads.downloadFailed'),
+              message: get(t)('downloads.failedToProcess', {
                 filename: download.filename,
-                error: error || get(t)("downloads.unknownError"),
+                error: error || get(t)('downloads.unknownError'),
               }),
-              type: "error",
+              type: 'error',
               read: false,
-              data: { file_id: fileId, download_type: "video_error" },
+              data: { file_id: fileId, download_type: 'video_error' },
             });
 
             toastStore.error(
-              get(t)("downloads.downloadFailedError", {
-                error: error || get(t)("downloads.unknownError"),
-              }),
+              get(t)('downloads.downloadFailedError', {
+                error: error || get(t)('downloads.unknownError'),
+              })
             );
 
             // Remove from downloads after error
@@ -153,9 +148,7 @@ function createDownloadStore() {
       let result = false;
       update((downloads) => {
         const download = downloads[fileId];
-        result =
-          download &&
-          ["preparing", "processing", "downloading"].includes(download.status);
+        result = download && ['preparing', 'processing', 'downloading'].includes(download.status);
         return downloads;
       });
       return result;

@@ -18,11 +18,14 @@ from .media import SpeakerProfile
 from .media import Tag
 from .media import Task
 from .media import TranscriptSegment
+from .password_history import PasswordHistory
 from .prompt import SummaryPrompt
 from .prompt import UserSetting
+from .refresh_token import RefreshToken
 from .topic import TopicSuggestion
 from .user import User
 from .user_llm_settings import UserLLMSettings
+from .user_mfa import UserMFA
 
 __all__ = [
     "User",
@@ -44,4 +47,7 @@ __all__ = [
     "UserSetting",
     "UserLLMSettings",
     "TopicSuggestion",
+    "RefreshToken",
+    "UserMFA",
+    "PasswordHistory",
 ]

@@ -52,14 +52,14 @@ class TaskRecoveryService:
             # Update task status to failed
             update_task_status(
                 db=db,
-                task_id=task.id,
+                task_id=str(task.id),
                 status="failed",
                 error_message="Task recovered after being stuck in processing",
                 completed=True,
             )
 
             # Check if we need to update the media file status
-            media_file = get_refreshed_object(db, MediaFile, task.media_file_id)
+            media_file = get_refreshed_object(db, MediaFile, int(task.media_file_id))
             if not media_file:
                 logger.error(f"Media file {task.media_file_id} not found for task {task.id}")
                 return False
@@ -117,10 +117,10 @@ class TaskRecoveryService:
             try:
                 logger.info(f"Marking orphaned task {task.id} as failed")
 
-                task.status = "failed"
-                task.error_message = "Task interrupted by system restart"
-                task.completed_at = datetime.now(timezone.utc)
-                task.updated_at = datetime.now(timezone.utc)
+                task.status = "failed"  # type: ignore[assignment]
+                task.error_message = "Task interrupted by system restart"  # type: ignore[assignment]
+                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
 
                 recovered_count += 1
 
@@ -152,7 +152,7 @@ class TaskRecoveryService:
         for media_file in abandoned_files:
             try:
                 logger.info(f"Resetting abandoned file {media_file.id}: {media_file.filename}")
-                update_media_file_status(db, media_file.id, FileStatus.PENDING)
+                update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 reset_count += 1
 
             except Exception as e:
@@ -213,13 +213,13 @@ class TaskRecoveryService:
         for media_file in stuck_files:
             try:
                 # Check if retry is allowed based on system settings
-                if not system_settings_service.should_retry_file(db, media_file.retry_count):
+                if not system_settings_service.should_retry_file(db, int(media_file.retry_count)):
                     logger.info(
                         f"Skipping retry for file {media_file.id} - retry limit reached "
                         f"(count: {media_file.retry_count})"
                     )
                     # Mark as ERROR since we won't retry
-                    update_media_file_status(db, media_file.id, FileStatus.ERROR)
+                    update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
                     continue
 
                 logger.info(f"Recovering stuck file {media_file.id} ({media_file.filename})")
@@ -237,7 +237,7 @@ class TaskRecoveryService:
                 for task in stale_tasks:
                     update_task_status(
                         db=db,
-                        task_id=task.id,
+                        task_id=str(task.id),
                         status="failed",
                         error_message="Task recovered - no active Celery worker found",
                         completed=True,
@@ -245,12 +245,12 @@ class TaskRecoveryService:
                     stats["tasks_failed"] += 1
 
                 # Increment retry count and reset file status to pending for retry
-                media_file.retry_count += 1
-                update_media_file_status(db, media_file.id, FileStatus.PENDING)
+                media_file.retry_count += 1  # type: ignore[assignment]
+                update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                 stats["files_recovered"] += 1
 
                 # Schedule new transcription task
-                if self.schedule_file_retry(media_file.id):
+                if self.schedule_file_retry(int(media_file.id)):
                     stats["tasks_retried"] += 1
                     logger.info(f"Successfully scheduled retry for stuck file {media_file.id}")
                 else:
@@ -277,7 +277,7 @@ class TaskRecoveryService:
         for media_file in problem_files:
             try:
                 # Check if retry is allowed based on system settings
-                if not system_settings_service.should_retry_file(db, media_file.retry_count):
+                if not system_settings_service.should_retry_file(db, int(media_file.retry_count)):
                     logger.info(
                         f"Skipping retry for file {media_file.id} - retry limit reached "
                         f"(count: {media_file.retry_count})"
@@ -297,19 +297,19 @@ class TaskRecoveryService:
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
                     # File is stuck, recover it
-                    media_file.retry_count += 1
-                    update_media_file_status(db, media_file.id, FileStatus.PENDING)
+                    media_file.retry_count += 1  # type: ignore[assignment]
+                    update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                     stats["files_recovered"] += 1
 
-                    if self.schedule_file_retry(media_file.id):
+                    if self.schedule_file_retry(int(media_file.id)):
                         stats["tasks_retried"] += 1
 
                 elif media_file.status == FileStatus.PENDING and file_age > timedelta(
                     hours=self.config.PENDING_FILE_RETRY_THRESHOLD
                 ):
                     # File has been pending too long, retry it
-                    media_file.retry_count += 1
-                    if self.schedule_file_retry(media_file.id):
+                    media_file.retry_count += 1  # type: ignore[assignment]
+                    if self.schedule_file_retry(int(media_file.id)):
                         stats["tasks_retried"] += 1
 
             except Exception as e:
@@ -329,13 +329,13 @@ class TaskRecoveryService:
         )
 
         if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
-            update_media_file_status(db, media_file.id, FileStatus.ERROR)
+            update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
             logger.info(f"Updated media file {media_file.id} status to ERROR after task recovery")
 
     def _handle_file_with_no_tasks(self, db: Session, media_file: MediaFile) -> bool:
         """Handle media file that has no associated tasks."""
         if media_file.status == FileStatus.PROCESSING:
-            update_media_file_status(db, media_file.id, FileStatus.ERROR)
+            update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
             logger.info(
                 f"Media file {media_file.id} had no tasks but was PROCESSING - marked as ERROR"
             )
@@ -347,24 +347,24 @@ class TaskRecoveryService:
         """Update file status based on its associated tasks."""
         task_counts = {"pending": 0, "in_progress": 0, "completed": 0, "failed": 0}
         for task in tasks:
-            task_counts[task.status] = task_counts.get(task.status, 0) + 1
+            task_counts[str(task.status)] = task_counts.get(str(task.status), 0) + 1
 
         # Decision logic based on task statuses
         if task_counts["pending"] == 0 and task_counts["in_progress"] == 0:
             # No active tasks
             if task_counts["failed"] > 0 and task_counts["completed"] == 0:
                 # All tasks failed
-                update_media_file_status(db, media_file.id, FileStatus.ERROR)
+                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
                 logger.info(f"Media file {media_file.id} all tasks failed - marked as ERROR")
             elif task_counts["completed"] > 0:
                 # Some tasks completed successfully
-                update_media_file_status(db, media_file.id, FileStatus.COMPLETED)
+                update_media_file_status(db, int(media_file.id), FileStatus.COMPLETED)
                 logger.info(f"Media file {media_file.id} had completed tasks - marked as COMPLETED")
         elif media_file.status == FileStatus.PENDING and (
             task_counts["in_progress"] > 0 or task_counts["completed"] > 0
         ):
             # Tasks are running but file still shows pending
-            update_media_file_status(db, media_file.id, FileStatus.PROCESSING)
+            update_media_file_status(db, int(media_file.id), FileStatus.PROCESSING)
             logger.info(
                 f"Media file {media_file.id} had active tasks but was PENDING - marked as PROCESSING"
             )
