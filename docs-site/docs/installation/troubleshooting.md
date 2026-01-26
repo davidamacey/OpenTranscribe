@@ -410,26 +410,29 @@ Edit pg_hba.conf and change last line from
 
     host all all all scram-sha-256
 
-to 
+to
 
     host all all all trust
 ```bash
 nano /var/lib/postgresql/data/pg_hba.conf
 ```
-save file
-restart container
-Reconnect and update Postgres password to match POSTGRES_ .env
+Save the file and restart the container.
+
+Reconnect and update the Postgres password to match `POSTGRES_PASSWORD` in your `.env` file:
 ```bash
 psql -U postgres
-ALTER USER postgres WITH PASSWORD 'Replace-with-same-password-in-POSTGRES_ .env';
-/q
+ALTER USER postgres WITH PASSWORD 'your-password-from-env-file';
+\q
 ```
-Restart container, reconnect and return pg_hba.conf last line to original auth value of scram-sha-256
-Restart OpenTranscribe
+
+Restart the container, reconnect, and return `pg_hba.conf` last line to the original auth value of `scram-sha-256`.
+
+Restart OpenTranscribe:
 ```bash
 ./opentranscribe.sh restart
 ```
-Check Postgresstatus
+
+Check Postgres status:
 ```bash
 ./opentranscribe.sh logs postgres
 ```
