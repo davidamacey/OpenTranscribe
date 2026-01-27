@@ -29,7 +29,7 @@ from app.utils.uuid_helpers import validate_uuids
 router = APIRouter()
 
 
-@router.get("/", response_model=list[CollectionWithCount])
+@router.get("", response_model=list[CollectionWithCount])
 async def list_collections(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -70,7 +70,7 @@ async def list_collections(
     return collections
 
 
-@router.post("/", response_model=CollectionSchema)
+@router.post("", response_model=CollectionSchema)
 async def create_collection(
     collection: CollectionCreate,
     db: Session = Depends(get_db),

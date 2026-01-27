@@ -29,28 +29,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.delete("/{speaker_uuid}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_speaker(
-    speaker_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> None:
-    """
-    Delete a speaker
-    """
-    # Find the speaker by UUID
-    speaker = get_speaker_by_uuid(db, speaker_uuid)
-
-    # Verify ownership
-    if speaker.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-
-    # Delete the speaker
-    db.delete(speaker)
-    db.commit()
+# =============================================================================
+# STATIC ROUTES FIRST - These must come before parameterized routes
+# =============================================================================
 
 
-@router.post("/", response_model=SpeakerSchema)
+@router.post("", response_model=SpeakerSchema)
 def create_speaker(
     speaker: SpeakerUpdate,
     media_file_uuid: str,
@@ -89,6 +73,9 @@ def create_speaker(
     SpeakerStatusService.add_computed_status(new_speaker)
 
     return new_speaker
+
+
+# --- Helper functions for list_speakers ---
 
 
 def _filter_speakers_query(
@@ -472,7 +459,7 @@ def _create_no_cache_response(content: list[dict[str, Any]]) -> JSONResponse:
     )
 
 
-@router.get("/", response_model=None)
+@router.get("", response_model=None)
 def list_speakers(
     verified_only: bool = False,
     file_uuid: str | None = None,
@@ -537,6 +524,436 @@ def list_speakers(
         return _create_no_cache_response([])
 
 
+@router.post("/cleanup-orphaned-embeddings", response_model=dict[str, Any])
+def cleanup_orphaned_embeddings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Clean up orphaned speaker embeddings in OpenSearch for non-existent MediaFiles.
+    """
+    try:
+        from app.services.opensearch_service import cleanup_orphaned_speaker_embeddings
+
+        deleted_count = cleanup_orphaned_speaker_embeddings(int(current_user.id))
+
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
+        }
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.get("/debug/cross-media-data", response_model=dict[str, Any])
+def debug_cross_media_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Debug endpoint to examine cross-media matching data in PostgreSQL and OpenSearch.
+    """
+    try:
+        debug_info: dict[str, Any] = {
+            "user_id": current_user.id,
+            "media_files": [],
+            "speakers": [],
+            "profiles": [],
+            "opensearch_speakers": [],
+            "opensearch_profiles": [],
+        }
+
+        # Get all media files for this user
+        media_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
+        for mf in media_files:
+            debug_info["media_files"].append(
+                {
+                    "id": mf.id,
+                    "filename": mf.filename,
+                    "title": mf.title,
+                    "status": mf.status.value if mf.status else None,
+                }
+            )
+
+        # Get all speakers for this user, especially Joe Rogan ones
+        speakers = (
+            db.query(Speaker)
+            .filter(Speaker.user_id == current_user.id)
+            .order_by(Speaker.media_file_id, Speaker.id)
+            .all()
+        )
+
+        joe_rogan_speakers: list[dict[str, Any]] = []
+        for speaker in speakers:
+            speaker_data: dict[str, Any] = {
+                "id": speaker.id,
+                "name": speaker.name,
+                "display_name": speaker.display_name,
+                "profile_id": speaker.profile_id,
+                "media_file_id": speaker.media_file_id,
+                "verified": speaker.verified,
+                "confidence": speaker.confidence,
+            }
+            debug_info["speakers"].append(speaker_data)
+
+            # Track Joe Rogan speakers specifically
+            if speaker.display_name == "Joe Rogan":
+                joe_rogan_speakers.append(speaker_data)
+
+        # Get all speaker profiles
+        profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id).all()
+        for profile in profiles:
+            debug_info["profiles"].append(
+                {
+                    "id": profile.id,
+                    "name": profile.name,
+                    "uuid": profile.uuid,
+                    "description": profile.description,
+                }
+            )
+
+        # Get OpenSearch speaker documents
+        try:
+            from app.services.opensearch_service import opensearch_client
+            from app.services.opensearch_service import settings
+
+            if opensearch_client:
+                # Query all speaker documents for this user
+                query = {
+                    "size": 100,
+                    "query": {
+                        "bool": {
+                            "must": [{"term": {"user_id": current_user.id}}],
+                            "must_not": [
+                                {"exists": {"field": "document_type"}}
+                            ],  # Only speakers, not profiles
+                        }
+                    },
+                }
+
+                response = opensearch_client.search(
+                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
+                )
+                for hit in response["hits"]["hits"]:
+                    source = hit["_source"]
+                    debug_info["opensearch_speakers"].append(
+                        {
+                            "opensearch_id": hit["_id"],
+                            "speaker_id": source.get("speaker_id"),
+                            "display_name": source.get("display_name"),
+                            "profile_id": source.get("profile_id"),
+                            "media_file_id": source.get("media_file_id"),
+                            "user_id": source.get("user_id"),
+                        }
+                    )
+
+                # Query profile documents
+                profile_query = {
+                    "size": 100,
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {"term": {"user_id": current_user.id}},
+                                {"term": {"document_type": "profile"}},
+                            ]
+                        }
+                    },
+                }
+
+                profile_response = opensearch_client.search(
+                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_query
+                )
+                for hit in profile_response["hits"]["hits"]:
+                    source = hit["_source"]
+                    debug_info["opensearch_profiles"].append(
+                        {
+                            "opensearch_id": hit["_id"],
+                            "profile_id": source.get("profile_id"),
+                            "profile_name": source.get("profile_name"),
+                            "speaker_count": source.get("speaker_count"),
+                            "user_id": source.get("user_id"),
+                        }
+                    )
+
+        except Exception as e:
+            debug_info["opensearch_error"] = str(e)
+
+        # Add summary analysis
+        debug_info["analysis"] = {
+            "total_media_files": len(debug_info["media_files"]),
+            "total_speakers": len(debug_info["speakers"]),
+            "joe_rogan_speakers": joe_rogan_speakers,
+            "joe_rogan_count": len(joe_rogan_speakers),
+            "total_profiles": len(debug_info["profiles"]),
+            "opensearch_speaker_count": len(debug_info["opensearch_speakers"]),
+            "opensearch_profile_count": len(debug_info["opensearch_profiles"]),
+        }
+
+        return debug_info
+
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.get("/debug/joe-rogan-cross-media", response_model=dict[str, Any])
+def debug_joe_rogan_cross_media(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Debug endpoint to test cross-media logic specifically for Joe Rogan speakers.
+    """
+    try:
+        # Find all Joe Rogan speakers
+        joe_rogan_speakers = (
+            db.query(Speaker)
+            .filter(Speaker.user_id == current_user.id, Speaker.display_name == "Joe Rogan")
+            .all()
+        )
+
+        results: dict[str, Any] = {
+            "joe_rogan_speakers_found": len(joe_rogan_speakers),
+            "cross_media_results": [],
+        }
+
+        for speaker in joe_rogan_speakers:
+            # Test the cross-media logic for this speaker
+            cross_media_result: dict[str, Any] = {
+                "speaker_id": speaker.id,
+                "speaker_name": speaker.name,
+                "media_file_id": speaker.media_file_id,
+                "profile_id": speaker.profile_id,
+                "verified": speaker.verified,
+                "occurrences": [],
+            }
+
+            # Replicate the cross-media logic
+            if speaker.profile_id:
+                # Speaker has a profile - find all instances of this profile
+                profile_speakers = (
+                    db.query(Speaker)
+                    .join(MediaFile)
+                    .filter(
+                        Speaker.profile_id == speaker.profile_id,
+                        Speaker.user_id == current_user.id,
+                    )
+                    .all()
+                )
+
+                cross_media_result["method_used"] = "profile_based"
+                cross_media_result["profile_speakers_found"] = len(profile_speakers)
+
+                for profile_speaker in profile_speakers:
+                    media_file = profile_speaker.media_file
+                    if media_file:
+                        occurrence = {
+                            "speaker_id": profile_speaker.id,
+                            "media_file_id": media_file.id,
+                            "media_file_title": media_file.title or media_file.filename,
+                            "same_speaker": profile_speaker.id == speaker.id,
+                        }
+                        cross_media_result["occurrences"].append(occurrence)
+
+            else:
+                # Speaker has no profile - search by display_name
+                similar_speakers = (
+                    db.query(Speaker)
+                    .join(MediaFile)
+                    .filter(
+                        Speaker.display_name == speaker.display_name,
+                        Speaker.user_id == current_user.id,
+                        Speaker.id != speaker.id,  # Exclude self
+                    )
+                    .all()
+                )
+
+                cross_media_result["method_used"] = "display_name_based"
+                cross_media_result["similar_speakers_found"] = len(similar_speakers)
+
+                # Add self first
+                if speaker.media_file:
+                    cross_media_result["occurrences"].append(
+                        {
+                            "speaker_id": speaker.id,
+                            "media_file_id": speaker.media_file.id,
+                            "media_file_title": speaker.media_file.title
+                            or speaker.media_file.filename,
+                            "same_speaker": True,
+                        }
+                    )
+
+                # Add similar speakers
+                for similar_speaker in similar_speakers:
+                    similar_media_file = similar_speaker.media_file
+                    if similar_media_file:
+                        occurrence = {
+                            "speaker_id": similar_speaker.id,
+                            "media_file_id": similar_media_file.id,
+                            "media_file_title": similar_media_file.title
+                            or similar_media_file.filename,
+                            "same_speaker": False,
+                        }
+                        cross_media_result["occurrences"].append(occurrence)
+
+            results["cross_media_results"].append(cross_media_result)
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Error in Joe Rogan debug endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+# =============================================================================
+# ROUTE ORDERING IS CRITICAL IN FASTAPI
+#
+# FastAPI matches routes in definition order. More specific routes must be
+# defined BEFORE less specific ones, otherwise the generic routes will
+# intercept requests meant for specific nested paths.
+#
+# CORRECT ORDER:
+#   1. Static routes (no parameters): /, /cleanup-orphaned-embeddings, etc.
+#   2. Nested parameterized routes: /{uuid}/verify, /{uuid}/cross-media
+#   3. Single-param routes (catch-all): /{uuid}
+#
+# WRONG: /{uuid} before /{uuid}/cross-media
+#   -> Request to /speakers/abc/cross-media matches /{uuid} with uuid="abc"
+# =============================================================================
+
+
+# --- SECTION: NESTED PARAMETERIZED ROUTES (must come before single-param routes) ---
+
+
+@router.get("/{speaker_uuid}/cross-media", response_model=list[dict[str, Any]])
+def get_speaker_cross_media_occurrences(
+    speaker_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[dict[str, Any]]:
+    """
+    Get all media files where this speaker (or their profile) appears.
+    """
+    try:
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+        if speaker.profile_id:
+            result = _get_profile_based_occurrences(speaker, current_user, db)
+        else:
+            result = _get_display_name_based_occurrences(speaker, current_user, db)
+
+        # Sort by confidence (highest first), with same_speaker files prioritized
+        result.sort(key=lambda x: (x["same_speaker"], x.get("confidence") or 0.0), reverse=True)
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting cross-media occurrences: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
+def verify_speaker_identification(
+    speaker_uuid: str,
+    action: str,  # 'accept', 'reject', 'create_profile'
+    profile_uuid: str | None = None,
+    profile_name: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Verify or reject speaker identification suggestions.
+
+    Actions:
+    - 'accept': Accept suggested profile match
+    - 'reject': Reject suggestion and keep unassigned
+    - 'create_profile': Create new profile and assign speaker
+    """
+    try:
+        speaker = get_speaker_by_uuid(db, speaker_uuid)
+        if speaker.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+        profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
+
+        return _dispatch_verify_action(
+            action, speaker, int(speaker.id), profile_id, profile_name, current_user, db
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying speaker: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
+def merge_speakers(
+    speaker_uuid: str,
+    target_speaker_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Merge two speakers into one (target absorbs source)."""
+    # Get both speakers by UUID
+    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
+    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
+
+    # Verify ownership
+    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    # Store profile IDs for embedding updates
+    source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
+    target_profile_id = int(target_speaker.profile_id) if target_speaker.profile_id else None
+    source_speaker_id = int(source_speaker.id)
+
+    # Update all transcript segments from source to target
+    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
+        {"speaker_id": target_speaker.id}
+    )
+
+    # Merge the embedding vectors by averaging them
+    _merge_speaker_embeddings(source_speaker, target_speaker)
+
+    # Get media file IDs that are affected
+    affected_media_files = {int(source_speaker.media_file_id), int(target_speaker.media_file_id)}
+
+    # Delete the source speaker
+    db.delete(source_speaker)
+    db.commit()
+    db.refresh(target_speaker)
+
+    # Clear video cache for affected media files
+    _clear_speaker_video_cache(db, affected_media_files)
+
+    # Update OpenSearch index
+    _update_opensearch_speaker_merge(str(source_speaker.uuid), str(target_speaker.uuid))
+
+    # Update profile embeddings
+    _update_profile_embeddings_after_merge(
+        db, source_profile_id, target_profile_id, source_speaker_id
+    )
+
+    # Recalculate analytics for affected media files
+    _refresh_analytics_after_merge(db, affected_media_files)
+
+    # Add computed status fields
+    SpeakerStatusService.add_computed_status(target_speaker)
+
+    return target_speaker
+
+
+# --- SECTION: SINGLE-PARAM ROUTES (catch-all, must come last) ---
+
+
 @router.get("/{speaker_uuid}", response_model=SpeakerSchema)
 def get_speaker(
     speaker_uuid: str,
@@ -556,6 +973,9 @@ def get_speaker(
     SpeakerStatusService.add_computed_status(speaker)
 
     return speaker
+
+
+# --- Helper functions for update_speaker ---
 
 
 def _handle_profile_embedding_updates(
@@ -905,175 +1325,28 @@ def update_speaker(
     return speaker
 
 
-def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) -> None:
-    """Merge and average speaker embeddings in OpenSearch."""
-    try:
-        import numpy as np
-
-        from app.services.opensearch_service import add_speaker_embedding
-        from app.services.opensearch_service import get_speaker_embedding
-
-        # Get embeddings for both speakers
-        source_embedding = get_speaker_embedding(str(source_speaker.uuid))
-        target_embedding = get_speaker_embedding(str(target_speaker.uuid))
-
-        if source_embedding and target_embedding:
-            # Average the embeddings
-            embeddings_array = np.array([source_embedding, target_embedding])
-            averaged_embedding = np.mean(embeddings_array, axis=0).tolist()
-
-            # Store the averaged embedding in OpenSearch
-            add_speaker_embedding(
-                speaker_uuid=str(target_speaker.uuid),
-                speaker_id=int(target_speaker.id),
-                user_id=int(target_speaker.user_id),
-                name=str(target_speaker.name),
-                embedding=averaged_embedding,
-                profile_id=int(target_speaker.profile_id) if target_speaker.profile_id else None,
-                media_file_id=int(target_speaker.media_file_id)
-                if target_speaker.media_file_id
-                else None,
-                display_name=str(target_speaker.display_name)
-                if target_speaker.display_name
-                else None,
-                segment_count=2,  # Merged from 2 speakers
-            )
-            logger.info(f"Updated target speaker {target_speaker.id} with averaged embedding")
-        else:
-            logger.warning("Could not retrieve embeddings for speaker merge")
-    except Exception as e:
-        logger.error(f"Error averaging speaker embeddings during merge: {e}")
-
-
-def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
-    """Clear video cache for affected media files after speaker merge."""
-    try:
-        from app.services.minio_service import MinIOService
-        from app.services.video_processing_service import VideoProcessingService
-
-        minio_service = MinIOService()
-        video_processing_service = VideoProcessingService(minio_service)
-
-        for media_file_id in affected_media_files:
-            video_processing_service.clear_cache_for_media_file(db, media_file_id)
-    except Exception as e:
-        logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
-
-
-def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
-    """Update OpenSearch index after speaker merge."""
-    try:
-        from app.services.opensearch_service import merge_speaker_embeddings
-
-        merge_speaker_embeddings(source_speaker_uuid, target_speaker_uuid, [])
-        logger.info(
-            f"Merged speaker embeddings in OpenSearch: {source_speaker_uuid} -> {target_speaker_uuid}"
-        )
-    except Exception as e:
-        logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
-
-
-def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) -> None:
-    """Recalculate analytics for affected media files after speaker merge."""
-    try:
-        from app.services.analytics_service import AnalyticsService
-
-        for media_file_id in affected_media_files:
-            if AnalyticsService.refresh_analytics(db, media_file_id):
-                logger.info(
-                    f"Refreshed analytics for media file {media_file_id} after speaker merge"
-                )
-            else:
-                logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
-    except Exception as e:
-        logger.error(f"Error refreshing analytics after speaker merge: {e}")
-
-
-def _update_profile_embeddings_after_merge(
-    db: Session,
-    source_profile_id: int | None,
-    target_profile_id: int | None,
-    source_speaker_id: int,
-) -> None:
-    """Update profile embeddings affected by speaker merge."""
-    try:
-        from app.services.profile_embedding_service import ProfileEmbeddingService
-
-        # Update source profile embedding if it exists
-        if (
-            source_profile_id
-            and source_profile_id != target_profile_id
-            and ProfileEmbeddingService.remove_speaker_from_profile_embedding(
-                db, source_speaker_id, source_profile_id
-            )
-        ):
-            logger.info(f"Updated source profile {source_profile_id} embedding after speaker merge")
-
-        # Update target profile embedding if it exists
-        if target_profile_id and ProfileEmbeddingService.update_profile_embedding(
-            db, target_profile_id
-        ):
-            logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
-
-    except Exception as e:
-        logger.error(f"Error updating profile embeddings after speaker merge: {e}")
-
-
-@router.post("/{speaker_uuid}/merge/{target_speaker_uuid}", response_model=SpeakerSchema)
-def merge_speakers(
+@router.delete("/{speaker_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_speaker(
     speaker_uuid: str,
-    target_speaker_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-):
-    """Merge two speakers into one (target absorbs source)."""
-    # Get both speakers by UUID
-    source_speaker = get_speaker_by_uuid(db, speaker_uuid)
-    target_speaker = get_speaker_by_uuid(db, target_speaker_uuid)
+) -> None:
+    """
+    Delete a speaker
+    """
+    # Find the speaker by UUID
+    speaker = get_speaker_by_uuid(db, speaker_uuid)
 
     # Verify ownership
-    if source_speaker.user_id != current_user.id or target_speaker.user_id != current_user.id:
+    if speaker.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-    # Store profile IDs for embedding updates
-    source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
-    target_profile_id = int(target_speaker.profile_id) if target_speaker.profile_id else None
-    source_speaker_id = int(source_speaker.id)
-
-    # Update all transcript segments from source to target
-    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
-        {"speaker_id": target_speaker.id}
-    )
-
-    # Merge the embedding vectors by averaging them
-    _merge_speaker_embeddings(source_speaker, target_speaker)
-
-    # Get media file IDs that are affected
-    affected_media_files = {int(source_speaker.media_file_id), int(target_speaker.media_file_id)}
-
-    # Delete the source speaker
-    db.delete(source_speaker)
+    # Delete the speaker
+    db.delete(speaker)
     db.commit()
-    db.refresh(target_speaker)
 
-    # Clear video cache for affected media files
-    _clear_speaker_video_cache(db, affected_media_files)
 
-    # Update OpenSearch index
-    _update_opensearch_speaker_merge(str(source_speaker.uuid), str(target_speaker.uuid))
-
-    # Update profile embeddings
-    _update_profile_embeddings_after_merge(
-        db, source_profile_id, target_profile_id, source_speaker_id
-    )
-
-    # Recalculate analytics for affected media files
-    _refresh_analytics_after_merge(db, affected_media_files)
-
-    # Add computed status fields
-    SpeakerStatusService.add_computed_status(target_speaker)
-
-    return target_speaker
+# --- Helper functions for verify_speaker_identification ---
 
 
 def _accept_speaker_profile_match(
@@ -1261,40 +1534,124 @@ def _dispatch_verify_action(
     )
 
 
-@router.post("/{speaker_uuid}/verify", response_model=dict[str, Any])
-def verify_speaker_identification(
-    speaker_uuid: str,
-    action: str,  # 'accept', 'reject', 'create_profile'
-    profile_uuid: str | None = None,
-    profile_name: str | None = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """
-    Verify or reject speaker identification suggestions.
+# --- Helper functions for merge_speakers ---
 
-    Actions:
-    - 'accept': Accept suggested profile match
-    - 'reject': Reject suggestion and keep unassigned
-    - 'create_profile': Create new profile and assign speaker
-    """
+
+def _merge_speaker_embeddings(source_speaker: Speaker, target_speaker: Speaker) -> None:
+    """Merge and average speaker embeddings in OpenSearch."""
     try:
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        import numpy as np
 
-        profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
+        from app.services.opensearch_service import add_speaker_embedding
+        from app.services.opensearch_service import get_speaker_embedding
 
-        return _dispatch_verify_action(
-            action, speaker, int(speaker.id), profile_id, profile_name, current_user, db
-        )
+        # Get embeddings for both speakers
+        source_embedding = get_speaker_embedding(str(source_speaker.uuid))
+        target_embedding = get_speaker_embedding(str(target_speaker.uuid))
 
-    except HTTPException:
-        raise
+        if source_embedding and target_embedding:
+            # Average the embeddings
+            embeddings_array = np.array([source_embedding, target_embedding])
+            averaged_embedding = np.mean(embeddings_array, axis=0).tolist()
+
+            # Store the averaged embedding in OpenSearch
+            add_speaker_embedding(
+                speaker_uuid=str(target_speaker.uuid),
+                speaker_id=int(target_speaker.id),
+                user_id=int(target_speaker.user_id),
+                name=str(target_speaker.name),
+                embedding=averaged_embedding,
+                profile_id=int(target_speaker.profile_id) if target_speaker.profile_id else None,
+                media_file_id=int(target_speaker.media_file_id)
+                if target_speaker.media_file_id
+                else None,
+                display_name=str(target_speaker.display_name)
+                if target_speaker.display_name
+                else None,
+                segment_count=2,  # Merged from 2 speakers
+            )
+            logger.info(f"Updated target speaker {target_speaker.id} with averaged embedding")
+        else:
+            logger.warning("Could not retrieve embeddings for speaker merge")
     except Exception as e:
-        logger.error(f"Error verifying speaker: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        logger.error(f"Error averaging speaker embeddings during merge: {e}")
+
+
+def _clear_speaker_video_cache(db: Session, affected_media_files: set[int]) -> None:
+    """Clear video cache for affected media files after speaker merge."""
+    try:
+        from app.services.minio_service import MinIOService
+        from app.services.video_processing_service import VideoProcessingService
+
+        minio_service = MinIOService()
+        video_processing_service = VideoProcessingService(minio_service)
+
+        for media_file_id in affected_media_files:
+            video_processing_service.clear_cache_for_media_file(db, media_file_id)
+    except Exception as e:
+        logger.error(f"Warning: Failed to clear video cache after speaker merge: {e}")
+
+
+def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
+    """Update OpenSearch index after speaker merge."""
+    try:
+        from app.services.opensearch_service import merge_speaker_embeddings
+
+        merge_speaker_embeddings(source_speaker_uuid, target_speaker_uuid, [])
+        logger.info(
+            f"Merged speaker embeddings in OpenSearch: {source_speaker_uuid} -> {target_speaker_uuid}"
+        )
+    except Exception as e:
+        logger.error(f"Error merging speaker embeddings in OpenSearch: {e}")
+
+
+def _refresh_analytics_after_merge(db: Session, affected_media_files: set[int]) -> None:
+    """Recalculate analytics for affected media files after speaker merge."""
+    try:
+        from app.services.analytics_service import AnalyticsService
+
+        for media_file_id in affected_media_files:
+            if AnalyticsService.refresh_analytics(db, media_file_id):
+                logger.info(
+                    f"Refreshed analytics for media file {media_file_id} after speaker merge"
+                )
+            else:
+                logger.warning(f"Failed to refresh analytics for media file {media_file_id}")
+    except Exception as e:
+        logger.error(f"Error refreshing analytics after speaker merge: {e}")
+
+
+def _update_profile_embeddings_after_merge(
+    db: Session,
+    source_profile_id: int | None,
+    target_profile_id: int | None,
+    source_speaker_id: int,
+) -> None:
+    """Update profile embeddings affected by speaker merge."""
+    try:
+        from app.services.profile_embedding_service import ProfileEmbeddingService
+
+        # Update source profile embedding if it exists
+        if (
+            source_profile_id
+            and source_profile_id != target_profile_id
+            and ProfileEmbeddingService.remove_speaker_from_profile_embedding(
+                db, source_speaker_id, source_profile_id
+            )
+        ):
+            logger.info(f"Updated source profile {source_profile_id} embedding after speaker merge")
+
+        # Update target profile embedding if it exists
+        if target_profile_id and ProfileEmbeddingService.update_profile_embedding(
+            db, target_profile_id
+        ):
+            logger.info(f"Updated target profile {target_profile_id} embedding after speaker merge")
+
+    except Exception as e:
+        logger.error(f"Error updating profile embeddings after speaker merge: {e}")
+
+
+# --- Helper functions for get_speaker_cross_media_occurrences ---
 
 
 def _build_occurrence_dict(
@@ -1378,317 +1735,3 @@ def _get_display_name_based_occurrences(
             )
 
     return result
-
-
-@router.get("/{speaker_uuid}/cross-media", response_model=list[dict[str, Any]])
-def get_speaker_cross_media_occurrences(
-    speaker_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> list[dict[str, Any]]:
-    """
-    Get all media files where this speaker (or their profile) appears.
-    """
-    try:
-        speaker = get_speaker_by_uuid(db, speaker_uuid)
-        if speaker.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-
-        if speaker.profile_id:
-            result = _get_profile_based_occurrences(speaker, current_user, db)
-        else:
-            result = _get_display_name_based_occurrences(speaker, current_user, db)
-
-        # Sort by confidence (highest first), with same_speaker files prioritized
-        result.sort(key=lambda x: (x["same_speaker"], x.get("confidence") or 0.0), reverse=True)
-
-        return result
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting cross-media occurrences: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
-
-
-@router.post("/cleanup-orphaned-embeddings", response_model=dict[str, Any])
-def cleanup_orphaned_embeddings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """
-    Clean up orphaned speaker embeddings in OpenSearch for non-existent MediaFiles.
-    """
-    try:
-        from app.services.opensearch_service import cleanup_orphaned_speaker_embeddings
-
-        deleted_count = cleanup_orphaned_speaker_embeddings(int(current_user.id))
-
-        return {
-            "status": "success",
-            "deleted_count": deleted_count,
-            "message": f"Cleaned up {deleted_count} orphaned speaker embeddings",
-        }
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
-
-
-@router.get("/debug/cross-media-data", response_model=dict[str, Any])
-def debug_cross_media_data(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """
-    Debug endpoint to examine cross-media matching data in PostgreSQL and OpenSearch.
-    """
-    try:
-        debug_info: dict[str, Any] = {
-            "user_id": current_user.id,
-            "media_files": [],
-            "speakers": [],
-            "profiles": [],
-            "opensearch_speakers": [],
-            "opensearch_profiles": [],
-        }
-
-        # Get all media files for this user
-        media_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
-        for mf in media_files:
-            debug_info["media_files"].append(
-                {
-                    "id": mf.id,
-                    "filename": mf.filename,
-                    "title": mf.title,
-                    "status": mf.status.value if mf.status else None,
-                }
-            )
-
-        # Get all speakers for this user, especially Joe Rogan ones
-        speakers = (
-            db.query(Speaker)
-            .filter(Speaker.user_id == current_user.id)
-            .order_by(Speaker.media_file_id, Speaker.id)
-            .all()
-        )
-
-        joe_rogan_speakers: list[dict[str, Any]] = []
-        for speaker in speakers:
-            speaker_data: dict[str, Any] = {
-                "id": speaker.id,
-                "name": speaker.name,
-                "display_name": speaker.display_name,
-                "profile_id": speaker.profile_id,
-                "media_file_id": speaker.media_file_id,
-                "verified": speaker.verified,
-                "confidence": speaker.confidence,
-            }
-            debug_info["speakers"].append(speaker_data)
-
-            # Track Joe Rogan speakers specifically
-            if speaker.display_name == "Joe Rogan":
-                joe_rogan_speakers.append(speaker_data)
-
-        # Get all speaker profiles
-        profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id).all()
-        for profile in profiles:
-            debug_info["profiles"].append(
-                {
-                    "id": profile.id,
-                    "name": profile.name,
-                    "uuid": profile.uuid,
-                    "description": profile.description,
-                }
-            )
-
-        # Get OpenSearch speaker documents
-        try:
-            from app.services.opensearch_service import opensearch_client
-            from app.services.opensearch_service import settings
-
-            if opensearch_client:
-                # Query all speaker documents for this user
-                query = {
-                    "size": 100,
-                    "query": {
-                        "bool": {
-                            "must": [{"term": {"user_id": current_user.id}}],
-                            "must_not": [
-                                {"exists": {"field": "document_type"}}
-                            ],  # Only speakers, not profiles
-                        }
-                    },
-                }
-
-                response = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=query
-                )
-                for hit in response["hits"]["hits"]:
-                    source = hit["_source"]
-                    debug_info["opensearch_speakers"].append(
-                        {
-                            "opensearch_id": hit["_id"],
-                            "speaker_id": source.get("speaker_id"),
-                            "display_name": source.get("display_name"),
-                            "profile_id": source.get("profile_id"),
-                            "media_file_id": source.get("media_file_id"),
-                            "user_id": source.get("user_id"),
-                        }
-                    )
-
-                # Query profile documents
-                profile_query = {
-                    "size": 100,
-                    "query": {
-                        "bool": {
-                            "must": [
-                                {"term": {"user_id": current_user.id}},
-                                {"term": {"document_type": "profile"}},
-                            ]
-                        }
-                    },
-                }
-
-                profile_response = opensearch_client.search(
-                    index=settings.OPENSEARCH_SPEAKER_INDEX, body=profile_query
-                )
-                for hit in profile_response["hits"]["hits"]:
-                    source = hit["_source"]
-                    debug_info["opensearch_profiles"].append(
-                        {
-                            "opensearch_id": hit["_id"],
-                            "profile_id": source.get("profile_id"),
-                            "profile_name": source.get("profile_name"),
-                            "speaker_count": source.get("speaker_count"),
-                            "user_id": source.get("user_id"),
-                        }
-                    )
-
-        except Exception as e:
-            debug_info["opensearch_error"] = str(e)
-
-        # Add summary analysis
-        debug_info["analysis"] = {
-            "total_media_files": len(debug_info["media_files"]),
-            "total_speakers": len(debug_info["speakers"]),
-            "joe_rogan_speakers": joe_rogan_speakers,
-            "joe_rogan_count": len(joe_rogan_speakers),
-            "total_profiles": len(debug_info["profiles"]),
-            "opensearch_speaker_count": len(debug_info["opensearch_speakers"]),
-            "opensearch_profile_count": len(debug_info["opensearch_profiles"]),
-        }
-
-        return debug_info
-
-    except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
-
-
-@router.get("/debug/joe-rogan-cross-media", response_model=dict[str, Any])
-def debug_joe_rogan_cross_media(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, Any]:
-    """
-    Debug endpoint to test cross-media logic specifically for Joe Rogan speakers.
-    """
-    try:
-        # Find all Joe Rogan speakers
-        joe_rogan_speakers = (
-            db.query(Speaker)
-            .filter(Speaker.user_id == current_user.id, Speaker.display_name == "Joe Rogan")
-            .all()
-        )
-
-        results: dict[str, Any] = {
-            "joe_rogan_speakers_found": len(joe_rogan_speakers),
-            "cross_media_results": [],
-        }
-
-        for speaker in joe_rogan_speakers:
-            # Test the cross-media logic for this speaker
-            cross_media_result: dict[str, Any] = {
-                "speaker_id": speaker.id,
-                "speaker_name": speaker.name,
-                "media_file_id": speaker.media_file_id,
-                "profile_id": speaker.profile_id,
-                "verified": speaker.verified,
-                "occurrences": [],
-            }
-
-            # Replicate the cross-media logic
-            if speaker.profile_id:
-                # Speaker has a profile - find all instances of this profile
-                profile_speakers = (
-                    db.query(Speaker)
-                    .join(MediaFile)
-                    .filter(
-                        Speaker.profile_id == speaker.profile_id,
-                        Speaker.user_id == current_user.id,
-                    )
-                    .all()
-                )
-
-                cross_media_result["method_used"] = "profile_based"
-                cross_media_result["profile_speakers_found"] = len(profile_speakers)
-
-                for profile_speaker in profile_speakers:
-                    media_file = profile_speaker.media_file
-                    if media_file:
-                        occurrence = {
-                            "speaker_id": profile_speaker.id,
-                            "media_file_id": media_file.id,
-                            "media_file_title": media_file.title or media_file.filename,
-                            "same_speaker": profile_speaker.id == speaker.id,
-                        }
-                        cross_media_result["occurrences"].append(occurrence)
-
-            else:
-                # Speaker has no profile - search by display_name
-                similar_speakers = (
-                    db.query(Speaker)
-                    .join(MediaFile)
-                    .filter(
-                        Speaker.display_name == speaker.display_name,
-                        Speaker.user_id == current_user.id,
-                        Speaker.id != speaker.id,  # Exclude self
-                    )
-                    .all()
-                )
-
-                cross_media_result["method_used"] = "display_name_based"
-                cross_media_result["similar_speakers_found"] = len(similar_speakers)
-
-                # Add self first
-                if speaker.media_file:
-                    cross_media_result["occurrences"].append(
-                        {
-                            "speaker_id": speaker.id,
-                            "media_file_id": speaker.media_file.id,
-                            "media_file_title": speaker.media_file.title
-                            or speaker.media_file.filename,
-                            "same_speaker": True,
-                        }
-                    )
-
-                # Add similar speakers
-                for similar_speaker in similar_speakers:
-                    similar_media_file = similar_speaker.media_file
-                    if similar_media_file:
-                        occurrence = {
-                            "speaker_id": similar_speaker.id,
-                            "media_file_id": similar_media_file.id,
-                            "media_file_title": similar_media_file.title
-                            or similar_media_file.filename,
-                            "same_speaker": False,
-                        }
-                        cross_media_result["occurrences"].append(occurrence)
-
-            results["cross_media_results"].append(cross_media_result)
-
-        return results
-
-    except Exception as e:
-        logger.error(f"Error in Joe Rogan debug endpoint: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e

@@ -59,7 +59,7 @@ def create_user(user_data: UserCreate, db: Session) -> User:
     return new_user
 
 
-@router.get("/", response_model=list[UserSchema])
+@router.get("", response_model=list[UserSchema])
 def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
     """
     List all users (admin only)

@@ -66,7 +66,7 @@
     try {
       // First, check summary status and LLM availability
       try {
-        const statusResponse = await axiosInstance.get(`/api/files/${fileId}/summary-status`);
+        const statusResponse = await axiosInstance.get(`/files/${fileId}/summary-status`);
 
         if (statusResponse.status === 200) {
           const statusData = statusResponse.data;
@@ -81,7 +81,7 @@
 
       // Then try to load the actual summary if it exists
       try {
-        const response = await axiosInstance.get(`/api/files/${fileId}/summary`);
+        const response = await axiosInstance.get(`/files/${fileId}/summary`);
         const data: SummaryResponse = response.data;
         summary = data.summary_data;
       } catch (summaryErr: any) {

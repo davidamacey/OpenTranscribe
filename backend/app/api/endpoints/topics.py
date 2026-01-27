@@ -35,6 +35,85 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# =============================================================================
+# STATIC ROUTES - Must come before parameterized routes
+# =============================================================================
+
+
+@router.post("/batch-extract", status_code=status.HTTP_202_ACCEPTED)
+async def batch_extract_topics(
+    file_uuids: list[str] = Body(..., embed=True),
+    force_regenerate: bool = Body(False, embed=True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, str | int | list[str]]:
+    """
+    Extract AI suggestions for multiple files in batch
+
+    Args:
+        file_uuids: List of file UUIDs to process
+        force_regenerate: Force re-extraction for all files
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        Acknowledgment that batch processing has been triggered
+    """
+    # Import here to avoid circular imports
+    from app.tasks.topic_extraction import batch_extract_topics_task
+
+    # Verify all files exist and belong to user
+    verified_uuids = []
+    for file_uuid in file_uuids:
+        try:
+            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
+            if media_file.transcript_segments:
+                verified_uuids.append(file_uuid)
+            else:
+                logger.warning(f"Skipping file {file_uuid} - no transcript available")
+        except HTTPException as e:
+            logger.warning(f"Skipping file {file_uuid} - {e.detail}")
+
+    if not verified_uuids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid files found for processing",
+        )
+
+    # Check if LLM is configured
+    extraction_service = TopicExtractionService.create_from_settings(
+        user_id=int(current_user.id), db=db
+    )
+
+    if not extraction_service:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="LLM provider not configured. Configure LLM settings first.",
+        )
+
+    # Trigger batch task
+    task = batch_extract_topics_task.delay(
+        file_uuids=verified_uuids,
+        force_regenerate=force_regenerate,
+    )
+
+    logger.info(
+        f"Triggered batch AI suggestion extraction for {len(verified_uuids)} files, task_id: {task.id}"
+    )
+
+    return {
+        "message": "Batch AI suggestion extraction started",
+        "task_id": task.id,
+        "file_count": len(verified_uuids),
+        "files": verified_uuids,
+    }
+
+
+# =============================================================================
+# PARAMETERIZED ROUTES - /{file_uuid}/* patterns
+# =============================================================================
+
+
 @router.get("/{file_uuid}/suggestions", response_model=TopicSuggestionResponse)
 async def get_topic_suggestions(
     file_uuid: str,
@@ -257,71 +336,3 @@ async def dismiss_topic_suggestions(
     db.commit()
 
     logger.info(f"Dismissed AI suggestions for file {file_uuid}")
-
-
-@router.post("/batch-extract", status_code=status.HTTP_202_ACCEPTED)
-async def batch_extract_topics(
-    file_uuids: list[str] = Body(..., embed=True),
-    force_regenerate: bool = Body(False, embed=True),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> dict[str, str | int | list[str]]:
-    """
-    Extract AI suggestions for multiple files in batch
-
-    Args:
-        file_uuids: List of file UUIDs to process
-        force_regenerate: Force re-extraction for all files
-        db: Database session
-        current_user: Authenticated user
-
-    Returns:
-        Acknowledgment that batch processing has been triggered
-    """
-    # Verify all files exist and belong to user
-    verified_uuids = []
-    for file_uuid in file_uuids:
-        try:
-            media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
-            if media_file.transcript_segments:
-                verified_uuids.append(file_uuid)
-            else:
-                logger.warning(f"Skipping file {file_uuid} - no transcript available")
-        except HTTPException as e:
-            logger.warning(f"Skipping file {file_uuid} - {e.detail}")
-
-    if not verified_uuids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid files found for processing",
-        )
-
-    # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(
-        user_id=int(current_user.id), db=db
-    )
-
-    if not extraction_service:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="LLM provider not configured. Configure LLM settings first.",
-        )
-
-    # Trigger batch task
-    from app.tasks.topic_extraction import batch_extract_topics_task
-
-    task = batch_extract_topics_task.delay(
-        file_uuids=verified_uuids,
-        force_regenerate=force_regenerate,
-    )
-
-    logger.info(
-        f"Triggered batch AI suggestion extraction for {len(verified_uuids)} files, task_id: {task.id}"
-    )
-
-    return {
-        "message": "Batch AI suggestion extraction started",
-        "task_id": task.id,
-        "file_count": len(verified_uuids),
-        "files": verified_uuids,
-    }

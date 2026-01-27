@@ -59,7 +59,7 @@
     isSaving = true;
 
     try {
-      const response = await axiosInstance.put(`/api/files/${file.uuid}`, {
+      const response = await axiosInstance.put(`/files/${file.uuid}`, {
         title: trimmedTitle
       });
 

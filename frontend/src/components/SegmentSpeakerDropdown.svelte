@@ -37,7 +37,7 @@
     const newSpeakerName = getNextSpeakerName();
 
     try {
-      const response = await axiosInstance.post(`/speakers/?media_file_uuid=${mediaFileUuid}`, {
+      const response = await axiosInstance.post(`/speakers?media_file_uuid=${mediaFileUuid}`, {
         name: newSpeakerName
       });
 

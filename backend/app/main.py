@@ -13,7 +13,6 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.middleware.audit import AuditMiddleware
-from app.middleware.route_fixer import RouteFixerMiddleware
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -177,9 +176,9 @@ app = FastAPI(
     docs_url=f"{settings.API_PREFIX}/docs",
     redoc_url=f"{settings.API_PREFIX}/redoc",
     lifespan=lifespan,
-    # Enable built-in support for routes with or without trailing slashes
-    # This ensures consistent behavior regardless of how frontend makes requests
-    redirect_slashes=True,
+    # Disable redirect_slashes to prevent 307 redirects that expose Docker internal hostnames
+    # Routes should be defined with "" (not "/") to match paths without trailing slash
+    redirect_slashes=False,
     # Increase default timeout to 1 hour for large file uploads
     default_timeout=3600,
 )
@@ -195,9 +194,6 @@ app.add_middleware(
 
 # Configure maximum upload size (50GB)
 app.router.default_max_upload_size = 50 * 1024 * 1024 * 1024  # type: ignore[attr-defined]  # 50GB
-
-# Add Route Fixer Middleware to handle inconsistent frontend/backend API calls
-app.add_middleware(RouteFixerMiddleware, api_prefix=settings.API_PREFIX)  # type: ignore[arg-type]
 
 # Add Audit Middleware for request ID tracking (FedRAMP AU-2/AU-3)
 app.add_middleware(AuditMiddleware)

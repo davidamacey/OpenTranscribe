@@ -126,7 +126,7 @@
       }
 
       const queryString = params.toString();
-      const url = queryString ? `/tasks/?${queryString}` : '/tasks/';
+      const url = queryString ? `/tasks?${queryString}` : '/tasks';
 
       const response = await axiosInstance.get(url);
       // Tasks are already filtered and include computed fields from backend

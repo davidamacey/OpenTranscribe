@@ -116,7 +116,7 @@ def get_supported_providers() -> Any:
     return schemas.SupportedProvidersResponse(providers=providers)
 
 
-@router.get("/", response_model=schemas.UserLLMConfigurationsList)
+@router.get("", response_model=schemas.UserLLMConfigurationsList)
 def get_user_configurations(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -246,7 +246,7 @@ def get_user_configuration(
     return user_config
 
 
-@router.post("/", response_model=schemas.UserLLMSettingsPublic)
+@router.post("", response_model=schemas.UserLLMSettingsPublic)
 def create_user_llm_configuration(
     *,
     db: Session = Depends(get_db),

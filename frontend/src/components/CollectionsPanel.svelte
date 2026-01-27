@@ -34,7 +34,7 @@
     loading = true;
 
     try {
-      const response = await axiosInstance.get('/api/collections/');
+      const response = await axiosInstance.get('/collections');
       collections = response.data;
     } catch (err: any) {
       console.error('Error fetching collections:', err);
@@ -51,7 +51,7 @@
     creating = true;
 
     try {
-      const response = await axiosInstance.post('/api/collections/', {
+      const response = await axiosInstance.post('/collections', {
         name: newCollectionName.trim(),
         description: newCollectionDescription.trim() || null
       });
@@ -90,7 +90,7 @@
     updating = true;
 
     try {
-      const response = await axiosInstance.put(`/api/collections/${collectionToEdit.uuid}`, {
+      const response = await axiosInstance.put(`/collections/${collectionToEdit.uuid}`, {
         name: editCollectionName.trim(),
         description: editCollectionDescription.trim() || null
       });
@@ -132,7 +132,7 @@
     deleting = true;
 
     try {
-      await axiosInstance.delete(`/api/collections/${collectionToDelete.uuid}`);
+      await axiosInstance.delete(`/collections/${collectionToDelete.uuid}`);
       collections = collections.filter(col => col.uuid !== collectionToDelete.uuid);
 
       if (selectedCollectionId === collectionToDelete.uuid) {
@@ -168,7 +168,7 @@
     addingToCollection = true;
 
     try {
-      const response = await axiosInstance.post(`/api/collections/${collectionId}/media`, {
+      const response = await axiosInstance.post(`/collections/${collectionId}/media`, {
         media_file_ids: selectedMediaIds
       });
 

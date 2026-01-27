@@ -286,7 +286,7 @@
 
       // If a collection is selected, fetch files from that collection
       if (selectedCollectionId !== null) {
-        const response = await axiosInstance.get(`/api/collections/${selectedCollectionId}/media`, { params });
+        const response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
         newFiles = response.data;
       } else {
         const response = await axiosInstance.get('/files', { params });

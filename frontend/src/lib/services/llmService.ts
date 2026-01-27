@@ -74,7 +74,7 @@ export class LLMService {
     }
 
     try {
-      const response = await axiosInstance.get('/api/llm/status');
+      const response = await axiosInstance.get('/llm/status');
       this.statusCache = response.data;
       this.lastCheck = now;
       return this.statusCache as LLMStatus;
@@ -102,7 +102,7 @@ export class LLMService {
    */
   async getProviders(): Promise<LLMProviders> {
     try {
-      const response = await axiosInstance.get('/api/llm/providers');
+      const response = await axiosInstance.get('/llm/providers');
       return response.data;
     } catch (error: any) {
       console.error('Error getting LLM providers:', error);
@@ -115,7 +115,7 @@ export class LLMService {
    */
   async testConnection(): Promise<LLMConnectionTest> {
     try {
-      const response = await axiosInstance.post('/api/llm/test-connection');
+      const response = await axiosInstance.post('/llm/test-connection');
       return response.data;
     } catch (error: any) {
       console.error('Error testing LLM connection:', error);

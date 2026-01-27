@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.models.media import Analytics
 from app.models.media import Collection
@@ -21,6 +22,7 @@ from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
 from app.services.minio_service import delete_file
@@ -637,7 +639,7 @@ def update_single_transcript_segment(
     segment_uuid: str,
     segment_update: TranscriptSegmentUpdate,
     current_user: User,
-) -> TranscriptSegment:
+) -> TranscriptSegmentSchema:
     """
     Update a single transcript segment for a media file.
 
@@ -649,16 +651,17 @@ def update_single_transcript_segment(
         current_user: Current user
 
     Returns:
-        Updated TranscriptSegment object
+        Updated TranscriptSegmentSchema object with all formatted fields
     """
     # Verify user owns the file or is admin
     is_admin = bool(current_user.role == "admin")
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
     file_id = int(db_file.id)  # Get internal ID for segment query
 
-    # Find the specific segment by UUID
+    # Find the specific segment by UUID with speaker eagerly loaded
     segment = (
         db.query(TranscriptSegment)
+        .options(joinedload(TranscriptSegment.speaker))
         .filter(
             TranscriptSegment.uuid == segment_uuid,
             TranscriptSegment.media_file_id == file_id,
@@ -678,7 +681,33 @@ def update_single_transcript_segment(
     db.commit()
     db.refresh(segment)
 
-    return segment  # type: ignore[no-any-return]
+    # Helper for timestamp formatting
+    def format_timestamp(seconds: float) -> str:
+        """Format seconds as MM:SS or H:MM:SS."""
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        if minutes >= 60:
+            hours = minutes // 60
+            minutes = minutes % 60
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes}:{secs:02d}"
+
+    # Manually construct Pydantic response with all required fields
+    return TranscriptSegmentSchema(
+        uuid=segment.uuid,  # type: ignore[arg-type]
+        media_file_id=db_file.uuid,  # type: ignore[arg-type]
+        start_time=float(segment.start_time),
+        end_time=float(segment.end_time),
+        text=str(segment.text),
+        speaker_id=segment.speaker.uuid if segment.speaker else None,
+        speaker=segment.speaker,
+        formatted_timestamp=format_timestamp(float(segment.start_time)),
+        display_timestamp=format_timestamp(float(segment.start_time)),
+        speaker_label=(segment.speaker.name if segment.speaker else None),
+        resolved_speaker_name=(
+            segment.speaker.display_name or segment.speaker.name if segment.speaker else None
+        ),
+    )
 
 
 def get_stream_url_info(db: Session, file_uuid: str, current_user: User) -> dict[str, Any]:

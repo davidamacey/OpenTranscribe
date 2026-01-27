@@ -64,8 +64,8 @@
 
       // Load speakers for this file and user profiles
       const [speakersResponse, profilesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speakers/?file_uuid=${fileId}`),  // Use file_uuid parameter
-        axiosInstance.get('/api/speaker-profiles/profiles')
+        axiosInstance.get(`/speakers?file_uuid=${fileId}`),  // Use file_uuid parameter
+        axiosInstance.get('/speaker-profiles/profiles')
       ]);
 
       speakers = speakersResponse.data;
@@ -85,11 +85,11 @@
 
       // Get suggestions and cross-media occurrences
       const [suggestionsResponse, occurrencesResponse] = await Promise.all([
-        axiosInstance.get(`/api/speaker-profiles/speakers/${speaker.uuid}/suggestions`).catch((err) => {
+        axiosInstance.get(`/speaker-profiles/speakers/${speaker.uuid}/suggestions`).catch((err) => {
           console.error('Failed to load speaker suggestions:', err);
           return { data: [] };
         }),
-        axiosInstance.get(`/api/speakers/${speaker.uuid}/cross-media`).catch((err) => {
+        axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`).catch((err) => {
           console.error('Failed to load cross-media occurrences:', err);
           return { data: [] };
         })
@@ -114,7 +114,7 @@
     try {
       const { action, speaker_id, profile_id, profile_name } = event.detail;
 
-      const response = await axiosInstance.post(`/api/speakers/${speaker_id}/verify`, {
+      const response = await axiosInstance.post(`/speakers/${speaker_id}/verify`, {
         action,
         profile_id,
         profile_name

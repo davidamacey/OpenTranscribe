@@ -1006,7 +1006,7 @@
       // First, prepare the upload to get a file ID
       try {
         // Step 1: Prepare the upload and get a file ID
-        const prepareResponse = await axiosInstance.post('/api/files/prepare', {
+        const prepareResponse = await axiosInstance.post('/files/prepare', {
           filename: file.name,
           file_size: file.size,
           content_type: file.type,
@@ -1099,7 +1099,7 @@
       };
 
       // Start the upload
-      const response = await axiosInstance.post('/api/files', formData, config);
+      const response = await axiosInstance.post('/files', formData, config);
       const responseData = response.data;
 
       // Store the file ID for potential cancellation
@@ -1205,7 +1205,7 @@
             // Log the attempt to help with debugging
             statusMessage = `Cleaning up file ID ${currentFileId}...`;
 
-            await axiosInstance.delete(`/api/files/${currentFileId}`, {
+            await axiosInstance.delete(`/files/${currentFileId}`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }

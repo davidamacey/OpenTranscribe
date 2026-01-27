@@ -88,6 +88,9 @@
     }
   };
   let statsLoading = false;
+  let statsRefreshing = false;
+  let statsInitialLoaded = false;
+  let statsPollingInterval: ReturnType<typeof setInterval> | null = null;
 
   // Admin Task Health section
   let taskHealthData: any = null;
@@ -192,10 +195,13 @@
 
     // Add escape key listener
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('gpu-stats-updated', handleGpuStatsEvent);
   });
 
   onDestroy(() => {
     document.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
+    stopStatsPolling();
     // Re-enable body scroll when component is destroyed
     document.body.style.overflow = '';
   });
@@ -212,6 +218,7 @@
       // Load data for the active section when modal opens
       if (activeSection === 'system-statistics') {
         loadStats();
+        startStatsPolling();
       } else if (activeSection === 'admin-users' && isAdmin) {
         loadAdminUsers();
       } else if (activeSection === 'admin-task-health' && isAdmin) {
@@ -222,6 +229,7 @@
     } else if (!isOpen && previousOpenState) {
       // Modal just closed
       document.body.style.overflow = '';
+      stopStatsPolling();
       previousOpenState = false;
     }
   }
@@ -248,6 +256,7 @@
   }
 
   function closeModal() {
+    stopStatsPolling();
     settingsModalStore.close();
     showCloseConfirmation = false;
     resetAllForms();
@@ -280,16 +289,40 @@
     settingsModalStore.clearAllDirty();
   }
 
+  function handleGpuStatsEvent(event: Event) {
+    const gpuData = (event as CustomEvent).detail;
+    if (gpuData && stats?.system) {
+      stats = { ...stats, system: { ...stats.system, gpu: gpuData } };
+    }
+  }
+
+  function startStatsPolling() {
+    stopStatsPolling();
+    statsPollingInterval = setInterval(() => {
+      loadStats();
+    }, 30000);
+  }
+
+  function stopStatsPolling() {
+    if (statsPollingInterval) {
+      clearInterval(statsPollingInterval);
+      statsPollingInterval = null;
+    }
+  }
+
   function switchSection(sectionId: SettingsSection) {
     settingsModalStore.setActiveSection(sectionId);
 
     // Load data for specific sections
     if (sectionId === 'system-statistics') {
       loadStats();
+      startStatsPolling();
     } else if (sectionId === 'admin-users') {
       loadAdminUsers();
     } else if (sectionId === 'admin-task-health') {
       loadTaskHealth();
+    } else {
+      stopStatsPolling();
     }
   }
 
@@ -478,17 +511,23 @@
   }
 
   async function loadStats() {
-    statsLoading = true;
+    if (statsInitialLoaded) {
+      statsRefreshing = true;
+    } else {
+      statsLoading = true;
+    }
 
     try {
       const response = await axiosInstance.get('/system/stats');
       stats = response.data;
+      statsInitialLoaded = true;
     } catch (err: any) {
       console.error('Error loading stats:', err);
       const message = err.response?.data?.detail || $t('settings.toast.statisticsLoadFailed');
       toastStore.error(message);
     } finally {
       statsLoading = false;
+      statsRefreshing = false;
     }
   }
 
@@ -621,7 +660,7 @@
 
   async function retryFile(fileId: string) {
     try {
-      await axiosInstance.post(`/tasks/retry-file/${fileId}`);
+      await axiosInstance.post(`/tasks/retry/${fileId}`);
       toastStore.success($t('settings.toast.fileRetryInitiated'));
       await refreshTaskHealth();
     } catch (err: any) {
@@ -1025,11 +1064,14 @@
               <div class="stats-actions">
                 <button
                   type="button"
-                  class="btn btn-secondary"
+                  class="btn btn-secondary btn-refresh"
                   on:click={refreshStats}
-                  disabled={statsLoading}
+                  disabled={statsLoading || statsRefreshing}
                 >
-                  {statsLoading ? $t('settings.statistics.loading') : $t('settings.statistics.refresh')}
+                  <svg class="refresh-icon" class:spinning={statsRefreshing} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                  </svg>
+                  {$t('settings.statistics.refresh')}
                 </button>
               </div>
 
@@ -1039,7 +1081,7 @@
                   <p>{$t('settings.statistics.loadingMessage')}</p>
                 </div>
               {:else}
-                <div class="stats-grid">
+                <div class="stats-grid" class:stats-refreshing={statsRefreshing}>
                   <!-- User Stats -->
                   <div class="stat-card">
                     <h4>{$t('settings.statistics.users')}</h4>
@@ -1160,7 +1202,7 @@
 
                 <!-- Recent Tasks Table -->
                 {#if stats.tasks?.recent && stats.tasks.recent.length > 0}
-                  <div class="recent-tasks">
+                  <div class="recent-tasks" class:stats-refreshing={statsRefreshing}>
                     <h4>{$t('settings.statistics.recentTasks')}</h4>
                     <div class="table-container">
                       <table class="data-table">
@@ -1190,7 +1232,7 @@
                     </div>
                   </div>
                 {:else}
-                  <div class="recent-tasks">
+                  <div class="recent-tasks" class:stats-refreshing={statsRefreshing}>
                     <h4>{$t('settings.statistics.recentTasks')}</h4>
                     <p class="empty-state">{$t('settings.statistics.noRecentTasks')}</p>
                   </div>
@@ -1708,6 +1750,27 @@
   .btn-small {
     padding: 0.25rem 0.625rem;
     font-size: 0.75rem;
+  }
+
+  .btn-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .refresh-icon {
+    flex-shrink: 0;
+    transition: transform 0.3s ease;
+  }
+
+  .refresh-icon.spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  .stats-refreshing {
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
   }
 
   .stats-actions {

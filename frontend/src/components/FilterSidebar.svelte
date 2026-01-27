@@ -175,7 +175,7 @@
     errorTags = null;
 
     try {
-      const response = await axiosInstance.get('/tags/');
+      const response = await axiosInstance.get('/tags');
       allTags = response.data;
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
@@ -192,7 +192,7 @@
     errorSpeakers = null;
 
     try {
-      const response = await axiosInstance.get('/speakers/?for_filter=true');
+      const response = await axiosInstance.get('/speakers?for_filter=true');
       allSpeakers = response.data;
     } catch (err) {
       console.error('Error fetching speakers:', err);

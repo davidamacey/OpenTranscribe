@@ -56,7 +56,7 @@ app/
 │   └── session_utils.py  # Session management utilities
 ├── middleware/            # 🔄 Request/Response Middleware
 │   ├── __init__.py
-│   └── route_fixer.py    # URL normalization middleware
+│   └── audit.py          # Request ID tracking and audit logging
 ├── models/                # 📊 Data Models (SQLAlchemy ORM)
 │   ├── media.py          # Media file and transcript models
 │   └── user.py           # User and authentication models
@@ -276,7 +276,7 @@ secret_key = settings.SECRET_KEY
 ## 🔄 Middleware (`middleware/`)
 
 ### Current Middleware
-- **Route fixer**: URL normalization and trailing slash handling
+- **Audit**: Request ID tracking and audit logging (FedRAMP AU-2/AU-3 compliance)
 - **CORS**: Cross-origin request handling (FastAPI built-in)
 - **Authentication**: JWT token validation (dependency injection)
 

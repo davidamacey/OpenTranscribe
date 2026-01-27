@@ -13,7 +13,7 @@ from app.services.opensearch_service import search_transcripts
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("")
 def search(
     q: str = Query(None, description="Search query"),
     speaker: Optional[str] = None,
