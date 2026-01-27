@@ -1,11 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
 
-  // Track if we're on the gallery page for styling
-  $: isGalleryPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '';
+  // Track if we're on a full-bleed page (own layout, no wrapper padding)
+  $: isFullBleedPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '' || $page.url.pathname === '/search';
 </script>
 
-<main class="content {isGalleryPage ? 'gallery-page' : ''}">
+<main class="content {isFullBleedPage ? 'gallery-page' : ''}">
   <slot />
 </main>
 

@@ -21,6 +21,7 @@
   let currentSubtitleBlobUrl: string | null = null;
   let trackElement: HTMLTrackElement | null = null;
   let currentLoadHandler: ((event: Event) => void) | null = null;
+  let isSeeking = false;
 
 
   function handleRetry() {
@@ -32,6 +33,9 @@
     if (!player) {
       return;
     }
+
+    // Show seeking spinner immediately
+    isSeeking = true;
 
     // Update player time
     player.currentTime = time;
@@ -211,8 +215,14 @@
       player.on('play', () => dispatch('play'));
       player.on('pause', () => dispatch('pause'));
       player.on('ended', () => dispatch('ended'));
-      player.on('seeking', () => dispatch('seeking'));
-      player.on('seeked', () => dispatch('seeked'));
+      player.on('seeking', () => {
+        isSeeking = true;
+        dispatch('seeking');
+      });
+      player.on('seeked', () => {
+        isSeeking = false;
+        dispatch('seeked');
+      });
 
     } catch (error) {
       console.error('Error creating Plyr player:', error);
@@ -340,6 +350,12 @@
       <div class="buffer-indicator">
         <div class="spinner"></div>
         <div class="buffer-text">{$t('videoPlayer.loadingProgress', { progress: Math.round(loadProgress) })}</div>
+      </div>
+    {/if}
+
+    {#if isSeeking}
+      <div class="seek-overlay">
+        <div class="seek-spinner"></div>
       </div>
     {/if}
 
@@ -868,6 +884,30 @@
   .buffer-text {
     font-size: 14px;
     font-weight: 500;
+  }
+
+  .seek-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+    border-radius: 8px;
+  }
+
+  .seek-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-left-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
   }
 
   .error-message {

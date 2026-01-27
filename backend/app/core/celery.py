@@ -39,6 +39,8 @@ celery_app = Celery(
         "app.tasks.youtube_processing",
         "app.tasks.speaker_tasks",
         "app.tasks.topic_extraction",
+        "app.tasks.reindex_task",
+        "app.tasks.search_maintenance_task",
     ],
 )
 
@@ -77,6 +79,9 @@ celery_app.conf.update(
         "identify_speakers_llm": {"queue": "nlp"},
         "app.tasks.topic_extraction.*": {"queue": "nlp"},
         "extract_topics_from_transcript": {"queue": "nlp"},
+        # Search Index Queue - Re-indexing with embedding generation (concurrency=2)
+        "app.tasks.reindex_task.*": {"queue": "cpu"},
+        "reindex_transcripts": {"queue": "cpu"},
         # Utility Queue - Lightweight maintenance tasks (concurrency=2)
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
@@ -85,6 +90,7 @@ celery_app.conf.update(
         "startup_recovery": {"queue": "utility"},
         "recover_user_files": {"queue": "utility"},
         "periodic_health_check": {"queue": "utility"},
+        "search_index_maintenance": {"queue": "cpu"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -92,6 +98,11 @@ celery_app.conf.update(
             "task": "periodic_health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
             "options": {"queue": "utility"},
+        },
+        "search-index-maintenance": {
+            "task": "search_index_maintenance",
+            "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
+            "options": {"queue": "cpu"},
         },
     },
 )

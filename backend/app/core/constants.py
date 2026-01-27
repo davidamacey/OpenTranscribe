@@ -123,6 +123,40 @@ LLM_DEFAULT_TIMEOUT = 60
 OPENSEARCH_DEFAULT_SIZE = 20
 OPENSEARCH_MAX_RESULT_WINDOW = 50000
 
+# Search & RAG constants
+SEARCH_DEFAULT_PAGE_SIZE = 20
+SEARCH_MAX_PAGE_SIZE = 100
+SEARCH_MAX_SNIPPETS_PER_FILE = 5
+SEARCH_HYBRID_MIN_SCORE = 0.005
+SEARCH_CACHE_TTL_SECONDS = 300
+SEARCH_CACHE_MAX_SIZE = 256
+
+# Embedding model registry
+EMBEDDING_MODELS = {
+    "all-MiniLM-L6-v2": {
+        "name": "MiniLM (Fast)",
+        "dimension": 384,
+        "description": "Fast, lightweight. Good baseline for keyword-heavy searches.",
+        "size_mb": 80,
+    },
+    "intfloat/e5-base-v2": {
+        "name": "E5-base (Balanced)",
+        "dimension": 768,
+        "description": "Better semantic understanding. Good balance of speed and quality.",
+        "size_mb": 220,
+    },
+    "BAAI/bge-m3": {
+        "name": "BGE-M3 (Best Quality)",
+        "dimension": 1024,
+        "description": "Best retrieval quality. 100+ languages. Recommended for multilingual content.",
+        "size_mb": 560,
+    },
+}
+
+# WebSocket notification types for search
+NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
+NOTIFICATION_TYPE_REINDEX_COMPLETE = "reindex_complete"
+
 # Progress tracking intervals
 PROGRESS_UPDATE_INTERVAL = 1000  # milliseconds
 DOWNLOAD_CHECK_INTERVAL = 1000  # milliseconds

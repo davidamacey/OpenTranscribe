@@ -316,10 +316,28 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         min_height = height_range[0] if height_range[0] is not None else 0
         max_height = height_range[1] if height_range[1] is not None else 0
 
+    # Get min/max file size
+    file_size_range = (
+        db.query(
+            func.min(MediaFile.file_size),
+            func.max(MediaFile.file_size),
+        )
+        .filter(MediaFile.user_id == user_id)
+        .filter(MediaFile.file_size.isnot(None))
+        .first()
+    )
+
+    min_file_size = 0
+    max_file_size = 0
+    if file_size_range is not None:
+        min_file_size = file_size_range[0] if file_size_range[0] is not None else 0
+        max_file_size = file_size_range[1] if file_size_range[1] is not None else 0
+
     return {
         "formats": formats,
         "codecs": codecs,
         "duration": {"min": min_duration, "max": max_duration},
+        "file_size": {"min": min_file_size, "max": max_file_size},
         "resolution": {
             "width": {"min": min_width, "max": max_width},
             "height": {"min": min_height, "max": max_height},

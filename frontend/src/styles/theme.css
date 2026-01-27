@@ -24,6 +24,7 @@
   --input-focus-border: #3b82f6;
   --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --button-hover: rgba(0, 0, 0, 0.05);
+  --hover-color: #f1f5f9;
   --toggle-bg: #e5e7eb;
   --toggle-button: #ffffff;
   --table-header-bg: #f1f5f9;
@@ -58,6 +59,7 @@
   --input-focus-border: #60a5fa;
   --dropdown-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --button-hover: rgba(255, 255, 255, 0.1);
+  --hover-color: #334155;
   --toggle-bg: #334155;
   --toggle-button: #f8fafc;
   --table-header-bg: #293548; /* Darker header background for better contrast */

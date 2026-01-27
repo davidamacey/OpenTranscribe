@@ -14,6 +14,7 @@
   import RetrySettings from '$components/settings/RetrySettings.svelte';
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
+  import SearchSettings from '$components/settings/SearchSettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -128,7 +129,8 @@
         { id: 'audio-extraction' as SettingsSection, label: $t('settings.audioExtraction.title'), icon: 'file-audio' },
         { id: 'transcription' as SettingsSection, label: $t('settings.transcription.title'), icon: 'waveform' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message' },
-        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' }
+        { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain' },
+        { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search' }
       ]
     }
   ];
@@ -1038,6 +1040,15 @@
               <h3 class="section-title">{$t('settings.llmProvider.title')}</h3>
               <p class="section-description">{$t('settings.llmProvider.description')}</p>
               <LLMSettings onSettingsChange={onAISettingsChange} />
+            </div>
+          {/if}
+
+          <!-- Search & Indexing Section -->
+          {#if activeSection === 'search-indexing'}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.searchIndexing.title')}</h3>
+              <p class="section-description">{$t('settings.searchIndexing.description')}</p>
+              <SearchSettings />
             </div>
           {/if}
 

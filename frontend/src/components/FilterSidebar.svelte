@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import RangeSlider from 'svelte-range-slider-pips';
+  import { DatePicker } from '@svelte-plugins/datepicker';
+  import { format } from 'date-fns';
   import axiosInstance from '../lib/axios';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
@@ -64,12 +66,14 @@
     max: null
   };
 
-  // Server-provided min/max values for duration
-  /** @type {{ min: number, max: number }} */
-  let durationRangeMinMax = {
-    min: 0,
-    max: 0
-  };
+  // Server-provided min/max values for sliders
+  let durationBounds = { min: 0, max: 3600 };
+  let fileSizeBounds = { min: 0, max: 1024 }; // in MB
+  let metadataLoaded = false;
+
+  // Slider values (two-element arrays for dual handles)
+  let durationSliderValues: [number, number] = [0, 3600];
+  let fileSizeSliderValues: [number, number] = [0, 1024];
 
   // File size range for filtering (in MB)
   /** @type {{ min: number|null, max: number|null }} */
@@ -83,12 +87,6 @@
 
   /** @type {string[]} */
   export let selectedStatuses: string[] = []; // ['pending', 'processing', 'completed', 'error']
-
-  /** @type {string} */
-  export let transcriptSearch = '';
-
-  /** @type {boolean} */
-  export let showAdvancedFilters = false;
 
   // State
   /** @type {Tag[]} */
@@ -155,7 +153,6 @@
 
   // Previous values for reactive change detection
   let prevSearchQuery = searchQuery;
-  let prevTranscriptSearch = transcriptSearch;
   let prevCollectionId = selectedCollectionId;
 
   function triggerFiltersImmediate() {
@@ -188,37 +185,25 @@
     triggerFiltersDebounced();
   }
 
-  $: if (isInitialized && transcriptSearch !== prevTranscriptSearch) {
-    prevTranscriptSearch = transcriptSearch;
-    triggerFiltersDebounced();
-  }
-
   // Reactive watcher for collection selection (immediate)
   $: if (isInitialized && selectedCollectionId !== prevCollectionId) {
     prevCollectionId = selectedCollectionId;
     triggerFiltersImmediate();
   }
 
-  // Date input values
-  /** @type {string} */
-  let fromDate = '';
+  // Date picker state
+  let datePickerOpen = false;
+  let datePickerClosing = false;
+  let dpStartDate: Date | string | null = null;
+  let dpEndDate: Date | string | null = null;
 
-  /** @type {string} */
-  let toDate = '';
-
-  // Duration input values
-  /** @type {string} */
-  let minDurationInput = '';
-
-  /** @type {string} */
-  let maxDurationInput = '';
-
-  // File size input values
-  /** @type {string} */
-  let minFileSizeInput = '';
-
-  /** @type {string} */
-  let maxFileSizeInput = '';
+  // Auto-scroll to show the full calendar when it opens
+  $: if (datePickerOpen && !datePickerClosing) {
+    tick().then(() => {
+      const cal = document.querySelector('.datepicker-wrapper .calendars-container');
+      if (cal) (cal as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
 
   // Fetch all tags
   async function fetchTags() {
@@ -341,55 +326,99 @@
   }
 
   /**
-   * Handle from date input changes
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
+   * Handle date picker range change
    */
-  function handleFromDateChange(event: Event & { currentTarget: HTMLInputElement }) {
-    const value = event.currentTarget?.value;
-    if (value) {
-      const date = new Date(value);
-      if (!isNaN(date.getTime())) { // Check if the date is valid
-        dateRange = { ...dateRange, from: date };
-      }
-    } else {
-      dateRange = { ...dateRange, from: null };
+  function handleDatePickerChange(event: { startDate: Date | string; endDate?: Date | string }) {
+    const start = event.startDate ? new Date(event.startDate) : null;
+    const end = event.endDate ? new Date(event.endDate) : null;
+    dateRange = {
+      from: start && !isNaN(start.getTime()) ? start : null,
+      to: end && !isNaN(end.getTime()) ? end : null,
+    };
+    if (dateRange.from && dateRange.to) {
+      datePickerClosing = true;
+      setTimeout(() => {
+        datePickerOpen = false;
+        datePickerClosing = false;
+      }, 350);
     }
     triggerFiltersImmediate();
   }
 
   /**
-   * Handle to date input changes
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
+   * Clear date range filter
    */
-  function handleToDateChange(event: Event & { currentTarget: HTMLInputElement }) {
-    const value = event.currentTarget?.value;
-    if (value) {
-      const date = new Date(value);
-      if (!isNaN(date.getTime())) { // Check if the date is valid
-        dateRange = { ...dateRange, to: date };
-      }
-    } else {
-      dateRange = { ...dateRange, to: null };
-    }
+  function clearDateRange() {
+    dpStartDate = null;
+    dpEndDate = null;
+    dateRange = { from: null, to: null };
     triggerFiltersImmediate();
   }
 
-  // Fetch media metadata - currently not used, reserved for future enhancement
   async function fetchMediaMetadata() {
     try {
       const response = await axiosInstance.get('/files/metadata-filters');
-      const metadataFilters = response.data;
+      const data = response.data;
 
-      // Update duration range with min/max values from server
-      if (metadataFilters.duration) {
-        durationRangeMinMax = {
-          min: metadataFilters.duration.min || 0,
-          max: metadataFilters.duration.max || 0
-        };
+      if (data.duration) {
+        const minDur = Math.floor(data.duration.min || 0);
+        const maxDur = Math.ceil(data.duration.max || 3600);
+        durationBounds = { min: minDur, max: Math.max(maxDur, minDur + 60) };
+        // Only reset slider if user hasn't set a filter
+        if (durationRange.min === null && durationRange.max === null) {
+          durationSliderValues = [durationBounds.min, durationBounds.max];
+        }
       }
+
+      if (data.file_size) {
+        const minSize = Math.floor((data.file_size.min || 0) / (1024 * 1024));
+        const maxSize = Math.ceil((data.file_size.max || 1024 * 1024 * 1024) / (1024 * 1024));
+        fileSizeBounds = { min: minSize, max: Math.max(maxSize, minSize + 1) };
+        if (fileSizeRange.min === null && fileSizeRange.max === null) {
+          fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
+        }
+      }
+
+      metadataLoaded = true;
     } catch (error) {
       console.error('Error fetching media metadata:', error);
+      metadataLoaded = true; // Still show sliders with defaults
     }
+  }
+
+  function formatDuration(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  function formatFileSize(mb: number): string {
+    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+    return `${Math.round(mb)} MB`;
+  }
+
+  function handleDurationSliderChange(e: CustomEvent<{ values: number[] }>) {
+    const [min, max] = e.detail.values;
+    const isAtMin = min <= durationBounds.min;
+    const isAtMax = max >= durationBounds.max;
+    durationRange = {
+      min: isAtMin ? null : min,
+      max: isAtMax ? null : max,
+    };
+    triggerFiltersDebounced();
+  }
+
+  function handleFileSizeSliderChange(e: CustomEvent<{ values: number[] }>) {
+    const [min, max] = e.detail.values;
+    const isAtMin = min <= fileSizeBounds.min;
+    const isAtMax = max >= fileSizeBounds.max;
+    fileSizeRange = {
+      min: isAtMin ? null : min,
+      max: isAtMax ? null : max,
+    };
+    triggerFiltersDebounced();
   }
 
   /**
@@ -422,52 +451,6 @@
     triggerFiltersImmediate();
   }
 
-  /**
-   * Handle min duration input change
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
-   */
-  function handleMinDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
-    const value = event.currentTarget?.value;
-    durationRange.min = value ? parseFloat(value) : null;
-    triggerFiltersDebounced();
-  }
-
-  /**
-   * Handle max duration input change
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
-   */
-  function handleMaxDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
-    const value = event.currentTarget?.value;
-    durationRange.max = value ? parseFloat(value) : null;
-    triggerFiltersDebounced();
-  }
-
-  /**
-   * Handle file size range input changes
-   * @param {'min'|'max'} field - The field to update
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
-   */
-  function handleFileSizeChange(field: 'min' | 'max', event: Event & { currentTarget: HTMLInputElement }) {
-    const value = event.currentTarget?.value;
-    fileSizeRange[field] = value ? parseFloat(value) : null;
-    triggerFiltersDebounced();
-  }
-
-  /**
-   * Handle resolution input changes - currently not used, reserved for future enhancement
-   * @param {'minWidth'|'maxWidth'|'minHeight'|'maxHeight'} field - The field to update
-   * @param {Event & { currentTarget: HTMLInputElement }} event - The input event
-   */
-  // function handleResolutionChange(field, event) {
-  //   const value = event.currentTarget?.value;
-  //   resolutionRange[field] = value ? parseInt(value, 10) : null;
-  // }
-
-  // Toggle advanced filters visibility
-  function toggleAdvancedFilters() {
-    showAdvancedFilters = !showAdvancedFilters;
-  }
-
   // Apply filters
   function applyFilters() {
     dispatch('filter', {
@@ -480,7 +463,6 @@
       fileSizeRange,
       fileTypes: selectedFileTypes,
       statuses: selectedStatuses,
-      transcriptSearch
     });
   }
 
@@ -494,24 +476,20 @@
     selectedSpeakers = [];
     selectedCollectionId = null;
     dateRange = { from: null, to: null };
-    fromDate = '';
-    toDate = '';
+    dpStartDate = null;
+    dpEndDate = null;
+    datePickerOpen = false;
     durationRange = { min: null, max: null };
     fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
-    transcriptSearch = '';
-    showAdvancedFilters = false; // Collapse advanced filters on reset
 
-    // Clear input field values
-    minDurationInput = '';
-    maxDurationInput = '';
-    minFileSizeInput = '';
-    maxFileSizeInput = '';
+    // Reset sliders to full bounds
+    durationSliderValues = [durationBounds.min, durationBounds.max];
+    fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
 
     // Sync prev values so watchers don't fire on re-enable
     prevSearchQuery = '';
-    prevTranscriptSearch = '';
     prevCollectionId = null;
 
     // Clear any pending debounce
@@ -538,19 +516,32 @@
   onMount(() => {
     fetchTags();
     fetchSpeakers();
+    fetchMediaMetadata();
 
-    // Initialize date inputs if dateRange has values
+    // Initialize date picker from dateRange props
     if (dateRange.from instanceof Date) {
-      fromDate = dateRange.from.toISOString().split('T')[0];
+      dpStartDate = dateRange.from;
+    }
+    if (dateRange.to instanceof Date) {
+      dpEndDate = dateRange.to;
     }
 
-    if (dateRange.to instanceof Date) {
-      toDate = dateRange.to.toISOString().split('T')[0];
+    // Restore slider positions from filter props
+    if (durationRange.min !== null || durationRange.max !== null) {
+      durationSliderValues = [
+        durationRange.min ?? durationBounds.min,
+        durationRange.max ?? durationBounds.max,
+      ];
+    }
+    if (fileSizeRange.min !== null || fileSizeRange.max !== null) {
+      fileSizeSliderValues = [
+        fileSizeRange.min ?? fileSizeBounds.min,
+        fileSizeRange.max ?? fileSizeBounds.max,
+      ];
     }
 
     // Sync prev values and enable reactive watchers after mount
     prevSearchQuery = searchQuery;
-    prevTranscriptSearch = transcriptSearch;
     prevCollectionId = selectedCollectionId;
     setTimeout(() => {
       isInitialized = true;
@@ -666,163 +657,126 @@
   </div>
 
   <div class="filter-section">
-    <h3>{$t('filter.dateRange')}</h3>
-    <div class="date-inputs">
-      <div class="date-group">
-        <label for="fromDate">{$t('common.from')}</label>
-        <input
-          type="date"
-          id="fromDate"
-          bind:value={fromDate}
-          on:input={handleFromDateChange}
-          class="filter-input"
-          title={$t('filter.fromDateTooltip')}
-        />
-      </div>
-      <div class="date-group">
-        <label for="toDate">{$t('common.to')}</label>
-        <input
-          type="date"
-          id="toDate"
-          bind:value={toDate}
-          on:input={handleToDateChange}
-          class="filter-input"
-          title={$t('filter.toDateTooltip')}
-        />
-      </div>
+    <div class="section-header-row">
+      <h3>{$t('filter.dateRange')}</h3>
+      {#if dateRange.from || dateRange.to}
+        <button
+          class="clear-inline-btn"
+          on:click|stopPropagation={clearDateRange}
+          title={$t('filter.clearDates')}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      {/if}
+    </div>
+    <div class="datepicker-wrapper" class:closing={datePickerClosing}>
+      <DatePicker
+        isRange
+        enableFutureDates
+        bind:isOpen={datePickerOpen}
+        bind:startDate={dpStartDate}
+        bind:endDate={dpEndDate}
+        onDateChange={handleDatePickerChange}
+      >
+        <button
+          type="button"
+          class="date-trigger-btn"
+          on:click={() => datePickerOpen = !datePickerOpen}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="date-icon">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          <span class="date-text">
+            {#if dateRange.from && dateRange.to}
+              {format(dateRange.from, 'MMM d, yyyy')} — {format(dateRange.to, 'MMM d, yyyy')}
+            {:else if dateRange.from}
+              {format(dateRange.from, 'MMM d, yyyy')} — ...
+            {:else}
+              {$t('filter.selectDateRange')}
+            {/if}
+          </span>
+        </button>
+      </DatePicker>
     </div>
   </div>
 
-  <!-- Advanced Filters Toggle -->
-  <div class="advanced-filters-divider">
-    <hr class="divider-line" />
-    <button
-      class="advanced-toggle-compact"
-      on:click={toggleAdvancedFilters}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toggle-icon {showAdvancedFilters ? 'rotated' : ''}">
-        <polyline points="6 9 12 15 18 9"></polyline>
-      </svg>
-      <span>{$t('filter.advancedFilters')}</span>
-    </button>
-    <hr class="divider-line" />
+  <!-- File Type -->
+  <div class="filter-section">
+    <h3>{$t('filter.fileType')}</h3>
+    <div class="file-type-list">
+      {#each availableFileTypes as fileType}
+        <button
+          class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
+          on:click={() => toggleFileType(fileType)}
+          title={$t('filter.fileTypeTooltip', { type: fileType })}
+        >
+          {fileType === 'audio' ? $t('common.audio') : $t('common.video')}
+        </button>
+      {/each}
+    </div>
   </div>
 
-  <!-- Advanced Filters Section -->
-  {#if showAdvancedFilters}
-    <div class="advanced-filters-content" transition:slide={{ duration: 300 }}>
-      <!-- Transcript Content Search -->
-      <div class="filter-section">
-        <h3>{$t('filter.searchTranscript')}</h3>
-        <input
-          type="text"
-          placeholder={$t('filter.searchTranscriptPlaceholder')}
-          bind:value={transcriptSearch}
-          class="filter-input"
-          title={$t('filter.searchTranscriptTooltip')}
-        />
-        <small class="input-help">{$t('filter.searchTranscriptHelp')}</small>
-      </div>
-
-      <!-- File Type -->
-      <div class="filter-section">
-        <h3>{$t('filter.fileType')}</h3>
-        <div class="file-type-list">
-          {#each availableFileTypes as fileType}
-            <button
-              class="file-type-button {selectedFileTypes.includes(fileType) ? 'selected' : ''}"
-              on:click={() => toggleFileType(fileType)}
-              title={$t('filter.fileTypeTooltip', { type: fileType })}
-            >
-              {fileType === 'audio' ? $t('common.audio') : $t('common.video')}
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      <!-- Duration Range -->
-      <div class="filter-section">
-        <h3>{$t('filter.duration')}</h3>
-        <div class="range-inputs">
-          <div class="range-group">
-            <label for="minDuration">{$t('filter.minSeconds')}</label>
-            <input
-              type="number"
-              id="minDuration"
-              min="0"
-              placeholder={$t('common.minimum')}
-              class="filter-input"
-              bind:value={minDurationInput}
-              on:input={handleMinDurationChange}
-              title={$t('filter.minDurationTooltip')}
-            />
-          </div>
-          <div class="range-group">
-            <label for="maxDuration">{$t('filter.maxSeconds')}</label>
-            <input
-              type="number"
-              id="maxDuration"
-              min="0"
-              placeholder={$t('common.maximum')}
-              class="filter-input"
-              bind:value={maxDurationInput}
-              on:input={handleMaxDurationChange}
-              title={$t('filter.maxDurationTooltip')}
-            />
-          </div>
-        </div>
-      </div>
-
-      <!-- File Size Range -->
-      <div class="filter-section">
-        <h3>{$t('filter.fileSize')}</h3>
-        <div class="range-inputs">
-          <div class="range-group">
-            <label for="minFileSize">{$t('filter.minMB')}</label>
-            <input
-              type="number"
-              id="minFileSize"
-              min="0"
-              placeholder={$t('common.minimum')}
-              class="filter-input"
-              bind:value={minFileSizeInput}
-              on:input={(e) => handleFileSizeChange('min', e)}
-              title={$t('filter.minFileSizeTooltip')}
-            />
-          </div>
-          <div class="range-group">
-            <label for="maxFileSize">{$t('filter.maxMB')}</label>
-            <input
-              type="number"
-              id="maxFileSize"
-              min="0"
-              placeholder={$t('common.maximum')}
-              class="filter-input"
-              bind:value={maxFileSizeInput}
-              on:input={(e) => handleFileSizeChange('max', e)}
-              title={$t('filter.maxFileSizeTooltip')}
-            />
-          </div>
-        </div>
-      </div>
-
-      <!-- Processing Status -->
-      <div class="filter-section">
-        <h3>{$t('filter.processingStatus')}</h3>
-        <div class="status-list">
-          {#each availableStatuses as status}
-            <button
-              class="status-button {selectedStatuses.includes(status) ? 'selected' : ''}"
-              on:click={() => toggleStatus(status)}
-              title={$t('filter.statusTooltip', { status })}
-            >
-              {status === 'pending' ? $t('common.pending') : status === 'processing' ? $t('common.processing') : status === 'completed' ? $t('common.completed') : status === 'error' ? $t('common.error') : status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          {/each}
-        </div>
-      </div>
+  <!-- Duration Range -->
+  <div class="filter-section">
+    <h3>{$t('filter.duration')}</h3>
+    <div class="slider-labels">
+      <span>{formatDuration(durationSliderValues[0])}</span>
+      <span>{formatDuration(durationSliderValues[1])}</span>
     </div>
-  {/if}
+    <div class="slider-wrapper">
+      <RangeSlider
+        bind:values={durationSliderValues}
+        min={durationBounds.min}
+        max={durationBounds.max}
+        step={durationBounds.max > 7200 ? 60 : durationBounds.max > 600 ? 30 : 10}
+        range
+        pushy
+        on:change={handleDurationSliderChange}
+      />
+    </div>
+  </div>
+
+  <!-- File Size Range -->
+  <div class="filter-section">
+    <h3>{$t('filter.fileSize')}</h3>
+    <div class="slider-labels">
+      <span>{formatFileSize(fileSizeSliderValues[0])}</span>
+      <span>{formatFileSize(fileSizeSliderValues[1])}</span>
+    </div>
+    <div class="slider-wrapper">
+      <RangeSlider
+        bind:values={fileSizeSliderValues}
+        min={fileSizeBounds.min}
+        max={fileSizeBounds.max}
+        step={fileSizeBounds.max > 10240 ? 100 : fileSizeBounds.max > 1024 ? 10 : 1}
+        range
+        pushy
+        on:change={handleFileSizeSliderChange}
+      />
+    </div>
+  </div>
+
+  <!-- Processing Status -->
+  <div class="filter-section">
+    <h3>{$t('filter.processingStatus')}</h3>
+    <div class="status-list">
+      {#each availableStatuses as status}
+        <button
+          class="status-button {selectedStatuses.includes(status) ? 'selected' : ''}"
+          on:click={() => toggleStatus(status)}
+          title={$t('filter.statusTooltip', { status })}
+        >
+          {status === 'pending' ? $t('common.pending') : status === 'processing' ? $t('common.processing') : status === 'completed' ? $t('common.completed') : status === 'error' ? $t('common.error') : status.charAt(0).toUpperCase() + status.slice(1)}
+        </button>
+      {/each}
+    </div>
+  </div>
 </div>
 
 <style>
@@ -893,113 +847,189 @@
     font-size: 0.9rem;
   }
 
-  .date-inputs {
+  /* Section header with inline clear button */
+  .section-header-row {
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
   }
 
-  .date-group {
+  .clear-inline-btn {
     display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: var(--background-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .date-group label {
-    font-size: 0.8rem;
+  .clear-inline-btn:hover {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  /* Date picker wrapper */
+  .datepicker-wrapper {
+    position: relative;
+  }
+
+  .date-trigger-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+    text-align: left;
+  }
+
+  .date-trigger-btn:hover {
+    border-color: var(--primary-color-light, #93c5fd);
+  }
+
+  .date-icon {
+    flex-shrink: 0;
     color: var(--text-secondary);
   }
 
-  .tags-list,
-  .speakers-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+  .date-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .tag-button,
-  .speaker-button {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    color: var(--text-color);
-    font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
-    cursor: pointer;
-    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
+  /* Datepicker theme — inline below trigger, light/dark mode */
+  .datepicker-wrapper :global(.datepicker) {
+    font-family: inherit;
   }
 
-  .tag-button.selected,
-  .speaker-button.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+  /* Core layout: render inline below trigger, fit sidebar width */
+  .datepicker-wrapper :global(.datepicker .calendars-container) {
+    position: static !important;
+    margin-top: 0.5rem;
+    width: 100% !important;
+    box-shadow: none !important;
+    border-radius: 8px;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    /* Theming */
+    --datepicker-container-background: var(--surface-color, #fff);
+    --datepicker-container-border: 1px solid var(--border-color, #e8e9ea);
+    --datepicker-container-border-radius: 8px;
+    --datepicker-container-box-shadow: none;
+    --datepicker-container-font-family: inherit;
+    --datepicker-container-width: 100%;
+    --datepicker-color: var(--text-color, #21333d);
+    --datepicker-border-color: var(--border-color, #e8e9ea);
+    --datepicker-state-active: var(--primary-color, #3b82f6);
+    --datepicker-state-hover: var(--hover-color, #e7f7fc);
+    --datepicker-font-size-base: 0.8rem;
+    /* Calendar sizing */
+    --datepicker-calendar-width: 100%;
+    --datepicker-calendar-padding: 4px 4px 12px;
+    --datepicker-calendar-day-height: 32px;
+    --datepicker-calendar-day-width: 32px;
+    --datepicker-calendar-day-padding: 2px;
+    --datepicker-calendar-day-font-size: 0.8rem;
+    --datepicker-calendar-dow-font-size: 0.75rem;
+    --datepicker-calendar-dow-margin-bottom: 6px;
+    --datepicker-calendar-header-font-size: 0.95rem;
+    --datepicker-calendar-header-padding: 8px 2px;
+    --datepicker-calendar-header-margin: 0 0 6px 0;
+    /* Colors — light mode */
+    --datepicker-calendar-day-color: var(--text-color, #232a32);
+    --datepicker-calendar-day-color-hover: var(--text-color, #232a32);
+    --datepicker-calendar-day-background-hover: var(--hover-color, #f5f5f5);
+    --datepicker-calendar-dow-color: var(--text-secondary, #8b9198);
+    --datepicker-calendar-header-color: var(--text-color, #21333d);
+    --datepicker-calendar-header-text-color: var(--text-color, #21333d);
+    --datepicker-calendar-header-month-nav-color: var(--text-color, #21333d);
+    --datepicker-calendar-header-month-nav-background-hover: var(--hover-color, #f5f5f5);
+    --datepicker-calendar-today-border: 1px solid var(--text-color, #232a32);
+    --datepicker-calendar-day-other-color: var(--text-secondary, #d1d3d6);
   }
 
-  .tag-count,
-  .speaker-count {
-    background-color: rgba(0, 0, 0, 0.2);
-    border-radius: 10px;
-    padding: 0.1rem 0.4rem;
-    font-size: 0.7rem;
-    font-weight: 500;
-    margin-left: 0.2rem;
+  .datepicker-wrapper :global(.datepicker .calendars-container .calendar) {
+    width: 100% !important;
+    padding: 4px 4px 12px !important;
   }
 
-  .tag-button.selected .tag-count,
-  .speaker-button.selected .speaker-count {
-    background-color: rgba(255, 255, 255, 0.3);
+  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .month) {
+    width: 100%;
+  }
+
+  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .date span) {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0.8rem !important;
+    padding: 2px !important;
+  }
+
+  .datepicker-wrapper :global(.datepicker .calendars-container .calendar .dow) {
+    font-size: 0.75rem !important;
+  }
+
+  /* Fade out calendar on close */
+  .datepicker-wrapper.closing :global(.datepicker .calendars-container) {
+    opacity: 0;
+  }
+
+  /* Dark mode overrides */
+  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .calendars-container) {
+    --datepicker-container-background: var(--surface-color, #1e293b);
+    --datepicker-color: var(--text-color, #e2e8f0);
+    --datepicker-container-border: 1px solid var(--border-color, #334155);
+    --datepicker-border-color: var(--border-color, #334155);
+    --datepicker-state-active: var(--primary-color, #3b82f6);
+    --datepicker-state-hover: rgba(59, 130, 246, 0.15);
+    --datepicker-calendar-day-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-day-color-hover: #fff;
+    --datepicker-calendar-day-color-disabled: var(--text-secondary, #64748b);
+    --datepicker-calendar-day-background-hover: rgba(255, 255, 255, 0.1);
+    --datepicker-calendar-dow-color: var(--text-secondary, #94a3b8);
+    --datepicker-calendar-header-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-header-text-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-header-month-nav-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-header-month-nav-background-hover: rgba(255, 255, 255, 0.1);
+    --datepicker-calendar-today-border: 1px solid var(--text-color, #e2e8f0);
+    --datepicker-calendar-day-other-color: var(--text-secondary, #475569);
+    /* Range selection colors */
+    --datepicker-calendar-range-background: rgba(59, 130, 246, 0.2);
+    --datepicker-calendar-range-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-range-start-end-background: var(--primary-color, #3b82f6);
+    --datepicker-calendar-range-start-end-color: #fff;
+    --datepicker-calendar-range-included-background: rgba(59, 130, 246, 0.12);
+    --datepicker-calendar-range-included-color: var(--text-color, #e2e8f0);
+    --datepicker-calendar-range-included-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.12);
+    /* Box-shadows behind start/end circles */
+    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 rgba(59, 130, 246, 0.15);
+    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 rgba(59, 130, 246, 0.15);
+    --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--surface-color, #1e293b);
+    --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--surface-color, #1e293b);
+  }
+
+  /* Invert nav arrow icons in dark mode (they're base64 black SVGs) */
+  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-previous-month),
+  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-next-month),
+  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-next-year),
+  :global([data-theme='dark']) .datepicker-wrapper :global(.datepicker .icon-previous-year) {
+    filter: invert(1);
   }
 
   .dropdown-section {
     margin-top: 0.75rem;
-  }
-
-  /* File Type and Status button styles */
-  .file-type-list,
-  .status-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .file-type-button,
-  .status-button {
-    background-color: var(--background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    font-size: 0.85rem;
-    padding: 0.4rem 0.8rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .file-type-button:hover,
-  .status-button:hover {
-    background-color: var(--hover-color);
-    border-color: var(--primary-color-light);
-  }
-
-  .file-type-button.selected,
-  .status-button.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
-  }
-
-  /* Input help text */
-  .input-help {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin-top: 0.25rem;
-    display: block;
-    font-style: italic;
   }
 
   .loading-text,
@@ -1008,107 +1038,72 @@
     color: var(--text-secondary);
     margin: 0;
   }
-  /* Advanced filters divider and toggle styles */
-  .advanced-filters-divider {
+
+  .slider-labels {
     display: flex;
-    align-items: center;
-    margin: 0.75rem 0 0.5rem 0;
-    position: relative;
-  }
-
-  .divider-line {
-    flex: 1;
-    height: 1px;
-    border: none;
-    background-color: var(--border-color);
-    margin: 0;
-  }
-
-  .advanced-toggle-compact {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background-color: var(--surface-color);
-    border: none;
-    color: var(--text-color);
-    font-size: 0.85rem;
-    font-weight: 500;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border-radius: 20px;
-    margin: 0 1rem;
-    white-space: nowrap;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .advanced-toggle-compact:hover {
-    background-color: var(--button-hover);
-    color: var(--primary-color);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-  }
-
-  .toggle-icon {
-    transition: transform 0.2s ease;
-    color: var(--primary-color);
-  }
-
-  .toggle-icon.rotated {
-    transform: rotate(180deg);
-  }
-
-  .advanced-filters-content {
-    /* Seamless integration with subtle visual distinction */
-    padding: 0.5rem 0.25rem;
-    margin: 0;
-    background: linear-gradient(135deg, transparent 0%, rgba(59, 130, 246, 0.02) 100%);
-    border: none;
-    box-shadow: none;
-    border-radius: 8px;
-    position: relative;
-  }
-
-
-  .advanced-filters-content .filter-section {
-    margin-bottom: 1rem;
-  }
-
-  .advanced-filters-content .filter-section:last-child {
-    margin-bottom: 0;
-  }
-
-  .range-inputs {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .range-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .range-group input[type="number"] {
-    padding: 0.5rem;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    background-color: var(--input-background, var(--surface-color));
-    color: var(--text-color);
-    font-size: 0.9rem;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .range-group input[type="number"]:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 2px var(--primary-color-light, rgba(59, 130, 246, 0.2));
-  }
-
-  .range-group label {
-    font-size: 0.85rem;
+    justify-content: space-between;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     margin-bottom: 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .slider-wrapper {
+    padding: 0 0.25rem;
+    --range-slider: var(--border-color, #d7dada);
+    --range-handle-inactive: #3b82f6;
+    --range-handle: #3b82f6;
+    --range-handle-focus: #2563eb;
+    --range-range: rgba(59, 130, 246, 0.25);
+    --range-pip: var(--border-color, #d7dada);
+    --range-pip-active: #3b82f6;
+    --range-pip-in-range: #3b82f6;
+    font-size: 0.75rem;
+  }
+
+  .slider-wrapper :global(.rangeSlider) {
+    margin: 0.5rem 0;
+  }
+
+  /* Vertical line handles */
+  .slider-wrapper :global(.rangeSlider .rangeHandle) {
+    width: 6px !important;
+    height: 22px !important;
+    cursor: pointer !important;
+  }
+
+  .slider-wrapper :global(.rangeSlider .rangeNub) {
+    width: 6px !important;
+    height: 22px !important;
+    border-radius: 2px !important;
+    border: none !important;
+    background-color: #3b82f6 !important;
+    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3) !important;
+    transform: none !important;
+    transition: height 0.15s ease, width 0.15s ease, margin 0.15s ease !important;
+  }
+
+  /* Slightly larger on hover */
+  .slider-wrapper :global(.rangeSlider .rangeHandle:hover .rangeNub) {
+    width: 8px !important;
+    height: 26px !important;
+    margin-top: -2px !important;
+    margin-left: -1px !important;
+  }
+
+  /* Hide the ripple effect */
+  .slider-wrapper :global(.rangeSlider .rangeHandle::before) {
+    display: none !important;
+  }
+
+  /* Range bar — same solid color as handles */
+  .slider-wrapper :global(.rangeSlider .rangeBar) {
+    background-color: #3b82f6 !important;
+  }
+
+  /* Pointer cursor on the track too */
+  .slider-wrapper :global(.rangeSlider) {
+    cursor: pointer !important;
   }
 
   /* Tag and Speaker button styles */
@@ -1190,35 +1185,4 @@
     font-style: italic;
   }
 
-  /* Responsive adjustments for advanced filters */
-  @media (max-width: 768px) {
-    .advanced-filters-divider {
-      margin: 1rem 0 0.75rem 0;
-    }
-
-    .advanced-toggle-compact {
-      padding: 0.4rem 0.8rem;
-      font-size: 0.8rem;
-      margin: 0 0.5rem;
-    }
-
-    .advanced-filters-content {
-      padding: 0.75rem 0.25rem;
-    }
-
-    .advanced-filters-content .filter-section {
-      margin-bottom: 1rem;
-    }
-  }
-
-  /* Reduced motion support */
-  @media (prefers-reduced-motion: reduce) {
-    .toggle-icon {
-      transition: none;
-    }
-
-    .advanced-toggle-compact {
-      transition: none;
-    }
-  }
 </style>

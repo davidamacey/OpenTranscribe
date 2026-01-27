@@ -231,6 +231,17 @@ class Settings(BaseSettings):
     OPENSEARCH_TOPIC_SUGGESTIONS_INDEX: str = "topic_suggestions"
     OPENSEARCH_TOPIC_VECTORS_INDEX: str = "topic_vectors"
 
+    # Search & RAG settings
+    OPENSEARCH_CHUNKS_INDEX: str = "transcript_chunks"
+    OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
+    SEARCH_CHUNK_TARGET_WORDS: int = int(os.getenv("SEARCH_CHUNK_TARGET_WORDS", "200"))
+    SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
+    SEARCH_EMBEDDING_MODEL: str = os.getenv("SEARCH_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    SEARCH_EMBEDDING_DIMENSION: int = int(os.getenv("SEARCH_EMBEDDING_DIMENSION", "384"))
+    SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "60"))
+    SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "100"))
+    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.005"))
+
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL
     CELERY_RESULT_BACKEND: str = REDIS_URL

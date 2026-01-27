@@ -474,7 +474,9 @@ INSERT INTO system_settings (key, value, description) VALUES
     ('transcription.max_retries', '3', 'Maximum number of retry attempts for failed transcriptions (0 = unlimited)'),
     ('transcription.retry_limit_enabled', 'true', 'Whether to enforce retry limits on transcription processing'),
     ('transcription.garbage_cleanup_enabled', 'true', 'Whether to clean up garbage words (very long words with no spaces) during transcription'),
-    ('transcription.max_word_length', '50', 'Maximum word length threshold for garbage detection (words longer than this with no spaces are replaced)')
+    ('transcription.max_word_length', '50', 'Maximum word length threshold for garbage detection (words longer than this with no spaces are replaced)'),
+    ('search.embedding_model', 'all-MiniLM-L6-v2', 'Search embedding model ID used for semantic search'),
+    ('search.embedding_dimension', '384', 'Search embedding vector dimension matching the current model')
 ON CONFLICT (key) DO NOTHING;
 
 -- Insert system prompts with comprehensive guidance and properly escaped JSON

@@ -91,7 +91,6 @@
       fileSizeRange?: { min: number | null; max: number | null };
       fileTypes?: string[];
       statuses?: string[];
-      transcriptSearch?: string;
     };
   }
 
@@ -152,7 +151,6 @@
   let fileSizeRange = { min: null as number | null, max: null as number | null };
   let selectedFileTypes: string[] = [];
   let selectedStatuses: string[] = [];
-  let transcriptSearch: string = '';
   // Use store for showFilters
   $: showFilters = $galleryState.showFilters;
 
@@ -275,11 +273,6 @@
       // Add status filter parameters
       if (selectedStatuses.length > 0) {
         selectedStatuses.forEach(status => params.append('status', status));
-      }
-
-      // Add transcript search parameter
-      if (transcriptSearch.trim()) {
-        params.append('transcript_search', transcriptSearch.trim());
       }
 
       let newFiles: MediaFile[] = [];
@@ -406,7 +399,7 @@
 
   // Handle filter changes
   function applyFilters(event: FilterEvent) {
-    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses, transcriptSearch: transcript } = event.detail;
+    const { search, tags, speaker, collectionId, dates, durationRange: duration, fileSizeRange: fileSize, fileTypes, statuses } = event.detail;
 
     searchQuery = search;
     selectedTags = tags;
@@ -419,7 +412,6 @@
     if (fileSize !== undefined) fileSizeRange = fileSize;
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
-    if (transcript !== undefined) transcriptSearch = transcript;
 
     fetchFiles();
   }
@@ -468,7 +460,6 @@
     fileSizeRange = { min: null, max: null };
     selectedFileTypes = [];
     selectedStatuses = [];
-    transcriptSearch = '';
 
     // Skip animation when resetting filters to avoid highlighting previously filtered items
     fetchFiles(false, true);
@@ -849,11 +840,12 @@
             title={showFilters ? $t('gallery.hideFiltersPanel') : $t('gallery.showFiltersPanel')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+              <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+              <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+              <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line>
+              <line x1="17" y1="16" x2="23" y2="16"></line>
             </svg>
-            {#if showFilters}
-              <span class="filter-toggle-text">{$t('gallery.hideFilters')}</span>
-            {/if}
           </button>
         </div>
 
@@ -871,7 +863,6 @@
               fileSizeRange={{min: null, max: null}}
               selectedFileTypes={selectedFileTypes}
               selectedStatuses={selectedStatuses}
-              transcriptSearch={transcriptSearch}
               on:filter={applyFilters}
               on:reset={resetFilters}
             />
@@ -1425,7 +1416,6 @@
     display: flex;
     flex-direction: column;
     transition: all 0.3s ease;
-    padding-top: 2rem; /* Additional spacing from navbar */
   }
 
   /* Expanded state */
@@ -1439,13 +1429,13 @@
   }
 
   .filter-toggle-container {
-    padding: 0 0.5rem;
-    margin-bottom: 1rem;
+    padding: 0.5rem 0.5rem 0;
+    margin-bottom: 0.5rem;
     flex-shrink: 0;
   }
 
   .filter-sidebar.show .filter-toggle-container {
-    padding: 0 1rem;
+    padding: 0.5rem 1rem 0;
   }
 
   .filter-toggle-btn {
@@ -1468,7 +1458,7 @@
   }
 
   .filter-toggle-btn:hover {
-    background-color: var(--hover-bg);
+    background-color: var(--hover-color);
     border-color: var(--primary-color);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   }

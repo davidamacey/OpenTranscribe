@@ -222,7 +222,7 @@ def _process_speaker_embeddings(
 
 
 def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: list) -> None:
-    """Index transcript in OpenSearch."""
+    """Index transcript in OpenSearch with chunk-level embeddings and legacy whole-doc."""
     full_transcript = generate_full_transcript(processed_segments)
     speaker_names = get_unique_speaker_names(processed_segments)
 
@@ -232,13 +232,54 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
             (media_file.title or media_file.filename) if media_file else f"File {ctx.file_id}"
         )
         file_uuid = media_file.uuid if media_file else None
-
-    if file_uuid:
-        index_transcript(
-            ctx.file_id, file_uuid, ctx.user_id, full_transcript, speaker_names, file_title
+        upload_time = (
+            (media_file.creation_date or media_file.upload_time).isoformat()
+            if media_file and (media_file.creation_date or media_file.upload_time)
+            else None
         )
-    else:
+        file_language = media_file.language if media_file else "en"
+        file_tags = []
+        if media_file and hasattr(media_file, "tags") and media_file.tags:
+            file_tags = [t.name for t in media_file.tags]
+        content_type = media_file.content_type if media_file else ""
+        duration = media_file.duration if media_file else None
+        file_size = media_file.file_size if media_file else None
+        collection_ids = []
+        if media_file and hasattr(media_file, "collections") and media_file.collections:
+            collection_ids = [c.id for c in media_file.collections]
+
+    if not file_uuid:
         logger.warning(f"Could not index transcript: file_uuid not found for file_id {ctx.file_id}")
+        return
+
+    # Legacy whole-doc index (backward compatibility)
+    index_transcript(
+        ctx.file_id, file_uuid, ctx.user_id, full_transcript, speaker_names, file_title
+    )
+
+    # New chunk-level index with embeddings
+    try:
+        from app.services.search.indexing_service import TranscriptIndexingService
+
+        indexing_service = TranscriptIndexingService()
+        chunk_count = indexing_service.index_transcript_chunks(
+            file_id=ctx.file_id,
+            file_uuid=str(file_uuid),
+            user_id=ctx.user_id,
+            segments=processed_segments,
+            title=file_title,
+            speakers=speaker_names,
+            tags=file_tags,
+            upload_time=upload_time,
+            language=file_language or "en",
+            content_type=content_type,
+            duration=duration,
+            file_size=file_size,
+            collection_ids=collection_ids,
+        )
+        logger.info(f"Indexed {chunk_count} chunks for file {file_uuid}")
+    except Exception as e:
+        logger.warning(f"Chunk indexing failed for file {file_uuid}, text search still works: {e}")
 
 
 def _run_whisperx_pipeline(

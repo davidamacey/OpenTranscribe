@@ -2261,6 +2261,44 @@
     }
   });
 
+  // Handle ?t= timestamp seek from search results
+  let hasSeenTimestamp = false;
+  $: if (playerInitialized && videoPlayerComponent && !hasSeenTimestamp) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const seekTime = urlParams.get('t');
+    if (seekTime) {
+      hasSeenTimestamp = true;
+      const targetTime = parseFloat(seekTime);
+      if (!isNaN(targetTime) && targetTime >= 0) {
+        // Seek the player to the specified timestamp
+        setTimeout(() => {
+          if (videoPlayerComponent && typeof videoPlayerComponent.seekToTime === 'function') {
+            videoPlayerComponent.seekToTime(targetTime);
+          } else {
+            currentTime = targetTime;
+          }
+          // Scroll the transcript segment into view
+          scrollToSegmentAtTime(targetTime);
+        }, 500);
+      }
+    }
+  }
+
+  function scrollToSegmentAtTime(time: number) {
+    const transcriptData = file?.transcript_segments;
+    if (!transcriptData || !Array.isArray(transcriptData)) return;
+    const segment = transcriptData.find((s: any) => time >= s.start_time && time <= s.end_time);
+    if (!segment) return;
+    const segId = segment.uuid || segment.id || `${segment.start_time}-${segment.end_time}`;
+    // Wait for DOM to update with the active-segment class
+    setTimeout(() => {
+      const el = document.querySelector(`[data-segment-id="${segId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+  }
+
   // Reactive statement to re-initialize player if videoUrl changes
   $: if (videoUrl && !playerInitialized && !isLoading) {
     // Video URL available but no player, scheduling initialization

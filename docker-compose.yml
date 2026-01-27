@@ -69,12 +69,12 @@ services:
 
   opensearch:
     container_name: opentranscribe-opensearch
-    image: opensearchproject/opensearch:3.3.1
+    image: opensearchproject/opensearch:3.4.0
     restart: always
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
       - DISABLE_SECURITY_PLUGIN=true
     ulimits:
       memlock:

@@ -9,7 +9,7 @@ OpenTranscribe is a containerized AI-powered transcription application with thes
 - **Backend**: FastAPI with async support and OpenAPI documentation
 - **Database**: PostgreSQL with SQLAlchemy ORM (no migrations during development)
 - **Storage**: MinIO S3-compatible object storage
-- **Search**: OpenSearch 3.3.1 (Apache Lucene 10) for full-text and vector search
+- **Search**: OpenSearch 3.4.0 (Apache Lucene 10) for full-text and vector search
 - **Queue**: Celery with Redis for background AI processing
 - **Monitoring**: Flower for task monitoring
 
@@ -316,7 +316,7 @@ backend/app/auth/
 - API Docs: http://localhost:5174/docs
 - MinIO Console: http://localhost:5179
 - Flower Dashboard: http://localhost:5175/flower
-- OpenSearch: http://localhost:5180 (v3.3.1 with Lucene 10)
+- OpenSearch: http://localhost:5180 (v3.4.0 with Lucene 10)
 
 ### Important File Locations
 - Environment config: `.env` (never overwrite without confirmation)

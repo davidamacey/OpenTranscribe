@@ -30,13 +30,54 @@ def get_alembic_config() -> Config:
     return config
 
 
-def run_migrations() -> None:
+def _detect_schema_version(conn, tables: list[str]) -> str | None:
+    """Detect the schema version of an existing untracked database.
+
+    Returns the Alembic revision to stamp, or None if no user table exists.
     """
-    Run database migrations on startup.
+    if "user" not in tables:
+        return None
+
+    from sqlalchemy import text
+
+    def _check_exists(query: str) -> bool:
+        return bool(conn.execute(text(query)).scalar())
+
+    has_ldap = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='user' AND column_name='auth_type')"
+    )
+    has_keycloak_pki = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='user' AND column_name='keycloak_id')"
+    )
+    has_fedramp = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables " "WHERE table_name='user_mfa')"
+    )
+    has_search_settings = "system_settings" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM system_settings " "WHERE key = 'search.embedding_model')"
+    )
+
+    # Return the highest version stamp that matches
+    if has_fedramp and has_search_settings:
+        return "v050_add_search_settings"
+    if has_fedramp:
+        return "v040_add_fedramp_compliance"
+    if has_keycloak_pki:
+        return "v031_add_keycloak_pki_auth"
+    if has_ldap:
+        return "v030_add_ldap_auth"
+    if "system_settings" in tables:
+        return "v020_add_system_settings"
+    return "v010_baseline"
+
+
+def run_migrations() -> None:
+    """Run database migrations on startup.
 
     Handles three scenarios:
     1. Fresh install: Tables exist from init_db.sql, stamp current version
-    2. Existing v0.1.0: Stamp baseline, apply new migrations
+    2. Existing v0.1.0+: Stamp detected version, apply new migrations
     3. Already tracked: Apply any pending migrations
     """
     logger.info("Checking database migrations...")
@@ -44,102 +85,28 @@ def run_migrations() -> None:
     engine = create_engine(settings.DATABASE_URL)
 
     with engine.connect() as conn:
-        # Check if Alembic is already tracking this database
         context = MigrationContext.configure(conn)
         current_rev = context.get_current_revision()
-
         inspector = inspect(engine)
         tables = inspector.get_table_names()
+        detected_version = _detect_schema_version(conn, tables)
 
-        # Check for LDAP columns (v0.3.0)
-        has_ldap_columns = False
-        # Check for Keycloak/PKI columns (v0.3.1)
-        has_keycloak_pki_columns = False
-        # Check for FedRAMP security tables (v0.4.0)
-        has_fedramp_tables = False
-        if "user" in tables:
-            from sqlalchemy import text
+    config = get_alembic_config()
 
-            result = conn.execute(
-                text(
-                    "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-                    "WHERE table_name='user' AND column_name='auth_type')"
-                )
-            )
-            has_ldap_columns = bool(result.scalar())
-
-            # Check for keycloak_id column
-            result = conn.execute(
-                text(
-                    "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-                    "WHERE table_name='user' AND column_name='keycloak_id')"
-                )
-            )
-            has_keycloak_pki_columns = bool(result.scalar())
-
-            # Check for user_mfa table (FedRAMP v0.3.2)
-            result = conn.execute(
-                text(
-                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
-                    "WHERE table_name='user_mfa')"
-                )
-            )
-            has_fedramp_tables = bool(result.scalar())
-
-    # Determine what action to take (connection is now closed)
     if current_rev:
-        # Alembic already tracking - just upgrade
         logger.info(f"Current migration version: {current_rev}")
-        config = get_alembic_config()
         command.upgrade(config, "head")
-    elif "user" in tables:
-        # Existing database without Alembic tracking
-        if has_fedramp_tables:
-            # Has v0.4.0 schema (FedRAMP security tables) - stamp as current
-            logger.info(
-                "Existing v0.4.0 database detected (has FedRAMP tables), stamping version..."
-            )
-            config = get_alembic_config()
-            command.stamp(config, "v040_add_fedramp_compliance")
-        elif has_keycloak_pki_columns:
-            # Has v0.3.1 schema - stamp as current
-            logger.info(
-                "Existing v0.3.1 database detected (has Keycloak/PKI columns), stamping version..."
-            )
-            config = get_alembic_config()
-            command.stamp(config, "v031_add_keycloak_pki_auth")
-        elif has_ldap_columns:
-            # Has v0.3.0 schema - stamp and upgrade
-            logger.info(
-                "Existing v0.3.0 database detected (has LDAP columns), stamping and upgrading..."
-            )
-            config = get_alembic_config()
-            command.stamp(config, "v030_add_ldap_auth")
-            logger.info("Applying migrations to upgrade to current version...")
-            command.upgrade(config, "head")
-        elif "system_settings" in tables:
-            # Has v0.2.0 schema - stamp and upgrade
-            logger.info("Existing v0.2.0 database detected, stamping and upgrading...")
-            config = get_alembic_config()
-            command.stamp(config, "v020_add_system_settings")
-            logger.info("Applying migrations to upgrade to current version...")
-            command.upgrade(config, "head")
-        else:
-            # v0.1.0 database - stamp baseline then upgrade
-            logger.info("Existing v0.1.0 database detected, stamping baseline...")
-            config = get_alembic_config()
-            command.stamp(config, "v010_baseline")
+    elif detected_version:
+        logger.info(f"Existing database detected, stamping {detected_version}...")
+        command.stamp(config, detected_version)
+        if detected_version != "v050_add_search_settings":
             logger.info("Applying migrations to upgrade to current version...")
             command.upgrade(config, "head")
     elif tables:
-        # Fresh install with init_db.sql tables - stamp head
         logger.info("Fresh database detected, stamping current version...")
-        config = get_alembic_config()
         command.stamp(config, "head")
     else:
-        # Empty database - let Alembic create everything
         logger.info("Empty database detected, running full migration...")
-        config = get_alembic_config()
         command.upgrade(config, "head")
 
     logger.info("Database migrations complete")
