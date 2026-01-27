@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/", response_model=TagSchema)
+@router.post("", response_model=TagSchema)
 def create_tag(
     tag_data: TagBase,
     db: Session = Depends(get_db),
@@ -49,7 +49,7 @@ def create_tag(
     return new_tag
 
 
-@router.get("/", response_model=list[TagWithCount])
+@router.get("", response_model=list[TagWithCount])
 def list_tags(db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     """
     List all available tags for the current user with usage counts, sorted by most used

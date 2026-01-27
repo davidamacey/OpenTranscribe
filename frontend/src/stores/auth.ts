@@ -169,7 +169,7 @@ export async function initAuth() {
 // Fetch current user info from API
 export async function fetchUserInfo() {
   try {
-    const response = await axiosInstance.get('auth/me');
+    const response = await axiosInstance.get('/auth/me');
     const userData = response.data;
 
     authStore.setUser(userData);
@@ -201,7 +201,7 @@ export async function login(
 
     // Use the axiosInstance which handles URL formats consistently
     // But we need to customize headers for this specific request
-    const response = await axiosInstance.post('auth/login', params, {
+    const response = await axiosInstance.post('/auth/login', params, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
@@ -284,8 +284,7 @@ export async function login(
 // Register function
 export async function register(email: string, fullName: string, password: string) {
   try {
-    // Use consistent URL format without leading slash
-    const response = await axiosInstance.post('auth/register', {
+    const response = await axiosInstance.post('/auth/register', {
       email,
       full_name: fullName,
       password,
@@ -328,7 +327,7 @@ export function logout() {
 // Get available authentication methods
 export async function getAuthMethods(): Promise<AuthMethods> {
   try {
-    const response = await axiosInstance.get('auth/methods');
+    const response = await axiosInstance.get('/auth/methods');
     return response.data;
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
@@ -353,7 +352,7 @@ export async function loginWithKeycloak(): Promise<{
   message?: string;
 }> {
   try {
-    const response = await axiosInstance.get('auth/keycloak/login');
+    const response = await axiosInstance.get('/auth/keycloak/login');
     const { authorization_url } = response.data;
 
     if (authorization_url) {
@@ -381,7 +380,7 @@ export async function handleKeycloakCallback(
   state: string
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axiosInstance.get('auth/keycloak/callback', {
+    const response = await axiosInstance.get('/auth/keycloak/callback', {
       params: { code, state },
     });
 
@@ -415,7 +414,7 @@ export async function loginWithPKI(): Promise<{
   message?: string;
 }> {
   try {
-    const response = await axiosInstance.post('auth/pki/authenticate');
+    const response = await axiosInstance.post('/auth/pki/authenticate');
 
     if (response.status === 200 && response.data.access_token) {
       const tokenValue = response.data.access_token;
@@ -453,7 +452,7 @@ export async function verifyMFA(
   isBackupCode: boolean = false
 ): Promise<{ success: boolean; message?: string }> {
   try {
-    const response = await axiosInstance.post('auth/mfa/verify', {
+    const response = await axiosInstance.post('/auth/mfa/verify', {
       mfa_token: mfaToken,
       code: code,
       is_backup_code: isBackupCode,

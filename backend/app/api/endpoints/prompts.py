@@ -24,7 +24,7 @@ from app.utils.uuid_helpers import get_prompt_by_uuid
 router = APIRouter()
 
 
-@router.get("/", response_model=schemas.SummaryPromptList)
+@router.get("", response_model=schemas.SummaryPromptList)
 def get_prompts(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
@@ -201,7 +201,7 @@ def get_prompts_by_content_type(
     )
 
 
-@router.post("/", response_model=schemas.SummaryPrompt)
+@router.post("", response_model=schemas.SummaryPrompt)
 def create_prompt(
     *,
     db: Session = Depends(get_db),
@@ -250,93 +250,9 @@ def create_prompt(
     return prompt
 
 
-@router.get("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
-def get_prompt(
-    prompt_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Get a specific prompt by UUID
-    """
-    prompt = get_prompt_by_uuid(db, prompt_uuid)
-
-    # Check access: system prompts are public, user prompts are private
-    if not prompt.is_system_default and prompt.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-
-    return prompt
-
-
-@router.put("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
-def update_prompt(
-    *,
-    db: Session = Depends(get_db),
-    prompt_uuid: str,
-    prompt_in: schemas.SummaryPromptUpdate,
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Update a custom summary prompt (user's own prompts only)
-    """
-    prompt = get_prompt_by_uuid(db, prompt_uuid)
-
-    # Only allow users to update their own custom prompts
-    if prompt.is_system_default or prompt.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Cannot modify system prompts or other users' prompts",
-        )
-
-    update_data = prompt_in.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(prompt, field, value)
-
-    db.add(prompt)
-    db.commit()
-    db.refresh(prompt)
-    return prompt
-
-
-@router.delete("/{prompt_uuid}")
-def delete_prompt(
-    prompt_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Delete a custom summary prompt (user's own prompts only)
-    """
-    prompt = get_prompt_by_uuid(db, prompt_uuid)
-    prompt_id = prompt.id
-
-    # Only allow users to delete their own custom prompts
-    if prompt.is_system_default or prompt.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Cannot delete system prompts or other users' prompts",
-        )
-
-    # Check if this is the user's active prompt
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            and_(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == "active_summary_prompt_id",
-                models.UserSetting.setting_value == str(prompt_id),
-            )
-        )
-        .first()
-    )
-
-    if active_setting:
-        # Reset to default prompt
-        db.delete(active_setting)
-
-    db.delete(prompt)
-    db.commit()
-    return {"detail": "Prompt deleted successfully"}
+# =============================================================================
+# STATIC ROUTES - Must come before parameterized routes
+# =============================================================================
 
 
 @router.get("/active/current", response_model=schemas.ActivePromptResponse)
@@ -483,3 +399,97 @@ def set_active_prompt(
     db.refresh(prompt)
 
     return schemas.ActivePromptResponse(active_prompt_id=str(prompt.uuid), active_prompt=prompt)  # type: ignore[arg-type]
+
+
+# =============================================================================
+# PARAMETERIZED ROUTES - Must come after static routes
+# =============================================================================
+
+
+@router.get("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
+def get_prompt(
+    prompt_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get a specific prompt by UUID
+    """
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
+
+    # Check access: system prompts are public, user prompts are private
+    if not prompt.is_system_default and prompt.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    return prompt
+
+
+@router.put("/{prompt_uuid}", response_model=schemas.SummaryPrompt)
+def update_prompt(
+    *,
+    db: Session = Depends(get_db),
+    prompt_uuid: str,
+    prompt_in: schemas.SummaryPromptUpdate,
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Update a custom summary prompt (user's own prompts only)
+    """
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
+
+    # Only allow users to update their own custom prompts
+    if prompt.is_system_default or prompt.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot modify system prompts or other users' prompts",
+        )
+
+    update_data = prompt_in.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(prompt, field, value)
+
+    db.add(prompt)
+    db.commit()
+    db.refresh(prompt)
+    return prompt
+
+
+@router.delete("/{prompt_uuid}")
+def delete_prompt(
+    prompt_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Delete a custom summary prompt (user's own prompts only)
+    """
+    prompt = get_prompt_by_uuid(db, prompt_uuid)
+    prompt_id = prompt.id
+
+    # Only allow users to delete their own custom prompts
+    if prompt.is_system_default or prompt.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete system prompts or other users' prompts",
+        )
+
+    # Check if this is the user's active prompt
+    active_setting = (
+        db.query(models.UserSetting)
+        .filter(
+            and_(
+                models.UserSetting.user_id == current_user.id,
+                models.UserSetting.setting_key == "active_summary_prompt_id",
+                models.UserSetting.setting_value == str(prompt_id),
+            )
+        )
+        .first()
+    )
+
+    if active_setting:
+        # Reset to default prompt
+        db.delete(active_setting)
+
+    db.delete(prompt)
+    db.commit()
+    return {"detail": "Prompt deleted successfully"}

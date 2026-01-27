@@ -80,7 +80,7 @@ export class PromptsApi {
       queryParams.append('content_type', params.content_type);
     }
 
-    const response = await axiosInstance.get(`${this.BASE_PATH}/?${queryParams.toString()}`);
+    const response = await axiosInstance.get(`${this.BASE_PATH}?${queryParams.toString()}`);
     return response.data;
   }
 
@@ -103,7 +103,7 @@ export class PromptsApi {
    * Create a new prompt
    */
   static async createPrompt(prompt: SummaryPromptCreate): Promise<SummaryPrompt> {
-    const response = await axiosInstance.post(`${this.BASE_PATH}/`, prompt);
+    const response = await axiosInstance.post(`${this.BASE_PATH}`, prompt);
     return response.data;
   }
 

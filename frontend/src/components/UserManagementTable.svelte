@@ -103,7 +103,7 @@
     try {
       // The backend expects full_name as a required field
       // Using username as the full_name since that's what we collect
-      await axiosInstance.post('/api/admin/users', {
+      await axiosInstance.post('/admin/users', {
         email: newEmail,
         password: newPassword,
         full_name: newUsername, // Required field
@@ -128,7 +128,15 @@
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      const message = err instanceof Error ? err.message : $t('userManagement.createUserFailed');
+      let message = $t('userManagement.createUserFailed');
+      if (err?.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          message = detail.map(d => d.msg || d).join('; ');
+        } else {
+          message = String(detail);
+        }
+      }
       toastStore.error(message);
     }
   }
@@ -183,7 +191,7 @@
    */
   async function executeDeleteUser(userId) {
     try {
-      await axiosInstance.delete(`/api/users/${userId}`);
+      await axiosInstance.delete(`/users/${userId}`);
       toastStore.success($t('userManagement.userDeletedSuccess'));
 
       // Refresh user list
@@ -202,7 +210,7 @@
    */
   async function updateUserRole(userId, role) {
     try {
-      await axiosInstance.put(`/api/users/${userId}`, { role });
+      await axiosInstance.put(`/users/${userId}`, { role });
       toastStore.success($t('userManagement.userRoleUpdated', { role }));
 
       // Refresh user list
@@ -275,7 +283,7 @@
     passwordResetLoading = true;
 
     try {
-      await axiosInstance.put(`/api/users/${passwordResetUser.uuid}`, {
+      await axiosInstance.put(`/users/${passwordResetUser.uuid}`, {
         password: resetPassword
       });
 
@@ -284,7 +292,15 @@
       closePasswordResetModal();
     } catch (err) {
       console.error('Error resetting password:', err);
-      const message = err instanceof Error ? err.message : $t('userManagement.passwordResetFailed');
+      let message = $t('userManagement.passwordResetFailed');
+      if (err?.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          message = detail.map(d => d.msg || d).join('; ');
+        } else {
+          message = String(detail);
+        }
+      }
       toastStore.error(message);
     } finally {
       passwordResetLoading = false;

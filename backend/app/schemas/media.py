@@ -226,7 +226,7 @@ class TranscriptSegmentCreate(TranscriptSegmentBase):
 
 
 class TranscriptSegmentUpdate(BaseModel):
-    id: int
+    id: Optional[int] = None  # Optional since segment is identified by UUID in URL
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     text: Optional[str] = None

@@ -713,8 +713,6 @@
   "upload.cancelUpload": "Отменить загрузку",
   "upload.removeFromList": "Удалить из списка",
   "filter.title": "Фильтры",
-  "filter.apply": "Применить",
-  "filter.applyTooltip": "Применить выбранные фильтры для обновления списка файлов",
   "filter.reset": "Сброс",
   "filter.resetTooltip": "Очистить все фильтры и показать все файлы",
   "filter.searchFiles": "Поиск файлов",

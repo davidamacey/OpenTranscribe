@@ -1,6 +1,8 @@
-import datetime
 import logging
 import platform
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
 
 import psutil
@@ -39,8 +41,8 @@ def get_system_uptime():
     """Get system uptime in a readable format"""
     try:
         # Get boot time and calculate uptime
-        boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
-        uptime = datetime.datetime.now() - boot_time
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
 
         # Format as days, hours, minutes, seconds
         days, remainder = divmod(uptime.total_seconds(), 86400)
@@ -131,29 +133,32 @@ def get_disk_usage():
 
 
 def get_gpu_usage():
-    """Get GPU usage information from Redis (updated by celery worker)"""
+    """Get GPU usage from Redis. Triggers on-demand collection if cache is empty."""
     try:
         import json
 
         from app.core.celery import celery_app
 
-        # Try to get GPU stats from Redis (set by celery worker task)
         redis_client = celery_app.backend.client
         gpu_stats_json = redis_client.get("gpu_stats")
 
         if gpu_stats_json:
-            gpu_stats = json.loads(gpu_stats_json)
-            return gpu_stats
-        else:
-            # No stats available yet - worker hasn't reported
-            return {
-                "available": False,
-                "name": "GPU stats not yet available",
-                "memory_total": "N/A",
-                "memory_used": "N/A",
-                "memory_free": "N/A",
-                "memory_percent": "N/A",
-            }
+            return json.loads(gpu_stats_json)
+
+        # No cached stats — trigger on-demand collection (debounced)
+        lock_acquired = redis_client.set("gpu_stats_pending", "1", nx=True, ex=30)
+        if lock_acquired:
+            celery_app.send_task("update_gpu_stats", queue="gpu")
+            logger.info("Dispatched on-demand GPU stats collection")
+
+        return {
+            "available": False,
+            "name": "GPU stats loading...",
+            "memory_total": "N/A",
+            "memory_used": "N/A",
+            "memory_free": "N/A",
+            "memory_percent": "N/A",
+        }
     except Exception as e:
         logger.error(f"Error getting GPU usage from Redis: {e}")
         return {
@@ -316,10 +321,6 @@ async def get_admin_stats(
             }
 
         # Get user statistics
-        from datetime import datetime
-        from datetime import timedelta
-        from datetime import timezone
-
         total_users = db.query(User).count()
         active_users = db.query(User).filter(User.is_active).count()
         inactive_users = total_users - active_users
@@ -330,8 +331,6 @@ async def get_admin_stats(
         new_users = db.query(User).filter(User.created_at >= seven_days_ago).count()
 
         # Get file statistics
-        from sqlalchemy.sql import func
-
         total_files = db.query(MediaFile).count()
 
         # Calculate new files in last 7 days

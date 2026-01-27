@@ -84,7 +84,7 @@
       // Choose optimal resolution for current device/screen
       const targetSamples = getOptimalResolution();
 
-      const response = await axiosInstance.get(`/api/files/${fileId}/waveform`, {
+      const response = await axiosInstance.get(`/files/${fileId}/waveform`, {
         params: { samples: targetSamples }
       });
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import axiosInstance from '../lib/axios';
   import CollectionsFilter from './CollectionsFilter.svelte';
@@ -148,6 +148,57 @@
   // Event dispatcher
   const dispatch = createEventDispatcher();
 
+  // Debounce infrastructure for auto-triggering filters
+  const DEBOUNCE_DELAY = 400;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let isInitialized = false;
+
+  // Previous values for reactive change detection
+  let prevSearchQuery = searchQuery;
+  let prevTranscriptSearch = transcriptSearch;
+  let prevCollectionId = selectedCollectionId;
+
+  function triggerFiltersImmediate() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    applyFilters();
+  }
+
+  function triggerFiltersDebounced() {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      applyFilters();
+    }, DEBOUNCE_DELAY);
+  }
+
+  onDestroy(() => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+  });
+
+  // Reactive watchers for text inputs (debounced)
+  $: if (isInitialized && searchQuery !== prevSearchQuery) {
+    prevSearchQuery = searchQuery;
+    triggerFiltersDebounced();
+  }
+
+  $: if (isInitialized && transcriptSearch !== prevTranscriptSearch) {
+    prevTranscriptSearch = transcriptSearch;
+    triggerFiltersDebounced();
+  }
+
+  // Reactive watcher for collection selection (immediate)
+  $: if (isInitialized && selectedCollectionId !== prevCollectionId) {
+    prevCollectionId = selectedCollectionId;
+    triggerFiltersImmediate();
+  }
+
   // Date input values
   /** @type {string} */
   let fromDate = '';
@@ -175,7 +226,7 @@
     errorTags = null;
 
     try {
-      const response = await axiosInstance.get('/tags/');
+      const response = await axiosInstance.get('/tags');
       allTags = response.data;
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
@@ -192,7 +243,7 @@
     errorSpeakers = null;
 
     try {
-      const response = await axiosInstance.get('/speakers/?for_filter=true');
+      const response = await axiosInstance.get('/speakers?for_filter=true');
       allSpeakers = response.data;
     } catch (err) {
       console.error('Error fetching speakers:', err);
@@ -215,6 +266,7 @@
     } else {
       selectedTags = selectedTags.filter(t => t !== tag);
     }
+    triggerFiltersImmediate();
   }
 
   /**
@@ -226,6 +278,7 @@
     const tag = allTags.find(t => t.uuid === tagId);
     if (tag && !selectedTags.includes(tag.name)) {
       selectedTags = [...selectedTags, tag.name];
+      triggerFiltersImmediate();
     }
   }
 
@@ -238,6 +291,7 @@
     const tag = allTags.find(t => t.uuid === tagId);
     if (tag) {
       selectedTags = selectedTags.filter(t => t !== tag.name);
+      triggerFiltersImmediate();
     }
   }
 
@@ -253,6 +307,7 @@
     } else {
       selectedSpeakers = selectedSpeakers.filter(s => s !== speaker);
     }
+    triggerFiltersImmediate();
   }
 
   /**
@@ -266,6 +321,7 @@
       const speakerName = speaker.display_name || speaker.name;
       if (!selectedSpeakers.includes(speakerName)) {
         selectedSpeakers = [...selectedSpeakers, speakerName];
+        triggerFiltersImmediate();
       }
     }
   }
@@ -280,6 +336,7 @@
     if (speaker) {
       const speakerName = speaker.display_name || speaker.name;
       selectedSpeakers = selectedSpeakers.filter(s => s !== speakerName);
+      triggerFiltersImmediate();
     }
   }
 
@@ -297,6 +354,7 @@
     } else {
       dateRange = { ...dateRange, from: null };
     }
+    triggerFiltersImmediate();
   }
 
   /**
@@ -313,6 +371,7 @@
     } else {
       dateRange = { ...dateRange, to: null };
     }
+    triggerFiltersImmediate();
   }
 
   // Fetch media metadata - currently not used, reserved for future enhancement
@@ -345,6 +404,7 @@
     } else {
       selectedFileTypes = selectedFileTypes.filter(ft => ft !== fileType);
     }
+    triggerFiltersImmediate();
   }
 
   /**
@@ -359,6 +419,7 @@
     } else {
       selectedStatuses = selectedStatuses.filter(s => s !== status);
     }
+    triggerFiltersImmediate();
   }
 
   /**
@@ -368,6 +429,7 @@
   function handleMinDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     durationRange.min = value ? parseFloat(value) : null;
+    triggerFiltersDebounced();
   }
 
   /**
@@ -377,6 +439,7 @@
   function handleMaxDurationChange(event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     durationRange.max = value ? parseFloat(value) : null;
+    triggerFiltersDebounced();
   }
 
   /**
@@ -387,6 +450,7 @@
   function handleFileSizeChange(field: 'min' | 'max', event: Event & { currentTarget: HTMLInputElement }) {
     const value = event.currentTarget?.value;
     fileSizeRange[field] = value ? parseFloat(value) : null;
+    triggerFiltersDebounced();
   }
 
   /**
@@ -422,6 +486,9 @@
 
   // Reset filters
   function resetFilters() {
+    // Temporarily disable reactive watchers to prevent intermediate triggers
+    isInitialized = false;
+
     searchQuery = '';
     selectedTags = [];
     selectedSpeakers = [];
@@ -442,7 +509,23 @@
     minFileSizeInput = '';
     maxFileSizeInput = '';
 
+    // Sync prev values so watchers don't fire on re-enable
+    prevSearchQuery = '';
+    prevTranscriptSearch = '';
+    prevCollectionId = null;
+
+    // Clear any pending debounce
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
     dispatch('reset');
+
+    // Re-enable reactive watchers after the current tick
+    setTimeout(() => {
+      isInitialized = true;
+    }, 0);
   }
 
   // Public method to refresh collections
@@ -464,6 +547,14 @@
     if (dateRange.to instanceof Date) {
       toDate = dateRange.to.toISOString().split('T')[0];
     }
+
+    // Sync prev values and enable reactive watchers after mount
+    prevSearchQuery = searchQuery;
+    prevTranscriptSearch = transcriptSearch;
+    prevCollectionId = selectedCollectionId;
+    setTimeout(() => {
+      isInitialized = true;
+    }, 0);
   });
 </script>
 
@@ -471,11 +562,6 @@
   <div class="filter-header">
     <h2>{$t('filter.title')}</h2>
     <div class="header-buttons">
-      <button
-        class="apply-button-compact"
-        on:click={applyFilters}
-        title={$t('filter.applyTooltip')}
-      >{$t('filter.apply')}</button>
       <button
         class="reset-button"
         on:click={resetFilters}
@@ -766,29 +852,6 @@
     display: flex;
     gap: 0.5rem;
     align-items: center;
-  }
-
-  .apply-button-compact {
-    background-color: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(59, 130, 246, 0.2);
-  }
-
-  .apply-button-compact:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.25);
-  }
-
-  .apply-button-compact:active:not(:disabled) {
-    transform: translateY(0);
   }
 
   .reset-button {

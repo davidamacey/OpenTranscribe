@@ -286,7 +286,7 @@
 
       // If a collection is selected, fetch files from that collection
       if (selectedCollectionId !== null) {
-        const response = await axiosInstance.get(`/api/collections/${selectedCollectionId}/media`, { params });
+        const response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
         newFiles = response.data;
       } else {
         const response = await axiosInstance.get('/files', { params });
@@ -415,11 +415,11 @@
     dateRange = dates;
 
     // Handle advanced filters if provided
-    if (duration) durationRange = duration;
-    if (fileSize) fileSizeRange = fileSize;
-    if (fileTypes) selectedFileTypes = fileTypes;
-    if (statuses) selectedStatuses = statuses;
-    if (transcript) transcriptSearch = transcript;
+    if (duration !== undefined) durationRange = duration;
+    if (fileSize !== undefined) fileSizeRange = fileSize;
+    if (fileTypes !== undefined) selectedFileTypes = fileTypes;
+    if (statuses !== undefined) selectedStatuses = statuses;
+    if (transcript !== undefined) transcriptSearch = transcript;
 
     fetchFiles();
   }
@@ -904,13 +904,23 @@
         <div class="file-grid">
           {#each files as file (file.uuid)}
             <div
-              class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''}"
+              class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
               animate:flip={{ duration: 300 }}
               in:scale={{ duration: 300, start: 0.8 }}
               out:fade={{ duration: 250 }}
             >
                 {#if isSelecting}
-                  <label class="file-selector">
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                  <label
+                    class="file-selector"
+                    on:click|stopPropagation={(e) => {
+                      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+                      }
+                    }}
+                  >
                     <input
                       type="checkbox"
                       class="file-checkbox"
@@ -927,7 +937,14 @@
                   on:click={(e) => {
                     if (isSelecting) {
                       e.preventDefault();
-                      toggleFileSelection(file.uuid, e);
+                      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                        galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+                      } else {
+                        toggleFileSelection(file.uuid, e);
+                      }
+                    } else if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                      e.preventDefault();
+                      galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
                     } else {
                       e.preventDefault();
                       goto(`/files/${file.uuid}`);
@@ -2145,6 +2162,12 @@
 
   .loading-state.entered {
     opacity: 1;
+  }
+
+  /* Prevent text selection artifacts during shift+click */
+  .file-card.selecting-mode {
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   /* Performance optimizations */

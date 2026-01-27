@@ -48,7 +48,7 @@
   // Fetch all available collections
   async function fetchAllCollections() {
     try {
-      const response = await axiosInstance.get('/api/collections/');
+      const response = await axiosInstance.get('/collections');
 
       // Ensure all collections have valid IDs
       const validCollections = (response.data || []).filter(collection =>
@@ -88,7 +88,7 @@
 
       // Add file to collection
       const payload = { media_file_ids: [fileId] };
-      const addUrl = `/api/collections/${collectionId}/media`;
+      const addUrl = `/collections/${collectionId}/media`;
       const response = await axiosInstance.post(addUrl, payload);
 
       // Add collection to local list if not already present
@@ -136,7 +136,7 @@
 
       // Collection doesn't exist - create it
       const createPayload = { name: collectionName };
-      const createResponse = await axiosInstance.post('/api/collections/', createPayload);
+      const createResponse = await axiosInstance.post('/collections', createPayload);
       const newCollection = createResponse.data;
 
       if (!newCollection || typeof newCollection.uuid === 'undefined') {
@@ -151,7 +151,7 @@
 
       // Add current file to the new collection
       const addPayload = { media_file_ids: [fileId] };
-      await axiosInstance.post(`/api/collections/${newCollection.uuid}/media`, addPayload);
+      await axiosInstance.post(`/collections/${newCollection.uuid}/media`, addPayload);
 
       // Add to collections if it's not already present
       if (!collections.some(c => c.uuid === newCollection.uuid)) {
@@ -192,7 +192,7 @@
       }
 
       // Remove file from collection
-      const deleteUrl = `/api/collections/${collectionId}/media`;
+      const deleteUrl = `/collections/${collectionId}/media`;
       const payload = { media_file_ids: [fileId] };
       await axiosInstance.delete(deleteUrl, { data: payload });
 

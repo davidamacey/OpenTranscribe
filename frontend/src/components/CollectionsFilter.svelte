@@ -26,7 +26,7 @@
   export async function fetchCollections() {
     loading = true;
     try {
-      const response = await axiosInstance.get('/api/collections/');
+      const response = await axiosInstance.get('/collections');
       // Sort collections by media_count descending (most used first)
       collections = (response.data || []).sort((a: any, b: any) => {
         return (b.media_count || 0) - (a.media_count || 0);

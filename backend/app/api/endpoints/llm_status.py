@@ -89,7 +89,7 @@ async def get_llm_status(
         }
 
 
-@router.get("/llm/providers")
+@router.get("/providers")
 async def get_available_providers(
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
@@ -113,7 +113,7 @@ async def get_available_providers(
         raise HTTPException(status_code=500, detail=f"Error getting LLM providers: {str(e)}") from e
 
 
-@router.post("/llm/test-connection")
+@router.post("/test-connection")
 async def test_llm_connection(
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:

@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from typing import NamedTuple
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -123,7 +124,6 @@ router.include_router(url_processing_router, prefix="", tags=["url-processing"])
 router.include_router(summary_status_router, prefix="", tags=["summary"])
 
 
-@router.post("/", response_model=MediaFileSchema)
 @router.post("", response_model=MediaFileSchema)
 async def upload_media_file(
     file: UploadFile = File(...),
@@ -158,7 +158,6 @@ async def upload_media_file(
     return response
 
 
-@router.get("/", response_model=list[MediaFileSchema])
 @router.get("", response_model=list[MediaFileSchema])
 def list_media_files(
     search: Optional[str] = None,
@@ -234,9 +233,29 @@ def list_media_files(
     return formatted_files
 
 
+@router.get("/metadata-filters", response_model=dict)
+def get_metadata_filters_endpoint(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+):
+    """Get available metadata filters like formats, codecs, etc."""
+    return get_metadata_filters(db, int(current_user.id))
+
+
+# =============================================================================
+# PARAMETERIZED ROUTES: /{file_uuid}/...
+# =============================================================================
+# IMPORTANT: All routes with path parameters like /{file_uuid} MUST be defined
+# AFTER static routes like /metadata-filters. FastAPI matches routes in order,
+# so /{file_uuid} would incorrectly capture /metadata-filters as file_uuid.
+#
+# The UUID type annotation provides validation - requests with invalid UUIDs
+# (like "metadata-filters") will return 422 Unprocessable Entity instead of 404.
+# =============================================================================
+
+
 @router.get("/{file_uuid}", response_model=MediaFileDetail)
 def get_media_file(
-    file_uuid: str,
+    file_uuid: UUID,
     segment_limit: Optional[int] = Query(
         500,
         description="Maximum number of transcript segments to return. Use 0 for all segments.",
@@ -257,28 +276,28 @@ def get_media_file(
     """
     # segment_limit=0 means get all segments
     effective_limit = None if segment_limit == 0 else segment_limit
-    return get_media_file_detail(db, file_uuid, current_user, effective_limit, segment_offset)
+    return get_media_file_detail(db, str(file_uuid), current_user, effective_limit, segment_offset)
 
 
 @router.put("/{file_uuid}", response_model=MediaFileSchema)
 def update_media_file_endpoint(
-    file_uuid: str,
+    file_uuid: UUID,
     media_file_update: MediaFileUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Update a media file's metadata"""
-    return update_media_file(db, file_uuid, media_file_update, current_user)
+    return update_media_file(db, str(file_uuid), media_file_update, current_user)
 
 
 @router.delete("/{file_uuid}", status_code=204)
 def delete_media_file_endpoint(
-    file_uuid: str,
+    file_uuid: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Delete a media file and all associated data"""
-    delete_media_file(db, file_uuid, current_user)
+    delete_media_file(db, str(file_uuid), current_user)
     return None
 
 
@@ -574,14 +593,6 @@ async def get_thumbnail(file_uuid: str, db: Session = Depends(get_db)):
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
     return get_thumbnail_streaming_response(db_file)
-
-
-@router.get("/metadata-filters", response_model=dict)
-def get_metadata_filters_endpoint(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
-):
-    """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, int(current_user.id))
 
 
 @router.put("/{file_uuid}/transcript/segments/{segment_uuid}", response_model=TranscriptSegment)

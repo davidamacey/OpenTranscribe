@@ -481,8 +481,6 @@
   "fileStatus.viewDetailsTooltip": "Voir les métadonnées détaillées du fichier et les informations sur les tâches",
   "fileStatus.viewDetailsTooltipFull": "Voir les métadonnées détaillées du fichier et les informations sur les tâches",
   "filter.advancedFilters": "Filtres avancés",
-  "filter.apply": "Appliquer",
-  "filter.applyTooltip": "Appliquer tous les filtres sélectionnés pour mettre à jour la liste des fichiers",
   "filter.collections": "Collections",
   "filter.dateRange": "Plage de dates",
   "filter.duration": "Durée",

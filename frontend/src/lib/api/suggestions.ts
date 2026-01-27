@@ -28,7 +28,7 @@ export interface AISuggestions {
  */
 export async function getAISuggestions(fileId: string): Promise<AISuggestions | null> {
   try {
-    const response = await axiosInstance.get(`/api/files/${fileId}/suggestions`);
+    const response = await axiosInstance.get(`/files/${fileId}/suggestions`);
 
     if (!response.data) {
       return null;
@@ -75,7 +75,7 @@ export async function extractAISuggestions(
   fileId: string,
   forceRegenerate: boolean = false
 ): Promise<void> {
-  await axiosInstance.post(`/api/files/${fileId}/extract`, {
+  await axiosInstance.post(`/files/${fileId}/extract`, {
     force_regenerate: forceRegenerate,
   });
 }
@@ -84,5 +84,5 @@ export async function extractAISuggestions(
  * Dismiss AI suggestions for a file
  */
 export async function dismissAISuggestions(fileId: string): Promise<void> {
-  await axiosInstance.post(`/api/files/${fileId}/suggestions/dismiss`);
+  await axiosInstance.post(`/files/${fileId}/suggestions/dismiss`);
 }

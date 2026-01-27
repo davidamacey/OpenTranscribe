@@ -81,7 +81,7 @@ celery_app.conf.update(
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
         "check_tasks_health": {"queue": "utility"},
-        "update_gpu_stats": {"queue": "utility"},
+        "update_gpu_stats": {"queue": "gpu"},
         "startup_recovery": {"queue": "utility"},
         "recover_user_files": {"queue": "utility"},
         "periodic_health_check": {"queue": "utility"},
@@ -92,11 +92,6 @@ celery_app.conf.update(
             "task": "periodic_health_check",
             "schedule": crontab(minute="*/10"),  # Run every 10 minutes
             "options": {"queue": "utility"},
-        },
-        "update-gpu-stats": {
-            "task": "update_gpu_stats",
-            "schedule": 30.0,  # Run every 30 seconds
-            "options": {"queue": "gpu"},  # Run on GPU worker
         },
     },
 )

@@ -19,7 +19,8 @@ export type NotificationType =
   | 'file_created'
   | 'file_updated'
   | 'file_deleted'
-  | 'speaker_updated';
+  | 'speaker_updated'
+  | 'gpu_stats_update';
 
 // Notification interface
 export interface Notification {
@@ -202,6 +203,12 @@ function createWebSocketStore() {
             } else if (data.type === 'download_progress') {
               // Handle download progress messages specially
               handleDownloadProgress(data);
+              return;
+            } else if (data.type === 'gpu_stats_update') {
+              // Silent GPU stats update — dispatch event for SettingsModal
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('gpu-stats-updated', { detail: data.data }));
+              }
               return;
             }
 

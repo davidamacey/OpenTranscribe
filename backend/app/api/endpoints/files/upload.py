@@ -2,6 +2,7 @@ import contextlib
 import io
 import logging
 import os
+from pathlib import Path
 
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -72,8 +73,14 @@ def create_media_file_record(
         # Sanitize filename to prevent issues with special characters
         sanitized_filename = sanitize_filename(file.filename or "unknown")
 
+        # Extract original title from filename (without extension) for display
+        # This preserves characters like apostrophes that get sanitized in the filename
+        original_filename = file.filename or "unknown"
+        original_title = Path(original_filename).stem
+
         db_file = MediaFile(
             filename=sanitized_filename,
+            title=original_title,
             user_id=current_user.id,
             storage_path="",  # Will be updated after upload
             file_size=file_size,

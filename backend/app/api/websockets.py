@@ -88,9 +88,13 @@ async def redis_subscriber():
                     notification_data = json.loads(message["data"])
                     user_id = notification_data.get("user_id")
                     notification_type = notification_data.get("type")
+                    is_broadcast = notification_data.get("broadcast", False)
                     data = notification_data.get("data", {})
 
-                    if user_id and notification_type:
+                    if is_broadcast and notification_type:
+                        await manager.broadcast({"type": notification_type, "data": data})
+                        logger.debug(f"Broadcast notification: {notification_type}")
+                    elif user_id and notification_type:
                         await manager.send_personal_message(
                             user_id, {"type": notification_type, "data": data}
                         )

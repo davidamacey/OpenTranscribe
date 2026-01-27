@@ -713,8 +713,6 @@
   "upload.cancelUpload": "Cancel upload",
   "upload.removeFromList": "Remove from list",
   "filter.title": "Filters",
-  "filter.apply": "Apply",
-  "filter.applyTooltip": "Apply all selected filters to update the file list",
   "filter.reset": "Reset",
   "filter.resetTooltip": "Clear all filters and show all files",
   "filter.searchFiles": "Search Files",

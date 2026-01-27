@@ -20,7 +20,7 @@ async def check_duplicate_by_hash(
 ) -> Optional[str]:
     """
     Check if a file with the same hash exists in the database.
-    Only considers files that are not in ERROR, CANCELLED, or ORPHANED status.
+    Only considers files that are not in failed states and have actually been uploaded.
 
     Args:
         db_session: SQLAlchemy database session
@@ -30,6 +30,9 @@ async def check_duplicate_by_hash(
     Returns:
         The UUID of the duplicate file if found, None otherwise
     """
+    from sqlalchemy import and_
+    from sqlalchemy import or_
+
     from app.models.media import FileStatus
     from app.models.media import MediaFile
 
@@ -42,10 +45,24 @@ async def check_duplicate_by_hash(
     if user_id is not None:
         query = query.filter(MediaFile.user_id == user_id)
 
-    # Only consider files that are not in failed/error states
-    # This prevents failed uploads from blocking re-uploads of the same file
+    # Only consider files that:
+    # 1. Are not in failed/error states
+    # 2. Have actually been uploaded (have a storage_path) OR are actively processing
+    # This prevents failed/incomplete uploads from blocking re-uploads of the same file
     query = query.filter(
         MediaFile.status.notin_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED])
+    )
+
+    # Also exclude PENDING files that have no storage_path (incomplete uploads)
+    query = query.filter(
+        or_(
+            MediaFile.status != FileStatus.PENDING,
+            and_(
+                MediaFile.status == FileStatus.PENDING,
+                MediaFile.storage_path.isnot(None),
+                MediaFile.storage_path != "",
+            ),
+        )
     )
 
     duplicate = query.first()
@@ -58,7 +75,11 @@ async def check_duplicate_by_hash(
 
 async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) -> int:
     """
-    Clean up any failed (ERROR, CANCELLED, ORPHANED) files with the same hash.
+    Clean up any failed or incomplete files with the same hash.
+    This includes:
+    - ERROR, CANCELLED, ORPHANED status files
+    - PENDING files that have no storage_path (incomplete uploads)
+
     This allows users to re-upload files that previously failed.
 
     Args:
@@ -69,6 +90,9 @@ async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) ->
     Returns:
         Number of files cleaned up
     """
+    from sqlalchemy import and_
+    from sqlalchemy import or_
+
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.services.minio_service import delete_file
@@ -77,13 +101,24 @@ async def cleanup_failed_duplicates(db_session, file_hash: str, user_id: int) ->
     if file_hash and file_hash.startswith("0x"):
         file_hash = file_hash[2:]
 
-    # Find failed files with the same hash for this user
+    # Find failed files OR incomplete pending files with the same hash for this user
     failed_files = (
         db_session.query(MediaFile)
         .filter(
             MediaFile.file_hash == file_hash,
             MediaFile.user_id == user_id,
-            MediaFile.status.in_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]),
+            or_(
+                # Failed status files
+                MediaFile.status.in_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]),
+                # Incomplete PENDING files (no storage_path means upload never completed)
+                and_(
+                    MediaFile.status == FileStatus.PENDING,
+                    or_(
+                        MediaFile.storage_path.is_(None),
+                        MediaFile.storage_path == "",
+                    ),
+                ),
+            ),
         )
         .all()
     )

@@ -77,7 +77,7 @@ def create_comment_for_file_nested(
     return CommentSchema.model_validate(db_comment_reloaded)
 
 
-@router.get("/", response_model=list[CommentSchema])
+@router.get("", response_model=list[CommentSchema])
 def get_comments_for_file(
     media_file_uuid: str,
     db: Session = Depends(get_db),
@@ -102,7 +102,7 @@ def get_comments_for_file(
     return comments
 
 
-@router.post("/", response_model=CommentSchema)
+@router.post("", response_model=CommentSchema)
 def create_comment_query_param(
     comment: CommentCreate,
     db: Session = Depends(get_db),

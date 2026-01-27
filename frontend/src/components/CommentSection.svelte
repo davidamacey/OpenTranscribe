@@ -108,8 +108,8 @@
         // Try alternate endpoints as fallback
         if (error.response?.status === 404) {
           try {
-            // Try the legacy endpoint without leading slash as fallback
-            response = await axiosInstance.get(`files/${fileId}/comments`, { headers });
+            // Try the legacy endpoint as fallback
+            response = await axiosInstance.get(`/files/${fileId}/comments`, { headers });
           } catch (/** @type {any} */ legacyError) {
             try {
               // If that fails, try the query parameter approach as last resort
@@ -216,9 +216,9 @@
       // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
-        // The correct endpoint without leading slash (baseURL is '/api')
+        // The correct endpoint with leading slash (baseURL is '/api')
         // This will become /api/comments/files/{fileId}/comments
-        const endpoint = `comments/files/${fileId}/comments`;
+        const endpoint = `/comments/files/${fileId}/comments`;
 
         // The backend expects media_file_id in the payload even though it's in the URL path
         const commentPayload = {
@@ -248,20 +248,20 @@
         // Try alternate endpoints as fallback if we get a 404
         if (error.response?.status === 404) {
           try {
-            // Try the legacy endpoint approach without leading slash
+            // Try the legacy endpoint approach as fallback
             // Trying legacy endpoint for adding comment
             const legacyPayload = {
               text: newComment,
               timestamp: timestamp,
               media_file_id: fileId // Required by the CommentCreate schema
             };
-            response = await axiosInstance.post(`files/${fileId}/comments`, legacyPayload, { headers });
+            response = await axiosInstance.post(`/files/${fileId}/comments`, legacyPayload, { headers });
             // Successfully added comment using main endpoint
           } catch (/** @type {any} */ legacyError) {
             try {
               // Try the query parameter endpoint as last resort
               // Trying query parameter endpoint as last resort
-              response = await axiosInstance.post('comments', {
+              response = await axiosInstance.post('/comments', {
                 text: newComment,
                 timestamp,
                 media_file_id: fileId // Required by the CommentCreate schema
@@ -357,7 +357,7 @@
         // Request details for editing comment
       }
 
-      await axiosInstance.put(`comments/${commentId}`, {
+      await axiosInstance.put(`/comments/${commentId}`, {
         text: newText
       }, { headers });
 
@@ -464,7 +464,7 @@
         // Delete request details
       }
 
-      await axiosInstance.delete(`comments/${commentId}`, { headers });
+      await axiosInstance.delete(`/comments/${commentId}`, { headers });
       // Comment deleted successfully
 
       comments = comments.filter(c => c.uuid !== commentId);

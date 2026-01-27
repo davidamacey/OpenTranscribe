@@ -128,7 +128,12 @@ def _create_task_dict_from_media_file(file: MediaFile, current_user: User) -> di
     }
 
 
-@router.get("/", response_model=list[Task])
+# =============================================================================
+# STATIC AND NESTED ROUTES - Must come before single-param routes
+# =============================================================================
+
+
+@router.get("", response_model=list[Task])
 def list_tasks(
     status: str | None = None,  # Filter by task status
     task_type: str | None = None,  # Filter by task type
@@ -164,70 +169,6 @@ def list_tasks(
     except Exception as e:
         logger.error(f"Error in list_tasks: {e}")
         return []
-
-
-def _parse_task_id(task_id: str) -> int:
-    """Parse task ID to extract media file ID."""
-    if not task_id.startswith("task_"):
-        raise ValueError("Invalid task ID format")
-    try:
-        return int(task_id.split("_")[1])
-    except (ValueError, IndexError) as e:
-        raise ValueError("Invalid task ID format") from e
-
-
-def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> MediaFile:
-    """Get media file by ID with proper permission checking."""
-    if current_user.role == "admin":
-        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-    else:
-        media_file = (
-            db.query(MediaFile)
-            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-            .first()
-        )
-
-    if not media_file:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-
-    return media_file  # type: ignore[no-any-return]
-
-
-@router.get("/{task_id}", response_model=Task)
-def get_task(
-    task_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """
-    Get a specific task by its ID
-    """
-    try:
-        # Parse task ID and get file ID
-        try:
-            file_id = _parse_task_id(task_id)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
-            ) from e
-
-        # Get media file with permission checking
-        media_file = _get_media_file_by_id(db, file_id, current_user)
-
-        # Create task dictionary and convert to Task object
-        task_dict = _create_task_dict_from_media_file(media_file, current_user)
-        task_dict["id"] = task_id  # Ensure we use the original task_id
-
-        return Task(**task_dict)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_task: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
-        ) from e
 
 
 @router.get("/system/health", response_model=dict[str, Any])
@@ -383,6 +324,121 @@ async def recover_all_stuck_tasks(
         ) from e
 
 
+@router.post("/system/startup-recovery", response_model=dict[str, Any])
+async def trigger_startup_recovery(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Manually trigger startup recovery for files interrupted by system crashes.
+
+    This endpoint allows admins to manually run the startup recovery process
+    that would normally run automatically when the system starts.
+    """
+    try:
+        # Schedule startup recovery in background
+        async def run_recovery():
+            try:
+                from app.tasks.recovery import startup_recovery_task
+
+                result = startup_recovery_task.delay()
+                logger.info(f"Manual startup recovery triggered: {result.id}")
+            except Exception as e:
+                logger.error(f"Error in manual startup recovery: {e}")
+
+        background_tasks.add_task(run_recovery)
+
+        return {
+            "success": True,
+            "message": "Startup recovery task scheduled successfully",
+        }
+    except Exception as e:
+        logger.error(f"Error triggering startup recovery: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        ) from e
+
+
+@router.post("/system/recover-all-user-files", response_model=dict[str, Any])
+async def trigger_all_user_file_recovery(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Manually trigger file recovery for all users.
+
+    This is useful for system-wide recovery after major issues.
+    """
+    try:
+        # Schedule recovery for all users in background
+        async def run_all_user_recovery():
+            try:
+                from app.tasks.recovery import recover_user_files_task
+
+                result = recover_user_files_task.delay()  # No user_id means all users
+                logger.info(f"All user file recovery triggered: {result.id}")
+            except Exception as e:
+                logger.error(f"Error in all user file recovery: {e}")
+
+        background_tasks.add_task(run_all_user_recovery)
+
+        return {"success": True, "message": "File recovery scheduled for all users"}
+    except Exception as e:
+        logger.error(f"Error triggering all user file recovery: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        ) from e
+
+
+@router.post("/system/recover-user-files/{user_uuid}", response_model=dict[str, Any])
+async def trigger_user_file_recovery(
+    user_uuid: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Manually trigger file recovery for a specific user.
+
+    This is useful when a user reports stuck or missing files.
+    """
+    try:
+        # Verify the user exists using UUID helper
+        target_user = get_user_by_uuid(db, user_uuid)
+
+        # Schedule user file recovery in background using internal integer ID
+        user_id = target_user.id
+
+        async def run_user_recovery():
+            try:
+                from app.tasks.recovery import recover_user_files_task
+
+                result = recover_user_files_task.delay(user_id)
+                logger.info(f"User file recovery triggered for user {user_id}: {result.id}")
+            except Exception as e:
+                logger.error(f"Error in user file recovery: {e}")
+
+        background_tasks.add_task(run_user_recovery)
+
+        return {
+            "success": True,
+            "message": f"File recovery scheduled for user {target_user.email}",
+            "user_uuid": user_uuid,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering user file recovery: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        ) from e
+
+
 @router.post("/system/recover-task/{task_id}", response_model=dict[str, Any])
 async def recover_task(
     task_id: str,
@@ -475,6 +531,44 @@ async def fix_inconsistent_file(
         ) from e
 
 
+@router.post("/fix-inconsistent-files", response_model=dict[str, Any])
+async def fix_all_inconsistent_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """
+    Attempt to fix all media files with inconsistent state
+    """
+    try:
+        inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
+        if not inconsistent_files:
+            return {
+                "success": True,
+                "count": 0,
+                "total": 0,
+                "message": "No inconsistent files found",
+            }
+
+        fixed_count = 0
+        for file in inconsistent_files:
+            success = task_recovery_service.fix_inconsistent_media_file(db, file)
+            if success:
+                fixed_count += 1
+
+        return {
+            "success": True,
+            "count": fixed_count,
+            "total": len(inconsistent_files),
+            "message": f"Successfully fixed {fixed_count} of {len(inconsistent_files)} files",
+        }
+    except Exception as e:
+        logger.error(f"Error in fix_all_inconsistent_files: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        ) from e
+
+
 @router.post("/retry/{file_uuid}", response_model=dict[str, Any])
 async def retry_file_processing(
     file_uuid: str,
@@ -553,115 +647,69 @@ async def retry_file_processing(
         ) from e
 
 
-@router.post("/system/startup-recovery", response_model=dict[str, Any])
-async def trigger_startup_recovery(
-    background_tasks: BackgroundTasks,
+# =============================================================================
+# SINGLE-PARAM ROUTES - Must come last
+# =============================================================================
+
+
+def _parse_task_id(task_id: str) -> int:
+    """Parse task ID to extract media file ID."""
+    if not task_id.startswith("task_"):
+        raise ValueError("Invalid task ID format")
+    try:
+        return int(task_id.split("_")[1])
+    except (ValueError, IndexError) as e:
+        raise ValueError("Invalid task ID format") from e
+
+
+def _get_media_file_by_id(db: Session, file_id: int, current_user: User) -> MediaFile:
+    """Get media file by ID with proper permission checking."""
+    if current_user.role == "admin":
+        media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    else:
+        media_file = (
+            db.query(MediaFile)
+            .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
+            .first()
+        )
+
+    if not media_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    return media_file  # type: ignore[no-any-return]
+
+
+@router.get("/{task_id}", response_model=Task)
+def get_task(
+    task_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
-    Manually trigger startup recovery for files interrupted by system crashes.
-
-    This endpoint allows admins to manually run the startup recovery process
-    that would normally run automatically when the system starts.
+    Get a specific task by its ID
     """
     try:
-        # Schedule startup recovery in background
-        async def run_recovery():
-            try:
-                from app.tasks.recovery import startup_recovery_task
+        # Parse task ID and get file ID
+        try:
+            file_id = _parse_task_id(task_id)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid task ID format"
+            ) from e
 
-                result = startup_recovery_task.delay()
-                logger.info(f"Manual startup recovery triggered: {result.id}")
-            except Exception as e:
-                logger.error(f"Error in manual startup recovery: {e}")
+        # Get media file with permission checking
+        media_file = _get_media_file_by_id(db, file_id, current_user)
 
-        background_tasks.add_task(run_recovery)
+        # Create task dictionary and convert to Task object
+        task_dict = _create_task_dict_from_media_file(media_file, current_user)
+        task_dict["id"] = task_id  # Ensure we use the original task_id
 
-        return {
-            "success": True,
-            "message": "Startup recovery task scheduled successfully",
-        }
-    except Exception as e:
-        logger.error(f"Error triggering startup recovery: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
-        ) from e
+        return Task(**task_dict)
 
-
-@router.post("/system/recover-user-files/{user_uuid}", response_model=dict[str, Any])
-async def trigger_user_file_recovery(
-    user_uuid: str,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
-):
-    """
-    Manually trigger file recovery for a specific user.
-
-    This is useful when a user reports stuck or missing files.
-    """
-    try:
-        # Verify the user exists using UUID helper
-        target_user = get_user_by_uuid(db, user_uuid)
-
-        # Schedule user file recovery in background using internal integer ID
-        user_id = target_user.id
-
-        async def run_user_recovery():
-            try:
-                from app.tasks.recovery import recover_user_files_task
-
-                result = recover_user_files_task.delay(user_id)
-                logger.info(f"User file recovery triggered for user {user_id}: {result.id}")
-            except Exception as e:
-                logger.error(f"Error in user file recovery: {e}")
-
-        background_tasks.add_task(run_user_recovery)
-
-        return {
-            "success": True,
-            "message": f"File recovery scheduled for user {target_user.email}",
-            "user_uuid": user_uuid,
-        }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering user file recovery: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}",
-        ) from e
-
-
-@router.post("/system/recover-all-user-files", response_model=dict[str, Any])
-async def trigger_all_user_file_recovery(
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
-):
-    """
-    Manually trigger file recovery for all users.
-
-    This is useful for system-wide recovery after major issues.
-    """
-    try:
-        # Schedule recovery for all users in background
-        async def run_all_user_recovery():
-            try:
-                from app.tasks.recovery import recover_user_files_task
-
-                result = recover_user_files_task.delay()  # No user_id means all users
-                logger.info(f"All user file recovery triggered: {result.id}")
-            except Exception as e:
-                logger.error(f"Error in all user file recovery: {e}")
-
-        background_tasks.add_task(run_all_user_recovery)
-
-        return {"success": True, "message": "File recovery scheduled for all users"}
-    except Exception as e:
-        logger.error(f"Error triggering all user file recovery: {e}")
+        logger.error(f"Error in get_task: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}",

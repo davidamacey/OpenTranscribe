@@ -154,7 +154,7 @@
     }
 
     try {
-      const response = await axiosInstance.get(`/api/files/${fileId}`);
+      const response = await axiosInstance.get(`/files/${fileId}`);
 
       if (response.data && typeof response.data === 'object' && file) {
         // Update all transcript and processing-related fields while preserving UI state flags
@@ -201,7 +201,7 @@
       isLoading = true;
       errorMessage = '';
 
-      const response = await axiosInstance.get(`/api/files/${targetFileId}`);
+      const response = await axiosInstance.get(`/files/${targetFileId}`);
 
       if (response.data && typeof response.data === 'object') {
         file = response.data;
@@ -244,7 +244,7 @@
       const currentCount = file?.transcript_segments?.length || 0;
       const nextOffset = currentCount;
 
-      const response = await axiosInstance.get(`/api/files/${fileId}`, {
+      const response = await axiosInstance.get(`/files/${fileId}`, {
         params: {
           segment_limit: segmentLimit,
           segment_offset: nextOffset
@@ -351,7 +351,7 @@
     // Load cross-media data for each labeled speaker
     for (const speaker of speakersNeedingCrossMedia) {
       try {
-        const response = await axiosInstance.get(`/api/speakers/${speaker.uuid}/cross-media`);
+        const response = await axiosInstance.get(`/speakers/${speaker.uuid}/cross-media`);
 
         // Update the speaker's cross_video_matches with actual file appearances
         speaker.cross_video_matches = response.data || [];
@@ -380,7 +380,7 @@
 
     try {
       // Load speakers from the backend API
-      const response = await axiosInstance.get(`/api/speakers/`, {
+      const response = await axiosInstance.get(`/speakers`, {
         params: { file_uuid: file.uuid }  // Use file_uuid parameter (file.uuid contains UUID)
       });
 
@@ -574,7 +574,7 @@
 
     try {
       // Silently refresh file data without showing loading state
-      const response = await axiosInstance.get(`/api/files/${file.uuid}`);
+      const response = await axiosInstance.get(`/files/${file.uuid}`);
 
       if (response.data && typeof response.data === 'object') {
         // Update file data (includes analytics and transcript segments)
@@ -617,7 +617,7 @@
 
     try {
       // Silently refresh file data to get updated analytics
-      const response = await axiosInstance.get(`/api/files/${file.uuid}`);
+      const response = await axiosInstance.get(`/files/${file.uuid}`);
 
       if (response.data && typeof response.data === 'object') {
         // Update analytics from refreshed response
@@ -798,7 +798,7 @@
           payload.profile_action = action;
         }
 
-        await axiosInstance.put(`/api/speakers/${speaker.uuid}`, payload);
+        await axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
 
         // Show success feedback with appropriate message
         const successMessage = action === 'update_profile'
@@ -875,7 +875,7 @@
       };
 
       const segmentUuid = segment.uuid;
-      const response = await axiosInstance.put(`/api/files/${fileId}/transcript/segments/${segmentUuid}`, segmentUpdate);
+      const response = await axiosInstance.put(`/files/${fileId}/transcript/segments/${segmentUuid}`, segmentUpdate);
 
       if (response.data) {
         // Update the transcript store FIRST for reactivity
@@ -913,7 +913,7 @@
 
             // Clear cached processed videos so downloads will use updated transcript
             try {
-              await axiosInstance.delete(`/api/files/${file.uuid}/cache`);
+              await axiosInstance.delete(`/files/${file.uuid}/cache`);
             } catch (error) {
               console.warn('Could not clear video cache:', error);
             }
@@ -960,7 +960,7 @@
 
     try {
       savingTranscript = true;
-      const response = await axiosInstance.put(`/api/files/${fileId}/transcript`, {
+      const response = await axiosInstance.put(`/files/${fileId}/transcript`, {
         transcript: editedTranscript
       });
 
@@ -1520,7 +1520,7 @@
         payload.profile_action = decision.decision;
       }
 
-      return axiosInstance.put(`/api/speakers/${speaker.uuid}`, payload);
+      return axiosInstance.put(`/speakers/${speaker.uuid}`, payload);
     });
 
     await Promise.all(updatePromises);
@@ -1581,7 +1581,7 @@
       });
     }
 
-    axiosInstance.delete(`/api/files/${file.uuid}/cache`).catch(error => {
+    axiosInstance.delete(`/files/${file.uuid}/cache`).catch(error => {
       console.warn('Could not clear video cache:', error);
     });
 
@@ -1702,7 +1702,7 @@
         file = file; // Trigger reactivity
       }
 
-      await axiosInstance.post(`/api/files/${fileId}/reprocess`);
+      await axiosInstance.post(`/files/${fileId}/reprocess`);
 
       // Don't immediately fetch - let WebSocket notifications handle updates
       // The file is now pending/processing and notifications will update the UI
@@ -1757,7 +1757,7 @@
         requestBody.num_speakers = reprocessNumSpeakers;
       }
 
-      await axiosInstance.post(`/api/files/${file.uuid}/reprocess`, Object.keys(requestBody).length > 0 ? requestBody : undefined);
+      await axiosInstance.post(`/files/${file.uuid}/reprocess`, Object.keys(requestBody).length > 0 ? requestBody : undefined);
 
       // Reset settings after starting
       showReprocessSettings = false;
@@ -1797,7 +1797,7 @@
     try {
       generatingSummary = true;
 
-      await axiosInstance.post(`/api/files/${file.uuid}/summarize`);
+      await axiosInstance.post(`/files/${file.uuid}/summarize`);
 
       // Don't refresh page - let WebSocket notifications handle status updates
       // This preserves user's editing state
@@ -1820,7 +1820,7 @@
     if (!file?.uuid) return;
 
     try {
-      const response = await axiosInstance.get(`/api/files/${file.uuid}/summary`);
+      const response = await axiosInstance.get(`/files/${file.uuid}/summary`);
       summaryData = response.data.summary_data;
     } catch (error: any) {
       console.error('Error loading summary:', error);
@@ -2673,7 +2673,7 @@
 
       // 4. Trigger the API call for reprocessing
       try {
-        await axiosInstance.post(`/api/files/${file.uuid}/summarize`, {
+        await axiosInstance.post(`/files/${file.uuid}/summarize`, {
           force_regenerate: true
         });
 

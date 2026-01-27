@@ -490,8 +490,19 @@ def _process_file_in_temp_dir(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.25)
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.25, "Preparing audio for transcription")
-    audio_file_path = prepare_audio_for_transcription(temp_file_path, ctx.content_type, temp_dir)
+    # Create progress callback for audio extraction phase (25% to 38% of overall progress)
+    def audio_extraction_progress_callback(stage_progress: float, message: str) -> None:
+        # Map 0-1 stage progress to 0.25-0.38 overall progress
+        overall_progress = 0.25 + (stage_progress * 0.13)
+        send_progress_notification(ctx.user_id, ctx.file_id, overall_progress, message)
+
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.25, "Starting audio preparation")
+    audio_file_path = prepare_audio_for_transcription(
+        temp_file_path,
+        ctx.content_type,
+        temp_dir,
+        progress_callback=audio_extraction_progress_callback,
+    )
 
     # Run WhisperX pipeline
     result = _run_whisperx_pipeline(ctx, audio_file_path, min_speakers, max_speakers, num_speakers)

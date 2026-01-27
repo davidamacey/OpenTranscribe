@@ -56,7 +56,7 @@
       const token = localStorage.getItem('token');
 
       // Use consistent URL format
-      const response = await axiosInstance.get('/tags/');
+      const response = await axiosInstance.get('/tags');
 
       // Ensure all tags have valid IDs before adding them to the allTags array
       const validTags = (response.data || []).filter(tag =>
@@ -147,7 +147,7 @@
       // Step 1: Create the tag with proper payload format
       const createPayload = { name: newTagInput.trim() };
 
-      const createResponse = await axiosInstance.post('/tags/', createPayload);
+      const createResponse = await axiosInstance.post('/tags', createPayload);
       const newTag = createResponse.data;
 
       // Ensure the tag has a valid UUID and name to prevent 'undefined' key errors

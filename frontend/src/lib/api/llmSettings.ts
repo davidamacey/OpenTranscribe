@@ -120,7 +120,7 @@ export class LLMSettingsApi {
    * Get all user's LLM configurations
    */
   static async getUserConfigurations(): Promise<UserLLMConfigurationsList> {
-    const response = await axiosInstance.get(`${this.BASE_PATH}/`);
+    const response = await axiosInstance.get(`${this.BASE_PATH}`);
     return response.data;
   }
 
@@ -128,7 +128,7 @@ export class LLMSettingsApi {
    * Create new LLM configuration for the current user
    */
   static async createSettings(settings: UserLLMSettingsCreate): Promise<UserLLMSettings> {
-    const response = await axiosInstance.post(`${this.BASE_PATH}/`, settings);
+    const response = await axiosInstance.post(`${this.BASE_PATH}`, settings);
     return response.data;
   }
 

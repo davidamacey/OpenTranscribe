@@ -5,6 +5,7 @@ export interface GalleryState {
   activeTab: 'gallery' | 'status';
   isSelecting: boolean;
   selectedFiles: Set<string>; // UUIDs
+  lastSelectedId: string | null; // For shift+click range selection
   files: any[];
   showFilters: boolean;
 }
@@ -14,6 +15,7 @@ export interface GalleryActions {
   toggleSelection: () => void;
   setSelecting: (selecting: boolean) => void;
   toggleFileSelection: (fileId: string) => void; // UUID
+  handleMultiSelect: (fileId: string, ctrlKey: boolean, shiftKey: boolean) => void;
   selectAllFiles: () => void;
   clearSelection: () => void;
   setFiles: (files: any[]) => void;
@@ -29,6 +31,7 @@ const initialState: GalleryState = {
   activeTab: 'gallery',
   isSelecting: false,
   selectedFiles: new Set<string>(), // UUIDs
+  lastSelectedId: null,
   files: [],
   showFilters: true,
 };
@@ -55,6 +58,7 @@ function createGalleryStore() {
         ...state,
         isSelecting: selecting,
         selectedFiles: selecting ? state.selectedFiles : new Set<string>(),
+        lastSelectedId: selecting ? state.lastSelectedId : null,
       }));
     },
 
@@ -63,6 +67,7 @@ function createGalleryStore() {
         ...state,
         isSelecting: !state.isSelecting,
         selectedFiles: !state.isSelecting ? state.selectedFiles : new Set<string>(),
+        lastSelectedId: !state.isSelecting ? state.lastSelectedId : null,
       }));
     },
 
@@ -74,7 +79,50 @@ function createGalleryStore() {
         } else {
           newSelected.add(fileId);
         }
-        return { ...state, selectedFiles: newSelected };
+        return { ...state, selectedFiles: newSelected, lastSelectedId: fileId };
+      });
+    },
+
+    handleMultiSelect: (fileId: string, ctrlKey: boolean, shiftKey: boolean) => {
+      update((state) => {
+        const newSelected = new Set(state.selectedFiles);
+
+        if (shiftKey && state.lastSelectedId) {
+          // Range select: find indices of anchor and target in files array
+          const fileIds = state.files.map((f) => f.uuid);
+          const anchorIdx = fileIds.indexOf(state.lastSelectedId);
+          const targetIdx = fileIds.indexOf(fileId);
+
+          if (anchorIdx !== -1 && targetIdx !== -1) {
+            const start = Math.min(anchorIdx, targetIdx);
+            const end = Math.max(anchorIdx, targetIdx);
+            for (let i = start; i <= end; i++) {
+              newSelected.add(fileIds[i]);
+            }
+          } else {
+            // Fallback: just toggle the item
+            if (newSelected.has(fileId)) {
+              newSelected.delete(fileId);
+            } else {
+              newSelected.add(fileId);
+            }
+          }
+        } else {
+          // Ctrl/Cmd+click or shift without anchor: toggle individual
+          if (newSelected.has(fileId)) {
+            newSelected.delete(fileId);
+          } else {
+            newSelected.add(fileId);
+          }
+        }
+
+        const isSelecting = newSelected.size > 0;
+        return {
+          ...state,
+          selectedFiles: newSelected,
+          lastSelectedId: fileId,
+          isSelecting,
+        };
       });
     },
 
@@ -93,6 +141,7 @@ function createGalleryStore() {
         ...state,
         isSelecting: false,
         selectedFiles: new Set<string>(),
+        lastSelectedId: null,
       }));
     },
 

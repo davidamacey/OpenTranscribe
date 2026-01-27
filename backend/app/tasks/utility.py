@@ -5,6 +5,7 @@ This module contains general utility tasks. Recovery-specific tasks
 have been moved to app.tasks.recovery for better organization.
 """
 
+import contextlib
 import json
 import logging
 
@@ -160,6 +161,31 @@ def update_gpu_stats(self):
             60,  # Expire after 60 seconds
             json.dumps(gpu_stats),
         )
+
+        # Broadcast to all connected WebSocket clients
+        try:
+            import redis as sync_redis
+
+            from app.core.config import settings
+
+            broadcast_client = sync_redis.from_url(settings.REDIS_URL)
+            broadcast_client.publish(
+                "websocket_notifications",
+                json.dumps(
+                    {
+                        "type": "gpu_stats_update",
+                        "broadcast": True,
+                        "data": gpu_stats,
+                    }
+                ),
+            )
+            logger.debug("Broadcast GPU stats update via WebSocket")
+        except Exception as broadcast_err:
+            logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}")
+
+        # Clear debounce lock (best-effort, non-critical)
+        with contextlib.suppress(Exception):  # noqa: S110
+            redis_client.delete("gpu_stats_pending")
 
         logger.debug(f"Updated GPU stats in Redis: {gpu_stats}")
         return gpu_stats
