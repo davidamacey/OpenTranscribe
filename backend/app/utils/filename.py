@@ -50,8 +50,8 @@ def sanitize_filename(filename: str, max_length: int = 255) -> str:
     extension = "".join(char for char in extension if ord(char) < 128)
 
     # Replace problematic characters with underscores
-    # Keep alphanumeric, hyphens, underscores, spaces, and dots
-    name = re.sub(r"[^\w\s\-.]", "_", name)
+    # Keep alphanumeric, hyphens, underscores, spaces, dots, and apostrophes
+    name = re.sub(r"[^\w\s\-.']", "_", name)
 
     # Replace multiple consecutive spaces/underscores with single ones
     name = re.sub(r"\s+", " ", name)

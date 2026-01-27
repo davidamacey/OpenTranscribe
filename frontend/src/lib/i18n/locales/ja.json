@@ -481,8 +481,6 @@
   "fileStatus.viewDetailsTooltip": "ファイルのメタデータとタスク情報の詳細を表示",
   "fileStatus.viewDetailsTooltipFull": "ファイルのメタデータとタスク情報の詳細を表示",
   "filter.advancedFilters": "詳細フィルター",
-  "filter.apply": "適用",
-  "filter.applyTooltip": "選択したすべてのフィルターを適用してファイルリストを更新",
   "filter.collections": "コレクション",
   "filter.dateRange": "日付範囲",
   "filter.duration": "再生時間",

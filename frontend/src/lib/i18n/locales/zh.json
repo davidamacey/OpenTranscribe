@@ -481,8 +481,6 @@
   "fileStatus.viewDetailsTooltip": "查看详细的文件元数据和任务信息",
   "fileStatus.viewDetailsTooltipFull": "查看详细的文件元数据和任务信息",
   "filter.advancedFilters": "高级筛选",
-  "filter.apply": "应用",
-  "filter.applyTooltip": "应用所有选定的筛选条件以更新文件列表",
   "filter.collections": "收藏集",
   "filter.dateRange": "日期范围",
   "filter.duration": "时长",

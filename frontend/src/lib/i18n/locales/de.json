@@ -481,8 +481,6 @@
   "fileStatus.viewDetailsTooltip": "Detaillierte Dateimetadaten und Aufgabeninformationen anzeigen",
   "fileStatus.viewDetailsTooltipFull": "Detaillierte Dateimetadaten und Aufgabeninformationen anzeigen",
   "filter.advancedFilters": "Erweiterte Filter",
-  "filter.apply": "Anwenden",
-  "filter.applyTooltip": "Alle ausgewählten Filter anwenden, um die Dateiliste zu aktualisieren",
   "filter.collections": "Sammlungen",
   "filter.dateRange": "Datumsbereich",
   "filter.duration": "Dauer",
