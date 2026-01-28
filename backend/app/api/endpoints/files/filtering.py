@@ -3,6 +3,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy import Float
 from sqlalchemy import Integer
+from sqlalchemy import String
 from sqlalchemy import cast
 from sqlalchemy import func
 from sqlalchemy.orm import Query
@@ -253,18 +254,22 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         Dictionary of available filter options
     """
     # Query for unique formats
+    format_text = cast(MediaFile.metadata_important["format"], String)
     formats_query = (
-        db.query(MediaFile.metadata_important["format"].astext.distinct())
+        db.query(format_text.distinct())
         .filter(MediaFile.user_id == user_id)
-        .filter(MediaFile.metadata_important["format"].astext != "null")
+        .filter(format_text != "null")
+        .filter(format_text.isnot(None))
     )
     formats = [fmt[0] for fmt in formats_query.all() if fmt[0]]
 
     # Query for unique codecs
+    codec_text = cast(MediaFile.metadata_important["codec"], String)
     codecs_query = (
-        db.query(MediaFile.metadata_important["codec"].astext.distinct())
+        db.query(codec_text.distinct())
         .filter(MediaFile.user_id == user_id)
-        .filter(MediaFile.metadata_important["codec"].astext != "null")
+        .filter(codec_text != "null")
+        .filter(codec_text.isnot(None))
     )
     codecs = [codec[0] for codec in codecs_query.all() if codec[0]]
 
@@ -285,21 +290,27 @@ def get_metadata_filters(db: Session, user_id: int) -> dict:
         max_duration = duration_range[1] if duration_range[1] is not None else 0.0
 
     # Get resolution ranges
+    width_text = cast(MediaFile.metadata_important["width"], String)
     width_range = (
         db.query(
-            func.min(cast(MediaFile.metadata_important["width"].astext, Integer)),
-            func.max(cast(MediaFile.metadata_important["width"].astext, Integer)),
+            func.min(cast(width_text, Integer)),
+            func.max(cast(width_text, Integer)),
         )
         .filter(MediaFile.user_id == user_id)
+        .filter(width_text.isnot(None))
+        .filter(width_text != "null")
         .first()
     )
 
+    height_text = cast(MediaFile.metadata_important["height"], String)
     height_range = (
         db.query(
-            func.min(cast(MediaFile.metadata_important["height"].astext, Integer)),
-            func.max(cast(MediaFile.metadata_important["height"].astext, Integer)),
+            func.min(cast(height_text, Integer)),
+            func.max(cast(height_text, Integer)),
         )
         .filter(MediaFile.user_id == user_id)
+        .filter(height_text.isnot(None))
+        .filter(height_text != "null")
         .first()
     )
 

@@ -95,8 +95,10 @@ services:
     container_name: opentranscribe-backend
     restart: always
     env_file: .env
-    # Backend handles API requests only - no AI models needed
-    # AI processing happens in celery-worker service
+    # Backend handles API requests only - except the search embedding model
+    # which is loaded for query-time vector search. AI processing in celery-worker.
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     ports:
       - "${BACKEND_PORT:-5174}:8080"
     environment:
@@ -232,6 +234,39 @@ services:
     restart: always
     env_file: .env
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=4 --max-tasks-per-child=50
+    environment:
+      # Internal Docker network settings (same as backend)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - TEMP_DIR=/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - postgres
+      - redis
+      - minio
+      - opensearch
+
+  celery-embedding-worker:
+    container_name: opentranscribe-celery-embedding-worker
+    restart: always
+    env_file: .env
+    # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
+    # Same pattern as GPU worker - sequential processing, model stays warm.
+    # High max-tasks-per-child avoids model reload overhead.
+    command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500
+    volumes:
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres

@@ -238,9 +238,18 @@ class Settings(BaseSettings):
     SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
     SEARCH_EMBEDDING_MODEL: str = os.getenv("SEARCH_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     SEARCH_EMBEDDING_DIMENSION: int = int(os.getenv("SEARCH_EMBEDDING_DIMENSION", "384"))
+    SEARCH_EMBEDDING_DEVICE: str = os.getenv("SEARCH_EMBEDDING_DEVICE", "cpu")
     SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "60"))
     SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "100"))
-    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.005"))
+    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
+    SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
+        os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.015")
+    )
+    # Intra-semantic suppression: filter semantic-only results whose score falls
+    # below this fraction of the semantic score range. 0.5 = keep top half.
+    SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
+        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.5")
+    )
 
     # Celery settings
     CELERY_BROKER_URL: str = REDIS_URL

@@ -17,7 +17,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod
     volumes:
-      - ./backend:/app  # Mount source code for development (no AI models needed)
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload  # Enable hot reload
 
   celery-worker:
@@ -57,6 +58,15 @@ services:
       dockerfile: Dockerfile.prod
     volumes:
       - ./backend:/app  # Mount source code for development
+
+  celery-embedding-worker:
+    image: opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app  # Mount source code for development
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
 
   celery-beat:
     image: opentranscribe-backend:latest

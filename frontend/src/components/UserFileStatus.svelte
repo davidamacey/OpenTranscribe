@@ -168,7 +168,7 @@
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
       selectedFile = fileId;
-      // Disable body scrolling when modal opens
+      // Disable scrolling when modal opens
       document.body.style.overflow = 'hidden';
     } catch (err: any) {
       console.error('Error fetching detailed status:', err);
@@ -179,7 +179,7 @@
   function closeModal() {
     detailedStatus = null;
     selectedFile = null;
-    // Re-enable body scrolling when modal closes
+    // Re-enable scrolling when modal closes
     document.body.style.overflow = '';
   }
 
@@ -306,10 +306,8 @@
     if (unsubscribeWebSocket) {
       unsubscribeWebSocket();
     }
-    // Ensure body scrolling is restored if component is destroyed while modal is open
-    if (document.body.style.overflow === 'hidden') {
-      document.body.style.overflow = '';
-    }
+    // Ensure scrolling is restored if component is destroyed while modal is open
+    document.body.style.overflow = '';
   });
 </script>
 
@@ -508,6 +506,7 @@
           <option value="all">{$t('fileStatus.allTypes')}</option>
           <option value="transcription">{$t('fileStatus.transcription')}</option>
           <option value="summarization">{$t('fileStatus.summarization')}</option>
+          <option value="search_indexing">{$t('search.settingsTitle')}</option>
         </select>
 
         <select bind:value={taskAgeFilter} class="compact-filter-select">
@@ -563,100 +562,98 @@
           <p>{taskFilter !== 'all' || taskTypeFilter !== 'all' ? $t('fileStatus.noTasksFilters') : $t('fileStatus.noTasks')}</p>
         </div>
       {:else}
-        <div class="tasks-grid">
-          {#each filteredTasks as task (task.id)}
-            <div class="task-card">
-              <div class="task-header">
-                <div class="task-type">
-                  {#if task.task_type === 'transcription'}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                      <line x1="12" y1="19" x2="12" y2="23"></line>
-                      <line x1="8" y1="23" x2="16" y2="23"></line>
-                    </svg>
-                    {$t('fileStatus.transcription')}
-                  {:else}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="8" y1="6" x2="21" y2="6"></line>
-                      <line x1="8" y1="12" x2="21" y2="12"></line>
-                      <line x1="8" y1="18" x2="21" y2="18"></line>
-                      <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                    </svg>
-                    {$t('fileStatus.summarization')}
-                  {/if}
-                </div>
-                <div class="task-status {task.status_badge_class || 'status-unknown'}">
-                  {#if task.status === 'pending'}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="12" y1="2" x2="12" y2="6"></line>
-                      <line x1="12" y1="18" x2="12" y2="22"></line>
-                      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                      <line x1="2" y1="12" x2="6" y2="12"></line>
-                      <line x1="18" y1="12" x2="22" y2="12"></line>
-                      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                    </svg>
-                    {$t('common.pending')}
-                  {:else if task.status === 'in_progress'}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    {$t('fileStatus.inProgress')}
-                    <span class="task-progress">{Math.round(task.progress * 100)}%</span>
-                  {:else if task.status === 'completed'}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                    </svg>
-                    {$t('common.completed')}
-                  {:else if task.status === 'failed'}
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="15" y1="9" x2="9" y2="15"></line>
-                      <line x1="9" y1="9" x2="15" y2="15"></line>
-                    </svg>
-                    {$t('fileStatus.failed')}
-                  {/if}
-
-                  {#if task.media_file}
-                    <button
-                      class="info-button small"
-                      on:click={() => fetchDetailedStatus(task.media_file.uuid)}
-                      title={$t('fileStatus.viewDetailsTooltip')}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                      </svg>
-                    </button>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="task-info">
-                {#if task.media_file}
-                  <div class="task-file">{task.media_file.filename}</div>
-                {/if}
-
-                {#if task.error_message}
-                  <div class="error-details">
-                    <span class="info-label">{$t('fileStatus.error')}</span>
-                    <div class="error-message">{task.error_message}</div>
-                  </div>
-                {/if}
-              </div>
-
-              {#if task.status === 'in_progress'}
-                <div class="progress-bar-container">
-                  <div class="progress-bar" style="width: {task.progress * 100}%"></div>
-                </div>
-              {/if}
-            </div>
-          {/each}
+        <div class="tasks-table-wrapper">
+          <table class="tasks-table">
+            <thead>
+              <tr>
+                <th>{$t('fileStatus.taskType')}</th>
+                <th>{$t('fileStatus.fileName')}</th>
+                <th>{$t('common.status')}</th>
+                <th class="col-actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each filteredTasks as task (task.id)}
+                <tr class="task-row">
+                  <td>
+                    <div class="task-type-cell">
+                      {#if task.task_type === 'transcription'}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                          <line x1="12" y1="19" x2="12" y2="23"></line>
+                          <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                        {$t('fileStatus.transcription')}
+                      {:else if task.task_type === 'search_indexing'}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        {$t('search.settingsTitle')}
+                      {:else}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="8" y1="6" x2="21" y2="6"></line>
+                          <line x1="8" y1="12" x2="21" y2="12"></line>
+                          <line x1="8" y1="18" x2="21" y2="18"></line>
+                          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                        </svg>
+                        {$t('fileStatus.summarization')}
+                      {/if}
+                    </div>
+                  </td>
+                  <td class="task-file-cell">
+                    {#if task.media_file}
+                      <span class="task-filename">{task.media_file.filename}</span>
+                    {:else}
+                      <span class="task-filename muted">—</span>
+                    {/if}
+                    {#if task.error_message}
+                      <span class="task-error-inline" title={task.error_message}>{task.error_message}</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <div class="task-status-cell">
+                      <span class="status-badge {task.status === 'completed' ? 'status-completed' : task.status === 'in_progress' ? 'status-processing' : task.status === 'pending' ? 'status-pending' : task.status === 'failed' ? 'status-error' : 'status-unknown'}">
+                        {#if task.status === 'pending'}
+                          {$t('common.pending')}
+                        {:else if task.status === 'in_progress'}
+                          {$t('fileStatus.inProgress')}
+                        {:else if task.status === 'completed'}
+                          {$t('common.completed')}
+                        {:else if task.status === 'failed'}
+                          {$t('fileStatus.failed')}
+                        {:else}
+                          {task.status}
+                        {/if}
+                      </span>
+                      {#if task.status === 'in_progress'}
+                        <div class="progress-bar-container">
+                          <div class="progress-bar" style="width: {task.progress * 100}%"></div>
+                        </div>
+                        <span class="task-progress-text">{Math.round(task.progress * 100)}%</span>
+                      {/if}
+                    </div>
+                  </td>
+                  <td class="task-actions-cell">
+                    {#if task.media_file}
+                      <button
+                        class="info-button small"
+                        on:click={() => fetchDetailedStatus(task.media_file.uuid)}
+                        title={$t('fileStatus.viewDetailsTooltip')}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="16" x2="12" y2="12"></line>
+                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                      </button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         </div>
       {/if}
     </div>
@@ -815,6 +812,8 @@
     margin: 0 auto;
     padding: 1rem;
     color: var(--text-color);
+    height: calc(100vh - 60px);
+    overflow-y: auto;
   }
 
   .header {
@@ -913,7 +912,7 @@
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 0.75rem;
-    margin: 0 auto 1.5rem auto;
+    margin: 0 auto 0.75rem auto;
     max-width: 700px;
   }
 
@@ -1126,7 +1125,7 @@
 
   .no-problems {
     text-align: center;
-    padding: 2rem;
+    padding: 0.75rem;
     background: var(--success-background);
     border: 1px solid var(--success-border);
     border-radius: 8px;
@@ -1140,12 +1139,12 @@
   }
 
   .recent-files {
-    margin-top: 2rem;
+    margin-top: 1rem;
   }
 
   .recent-files h3 {
     color: var(--text-color);
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
   }
 
   .recent-files-grid {
@@ -1305,65 +1304,128 @@
   }
 
 
-  .tasks-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1rem;
-  }
-
-  .task-card {
-    background: var(--background-color);
-    border: 1px solid var(--border-color);
+  .tasks-table-wrapper {
+    overflow-x: auto;
     border-radius: 6px;
-    padding: 1rem;
-    transition: all 0.2s ease;
+    border: 1px solid var(--border-color);
   }
 
-  .task-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    border-color: var(--border-hover);
+  .tasks-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    margin-bottom: 0;
+    box-shadow: none;
   }
 
-  .task-card .task-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .task-card .task-type {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  .tasks-table thead th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
     font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary-color);
+    background: var(--background-color);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+
+  .tasks-table thead th.col-actions {
+    width: 3rem;
+    text-align: center;
+  }
+
+  .tasks-table tbody td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
     color: var(--text-color);
   }
 
-  .task-card .task-status {
-    padding: 0.25rem 0.75rem;
-    border-radius: 100px;
-    font-size: 0.8rem;
-    font-weight: 500;
+  .tasks-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .tasks-table tbody tr:hover {
+    background: var(--table-row-hover, rgba(0, 0, 0, 0.02));
+  }
+
+  :global(.dark) .tasks-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .task-type-cell {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    font-weight: 500;
+    white-space: nowrap;
   }
 
-  .task-file {
+  .task-type-cell svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .task-file-cell {
+    max-width: 300px;
+  }
+
+  .task-filename {
+    display: block;
     font-weight: 500;
-    color: var(--text-color);
-    margin-bottom: 0.5rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .task-progress {
+  .task-filename.muted {
+    color: var(--text-secondary-color);
+  }
+
+  .task-error-inline {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--error-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+    margin-top: 0.15rem;
+  }
+
+  .task-status-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .task-status-cell .progress-bar-container {
+    width: 60px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .task-status-cell .progress-bar {
+    height: 100%;
+    background: #3b82f6;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .task-progress-text {
+    font-size: 0.75rem;
     font-weight: 600;
-    margin-left: 0.5rem;
+    color: var(--text-secondary-color);
+  }
+
+  .task-actions-cell {
+    text-align: center;
+    width: 3rem;
   }
 
   .no-tasks {
@@ -1396,7 +1458,8 @@
     max-width: 600px;
     width: 90%;
     max-height: 80vh;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   }
 
@@ -1410,6 +1473,7 @@
     align-items: center;
     padding: 1.5rem;
     border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
   }
 
   .modal-header h3 {
@@ -1432,6 +1496,9 @@
 
   .modal-body {
     padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
   }
 
   .file-details h4 {

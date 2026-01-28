@@ -56,6 +56,16 @@ services:
     pull_policy: always
     # No volumes needed - NLP worker doesn't need model cache
 
+  celery-embedding-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+    volumes:
+      # Production: sentence-transformers model cache
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
     build:

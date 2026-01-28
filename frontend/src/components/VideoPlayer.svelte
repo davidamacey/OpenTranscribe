@@ -37,8 +37,47 @@
     // Show seeking spinner immediately
     isSeeking = true;
 
-    // Update player time
+    const media = (player as any).media as HTMLMediaElement | undefined;
+
+    // For large files (especially audio), the media may not have metadata loaded yet
+    // when this is called from the ?t= parameter handler on page load.
+    // Wait for loadedmetadata before attempting to seek.
+    if (media && media.readyState < 1) {
+      await new Promise<void>((resolve) => {
+        const onReady = () => {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+        };
+        media.addEventListener('loadedmetadata', onReady, { once: true });
+        media.addEventListener('canplay', onReady, { once: true });
+        // Check if already ready (race condition with event)
+        if (media.readyState >= 1) {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+          return;
+        }
+        // Timeout for very large files (15s)
+        setTimeout(() => {
+          media.removeEventListener('loadedmetadata', onReady);
+          media.removeEventListener('canplay', onReady);
+          resolve();
+        }, 15000);
+      });
+      // Brief delay to let Plyr process its own metadata/ready handlers
+      // so its internal duration is valid (Plyr bails on seek if duration is 0)
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    // Update player time via Plyr
     player.currentTime = time;
+    // Also set directly on the media element as fallback — Plyr's setter
+    // checks `if (!this.duration) return` which can bail if Plyr hasn't
+    // finished initializing its internal state yet
+    if (media) {
+      media.currentTime = time;
+    }
     currentTime = time;
 
     // Dispatch the seek event to parent
@@ -46,6 +85,9 @@
       currentTime: time,
       duration: duration
     });
+
+    // Fallback: clear spinner if 'seeked' event never fires
+    setTimeout(() => { isSeeking = false; }, 5000);
   }
 
   // External function to update subtitles when transcript becomes available or is edited
@@ -674,6 +716,19 @@
   :global(.plyr--audio .plyr__menu__container) {
     z-index: 99999 !important;
     position: absolute !important;
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  :global(.plyr--audio .plyr__menu__container::after) {
+    border-top-color: var(--surface-color) !important;
+  }
+
+  :global(.plyr--audio .plyr__menu__container label),
+  :global(.plyr--audio .plyr__menu__container span) {
+    color: var(--text-color) !important;
   }
 
   :global(.plyr--audio .plyr__menu__container .plyr__control) {
@@ -682,6 +737,12 @@
 
   :global(.plyr--audio .plyr__tooltip) {
     z-index: 99999 !important;
+  }
+
+  /* When hovering a control, raise it above the progress bar (z-index: 10)
+     so the tooltip is not hidden behind the progress bar */
+  :global(.plyr--audio .plyr__control:hover) {
+    z-index: 20 !important;
   }
 
   :global(.plyr--audio .plyr__volume) {
@@ -750,6 +811,23 @@
     background: var(--surface-color) !important;
   }
 
+  /* Menu popup container for video - override Plyr default white background */
+  :global(.plyr--video .plyr__menu__container) {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  }
+
+  :global(.plyr--video .plyr__menu__container::after) {
+    border-top-color: var(--surface-color) !important;
+  }
+
+  :global(.plyr--video .plyr__menu__container label),
+  :global(.plyr--video .plyr__menu__container span) {
+    color: var(--text-color) !important;
+  }
+
   /* Force all menu items in video to have dark theme colors */
   :global(.plyr--video .plyr__menu .plyr__control) {
     color: var(--text-color) !important;
@@ -782,9 +860,9 @@
     color: white !important;
   }
 
-  /* Button spans for video */
-  :global(.plyr--video button[data-plyr="speed"] span),
-  :global(.plyr--video button[data-plyr="captions"] span) {
+  /* Button spans for video (exclude tooltips) */
+  :global(.plyr--video button[data-plyr="speed"] span:not(.plyr__tooltip)),
+  :global(.plyr--video button[data-plyr="captions"] span:not(.plyr__tooltip)) {
     color: inherit !important;
   }
 

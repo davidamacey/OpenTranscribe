@@ -17,6 +17,9 @@ services:
   celery-nlp-worker:
     pull_policy: never
 
+  celery-embedding-worker:
+    pull_policy: never
+
   celery-beat:
     pull_policy: never
 

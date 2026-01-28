@@ -32,6 +32,34 @@ except Exception as e:
     opensearch_client = None
 
 
+def get_opensearch_client() -> "OpenSearch | None":
+    """Get the OpenSearch client, attempting lazy initialization if None.
+
+    If the client was not initialized at module load time (e.g., OpenSearch
+    was not yet available), this function attempts to create a new client.
+
+    Returns:
+        OpenSearch client instance, or None if connection fails.
+    """
+    global opensearch_client
+    if opensearch_client is not None:
+        return opensearch_client
+
+    try:
+        opensearch_client = OpenSearch(
+            hosts=[{"host": settings.OPENSEARCH_HOST, "port": int(settings.OPENSEARCH_PORT)}],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=False,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+            connection_class=RequestsHttpConnection,
+        )
+        logger.info("OpenSearch client lazily initialized successfully")
+        return opensearch_client
+    except Exception as e:
+        logger.warning(f"Lazy OpenSearch client initialization failed: {e}")
+        return None
+
+
 def ensure_indices_exist():
     """
     Ensure the transcript and speaker indices exist, creating them if necessary

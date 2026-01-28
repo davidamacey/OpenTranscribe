@@ -65,6 +65,16 @@ services:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
 
+  celery-embedding-worker:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    volumes:
+      # Offline: sentence-transformers model must be pre-cached
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+    environment:
+      # Offline mode for HuggingFace (prevents network calls)
+      - HF_HUB_OFFLINE=1
+
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never

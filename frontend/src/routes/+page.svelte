@@ -987,29 +987,28 @@
                     {#if file.formatted_duration}
                       <span class="file-duration">{file.formatted_duration}</span>
                     {/if}
-                  </div>
-
-                  <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
-                    <span class="status-dot"></span>
-                    {#if file.status === 'error' && file.last_error_message}
-                      <!-- svelte-ignore a11y-click-events-have-key-events -->
-                      <!-- svelte-ignore a11y-no-static-element-interactions -->
-                      <span
-                        class="error-details-trigger"
-                        on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
-                        title={$t('gallery.errorClickForDetails')}
-                      >
-                        {$t('common.error')} - {$t('gallery.errorClickDetails')}
-                      </span>
-                    {:else if file.status === 'completed'}
-                      {$t('common.completed')}
-                    {:else if file.status === 'processing'}
-                      {$t('common.processing')}
-                    {:else if file.status === 'pending'}
-                      {$t('common.pending')}
-                    {:else}
-                      {file.display_status || file.status}
-                    {/if}
+                    <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
+                      <span class="status-dot"></span>
+                      {#if file.status === 'error' && file.last_error_message}
+                        <!-- svelte-ignore a11y-click-events-have-key-events -->
+                        <!-- svelte-ignore a11y-no-static-element-interactions -->
+                        <span
+                          class="error-details-trigger"
+                          on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
+                          title={$t('gallery.errorClickForDetails')}
+                        >
+                          {$t('common.error')}
+                        </span>
+                      {:else if file.status === 'completed'}
+                        {$t('common.completed')}
+                      {:else if file.status === 'processing'}
+                        {$t('common.processing')}
+                      {:else if file.status === 'pending'}
+                        {$t('common.pending')}
+                      {:else}
+                        {file.display_status || file.status}
+                      {/if}
+                    </div>
                   </div>
                 </div>
               </a>
@@ -1782,7 +1781,7 @@
   .file-meta {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.5rem;
     font-size: 0.875rem;
     color: var(--text-secondary);
   }
@@ -1790,14 +1789,15 @@
   .file-status {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
+    gap: 0.25rem;
+    font-size: 0.65rem;
     font-weight: 500;
-    padding: 0.25rem 0.75rem;
+    padding: 0.15rem 0.5rem;
     border-radius: 9999px;
     background-color: rgba(0, 0, 0, 0.05);
     width: fit-content;
-    align-self: flex-start;
+    margin-left: auto;
+    white-space: nowrap;
   }
 
   :global(.dark) .file-status {

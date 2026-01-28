@@ -57,7 +57,7 @@
   });
 
   onDestroy(() => {
-    // Cleanup: ensure body scrolling is restored and event listeners removed
+    // Cleanup: ensure scrolling is restored and event listeners removed
     document.body.style.overflow = '';
     if (keydownHandler) {
       document.removeEventListener('keydown', keydownHandler);

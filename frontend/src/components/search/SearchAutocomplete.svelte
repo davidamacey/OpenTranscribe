@@ -176,6 +176,13 @@
       {/each}
     </div>
   {/if}
+
+  {#if value.startsWith('speaker:') && !showSuggestions}
+    <div class="operator-hint">
+      <span class="hint-label">{$t('search.searchTips')}</span>
+      <code>{$t('search.speakerOperatorExample')}</code>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -283,5 +290,39 @@
     color: var(--text-secondary, #9ca3af);
     text-transform: uppercase;
     letter-spacing: 0.03em;
+  }
+
+  .operator-hint {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    padding: 0.5rem 0.75rem;
+    background: var(--card-background, var(--surface-color, #fff));
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: var(--dropdown-shadow, 0 4px 12px rgba(0, 0, 0, 0.1));
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+  }
+
+  .hint-label {
+    font-weight: 500;
+    color: var(--text-secondary, #9ca3af);
+    font-size: 0.75rem;
+  }
+
+  .operator-hint code {
+    font-family: monospace;
+    font-size: 0.75rem;
+    background: rgba(99, 102, 241, 0.08);
+    color: var(--primary-color, #4f46e5);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
   }
 </style>

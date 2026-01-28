@@ -15,18 +15,25 @@
 #
 # Configuration:
 #   Set these variables in your .env file:
-#   - GPU_SCALE_DEVICE_ID=2           # GPU device ID to use (default: 2)
+#   - GPU_SCALE_DEVICE_ID=2           # GPU device ID for scaled workers (default: 2)
 #   - GPU_SCALE_WORKERS=4             # Number of parallel workers (default: 4)
+#   - GPU_SCALE_DEFAULT_WORKER=0      # Set to 1 to keep default worker (dual-GPU mode)
 #
-# Example Hardware Setup:
-#   GPU 0: NVIDIA RTX A6000 (49GB)    - Running LLM model
-#   GPU 1: RTX 3080 Ti (12GB)         - Default single worker (disabled when scaling enabled)
-#   GPU 2: NVIDIA RTX A6000 (49GB)    - Scaled workers (4 parallel in single container)
+# Single-GPU Mode (default): Replaces default worker with scaled workers on one GPU.
+#   GPU_SCALE_DEFAULT_WORKER=0 (default)
+#
+# Dual-GPU Mode: Keeps default worker on GPU_DEVICE_ID alongside scaled workers.
+#   GPU_SCALE_DEFAULT_WORKER=1
+#
+# Example Dual-GPU Setup (5 total workers):
+#   GPU 0: NVIDIA RTX A6000 (49GB)    - Scaled workers (4 parallel in single container)
+#   GPU 1: RTX 3080 Ti (12GB)         - Default single worker (GPU_DEVICE_ID=1)
+#   GPU 2: NVIDIA RTX A6000 (49GB)    - Running LLM model (vLLM, external)
 
 services:
-  # Disable the default single GPU worker when scaling is enabled
+  # Default worker: disabled in single-GPU mode, kept alive in dual-GPU mode
   celery-worker:
-    scale: 0
+    scale: ${GPU_SCALE_DEFAULT_WORKER:-0}
 
   # Scaled GPU Worker - GPU-specific settings
   # Base definition (env, tmpfs, depends_on) in docker-compose.yml

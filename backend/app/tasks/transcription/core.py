@@ -232,21 +232,6 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
             (media_file.title or media_file.filename) if media_file else f"File {ctx.file_id}"
         )
         file_uuid = media_file.uuid if media_file else None
-        upload_time = (
-            (media_file.creation_date or media_file.upload_time).isoformat()
-            if media_file and (media_file.creation_date or media_file.upload_time)
-            else None
-        )
-        file_language = media_file.language if media_file else "en"
-        file_tags = []
-        if media_file and hasattr(media_file, "tags") and media_file.tags:
-            file_tags = [t.name for t in media_file.tags]
-        content_type = media_file.content_type if media_file else ""
-        duration = media_file.duration if media_file else None
-        file_size = media_file.file_size if media_file else None
-        collection_ids = []
-        if media_file and hasattr(media_file, "collections") and media_file.collections:
-            collection_ids = [c.id for c in media_file.collections]
 
     if not file_uuid:
         logger.warning(f"Could not index transcript: file_uuid not found for file_id {ctx.file_id}")
@@ -257,29 +242,18 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
         ctx.file_id, file_uuid, ctx.user_id, full_transcript, speaker_names, file_title
     )
 
-    # New chunk-level index with embeddings
+    # Dispatch chunk-level search indexing as a separate tracked Celery task
     try:
-        from app.services.search.indexing_service import TranscriptIndexingService
+        from app.tasks.search_indexing_task import index_transcript_search_task
 
-        indexing_service = TranscriptIndexingService()
-        chunk_count = indexing_service.index_transcript_chunks(
+        index_transcript_search_task.delay(
             file_id=ctx.file_id,
             file_uuid=str(file_uuid),
             user_id=ctx.user_id,
-            segments=processed_segments,
-            title=file_title,
-            speakers=speaker_names,
-            tags=file_tags,
-            upload_time=upload_time,
-            language=file_language or "en",
-            content_type=content_type,
-            duration=duration,
-            file_size=file_size,
-            collection_ids=collection_ids,
         )
-        logger.info(f"Indexed {chunk_count} chunks for file {file_uuid}")
+        logger.info(f"Dispatched search indexing task for file {file_uuid}")
     except Exception as e:
-        logger.warning(f"Chunk indexing failed for file {file_uuid}, text search still works: {e}")
+        logger.warning(f"Failed to dispatch search indexing task for file {file_uuid}: {e}")
 
 
 def _run_whisperx_pipeline(
@@ -394,12 +368,12 @@ def _process_transcription_result(
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.85)
 
-    # Index in search
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.85, "Indexing for search")
+    # Index in search (dispatched as separate Celery task)
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.85, "Dispatching search indexing")
     try:
         _index_transcript_in_search(ctx, processed_segments)
     except Exception as e:
-        logger.warning(f"Error indexing transcript: {e}")
+        logger.warning(f"Error dispatching search indexing: {e}")
 
     # Finalize
     send_progress_notification(ctx.user_id, ctx.file_id, 0.95, "Finalizing transcription")

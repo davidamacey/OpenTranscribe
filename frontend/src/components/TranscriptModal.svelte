@@ -235,7 +235,7 @@
     setupInfiniteScrollObserver();
   }
 
-  // Clean up body overflow and observer when component is destroyed
+  // Clean up scroll lock and observer when component is destroyed
   onMount(() => {
     return () => {
       document.body.style.overflow = '';

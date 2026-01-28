@@ -204,7 +204,7 @@
     document.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('gpu-stats-updated', handleGpuStatsEvent);
     stopStatsPolling();
-    // Re-enable body scroll when component is destroyed
+    // Re-enable scroll when component is destroyed
     document.body.style.overflow = '';
   });
 

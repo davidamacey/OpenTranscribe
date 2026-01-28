@@ -34,6 +34,7 @@ def _search_response_to_schema(response) -> dict[str, Any]:
                 "tags": hit.tags,
                 "upload_time": hit.upload_time,
                 "language": hit.language,
+                "content_type": hit.content_type,
                 "relevance_score": hit.relevance_score,
                 "occurrences": [
                     {
@@ -45,11 +46,18 @@ def _search_response_to_schema(response) -> dict[str, Any]:
                         "chunk_index": occ.chunk_index,
                         "score": occ.score,
                         "match_type": occ.match_type,
+                        "has_keyword_match": occ.has_keyword_match,
+                        "highlight_type": occ.highlight_type,
                     }
                     for occ in hit.occurrences
                 ],
                 "total_occurrences": hit.total_occurrences,
                 "title_highlighted": hit.title_highlighted,
+                "keyword_occurrences": hit.keyword_occurrences,
+                "semantic_only": hit.semantic_only,
+                "semantic_confidence": hit.semantic_confidence,
+                "match_sources": hit.match_sources,
+                "relevance_percent": hit.relevance_percent,
             }
             for hit in response.results
         ],

@@ -21,7 +21,7 @@
     }
   }
 
-  // Disable body scroll when modal is open
+  // Disable scroll when modal is open
   $: if (typeof window !== 'undefined') {
     if (showModal) {
       document.body.style.overflow = 'hidden';

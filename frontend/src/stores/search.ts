@@ -9,6 +9,8 @@ export interface SearchOccurrence {
   chunk_index: number;
   score: number;
   match_type: 'content' | 'title' | 'speaker';
+  has_keyword_match: boolean;
+  highlight_type: 'keyword' | 'semantic';
 }
 
 export interface SearchHit {
@@ -19,10 +21,16 @@ export interface SearchHit {
   tags: string[];
   upload_time: string;
   language: string;
+  content_type: string;
   relevance_score: number;
   occurrences: SearchOccurrence[];
   total_occurrences: number;
   title_highlighted: string;
+  keyword_occurrences: number;
+  semantic_only: boolean;
+  semantic_confidence: string;
+  match_sources: string[];
+  relevance_percent: number;
 }
 
 export interface SearchResponse {
@@ -43,6 +51,7 @@ export interface ActivePreviewState {
   title: string;
   startTime: number;
   speaker: string;
+  contentType: string;
 }
 
 export interface SearchState {

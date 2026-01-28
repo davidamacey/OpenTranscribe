@@ -56,15 +56,17 @@ class SearchEmbeddingService:
         try:
             from sentence_transformers import SentenceTransformer
 
-            SearchEmbeddingService._model = SentenceTransformer(model_name)
-            logger.info(f"Search embedding model loaded: {model_name}")
+            device = settings.SEARCH_EMBEDDING_DEVICE
+            SearchEmbeddingService._model = SentenceTransformer(model_name, device=device)
+            logger.info(f"Search embedding model loaded: {model_name} on device={device}")
         except Exception as e:
             logger.error(f"Failed to load search embedding model {model_name}: {e}")
             raise
 
     def embed_texts(self, texts: list[str], batch_size: int = 256) -> list[list[float]]:
-        """Batch embed document texts. GPU-accelerated when available.
+        """Batch embed document texts.
 
+        Runs on the device configured by SEARCH_EMBEDDING_DEVICE (default: cpu).
         Applies model-specific instruction prefixes for optimal quality.
 
         Args:

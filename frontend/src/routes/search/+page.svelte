@@ -4,13 +4,15 @@
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
-  import { searchStore, type SearchResponse } from '$stores/search';
+  import { searchStore, type SearchResponse, type SearchOccurrence } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
+  import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
+  import WaveformPlayer from '$components/WaveformPlayer.svelte';
 
   let searchInput = '';
   let showFilters = true;
@@ -28,13 +30,19 @@
   let filterSelectedStatuses: string[] = [];
 
   // Sticky preview player state
-  let previewData: { fileUuid: string; title: string; startTime: number; speaker: string } | null = null;
-  let previewMediaElement: HTMLVideoElement | null = null;
+  let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
+  let previewMediaElement: HTMLVideoElement | HTMLAudioElement | null = null;
   let previewPlayer: Plyr | null = null;
   let activePreview: { fileUuid: string; startTime: number } | null = null;
   let previewSeeking = false;
   let previewCurrentTime = 0;
   let previewCurrentSpeaker = '';
+
+  // Search transcript modal state
+  let transcriptModalOpen = false;
+  let transcriptModalFileUuid = '';
+  let transcriptModalFileName = '';
+  let transcriptModalOccurrences: SearchOccurrence[] = [];
 
   function formatPlaybackTime(seconds: number): string {
     const h = Math.floor(seconds / 3600);
@@ -57,6 +65,8 @@
     }
     return previewData.speaker || '';
   }
+
+  $: isAudioPreview = previewData?.contentType?.startsWith('audio/') ?? false;
 
   // Read initial state from URL
   $: urlQuery = $page.url.searchParams.get('q') || '';
@@ -329,13 +339,13 @@
       return;
     }
 
-    // If switching files, fully tear down first
-    if (previewData && previewData.fileUuid !== data.fileUuid) {
-      destroyPreviewPlayer();
-      previewData = null;
-      // Wait for Svelte to tear down the old video element
-      await tick();
-    }
+    // Always fully tear down and recreate to avoid stale DOM bindings
+    // (Plyr's destroy moves elements, which can confuse Svelte's bind:this
+    // when switching between audio/video branches)
+    destroyPreviewPlayer();
+    previewMediaElement = null;
+    previewData = null;
+    await tick();
 
     previewData = data;
     activePreview = { fileUuid: data.fileUuid, startTime: data.startTime };
@@ -346,9 +356,17 @@
     // Persist to store for back-button restoration
     searchStore.setActivePreview(data);
 
-    // Wait for Svelte to render the video element
+    // Wait for Svelte to render the media element
     await tick();
     initPreviewPlayer(data.startTime);
+  }
+
+  function handleViewTranscript(event: CustomEvent) {
+    const { fileUuid, title, occurrences } = event.detail;
+    transcriptModalFileUuid = fileUuid;
+    transcriptModalFileName = title;
+    transcriptModalOccurrences = occurrences;
+    transcriptModalOpen = true;
   }
 
   function initPreviewPlayer(startTime: number) {
@@ -363,12 +381,12 @@
     // Force the video element to load its source
     previewMediaElement.load();
 
+    const audioControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'settings'];
+    const videoControls = ['play-large', 'play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'];
+
     previewPlayer = new Plyr(previewMediaElement, {
-      controls: [
-        'play-large', 'play', 'current-time', 'duration', 'progress',
-        'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen',
-      ],
-      settings: ['captions', 'speed'],
+      controls: isAudioPreview ? audioControls : videoControls,
+      settings: isAudioPreview ? ['speed'] : ['captions', 'speed'],
       iconUrl: '/plyr.svg',
       keyboard: { global: false },
       tooltips: { controls: true },
@@ -385,10 +403,13 @@
       if (startTime > 0) {
         previewPlayer.currentTime = startTime;
       }
-      previewPlayer.play().catch(() => {
-        // Autoplay may be blocked by browser - user can click play manually
-        previewSeeking = false;
-      });
+      const playResult = previewPlayer.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {
+          // Autoplay may be blocked by browser - user can click play manually
+          previewSeeking = false;
+        });
+      }
     }
 
     // Use the underlying media element events for reliability
@@ -436,6 +457,12 @@
     searchStore.setActivePreview(null);
   }
 
+  function handleWaveformSeek(event: CustomEvent<{ time: number }>) {
+    if (previewPlayer && event.detail?.time != null) {
+      previewPlayer.currentTime = event.detail.time;
+    }
+  }
+
   // Save all transient state before navigating away
   function saveState() {
     // Save scroll position
@@ -461,6 +488,12 @@
   function formatSearchTime(ms: number): string {
     return (ms / 1000).toFixed(2);
   }
+
+  // Split results into keyword matches and semantic-only
+  $: keywordResults = $searchStore.results.filter(r => !r.semantic_only);
+  $: semanticHighResults = $searchStore.results.filter(r => r.semantic_only && r.semantic_confidence === 'high');
+  $: semanticLowResults = $searchStore.results.filter(r => r.semantic_only && r.semantic_confidence === 'low');
+  $: allSemanticOnly = keywordResults.length === 0 && (semanticHighResults.length > 0 || semanticLowResults.length > 0);
 
   onDestroy(() => {
     saveState();
@@ -601,17 +634,64 @@
             </svg>
             <p class="state-title">{$t('searchPage.placeholder')}</p>
             <p class="state-hint">{$t('search.welcomeHint')}</p>
+            <p class="state-hint search-tip">{$t('search.speakerSearchTip')}</p>
           </div>
         {:else}
           <div class="results-list">
-            {#each $searchStore.results as hit (hit.file_uuid)}
-              <SearchResultCard
-                {hit}
-                query={$searchStore.query}
-                {activePreview}
-                on:preview={handlePreview}
-              />
-            {/each}
+              {#if allSemanticOnly}
+                <div class="no-keyword-notice">
+                  <p>{$t('search.noKeywordMatches')}</p>
+                </div>
+              {/if}
+
+              {#each keywordResults as hit (hit.file_uuid)}
+                <SearchResultCard
+                  {hit}
+                  query={$searchStore.query}
+                  {activePreview}
+                  on:preview={handlePreview}
+                  on:viewTranscript={handleViewTranscript}
+                />
+              {/each}
+
+              {#if semanticHighResults.length > 0 && keywordResults.length > 0}
+                {#each semanticHighResults as hit (hit.file_uuid)}
+                  <SearchResultCard
+                    {hit}
+                    query={$searchStore.query}
+                    {activePreview}
+                    on:preview={handlePreview}
+                    on:viewTranscript={handleViewTranscript}
+                  />
+                {/each}
+              {:else if semanticHighResults.length > 0}
+                {#each semanticHighResults as hit (hit.file_uuid)}
+                  <SearchResultCard
+                    {hit}
+                    query={$searchStore.query}
+                    {activePreview}
+                    on:preview={handlePreview}
+                    on:viewTranscript={handleViewTranscript}
+                  />
+                {/each}
+              {/if}
+
+              {#if semanticLowResults.length > 0}
+                {#if keywordResults.length > 0 || semanticHighResults.length > 0}
+                  <div class="related-divider">
+                    <span>{$t('search.relatedResults')}</span>
+                  </div>
+                {/if}
+                {#each semanticLowResults as hit (hit.file_uuid)}
+                  <SearchResultCard
+                    {hit}
+                    query={$searchStore.query}
+                    {activePreview}
+                    on:preview={handlePreview}
+                    on:viewTranscript={handleViewTranscript}
+                  />
+                {/each}
+              {/if}
           </div>
 
           {#if $searchStore.totalPages > 1}
@@ -631,7 +711,22 @@
     <div class="sticky-preview">
       <div class="preview-header">
         <div class="preview-info">
-          <span class="preview-title">{previewData.title}</span>
+          <span class="preview-title">
+            {#if isAudioPreview}
+              <svg class="preview-media-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            {:else}
+              <svg class="preview-media-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+              </svg>
+            {/if}
+            {previewData.title}
+          </span>
           <span class="preview-playback-info">
             <span class="preview-time">{formatPlaybackTime(previewCurrentTime)}</span>
             {#if previewCurrentSpeaker}
@@ -657,22 +752,50 @@
           </button>
         </div>
       </div>
-      <div class="preview-player-container">
+      <div class="preview-player-container" class:audio-preview={isAudioPreview}>
         {#if previewSeeking}
           <div class="preview-seek-overlay">
             <div class="preview-seek-spinner"></div>
           </div>
         {/if}
-        <!-- svelte-ignore a11y-media-has-caption -->
-        <video
-          bind:this={previewMediaElement}
-          preload="auto"
-        >
-          <source src="/api/files/{previewData.fileUuid}/simple-video" />
-        </video>
+        {#if isAudioPreview}
+          <!-- svelte-ignore a11y-media-has-caption -->
+          <audio
+            bind:this={previewMediaElement}
+            preload="auto"
+          >
+            <source src="/api/files/{previewData.fileUuid}/simple-video" />
+          </audio>
+          <div class="preview-waveform">
+            <WaveformPlayer
+              fileId={previewData.fileUuid}
+              duration={previewPlayer?.duration || 0}
+              currentTime={previewCurrentTime}
+              height={60}
+              on:seek={handleWaveformSeek}
+            />
+          </div>
+        {:else}
+          <!-- svelte-ignore a11y-media-has-caption -->
+          <video
+            bind:this={previewMediaElement}
+            preload="auto"
+          >
+            <source src="/api/files/{previewData.fileUuid}/simple-video" />
+          </video>
+        {/if}
       </div>
     </div>
   {/if}
+
+  <SearchTranscriptModal
+    bind:isOpen={transcriptModalOpen}
+    fileUuid={transcriptModalFileUuid}
+    fileName={transcriptModalFileName}
+    searchQuery={$searchStore.query}
+    occurrences={transcriptModalOccurrences}
+    on:close={() => transcriptModalOpen = false}
+  />
 </div>
 
 <style>
@@ -939,6 +1062,13 @@
     margin: 0;
   }
 
+  .search-tip {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    opacity: 0.7;
+  }
+
   .empty-icon {
     opacity: 0.35;
   }
@@ -998,6 +1128,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .preview-media-icon {
+    flex-shrink: 0;
+    opacity: 0.7;
   }
 
   .preview-playback-info {
@@ -1098,6 +1236,112 @@
 
   @keyframes preview-spin {
     to { transform: rotate(360deg); }
+  }
+
+  /* Audio preview layout */
+  .preview-player-container.audio-preview {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .preview-waveform {
+    width: 100%;
+    padding: 0.5rem 0.5rem 0;
+    background: var(--surface-color);
+  }
+
+  .preview-player-container.audio-preview :global(audio) {
+    width: 100%;
+  }
+
+  /* Audio Plyr styles to match file detail page */
+  .preview-player-container.audio-preview :global(.plyr--audio) {
+    overflow: visible !important;
+    transform: none !important;
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__controls) {
+    background: var(--surface-color) !important;
+    border-color: var(--border-color) !important;
+    padding-top: 28px !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress) {
+    position: absolute !important;
+    top: 6px !important;
+    left: 8px !important;
+    right: 8px !important;
+    width: calc(100% - 16px) !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 10 !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-track) {
+    height: 6px !important;
+    border-radius: 3px !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-track) {
+    height: 6px !important;
+    border-radius: 3px !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    background: var(--primary-color) !important;
+    border: none !important;
+    cursor: pointer !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    background: var(--primary-color) !important;
+    border: none !important;
+    cursor: pointer !important;
+  }
+
+  :global(.dark) .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-webkit-slider-thumb) {
+    background: white !important;
+  }
+
+  :global(.dark) .preview-player-container.audio-preview :global(.plyr--audio .plyr__progress input[type="range"]::-moz-range-thumb) {
+    background: white !important;
+  }
+
+  /* When hovering a control, raise it above the progress bar (z-index: 10)
+     so the tooltip is not hidden behind the progress bar */
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__control:hover) {
+    z-index: 20 !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__tooltip) {
+    z-index: 99999 !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__control:not([data-plyr="speed"])) {
+    color: var(--text-color) !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__control:not([data-plyr="speed"]):hover) {
+    background: var(--hover-color) !important;
+    color: var(--text-color) !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__time) {
+    color: var(--text-color) !important;
+    font-size: 13px !important;
+  }
+
+  .preview-player-container.audio-preview :global(.plyr--audio .plyr__volume input[type="range"]) {
+    color: var(--primary-color) !important;
   }
 
   .preview-player-container :global(video) {
@@ -1304,6 +1548,46 @@
 
   .preview-player-container :global(.plyr--video button.plyr__control--back span) {
     color: inherit !important;
+  }
+
+  .no-keyword-notice {
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    background: var(--color-warning-bg, #fef3c7);
+    color: var(--color-warning-text, #92400e);
+    border-radius: 8px;
+    font-size: 0.9rem;
+  }
+
+  :global(.dark) .no-keyword-notice {
+    background: rgba(245, 158, 11, 0.1);
+    color: #fbbf24;
+  }
+
+  .related-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0 12px;
+    color: var(--text-secondary, #6b7280);
+    font-size: 0.85rem;
+  }
+
+  .related-divider::before,
+  .related-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color, #e5e7eb);
+  }
+
+  :global(.dark) .related-divider {
+    color: #9ca3af;
+  }
+
+  :global(.dark) .related-divider::before,
+  :global(.dark) .related-divider::after {
+    background: #374151;
   }
 
   /* Responsive */

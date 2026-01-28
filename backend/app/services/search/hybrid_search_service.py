@@ -16,6 +16,7 @@ from app.core.constants import SEARCH_CACHE_TTL_SECONDS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
+from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 from app.services.search.embedding_service import SearchEmbeddingService
 from app.services.search.indexing_service import ensure_chunks_index_exists
@@ -37,6 +38,7 @@ def _sanitize_html(text: str) -> str:
     if not text:
         return text
     # Temporarily replace allowed <mark> tags with placeholders
+    text = text.replace('<mark class="semantic">', "\x00MARK_SEM_OPEN\x00")
     text = text.replace("<mark>", "\x00MARK_OPEN\x00")
     text = text.replace("</mark>", "\x00MARK_CLOSE\x00")
     # Strip all remaining HTML tags
@@ -50,9 +52,61 @@ def _sanitize_html(text: str) -> str:
         .replace("'", "&#x27;")
     )
     # Restore allowed <mark> tags
+    text = text.replace("\x00MARK_SEM_OPEN\x00", '<mark class="semantic">')
     text = text.replace("\x00MARK_OPEN\x00", "<mark>")
     text = text.replace("\x00MARK_CLOSE\x00", "</mark>")
     return text
+
+
+def _add_semantic_highlights(snippet: str, query: str) -> str:
+    """Highlight query words in semantic snippet using <mark class='semantic'>.
+
+    For semantic-only hits, OpenSearch returns no <mark> tags. This function
+    adds indigo-styled highlights for query words that appear in the snippet text.
+
+    Args:
+        snippet: The snippet text (may contain HTML entities but no <mark> tags).
+        query: The original search query string.
+
+    Returns:
+        Snippet with query words wrapped in <mark class="semantic"> tags.
+    """
+    query_words = query.lower().split()
+    if not query_words:
+        return snippet
+    # Only match words with 3+ characters to avoid highlighting articles/prepositions
+    patterns = [re.escape(w) for w in query_words if len(w) >= 3]
+    if not patterns:
+        return snippet
+    regex = re.compile(r"\b(" + "|".join(patterns) + r")\b", re.IGNORECASE)
+    return regex.sub(r'<mark class="semantic">\g<0></mark>', snippet)
+
+
+def _parse_query_operators(raw_query: str) -> tuple[str, dict[str, str]]:
+    """Parse inline operators from query string.
+
+    Supports: speaker:"Name" or speaker:Name
+    Returns: (clean_query, operators_dict)
+
+    Examples:
+        'speaker:"Joe Rogan" china' -> ('china', {'speaker': 'Joe Rogan'})
+        'speaker:SPEAKER_00 warp' -> ('warp', {'speaker': 'SPEAKER_00'})
+        'just plain text' -> ('just plain text', {})
+    """
+    operators: dict[str, str] = {}
+    # Match speaker:"quoted name" or speaker:single_word
+    pattern = r'speaker:(?:"([^"]+)"|(\S+))'
+    match = re.search(pattern, raw_query, re.IGNORECASE)
+    if match:
+        speaker_name = match.group(1) or match.group(2)
+        operators["speaker"] = speaker_name
+        # Remove the operator from query text
+        clean = re.sub(pattern, "", raw_query, count=1, flags=re.IGNORECASE).strip()
+        # Collapse multiple spaces
+        clean = re.sub(r"\s+", " ", clean).strip()
+    else:
+        clean = raw_query
+    return clean, operators
 
 
 def _extract_snippet_and_match_type(
@@ -68,8 +122,9 @@ def _extract_snippet_and_match_type(
     Returns:
         Tuple of (sanitized snippet text, match type string).
     """
-    if "content" in highlight:
-        snippet = " ... ".join(highlight["content"])
+    if "content" in highlight or "content.exact" in highlight:
+        content_highlights = highlight.get("content") or highlight.get("content.exact", [])
+        snippet = " ... ".join(content_highlights)
         match_type = "content"
     elif "title" in highlight:
         snippet = source.get("content", "")[:200]
@@ -113,6 +168,8 @@ class SearchOccurrence:
     score: float
     match_type: str = "content"  # "content", "title", or "speaker"
     speaker_highlighted: str = ""  # Speaker name with <mark> tags if matched
+    has_keyword_match: bool = True  # False for semantic-only hits (no highlights)
+    highlight_type: str = "keyword"  # "keyword" or "semantic"
 
 
 @dataclass
@@ -126,10 +183,18 @@ class SearchHit:
     tags: list[str]
     upload_time: str
     language: str
-    relevance_score: float
+    content_type: str = ""
+    relevance_score: float = 0.0
     occurrences: list[SearchOccurrence] = field(default_factory=list)
     total_occurrences: int = 0
     title_highlighted: str = ""  # Title with <mark> tags if matched
+    keyword_occurrences: int = 0  # Count of hits with actual keyword highlights
+    semantic_only: bool = False  # True if no keyword matches, only semantic
+    semantic_confidence: str = ""  # "", "high", or "low" for semantic-only hits
+    match_sources: list[str] = field(
+        default_factory=list
+    )  # e.g. ["content", "title", "speaker", "semantic"]
+    relevance_percent: int = 0  # 0-100 relevance confidence for display
 
 
 @dataclass
@@ -289,7 +354,8 @@ class HybridSearchService:
         Returns:
             SearchResponse with grouped results.
         """
-        if not opensearch_client:
+        client = get_opensearch_client()
+        if not client:
             logger.warning("OpenSearch client not initialized")
             return self._empty_response(query, page, page_size)
 
@@ -323,6 +389,12 @@ class HybridSearchService:
 
         _ensure_infrastructure()
 
+        # Parse inline query operators (e.g., speaker:"Joe Rogan" china)
+        clean_query, operators = _parse_query_operators(query)
+        if "speaker" in operators:
+            speakers = list(speakers or []) + [operators["speaker"]]
+        search_query = clean_query if clean_query else query
+
         # Build filters
         filters = self._build_filters(
             user_id,
@@ -351,13 +423,30 @@ class HybridSearchService:
         )
 
         # Generate query embedding and execute search
-        query_embedding, use_hybrid = self._generate_query_embedding(query, search_mode)
-        response = self._execute_search(query, query_embedding, filters, page_size, use_hybrid)
+        query_embedding, use_hybrid = self._generate_query_embedding(search_query, search_mode)
+        response = self._execute_search(
+            search_query, query_embedding, filters, page_size, use_hybrid
+        )
         if response is None:
             return self._empty_response(query, page, page_size)
 
         # Group, sort, paginate, and build response
-        grouped = self._group_results_by_file(response)
+        grouped = self._group_results_by_file(response, query=query)
+
+        # Filter weakest semantic-only results (intra-semantic comparison)
+        semantic_hits = [h for h in grouped if h.semantic_only]
+        if semantic_hits:
+            best_semantic = max(h.relevance_score for h in semantic_hits)
+            min_semantic = settings.SEARCH_HYBRID_MIN_SCORE
+            semantic_range = best_semantic - min_semantic
+            if semantic_range > 0:
+                # Keep semantic results scoring >= SUPPRESS_RATIO of the
+                # best semantic score (measured within the semantic range)
+                threshold = min_semantic + semantic_range * settings.SEARCH_SEMANTIC_SUPPRESS_RATIO
+                grouped = [
+                    h for h in grouped if not h.semantic_only or h.relevance_score >= threshold
+                ]
+
         result = self._sort_and_paginate(
             query,
             grouped,
@@ -461,30 +550,31 @@ class HybridSearchService:
     ) -> SearchResponse:
         """Sort grouped results, paginate, and build SearchResponse.
 
-        Args:
-            query: Original search query text.
-            grouped: File-grouped search hits.
-            sort_by: Sort order - relevance, date, or match_count.
-            search_mode: Search mode used.
-            page: Page number (1-indexed).
-            page_size: Results per page.
-            filters_applied: Dict of active filters.
-            start_time: Search start timestamp for elapsed time calculation.
-
-        Returns:
-            Final SearchResponse.
+        Keyword-matched files always appear before semantic-only files.
         """
         if sort_by == "date":
+            grouped.sort(key=lambda h: (h.semantic_only, h.upload_time), reverse=False)
+            # We want: keyword first (semantic_only=False=0), then semantic (True=1)
+            # Within each group, sort by date descending
             grouped.sort(key=lambda h: h.upload_time, reverse=True)
+            grouped.sort(key=lambda h: h.semantic_only)
         elif sort_by == "match_count":
-            grouped.sort(key=lambda h: h.total_occurrences, reverse=True)
+            grouped.sort(key=lambda h: (-int(not h.semantic_only), -h.keyword_occurrences))
+        else:
+            # Relevance: keyword matches first, then by score
+            grouped.sort(key=lambda h: (-int(not h.semantic_only), -h.relevance_score))
 
         total_files = len(grouped)
         total_pages = max(1, (total_files + page_size - 1) // page_size)
         start_idx = (page - 1) * page_size
         page_results = grouped[start_idx : start_idx + page_size]
 
-        total_results = sum(h.total_occurrences for h in grouped)
+        # Total results uses keyword_occurrences for files with keyword matches,
+        # total_occurrences for semantic-only files
+        total_results = sum(
+            h.keyword_occurrences if h.keyword_occurrences > 0 else h.total_occurrences
+            for h in grouped
+        )
         elapsed_ms = round((time.time() - start_time) * 1000, 1)
 
         return SearchResponse(
@@ -734,7 +824,6 @@ class HybridSearchService:
                                                     "speaker^3",
                                                 ],
                                                 "type": "best_fields",
-                                                "fuzziness": "AUTO",
                                             }
                                         }
                                     ],
@@ -787,6 +876,7 @@ class HybridSearchService:
                     "upload_time",
                     "language",
                     "content",
+                    "content_type",
                 ],
             }
         else:
@@ -800,7 +890,11 @@ class HybridSearchService:
         filters: list[dict[str, Any]],
         page_size: int,
     ) -> dict[str, Any]:
-        """Build a BM25-only search body (fallback when embeddings unavailable)."""
+        """Build a BM25-only search body for exact/keyword mode.
+
+        Uses the content.exact subfield (standard analyzer, no stemming)
+        for truly exact matching. No fuzziness.
+        """
         fetch_size = page_size * 5
         return {
             "size": fetch_size,
@@ -811,13 +905,11 @@ class HybridSearchService:
                             "multi_match": {
                                 "query": query,
                                 "fields": [
-                                    "content^3",
-                                    "content.exact^2",
+                                    "content.exact^3",
                                     "title^2",
                                     "speaker^3",
                                 ],
                                 "type": "best_fields",
-                                "fuzziness": "AUTO",
                             }
                         }
                     ],
@@ -826,7 +918,7 @@ class HybridSearchService:
             },
             "highlight": {
                 "fields": {
-                    "content": {
+                    "content.exact": {
                         "pre_tags": ["<mark>"],
                         "post_tags": ["</mark>"],
                         "fragment_size": 200,
@@ -857,12 +949,14 @@ class HybridSearchService:
                 "upload_time",
                 "language",
                 "content",
+                "content_type",
             ],
         }
 
-    def _group_results_by_file(
+    def _group_results_by_file(  # noqa: C901
         self,
         response: dict[str, Any],
+        query: str = "",
     ) -> list[SearchHit]:
         """Group OpenSearch hits by file_uuid into SearchHit objects."""
         hits_by_file: dict[str, SearchHit] = {}
@@ -880,6 +974,13 @@ class HybridSearchService:
             title_highlighted = _extract_highlighted_field(highlight, "title")
             speaker_highlighted = _extract_highlighted_field(highlight, "speaker")
 
+            # Classify: keyword match if highlight dict has any entries
+            has_keyword_match = bool(highlight)
+
+            # For semantic-only hits, highlight query words in snippet
+            if not has_keyword_match and query:
+                snippet = _add_semantic_highlights(snippet, query)
+
             occurrence = SearchOccurrence(
                 snippet=snippet,
                 speaker=source.get("speaker", ""),
@@ -889,6 +990,8 @@ class HybridSearchService:
                 score=score,
                 match_type=match_type,
                 speaker_highlighted=speaker_highlighted,
+                has_keyword_match=has_keyword_match,
+                highlight_type="keyword" if has_keyword_match else "semantic",
             )
 
             if file_uuid not in hits_by_file:
@@ -900,6 +1003,7 @@ class HybridSearchService:
                     tags=source.get("tags", []),
                     upload_time=source.get("upload_time", ""),
                     language=source.get("language", ""),
+                    content_type=source.get("content_type", ""),
                     relevance_score=score,
                     title_highlighted=title_highlighted,
                 )
@@ -911,8 +1015,80 @@ class HybridSearchService:
             if len(file_hit.occurrences) < SEARCH_MAX_SNIPPETS_PER_FILE:
                 file_hit.occurrences.append(occurrence)
             file_hit.total_occurrences += 1
+            if has_keyword_match:
+                file_hit.keyword_occurrences += 1
             if score > file_hit.relevance_score:
                 file_hit.relevance_score = score
+
+            # Track match sources from highlights
+            if (
+                "content" in highlight or "content.exact" in highlight
+            ) and "content" not in file_hit.match_sources:
+                file_hit.match_sources.append("content")
+            if "title" in highlight and "title" not in file_hit.match_sources:
+                file_hit.match_sources.append("title")
+            if "speaker" in highlight and "speaker" not in file_hit.match_sources:
+                file_hit.match_sources.append("speaker")
+
+        # Post-process: sort occurrences so keyword matches surface first,
+        # classify semantic-only files, and detect metadata speakers.
+        for file_hit in hits_by_file.values():
+            file_hit.occurrences.sort(
+                key=lambda o: (not o.has_keyword_match, -o.score),
+            )
+
+        semantic_high_threshold = getattr(settings, "SEARCH_SEMANTIC_HIGH_CONFIDENCE", 0.015)
+        query_lower = query.lower().strip() if query else ""
+        for file_hit in hits_by_file.values():
+            if file_hit.keyword_occurrences == 0:
+                file_hit.semantic_only = True
+                if "semantic" not in file_hit.match_sources:
+                    file_hit.match_sources.append("semantic")
+                if file_hit.relevance_score >= semantic_high_threshold:
+                    file_hit.semantic_confidence = "high"
+                else:
+                    file_hit.semantic_confidence = "low"
+
+            # Detect if query matches a speaker in this file (metadata match)
+            if query_lower:
+                for speaker_name in file_hit.speakers:
+                    speaker_lower = speaker_name.lower()
+                    if query_lower in speaker_lower or speaker_lower in query_lower:
+                        if "metadata_speaker" not in file_hit.match_sources:
+                            file_hit.match_sources.append("metadata_speaker")
+                        break
+
+        # Compute relevance_percent using observed score ranges for better spread.
+        # Keyword and semantic results are scored on different RRF scales, so we
+        # normalize each group independently against the scores actually present.
+        all_hits = list(hits_by_file.values())
+        kw_hits = [h for h in all_hits if not h.semantic_only]
+        sem_hits = [h for h in all_hits if h.semantic_only]
+
+        if kw_hits:
+            kw_scores = [h.relevance_score for h in kw_hits]
+            kw_min, kw_max = min(kw_scores), max(kw_scores)
+            kw_range = kw_max - kw_min
+            for h in kw_hits:
+                if kw_range > 0:
+                    # Map to 30-99%: even the weakest keyword match shows decent relevance
+                    pct = (h.relevance_score - kw_min) / kw_range
+                    h.relevance_percent = int(30 + pct * 69)
+                else:
+                    # Single keyword file or all same score
+                    h.relevance_percent = 85
+
+        if sem_hits:
+            sem_scores = [h.relevance_score for h in sem_hits]
+            sem_min, sem_max = min(sem_scores), max(sem_scores)
+            sem_range = sem_max - sem_min
+            for h in sem_hits:
+                if sem_range > 0:
+                    # Map to 15-80%: semantic matches cap below keyword range
+                    pct = (h.relevance_score - sem_min) / sem_range
+                    h.relevance_percent = int(15 + pct * 65)
+                else:
+                    h.relevance_percent = 50
 
         return list(hits_by_file.values())
 

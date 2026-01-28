@@ -311,19 +311,26 @@ def _send_bulk_update_notification(
 
         from app.api.websockets import publish_notification
 
-        asyncio.create_task(
-            publish_notification(
-                user_id=int(updated_speaker.user_id),
-                notification_type="speakers_bulk_updated",
-                data={
-                    "trigger_speaker_id": int(updated_speaker.id),
-                    "display_name": str(updated_speaker.display_name),
-                    "auto_applied_count": auto_applied_count,
-                    "suggested_count": suggested_count,
-                    "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
-                },
-            )
+        coro = publish_notification(
+            user_id=int(updated_speaker.user_id),
+            notification_type="speakers_bulk_updated",
+            data={
+                "trigger_speaker_id": int(updated_speaker.id),
+                "display_name": str(updated_speaker.display_name),
+                "auto_applied_count": auto_applied_count,
+                "suggested_count": suggested_count,
+                "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
+            },
         )
+
+        # This sync function runs in a threadpool, so schedule on the main event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coro)
+        except RuntimeError:
+            # No running loop in this thread - use run() to create one
+            asyncio.run(coro)
+
         logger.info(
             f"Sent WebSocket notification for bulk speaker update: {auto_applied_count} speakers"
         )

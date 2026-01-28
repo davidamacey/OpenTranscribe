@@ -78,6 +78,10 @@ class LLMService:
         self.config = config
         self.user_context_window = config.max_tokens  # Store user's context window setting
 
+        # Derive response token budget from user's context window
+        # For 121K context → 16384, for 8K → 4000 (floor)
+        self.response_tokens = max(4000, min(16384, self.user_context_window // 4))
+
         # Create session with retry strategy for reliability
         self.session = requests.Session()
         retry_strategy = Retry(
@@ -134,7 +138,8 @@ class LLMService:
             f"Initialized LLMService: {config.provider}/{config.model}, "
             f"endpoint={resolved_endpoint}, "
             f"base_url={config.base_url or 'default'}, "
-            f"context_window={self.user_context_window}"
+            f"context_window={self.user_context_window}, "
+            f"response_tokens={self.response_tokens}"
         )
 
     def _is_reasoning_model(self) -> bool:
@@ -575,6 +580,10 @@ class LLMService:
         )
         return final_chunks
 
+    def _is_truncated(self, response: "LLMResponse") -> bool:
+        """Check if an LLM response was truncated due to token limit."""
+        return response.finish_reason in ("length", "max_tokens")
+
     def generate_summary(
         self,
         transcript: str,
@@ -648,7 +657,21 @@ class LLMService:
         ]
 
         # Use response prefilling to force JSON output (bypasses preamble)
-        response = self.chat_completion(messages, temperature=0.1, prefill_json=True)
+        response = self.chat_completion(
+            messages, max_tokens=self.response_tokens, temperature=0.1, prefill_json=True
+        )
+
+        # Retry with doubled tokens if response was truncated
+        if self._is_truncated(response):
+            retry_tokens = min(self.response_tokens * 2, self.user_context_window // 2)
+            logger.warning(
+                f"Summary response truncated (finish_reason={response.finish_reason}), "
+                f"retrying with max_tokens={retry_tokens}"
+            )
+            response = self.chat_completion(
+                messages, max_tokens=retry_tokens, temperature=0.1, prefill_json=True
+            )
+
         return self._parse_summary_response(response, len(transcript))
 
     def _process_multiple_chunks(
@@ -719,7 +742,7 @@ class LLMService:
 
         # Use response prefilling for consistent JSON output
         response = self.chat_completion(
-            messages, max_tokens=2000, temperature=0.1, prefill_json=True
+            messages, max_tokens=min(4000, self.response_tokens), temperature=0.1, prefill_json=True
         )
 
         try:
@@ -775,8 +798,20 @@ class LLMService:
         try:
             # Use response prefilling for final combined summary
             response = self.chat_completion(
-                messages, max_tokens=4000, temperature=0.1, prefill_json=True
+                messages, max_tokens=self.response_tokens, temperature=0.1, prefill_json=True
             )
+
+            # Retry with doubled tokens if response was truncated
+            if self._is_truncated(response):
+                retry_tokens = min(self.response_tokens * 2, self.user_context_window // 2)
+                logger.warning(
+                    f"Combined summary truncated (finish_reason={response.finish_reason}), "
+                    f"retrying with max_tokens={retry_tokens}"
+                )
+                response = self.chat_completion(
+                    messages, max_tokens=retry_tokens, temperature=0.1, prefill_json=True
+                )
+
             return self._parse_summary_response(
                 response,
                 0,
@@ -850,8 +885,26 @@ class LLMService:
             return summary_data
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse summary JSON: {e}")
-            logger.error(f"Response content: {response.content[:500]}...")
+            logger.warning(f"Initial JSON parse failed: {e}")
+
+            # Attempt JSON repair for truncated responses
+            repaired = self._repair_truncated_json(content)
+            if repaired is not None:
+                logger.info("JSON repair succeeded, using repaired summary")
+                metadata = {
+                    "provider": self.config.provider.value,
+                    "model": self.config.model,
+                    "usage_tokens": response.usage_tokens,
+                    "transcript_length": transcript_length,
+                    "user_context_window": self.user_context_window,
+                    "json_repaired": True,
+                }
+                if extra_metadata:
+                    metadata.update(extra_metadata)
+                repaired["metadata"] = metadata
+                return repaired
+
+            logger.error(f"JSON repair also failed. Response content: {response.content[:500]}...")
 
             # Return minimal error structure
             return {
@@ -865,6 +918,69 @@ class LLMService:
                     "user_context_window": self.user_context_window,
                 },
             }
+
+    def _repair_truncated_json(self, content: str) -> dict[str, Any] | None:  # noqa: C901
+        """
+        Attempt to repair truncated JSON by closing open strings, arrays, and objects.
+
+        Returns parsed dict on success, None on failure.
+        """
+        try:
+            text = content.rstrip()
+
+            # Track JSON structure state
+            in_string = False
+            escape_next = False
+            stack: list[str] = []  # tracks '{' and '['
+
+            for char in text:
+                if escape_next:
+                    escape_next = False
+                    continue
+                if char == "\\":
+                    if in_string:
+                        escape_next = True
+                    continue
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if char in ("{", "["):
+                    stack.append(char)
+                elif char == "}":
+                    if stack and stack[-1] == "{":
+                        stack.pop()
+                elif char == "]" and stack and stack[-1] == "[":
+                    stack.pop()
+
+            # Build repair suffix
+            repair = ""
+
+            # Close unterminated string
+            if in_string:
+                repair += '"'
+
+            # Check if we're mid-value in an object (e.g., truncated after a key's colon)
+            # The closing brackets will handle structure
+            stripped = (text + repair).rstrip()
+            if stripped and stripped[-1] in (",", ":"):
+                repair += '""'
+
+            # Close open arrays and objects in reverse order
+            for bracket in reversed(stack):
+                if bracket == "{":
+                    repair += "}"
+                elif bracket == "[":
+                    repair += "]"
+
+            repaired_content = text + repair
+            result: dict[str, Any] = json.loads(repaired_content)
+            return result
+
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug(f"JSON repair failed: {e}")
+            return None
 
     def validate_connection(self) -> tuple[bool, str]:
         """

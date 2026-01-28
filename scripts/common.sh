@@ -49,12 +49,23 @@ fix_model_cache_permissions() {
     mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers"
   fi
 
-  # Check current ownership
-  local current_owner
-  current_owner=$(stat -c '%u' "$MODEL_CACHE_DIR" 2>/dev/null || stat -f '%u' "$MODEL_CACHE_DIR" 2>/dev/null || echo "unknown")
+  # Ensure all required subdirectories exist
+  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" 2>/dev/null
 
-  # If directory is owned by root (0) or doesn't match container user (1000), fix permissions
-  if [ "$current_owner" = "0" ] || [ "$current_owner" != "1000" ]; then
+  # Check ownership of parent AND all subdirectories (subdirs may be root-owned
+  # even if the parent is correctly owned by UID 1000)
+  local needs_fix=false
+  for dir in "$MODEL_CACHE_DIR" "$MODEL_CACHE_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    local owner
+    owner=$(stat -c '%u' "$dir" 2>/dev/null || stat -f '%u' "$dir" 2>/dev/null || echo "unknown")
+    if [ "$owner" != "1000" ]; then
+      needs_fix=true
+      break
+    fi
+  done
+
+  if [ "$needs_fix" = true ]; then
     echo "🔧 Fixing model cache permissions for non-root container (UID 1000)..."
 
     # Try using Docker to fix permissions (works without sudo)

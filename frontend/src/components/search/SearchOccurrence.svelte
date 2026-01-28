@@ -18,11 +18,6 @@
 
 <div class="occurrence">
   <div class="occurrence-header">
-    {#if occurrence.match_type === 'title'}
-      <span class="match-badge title-match">{$t('search.titleMatch')}</span>
-    {:else if occurrence.match_type === 'speaker'}
-      <span class="match-badge speaker-match">{$t('search.speakerMatch')}</span>
-    {/if}
     {#if occurrence.speaker}
       <span class="speaker">
         {#if occurrence.speaker_highlighted}
@@ -41,7 +36,7 @@
     </a>
   </div>
   {#if occurrence.snippet}
-    <div class="snippet" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'}>
+    <div class="snippet" class:context-only={occurrence.match_type === 'title' || occurrence.match_type === 'speaker'} class:semantic-snippet={occurrence.highlight_type === 'semantic'}>
       {@html occurrence.snippet}
     </div>
   {/if}
@@ -118,22 +113,28 @@
     font-style: italic;
   }
 
-  .match-badge {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    padding: 0.0625rem 0.375rem;
-    border-radius: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+  .snippet :global(mark.semantic) {
+    background: rgba(245, 158, 11, 0.2);
+    color: inherit;
+    padding: 0.05em 0.15em;
+    border-radius: 2px;
+    font-weight: 500;
   }
 
-  .title-match {
-    color: var(--info-color, #2563eb);
-    background: rgba(37, 99, 235, 0.15);
+  :global(.dark) .snippet :global(mark.semantic) {
+    background: rgba(251, 191, 36, 0.25);
   }
 
-  .speaker-match {
-    color: var(--primary-color, #4f46e5);
-    background: rgba(79, 70, 229, 0.15);
+  .snippet.semantic-snippet {
+    background: rgba(245, 158, 11, 0.08);
+    border-left: 3px solid rgba(245, 158, 11, 0.4);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0 4px 4px 0;
   }
+
+  :global(.dark) .snippet.semantic-snippet {
+    background: rgba(251, 191, 36, 0.1);
+    border-left-color: rgba(251, 191, 36, 0.35);
+  }
+
 </style>

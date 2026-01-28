@@ -1,9 +1,11 @@
 """Transcript indexing service for OpenSearch chunk-level search."""
 import datetime
 import logging
+import time
 from typing import Any
 
 from app.core.config import settings
+from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 
 from .chunking_service import chunk_transcript_by_speaker_turns
@@ -267,7 +269,7 @@ class TranscriptIndexingService:
         duration: float | None = None,
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
-    ) -> int:
+    ) -> dict[str, Any] | int:
         """Chunk, embed, and index a transcript.
 
         Args:
@@ -288,7 +290,8 @@ class TranscriptIndexingService:
         Returns:
             Number of chunks indexed.
         """
-        if not opensearch_client:
+        client = get_opensearch_client()
+        if not client:
             logger.warning("OpenSearch client not initialized, skipping chunk indexing")
             return 0
 
@@ -303,6 +306,7 @@ class TranscriptIndexingService:
             upload_time = datetime.datetime.now().isoformat()
 
         # 1. Chunk segments
+        t_chunk_start = time.time()
         chunks = chunk_transcript_by_speaker_turns(
             segments=segments,
             file_uuid=file_uuid,
@@ -318,12 +322,14 @@ class TranscriptIndexingService:
             file_size=file_size,
             collection_ids=collection_ids,
         )
+        chunk_ms = round((time.time() - t_chunk_start) * 1000)
 
         if not chunks:
             logger.warning(f"No chunks generated for file {file_uuid}")
             return 0
 
         # 2. Batch embed chunk texts
+        t_embed_start = time.time()
         chunk_texts = [c["content"] for c in chunks]
         try:
             embedding_service = SearchEmbeddingService.get_instance()
@@ -338,6 +344,7 @@ class TranscriptIndexingService:
             model_name = None
             for chunk in chunks:
                 chunk["embedding_model"] = None
+        embed_ms = round((time.time() - t_embed_start) * 1000)
 
         # 3. Add indexed_at timestamp
         now = datetime.datetime.now().isoformat()
@@ -345,13 +352,25 @@ class TranscriptIndexingService:
             chunk["indexed_at"] = now
 
         # 4. Bulk index to OpenSearch
+        t_index_start = time.time()
         try:
             indexed = self._bulk_index_chunks(chunks)
+            index_ms = round((time.time() - t_index_start) * 1000)
+            total_ms = chunk_ms + embed_ms + index_ms
+
             logger.info(
                 f"Indexed {indexed} chunks for file {file_uuid} "
-                f"(model: {model_name or 'text-only'})"
+                f"(model: {model_name or 'text-only'}, "
+                f"chunk={chunk_ms}ms, embed={embed_ms}ms, index={index_ms}ms, total={total_ms}ms)"
             )
-            return indexed
+            return {
+                "chunk_count": indexed,
+                "chunk_ms": chunk_ms,
+                "embed_ms": embed_ms,
+                "index_ms": index_ms,
+                "total_ms": total_ms,
+                "model": model_name or "text-only",
+            }
         except Exception as e:
             logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
             return 0
@@ -413,7 +432,7 @@ class TranscriptIndexingService:
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index
-        return self.index_transcript_chunks(
+        result = self.index_transcript_chunks(
             file_id=file_id,
             file_uuid=file_uuid,
             user_id=user_id,
@@ -428,6 +447,11 @@ class TranscriptIndexingService:
             file_size=file_size,
             collection_ids=collection_ids,
         )
+        # Extract chunk count from result (dict or int)
+        if isinstance(result, dict):
+            chunk_count: int = result.get("chunk_count", 0)
+            return chunk_count
+        return result
 
     def _bulk_index_chunks(self, chunks: list[dict[str, Any]]) -> int:
         """Bulk index chunks to OpenSearch.

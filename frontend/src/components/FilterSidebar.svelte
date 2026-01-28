@@ -361,8 +361,8 @@
       const data = response.data;
 
       if (data.duration) {
-        const minDur = Math.floor(data.duration.min || 0);
-        const maxDur = Math.ceil(data.duration.max || 3600);
+        const minDur = Math.floor(data.duration.min ?? 0);
+        const maxDur = Math.ceil(data.duration.max ?? 0);
         durationBounds = { min: minDur, max: Math.max(maxDur, minDur + 60) };
         // Only reset slider if user hasn't set a filter
         if (durationRange.min === null && durationRange.max === null) {
@@ -371,8 +371,8 @@
       }
 
       if (data.file_size) {
-        const minSize = Math.floor((data.file_size.min || 0) / (1024 * 1024));
-        const maxSize = Math.ceil((data.file_size.max || 1024 * 1024 * 1024) / (1024 * 1024));
+        const minSize = Math.floor((data.file_size.min ?? 0) / (1024 * 1024));
+        const maxSize = Math.ceil((data.file_size.max ?? 0) / (1024 * 1024));
         fileSizeBounds = { min: minSize, max: Math.max(maxSize, minSize + 1) };
         if (fileSizeRange.min === null && fileSizeRange.max === null) {
           fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
