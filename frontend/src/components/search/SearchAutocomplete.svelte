@@ -15,6 +15,7 @@
   let inputEl: HTMLInputElement;
   let abortController: AbortController | null = null;
   let suppressFocusReopen = false;
+  let searchExecuted = false;
 
   async function fetchSuggestions(query: string) {
     if (query.length < 2) {
@@ -44,6 +45,7 @@
   }
 
   function handleInput() {
+    searchExecuted = false;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fetchSuggestions(value), 200);
   }
@@ -53,6 +55,7 @@
       if (e.key === 'Enter') {
         suggestions = [];
         suppressFocusReopen = true;
+        searchExecuted = true;
         dispatch('search');
       }
       return;
@@ -75,6 +78,7 @@
           showSuggestions = false;
           suggestions = [];
           suppressFocusReopen = true;
+          searchExecuted = true;
           dispatch('search');
         }
         break;
@@ -114,6 +118,7 @@
     suggestions = [];
     showSuggestions = false;
     selectedIndex = -1;
+    searchExecuted = false;
     inputEl?.focus();
     dispatch('clear');
   }
@@ -177,7 +182,7 @@
     </div>
   {/if}
 
-  {#if value.startsWith('speaker:') && !showSuggestions}
+  {#if value.startsWith('speaker:') && !showSuggestions && !searchExecuted}
     <div class="operator-hint">
       <span class="hint-label">{$t('search.searchTips')}</span>
       <code>{$t('search.speakerOperatorExample')}</code>

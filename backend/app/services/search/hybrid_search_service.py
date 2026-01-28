@@ -104,6 +104,7 @@ def _parse_query_operators(raw_query: str) -> tuple[str, dict[str, str]]:
         clean = re.sub(pattern, "", raw_query, count=1, flags=re.IGNORECASE).strip()
         # Collapse multiple spaces
         clean = re.sub(r"\s+", " ", clean).strip()
+        logger.info(f"PARSE: raw='{raw_query}' -> clean='{clean}', speaker='{speaker_name}'")
     else:
         clean = raw_query
     return clean, operators
@@ -393,7 +394,12 @@ class HybridSearchService:
         clean_query, operators = _parse_query_operators(query)
         if "speaker" in operators:
             speakers = list(speakers or []) + [operators["speaker"]]
-        search_query = clean_query if clean_query else query
+        search_query = clean_query.strip() if clean_query else ""
+
+        # Debug logging
+        logger.info(
+            f"SEARCH: original='{query}', clean='{clean_query}', search_query='{search_query}', speakers={speakers}"
+        )
 
         # Build filters
         filters = self._build_filters(
@@ -424,8 +430,9 @@ class HybridSearchService:
 
         # Generate query embedding and execute search
         query_embedding, use_hybrid = self._generate_query_embedding(search_query, search_mode)
+        has_speaker_filter = bool(speakers)
         response = self._execute_search(
-            search_query, query_embedding, filters, page_size, use_hybrid
+            search_query, query_embedding, filters, page_size, use_hybrid, has_speaker_filter
         )
         if response is None:
             return self._empty_response(query, page, page_size)
@@ -494,6 +501,7 @@ class HybridSearchService:
         filters: list[dict[str, Any]],
         page_size: int,
         use_hybrid: bool,
+        has_speaker_filter: bool = False,
     ) -> dict[str, Any] | None:
         """Execute the OpenSearch query with fallback to BM25-only.
 
@@ -503,6 +511,7 @@ class HybridSearchService:
             filters: OpenSearch filter clauses.
             page_size: Results per page.
             use_hybrid: Whether to use hybrid search pipeline.
+            has_speaker_filter: Whether a speaker filter is active.
 
         Returns:
             OpenSearch response dict, or None if all attempts fail.
@@ -511,7 +520,7 @@ class HybridSearchService:
             return None
         try:
             search_body = self._build_search_body(
-                query, query_embedding, filters, page_size, use_hybrid
+                query, query_embedding, filters, page_size, use_hybrid, has_speaker_filter
             )
             search_params: dict[str, Any] = {}
             if use_hybrid:
@@ -527,7 +536,7 @@ class HybridSearchService:
 
         # Fall back to BM25-only without pipeline
         try:
-            search_body = self._build_bm25_only_body(query, filters, page_size)
+            search_body = self._build_bm25_only_body(query, filters, page_size, has_speaker_filter)
             fallback: dict[str, Any] = opensearch_client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body=search_body,
@@ -799,10 +808,66 @@ class HybridSearchService:
         filters: list[dict[str, Any]],
         page_size: int,
         use_hybrid: bool,
+        has_speaker_filter: bool = False,
     ) -> dict[str, Any]:
         """Build the hybrid search query body."""
         # Over-fetch for grouping by file
         fetch_size = page_size * 5
+
+        # Dynamically set search fields based on speaker filter
+        if has_speaker_filter:
+            search_fields = [
+                "content^3",
+                "content.exact^2",
+                "title^2",
+            ]
+        else:
+            search_fields = [
+                "content^3",
+                "content.exact^2",
+                "title^2",
+                "speaker^3",
+            ]
+
+        # Build the text query clause (multi_match or match_all if no query)
+        if query and query.strip():
+            text_query_clause = {
+                "multi_match": {
+                    "query": query,
+                    "fields": search_fields,
+                    "type": "best_fields",
+                }
+            }
+            logger.info(
+                f"BUILD_BODY: using multi_match with query='{query}', has_speaker_filter={has_speaker_filter}, fields={search_fields}"
+            )
+        else:
+            # Empty query - use match_all (will only filter by speaker/tags/etc)
+            text_query_clause = {"match_all": {}}
+            logger.info(
+                f"BUILD_BODY: using match_all (empty query), has_speaker_filter={has_speaker_filter}"
+            )
+
+        # Build highlight fields (exclude speaker when using speaker filter)
+        highlight_fields = {
+            "content": {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "fragment_size": 200,
+                "number_of_fragments": 3,
+            },
+            "title": {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "number_of_fragments": 0,
+            },
+        }
+        if not has_speaker_filter:
+            highlight_fields["speaker"] = {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "number_of_fragments": 0,
+            }
 
         if use_hybrid and query_embedding:
             search_body: dict[str, Any] = {
@@ -813,20 +878,7 @@ class HybridSearchService:
                             # BM25 leg
                             {
                                 "bool": {
-                                    "must": [
-                                        {
-                                            "multi_match": {
-                                                "query": query,
-                                                "fields": [
-                                                    "content^3",
-                                                    "content.exact^2",
-                                                    "title^2",
-                                                    "speaker^3",
-                                                ],
-                                                "type": "best_fields",
-                                            }
-                                        }
-                                    ],
+                                    "must": [text_query_clause],
                                     "filter": filters,
                                 }
                             },
@@ -843,26 +895,7 @@ class HybridSearchService:
                         ]
                     }
                 },
-                "highlight": {
-                    "fields": {
-                        "content": {
-                            "pre_tags": ["<mark>"],
-                            "post_tags": ["</mark>"],
-                            "fragment_size": 200,
-                            "number_of_fragments": 3,
-                        },
-                        "title": {
-                            "pre_tags": ["<mark>"],
-                            "post_tags": ["</mark>"],
-                            "number_of_fragments": 0,
-                        },
-                        "speaker": {
-                            "pre_tags": ["<mark>"],
-                            "post_tags": ["</mark>"],
-                            "number_of_fragments": 0,
-                        },
-                    }
-                },
+                "highlight": {"fields": highlight_fields},
                 "_source": [
                     "file_uuid",
                     "file_id",
@@ -880,7 +913,7 @@ class HybridSearchService:
                 ],
             }
         else:
-            search_body = self._build_bm25_only_body(query, filters, page_size)
+            search_body = self._build_bm25_only_body(query, filters, page_size, has_speaker_filter)
 
         return search_body
 
@@ -889,6 +922,7 @@ class HybridSearchService:
         query: str,
         filters: list[dict[str, Any]],
         page_size: int,
+        has_speaker_filter: bool = False,
     ) -> dict[str, Any]:
         """Build a BM25-only search body for exact/keyword mode.
 
@@ -896,46 +930,63 @@ class HybridSearchService:
         for truly exact matching. No fuzziness.
         """
         fetch_size = page_size * 5
+
+        # Dynamically set search fields based on speaker filter
+        if has_speaker_filter:
+            search_fields = [
+                "content.exact^3",
+                "title^2",
+            ]
+        else:
+            search_fields = [
+                "content.exact^3",
+                "title^2",
+                "speaker^3",
+            ]
+
+        # Build the text query clause (multi_match or match_all if no query)
+        if query and query.strip():
+            text_query_clause = {
+                "multi_match": {
+                    "query": query,
+                    "fields": search_fields,
+                    "type": "best_fields",
+                }
+            }
+        else:
+            # Empty query - use match_all (will only filter by speaker/tags/etc)
+            text_query_clause = {"match_all": {}}
+
+        # Build highlight fields (exclude speaker when using speaker filter)
+        highlight_fields_bm25 = {
+            "content.exact": {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "fragment_size": 200,
+                "number_of_fragments": 3,
+            },
+            "title": {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "number_of_fragments": 0,
+            },
+        }
+        if not has_speaker_filter:
+            highlight_fields_bm25["speaker"] = {
+                "pre_tags": ["<mark>"],
+                "post_tags": ["</mark>"],
+                "number_of_fragments": 0,
+            }
+
         return {
             "size": fetch_size,
             "query": {
                 "bool": {
-                    "must": [
-                        {
-                            "multi_match": {
-                                "query": query,
-                                "fields": [
-                                    "content.exact^3",
-                                    "title^2",
-                                    "speaker^3",
-                                ],
-                                "type": "best_fields",
-                            }
-                        }
-                    ],
+                    "must": [text_query_clause],
                     "filter": filters,
                 }
             },
-            "highlight": {
-                "fields": {
-                    "content.exact": {
-                        "pre_tags": ["<mark>"],
-                        "post_tags": ["</mark>"],
-                        "fragment_size": 200,
-                        "number_of_fragments": 3,
-                    },
-                    "title": {
-                        "pre_tags": ["<mark>"],
-                        "post_tags": ["</mark>"],
-                        "number_of_fragments": 0,
-                    },
-                    "speaker": {
-                        "pre_tags": ["<mark>"],
-                        "post_tags": ["</mark>"],
-                        "number_of_fragments": 0,
-                    },
-                }
-            },
+            "highlight": {"fields": highlight_fields_bm25},
             "_source": [
                 "file_uuid",
                 "file_id",

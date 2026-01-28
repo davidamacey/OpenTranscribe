@@ -236,6 +236,16 @@
     performSearch(searchInput, 1);
   }
 
+  function handleClearSearch() {
+    searchInput = '';
+    searchStore.reset();
+    // Update URL to remove search params
+    const url = new URL(window.location.href);
+    url.searchParams.delete('q');
+    url.searchParams.delete('page');
+    goto(url.toString(), { replaceState: true });
+  }
+
   function handlePageChange(event: CustomEvent<number>) {
     performSearch($searchStore.query, event.detail);
     // Scroll to top of results
@@ -555,6 +565,7 @@
             bind:value={searchInput}
             on:search={handleSearch}
             on:select={handleSuggestionSelect}
+            on:clear={handleClearSearch}
             placeholder={$t('searchPage.placeholder')}
           />
           <button class="search-btn" on:click={handleSearch} disabled={$searchStore.isLoading}>
