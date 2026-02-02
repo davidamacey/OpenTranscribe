@@ -219,6 +219,7 @@ setup_directories() {
     mkdir -p "${PACKAGE_DIR}/models/torch"
     mkdir -p "${PACKAGE_DIR}/models/nltk_data"
     mkdir -p "${PACKAGE_DIR}/models/sentence-transformers"
+    mkdir -p "${PACKAGE_DIR}/models/opensearch-ml"
     mkdir -p "${PACKAGE_DIR}/config"
     mkdir -p "${PACKAGE_DIR}/database"
     mkdir -p "${PACKAGE_DIR}/scripts"
@@ -385,6 +386,104 @@ select_whisper_model_for_offline() {
     echo ""
 }
 
+select_opensearch_models_for_offline() {
+    print_header "OpenSearch Neural Model Selection"
+
+    echo -e "${BLUE}Available OpenSearch Neural Models for Semantic Search:${NC}"
+    echo ""
+    echo "  Model                                          Tier       Languages      Size"
+    echo "  ─────────────────────────────────────────────────────────────────────────────"
+    echo "  all-MiniLM-L6-v2 (default)                    Fast       English        80MB"
+    echo "  paraphrase-multilingual-MiniLM-L12-v2         Fast       50+ languages  420MB"
+    echo "  all-mpnet-base-v2                             Balanced   English        420MB"
+    echo "  paraphrase-multilingual-mpnet-base-v2         Balanced   50+ languages  1.1GB"
+    echo "  all-distilroberta-v1                          Best       English        290MB"
+    echo "  distiluse-base-multilingual-cased-v1          Best       15 languages   480MB"
+    echo ""
+    echo -e "${GREEN}Recommendation: all-MiniLM-L6-v2${NC} (default)"
+    echo "  Reason: Fast, lightweight, good for most use cases"
+    echo ""
+    echo -e "${YELLOW}IMPORTANT for Offline Deployments:${NC}"
+    echo "  • You can select multiple models (comma-separated) to enable model switching"
+    echo "  • Models cannot be downloaded after deployment without internet"
+    echo "  • For multilingual content, add a multilingual model"
+    echo ""
+
+    # Check if OPENSEARCH_MODELS is already set
+    if [ -n "$OPENSEARCH_MODELS" ]; then
+        print_info "OPENSEARCH_MODELS already set to: $OPENSEARCH_MODELS"
+        read -p "Use these models or select different ones? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            print_success "Using models: $OPENSEARCH_MODELS"
+            return 0
+        fi
+    fi
+
+    # Prompt user for model selection
+    echo "Enter model names (comma-separated) or choose an option:"
+    echo "  1. Default only (all-MiniLM-L6-v2) - 80MB"
+    echo "  2. English suite (default + best quality) - 370MB"
+    echo "  3. Multilingual suite (default + multilingual) - 500MB"
+    echo "  4. Complete suite (all 6 models) - ~2.8GB"
+    echo "  5. Custom selection (enter model names)"
+    echo ""
+
+    while true; do
+        read -r -p "Select option [1-5] (default: 1): " user_choice
+
+        # Use default if user just presses Enter
+        if [ -z "$user_choice" ]; then
+            OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+            break
+        fi
+
+        case "$user_choice" in
+            1)
+                OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+                break
+                ;;
+            2)
+                OPENSEARCH_MODELS="all-MiniLM-L6-v2,all-distilroberta-v1"
+                break
+                ;;
+            3)
+                OPENSEARCH_MODELS="all-MiniLM-L6-v2,paraphrase-multilingual-MiniLM-L12-v2"
+                break
+                ;;
+            4)
+                export DOWNLOAD_ALL_OPENSEARCH_MODELS="true"
+                OPENSEARCH_MODELS=""
+                print_success "Downloading all 6 OpenSearch models"
+                return 0
+                ;;
+            5)
+                echo ""
+                echo "Available model short names:"
+                echo "  all-MiniLM-L6-v2, paraphrase-multilingual-MiniLM-L12-v2,"
+                echo "  all-mpnet-base-v2, paraphrase-multilingual-mpnet-base-v2,"
+                echo "  all-distilroberta-v1, distiluse-base-multilingual-cased-v1"
+                echo ""
+                read -r -p "Enter model names (comma-separated): " custom_models
+                if [ -n "$custom_models" ]; then
+                    OPENSEARCH_MODELS="$custom_models"
+                    break
+                else
+                    print_error "No models specified. Please try again."
+                fi
+                ;;
+            *)
+                print_error "Invalid option. Please choose 1-5."
+                ;;
+        esac
+    done
+
+    echo ""
+    print_success "Selected OpenSearch models: ${OPENSEARCH_MODELS}"
+    export OPENSEARCH_MODELS
+    echo ""
+}
+
 select_gpu_device_for_build() {
     print_header "GPU Selection for Model Downloads"
 
@@ -486,7 +585,14 @@ download_models() {
 
     print_info "Starting model download container..."
     print_info "Downloading Whisper model: ${WHISPER_MODEL}"
-    print_info "This will download approximately 5-40GB depending on model size"
+    if [ -n "$OPENSEARCH_MODELS" ]; then
+        print_info "Downloading OpenSearch models: ${OPENSEARCH_MODELS}"
+    elif [ "$DOWNLOAD_ALL_OPENSEARCH_MODELS" = "true" ]; then
+        print_info "Downloading OpenSearch models: ALL (6 models)"
+    else
+        print_info "Downloading OpenSearch models: default (all-MiniLM-L6-v2)"
+    fi
+    print_info "This will download approximately 5-40GB depending on model selection"
     print_warning "This may take 10-60 minutes depending on your internet speed..."
 
     # Create temporary model cache directory
@@ -495,6 +601,7 @@ download_models() {
     mkdir -p "${temp_model_cache}/torch"
     mkdir -p "${temp_model_cache}/nltk_data"
     mkdir -p "${temp_model_cache}/sentence-transformers"
+    mkdir -p "${temp_model_cache}/opensearch-ml"
 
     # Run backend container with model download script
     print_info "Running model download in Docker container..."
@@ -518,10 +625,13 @@ download_models() {
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
         -e USE_GPU="${USE_GPU:-true}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
+        -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
+        -e DOWNLOAD_ALL_OPENSEARCH_MODELS="${DOWNLOAD_ALL_OPENSEARCH_MODELS:-false}" \
         -v "${temp_model_cache}/huggingface:/home/appuser/.cache/huggingface" \
         -v "${temp_model_cache}/torch:/home/appuser/.cache/torch" \
         -v "${temp_model_cache}/nltk_data:/home/appuser/.cache/nltk_data" \
         -v "${temp_model_cache}/sentence-transformers:/home/appuser/.cache/sentence-transformers" \
+        -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
         -v "$(pwd)/test_videos:/app/test_videos:ro" \
         davidamacey/opentranscribe-backend:latest \
@@ -555,6 +665,13 @@ download_models() {
         print_info "  Copied sentence-transformers models"
     else
         print_warning "No sentence-transformers models found to copy"
+    fi
+
+    if [ -d "${temp_model_cache}/opensearch-ml" ] && [ "$(ls -A ${temp_model_cache}/opensearch-ml 2>/dev/null)" ]; then
+        cp -r "${temp_model_cache}/opensearch-ml"/* "${PACKAGE_DIR}/models/opensearch-ml/"
+        print_info "  Copied OpenSearch neural search models"
+    else
+        print_warning "No OpenSearch neural models found to copy"
     fi
 
     # Check if model manifest was created (it's inside the huggingface cache dir)
@@ -801,6 +918,7 @@ main() {
     extract_docker_images
     setup_directories
     select_whisper_model_for_offline
+    select_opensearch_models_for_offline
     select_gpu_device_for_build
     pull_and_save_images
     download_models

@@ -9,9 +9,12 @@ from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 
 from .chunking_service import chunk_transcript_by_speaker_turns
-from .embedding_service import SearchEmbeddingService
 
 logger = logging.getLogger(__name__)
+
+# Track whether neural pipeline is available
+_neural_pipeline_verified = False
+_neural_pipeline_available = False
 
 # Index config for transcript chunks
 TRANSCRIPT_CHUNKS_INDEX_BODY = {
@@ -29,13 +32,14 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
                     "filter": [
                         "lowercase",
                         "english_stop",
-                        "kstem",
+                        "english_snowball",
                         "shingle_filter",
                     ],
                 }
             },
             "filter": {
                 "english_stop": {"type": "stop", "stopwords": "_english_"},
+                "english_snowball": {"type": "snowball", "language": "English"},
                 "shingle_filter": {
                     "type": "shingle",
                     "min_shingle_size": 2,
@@ -124,8 +128,11 @@ def ensure_chunks_index_exists() -> bool:
         if opensearch_client.indices.exists(index=index_name):
             return True
 
-        # Set dimension from config
-        index_body = _get_index_body_with_dimension(settings.SEARCH_EMBEDDING_DIMENSION)
+        # Get dimension from settings service (reads from DB with default fallback)
+        from app.services.search.settings_service import get_search_embedding_dimension
+
+        dimension = get_search_embedding_dimension()
+        index_body = _get_index_body_with_dimension(dimension)
 
         opensearch_client.indices.create(index=index_name, body=index_body)
         logger.info(f"Created transcript chunks index: {index_name}")
@@ -242,6 +249,150 @@ def ensure_search_pipeline_exists() -> bool:
         return False
 
 
+def _get_model_id_from_service() -> str | None:
+    """Get the active model ID from the ML model service.
+
+    Returns:
+        Model ID string or None if not available.
+    """
+    try:
+        from .ml_model_service import get_ml_model_service
+
+        ml_service = get_ml_model_service()
+        return ml_service.get_active_model_id()
+    except Exception as e:
+        logger.warning(f"Could not get active model: {e}")
+        return None
+
+
+def _check_existing_pipeline_model(pipeline_id: str, expected_model_id: str) -> bool | None:
+    """Check if existing pipeline has the expected model.
+
+    Args:
+        pipeline_id: Pipeline ID to check.
+        expected_model_id: Expected model ID.
+
+    Returns:
+        True if pipeline exists with correct model, False if model mismatch, None if not found.
+    """
+    if not opensearch_client:
+        return None
+
+    try:
+        response = opensearch_client.ingest.get_pipeline(id=pipeline_id)
+        current_pipeline = response.get(pipeline_id, {})
+        processors = current_pipeline.get("processors", [])
+
+        for processor in processors:
+            if "text_embedding" in processor:
+                current_model = processor["text_embedding"].get("model_id")
+                if current_model == expected_model_id:
+                    return True
+                logger.info(
+                    f"Neural pipeline model mismatch: {current_model} vs {expected_model_id}, updating"
+                )
+                return False
+        return None
+    except Exception:
+        logger.debug(f"Neural ingest pipeline {pipeline_id} not found, will create it")
+        return None
+
+
+def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
+    """Ensure the neural ingest pipeline exists with the specified model.
+
+    The neural ingest pipeline uses OpenSearch's text_embedding processor
+    to generate embeddings server-side during document ingestion.
+
+    Args:
+        model_id: OpenSearch ML model ID. If None, attempts to get from service.
+
+    Returns:
+        True if pipeline exists or was created, False on error.
+    """
+    global _neural_pipeline_verified, _neural_pipeline_available
+
+    if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+        logger.debug("Neural search disabled, skipping neural ingest pipeline")
+        return False
+
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    pipeline_id = settings.OPENSEARCH_NEURAL_PIPELINE
+
+    # Get model_id if not provided
+    if not model_id:
+        model_id = _get_model_id_from_service()
+
+    if not model_id:
+        logger.warning("No model_id available for neural ingest pipeline")
+        return False
+
+    try:
+        # Check if pipeline exists with correct model
+        pipeline_check = _check_existing_pipeline_model(pipeline_id, model_id)
+        if pipeline_check is True:
+            _neural_pipeline_verified = True
+            _neural_pipeline_available = True
+            return True
+
+        # Create or update pipeline
+        pipeline_body = {
+            "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
+            "processors": [
+                {
+                    "text_embedding": {
+                        "model_id": model_id,
+                        "field_map": {"content": "embedding"},
+                    }
+                }
+            ],
+        }
+
+        opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
+        logger.info(f"Created/updated neural ingest pipeline: {pipeline_id} with model {model_id}")
+
+        _neural_pipeline_verified = True
+        _neural_pipeline_available = True
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating neural ingest pipeline: {e}")
+        _neural_pipeline_verified = True
+        _neural_pipeline_available = False
+        return False
+
+
+def is_neural_pipeline_available() -> bool:
+    """Check if the neural ingest pipeline is available.
+
+    Returns:
+        True if neural pipeline is configured and available.
+    """
+    global _neural_pipeline_verified, _neural_pipeline_available
+
+    if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+        return False
+
+    if _neural_pipeline_verified:
+        return _neural_pipeline_available
+
+    # Try to verify
+    return ensure_neural_ingest_pipeline()
+
+
+def reset_neural_pipeline_state() -> None:
+    """Reset the neural pipeline verification state.
+
+    Call this when switching models or after configuration changes.
+    """
+    global _neural_pipeline_verified, _neural_pipeline_available
+    _neural_pipeline_verified = False
+    _neural_pipeline_available = False
+
+
 def _get_index_body_with_dimension(dimension: int) -> dict[str, Any]:
     """Get index body with the correct embedding dimension."""
     import copy
@@ -252,7 +403,15 @@ def _get_index_body_with_dimension(dimension: int) -> dict[str, Any]:
 
 
 class TranscriptIndexingService:
-    """Handles chunking, embedding, and indexing transcripts into OpenSearch."""
+    """Handles chunking, embedding, and indexing transcripts into OpenSearch.
+
+    Uses OpenSearch neural search for embedding generation. Embeddings are
+    generated server-side via the neural ingest pipeline, which eliminates
+    Python embedding overhead and enables hot-swap model changes.
+
+    If neural search is not available, documents are indexed without embeddings
+    and search falls back to BM25-only (keyword search).
+    """
 
     def index_transcript_chunks(
         self,
@@ -270,7 +429,11 @@ class TranscriptIndexingService:
         file_size: int | None = None,
         collection_ids: list[int] | None = None,
     ) -> dict[str, Any] | int:
-        """Chunk, embed, and index a transcript.
+        """Chunk and index a transcript using OpenSearch neural search.
+
+        Embeddings are generated server-side by OpenSearch via the neural
+        ingest pipeline. If neural search is not available, documents are
+        indexed without embeddings (BM25 keyword search only).
 
         Args:
             file_id: Media file integer ID.
@@ -288,7 +451,7 @@ class TranscriptIndexingService:
             collection_ids: List of collection IDs the file belongs to.
 
         Returns:
-            Number of chunks indexed.
+            Dict with indexing stats or int (chunk count).
         """
         client = get_opensearch_client()
         if not client:
@@ -328,23 +491,21 @@ class TranscriptIndexingService:
             logger.warning(f"No chunks generated for file {file_uuid}")
             return 0
 
-        # 2. Batch embed chunk texts
-        t_embed_start = time.time()
-        chunk_texts = [c["content"] for c in chunks]
-        try:
-            embedding_service = SearchEmbeddingService.get_instance()
-            embeddings = embedding_service.embed_texts(chunk_texts)
-            model_name = embedding_service.model_name
+        # 2. Check if neural pipeline is available for embedding generation
+        use_neural = is_neural_pipeline_available()
 
-            for i, chunk in enumerate(chunks):
-                chunk["embedding"] = embeddings[i]
-                chunk["embedding_model"] = model_name
-        except Exception as e:
-            logger.warning(f"Embedding failed for file {file_uuid}, indexing text-only: {e}")
-            model_name = None
+        if use_neural:
+            # Neural mode: OpenSearch generates embeddings via ingest pipeline
+            for chunk in chunks:
+                chunk["embedding_model"] = "neural"
+            logger.debug(f"Using neural ingest pipeline for file {file_uuid}")
+        else:
+            # No neural pipeline - index without embeddings (BM25 only)
             for chunk in chunks:
                 chunk["embedding_model"] = None
-        embed_ms = round((time.time() - t_embed_start) * 1000)
+            logger.warning(
+                f"Neural pipeline not available for file {file_uuid}, indexing text-only"
+            )
 
         # 3. Add indexed_at timestamp
         now = datetime.datetime.now().isoformat()
@@ -354,22 +515,22 @@ class TranscriptIndexingService:
         # 4. Bulk index to OpenSearch
         t_index_start = time.time()
         try:
-            indexed = self._bulk_index_chunks(chunks)
+            indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
             index_ms = round((time.time() - t_index_start) * 1000)
-            total_ms = chunk_ms + embed_ms + index_ms
+            total_ms = chunk_ms + index_ms
 
+            mode_str = "neural" if use_neural else "text-only"
             logger.info(
                 f"Indexed {indexed} chunks for file {file_uuid} "
-                f"(model: {model_name or 'text-only'}, "
-                f"chunk={chunk_ms}ms, embed={embed_ms}ms, index={index_ms}ms, total={total_ms}ms)"
+                f"(mode: {mode_str}, chunk={chunk_ms}ms, index={index_ms}ms, total={total_ms}ms)"
             )
             return {
                 "chunk_count": indexed,
                 "chunk_ms": chunk_ms,
-                "embed_ms": embed_ms,
                 "index_ms": index_ms,
                 "total_ms": total_ms,
-                "model": model_name or "text-only",
+                "mode": mode_str,
+                "neural": use_neural,
             }
         except Exception as e:
             logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
@@ -453,11 +614,14 @@ class TranscriptIndexingService:
             return chunk_count
         return result
 
-    def _bulk_index_chunks(self, chunks: list[dict[str, Any]]) -> int:
+    def _bulk_index_chunks(
+        self, chunks: list[dict[str, Any]], use_neural_pipeline: bool = False
+    ) -> int:
         """Bulk index chunks to OpenSearch.
 
         Args:
             chunks: List of chunk documents to index.
+            use_neural_pipeline: If True, use neural ingest pipeline for embedding.
 
         Returns:
             Number of successfully indexed chunks.
@@ -467,14 +631,18 @@ class TranscriptIndexingService:
 
         for _, chunk in enumerate(chunks):
             doc_id = f"{chunk['file_uuid']}_{chunk['chunk_index']}"
-            bulk_body.append(
-                {
-                    "index": {
-                        "_index": index_name,
-                        "_id": doc_id,
-                    }
+            index_action: dict[str, Any] = {
+                "index": {
+                    "_index": index_name,
+                    "_id": doc_id,
                 }
-            )
+            }
+
+            # Use neural ingest pipeline if enabled
+            if use_neural_pipeline:
+                index_action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
+
+            bulk_body.append(index_action)
             bulk_body.append(chunk)
 
         if not opensearch_client:
@@ -483,7 +651,14 @@ class TranscriptIndexingService:
         response = opensearch_client.bulk(body=bulk_body, refresh=False)
 
         if response.get("errors"):
-            error_count = sum(1 for item in response["items"] if "error" in item.get("index", {}))
+            error_count = 0
+            for item in response["items"]:
+                if "error" in item.get("index", {}):
+                    error_count += 1
+                    error_info = item["index"]["error"]
+                    logger.error(
+                        f"Bulk index error: {error_info.get('type')}: {error_info.get('reason')}"
+                    )
             logger.error(f"Bulk indexing had {error_count} errors out of {len(chunks)}")
             return len(chunks) - error_count
 

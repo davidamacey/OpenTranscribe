@@ -10,42 +10,54 @@ from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 logger = logging.getLogger(__name__)
 
 
-def _load_search_settings_from_db() -> None:
-    """Load persisted search settings from DB into this worker process."""
-    try:
-        from app.services.search.settings_service import get_search_embedding_dimension
-        from app.services.search.settings_service import get_search_embedding_model
+def _ensure_neural_pipeline_ready() -> bool:
+    """Ensure neural search pipeline is ready for indexing.
 
-        db_model = get_search_embedding_model()
-        db_dimension = get_search_embedding_dimension()
-        settings.SEARCH_EMBEDDING_MODEL = db_model
-        settings.SEARCH_EMBEDDING_DIMENSION = db_dimension
-        logger.info(f"Worker loaded DB settings: model={db_model}, dim={db_dimension}")
+    Returns:
+        True if neural search is available and pipeline is ready.
+    """
+    if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+        return False
+
+    try:
+        from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+        from app.services.search.indexing_service import reset_neural_pipeline_state
+
+        # Reset state to force re-check
+        reset_neural_pipeline_state()
+
+        if ensure_neural_ingest_pipeline():
+            logger.info("Neural ingest pipeline ready for reindexing")
+            return True
+        else:
+            logger.warning("Neural ingest pipeline not available")
+            return False
     except Exception as e:
-        logger.warning(f"Could not load search settings from DB: {e}")
+        logger.warning(f"Could not setup neural pipeline: {e}")
+        return False
 
 
 def _handle_model_switch(model_id: str) -> dict[str, Any] | None:
-    """Switch embedding model if valid. Returns error dict on failure, None on success."""
-    from app.core.constants import EMBEDDING_MODELS
-    from app.services.search.embedding_service import SearchEmbeddingService
+    """Switch embedding model if valid. Returns error dict on failure, None on success.
+
+    Only handles OpenSearch neural models.
+    """
+    from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
     from app.services.search.indexing_service import recreate_index_for_dimension
 
-    if model_id not in EMBEDDING_MODELS:
-        logger.warning(f"Unknown model_id: {model_id}, using current model")
+    if model_id in OPENSEARCH_EMBEDDING_MODELS:
+        model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
+        new_dimension: int = model_info["dimension"]  # type: ignore[assignment]
+
+        # Recreate index with new dimension if needed
+        if not recreate_index_for_dimension(new_dimension):
+            logger.error(f"Failed to recreate index for dimension {new_dimension}")
+            return {"error": "Failed to recreate index for new model dimension"}
+
+        logger.info(f"Worker using neural model {model_id} ({new_dimension}d)")
         return None
 
-    new_dimension: int = EMBEDDING_MODELS[model_id]["dimension"]  # type: ignore[assignment]
-    settings.SEARCH_EMBEDDING_MODEL = model_id
-    settings.SEARCH_EMBEDDING_DIMENSION = new_dimension
-    SearchEmbeddingService.reset()
-
-    # Recreate index with new dimension if needed
-    if not recreate_index_for_dimension(new_dimension):
-        logger.error(f"Failed to recreate index for dimension {new_dimension}")
-        return {"error": "Failed to recreate index for new model dimension"}
-
-    logger.info(f"Worker switched to model {model_id} ({new_dimension}d)")
+    logger.warning(f"Unknown model_id: {model_id}, using current model")
     return None
 
 
@@ -181,12 +193,17 @@ def reindex_transcripts_task(
     task_id = self.request.id
     logger.info(f"Re-index task {task_id} started for user {user_id}")
 
-    _load_search_settings_from_db()
-
     if model_id:
         error = _handle_model_switch(model_id)
         if error:
             return error
+
+    # Ensure neural pipeline is ready if enabled
+    use_neural = _ensure_neural_pipeline_ready()
+    if use_neural:
+        logger.info("Reindex will use neural embedding mode")
+    else:
+        logger.warning("Neural embedding not available - reindex may not generate embeddings")
 
     indexing_service = TranscriptIndexingService()
     stats: dict[str, Any] = {

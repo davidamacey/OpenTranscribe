@@ -4,7 +4,35 @@
 
 # OpenTranscribe Model Downloader
 # Downloads all required AI models before application startup
+#
 # Usage: ./scripts/download-models.sh [model_cache_dir]
+#
+# Environment Variables:
+#   WHISPER_MODEL              - Whisper model to download (default: large-v2)
+#   OPENSEARCH_MODELS          - Comma-separated list of OpenSearch neural models
+#                                Example: "all-MiniLM-L6-v2,all-mpnet-base-v2"
+#   DOWNLOAD_ALL_OPENSEARCH_MODELS - Set to "true" to download all 6 neural models
+#
+# Available OpenSearch Neural Models (for semantic search):
+#   Fast tier (384 dimensions):
+#     - all-MiniLM-L6-v2                      (default, English, 80MB)
+#     - paraphrase-multilingual-MiniLM-L12-v2 (Multilingual 50+, 420MB)
+#   Balanced tier (768 dimensions):
+#     - all-mpnet-base-v2                     (English, 420MB)
+#     - paraphrase-multilingual-mpnet-base-v2 (Multilingual 50+, 1.1GB)
+#   Best quality tier:
+#     - all-distilroberta-v1                  (English, 768d, 290MB)
+#     - distiluse-base-multilingual-cased-v1  (Multilingual 15, 512d, 480MB)
+#
+# Examples:
+#   # Download default models only
+#   ./scripts/download-models.sh
+#
+#   # Download specific OpenSearch models for multilingual support
+#   OPENSEARCH_MODELS="all-MiniLM-L6-v2,paraphrase-multilingual-MiniLM-L12-v2" ./scripts/download-models.sh
+#
+#   # Download all models (for complete offline support)
+#   DOWNLOAD_ALL_OPENSEARCH_MODELS=true ./scripts/download-models.sh
 
 # Colors for output
 RED='\033[0;31m'
@@ -143,6 +171,7 @@ download_models_docker() {
     # Create model cache directories
     mkdir -p "$MODEL_CACHE_DIR/huggingface"
     mkdir -p "$MODEL_CACHE_DIR/torch"
+    mkdir -p "$MODEL_CACHE_DIR/opensearch-ml"
 
     print_info "Starting model download using Docker..."
     echo ""
@@ -191,8 +220,11 @@ download_models_docker() {
         -e USE_GPU="${use_gpu}" \
         -e COMPUTE_TYPE="${COMPUTE_TYPE:-float16}" \
         -e DIARIZATION_MODEL="${DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}" \
+        -e DOWNLOAD_ALL_OPENSEARCH_MODELS="${DOWNLOAD_ALL_OPENSEARCH_MODELS:-false}" \
+        -e OPENSEARCH_MODELS="${OPENSEARCH_MODELS:-}" \
         -v "$(realpath "$MODEL_CACHE_DIR/huggingface"):/home/appuser/.cache/huggingface" \
         -v "$(realpath "$MODEL_CACHE_DIR/torch"):/home/appuser/.cache/torch" \
+        -v "$(realpath "$MODEL_CACHE_DIR/opensearch-ml"):/home/appuser/.cache/opensearch-ml" \
         -v "$SCRIPT_DIR/download-models.py:/app/download-models.py:ro" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
@@ -303,9 +335,11 @@ show_summary() {
     local total_size
     local hf_size
     local torch_size
+    local opensearch_size
     total_size=$(get_dir_size "$MODEL_CACHE_DIR")
     hf_size=$(get_dir_size "$MODEL_CACHE_DIR/huggingface")
     torch_size=$(get_dir_size "$MODEL_CACHE_DIR/torch")
+    opensearch_size=$(get_dir_size "$MODEL_CACHE_DIR/opensearch-ml")
 
     echo -e "${GREEN}✅ Model cache ready!${NC}"
     echo ""
@@ -313,6 +347,7 @@ show_summary() {
     echo "Total size: $total_size"
     echo "  • HuggingFace models: $hf_size"
     echo "  • Torch models: $torch_size"
+    echo "  • OpenSearch neural models: $opensearch_size"
     echo ""
     print_info "Models are cached and will be available immediately when Docker starts"
     echo ""

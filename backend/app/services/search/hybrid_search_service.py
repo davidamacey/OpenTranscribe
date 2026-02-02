@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from nltk.stem import SnowballStemmer
+
 from app.core.config import settings
 from app.core.constants import SEARCH_CACHE_MAX_SIZE
 from app.core.constants import SEARCH_CACHE_TTL_SECONDS
@@ -18,7 +20,6 @@ from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
-from app.services.search.embedding_service import SearchEmbeddingService
 from app.services.search.indexing_service import ensure_chunks_index_exists
 from app.services.search.indexing_service import ensure_search_pipeline_exists
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Module-level caches for index/pipeline existence checks
 _index_verified = False
 _pipeline_verified = False
+_neural_search_available: bool | None = None
 
 
 def _sanitize_html(text: str) -> str:
@@ -58,113 +60,42 @@ def _sanitize_html(text: str) -> str:
     return text
 
 
-def _get_word_stem(word: str) -> str:
-    """Get a simple stem for a word by removing common suffixes.
+# Language-aware stemmer cache
+_stemmers: dict[str, SnowballStemmer] = {}
 
-    This is a lightweight stemming approach that handles common English suffixes
-    to match semantic variations like china→chinese, economy→economic, etc.
+
+def _get_word_stem(word: str, language: str = "english") -> str:
+    """Get stem using NLTK SnowballStemmer - matches OpenSearch snowball filter.
+
+    Args:
+        word: Word to stem.
+        language: Language for stemming (default: english).
+
+    Returns:
+        Stemmed word.
     """
-    word = word.lower()
-    # Common suffixes to strip (order matters - check longer ones first)
-    suffixes = [
-        "ization",
-        "isation",
-        "ational",
-        "ousness",
-        "iveness",
-        "fulness",
-        "ically",
-        "iously",
-        "lessly",
-        "ations",
-        "encies",
-        "ancies",
-        "ingly",
-        "ously",
-        "ively",
-        "fully",
-        "ation",
-        "ition",
-        "ement",
-        "ness",
-        "ment",
-        "ence",
-        "ance",
-        "able",
-        "ible",
-        "ally",
-        "ious",
-        "eous",
-        "ical",
-        "less",
-        "ness",
-        "ship",
-        "ward",
-        "wise",
-        "like",
-        "ing",
-        "ies",
-        "ied",
-        "ian",
-        "ese",
-        "ish",
-        "ive",
-        "ous",
-        "ful",
-        "ant",
-        "ent",
-        "ion",
-        "ism",
-        "ist",
-        "ity",
-        "ory",
-        "ary",
-        "ery",
-        "ing",
-        "ed",
-        "er",
-        "ly",
-        "al",
-        "en",
-        "es",
-        "ty",
-        "ry",
-        "ic",
-        "s",
-    ]
-    for suffix in suffixes:
-        if len(word) > len(suffix) + 2 and word.endswith(suffix):
-            return word[: -len(suffix)]
-    return word
+    lang = language.lower() if language.lower() in SnowballStemmer.languages else "english"
+    if lang not in _stemmers:
+        _stemmers[lang] = SnowballStemmer(lang)
+    return str(_stemmers[lang].stem(word.lower()))
 
 
 def _get_semantic_similar_words(query: str, all_snippets: list[str]) -> set[str]:
     """Get semantically similar words for a query across all snippets.
 
-    Computed ONCE per search query for efficiency.
+    With neural search, embeddings are generated server-side by OpenSearch,
+    so we use stem-based matching for semantic highlighting instead.
 
     Args:
         query: The search query.
         all_snippets: All snippet texts from semantic matches.
 
     Returns:
-        Set of words (lowercase) that are semantically similar to the query.
+        Empty set - stem matching in _add_semantic_highlights handles highlighting.
     """
-    if not query or not all_snippets:
-        return set()
-
-    # Combine all snippets to find similar words across all matches
-    combined_text = " ".join(all_snippets)
-
-    try:
-        embedding_service = SearchEmbeddingService.get_instance()
-        similar_words = embedding_service.find_similar_words(
-            query=query, text=combined_text, threshold=0.35, max_words=50
-        )
-        return set(w.lower() for w in similar_words)
-    except Exception as e:
-        logger.warning(f"Failed to find similar words: {e}")
-        return set()
+    # Neural search generates embeddings server-side, not available here
+    # Stem-based matching in _add_semantic_highlights handles semantic highlighting
+    return set()
 
 
 def _matches_query_prefix(word_lower: str, word_stem: str, query_prefixes: list[str]) -> bool:
@@ -443,6 +374,16 @@ def clear_search_cache() -> None:
     logger.info("Search cache cleared")
 
 
+def reset_neural_search_state() -> None:
+    """Reset the neural search availability state.
+
+    Call this when switching models or after configuration changes.
+    """
+    global _neural_search_available
+    _neural_search_available = None
+    logger.info("Neural search state reset")
+
+
 def _append_range_filter(
     filters: list[dict[str, Any]],
     field: str,
@@ -620,10 +561,18 @@ class HybridSearchService:
         )
 
         # Generate query embedding and execute search
-        query_embedding, use_hybrid = self._generate_query_embedding(search_query, search_mode)
+        query_embedding, use_hybrid, use_neural = self._generate_query_embedding(
+            search_query, search_mode
+        )
         has_speaker_filter = bool(speakers)
         response = self._execute_search(
-            search_query, query_embedding, filters, page_size, use_hybrid, has_speaker_filter
+            search_query,
+            query_embedding,
+            filters,
+            page_size,
+            use_hybrid,
+            has_speaker_filter,
+            use_neural,
         )
         if response is None:
             return self._empty_response(query, page, page_size)
@@ -662,48 +611,103 @@ class HybridSearchService:
 
         return result
 
+    def _check_neural_search_available(self) -> bool:
+        """Check if neural search is available in OpenSearch.
+
+        Caches the result to avoid repeated checks.
+
+        Returns:
+            True if neural search is available and a model is deployed.
+        """
+        global _neural_search_available
+
+        if _neural_search_available is not None:
+            return _neural_search_available
+
+        if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+            _neural_search_available = False
+            return False
+
+        try:
+            from .ml_model_service import get_ml_model_service
+
+            ml_service = get_ml_model_service()
+            model_id = ml_service.get_active_model_id()
+            _neural_search_available = model_id is not None
+            if _neural_search_available:
+                logger.info(f"Neural search available with model: {model_id}")
+            else:
+                logger.info("Neural search not available - no deployed model")
+            return _neural_search_available
+        except Exception as e:
+            logger.warning(f"Could not check neural search availability: {e}")
+            _neural_search_available = False
+            return False
+
+    def _get_neural_model_id(self) -> str | None:
+        """Get the active neural model ID.
+
+        Returns:
+            Model ID string or None if not available.
+        """
+        try:
+            from .ml_model_service import get_ml_model_service
+
+            ml_service = get_ml_model_service()
+            return ml_service.get_active_model_id()
+        except Exception as e:
+            logger.warning(f"Could not get neural model ID: {e}")
+            return None
+
     def _generate_query_embedding(
         self,
         query: str,
         search_mode: str,
-    ) -> tuple[list[float] | None, bool]:
-        """Generate query embedding vector for semantic search.
+    ) -> tuple[None, bool, bool]:
+        """Check if hybrid/neural search should be used.
+
+        Neural search generates embeddings server-side in OpenSearch,
+        so no client-side embedding is needed.
 
         Args:
             query: Search query text.
-            search_mode: Search mode - "keyword" skips embedding.
+            search_mode: Search mode - "keyword" skips semantic search.
 
         Returns:
-            Tuple of (embedding vector or None, whether hybrid mode is active).
+            Tuple of (None, whether hybrid mode is active, whether to use neural query).
         """
         if search_mode == "keyword":
-            return None, False
-        try:
-            embedding_service = SearchEmbeddingService.get_instance()
-            query_embedding = embedding_service.embed_query(query)
-            return query_embedding, True
-        except Exception as e:
-            logger.warning(f"Embedding failed, falling back to BM25-only: {e}")
-            return None, False
+            return None, False, False
+
+        # Check if neural search is available
+        if self._check_neural_search_available():
+            # Neural mode: OpenSearch generates embeddings server-side
+            return None, True, True
+
+        # Neural search not available, fall back to BM25-only
+        logger.warning("Neural search not available, using BM25-only mode")
+        return None, False, False
 
     def _execute_search(
         self,
         query: str,
-        query_embedding: list[float] | None,
+        query_embedding: None,
         filters: list[dict[str, Any]],
         page_size: int,
         use_hybrid: bool,
         has_speaker_filter: bool = False,
+        use_neural: bool = False,
     ) -> dict[str, Any] | None:
         """Execute the OpenSearch query with fallback to BM25-only.
 
         Args:
             query: Search query text.
-            query_embedding: Optional embedding vector.
+            query_embedding: Unused, kept for API compatibility.
             filters: OpenSearch filter clauses.
             page_size: Results per page.
             use_hybrid: Whether to use hybrid search pipeline.
             has_speaker_filter: Whether a speaker filter is active.
+            use_neural: Whether to use neural query (server-side embedding).
 
         Returns:
             OpenSearch response dict, or None if all attempts fail.
@@ -712,7 +716,13 @@ class HybridSearchService:
             return None
         try:
             search_body = self._build_search_body(
-                query, query_embedding, filters, page_size, use_hybrid, has_speaker_filter
+                query,
+                query_embedding,
+                filters,
+                page_size,
+                use_hybrid,
+                has_speaker_filter,
+                use_neural,
             )
             search_params: dict[str, Any] = {}
             if use_hybrid:
@@ -1029,13 +1039,31 @@ class HybridSearchService:
     def _build_search_body(
         self,
         query: str,
-        query_embedding: list[float] | None,
+        query_embedding: None,
         filters: list[dict[str, Any]],
         page_size: int,
         use_hybrid: bool,
         has_speaker_filter: bool = False,
+        use_neural: bool = False,
     ) -> dict[str, Any]:
-        """Build the hybrid search query body."""
+        """Build the hybrid search query body.
+
+        Supports two modes:
+        1. Neural hybrid: BM25 + neural query (OpenSearch generates embeddings)
+        2. BM25-only: Keyword search without vector component
+
+        Args:
+            query: Search query text.
+            query_embedding: Unused, kept for API compatibility.
+            filters: OpenSearch filter clauses.
+            page_size: Results per page.
+            use_hybrid: Whether to use hybrid search.
+            has_speaker_filter: Whether a speaker filter is active.
+            use_neural: Whether to use neural query (server-side embedding).
+
+        Returns:
+            OpenSearch search body dict.
+        """
         # Over-fetch for grouping by file
         fetch_size = page_size * 5
 
@@ -1063,14 +1091,15 @@ class HybridSearchService:
                     "type": "best_fields",
                 }
             }
-            logger.info(
-                f"BUILD_BODY: using multi_match with query='{query}', has_speaker_filter={has_speaker_filter}, fields={search_fields}"
+            logger.debug(
+                f"BUILD_BODY: query='{query}', has_speaker_filter={has_speaker_filter}, "
+                f"use_neural={use_neural}"
             )
         else:
             # Empty query - use match_all (will only filter by speaker/tags/etc)
             text_query_clause = {"match_all": {}}
-            logger.info(
-                f"BUILD_BODY: using match_all (empty query), has_speaker_filter={has_speaker_filter}"
+            logger.debug(
+                f"BUILD_BODY: match_all (empty query), has_speaker_filter={has_speaker_filter}"
             )
 
         # Build highlight fields (exclude speaker when using speaker filter)
@@ -1094,55 +1123,67 @@ class HybridSearchService:
                 "number_of_fragments": 0,
             }
 
-        if use_hybrid and query_embedding:
-            search_body: dict[str, Any] = {
-                "size": fetch_size,
-                "query": {
-                    "hybrid": {
-                        "queries": [
-                            # BM25 leg
-                            {
-                                "bool": {
-                                    "must": [text_query_clause],
-                                    "filter": filters,
-                                }
-                            },
-                            # Vector leg
-                            {
-                                "knn": {
-                                    "embedding": {
-                                        "vector": query_embedding,
-                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
-                                        "filter": {"bool": {"filter": filters}},
-                                    }
-                                }
-                            },
-                        ]
-                    }
-                },
-                "highlight": {"fields": highlight_fields},
-                "_source": [
-                    "file_uuid",
-                    "file_id",
-                    "title",
-                    "speaker",
-                    "speakers",
-                    "tags",
-                    "start_time",
-                    "end_time",
-                    "chunk_index",
-                    "upload_time",
-                    "language",
-                    "content",
-                    "content_type",
-                    "duration",
-                    "file_size",
-                ],
-            }
-        else:
-            search_body = self._build_bm25_only_body(query, filters, page_size, has_speaker_filter)
+        # Common _source fields
+        source_fields = [
+            "file_uuid",
+            "file_id",
+            "title",
+            "speaker",
+            "speakers",
+            "tags",
+            "start_time",
+            "end_time",
+            "chunk_index",
+            "upload_time",
+            "language",
+            "content",
+            "content_type",
+            "duration",
+            "file_size",
+        ]
 
-        return search_body
+        if use_hybrid and use_neural and query and query.strip():
+            # Neural hybrid mode: OpenSearch generates embeddings server-side
+            model_id = self._get_neural_model_id()
+            if model_id:
+                search_body: dict[str, Any] = {
+                    "size": fetch_size,
+                    "query": {
+                        "hybrid": {
+                            "queries": [
+                                # BM25 leg
+                                {
+                                    "bool": {
+                                        "must": [text_query_clause],
+                                        "filter": filters,
+                                    }
+                                },
+                                # Neural leg - OpenSearch generates embedding from query_text
+                                {
+                                    "neural": {
+                                        "embedding": {
+                                            "query_text": query,
+                                            "model_id": model_id,
+                                            "k": settings.SEARCH_RRF_WINDOW_SIZE,
+                                            "ef_search": 512,
+                                        }
+                                    }
+                                },
+                            ]
+                        }
+                    },
+                    "highlight": {"fields": highlight_fields},
+                    "_source": source_fields,
+                }
+                logger.debug(f"Using neural hybrid query with model {model_id}")
+                return search_body
+            else:
+                logger.warning(
+                    "Neural search enabled but no model_id available, falling back to BM25"
+                )
+
+        # Fall back to BM25-only
+        return self._build_bm25_only_body(query, filters, page_size, has_speaker_filter)
 
     def _build_bm25_only_body(
         self,

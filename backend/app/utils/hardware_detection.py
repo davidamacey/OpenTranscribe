@@ -117,7 +117,12 @@ class HardwareConfig:
             return "int8"
 
     def _get_optimal_batch_size(self) -> int:
-        """Get optimal batch size based on device and available memory."""
+        """Get optimal batch size based on device and available memory.
+
+        Batch sizes are optimized for large-v3-turbo (~6GB VRAM) which is the default model.
+        This leaves headroom for the alignment and diarization stages that follow.
+        Users with large-v2/large-v3 (~10GB VRAM) can override via BATCH_SIZE env var.
+        """
         if self.device == "cuda":
             try:
                 import torch
@@ -126,9 +131,17 @@ class HardwareConfig:
                 total_memory = torch.cuda.get_device_properties(0).total_memory
                 memory_gb = total_memory / (1024**3)
 
-                if memory_gb >= 24:  # High-end GPU
+                # Batch sizes optimized for large-v3-turbo (~6GB model)
+                # With turbo using ~40% less VRAM than large-v2, we can batch more aggressively
+                if memory_gb >= 40:  # A6000, A100 (48GB+)
+                    return 32
+                elif memory_gb >= 24:  # RTX 3090, A5000 (24GB)
+                    return 24
+                elif memory_gb >= 16:  # RTX 4080 (16GB)
                     return 16
-                elif memory_gb >= 12:  # Mid-range GPU
+                elif memory_gb >= 12:  # RTX 3080 (12GB) - turbo uses ~6GB, safe for batch 12
+                    return 12
+                elif memory_gb >= 8:  # RTX 3070 (8GB)
                     return 8
                 elif memory_gb >= 6:  # Entry-level GPU
                     return 4

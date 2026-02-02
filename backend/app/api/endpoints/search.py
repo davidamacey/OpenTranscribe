@@ -10,11 +10,10 @@ from fastapi import Query
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.config import settings
-from app.core.constants import EMBEDDING_MODELS
+from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.models.user import User
-from app.schemas.search import SetEmbeddingModelSchema
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +382,8 @@ def reindex_status(
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.services.opensearch_service import opensearch_client
+    from app.services.search.settings_service import get_search_embedding_dimension
+    from app.services.search.settings_service import get_search_embedding_model
 
     with session_scope() as db:
         total_files = (
@@ -426,114 +427,361 @@ def reindex_status(
         "indexed_files": indexed_files,
         "pending_files": max(0, total_files - indexed_files),
         "in_progress": in_progress,
-        "current_model": settings.SEARCH_EMBEDDING_MODEL,
-        "current_dimension": settings.SEARCH_EMBEDDING_DIMENSION,
+        "current_model": get_search_embedding_model(),
+        "current_dimension": get_search_embedding_dimension(),
         "last_indexed_at": last_indexed_at,
     }
 
 
-@router.get("/models")
-def get_embedding_models(
+# =============================================================================
+# OpenSearch Neural Search Model Management Endpoints
+# =============================================================================
+
+
+@router.get("/models/neural")
+def get_neural_models(
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
     """
-    Return available embedding models with current selection.
+    Get available OpenSearch neural search models with deployment status.
+
+    Returns both the model registry and current deployment state.
 
     Returns:
-        Dict with models list, current_model_id, and current_dimension.
+        Dict with models list, neural_enabled flag, and active model info.
     """
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+
+    # Get registered/deployed models from OpenSearch
+    deployed_models = ml_service.list_models()
+    deployed_by_name = {m["name"]: m for m in deployed_models}
+
+    # Build model list from registry with deployment status
     models = []
-    for model_id, info in EMBEDDING_MODELS.items():
+    for model_name, info in OPENSEARCH_EMBEDDING_MODELS.items():
+        deployed_info = deployed_by_name.get(model_name, {})
         models.append(
             {
-                "model_id": model_id,
-                "name": info["name"],
+                "model_name": model_name,
+                "display_name": info["name"],
                 "dimension": info["dimension"],
-                "description": info["description"],
                 "size_mb": info["size_mb"],
+                "languages": info["languages"],
+                "description": info["description"],
+                "default": info.get("default", False),
+                "registered": bool(deployed_info.get("model_id")),
+                "deployed": deployed_info.get("deployed", False),
+                "model_id": deployed_info.get("model_id"),
+                "state": deployed_info.get("state", "NOT_REGISTERED"),
             }
         )
 
+    # Get active model
+    active_model_id = ml_service.get_active_model_id()
+    active_model_name = None
+    if active_model_id:
+        for m in deployed_models:
+            if m.get("model_id") == active_model_id:
+                active_model_name = m.get("name")
+                break
+
     return {
+        "neural_enabled": settings.OPENSEARCH_NEURAL_SEARCH_ENABLED,
         "models": models,
-        "current_model_id": settings.SEARCH_EMBEDDING_MODEL,
-        "current_dimension": settings.SEARCH_EMBEDDING_DIMENSION,
+        "active_model_id": active_model_id,
+        "active_model_name": active_model_name,
     }
 
 
-@router.post("/models")
-def set_embedding_model(
-    body: SetEmbeddingModelSchema,
+@router.post("/models/neural/{model_name}/register")
+def register_neural_model(
+    model_name: str,
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """
-    Change embedding model. Triggers full re-index with new model.
+    Register a neural model in OpenSearch.
 
-    Search falls back to BM25 during re-indexing.
+    Downloads and registers the model from HuggingFace. This may take
+    several minutes depending on model size.
 
     Args:
-        body: Request with model_id to switch to.
+        model_name: Full model name from OPENSEARCH_EMBEDDING_MODELS.
 
     Returns:
-        Dict with status and re-index task info.
+        Dict with registration status and model_id.
     """
-    model_id = body.model_id
-
-    if model_id not in EMBEDDING_MODELS:
+    if model_name not in OPENSEARCH_EMBEDDING_MODELS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown model: {model_id}. Available: {list(EMBEDDING_MODELS.keys())}",
+            detail=f"Unknown model: {model_name}. Available: {list(OPENSEARCH_EMBEDDING_MODELS.keys())}",
         )
 
-    model_info = EMBEDDING_MODELS[model_id]
-    new_dimension: int = model_info["dimension"]  # type: ignore[assignment]
+    from app.services.search.ml_model_service import get_ml_model_service
 
-    # Persist to database so all processes (API + workers) can read it
-    from app.services.search.settings_service import save_search_embedding_model
+    ml_service = get_ml_model_service()
 
-    save_search_embedding_model(model_id, new_dimension)
+    # Check if already registered
+    existing_id = ml_service.find_model_by_name(model_name)
+    if existing_id:
+        return {
+            "status": "already_registered",
+            "model_id": existing_id,
+            "model_name": model_name,
+        }
 
-    # Update in-memory settings for this process
-    settings.SEARCH_EMBEDDING_MODEL = model_id
-    settings.SEARCH_EMBEDDING_DIMENSION = new_dimension
+    # Register the model
+    model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
+    model_id = ml_service.register_model(
+        model_name=model_name,
+        model_format=str(model_info.get("model_format", "TORCH_SCRIPT")),
+        description=str(model_info.get("description", "")),
+    )
 
-    # Reset the embedding service singleton on this process too
-    from app.services.search.embedding_service import SearchEmbeddingService
+    if not model_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to register model {model_name}. Check OpenSearch logs.",
+        )
 
-    SearchEmbeddingService.reset()
+    logger.info(f"Registered neural model {model_name} as {model_id}")
 
-    # Reset the index verified cache so search rechecks
-    from app.services.search import hybrid_search_service
+    return {
+        "status": "registered",
+        "model_id": model_id,
+        "model_name": model_name,
+    }
 
-    hybrid_search_service._index_verified = False
 
-    # Clear search cache on model switch
+@router.post("/models/neural/{model_name}/deploy")
+def deploy_neural_model(
+    model_name: str,
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """
+    Deploy a registered neural model for inference.
+
+    The model must be registered first. Deployment loads the model into
+    memory for fast inference.
+
+    Args:
+        model_name: Full model name from OPENSEARCH_EMBEDDING_MODELS.
+
+    Returns:
+        Dict with deployment status.
+    """
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+
+    # Find the model
+    model_id = ml_service.find_model_by_name(model_name)
+    if not model_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {model_name} not registered. Register it first.",
+        )
+
+    # Check if already deployed
+    status = ml_service.get_model_status(model_id)
+    if status.get("deployed"):
+        return {
+            "status": "already_deployed",
+            "model_id": model_id,
+            "model_name": model_name,
+        }
+
+    # Deploy the model
+    if not ml_service.deploy_model(model_id):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to deploy model {model_name}. Check OpenSearch logs.",
+        )
+
+    logger.info(f"Deployed neural model {model_name} ({model_id})")
+
+    return {
+        "status": "deployed",
+        "model_id": model_id,
+        "model_name": model_name,
+    }
+
+
+@router.post("/models/neural/{model_name}/undeploy")
+def undeploy_neural_model(
+    model_name: str,
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """
+    Undeploy a neural model to free memory.
+
+    The model remains registered and can be redeployed later.
+
+    Args:
+        model_name: Full model name from OPENSEARCH_EMBEDDING_MODELS.
+
+    Returns:
+        Dict with undeploy status.
+    """
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+
+    # Find the model
+    model_id = ml_service.find_model_by_name(model_name)
+    if not model_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {model_name} not registered.",
+        )
+
+    if not ml_service.undeploy_model(model_id):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to undeploy model {model_name}.",
+        )
+
+    # Reset neural search state since active model may have changed
+    from app.services.search.hybrid_search_service import reset_neural_search_state
+
+    reset_neural_search_state()
+
+    logger.info(f"Undeployed neural model {model_name} ({model_id})")
+
+    return {
+        "status": "undeployed",
+        "model_id": model_id,
+        "model_name": model_name,
+    }
+
+
+@router.put("/models/neural/active")
+def set_active_neural_model(
+    model_name: str = Query(..., description="Model name to set as active"),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """
+    Set the active neural model for search and trigger reindex.
+
+    The model must be deployed before it can be set as active.
+    This will:
+    1. Update the neural ingest pipeline with the new model
+    2. Trigger a full reindex of all transcripts
+    3. Reset search caches
+
+    Args:
+        model_name: Full model name from OPENSEARCH_EMBEDDING_MODELS.
+
+    Returns:
+        Dict with status and reindex task info.
+    """
+    if model_name not in OPENSEARCH_EMBEDDING_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model: {model_name}",
+        )
+
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+
+    # Find and verify the model is deployed
+    model_id = ml_service.find_model_by_name(model_name)
+    if not model_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model {model_name} not registered. Register and deploy it first.",
+        )
+
+    status = ml_service.get_model_status(model_id)
+    if not status.get("deployed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {model_name} is not deployed. Deploy it first.",
+        )
+
+    # Set as active model
+    ml_service.set_active_model_id(model_id)
+
+    # Update the neural ingest pipeline
+    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+    from app.services.search.indexing_service import reset_neural_pipeline_state
+
+    reset_neural_pipeline_state()
+    ensure_neural_ingest_pipeline(model_id)
+
+    # Reset search caches
     from app.services.search.hybrid_search_service import clear_search_cache
+    from app.services.search.hybrid_search_service import reset_neural_search_state
 
     clear_search_cache()
+    reset_neural_search_state()
 
-    # Trigger full re-index with new model
-    # Pass model_id to Celery worker so it updates its own settings
+    # Update dimension in settings
+    model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
+    new_dimension: int = model_info["dimension"]  # type: ignore[assignment]
+
+    # Recreate index if dimension changed
+    from app.services.search.indexing_service import recreate_index_for_dimension
+
+    recreate_index_for_dimension(new_dimension)
+
+    # Trigger full reindex
     from app.tasks.reindex_task import reindex_transcripts_task
 
     task = reindex_transcripts_task.delay(
         user_id=int(current_user.id),
         file_uuids=None,  # All files
-        model_id=model_id,  # Propagate to worker
     )
 
     logger.info(
-        f"Model switch to {model_id} ({new_dimension}d) for user {current_user.id}, "
-        f"re-index task: {task.id}"
+        f"Set active neural model to {model_name} ({model_id}), " f"reindex task: {task.id}"
     )
 
     return {
-        "status": "model_changed",
+        "status": "active_model_set",
+        "model_name": model_name,
         "model_id": model_id,
         "dimension": new_dimension,
         "reindex_task_id": task.id,
         "message": (
             f"Switched to {model_info['name']}. "
-            f"Re-indexing all transcripts. Search will use keyword-only mode during re-indexing."
+            f"Re-indexing all transcripts with neural pipeline."
         ),
+    }
+
+
+@router.get("/models/neural/status")
+def get_neural_search_status(
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Get the current neural search status.
+
+    Returns:
+        Dict with neural search enabled flag, active model, and pipeline status.
+    """
+    from app.services.search.indexing_service import is_neural_pipeline_available
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+    active_model_id = ml_service.get_active_model_id()
+
+    # Get active model details
+    active_model_name = None
+    active_model_info = None
+    if active_model_id:
+        status = ml_service.get_model_status(active_model_id)
+        active_model_name = status.get("name")
+        if active_model_name and active_model_name in OPENSEARCH_EMBEDDING_MODELS:
+            active_model_info = OPENSEARCH_EMBEDDING_MODELS[active_model_name]
+
+    return {
+        "neural_enabled": settings.OPENSEARCH_NEURAL_SEARCH_ENABLED,
+        "neural_pipeline_available": is_neural_pipeline_available(),
+        "active_model_id": active_model_id,
+        "active_model_name": active_model_name,
+        "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
+        "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
     }

@@ -531,6 +531,247 @@ def download_sentence_transformers():
         print_error(f"Failed to download sentence-transformers model: {e}")
         return {"sentence_transformers": {"status": "failed", "error": str(e)}}
 
+def download_opensearch_neural_models():
+    """Download OpenSearch neural search models for offline use.
+
+    Downloads pre-built models from OpenSearch's artifact repository.
+    These are the same models OpenSearch ML Commons downloads when registering
+    pretrained models, but we pre-download them for offline/air-gapped deployments.
+
+    Environment Variables:
+        OPENSEARCH_MODELS: Comma-separated list of model short names to download.
+                          Example: "all-MiniLM-L6-v2,all-mpnet-base-v2"
+        DOWNLOAD_ALL_OPENSEARCH_MODELS: Set to "true" to download all 6 models.
+
+    Available models (use short names):
+        - all-MiniLM-L6-v2 (default, fast English, 80MB)
+        - all-mpnet-base-v2 (balanced English, 420MB)
+        - all-distilroberta-v1 (best quality English, 290MB)
+        - paraphrase-multilingual-MiniLM-L12-v2 (fast multilingual, 420MB)
+        - paraphrase-multilingual-mpnet-base-v2 (balanced multilingual, 1.1GB)
+        - distiluse-base-multilingual-cased-v1 (best multilingual, 480MB)
+    """
+    print_header("Downloading OpenSearch Neural Search Models")
+
+    # Complete registry of available models - matches OPENSEARCH_EMBEDDING_MODELS in constants.py
+    all_available_models = {
+        # Fast tier - 384 dimensions
+        "all-MiniLM-L6-v2": {
+            "name": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 384,
+            "size_mb": 80,
+            "tier": "fast",
+            "languages": "English",
+            "description": "Fast, lightweight. Good baseline for keyword-heavy searches.",
+        },
+        "paraphrase-multilingual-MiniLM-L12-v2": {
+            "name": "huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 384,
+            "size_mb": 420,
+            "tier": "fast",
+            "languages": "Multilingual (50+)",
+            "description": "Fast multilingual model. 50+ languages with good quality.",
+        },
+        # Balanced tier - 768 dimensions
+        "all-mpnet-base-v2": {
+            "name": "huggingface/sentence-transformers/all-mpnet-base-v2",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 768,
+            "size_mb": 420,
+            "tier": "balanced",
+            "languages": "English",
+            "description": "Better semantic understanding. Good balance of speed and quality.",
+        },
+        "paraphrase-multilingual-mpnet-base-v2": {
+            "name": "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 768,
+            "size_mb": 1100,
+            "tier": "balanced",
+            "languages": "Multilingual (50+)",
+            "description": "Higher quality multilingual embeddings.",
+        },
+        # Best quality tier
+        "all-distilroberta-v1": {
+            "name": "huggingface/sentence-transformers/all-distilroberta-v1",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 768,
+            "size_mb": 290,
+            "tier": "best",
+            "languages": "English",
+            "description": "Best retrieval quality for English.",
+        },
+        "distiluse-base-multilingual-cased-v1": {
+            "name": "huggingface/sentence-transformers/distiluse-base-multilingual-cased-v1",
+            "version": "1.0.1",
+            "format": "torch_script",
+            "dimension": 512,
+            "size_mb": 480,
+            "tier": "best",
+            "languages": "Multilingual (15)",
+            "description": "Best quality for common languages (15 languages).",
+        },
+    }
+
+    # Determine which models to download
+    models_to_download = []
+
+    # Check for OPENSEARCH_MODELS environment variable (comma-separated short names)
+    selected_models = os.environ.get("OPENSEARCH_MODELS", "").strip()
+    download_all = os.environ.get("DOWNLOAD_ALL_OPENSEARCH_MODELS", "false").lower() == "true"
+
+    if download_all:
+        # Download all available models
+        models_to_download = list(all_available_models.values())
+        print_info(f"Downloading ALL {len(models_to_download)} OpenSearch neural models")
+        print_info("(DOWNLOAD_ALL_OPENSEARCH_MODELS=true)")
+    elif selected_models:
+        # User specified specific models
+        model_names = [m.strip() for m in selected_models.split(",") if m.strip()]
+        print_info(f"Selected models: {', '.join(model_names)}")
+
+        for short_name in model_names:
+            if short_name in all_available_models:
+                models_to_download.append(all_available_models[short_name])
+            else:
+                print_error(f"Unknown model: {short_name}")
+                print_info(f"Available models: {', '.join(all_available_models.keys())}")
+
+        if not models_to_download:
+            print_error("No valid models specified. Using default.")
+            models_to_download = [all_available_models["all-MiniLM-L6-v2"]]
+    else:
+        # Default: download only the default model
+        models_to_download = [all_available_models["all-MiniLM-L6-v2"]]
+        print_info("Downloading default OpenSearch model (all-MiniLM-L6-v2)")
+        print_info("")
+        print_info("To download additional models, set OPENSEARCH_MODELS:")
+        print_info("  OPENSEARCH_MODELS=\"all-MiniLM-L6-v2,all-mpnet-base-v2\"")
+        print_info("")
+        print_info("Available models:")
+        for short_name, info in all_available_models.items():
+            print_info(f"  {short_name} ({info['tier']}, {info['languages']}, {info['size_mb']}MB)")
+
+    print_info(f"\nDownloading {len(models_to_download)} model(s)...")
+
+    # Create output directory
+    output_dir = Path.home() / ".cache" / "opensearch-ml"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    downloaded_models = []
+    failed_models = []
+
+    for model_info in models_to_download:
+        model_name = model_info["name"]
+        version = model_info["version"]
+        model_format = model_info["format"]
+
+        # Build the artifact URL
+        # Format: https://artifacts.opensearch.org/models/ml-models/{name}/{version}/{format}/{filename}.zip
+        # Example: huggingface/sentence-transformers/all-MiniLM-L6-v2 -> sentence-transformers_all-MiniLM-L6-v2
+        name_parts = model_name.split("/")
+        if len(name_parts) >= 3:
+            # huggingface/sentence-transformers/all-MiniLM-L6-v2
+            model_short_name = f"{name_parts[1]}_{name_parts[2]}"
+        else:
+            model_short_name = model_name.replace("/", "_")
+
+        filename = f"{model_short_name}-{version}-{model_format}.zip"
+        url = f"https://artifacts.opensearch.org/models/ml-models/{model_name}/{version}/{model_format}/{filename}"
+
+        # Output path - use model short name as directory
+        model_dir = output_dir / name_parts[-1] if len(name_parts) >= 1 else output_dir / model_short_name
+        model_dir.mkdir(parents=True, exist_ok=True)
+        output_path = model_dir / filename
+
+        print_info(f"Downloading: {model_name}")
+        print_info(f"  URL: {url}")
+        print_info(f"  Output: {output_path}")
+
+        try:
+            import urllib.request
+            import urllib.error
+
+            # Check if already downloaded
+            if output_path.exists():
+                print_success(f"  Already exists, skipping download")
+                downloaded_models.append({
+                    "name": model_name,
+                    "path": str(output_path),
+                    "dimension": model_info["dimension"],
+                    "version": version,
+                    "format": model_format,
+                })
+                continue
+
+            # Download the model
+            print_info(f"  Downloading...")
+            urllib.request.urlretrieve(url, output_path)
+
+            # Verify file exists and has content
+            if output_path.exists() and output_path.stat().st_size > 0:
+                size_mb = round(output_path.stat().st_size / (1024 * 1024), 1)
+                print_success(f"  Downloaded successfully ({size_mb} MB)")
+                downloaded_models.append({
+                    "name": model_name,
+                    "path": str(output_path),
+                    "dimension": model_info["dimension"],
+                    "version": version,
+                    "format": model_format,
+                })
+            else:
+                print_error(f"  Download failed - file is empty or missing")
+                failed_models.append(model_name)
+
+        except urllib.error.HTTPError as e:
+            print_error(f"  HTTP Error {e.code}: {e.reason}")
+            print_error(f"  URL may not be available from OpenSearch artifacts")
+            failed_models.append(model_name)
+        except Exception as e:
+            print_error(f"  Failed to download: {e}")
+            failed_models.append(model_name)
+
+    # Create manifest file
+    manifest_path = output_dir / "model_manifest.json"
+    manifest = {
+        "downloaded_at": datetime.now().isoformat(),
+        "models": downloaded_models,
+        "failed": failed_models,
+    }
+
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    print_info(f"Manifest saved to: {manifest_path}")
+
+    if failed_models:
+        print_warning(f"Failed to download {len(failed_models)} model(s): {', '.join(failed_models)}")
+        return {
+            "opensearch_neural": {
+                "status": "partial",
+                "downloaded": len(downloaded_models),
+                "failed": failed_models,
+                "path": str(output_dir),
+            }
+        }
+
+    print_success(f"All {len(downloaded_models)} OpenSearch neural model(s) downloaded successfully")
+    return {
+        "opensearch_neural": {
+            "status": "downloaded",
+            "models": downloaded_models,
+            "path": str(output_dir),
+        }
+    }
+
+
 def get_cache_info():
     """Get information about cached models"""
     # Use default paths (same as backend)
@@ -538,12 +779,14 @@ def get_cache_info():
     torch_home = str(Path.home() / ".cache" / "torch")
     nltk_home = str(Path.home() / ".cache" / "nltk_data")
     sent_home = str(Path.home() / ".cache" / "sentence-transformers")
+    opensearch_ml_home = str(Path.home() / ".cache" / "opensearch-ml")
 
     cache_dirs = {
         "huggingface": Path(hf_home),
         "torch": Path(torch_home),
         "nltk_data": Path(nltk_home),
-        "sentence_transformers": Path(sent_home)
+        "sentence_transformers": Path(sent_home),
+        "opensearch_ml": Path(opensearch_ml_home),
     }
 
     info = {}
@@ -618,6 +861,7 @@ def main():
     results.update(download_alignment_models())
     results.update(download_nltk_data())
     results.update(download_sentence_transformers())
+    results.update(download_opensearch_neural_models())
 
     # Create manifest
     manifest = create_manifest(results)

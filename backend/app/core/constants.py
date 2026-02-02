@@ -138,27 +138,95 @@ SEARCH_HYBRID_MIN_SCORE = 0.01
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256
 
-# Embedding model registry
-EMBEDDING_MODELS = {
-    "all-MiniLM-L6-v2": {
-        "name": "MiniLM (Fast)",
+# OpenSearch Native Neural Search Model Registry
+# These models are registered and deployed directly in OpenSearch via ML Commons plugin
+# Organized by quality tier (Fast → Balanced → Best) and language support (English / Multilingual)
+OPENSEARCH_EMBEDDING_MODELS = {
+    # === FAST TIER (384 dimensions) ===
+    # Low latency, lower memory. Good for keyword-focused searches.
+    "huggingface/sentence-transformers/all-MiniLM-L6-v2": {
+        "name": "MiniLM - Fast (English Only)",
         "dimension": 384,
-        "description": "Fast, lightweight. Good baseline for keyword-heavy searches.",
         "size_mb": 80,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": True,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "english",
+        "description": "Fast, lightweight English model. Good baseline for keyword-heavy searches.",
     },
-    "intfloat/e5-base-v2": {
-        "name": "E5-base (Balanced)",
+    "huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
+        "name": "MiniLM - Fast (Multilingual, 50+ Languages)",
+        "dimension": 384,
+        "size_mb": 420,
+        "languages": ["multilingual"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "multilingual",
+        "description": "Fast multilingual model. 50+ languages with good quality.",
+    },
+    # === BALANCED TIER (768 dimensions) ===
+    # Good balance of speed and semantic quality.
+    "huggingface/sentence-transformers/all-mpnet-base-v2": {
+        "name": "MPNet - Balanced (English Only)",
         "dimension": 768,
+        "size_mb": 420,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "balanced",
+        "language_type": "english",
         "description": "Better semantic understanding. Good balance of speed and quality.",
-        "size_mb": 220,
     },
-    "BAAI/bge-m3": {
-        "name": "BGE-M3 (Best Quality)",
-        "dimension": 1024,
-        "description": "Best retrieval quality. 100+ languages. Recommended for multilingual content.",
-        "size_mb": 560,
+    "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
+        "name": "MPNet - Balanced (Multilingual, 50+ Languages)",
+        "dimension": 768,
+        "size_mb": 1100,
+        "languages": ["multilingual"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "balanced",
+        "language_type": "multilingual",
+        "description": "Higher quality multilingual embeddings. Good semantic search.",
+    },
+    # === BEST QUALITY TIER ===
+    # Highest retrieval quality, recommended for semantic-heavy searches.
+    "huggingface/sentence-transformers/all-distilroberta-v1": {
+        "name": "DistilRoBERTa - Best Quality (English Only)",
+        "dimension": 768,
+        "size_mb": 290,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "best",
+        "language_type": "english",
+        "description": "Best retrieval quality for English. Excellent semantic understanding.",
+    },
+    "huggingface/sentence-transformers/distiluse-base-multilingual-cased-v1": {
+        "name": "DistilUSE - Best Quality (Multilingual, 15 Languages)",
+        "dimension": 512,
+        "size_mb": 480,
+        "languages": ["multilingual"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "best",
+        "language_type": "multilingual",
+        "description": "Best quality for common languages. 15 languages with excellent accuracy.",
     },
 }
+
+# Default OpenSearch neural model for new installations
+OPENSEARCH_DEFAULT_MODEL = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+
+# Neural ingest pipeline name
+OPENSEARCH_NEURAL_PIPELINE = "transcript-neural-ingest"
 
 # WebSocket notification types for search
 NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"

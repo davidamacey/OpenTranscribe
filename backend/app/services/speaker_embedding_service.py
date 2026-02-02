@@ -95,6 +95,12 @@ class SpeakerEmbeddingService:
                 # Extract embedding from the whole file
                 embedding = self.inference(audio_path)
 
+            # L2 normalize for optimal cosine similarity in OpenSearch
+            if embedding is not None:
+                norm = np.linalg.norm(embedding)
+                if norm > 0:
+                    embedding = embedding / norm
+
             return embedding  # type: ignore[no-any-return]
 
         except Exception as e:
@@ -171,17 +177,28 @@ class SpeakerEmbeddingService:
             embeddings: List of numpy arrays
 
         Returns:
-            Aggregated embedding (mean of all embeddings)
+            Aggregated embedding (mean of all embeddings), L2 normalized
         """
         if not embeddings:
             raise ValueError("No embeddings to aggregate")
 
         if len(embeddings) == 1:
-            return embeddings[0]
+            embedding = embeddings[0]
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+            return embedding
 
         # Stack all embeddings and compute mean
         stacked = np.vstack(embeddings)
-        return np.mean(stacked, axis=0)  # type: ignore[no-any-return]
+        aggregated = np.mean(stacked, axis=0)
+
+        # L2 normalize the aggregated embedding
+        norm = np.linalg.norm(aggregated)
+        if norm > 0:
+            aggregated = aggregated / norm
+
+        return aggregated  # type: ignore[no-any-return]
 
     def compute_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
         """

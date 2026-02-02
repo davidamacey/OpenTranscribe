@@ -147,19 +147,96 @@ async def _run_thumbnail_migration():
         logger.error(f"Error scheduling thumbnail migration: {e}")
 
 
-async def _load_search_settings():
-    """Load persisted search model settings from DB into runtime config."""
+async def _run_speaker_embedding_normalization():
+    """Schedule speaker embedding L2 normalization after a delay."""
     try:
-        from app.services.search.settings_service import get_search_embedding_dimension
-        from app.services.search.settings_service import get_search_embedding_model
+        await asyncio.sleep(60)  # Wait for OpenSearch and other startup tasks
+        from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
 
-        model_id = get_search_embedding_model()
-        dimension = get_search_embedding_dimension()
-        settings.SEARCH_EMBEDDING_MODEL = model_id
-        settings.SEARCH_EMBEDDING_DIMENSION = dimension
-        logger.info(f"Loaded search settings: model={model_id}, dim={dimension}")
+        result = normalize_speaker_embeddings_task.delay()
+        logger.info(f"Speaker embedding normalization task scheduled: {result.id}")
     except Exception as e:
-        logger.warning(f"Could not load search settings from DB: {e}")
+        logger.error(f"Error scheduling speaker embedding normalization: {e}")
+
+
+# NOTE: Search settings (model ID, dimension) are now managed by OpenSearch
+# neural search via ml_model_service.py and persisted in system_settings table.
+# No need to load them into runtime config - they're read directly from DB when needed.
+
+
+async def _initialize_neural_search():
+    """Initialize OpenSearch neural search models on startup.
+
+    This function:
+    1. Configures ML Commons cluster settings
+    2. Checks for local models (offline deployment support)
+    3. Ensures the default model is registered and deployed
+    4. Creates/updates the neural ingest pipeline
+
+    Runs after a delay to allow OpenSearch to fully start.
+    For offline/air-gapped deployments, models are loaded from
+    pre-downloaded local files (mounted at /ml-models in OpenSearch container).
+    """
+    if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+        logger.info("Neural search disabled, skipping initialization")
+        return
+
+    try:
+        # Wait for OpenSearch to be ready
+        await asyncio.sleep(15)
+
+        from app.services.search.ml_model_service import get_ml_model_service
+
+        ml_service = get_ml_model_service()
+
+        # Configure ML Commons settings
+        if not ml_service.configure_ml_settings():
+            logger.warning("Could not configure ML Commons settings")
+            return
+
+        # Check for available local models (offline deployment support)
+        local_models = ml_service.get_available_local_models()
+        if local_models:
+            model_names = [m["short_name"] for m in local_models]
+            logger.info(f"Found {len(local_models)} local models for offline use: {model_names}")
+        else:
+            logger.info("No local models found, will use remote registration (requires internet)")
+
+        # Check if we have an active model
+        active_model_id = ml_service.get_active_model_id()
+
+        if active_model_id:
+            logger.info(f"Neural search already has active model: {active_model_id}")
+        else:
+            # Try to register and deploy the default model
+            default_model = settings.OPENSEARCH_NEURAL_MODEL
+            logger.info(f"No active model, attempting to setup default: {default_model}")
+
+            # Check if default model is available locally
+            local_path = ml_service.get_local_model_path(default_model)
+            if local_path:
+                logger.info(f"Default model available locally: {local_path}")
+            else:
+                logger.info("Default model not found locally, will download from remote")
+
+            model_id = ml_service.ensure_model_deployed(default_model)
+            if model_id:
+                ml_service.set_active_model_id(model_id)
+                logger.info(f"Default neural model deployed: {default_model} -> {model_id}")
+            else:
+                logger.warning(f"Could not deploy default model {default_model}")
+                return
+
+        # Ensure neural ingest pipeline is configured
+        from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+
+        if ensure_neural_ingest_pipeline():
+            logger.info("Neural ingest pipeline configured successfully")
+        else:
+            logger.warning("Could not configure neural ingest pipeline")
+
+    except Exception as e:
+        logger.error(f"Error initializing neural search: {e}")
 
 
 @asynccontextmanager
@@ -179,8 +256,9 @@ async def lifespan(app: FastAPI):
     minio_task = asyncio.create_task(_setup_minio())
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
-    search_settings_task = asyncio.create_task(_load_search_settings())
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
+    neural_search_task = asyncio.create_task(_initialize_neural_search())
+    embedding_normalization = asyncio.create_task(_run_speaker_embedding_normalization())
 
     yield
 
@@ -189,8 +267,9 @@ async def lifespan(app: FastAPI):
         minio_task,
         recovery_task,
         search_maintenance,
-        search_settings_task,
         thumbnail_migration,
+        neural_search_task,
+        embedding_normalization,
     ]:
         if not task.done():
             task.cancel()

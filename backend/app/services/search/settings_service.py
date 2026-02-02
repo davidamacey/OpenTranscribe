@@ -2,7 +2,8 @@
 import logging
 from typing import Optional
 
-from app.core.config import settings
+from app.core.constants import OPENSEARCH_DEFAULT_MODEL
+from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -10,20 +11,24 @@ logger = logging.getLogger(__name__)
 _KEY_EMBEDDING_MODEL = "search.embedding_model"
 _KEY_EMBEDDING_DIMENSION = "search.embedding_dimension"
 
+# Default dimension from the default model
+_default_model_info = OPENSEARCH_EMBEDDING_MODELS.get(OPENSEARCH_DEFAULT_MODEL, {})
+_DEFAULT_DIMENSION: int = _default_model_info.get("dimension", 384)  # type: ignore[assignment]
+
 
 def get_search_embedding_model() -> str:
-    """Get the current embedding model ID from DB, falling back to config default."""
+    """Get the current embedding model ID from DB, falling back to default."""
     value = _get_setting(_KEY_EMBEDDING_MODEL)
-    return value if value else settings.SEARCH_EMBEDDING_MODEL
+    return value if value else OPENSEARCH_DEFAULT_MODEL
 
 
 def get_search_embedding_dimension() -> int:
-    """Get the current embedding dimension from DB, falling back to config default."""
+    """Get the current embedding dimension from DB, falling back to default."""
     value = _get_setting(_KEY_EMBEDDING_DIMENSION)
     try:
-        return int(value) if value else settings.SEARCH_EMBEDDING_DIMENSION
+        return int(value) if value else _DEFAULT_DIMENSION
     except (ValueError, TypeError):
-        return settings.SEARCH_EMBEDDING_DIMENSION
+        return _DEFAULT_DIMENSION
 
 
 def save_search_embedding_model(model_id: str, dimension: int) -> None:

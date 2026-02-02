@@ -123,3 +123,54 @@ class SetEmbeddingModelSchema(BaseModel):
     """Request to change embedding model."""
 
     model_id: str = Field(..., description="Model ID from the registry")
+
+
+# Neural Search Model Schemas
+
+
+class NeuralModelInfoSchema(BaseModel):
+    """OpenSearch neural model info."""
+
+    model_name: str = Field(
+        ..., description="Model name (e.g., huggingface/sentence-transformers/...)"
+    )
+    display_name: str = Field(..., description="Human-readable model name")
+    dimension: int = Field(..., description="Embedding dimension")
+    size_mb: int = Field(0, description="Model size in MB")
+    languages: list[str] = Field(default_factory=list, description="Supported languages")
+    model_format: str = Field("TORCH_SCRIPT", description="Model format")
+    is_default: bool = Field(False, description="Whether this is the default model")
+    # OpenSearch status fields
+    model_id: str | None = Field(None, description="OpenSearch model ID if registered")
+    state: str = Field(
+        "NOT_REGISTERED", description="Model state: NOT_REGISTERED, REGISTERED, DEPLOYING, DEPLOYED"
+    )
+    is_active: bool = Field(False, description="Whether this is the currently active model")
+
+
+class NeuralModelsResponseSchema(BaseModel):
+    """List of available neural models."""
+
+    models: list[NeuralModelInfoSchema] = Field(default_factory=list)
+    active_model: str | None = Field(None, description="Currently active model name")
+    neural_search_enabled: bool = Field(False, description="Whether neural search is enabled")
+
+
+class NeuralModelStatusSchema(BaseModel):
+    """Neural search status."""
+
+    enabled: bool = Field(False, description="Whether neural search is enabled in config")
+    available: bool = Field(False, description="Whether neural search is currently available")
+    active_model_name: str | None = Field(None, description="Active model name")
+    active_model_id: str | None = Field(None, description="OpenSearch model ID")
+    pipeline_configured: bool = Field(False, description="Whether ingest pipeline is configured")
+    ml_commons_configured: bool = Field(
+        False, description="Whether ML Commons settings are configured"
+    )
+
+
+class SetActiveNeuralModelSchema(BaseModel):
+    """Request to set active neural model."""
+
+    model_name: str = Field(..., description="Model name to activate")
+    reindex: bool = Field(True, description="Whether to trigger reindex after model change")

@@ -236,9 +236,6 @@ class Settings(BaseSettings):
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
     SEARCH_CHUNK_TARGET_WORDS: int = int(os.getenv("SEARCH_CHUNK_TARGET_WORDS", "200"))
     SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
-    SEARCH_EMBEDDING_MODEL: str = os.getenv("SEARCH_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-    SEARCH_EMBEDDING_DIMENSION: int = int(os.getenv("SEARCH_EMBEDDING_DIMENSION", "384"))
-    SEARCH_EMBEDDING_DEVICE: str = os.getenv("SEARCH_EMBEDDING_DEVICE", "cpu")
     SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "60"))
     SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "100"))
     SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
@@ -249,6 +246,21 @@ class Settings(BaseSettings):
     # below this fraction of the semantic score range. 0.5 = keep top half.
     SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
         os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.5")
+    )
+
+    # OpenSearch Neural Search settings (ML Commons-based)
+    # When enabled, embeddings are generated server-side by OpenSearch instead of Python
+    OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = (
+        os.getenv("OPENSEARCH_NEURAL_SEARCH_ENABLED", "true").lower() == "true"
+    )
+    # Default model to register/deploy (from OPENSEARCH_EMBEDDING_MODELS in constants.py)
+    OPENSEARCH_NEURAL_MODEL: str = os.getenv(
+        "OPENSEARCH_NEURAL_MODEL",
+        "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+    )
+    # Neural ingest pipeline name
+    OPENSEARCH_NEURAL_PIPELINE: str = os.getenv(
+        "OPENSEARCH_NEURAL_PIPELINE", "transcript-neural-ingest"
     )
 
     # Celery settings
@@ -292,7 +304,11 @@ class Settings(BaseSettings):
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v2")
+    # large-v3-turbo: 6x faster, ~6GB VRAM, excellent English, good multilingual
+    # large-v3: Best accuracy, ~10GB VRAM, required for translation feature
+    # large-v2: Legacy model, ~10GB VRAM, good balance
+    # Note: large-v3-turbo cannot translate - use large-v3 if translation is needed
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "large-v3-turbo")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization")
     HUGGINGFACE_TOKEN: Optional[str] = os.getenv("HUGGINGFACE_TOKEN", None)
 

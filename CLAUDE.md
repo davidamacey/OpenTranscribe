@@ -347,6 +347,41 @@ backend/app/auth/
 8. Database storage and OpenSearch indexing
 9. WebSocket notification to frontend
 
+### Whisper Model Selection
+
+OpenTranscribe defaults to `large-v3-turbo` for optimal speed. Users can override via `WHISPER_MODEL` environment variable.
+
+**Model Comparison:**
+
+| Model | Speed | VRAM | English | Multilingual | Translation | Best For |
+|-------|-------|------|---------|--------------|-------------|----------|
+| `large-v3-turbo` | **6x faster** | ~6GB | Excellent | Good* | **NO** | English, speed-critical |
+| `large-v3` | Slow | ~10GB | Excellent | **Best** | Yes | Non-English, translation |
+| `large-v2` | Slow | ~10GB | Excellent | Good | Yes | Legacy, translation |
+
+*Turbo shows slightly reduced accuracy for Thai and Cantonese compared to large-v2
+
+**Language-Specific Recommendations:**
+
+| Use Case | Recommended Model | Why |
+|----------|-------------------|-----|
+| English podcasts/meetings | `large-v3-turbo` | 6x faster, excellent English accuracy |
+| Spanish, French, German, Japanese | `large-v3-turbo` | Good accuracy, much faster |
+| Thai, Cantonese, Vietnamese | `large-v3` | Turbo has reduced accuracy for these |
+| Low-resource languages | `large-v3` | 10-20% better than other models |
+| Translation to English | `large-v3` | **Turbo cannot translate** |
+| Maximum accuracy (any language) | `large-v3` | Best overall accuracy |
+
+**Critical Translation Warning:** `large-v3-turbo` was NOT trained for translation tasks. If users enable "Translate to English" in settings, they should use `large-v3` or `large-v2`.
+
+**Configuration:**
+```bash
+# In .env file
+WHISPER_MODEL=large-v3-turbo  # Default - 6x faster
+WHISPER_MODEL=large-v3        # For translation or maximum accuracy
+WHISPER_MODEL=large-v2        # Legacy fallback
+```
+
 ### LLM Features
 
 The application now includes optional AI-powered features using Large Language Models:
