@@ -198,15 +198,34 @@
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
 
-  // Handle scroll to update progress bar
+  // Handle scroll to update progress bar based on segment index (not scroll position)
+  // This ensures progress is relative to total transcript size, not just loaded segments
   function handleTranscriptScroll(event: Event) {
     const target = event.target as HTMLElement;
-    if (target) {
-      const scrollHeight = target.scrollHeight - target.clientHeight;
-      if (scrollHeight > 0) {
-        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+    if (!target || totalSegments === 0) return;
+
+    // Find all segment elements with data-seg-index attribute
+    const segmentElements = target.querySelectorAll('[data-seg-index]');
+    if (segmentElements.length === 0) {
+      scrollProgress = 0;
+      return;
+    }
+
+    // Find the first visible segment (at top of viewport)
+    const viewportTop = target.scrollTop;
+    let firstVisibleSegmentIndex = 0;
+
+    for (const el of Array.from(segmentElements)) {
+      const segmentTop = (el as HTMLElement).offsetTop - target.offsetTop;
+      if (segmentTop >= viewportTop) {
+        const dataIndex = el.getAttribute('data-seg-index');
+        firstVisibleSegmentIndex = dataIndex ? parseInt(dataIndex, 10) : 0;
+        break;
       }
     }
+
+    // Calculate progress as percentage of total segments
+    scrollProgress = Math.round((firstVisibleSegmentIndex / totalSegments) * 100);
   }
 
   // Set up infinite scroll observer
@@ -410,17 +429,47 @@
             </div>
           {:else if displaySegments.length > 0}
             <div class="transcript-content">
-              {#each displaySegments as segment}
-                <div class="transcript-segment">
-                  <div class="segment-header">
-                    <div
-                      class="segment-speaker"
-                      style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
-                    >{translateSpeakerLabel(segment.speakerName)}</div>
-                    <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+              {#each displaySegments as segment, index}
+                {#if segment.isOverlapGroup && segment.overlapSegments}
+                  <!-- Overlap Group -->
+                  <div class="overlap-group" data-seg-index={index}>
+                    <div class="overlap-indicator">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                      </svg>
+                      <span class="overlap-label">{$t('transcript.overlapIndicator', { count: segment.overlapSegments.length })}</span>
+                      <span class="overlap-time">{formatSimpleTimestamp(segment.startTime ?? 0)} - {formatSimpleTimestamp(segment.endTime ?? 0)}</span>
+                    </div>
+                    <div class="overlap-connector"></div>
+                    {#each segment.overlapSegments as overlapSeg}
+                      <div class="transcript-segment in-overlap">
+                        <div class="segment-header">
+                          <div
+                            class="segment-speaker"
+                            style="background-color: {getSpeakerColorForSegment(overlapSeg).bg}; border-color: {getSpeakerColorForSegment(overlapSeg).border}; --speaker-light: {getSpeakerColorForSegment(overlapSeg).textLight}; --speaker-dark: {getSpeakerColorForSegment(overlapSeg).textDark};"
+                          >{translateSpeakerLabel(overlapSeg.speakerName)}</div>
+                          <div class="segment-time">{formatSimpleTimestamp(overlapSeg.startTime ?? 0)}-{formatSimpleTimestamp(overlapSeg.endTime ?? 0)}</div>
+                        </div>
+                        <div class="segment-text">{@html highlightSearchTerms(overlapSeg.text, searchQuery, currentMatchIndex)}</div>
+                      </div>
+                    {/each}
                   </div>
-                  <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
-                </div>
+                {:else}
+                  <!-- Regular Segment -->
+                  <div class="transcript-segment" data-seg-index={index}>
+                    <div class="segment-header">
+                      <div
+                        class="segment-speaker"
+                        style="background-color: {getSpeakerColorForSegment(segment).bg}; border-color: {getSpeakerColorForSegment(segment).border}; --speaker-light: {getSpeakerColorForSegment(segment).textLight}; --speaker-dark: {getSpeakerColorForSegment(segment).textDark};"
+                      >{translateSpeakerLabel(segment.speakerName)}</div>
+                      <div class="segment-time">{formatSimpleTimestamp(segment.startTime ?? 0)}-{formatSimpleTimestamp(segment.endTime ?? 0)}</div>
+                    </div>
+                    <div class="segment-text">{@html highlightSearchTerms(segment.text, searchQuery, currentMatchIndex)}</div>
+                  </div>
+                {/if}
               {/each}
 
               <!-- Infinite scroll sentinel and loading indicator -->
@@ -943,6 +992,72 @@
     padding: 0.1em 0.2em;
     border-radius: 3px;
     box-shadow: 0 0 0 1px rgba(255, 165, 0, 0.8);
+  }
+
+  /* Overlap group styles */
+  .overlap-group {
+    position: relative;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    padding-left: 1.25rem;
+    border-left: 3px solid var(--primary-color, #6366f1);
+    background: linear-gradient(
+      90deg,
+      rgba(99, 102, 241, 0.08) 0%,
+      transparent 100%
+    );
+    border-radius: 0 8px 8px 0;
+  }
+
+  .overlap-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    background: rgba(99, 102, 241, 0.15);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--primary-color, #6366f1);
+    font-weight: 500;
+  }
+
+  .overlap-indicator svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .overlap-label {
+    font-weight: 500;
+  }
+
+  .overlap-time {
+    font-size: 0.75rem;
+    opacity: 0.8;
+  }
+
+  .overlap-connector {
+    position: absolute;
+    left: 0;
+    top: 3.5rem;
+    bottom: 0.5rem;
+    width: 2px;
+    background: linear-gradient(
+      to bottom,
+      var(--primary-color, #6366f1) 0%,
+      transparent 100%
+    );
+  }
+
+  .in-overlap {
+    position: relative;
+    margin-left: 0.5rem;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--border-color, #e5e7eb);
+  }
+
+  .in-overlap:hover {
+    border-left-color: var(--primary-color, #6366f1);
   }
 
   @media (max-width: 768px) {

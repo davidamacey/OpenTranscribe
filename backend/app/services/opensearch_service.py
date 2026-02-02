@@ -7,7 +7,7 @@ from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 
 from app.core.config import settings
-from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION
+from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 
 # Setup logging
@@ -58,6 +58,19 @@ def get_opensearch_client() -> "OpenSearch | None":
     except Exception as e:
         logger.warning(f"Lazy OpenSearch client initialization failed: {e}")
         return None
+
+
+def get_speaker_embedding_dimension() -> int:
+    """
+    Get the speaker embedding dimension from the existing index, or default to v4 for new installs.
+
+    Returns:
+        512 for v3 mode (existing pyannote/embedding data)
+        256 for v4 mode (new WeSpeaker data or fresh install)
+    """
+    from app.services.embedding_mode_service import EmbeddingModeService
+
+    return EmbeddingModeService.get_embedding_dimension()
 
 
 def ensure_indices_exist():
@@ -125,7 +138,7 @@ def ensure_indices_exist():
                         "updated_at": {"type": "date"},
                         "embedding": {
                             "type": "knn_vector",
-                            "dimension": PYANNOTE_EMBEDDING_DIMENSION,
+                            "dimension": get_speaker_embedding_dimension(),  # Dynamic based on mode
                             "method": {
                                 "name": "hnsw",
                                 "space_type": "cosinesimil",
@@ -152,6 +165,163 @@ def ensure_indices_exist():
         logger.error(f"Configuration error creating indices: {e}")
     except Exception as e:
         logger.error(f"Unexpected error creating indices: {e}")
+
+
+def create_speaker_index_v4(index_name: str | None = None) -> bool:
+    """
+    Create a new speaker index with v4 dimensions (256-dim).
+    Used for migration from v3 to v4.
+
+    Args:
+        index_name: Name for the new index (defaults to speakers_v4)
+
+    Returns:
+        True if successful
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    index_name = index_name or f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+
+    try:
+        # Check if index already exists
+        if opensearch_client.indices.exists(index=index_name):
+            logger.info(f"V4 speaker index already exists: {index_name}")
+            return True
+
+        speaker_index_config = {
+            "settings": {
+                "index": {
+                    "number_of_shards": 1,
+                    "number_of_replicas": 0,
+                    "knn": True,
+                }
+            },
+            "mappings": {
+                "properties": {
+                    "speaker_id": {"type": "integer"},
+                    "speaker_uuid": {"type": "keyword"},
+                    "profile_id": {"type": "integer"},
+                    "profile_uuid": {"type": "keyword"},
+                    "user_id": {"type": "integer"},
+                    "name": {"type": "keyword"},
+                    "collection_ids": {"type": "integer"},
+                    "media_file_id": {"type": "integer"},
+                    "segment_count": {"type": "integer"},
+                    "created_at": {"type": "date"},
+                    "updated_at": {"type": "date"},
+                    "embedding": {
+                        "type": "knn_vector",
+                        "dimension": PYANNOTE_EMBEDDING_DIMENSION_V4,  # 256-dim for v4
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "cosinesimil",
+                            "engine": "lucene",
+                            "parameters": {
+                                "ef_construction": 128,
+                                "m": 24,
+                            },
+                        },
+                    },
+                }
+            },
+        }
+
+        opensearch_client.indices.create(index=index_name, body=speaker_index_config)
+        logger.info(f"Created v4 speaker index: {index_name}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating v4 speaker index: {e}")
+        return False
+
+
+def add_speaker_embedding_v4(
+    speaker_id: int,
+    speaker_uuid: str,
+    user_id: int,
+    name: str,
+    embedding: list[float],
+    profile_id: int | None = None,
+    profile_uuid: str | None = None,
+    collection_ids: list[int] | None = None,
+    media_file_id: int | None = None,
+    segment_count: int = 1,
+    display_name: str | None = None,
+):
+    """
+    Add a speaker embedding to the v4 staging index during migration.
+
+    This function indexes to the _v4 staging index instead of the main speaker index,
+    allowing migration to proceed without affecting the production index.
+
+    Args:
+        speaker_id: ID of the speaker in the database (for internal queries)
+        speaker_uuid: UUID of the speaker (used as document ID)
+        user_id: ID of the user who owns the speaker profile
+        name: Name of the speaker
+        embedding: Vector embedding of the speaker's voice (256-dim for v4)
+        profile_id: Optional speaker profile ID (for internal queries)
+        profile_uuid: Optional speaker profile UUID
+        collection_ids: Optional list of collection IDs
+        media_file_id: Optional source media file ID
+        segment_count: Number of segments used to create embedding
+        display_name: Optional display name for the speaker
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized, skipping speaker embedding")
+        return
+
+    v4_index = f"{settings.OPENSEARCH_SPEAKER_INDEX}_v4"
+
+    try:
+        # Validate embedding before indexing
+        if embedding is None:
+            logger.error(f"Cannot index speaker {speaker_uuid}: embedding is None")
+            return
+
+        if not isinstance(embedding, list) or len(embedding) == 0:
+            logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
+            return
+
+        logger.info(
+            f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) to v4 index with embedding length: {len(embedding)}"
+        )
+
+        # Prepare document
+        doc = {
+            "speaker_id": speaker_id,
+            "speaker_uuid": str(speaker_uuid),
+            "profile_id": profile_id,
+            "profile_uuid": str(profile_uuid) if profile_uuid else None,
+            "user_id": user_id,
+            "name": name,
+            "display_name": display_name,
+            "collection_ids": collection_ids or [],
+            "media_file_id": media_file_id,
+            "segment_count": segment_count,
+            "created_at": datetime.datetime.now().isoformat(),
+            "updated_at": datetime.datetime.now().isoformat(),
+            "embedding": embedding,
+        }
+
+        # Index the document to the v4 staging index using UUID as document ID
+        response = opensearch_client.index(
+            index=v4_index,
+            body=doc,
+            id=str(speaker_uuid),  # Use speaker_uuid as document ID
+        )
+
+        logger.info(
+            f"Indexed speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}) to v4 index: {response}"
+        )
+        return response
+
+    except Exception as e:
+        logger.error(
+            f"Error indexing speaker embedding to v4 for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
+        )
 
 
 def index_transcript(
@@ -1239,8 +1409,12 @@ def update_profile_embedding(
         }
 
         # Use UUID-based prefixed ID
+        # Use refresh='wait_for' to ensure the update is immediately searchable
         opensearch_client.index(
-            index=settings.OPENSEARCH_SPEAKER_INDEX, id=f"profile_{profile_uuid}", body=doc
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            id=f"profile_{profile_uuid}",
+            body=doc,
+            refresh="wait_for",
         )
 
         logger.info(f"Updated profile {profile_uuid} embedding in OpenSearch")
@@ -1390,16 +1564,21 @@ def find_matching_profiles(
                     "embedding": {
                         "vector": embedding,
                         "k": size,
-                        "filter": {"term": {"user_id": user_id}},
+                        "filter": {
+                            "bool": {
+                                "must": [
+                                    {"term": {"user_id": user_id}},
+                                    {"term": {"document_type": "profile"}},
+                                ]
+                            }
+                        },
                     }
                 }
             },
             "_source": ["profile_id", "profile_name", "embedding_count", "updated_at"],
         }
 
-        response = opensearch_client.search(
-            index=f"{settings.OPENSEARCH_SPEAKER_INDEX}_profiles", body=query
-        )
+        response = opensearch_client.search(index=settings.OPENSEARCH_SPEAKER_INDEX, body=query)
 
         matches = []
         for hit in response["hits"]["hits"]:

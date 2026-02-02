@@ -16,6 +16,12 @@ def _patched_torch_load(*args, **kwargs):
 
 torch.load = _patched_torch_load
 
+# Apply PyAnnote v4 compatibility patch BEFORE any whisperx imports
+# This replaces whisperx.diarize.DiarizationPipeline with our v4-compatible version
+from app.utils.pyannote_compat import apply_pyannote_v4_patch  # noqa: E402
+
+apply_pyannote_v4_patch()
+
 # Imports must come after torch.load patch to prevent caching issues
 from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
@@ -43,6 +49,8 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.search_indexing_task",
         "app.tasks.thumbnail_migration",
+        "app.tasks.embedding_migration_v4",
+        "app.tasks.speaker_embedding_migration",
     ],
 )
 
@@ -97,6 +105,12 @@ celery_app.conf.update(
         "startup_recovery": {"queue": "utility"},
         "recover_user_files": {"queue": "utility"},
         "periodic_health_check": {"queue": "utility"},
+        # Embedding Migration Tasks (v3 → v4)
+        "migrate_speaker_embeddings_to_v4": {"queue": "cpu"},
+        "normalize_speaker_embeddings": {"queue": "cpu"},
+        "check_migration_status": {"queue": "utility"},
+        "extract_v4_embeddings": {"queue": "gpu"},
+        "finalize_v4_migration": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

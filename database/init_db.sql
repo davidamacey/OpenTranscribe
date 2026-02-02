@@ -229,7 +229,10 @@ CREATE TABLE IF NOT EXISTS transcript_segment (
     speaker_id INTEGER NULL REFERENCES speaker(id),
     start_time FLOAT NOT NULL,
     end_time FLOAT NOT NULL,
-    text TEXT NOT NULL
+    text TEXT NOT NULL,
+    is_overlap BOOLEAN NOT NULL DEFAULT FALSE,
+    overlap_group_id UUID NULL,
+    overlap_confidence FLOAT NULL
 );
 
 -- Comments table
@@ -320,6 +323,7 @@ CREATE INDEX IF NOT EXISTS idx_speaker_profile_user_id ON speaker_profile(user_i
 
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_media_file_id ON transcript_segment(media_file_id);
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_speaker_id ON transcript_segment(speaker_id);
+CREATE INDEX IF NOT EXISTS idx_transcript_segment_overlap_group ON transcript_segment(overlap_group_id) WHERE overlap_group_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_task_user_id ON task(user_id);
 CREATE INDEX IF NOT EXISTS idx_task_status ON task(status);

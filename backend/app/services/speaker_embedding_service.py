@@ -7,9 +7,10 @@ from typing import Optional
 import numpy as np
 import torch
 from pyannote.audio import Inference
-from pyannote.core import Segment
 
 from app.core.config import settings
+from app.services.embedding_mode_service import EmbeddingMode
+from app.services.embedding_mode_service import EmbeddingModeService
 from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
@@ -18,15 +19,29 @@ logger = logging.getLogger(__name__)
 class SpeakerEmbeddingService:
     """Service for extracting speaker embeddings using pyannote."""
 
-    def __init__(self, model_name: str = "pyannote/embedding", models_dir: Optional[str] = None):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        models_dir: Optional[str] = None,
+        mode: EmbeddingMode | None = None,
+    ):
         """
         Initialize the speaker embedding service.
 
         Args:
-            model_name: Name of the pyannote embedding model
+            model_name: Name of the embedding model (auto-detected if None)
             models_dir: Directory to cache models
+            mode: Embedding mode ('v3' or 'v4', auto-detected if None)
         """
-        self.model_name = model_name
+        # Detect embedding mode if not specified
+        self.mode: EmbeddingMode = mode or EmbeddingModeService.detect_mode()
+
+        # Select model based on mode if not explicitly provided
+        if model_name is None:
+            self.model_name = EmbeddingModeService.get_embedding_model_name(self.mode)
+        else:
+            self.model_name = model_name
+
         self.models_dir: Path = (
             Path(models_dir) if models_dir else Path(settings.MODEL_BASE_DIR) / "pyannote"
         )
@@ -43,6 +58,8 @@ class SpeakerEmbeddingService:
     def _initialize_model(self):
         """Initialize the pyannote embedding model."""
         try:
+            from pyannote.audio import Model
+
             # Check if we have a Hugging Face token
             hf_token = settings.HUGGINGFACE_TOKEN
             # Only warn about missing token if not in offline mode (models pre-downloaded)
@@ -54,18 +71,13 @@ class SpeakerEmbeddingService:
             # Log VRAM before loading embedding model
             self.hardware_config.log_vram_usage("before embedding model load")
 
-            # Initialize the embedding model with authentication if available
-            if hf_token:
-                logger.info("Initializing pyannote embedding model with authentication")
-                self.inference = Inference(
-                    self.model_name,
-                    window="whole",
-                    device=self.device,
-                    use_auth_token=hf_token,
-                )
-            else:
-                logger.info("Initializing pyannote embedding model without authentication")
-                self.inference = Inference(self.model_name, window="whole", device=self.device)
+            # Load the model first with authentication token
+            logger.info(f"Loading pyannote embedding model: {self.model_name}")
+            model = Model.from_pretrained(self.model_name, token=hf_token)
+
+            # Initialize inference with the loaded model
+            logger.info("Initializing pyannote Inference for embeddings")
+            self.inference = Inference(model, window="whole", device=self.device)
 
             self.hardware_config.log_vram_usage("after embedding model loaded")
             logger.info(f"Initialized pyannote embedding model on {self.device}")
@@ -87,13 +99,24 @@ class SpeakerEmbeddingService:
             Numpy array of the embedding or None if failed
         """
         try:
+            import torchaudio
+
+            # Load audio using torchaudio (avoids torchcodec dependency issues)
+            waveform, sample_rate = torchaudio.load(audio_path)
+
             if segment:
-                # Extract embedding from a specific segment
-                excerpt = Segment(segment["start"], segment["end"])
-                embedding = self.inference.crop(audio_path, excerpt)
-            else:
-                # Extract embedding from the whole file
-                embedding = self.inference(audio_path)
+                # Extract the specific segment
+                start_sample = int(segment["start"] * sample_rate)
+                end_sample = int(segment["end"] * sample_rate)
+                waveform = waveform[:, start_sample:end_sample]
+
+            # PyAnnote expects mono audio
+            if waveform.shape[0] > 1:
+                waveform = waveform.mean(dim=0, keepdim=True)
+
+            # Pass as waveform dict to avoid torchcodec/AudioDecoder issues
+            audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+            embedding = self.inference(audio_input)
 
             # L2 normalize for optimal cosine similarity in OpenSearch
             if embedding is not None:
@@ -243,7 +266,7 @@ class SpeakerEmbeddingService:
 
     def get_embedding_dimension(self) -> int:
         """Get the dimension of the embeddings produced by the model."""
-        return 512  # Pyannote embedding dimension (updated for newer models)
+        return EmbeddingModeService.get_embedding_dimension(self.mode)
 
     def cleanup(self):
         """
@@ -270,3 +293,97 @@ class SpeakerEmbeddingService:
 
         self.hardware_config.log_vram_usage("after embedding model cleanup")
         logger.info("GPU memory cleaned up after embedding service")
+
+
+# ============================================================================
+# Warm Model Cache - keeps embedding model loaded between transcriptions
+# ============================================================================
+
+_cached_embedding_service: Optional[SpeakerEmbeddingService] = None
+_cache_lock = None  # Lazy-initialized threading lock
+
+
+def _get_cache_lock():
+    """Get or create the cache lock (lazy initialization for fork safety)."""
+    global _cache_lock
+    if _cache_lock is None:
+        import threading
+
+        _cache_lock = threading.Lock()
+    return _cache_lock
+
+
+def get_cached_embedding_service(
+    model_name: str | None = None,
+    mode: EmbeddingMode | None = None,
+) -> SpeakerEmbeddingService:
+    """
+    Get a cached SpeakerEmbeddingService instance.
+
+    The model is loaded once and kept warm in GPU memory between transcriptions.
+    Subsequent calls return the same instance, avoiding the 40-60 second model
+    loading overhead.
+
+    Args:
+        model_name: Name of the embedding model (uses cached if matches)
+        mode: Embedding mode ('v3' or 'v4', uses cached if matches)
+
+    Returns:
+        Cached or newly created SpeakerEmbeddingService
+    """
+    global _cached_embedding_service
+
+    with _get_cache_lock():
+        # Check if we have a valid cached service
+        if _cached_embedding_service is not None:
+            # Verify the cached service matches requested parameters
+            requested_mode = mode or EmbeddingModeService.detect_mode()
+            requested_model = model_name or EmbeddingModeService.get_embedding_model_name(
+                requested_mode
+            )
+
+            if (
+                _cached_embedding_service.mode == requested_mode
+                and _cached_embedding_service.model_name == requested_model
+            ):
+                logger.info(
+                    f"Using warm cached embedding service: {_cached_embedding_service.model_name} "
+                    f"(mode: {_cached_embedding_service.mode})"
+                )
+                return _cached_embedding_service
+            else:
+                # Parameters changed, need to reload
+                logger.info(
+                    f"Embedding config changed, clearing cache. "
+                    f"Old: {_cached_embedding_service.model_name}, New: {requested_model}"
+                )
+                clear_embedding_cache()
+
+        # Create new service and cache it
+        logger.info("Creating new embedding service (cold start)")
+        _cached_embedding_service = SpeakerEmbeddingService(
+            model_name=model_name,
+            mode=mode,
+        )
+        logger.info(
+            f"Embedding service cached and warm: {_cached_embedding_service.model_name} "
+            f"(mode: {_cached_embedding_service.mode})"
+        )
+        return _cached_embedding_service
+
+
+def clear_embedding_cache() -> None:
+    """
+    Clear the cached embedding service and free GPU memory.
+
+    Call this when you need to free GPU memory for other models,
+    or when shutting down the worker.
+    """
+    global _cached_embedding_service
+
+    with _get_cache_lock():
+        if _cached_embedding_service is not None:
+            logger.info("Clearing cached embedding service")
+            _cached_embedding_service.cleanup()
+            _cached_embedding_service = None
+            logger.info("Embedding cache cleared")

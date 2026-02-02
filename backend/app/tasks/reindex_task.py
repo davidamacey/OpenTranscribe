@@ -297,52 +297,50 @@ def reindex_transcripts_task(
 
 
 def _send_reindex_progress(user_id: int, progress: float, indexed: int, total: int) -> None:
-    """Send re-index progress via WebSocket."""
+    """Send re-index progress via Redis pub/sub for WebSocket delivery."""
     try:
-        import asyncio
+        import json
 
-        from app.api.websockets import send_notification
+        import redis
 
-        data = {
-            "progress": round(progress, 2),
-            "indexed_files": indexed,
-            "total_files": total,
+        # Use same pattern as transcription notifications
+        redis_client = redis.from_url(settings.REDIS_URL)
+
+        notification = {
+            "user_id": user_id,
+            "type": NOTIFICATION_TYPE_REINDEX_PROGRESS,
+            "data": {
+                "progress": round(progress, 2),
+                "indexed_files": indexed,
+                "total_files": total,
+            },
         }
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(
-                    send_notification(user_id, NOTIFICATION_TYPE_REINDEX_PROGRESS, data)
-                )
-            else:
-                loop.run_until_complete(
-                    send_notification(user_id, NOTIFICATION_TYPE_REINDEX_PROGRESS, data)
-                )
-        except RuntimeError:
-            asyncio.run(send_notification(user_id, NOTIFICATION_TYPE_REINDEX_PROGRESS, data))
+
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published reindex progress via Redis: {indexed}/{total}")
+
     except Exception as e:
-        logger.debug(f"Failed to send reindex progress notification: {e}")
+        logger.error(f"Failed to send reindex progress notification: {e}")
 
 
 def _send_reindex_complete(user_id: int, stats: dict[str, Any]) -> None:
-    """Send re-index completion via WebSocket."""
+    """Send re-index completion via Redis pub/sub for WebSocket delivery."""
     try:
-        import asyncio
+        import json
 
-        from app.api.websockets import send_notification
+        import redis
 
-        data = {"stats": stats}
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(
-                    send_notification(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, data)
-                )
-            else:
-                loop.run_until_complete(
-                    send_notification(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, data)
-                )
-        except RuntimeError:
-            asyncio.run(send_notification(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, data))
+        # Use same pattern as transcription notifications
+        redis_client = redis.from_url(settings.REDIS_URL)
+
+        notification = {
+            "user_id": user_id,
+            "type": NOTIFICATION_TYPE_REINDEX_COMPLETE,
+            "data": {"stats": stats},
+        }
+
+        redis_client.publish("websocket_notifications", json.dumps(notification))
+        logger.info(f"Published reindex complete via Redis: {stats}")
+
     except Exception as e:
-        logger.debug(f"Failed to send reindex completion notification: {e}")
+        logger.error(f"Failed to send reindex completion notification: {e}")

@@ -1,5 +1,5 @@
 import logging
-import uuid
+import uuid as uuid_module
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -77,7 +77,7 @@ def create_or_get_speaker(
 
     if not speaker:
         try:
-            speaker_uuid = str(uuid.uuid4())
+            speaker_uuid = str(uuid_module.uuid4())
 
             speaker = Speaker(
                 name=speaker_label,
@@ -98,7 +98,7 @@ def create_or_get_speaker(
                 f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}"
             )
             # Create a fallback speaker with guaranteed UUID
-            speaker_uuid = str(uuid.uuid4())
+            speaker_uuid = str(uuid_module.uuid4())
             speaker = Speaker(
                 name=speaker_label,
                 display_name=None,
@@ -194,3 +194,118 @@ def process_segments_with_speakers(
         processed_segments.append(processed_segment)
 
     return processed_segments
+
+
+def mark_overlapping_segments(
+    segments: list[dict[str, Any]],
+    overlap_regions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Mark segments that occur during overlapping speech regions.
+
+    Uses NumPy vectorized operations for O(1) overlap detection instead of O(n*m) nested loops.
+    Segments with time overlap with detected overlap regions are grouped together
+    with a shared overlap_group_id for UI display as simultaneous speech.
+
+    Args:
+        segments: List of processed transcript segments
+        overlap_regions: List of overlap regions from PyAnnote v4 diarization.
+                        Each region has 'start' and 'end' keys
+
+    Returns:
+        Updated segments with is_overlap, overlap_group_id, and overlap_confidence set
+    """
+    import time
+
+    start_time = time.perf_counter()
+
+    if not overlap_regions:
+        logger.info("No overlap regions provided, skipping overlap marking")
+        return segments
+
+    if not segments:
+        logger.info("No segments provided, skipping overlap marking")
+        return segments
+
+    import numpy as np
+
+    logger.info(
+        f"Marking overlapping segments from {len(overlap_regions)} detected overlap regions "
+        f"across {len(segments)} segments (vectorized)"
+    )
+
+    # Convert segment times to NumPy arrays for vectorized operations
+    seg_starts = np.array([s["start"] for s in segments], dtype=np.float64)
+    seg_ends = np.array([s["end"] for s in segments], dtype=np.float64)
+    seg_durations = seg_ends - seg_starts
+
+    # Convert region times to NumPy arrays
+    region_starts = np.array([r["start"] for r in overlap_regions], dtype=np.float64)
+    region_ends = np.array([r["end"] for r in overlap_regions], dtype=np.float64)
+
+    # Vectorized overlap detection using broadcasting
+    # Shape: (num_segments, num_regions)
+    # Overlap occurs when: seg_start < region_end AND seg_end > region_start
+    overlaps_matrix = (seg_starts[:, np.newaxis] < region_ends) & (
+        seg_ends[:, np.newaxis] > region_starts
+    )
+
+    # Pre-compute all overlap assignments to minimize Python loop overhead
+    # This is critical for large files (3700+ segments)
+
+    # Find regions with 2+ overlapping segments (valid overlap groups)
+    segments_per_region = overlaps_matrix.sum(axis=0)  # Count per region
+    valid_region_mask = segments_per_region >= 2
+    valid_region_indices = np.where(valid_region_mask)[0]
+
+    if len(valid_region_indices) == 0:
+        logger.info("No valid overlap groups found (need 2+ segments per region)")
+        return segments
+
+    # Pre-generate all group IDs at once (batch UUID generation)
+    group_ids = [str(uuid_module.uuid4()) for _ in range(len(valid_region_indices))]
+
+    # Build assignment list: (segment_idx, group_id, region_idx) tuples
+    # This avoids repeated np.where() calls in a loop
+    assignments: list[tuple[int, str, int]] = []
+    for i, region_idx in enumerate(valid_region_indices):
+        overlapping_indices = np.where(overlaps_matrix[:, region_idx])[0]
+        group_id = group_ids[i]
+        for seg_idx in overlapping_indices:
+            assignments.append((int(seg_idx), group_id, int(region_idx)))
+
+    # Vectorized confidence calculation for all assignments at once
+    if assignments:
+        assign_seg_indices = np.array([a[0] for a in assignments])
+        assign_region_indices = np.array([a[2] for a in assignments])
+
+        # Get segment and region boundaries for all assignments
+        assign_seg_starts = seg_starts[assign_seg_indices]
+        assign_seg_ends = seg_ends[assign_seg_indices]
+        assign_seg_durations = seg_durations[assign_seg_indices]
+        assign_region_starts = region_starts[assign_region_indices]
+        assign_region_ends = region_ends[assign_region_indices]
+
+        # Vectorized overlap calculation
+        overlap_starts = np.maximum(assign_seg_starts, assign_region_starts)
+        overlap_ends = np.minimum(assign_seg_ends, assign_region_ends)
+        overlap_durations = np.maximum(0.0, overlap_ends - overlap_starts)
+        confidences = np.where(
+            assign_seg_durations > 0, overlap_durations / assign_seg_durations, 0.0
+        )
+
+    # Single pass to update all segment dicts
+    overlap_count = 0
+    for i, (seg_idx, group_id, _) in enumerate(assignments):
+        segments[seg_idx]["is_overlap"] = True
+        segments[seg_idx]["overlap_group_id"] = group_id
+        segments[seg_idx]["overlap_confidence"] = float(confidences[i])
+        overlap_count += 1
+
+    elapsed = time.perf_counter() - start_time
+    logger.info(
+        f"TIMING: mark_overlapping_segments completed in {elapsed:.3f}s - "
+        f"Marked {overlap_count} segments as overlapping speech "
+        f"({len(valid_region_indices)} overlap groups, {len(segments)} total segments)"
+    )
+    return segments

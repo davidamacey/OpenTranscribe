@@ -14,6 +14,7 @@ from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.models.user import User
+from app.schemas.search import SetEmbeddingModelSchema
 
 logger = logging.getLogger(__name__)
 
@@ -430,6 +431,84 @@ def reindex_status(
         "current_model": get_search_embedding_model(),
         "current_dimension": get_search_embedding_dimension(),
         "last_indexed_at": last_indexed_at,
+    }
+
+
+# =============================================================================
+# Embedding Model Selection Endpoints
+# =============================================================================
+
+
+@router.get("/models")
+def get_embedding_models(
+    current_user: User = Depends(get_current_active_user),
+) -> dict[str, Any]:
+    """
+    Get available embedding models for search indexing.
+
+    Returns the list of sentence transformer models that can be used
+    for semantic search embedding.
+    """
+    from app.services.search.settings_service import get_search_embedding_model
+
+    models = [
+        {
+            "model_id": model_name,
+            "name": info["name"],
+            "dimension": info["dimension"],
+            "description": info["description"],
+            "size_mb": info["size_mb"],
+        }
+        for model_name, info in OPENSEARCH_EMBEDDING_MODELS.items()
+    ]
+
+    return {
+        "models": models,
+        "current_model_id": get_search_embedding_model(),
+    }
+
+
+@router.post("/models")
+def set_embedding_model(
+    request: SetEmbeddingModelSchema,
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """
+    Set the embedding model and trigger reindex.
+
+    Changing the embedding model requires re-indexing all transcripts
+    since the vector dimensions will change.
+    """
+    model_id = request.model_id
+    if model_id not in OPENSEARCH_EMBEDDING_MODELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown model: {model_id}",
+        )
+
+    from app.services.search.settings_service import save_search_embedding_model
+
+    model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
+    dimension: int = model_info["dimension"]  # type: ignore[assignment]
+
+    # Update setting
+    save_search_embedding_model(model_id, dimension)
+
+    # Trigger reindex
+    from app.tasks.reindex_task import reindex_transcripts_task
+
+    task = reindex_transcripts_task.delay(
+        user_id=int(current_user.id),
+        file_uuids=None,
+    )
+
+    logger.info(f"Embedding model changed to {model_id} ({dimension}d), reindex task: {task.id}")
+
+    return {
+        "status": "model_changed",
+        "model_id": model_id,
+        "reindex_task_id": task.id,
+        "message": f"Switched to {model_info['name']}. Re-indexing all transcripts.",
     }
 
 

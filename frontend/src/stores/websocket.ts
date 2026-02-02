@@ -21,7 +21,11 @@ export type NotificationType =
   | 'file_deleted'
   | 'speaker_updated'
   | 'speaker_processing_complete'
-  | 'gpu_stats_update';
+  | 'gpu_stats_update'
+  | 'reindex_progress'
+  | 'reindex_complete'
+  | 'migration_progress'
+  | 'migration_complete';
 
 // Notification interface
 export interface Notification {
@@ -209,6 +213,30 @@ function createWebSocketStore() {
               // Silent GPU stats update — dispatch event for SettingsModal
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('gpu-stats-updated', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'reindex_progress') {
+              // Reindex progress update — dispatch event for SearchSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('reindex-progress', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'reindex_complete') {
+              // Reindex complete — dispatch event for SearchSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('reindex-complete', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'migration_progress') {
+              // Embedding migration progress — dispatch event for EmbeddingMigrationSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('migration-progress', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'migration_complete') {
+              // Embedding migration complete — dispatch event for EmbeddingMigrationSettings
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('migration-complete', { detail: data.data }));
               }
               return;
             }

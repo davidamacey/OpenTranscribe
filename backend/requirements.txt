@@ -35,22 +35,44 @@ pyotp>=2.9.0
 qrcode[pil]>=7.4.0
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
-# NumPy 2.x - fully compatible with PyTorch 2.8+, CTranslate2 4.6+, PyAnnote 3.4+
-numpy>=1.25.2
+# NumPy 2.x - required by whisperx>=3.7.6
+numpy>=2.1.0
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 --extra-index-url https://download.pytorch.org/whl/cu128
 torch==2.8.0
 torchaudio==2.8.0
 
-# WhisperX latest version with ctranslate2 4.5+ support
-whisperx==3.7.0
+# =============================================================================
+# WhisperX 3.7.6 Dependencies (explicit since we install with --no-deps)
+# Source: https://github.com/m-bain/whisperx/blob/main/pyproject.toml
+# =============================================================================
+# CTranslate2 - inference engine for Whisper
+# whisperx requires >=4.5.0, faster-whisper requires >=4.0,<5
+# We use >=4.6.0 for cuDNN 9 support (required for CUDA 12.8)
+ctranslate2>=4.6.0,<5
 
-# CTranslate2 with cuDNN 9 support (required for CUDA 12.8)
-ctranslate2>=4.6.0
+# faster-whisper - CTranslate2-based Whisper implementation
+# whisperx requires >=1.1.1
+faster-whisper>=1.1.1
 
-# PyAnnote (compatible with NumPy 2.x and PyTorch 2.6+)
-pyannote.audio>=3.3.2
+# ML/Data processing
+transformers>=4.48.0
+pandas>=2.2.3
+huggingface-hub<1.0.0
+
+# Triton for optimized attention (Linux x86_64 only)
+triton>=3.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+
+# PyAnnote v4 - OVERRIDE whisperx's pyannote-audio<4.0.0 requirement
+# We need v4 for VBx clustering, WeSpeaker embeddings, and overlap detection
+# WhisperX's DiarizationPipeline is monkey-patched at runtime
+# See: backend/app/utils/pyannote_compat.py
+pyannote.audio>=4.0.0
+
+# NOTE: whisperx==3.7.6 is installed separately in Dockerfile with --no-deps
+# to bypass the pyannote-audio<4.0.0 conflict
+# =============================================================================
 
 # Supporting libraries
 omegaconf>=2.3.0
@@ -62,5 +84,5 @@ yt-dlp>=2025.1.7
 
 # Semantic search and NLP
 sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)
-nltk>=3.8.0  # For SnowballStemmer (matches OpenSearch snowball filter)
+nltk>=3.9.1  # Required by whisperx>=3.7.6, also for SnowballStemmer
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage

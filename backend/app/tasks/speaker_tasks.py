@@ -393,3 +393,144 @@ def process_speaker_update_background(
 
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, name="extract_speaker_embeddings")
+def extract_speaker_embeddings_task(
+    self,
+    file_uuid: str,
+    speaker_mapping: dict[str, int],
+):
+    """
+    Extract speaker embeddings asynchronously after transcription completes.
+
+    This task runs in the background to extract voice embeddings for speaker
+    matching, allowing the main transcription to complete faster. It downloads
+    the audio file from MinIO and processes it independently.
+
+    Args:
+        file_uuid: UUID of the MediaFile
+        speaker_mapping: Mapping of speaker labels to database IDs
+    """
+    import os
+    import tempfile
+
+    from app.services.minio_service import download_file
+    from app.services.speaker_embedding_service import SpeakerEmbeddingService
+    from app.services.speaker_matching_service import SpeakerMatchingService
+    from app.tasks.transcription.audio_processor import get_audio_file_extension
+    from app.tasks.transcription.audio_processor import prepare_audio_for_transcription
+    from app.utils.hardware_detection import detect_hardware
+    from app.utils.task_utils import create_task_record
+    from app.utils.task_utils import update_task_status
+    from app.utils.uuid_helpers import get_file_by_uuid
+
+    task_id = self.request.id
+    db = SessionLocal()
+
+    try:
+        media_file = get_file_by_uuid(db, file_uuid)
+        if not media_file:
+            raise ValueError(f"Media file with UUID {file_uuid} not found")
+
+        file_id = int(media_file.id)
+        user_id = int(media_file.user_id)
+        storage_path = str(media_file.storage_path)
+        content_type = str(media_file.content_type)
+        filename = str(media_file.filename)
+
+        create_task_record(db, task_id, user_id, file_id, "speaker_embedding")
+        update_task_status(db, task_id, "in_progress", progress=0.1)
+
+        # Force GPU synchronization before loading embedding model
+        hardware_config = detect_hardware()
+        hardware_config.optimize_memory_usage()
+        logger.info("GPU memory synchronized before speaker embedding extraction")
+
+        # Get transcript segments for embedding extraction
+        transcript_segments = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .order_by(TranscriptSegment.start_time)
+            .all()
+        )
+
+        if not transcript_segments:
+            logger.warning(f"No transcript segments found for file {file_id}")
+            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+            return {"status": "skipped", "message": "No segments to process"}
+
+        # Convert segments to dict format for embedding service
+        processed_segments = [
+            {
+                "start": seg.start_time,
+                "end": seg.end_time,
+                "text": seg.text,
+                "speaker": seg.speaker.name if seg.speaker else "SPEAKER_00",
+                "speaker_id": seg.speaker_id,
+            }
+            for seg in transcript_segments
+        ]
+
+        update_task_status(db, task_id, "in_progress", progress=0.2)
+
+        # Download file from MinIO and prepare audio
+        logger.info(f"Downloading file {storage_path} for speaker embedding extraction")
+        file_data, _, _ = download_file(storage_path)
+        file_ext = get_audio_file_extension(content_type, filename)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save downloaded file
+            temp_file_path = os.path.join(temp_dir, f"input{file_ext}")
+            with open(temp_file_path, "wb") as f:
+                f.write(file_data.read())
+
+            # Prepare audio for embedding extraction
+            audio_file_path = prepare_audio_for_transcription(
+                temp_file_path, content_type, temp_dir
+            )
+
+            update_task_status(db, task_id, "in_progress", progress=0.4)
+
+            # Initialize embedding service and extract embeddings
+            embedding_service = SpeakerEmbeddingService()
+            logger.info(
+                f"Using speaker embedding mode: {embedding_service.mode} ({embedding_service.model_name})"
+            )
+
+            try:
+                matching_service = SpeakerMatchingService(db, embedding_service)
+                logger.info(
+                    f"Starting speaker matching for {len(speaker_mapping)} speakers in file {file_id}"
+                )
+
+                speaker_results = matching_service.process_speaker_segments(
+                    audio_file_path, file_id, user_id, processed_segments, speaker_mapping
+                )
+
+                update_task_status(db, task_id, "in_progress", progress=0.9)
+                logger.info(
+                    f"Speaker matching completed: {len(speaker_results) if speaker_results else 0} results"
+                )
+
+            finally:
+                # Clean up embedding service to free VRAM
+                embedding_service.cleanup()
+                hardware_config.optimize_memory_usage()
+
+        update_task_status(db, task_id, "completed", progress=1.0, completed=True)
+
+        return {
+            "status": "success",
+            "file_id": file_id,
+            "speakers_processed": len(speaker_results) if speaker_results else 0,
+        }
+
+    except Exception as e:
+        logger.error(f"Error in speaker embedding task for {file_uuid}: {str(e)}")
+        logger.error("Full traceback:", exc_info=True)
+        update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+        return {"status": "error", "message": str(e)}
+
+    finally:
+        db.close()

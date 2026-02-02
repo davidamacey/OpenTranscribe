@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -22,6 +22,12 @@
     last_indexed_at: string | null;
   }
 
+  interface ReindexProgress {
+    progress: number;
+    indexed_files: number;
+    total_files: number;
+  }
+
   let models: EmbeddingModel[] = [];
   let selectedModelId = '';
   let currentModelId = '';
@@ -30,9 +36,35 @@
   let isReindexing = false;
   let isSwitchingModel = false;
 
+  // Live reindex progress
+  let reindexProgress: ReindexProgress | null = null;
+
+  // Event handlers for WebSocket events
+  function handleReindexProgress(event: CustomEvent<ReindexProgress>) {
+    reindexProgress = event.detail;
+    isReindexing = true;
+  }
+
+  function handleReindexComplete(event: CustomEvent<{ stats: any }>) {
+    reindexProgress = null;
+    isReindexing = false;
+    // Reload status to get updated counts
+    loadStatus();
+    toastStore.success($t('search.reindexComplete') || 'Re-indexing complete!');
+  }
+
   onMount(async () => {
     await Promise.all([loadModels(), loadStatus()]);
     isLoading = false;
+
+    // Listen for WebSocket events
+    window.addEventListener('reindex-progress', handleReindexProgress as EventListener);
+    window.addEventListener('reindex-complete', handleReindexComplete as EventListener);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
+    window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
   });
 
   async function loadModels() {
@@ -50,6 +82,10 @@
     try {
       const res = await axiosInstance.get('/search/reindex/status');
       indexStatus = res.data;
+      // Check if reindex is currently in progress (from backend status)
+      if (indexStatus?.in_progress && !reindexProgress) {
+        isReindexing = true;
+      }
     } catch (e) {
       console.error('Failed to load index status:', e);
     }
@@ -86,10 +122,10 @@
       const res = await axiosInstance.post('/search/reindex');
       toastStore.success(res.data.message);
       await loadStatus();
+      // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
     } catch (e: any) {
       toastStore.error(e?.response?.data?.detail || 'Failed to start re-indexing');
-    } finally {
-      isReindexing = false;
+      isReindexing = false; // Only reset on error
     }
   }
 
@@ -99,10 +135,10 @@
       const res = await axiosInstance.post('/search/reindex?pending_only=true');
       toastStore.success(res.data.message);
       await loadStatus();
+      // Don't set isReindexing = false here - WebSocket 'reindex-complete' event handles that
     } catch (e: any) {
       toastStore.error(e?.response?.data?.detail || 'Failed to start re-indexing');
-    } finally {
-      isReindexing = false;
+      isReindexing = false; // Only reset on error
     }
   }
 
@@ -150,7 +186,26 @@
       </div>
     </div>
 
-    {#if indexStatus.total_files > 0}
+    {#if isReindexing && reindexProgress}
+      <!-- Live reindex progress -->
+      <div class="reindex-live-progress">
+        <div class="reindex-header">
+          <span class="reindex-label">
+            <span class="spinner"></span>
+            {$t('search.reindexingInProgress') || 'Re-indexing in progress...'}
+          </span>
+          <span class="reindex-count">
+            {reindexProgress.indexed_files} / {reindexProgress.total_files} files
+          </span>
+        </div>
+        <div class="progress-container">
+          <div class="progress-bar reindexing">
+            <div class="progress-fill" style="width: {Math.round(reindexProgress.progress * 100)}%"></div>
+          </div>
+          <span class="progress-text">{Math.round(reindexProgress.progress * 100)}%</span>
+        </div>
+      </div>
+    {:else if indexStatus.total_files > 0}
       <div class="progress-container">
         <div class="progress-bar">
           <div class="progress-fill" style="width: {progressPercent}%"></div>
@@ -159,7 +214,7 @@
       </div>
     {/if}
 
-    {#if indexStatus.pending_files > 0}
+    {#if indexStatus.pending_files > 0 && !isReindexing}
       <p class="pending-notice">
         {indexStatus.pending_files} file{indexStatus.pending_files !== 1 ? 's' : ''} pending re-indexing.
       </p>
@@ -196,13 +251,17 @@
       id="embedding-model-select"
       class="form-control"
       bind:value={selectedModelId}
-      disabled={isSwitchingModel || isReindexing}
+      disabled={isSwitchingModel || isReindexing || models.length === 0}
     >
-      {#each models as model}
-        <option value={model.model_id}>
-          {model.name} — {model.dimension}d, ~{model.size_mb}MB
-        </option>
-      {/each}
+      {#if models.length === 0}
+        <option value="">Loading models...</option>
+      {:else}
+        {#each models as model}
+          <option value={model.model_id}>
+            {model.name} — {model.dimension}d, ~{model.size_mb}MB{model.model_id === currentModelId ? ' (Current)' : ''}
+          </option>
+        {/each}
+      {/if}
     </select>
     {#if selectedModel}
       <small class="form-text">{selectedModel.description}</small>
@@ -392,5 +451,69 @@
   .section-divider {
     margin: 1.25rem 0;
     border-top: 1px solid var(--border-color);
+  }
+
+  /* Live reindex progress styles */
+  .reindex-live-progress {
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
+    background: var(--primary-light, rgba(59, 130, 246, 0.08));
+    border-radius: 8px;
+    border: 1px solid var(--primary-border, rgba(59, 130, 246, 0.2));
+  }
+
+  .reindex-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .reindex-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--primary-color);
+  }
+
+  .reindex-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--primary-light, rgba(59, 130, 246, 0.3));
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .progress-bar.reindexing {
+    background: var(--primary-light, rgba(59, 130, 246, 0.2));
+  }
+
+  .progress-bar.reindexing .progress-fill {
+    background: var(--primary-color);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
   }
 </style>

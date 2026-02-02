@@ -28,10 +28,18 @@ RUN pip install --user --no-cache-dir --upgrade pip
 # All packages now use cuDNN 9 for CUDA 12.8 compatibility
 # PyTorch 2.8.0+cu128 - includes CVE-2025-32434 security fix
 # CTranslate2 4.6.0+ - cuDNN 9 support
-# WhisperX 3.7.0 - latest version with ctranslate2 4.5+ compatibility
 # NumPy 2.x - fully compatible with all packages, no security issues
 # Use --user to install to /root/.local which we'll copy to final stage
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
+
+# Install WhisperX with --no-deps to avoid pyannote-audio<4.0.0 conflict
+# WhisperX 3.7.6 requires pyannote-audio<4.0.0 but we need v4 for VBx clustering
+# We work around this by:
+#   1. Installing all whisperx deps in requirements.txt (minus pyannote-audio)
+#   2. Installing pyannote.audio>=4.0.0 in requirements.txt
+#   3. Installing whisperx without deps here
+#   4. Monkey-patching DiarizationPipeline at runtime (pyannote_compat.py)
+RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps whisperx==3.7.6
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Stage - Minimal production image with non-root user

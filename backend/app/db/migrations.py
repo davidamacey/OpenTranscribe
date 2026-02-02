@@ -57,8 +57,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:
     has_search_settings = "system_settings" in tables and _check_exists(
         "SELECT EXISTS(SELECT 1 FROM system_settings " "WHERE key = 'search.embedding_model')"
     )
+    has_overlap_column = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='transcript_segment' AND column_name='is_overlap')"
+    )
 
     # Return the highest version stamp that matches
+    if has_overlap_column:
+        return "v060_add_transcript_overlap"
     if has_fedramp and has_search_settings:
         return "v050_add_search_settings"
     if has_fedramp:
@@ -99,7 +105,7 @@ def run_migrations() -> None:
     elif detected_version:
         logger.info(f"Existing database detected, stamping {detected_version}...")
         command.stamp(config, detected_version)
-        if detected_version != "v050_add_search_settings":
+        if detected_version != "v060_add_transcript_overlap":
             logger.info("Applying migrations to upgrade to current version...")
             command.upgrade(config, "head")
     elif tables:

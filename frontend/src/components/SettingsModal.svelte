@@ -15,6 +15,7 @@
   import LanguageSettings from '$components/settings/LanguageSettings.svelte';
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
+  import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -115,7 +116,8 @@
         items: [
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
-          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' }
+          { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' }
         ]
       }
     ] : []),
@@ -1381,6 +1383,13 @@
               <div class="settings-subsection">
                 <RetrySettings />
               </div>
+            </div>
+          {/if}
+
+          <!-- Embedding Migration Section -->
+          {#if activeSection === 'embedding-migration' && isAdmin}
+            <div class="content-section">
+              <EmbeddingMigrationSettings />
             </div>
           {/if}
         </main>

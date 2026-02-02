@@ -143,6 +143,13 @@ class TranscriptSegment(Base):
     start_time = Column(Float, nullable=False)  # Start time in seconds
     end_time = Column(Float, nullable=False)  # End time in seconds
     text = Column(Text, nullable=False)
+    is_overlap = Column(
+        Boolean, nullable=False, default=False
+    )  # From overlapping speech separation
+    overlap_group_id = Column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )  # Groups overlapping segments together
+    overlap_confidence = Column(Float, nullable=True)  # Confidence of overlap detection
 
     # Relationships
     media_file = relationship("MediaFile", back_populates="transcript_segments")

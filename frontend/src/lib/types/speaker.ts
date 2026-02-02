@@ -43,6 +43,12 @@ export interface Segment {
   };
   formatted_timestamp?: string;
   display_timestamp?: string;
+  // Overlap fields for simultaneous speech display
+  is_overlap?: boolean;
+  overlap_group_id?: string;
+  overlap_confidence?: number;
+  overlap_index?: number; // Position within group (computed client-side)
+  overlap_count?: number; // Total in group (computed client-side)
 }
 
 /**

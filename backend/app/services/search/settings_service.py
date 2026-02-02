@@ -19,7 +19,22 @@ _DEFAULT_DIMENSION: int = _default_model_info.get("dimension", 384)  # type: ign
 def get_search_embedding_model() -> str:
     """Get the current embedding model ID from DB, falling back to default."""
     value = _get_setting(_KEY_EMBEDDING_MODEL)
-    return value if value else OPENSEARCH_DEFAULT_MODEL
+    if not value:
+        return OPENSEARCH_DEFAULT_MODEL
+
+    # If already a valid full model ID, return as-is
+    if value in OPENSEARCH_EMBEDDING_MODELS:
+        return value
+
+    # Try to find a matching model by short name (e.g., "all-MiniLM-L6-v2")
+    for full_id in OPENSEARCH_EMBEDDING_MODELS:
+        if full_id.endswith(f"/{value}"):
+            logger.info(f"Normalized short model name '{value}' to '{full_id}'")
+            return full_id
+
+    # Fallback to default if not found
+    logger.warning(f"Unknown model '{value}', falling back to default")
+    return OPENSEARCH_DEFAULT_MODEL
 
 
 def get_search_embedding_dimension() -> int:

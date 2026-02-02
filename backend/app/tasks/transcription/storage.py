@@ -1,7 +1,9 @@
 import datetime
 import logging
+import uuid as uuid_module
 from typing import Any
 
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from app.db.session_utils import get_refreshed_object
@@ -14,27 +16,69 @@ logger = logging.getLogger(__name__)
 
 def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str, Any]]) -> None:
     """
-    Save transcript segments to the database.
+    Save transcript segments to the database using bulk insert for efficiency.
+
+    Uses SQLAlchemy's bulk insert to insert all segments in a single database
+    roundtrip instead of individual INSERT statements per segment.
 
     Args:
         db: Database session
         file_id: Media file ID
         segments: List of processed segments with speaker information
     """
-    logger.info(f"Saving {len(segments)} transcript segments to database")
+    import time
+
+    start_time = time.perf_counter()
+
+    if not segments:
+        logger.info("No segments to save")
+        return
+
+    logger.info(f"Saving {len(segments)} transcript segments to database (bulk insert)")
+
+    # Prepare all records for bulk insert
+    overlap_count = 0
+    records = []
 
     for segment in segments:
-        db_segment = TranscriptSegment(
-            media_file_id=file_id,
-            start_time=segment["start"],
-            end_time=segment["end"],
-            text=segment["text"],
-            speaker_id=segment["speaker_id"],
-        )
-        db.add(db_segment)
+        is_overlap = segment.get("is_overlap", False)
+        if is_overlap:
+            overlap_count += 1
 
+        # Get overlap_group_id and convert string UUID to proper UUID object if present
+        overlap_group_id = segment.get("overlap_group_id")
+        if overlap_group_id and isinstance(overlap_group_id, str):
+            overlap_group_id = uuid_module.UUID(overlap_group_id)
+
+        records.append(
+            {
+                "uuid": uuid_module.uuid4(),  # Generate UUID for each segment
+                "media_file_id": file_id,
+                "start_time": segment["start"],
+                "end_time": segment["end"],
+                "text": segment["text"],
+                "speaker_id": segment.get("speaker_id"),
+                "is_overlap": is_overlap,
+                "overlap_group_id": overlap_group_id,
+                "overlap_confidence": segment.get("overlap_confidence"),
+            }
+        )
+
+    # Execute bulk insert - single database roundtrip for all segments
+    db.execute(insert(TranscriptSegment), records)
     db.commit()
-    logger.info(f"Successfully saved {len(segments)} segments")
+
+    elapsed = time.perf_counter() - start_time
+    if overlap_count > 0:
+        logger.info(
+            f"TIMING: save_transcript_segments completed in {elapsed:.3f}s - "
+            f"Saved {len(segments)} segments ({overlap_count} overlapping)"
+        )
+    else:
+        logger.info(
+            f"TIMING: save_transcript_segments completed in {elapsed:.3f}s - "
+            f"Saved {len(segments)} segments"
+        )
 
 
 def update_media_file_transcription_status(
@@ -65,29 +109,6 @@ def update_media_file_transcription_status(
 
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")
-
-
-def create_search_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """
-    Create cleaned segments for search indexing.
-
-    Args:
-        segments: Original transcript segments
-
-    Returns:
-        Cleaned segments for search indexing
-    """
-    index_segments = []
-    for segment in segments:
-        index_segments.append(
-            {
-                "start": segment["start"],
-                "end": segment["end"],
-                "text": segment["text"],
-                "speaker": segment["speaker"],
-            }
-        )
-    return index_segments
 
 
 def generate_full_transcript(segments: list[dict[str, Any]]) -> str:

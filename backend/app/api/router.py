@@ -1,13 +1,12 @@
 import logging
 
 from fastapi import APIRouter
-from fastapi import Request
-from fastapi.routing import APIRoute
 
 from . import websockets
 from .endpoints import admin
 from .endpoints import auth
 from .endpoints import comments
+from .endpoints import embedding_migration
 from .endpoints import llm_settings
 from .endpoints import llm_status
 from .endpoints import media_collections
@@ -30,22 +29,6 @@ from .endpoints.files.management import router as file_management_router
 logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
-
-
-# Custom route class that logs request details
-class LoggingRoute(APIRoute):
-    def get_route_handler(self):
-        original_route_handler = super().get_route_handler()
-
-        async def custom_route_handler(request: Request):
-            try:
-                logger.debug(f"Processing route: {request.method} {request.url.path}")
-                return await original_route_handler(request)
-            except Exception as exc:
-                logger.error(f"Error processing route {request.url.path}: {exc}")
-                raise
-
-        return custom_route_handler
 
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
@@ -99,6 +82,9 @@ include_router_with_consistency(
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
+)
+include_router_with_consistency(
+    embedding_migration.router, prefix="/embeddings/migration", tags=["embedding-migration"]
 )
 
 # Include WebSocket router without prefix since it handles its own paths

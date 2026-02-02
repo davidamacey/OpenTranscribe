@@ -219,6 +219,9 @@ class TranscriptSegmentBase(BaseModel):
     end_time: float
     text: str
     speaker_id: Optional[UUID] = None
+    is_overlap: bool = False
+    overlap_group_id: Optional[UUID] = None
+    overlap_confidence: Optional[float] = None
 
 
 class TranscriptSegmentCreate(TranscriptSegmentBase):

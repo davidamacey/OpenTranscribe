@@ -16,7 +16,8 @@ export type SettingsSection =
   // Admin sections
   | 'admin-users'
   | 'admin-task-health'
-  | 'admin-settings';
+  | 'admin-settings'
+  | 'embedding-migration';
 
 interface SettingsModalState {
   isOpen: boolean;
@@ -41,6 +42,7 @@ const initialState: SettingsModalState = {
     'admin-users': false,
     'admin-task-health': false,
     'admin-settings': false,
+    'embedding-migration': false,
   },
 };
 

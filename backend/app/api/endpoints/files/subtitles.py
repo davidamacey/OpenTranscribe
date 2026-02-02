@@ -25,12 +25,13 @@ async def get_subtitles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
-    subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt)"),
+    subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt, txt)"),
 ):
     """
     Generate and download subtitles for a media file.
 
     Returns subtitles in the requested format (SRT by default).
+    Supports: srt, webvtt, txt (plain text with timestamps).
     """
     # Get media file and check permissions
     media_file = get_file_by_uuid_with_permission(db, file_uuid, int(current_user.id))
@@ -41,10 +42,13 @@ async def get_subtitles(
 
     try:
         # Generate subtitle content based on format
-        if subtitle_format.lower() == "webvtt":
+        format_lower = subtitle_format.lower()
+        if format_lower == "webvtt":
             subtitle_content = SubtitleService.generate_webvtt_content(
                 db, file_id, include_speakers
             )
+        elif format_lower == "txt":
+            subtitle_content = SubtitleService.generate_txt_content(db, file_id, include_speakers)
         else:
             subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
 
@@ -52,8 +56,12 @@ async def get_subtitles(
             raise HTTPException(status_code=404, detail="No transcript available for this file")
 
         # Determine content type based on format
-        content_type_map = {"srt": "application/x-subrip", "webvtt": "text/vtt"}
-        content_type = content_type_map.get(subtitle_format.lower(), "text/plain")
+        content_type_map = {
+            "srt": "application/x-subrip",
+            "webvtt": "text/vtt",
+            "txt": "text/plain",
+        }
+        content_type = content_type_map.get(format_lower, "text/plain")
 
         # Generate filename
         base_filename = (
@@ -61,7 +69,7 @@ async def get_subtitles(
             if "." in media_file.filename
             else media_file.filename
         )
-        filename = f"{base_filename}.{subtitle_format.lower()}"
+        filename = f"{base_filename}.{format_lower}"
 
         return Response(
             content=subtitle_content,
@@ -129,5 +137,10 @@ async def validate_subtitles(
 async def get_supported_formats():
     """
     Get list of supported subtitle formats.
+
+    Formats:
+    - srt: SubRip Text (most compatible)
+    - webvtt: Web Video Text Tracks (web-friendly)
+    - txt: Plain text with timestamps (human-readable)
     """
-    return {"subtitle_formats": ["srt", "webvtt"]}
+    return {"subtitle_formats": ["srt", "webvtt", "txt"]}

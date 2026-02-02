@@ -11,7 +11,6 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.services.opensearch_service import index_transcript
-from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
@@ -27,6 +26,7 @@ from .notifications import send_processing_notification
 from .notifications import send_progress_notification
 from .speaker_processor import create_speaker_mapping
 from .speaker_processor import extract_unique_speakers
+from .speaker_processor import mark_overlapping_segments
 from .speaker_processor import process_segments_with_speakers
 from .storage import generate_full_transcript
 from .storage import get_unique_speaker_names
@@ -190,35 +190,49 @@ def _get_user_friendly_error_message(error_message: str) -> str:
 def _process_speaker_embeddings(
     ctx: TranscriptionContext, audio_file_path: str, processed_segments: list, speaker_mapping: dict
 ) -> None:
-    """Extract speaker embeddings and match profiles."""
+    """Extract speaker embeddings and match profiles using warm cached model."""
+    import time
+
+    from app.services.speaker_embedding_service import get_cached_embedding_service
     from app.utils.hardware_detection import detect_hardware
 
-    # Force GPU synchronization before loading embedding model
+    total_start = time.perf_counter()
+
+    # Force GPU synchronization before embedding extraction
+    sync_start = time.perf_counter()
     hardware_config = detect_hardware()
     hardware_config.optimize_memory_usage()
-    logger.info("GPU memory synchronized before speaker embedding extraction")
+    logger.info(f"TIMING: GPU sync completed in {time.perf_counter() - sync_start:.3f}s")
 
-    send_progress_notification(ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification")
+    # Use cached embedding service (warm model, avoids 40-60s cold start)
+    cache_start = time.perf_counter()
+    embedding_service = get_cached_embedding_service()
+    cache_elapsed = time.perf_counter() - cache_start
+    logger.info(
+        f"TIMING: get_cached_embedding_service completed in {cache_elapsed:.3f}s - "
+        f"mode: {embedding_service.mode} ({embedding_service.model_name})"
+    )
 
-    embedding_service = SpeakerEmbeddingService()
-    try:
-        with session_scope() as db:
-            matching_service = SpeakerMatchingService(db, embedding_service)
-            logger.info(
-                f"TRANSCRIPTION DEBUG: Starting speaker matching for {len(speaker_mapping)} speakers"
-            )
-            speaker_results = matching_service.process_speaker_segments(
-                audio_file_path, ctx.file_id, ctx.user_id, processed_segments, speaker_mapping
-            )
-            logger.info(
-                f"TRANSCRIPTION DEBUG: Speaker matching completed, got {len(speaker_results) if speaker_results else 0} results"
-            )
-            update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
+    matching_start = time.perf_counter()
+    with session_scope() as db:
+        matching_service = SpeakerMatchingService(db, embedding_service)
+        logger.info(f"Starting speaker matching for {len(speaker_mapping)} speakers")
+        speaker_results = matching_service.process_speaker_segments(
+            audio_file_path, ctx.file_id, ctx.user_id, processed_segments, speaker_mapping
+        )
+        matching_elapsed = time.perf_counter() - matching_start
+        logger.info(
+            f"TIMING: process_speaker_segments completed in {matching_elapsed:.3f}s - "
+            f"got {len(speaker_results) if speaker_results else 0} results"
+        )
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.82)
 
-        logger.info(f"Speaker identification completed: {len(speaker_results)} speakers processed")
-    finally:
-        # Clean up embedding service to free VRAM
-        embedding_service.cleanup()
+    total_elapsed = time.perf_counter() - total_start
+    logger.info(
+        f"TIMING: _process_speaker_embeddings TOTAL completed in {total_elapsed:.3f}s - "
+        f"{len(speaker_results) if speaker_results else 0} speakers processed"
+    )
+    # Note: We do NOT cleanup the embedding service here - keep it warm for next transcription
 
 
 def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: list) -> None:
@@ -313,20 +327,44 @@ def _process_transcription_result(
     ctx: TranscriptionContext, result: dict, audio_file_path: str
 ) -> dict:
     """Process successful transcription result including speakers, indexing, and finalization."""
+    import time
+
     from app.utils.hardware_detection import detect_hardware
 
     # Process speakers and segments
     send_progress_notification(ctx.user_id, ctx.file_id, 0.68, "Processing speaker segments")
+    step_start = time.perf_counter()
     unique_speakers = extract_unique_speakers(result["segments"])
+    logger.info(
+        f"TIMING: extract_unique_speakers completed in {time.perf_counter() - step_start:.3f}s"
+    )
 
+    step_start = time.perf_counter()
     with session_scope() as db:
         speaker_mapping = create_speaker_mapping(db, ctx.user_id, ctx.file_id, unique_speakers)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
+    logger.info(
+        f"TIMING: create_speaker_mapping completed in {time.perf_counter() - step_start:.3f}s"
+    )
 
     send_progress_notification(ctx.user_id, ctx.file_id, 0.72, "Organizing transcript segments")
+    step_start = time.perf_counter()
     processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
+    logger.info(
+        f"TIMING: process_segments_with_speakers completed in {time.perf_counter() - step_start:.3f}s - {len(processed_segments)} segments"
+    )
+
+    # Mark overlapping segments if overlap info is available
+    overlap_info = result.get("overlap_info", {})
+    overlap_regions = overlap_info.get("regions", [])
+    if overlap_regions:
+        step_start = time.perf_counter()
+        logger.info(f"Marking {len(overlap_regions)} overlap regions for file {ctx.file_id}")
+        processed_segments = mark_overlapping_segments(processed_segments, overlap_regions)
+        # Note: mark_overlapping_segments has its own internal timing log
 
     # Clean garbage words
+    step_start = time.perf_counter()
     with session_scope() as db:
         from app.services import system_settings_service
 
@@ -341,24 +379,30 @@ def _process_transcription_result(
                 f"Cleaned {garbage_count} garbage word(s) from file {ctx.file_id} "
                 f"(threshold: {garbage_config['max_word_length']} chars)"
             )
+    logger.info(f"TIMING: garbage cleanup completed in {time.perf_counter() - step_start:.3f}s")
 
     with session_scope() as db:
         update_task_status(db, ctx.task_id, "in_progress", progress=0.75)
 
     # Save to database
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
+    step_start = time.perf_counter()
     with session_scope() as db:
         save_transcript_segments(db, ctx.file_id, processed_segments)
         update_media_file_transcription_status(
             db, ctx.file_id, processed_segments, result.get("language", "en")
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
+    # Note: save_transcript_segments has its own internal timing log
 
-    # Speaker embeddings
+    # Speaker embeddings - inline processing with warm model cache
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.78, "Processing speaker identification")
+    step_start = time.perf_counter()
     try:
         _process_speaker_embeddings(ctx, audio_file_path, processed_segments, speaker_mapping)
     except Exception as e:
         logger.warning(f"Error in speaker identification: {e}")
+    # Note: _process_speaker_embeddings has its own internal timing log
 
     # Force GPU memory cleanup before OpenSearch indexing
     hardware_config = detect_hardware()

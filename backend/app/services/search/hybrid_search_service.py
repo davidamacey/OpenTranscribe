@@ -1165,7 +1165,6 @@ class HybridSearchService:
                                             "query_text": query,
                                             "model_id": model_id,
                                             "k": settings.SEARCH_RRF_WINDOW_SIZE,
-                                            "ef_search": 512,
                                         }
                                     }
                                 },

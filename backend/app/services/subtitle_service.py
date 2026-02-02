@@ -1,10 +1,12 @@
 """
 Subtitle generation service for creating SRT files from transcript segments.
 Handles movie-style formatting with proper line lengths and speaker labels.
+Supports overlapping speech display where multiple speakers talk simultaneously.
 """
 
 import re
 import textwrap
+from collections import defaultdict
 
 from sqlalchemy.orm import Session
 
@@ -69,6 +71,70 @@ class SubtitleService:
             break_long_words=False,
             break_on_hyphens=False,
         )
+
+    @staticmethod
+    def _group_overlapping_segments(
+        segments: list[TranscriptSegment],
+    ) -> list[list[TranscriptSegment]]:
+        """Group segments by overlap_group_id for merged display.
+
+        Returns a list of segment groups. Non-overlapping segments are in
+        single-element lists, while overlapping segments are grouped together.
+        """
+        overlap_groups: dict[str, list[TranscriptSegment]] = defaultdict(list)
+        non_overlap_segments: list[tuple[int, TranscriptSegment]] = []
+
+        # Separate overlapping and non-overlapping segments
+        for idx, segment in enumerate(segments):
+            if segment.overlap_group_id:
+                overlap_groups[str(segment.overlap_group_id)].append(segment)
+            else:
+                non_overlap_segments.append((idx, segment))
+
+        # Build result maintaining original order
+        processed_overlap_ids: set[str] = set()
+        result_with_positions: list[tuple[float, list[TranscriptSegment]]] = []
+
+        for segment in segments:
+            if segment.overlap_group_id:
+                group_id = str(segment.overlap_group_id)
+                if group_id not in processed_overlap_ids:
+                    processed_overlap_ids.add(group_id)
+                    group = overlap_groups[group_id]
+                    # Use the earliest start time for positioning
+                    min_start = min(float(s.start_time) for s in group)
+                    result_with_positions.append((min_start, group))
+            else:
+                result_with_positions.append((float(segment.start_time), [segment]))
+
+        # Sort by start time and return just the groups
+        result_with_positions.sort(key=lambda x: x[0])
+        return [group for _, group in result_with_positions]
+
+    @staticmethod
+    def _format_overlap_for_subtitle(
+        segments: list[TranscriptSegment],
+        speaker_map: dict[int, str],
+        format_type: str = "srt",
+    ) -> tuple[float, float, str]:
+        """Format overlapping segments as a single subtitle cue with speaker labels.
+
+        Returns (start_time, end_time, formatted_text).
+        """
+        # Get time range spanning all segments
+        start_time = min(float(s.start_time) for s in segments)
+        end_time = max(float(s.end_time) for s in segments)
+
+        # Format each speaker's text with their label
+        lines = []
+        for segment in sorted(segments, key=lambda s: float(s.start_time)):
+            speaker_name = (
+                speaker_map.get(segment.speaker_id, "Unknown") if segment.speaker_id else "Unknown"
+            )
+            text = str(segment.text).strip()
+            lines.append(f"[{speaker_name}] {text}")
+
+        return start_time, end_time, "\n".join(lines)
 
     @staticmethod
     def _create_subtitle_block(lines: list[str], speaker_prefix: str) -> str:
@@ -219,7 +285,11 @@ class SubtitleService:
     def generate_webvtt_content(
         db: Session, media_file_id: int, include_speakers: bool = True
     ) -> str:
-        """Generate WebVTT subtitle content from transcript segments."""
+        """Generate WebVTT subtitle content from transcript segments.
+
+        Handles overlapping speech by merging segments with the same overlap_group_id
+        into a single subtitle cue with speaker labels on separate lines.
+        """
         # Get media file and transcript segments
         media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
         if not media_file:
@@ -236,35 +306,57 @@ class SubtitleService:
         if not segments:
             raise ValueError("No transcript segments found for this media file")
 
+        # Build speaker map for quick lookup
+        speaker_map: dict[int, str] = {}
+        if include_speakers:
+            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
+            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
+            for speaker in speakers:
+                speaker_map[speaker.id] = (
+                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
+                )
+
+        # Group overlapping segments
+        segment_groups = SubtitleService._group_overlapping_segments(segments)
+
         # Start WebVTT content
         webvtt_content = "WEBVTT\n\n"
 
-        for segment in segments:
-            speaker_name = None
-            if include_speakers and segment.speaker_id:
-                speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
-                if speaker:
-                    # Use display name if available, otherwise use original name
-                    speaker_name = (
-                        str(speaker.display_name) if speaker.display_name else str(speaker.name)
-                    )
-
-            # Split long segments into properly formatted subtitles for WebVTT
-            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
-
-            for start_time, end_time, text in subtitle_parts:
-                # Format WebVTT timestamps (using dots instead of commas)
+        for group in segment_groups:
+            if len(group) > 1:
+                # Overlapping segments - merge into single cue
+                start_time, end_time, text = SubtitleService._format_overlap_for_subtitle(
+                    group, speaker_map, "webvtt"
+                )
                 start_timestamp = SubtitleService.format_timestamp(start_time).replace(",", ".")
                 end_timestamp = SubtitleService.format_timestamp(end_time).replace(",", ".")
 
-                # Add WebVTT cue
                 webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
+            else:
+                # Single segment - process normally
+                segment = group[0]
+                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None
+
+                # Split long segments into properly formatted subtitles for WebVTT
+                subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "webvtt")
+
+                for start_time, end_time, text in subtitle_parts:
+                    # Format WebVTT timestamps (using dots instead of commas)
+                    start_timestamp = SubtitleService.format_timestamp(start_time).replace(",", ".")
+                    end_timestamp = SubtitleService.format_timestamp(end_time).replace(",", ".")
+
+                    # Add WebVTT cue
+                    webvtt_content += f"{start_timestamp} --> {end_timestamp}\n{text}\n\n"
 
         return webvtt_content
 
     @staticmethod
     def generate_srt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
-        """Generate SRT subtitle content from transcript segments."""
+        """Generate SRT subtitle content from transcript segments.
+
+        Handles overlapping speech by merging segments with the same overlap_group_id
+        into a single subtitle cue with speaker labels on separate lines.
+        """
         # Get media file and transcript segments
         media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
         if not media_file:
@@ -281,30 +373,50 @@ class SubtitleService:
         if not segments:
             raise ValueError("No transcript segments found for this media file")
 
+        # Build speaker map for quick lookup
+        speaker_map: dict[int, str] = {}
+        if include_speakers:
+            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
+            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
+            for speaker in speakers:
+                speaker_map[speaker.id] = (
+                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
+                )
+
+        # Group overlapping segments
+        segment_groups = SubtitleService._group_overlapping_segments(segments)
+
         srt_content = []
         subtitle_index = 1
 
-        for segment in segments:
-            speaker_name = None
-            if include_speakers and segment.speaker_id:
-                speaker = db.query(Speaker).filter(Speaker.id == segment.speaker_id).first()
-                if speaker:
-                    # Use display name if available, otherwise use original name
-                    speaker_name = (
-                        str(speaker.display_name) if speaker.display_name else str(speaker.name)
-                    )
-
-            # Split long segments into properly formatted subtitles
-            subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
-
-            for start_time, end_time, text in subtitle_parts:
-                # Format SRT entry
+        for group in segment_groups:
+            if len(group) > 1:
+                # Overlapping segments - merge into single cue
+                start_time, end_time, text = SubtitleService._format_overlap_for_subtitle(
+                    group, speaker_map, "srt"
+                )
                 start_timestamp = SubtitleService.format_timestamp(start_time)
                 end_timestamp = SubtitleService.format_timestamp(end_time)
 
                 srt_entry = f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
                 srt_content.append(srt_entry)
                 subtitle_index += 1
+            else:
+                # Single segment - process normally
+                segment = group[0]
+                speaker_name = speaker_map.get(segment.speaker_id) if segment.speaker_id else None
+
+                # Split long segments into properly formatted subtitles
+                subtitle_parts = SubtitleService.split_long_segment(segment, speaker_name, "srt")
+
+                for start_time, end_time, text in subtitle_parts:
+                    # Format SRT entry
+                    start_timestamp = SubtitleService.format_timestamp(start_time)
+                    end_timestamp = SubtitleService.format_timestamp(end_time)
+
+                    srt_entry = f"{subtitle_index}\n{start_timestamp} --> {end_timestamp}\n{text}\n"
+                    srt_content.append(srt_entry)
+                    subtitle_index += 1
 
         return "\n".join(srt_content)
 
@@ -323,6 +435,102 @@ class SubtitleService:
                 f.write(srt_content)
 
         return srt_content
+
+    @staticmethod
+    def format_timestamp_simple(seconds: float) -> str:
+        """Convert seconds to simple MM:SS or HH:MM:SS format."""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
+
+    @staticmethod
+    def generate_txt_content(db: Session, media_file_id: int, include_speakers: bool = True) -> str:
+        """Generate plain text transcript with timestamps and speaker labels.
+
+        For overlapping speech, formats as:
+        [00:02:15 - 00:02:20] OVERLAPPING SPEECH:
+          Alice (00:02:15 - 00:02:18): That's a great idea but--
+          Bob (00:02:16 - 00:02:20): I completely disagree!
+        """
+        # Get media file and transcript segments
+        media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        if not media_file:
+            raise ValueError(f"Media file with ID {media_file_id} not found")
+
+        # Get all transcript segments ordered by start time
+        segments = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == media_file_id)
+            .order_by(TranscriptSegment.start_time)
+            .all()
+        )
+
+        if not segments:
+            raise ValueError("No transcript segments found for this media file")
+
+        # Build speaker map for quick lookup
+        speaker_map: dict[int, str] = {}
+        if include_speakers:
+            speaker_ids = {s.speaker_id for s in segments if s.speaker_id}
+            speakers = db.query(Speaker).filter(Speaker.id.in_(speaker_ids)).all()
+            for speaker in speakers:
+                speaker_map[speaker.id] = (
+                    str(speaker.display_name) if speaker.display_name else str(speaker.name)
+                )
+
+        # Group overlapping segments
+        segment_groups = SubtitleService._group_overlapping_segments(segments)
+
+        txt_lines = []
+
+        for group in segment_groups:
+            if len(group) > 1:
+                # Overlapping segments - format as special block
+                group_start = min(float(s.start_time) for s in group)
+                group_end = max(float(s.end_time) for s in group)
+
+                start_ts = SubtitleService.format_timestamp_simple(group_start)
+                end_ts = SubtitleService.format_timestamp_simple(group_end)
+
+                txt_lines.append(f"[{start_ts} - {end_ts}] OVERLAPPING SPEECH:")
+
+                for segment in sorted(group, key=lambda s: float(s.start_time)):
+                    speaker_name = (
+                        speaker_map.get(segment.speaker_id, "Unknown")
+                        if segment.speaker_id
+                        else "Unknown"
+                    )
+                    seg_start = SubtitleService.format_timestamp_simple(float(segment.start_time))
+                    seg_end = SubtitleService.format_timestamp_simple(float(segment.end_time))
+                    text = str(segment.text).strip()
+
+                    if include_speakers:
+                        txt_lines.append(f"  {speaker_name} ({seg_start} - {seg_end}): {text}")
+                    else:
+                        txt_lines.append(f"  ({seg_start} - {seg_end}): {text}")
+
+                txt_lines.append("")  # Empty line after overlap block
+            else:
+                # Single segment
+                segment = group[0]
+                speaker_name = (
+                    speaker_map.get(segment.speaker_id, "Unknown")
+                    if segment.speaker_id
+                    else "Unknown"
+                )
+                start_ts = SubtitleService.format_timestamp_simple(float(segment.start_time))
+                end_ts = SubtitleService.format_timestamp_simple(float(segment.end_time))
+                text = str(segment.text).strip()
+
+                if include_speakers:
+                    txt_lines.append(f"[{start_ts} - {end_ts}] {speaker_name}: {text}")
+                else:
+                    txt_lines.append(f"[{start_ts} - {end_ts}] {text}")
+
+        return "\n".join(txt_lines)
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

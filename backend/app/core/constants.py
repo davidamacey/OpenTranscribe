@@ -232,6 +232,10 @@ OPENSEARCH_NEURAL_PIPELINE = "transcript-neural-ingest"
 NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
 NOTIFICATION_TYPE_REINDEX_COMPLETE = "reindex_complete"
 
+# WebSocket notification types for embedding migration
+NOTIFICATION_TYPE_MIGRATION_PROGRESS = "migration_progress"
+NOTIFICATION_TYPE_MIGRATION_COMPLETE = "migration_complete"
+
 # Progress tracking intervals
 PROGRESS_UPDATE_INTERVAL = 1000  # milliseconds
 DOWNLOAD_CHECK_INTERVAL = 1000  # milliseconds
@@ -261,7 +265,16 @@ TASK_STATUS_ERROR = "error"
 
 # Embedding dimensions
 SENTENCE_TRANSFORMER_DIMENSION = 384  # sentence-transformers/all-MiniLM-L6-v2
-PYANNOTE_EMBEDDING_DIMENSION = 512  # PyAnnote embedding dimension
+PYANNOTE_EMBEDDING_DIMENSION = 512  # Legacy v3 dimension (pyannote/embedding)
+
+# Speaker embedding mode constants (PyAnnote v3/v4 compatibility)
+# Typed as Literal for mypy compatibility with EmbeddingMode type
+EMBEDDING_MODE_V3: str = "v3"  # pyannote/embedding, 512-dim
+EMBEDDING_MODE_V4: str = "v4"  # WeSpeaker, 256-dim
+
+# PyAnnote embedding dimensions by version
+PYANNOTE_EMBEDDING_DIMENSION_V3 = 512  # pyannote/embedding model
+PYANNOTE_EMBEDDING_DIMENSION_V4 = 256  # WeSpeaker ResNet34-LM model
 
 # Token estimation constants for LLM services
 CHARS_PER_TOKEN_ESTIMATE = 4.0  # Average characters per token
