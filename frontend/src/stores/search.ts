@@ -31,6 +31,8 @@ export interface SearchHit {
   semantic_confidence: string;
   match_sources: string[];
   relevance_percent: number;
+  duration: number;
+  file_size: number;
 }
 
 export interface SearchResponse {
@@ -67,6 +69,7 @@ export interface SearchState {
   isLoading: boolean;
   error: string | null;
   sortBy: string;
+  sortOrder: 'asc' | 'desc';
   searchMode: string;
   selectedSpeakers: string[];
   selectedTags: string[];
@@ -96,6 +99,7 @@ const initialState: SearchState = {
   isLoading: false,
   error: null,
   sortBy: 'relevance',
+  sortOrder: 'desc',
   searchMode: 'hybrid',
   selectedSpeakers: [],
   selectedTags: [],
@@ -120,6 +124,9 @@ function createSearchStore() {
     setQuery: (query: string) => update((s) => ({ ...s, query })),
     setPage: (page: number) => update((s) => ({ ...s, page })),
     setSortBy: (sortBy: string) => update((s) => ({ ...s, sortBy, page: 1 })),
+    setSortOrder: (sortOrder: 'asc' | 'desc') => update((s) => ({ ...s, sortOrder, page: 1 })),
+    setSort: (sortBy: string, sortOrder: 'asc' | 'desc') =>
+      update((s) => ({ ...s, sortBy, sortOrder, page: 1 })),
     setSearchMode: (searchMode: string) => update((s) => ({ ...s, searchMode, page: 1 })),
     setLoading: (isLoading: boolean) => update((s) => ({ ...s, isLoading })),
     setError: (error: string | null) => update((s) => ({ ...s, error })),

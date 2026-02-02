@@ -28,15 +28,25 @@
 
   interface MatchPosition {
     type: 'keyword' | 'semantic';
-    segmentIndex: number;
+    segmentIndex: number;      // Resolved AFTER segments load (-1 if unresolved)
+    startTime: number;         // From occurrence
+    endTime: number;           // From occurrence
+    resolved: boolean;         // Whether segmentIndex has been resolved
   }
 
   let loading = false;
   let error: string | null = null;
   let groupedSegments: GroupedSegment[] = [];
   let matchPositions: MatchPosition[] = [];
+  let allMatchPositions: MatchPosition[] = []; // All matches including unloaded
   let currentMatchIdx = 0;
   let contentElement: HTMLElement | null = null;
+  let navigatingToMatch = false; // Loading indicator for navigation
+
+  // Pre-computed query terms for efficient highlighting (computed once per search)
+  let cachedQueryWords: string[] = [];
+  let cachedQueryStems: string[] = [];
+  let cachedQueryPrefixes: string[] = [];
 
   // Progressive loading state
   const SEGMENTS_PER_PAGE = 200;
@@ -77,38 +87,100 @@
       .replace(/'/g, '&#x27;');
   }
 
-  function highlightQueryTerms(text: string, cssClass: string): string {
-    if (!searchQuery.trim()) return escapeHtml(text);
-    const words = searchQuery.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
-    if (words.length === 0) return escapeHtml(text);
-
-    const escaped = escapeHtml(text);
-    const patterns = words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(`\\b(${patterns.join('|')})\\b`, 'gi');
-
-    // We need to match against the escaped text but the escaped text might have entities
-    // So match against original, then build result with escaping around matches
-    const result: string[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-    const textLower = text.toLowerCase();
-
-    // Use regex on original text, then escape each piece
-    const origRegex = new RegExp(`\\b(${patterns.join('|')})\\b`, 'gi');
-    while ((match = origRegex.exec(text)) !== null) {
-      // Add text before match (escaped)
-      if (match.index > lastIndex) {
-        result.push(escapeHtml(text.substring(lastIndex, match.index)));
+  /**
+   * Get a simple word stem by removing common suffixes.
+   * Enables matching semantic variations like china→chinese, economy→economic.
+   */
+  function getWordStem(word: string): string {
+    const w = word.toLowerCase();
+    // Common suffixes to strip (order matters - check longer ones first)
+    const suffixes = [
+      "ization", "isation", "ational", "ousness", "iveness", "fulness",
+      "ically", "iously", "lessly", "ations", "encies", "ancies",
+      "ingly", "ously", "ively", "fully", "ation", "ition", "ement",
+      "ness", "ment", "ence", "ance", "able", "ible", "ally", "ious",
+      "eous", "ical", "less", "ness", "ship", "ward", "wise", "like",
+      "ing", "ies", "ied", "ian", "ese", "ish", "ive", "ous", "ful",
+      "ant", "ent", "ion", "ism", "ist", "ity", "ory", "ary", "ery",
+      "ing", "ed", "er", "ly", "al", "en", "es", "ty", "ry", "ic", "s"
+    ];
+    for (const suffix of suffixes) {
+      if (w.length > suffix.length + 2 && w.endsWith(suffix)) {
+        return w.slice(0, -suffix.length);
       }
-      // Add highlighted match
-      result.push(`<mark class="${cssClass}">${escapeHtml(match[0])}</mark>`);
-      lastIndex = match.index + match[0].length;
     }
-    // Add remaining text
-    if (lastIndex < text.length) {
-      result.push(escapeHtml(text.substring(lastIndex)));
+    return w;
+  }
+
+  // Pre-compute query stems and prefixes when searchQuery changes (runs once per search)
+  $: {
+    const words = searchQuery.toLowerCase().split(/\s+/).filter(w => w.length >= 3);
+    cachedQueryWords = words;
+    cachedQueryStems = words.map(getWordStem);
+    cachedQueryPrefixes = words
+      .filter(w => w.length >= 4)
+      .map(w => w.slice(0, Math.max(4, w.length - 2)));
+  }
+
+  /**
+   * Check if a word should be highlighted based on semantic similarity to query terms.
+   * Uses stem matching and prefix matching for semantic variations.
+   */
+  function shouldHighlightWord(word: string, queryWords: string[], queryStems: string[], queryPrefixes: string[]): boolean {
+    const wordLower = word.toLowerCase();
+    const wordStem = getWordStem(wordLower);
+
+    // Check exact match
+    if (queryWords.includes(wordLower)) return true;
+
+    // Check stem match (china→chin matches chinese→chin)
+    if (queryStems.includes(wordStem)) return true;
+
+    // Check prefix match
+    for (const prefix of queryPrefixes) {
+      if (wordLower.startsWith(prefix) || wordStem.startsWith(prefix)) return true;
     }
-    return result.length > 0 ? result.join('') : escapeHtml(text);
+
+    // Check if query word is prefix of this word
+    for (const qw of queryWords) {
+      if (wordLower.startsWith(qw) || wordStem.startsWith(getWordStem(qw))) return true;
+    }
+
+    return false;
+  }
+
+  function highlightQueryTerms(text: string, cssClass: string): string {
+    // Use pre-computed cached values for efficiency
+    if (cachedQueryWords.length === 0) return escapeHtml(text);
+
+    // Process text word by word, preserving non-word characters
+    const result: string[] = [];
+    let currentPos = 0;
+    const wordPattern = /\b([a-zA-Z]+)\b/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = wordPattern.exec(text)) !== null) {
+      // Add text before this word (escaped)
+      if (match.index > currentPos) {
+        result.push(escapeHtml(text.substring(currentPos, match.index)));
+      }
+
+      const word = match[1];
+      if (shouldHighlightWord(word, cachedQueryWords, cachedQueryStems, cachedQueryPrefixes)) {
+        result.push(`<span class="${cssClass}">${escapeHtml(word)}</span>`);
+      } else {
+        result.push(escapeHtml(word));
+      }
+
+      currentPos = match.index + match[0].length;
+    }
+
+    // Add remaining text (escaped)
+    if (currentPos < text.length) {
+      result.push(escapeHtml(text.substring(currentPos)));
+    }
+
+    return result.join('');
   }
 
   /**
@@ -148,10 +220,12 @@
     function buildHighlightedText(entries: TextEntry[]): string {
       return entries.map(entry => {
         if (entry.isKeyword) {
+          // For keyword matches, highlight the specific matching words
           return highlightQueryTerms(entry.text, 'search-keyword-match');
         } else if (entry.isSemantic) {
-          // Wrap entire raw segment text in semantic span (inline highlight)
-          return `<span class="search-semantic-match">${escapeHtml(entry.text)}</span>`;
+          // For semantic matches, highlight the ENTIRE segment as one unit
+          // The whole segment is semantically relevant, not just specific words
+          return `<span class="search-semantic-segment">${escapeHtml(entry.text)}</span>`;
         } else {
           return escapeHtml(entry.text);
         }
@@ -220,7 +294,50 @@
     };
   }
 
-  /** Build match positions from grouped segments */
+  /** Build ALL match positions from occurrences (pre-known from search) */
+  function buildAllMatchPositionsFromOccurrences(): MatchPosition[] {
+    const positions: MatchPosition[] = [];
+    for (const occ of occurrences) {
+      const type = occ.has_keyword_match ? 'keyword' : 'semantic';
+      positions.push({
+        type,
+        segmentIndex: -1,        // Unresolved initially - will be resolved when segments load
+        startTime: occ.start_time,
+        endTime: occ.end_time,
+        resolved: false
+      });
+    }
+    // Sort by time for chronological navigation
+    return positions.sort((a, b) => a.startTime - b.startTime);
+  }
+
+  /** Find the grouped segment that contains this time range */
+  function resolveMatchPositionIndex(pos: MatchPosition): number {
+    for (const seg of groupedSegments) {
+      // Check if the occurrence's time range overlaps with this segment
+      if (pos.startTime < seg.endTime && pos.endTime > seg.startTime) {
+        return seg.segmentIndex;
+      }
+    }
+    return -1; // Not found in loaded segments
+  }
+
+  /** Wait for a segment element to exist in the DOM */
+  async function waitForSegmentInDOM(targetSegmentIndex: number, maxWaitMs: number = 3000): Promise<boolean> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitMs) {
+      const element = contentElement?.querySelector(`[data-seg-index="${targetSegmentIndex}"]`);
+      if (element) {
+        return true;
+      }
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    return false;
+  }
+
+  /** Build match positions from grouped segments (used for matchPositions local tracking) */
   function buildMatchPositions(segments: GroupedSegment[]): MatchPosition[] {
     const positions: MatchPosition[] = [];
     for (const seg of segments) {
@@ -232,13 +349,31 @@
           const matches = seg.text.match(regex);
           const count = matches ? matches.length : 0;
           for (let i = 0; i < Math.max(1, count); i++) {
-            positions.push({ type: 'keyword', segmentIndex: seg.segmentIndex });
+            positions.push({
+              type: 'keyword',
+              segmentIndex: seg.segmentIndex,
+              startTime: seg.startTime,
+              endTime: seg.endTime,
+              resolved: true
+            });
           }
         } else {
-          positions.push({ type: 'keyword', segmentIndex: seg.segmentIndex });
+          positions.push({
+            type: 'keyword',
+            segmentIndex: seg.segmentIndex,
+            startTime: seg.startTime,
+            endTime: seg.endTime,
+            resolved: true
+          });
         }
       } else if (seg.isSemantic) {
-        positions.push({ type: 'semantic', segmentIndex: seg.segmentIndex });
+        positions.push({
+          type: 'semantic',
+          segmentIndex: seg.segmentIndex,
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+          resolved: true
+        });
       }
     }
     return positions;
@@ -253,6 +388,7 @@
     error = null;
     groupedSegments = [];
     matchPositions = [];
+    allMatchPositions = buildAllMatchPositionsFromOccurrences(); // Pre-build from ALL occurrences
     currentMatchIdx = 0;
     totalSegmentCount = 0;
     loadedSegmentOffset = 0;
@@ -287,6 +423,17 @@
       groupedSegments = result.grouped;
       matchPositions = buildMatchPositions(result.grouped);
       currentMatchIdx = 0;
+
+      // Resolve segment indices for all matches that are now loaded
+      for (const pos of allMatchPositions) {
+        if (!pos.resolved) {
+          const resolvedIdx = resolveMatchPositionIndex(pos);
+          if (resolvedIdx !== -1) {
+            pos.segmentIndex = resolvedIdx;
+            pos.resolved = true;
+          }
+        }
+      }
 
       loading = false;
 
@@ -354,8 +501,19 @@
       loadedSegmentOffset += newSegments.length;
       hasMoreSegments = loadedSegmentOffset < totalSegmentCount;
 
-      // Rebuild all match positions
+      // Rebuild match positions for currently loaded segments (for scrolling)
       matchPositions = buildMatchPositions(groupedSegments);
+
+      // Resolve segment indices for any newly covered matches
+      for (const pos of allMatchPositions) {
+        if (!pos.resolved) {
+          const resolvedIdx = resolveMatchPositionIndex(pos);
+          if (resolvedIdx !== -1) {
+            pos.segmentIndex = resolvedIdx;
+            pos.resolved = true;
+          }
+        }
+      }
     } catch (e: any) {
       console.error('Failed to load more segments:', e);
     }
@@ -382,12 +540,30 @@
 
   function handleContentScroll(event: Event) {
     const target = event.target as HTMLElement;
-    if (target) {
-      const scrollHeight = target.scrollHeight - target.clientHeight;
-      if (scrollHeight > 0) {
-        scrollProgress = Math.round((target.scrollTop / scrollHeight) * 100);
+    if (!target || totalSegmentCount === 0) return;
+
+    // Calculate progress based on visible segment index vs total segments
+    const segmentElements = target.querySelectorAll('[data-seg-index]');
+    if (segmentElements.length === 0) {
+      scrollProgress = 0;
+      return;
+    }
+
+    // Find the first visible segment (top of viewport)
+    const viewportTop = target.scrollTop;
+    let firstVisibleSegmentIndex = 0;
+
+    for (const el of Array.from(segmentElements)) {
+      const segmentTop = (el as HTMLElement).offsetTop - target.offsetTop;
+      if (segmentTop >= viewportTop) {
+        const dataIndex = el.getAttribute('data-seg-index');
+        firstVisibleSegmentIndex = dataIndex ? parseInt(dataIndex, 10) : 0;
+        break;
       }
     }
+
+    // Calculate progress as percentage of total segments
+    scrollProgress = Math.round((firstVisibleSegmentIndex / totalSegmentCount) * 100);
   }
 
   // Observe the sentinel element when it's available
@@ -435,36 +611,110 @@
   });
 
   function scrollToCurrentMatch() {
-    if (matchPositions.length === 0) return;
-    setTimeout(() => {
+    if (allMatchPositions.length === 0) return;
+
+    requestAnimationFrame(() => {
       if (!contentElement) return;
-      const pos = matchPositions[currentMatchIdx];
-      if (!pos) return;
+      const pos = allMatchPositions[currentMatchIdx];
+      if (!pos || pos.segmentIndex === -1) return;
 
       // Find the segment element
-      const segEl = contentElement.querySelector(`[data-seg-index="${pos.segmentIndex}"]`);
-      if (segEl) {
-        // Try to find a specific mark element within
-        const marks = segEl.querySelectorAll('mark');
-        if (marks.length > 0) {
-          marks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const segEl = contentElement.querySelector(`[data-seg-index="${pos.segmentIndex}"]`) as HTMLElement;
+      if (!segEl) return;
+
+      // Find highlighted elements within this segment based on match type
+      // Keyword matches use .search-keyword-match (word-level)
+      // Semantic matches use .search-semantic-segment (full segment text)
+      const highlightClass = pos.type === 'keyword'
+        ? '.search-keyword-match'
+        : '.search-semantic-segment';
+      const highlights = segEl.querySelectorAll(highlightClass);
+
+      // Determine pulse class based on match type (yellow for keyword, orange for semantic)
+      const pulseClass = pos.type === 'keyword' ? 'search-keyword-pulse' : 'search-semantic-pulse';
+
+      if (highlights.length > 0) {
+        // Remove previous pulse from any element
+        document.querySelectorAll('.search-keyword-pulse, .search-semantic-pulse').forEach(el => {
+          el.classList.remove('search-keyword-pulse', 'search-semantic-pulse');
+        });
+
+        // Add pulse to first matched element in this segment
+        const targetEl = highlights[0] as HTMLElement;
+        targetEl.classList.add(pulseClass);
+
+        // Remove pulse after animation completes (3.5s to match animation)
+        setTimeout(() => {
+          targetEl.classList.remove(pulseClass);
+        }, 3500);
+
+        // Scroll to the highlighted element
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        // Fallback: try any highlight type if specific type not found
+        const anyHighlights = segEl.querySelectorAll('.search-keyword-match, .search-semantic-segment, .search-semantic-match');
+        if (anyHighlights.length > 0) {
+          document.querySelectorAll('.search-keyword-pulse, .search-semantic-pulse').forEach(el => {
+            el.classList.remove('search-keyword-pulse', 'search-semantic-pulse');
+          });
+          const targetEl = anyHighlights[0] as HTMLElement;
+          targetEl.classList.add(pulseClass);
+          setTimeout(() => {
+            targetEl.classList.remove(pulseClass);
+          }, 3500);
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         } else {
+          // Last fallback: scroll to segment
           segEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }
-    }, 50);
+    });
   }
 
-  function nextMatch() {
-    if (matchPositions.length === 0) return;
-    currentMatchIdx = (currentMatchIdx + 1) % matchPositions.length;
-    scrollToCurrentMatch();
+  async function nextMatch() {
+    if (allMatchPositions.length === 0) return;
+    const nextIdx = (currentMatchIdx + 1) % allMatchPositions.length;
+    await navigateToMatch(nextIdx);
   }
 
-  function prevMatch() {
-    if (matchPositions.length === 0) return;
-    currentMatchIdx = currentMatchIdx > 0 ? currentMatchIdx - 1 : matchPositions.length - 1;
-    scrollToCurrentMatch();
+  async function prevMatch() {
+    if (allMatchPositions.length === 0) return;
+    const prevIdx = currentMatchIdx > 0 ? currentMatchIdx - 1 : allMatchPositions.length - 1;
+    await navigateToMatch(prevIdx);
+  }
+
+  async function navigateToMatch(targetIdx: number) {
+    if (targetIdx < 0 || targetIdx >= allMatchPositions.length) return;
+
+    const targetMatch = allMatchPositions[targetIdx];
+
+    // Try to resolve the segment index from loaded segments using time-based matching
+    let resolvedIndex = resolveMatchPositionIndex(targetMatch);
+
+    if (resolvedIndex === -1) {
+      // Target segment not yet loaded - load more until we find it
+      navigatingToMatch = true;
+
+      while (resolvedIndex === -1 && hasMoreSegments) {
+        await loadMoreSegments();
+        await tick();
+        resolvedIndex = resolveMatchPositionIndex(targetMatch);
+      }
+
+      // Wait for DOM to render the element
+      if (resolvedIndex !== -1) {
+        await waitForSegmentInDOM(resolvedIndex);
+      }
+
+      navigatingToMatch = false;
+    }
+
+    if (resolvedIndex !== -1) {
+      targetMatch.segmentIndex = resolvedIndex;
+      targetMatch.resolved = true;
+      currentMatchIdx = targetIdx;
+      scrollToCurrentMatch();
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -497,7 +747,7 @@
     return `${m}:${String(s).padStart(2, '0')}`;
   }
 
-  $: totalMatches = matchPositions.length;
+  $: totalMatches = allMatchPositions.length;
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -547,7 +797,12 @@
           <span class="nav-query">"{searchQuery}"</span>
           <div class="nav-controls">
             <span class="nav-count">
-              {$t('searchTranscript.matchCount', { current: currentMatchIdx + 1, total: totalMatches })}
+              {#if navigatingToMatch}
+                <span class="nav-loading-spinner"></span>
+                {$t('searchTranscript.loadingMatch')}
+              {:else}
+                {$t('searchTranscript.matchCount', { current: currentMatchIdx + 1, total: totalMatches })}
+              {/if}
             </span>
             <button
               class="nav-btn"
@@ -601,6 +856,7 @@
                 <div
                   class="transcript-segment"
                   class:keyword-segment={segment.isKeyword}
+                  class:semantic-segment={segment.isSemantic}
                   data-seg-index={segment.segmentIndex}
                 >
                   <div class="segment-header">
@@ -715,11 +971,13 @@
   }
 
   .keyword-swatch {
-    background: rgba(250, 204, 21, 0.5);
+    background: rgba(250, 204, 21, 0.7);
+    border: 1px solid rgba(250, 204, 21, 0.9);
   }
 
   .semantic-swatch {
-    background: rgba(245, 158, 11, 0.4);
+    background: rgba(251, 146, 60, 0.6);
+    border: 1px solid rgba(251, 146, 60, 0.8);
   }
 
   .close-button {
@@ -795,6 +1053,23 @@
     color: var(--text-primary);
   }
 
+  .nav-loading-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-right: 0.5rem;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   /* Content wrapper for progress bar + scroll area + info bar */
   .modal-content-wrapper {
     flex: 1;
@@ -866,27 +1141,21 @@
   }
 
   .semantic-segment {
-    border-left-color: rgba(245, 158, 11, 0.4);
-    background-color: rgba(245, 158, 11, 0.04);
-    border-radius: 0 6px 6px 0;
-    padding: 0.5rem 0.75rem;
+    border-left-color: rgba(251, 146, 60, 0.6);
+    border-left-width: 4px;
   }
 
   :global(.dark) .semantic-segment {
-    border-left-color: rgba(251, 191, 36, 0.35);
-    background-color: rgba(251, 191, 36, 0.06);
+    border-left-color: rgba(251, 146, 60, 0.65);
   }
 
   .keyword-segment {
-    border-left-color: rgba(250, 204, 21, 0.6);
-    background-color: rgba(250, 204, 21, 0.04);
-    border-radius: 0 6px 6px 0;
-    padding: 0.5rem 0.75rem;
+    border-left-color: rgba(250, 204, 21, 0.7);
+    border-left-width: 4px;
   }
 
   :global(.dark) .keyword-segment {
-    border-left-color: rgba(250, 204, 21, 0.4);
-    background-color: rgba(250, 204, 21, 0.06);
+    border-left-color: rgba(250, 204, 21, 0.6);
   }
 
   .segment-header {
@@ -936,24 +1205,92 @@
 
   /* Keyword word-level matches - yellow */
   .segment-text :global(.search-keyword-match) {
-    background-color: rgba(250, 204, 21, 0.4);
-    padding: 0.05em 0.15em;
-    border-radius: 2px;
+    background-color: rgba(250, 204, 21, 0.55);
+    padding: 0.1em 0.25em;
+    border-radius: 3px;
+    font-weight: 600;
+    border-bottom: 2px solid rgba(250, 204, 21, 0.8);
   }
 
   :global(.dark) .segment-text :global(.search-keyword-match) {
-    background-color: rgba(250, 204, 21, 0.3);
+    background-color: rgba(250, 204, 21, 0.45);
+    border-bottom-color: rgba(250, 204, 21, 0.7);
   }
 
-  /* Semantic segment-level matches - amber */
+  /* Semantic word-level matches - orange */
   .segment-text :global(.search-semantic-match) {
-    background-color: rgba(245, 158, 11, 0.2);
-    padding: 0.05em 0.15em;
-    border-radius: 2px;
+    background-color: rgba(251, 146, 60, 0.45);
+    padding: 0.1em 0.25em;
+    border-radius: 3px;
+    font-weight: 600;
+    border-bottom: 2px solid rgba(251, 146, 60, 0.7);
   }
 
   :global(.dark) .segment-text :global(.search-semantic-match) {
-    background-color: rgba(251, 191, 36, 0.25);
+    background-color: rgba(251, 146, 60, 0.5);
+    border-bottom-color: rgba(251, 146, 60, 0.8);
+  }
+
+  /* Full semantic segment highlight - when no specific words match query */
+  .segment-text :global(.search-semantic-segment) {
+    background-color: rgba(251, 146, 60, 0.2);
+    border-left: 3px solid rgba(251, 146, 60, 0.6);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    display: inline;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  :global(.dark) .segment-text :global(.search-semantic-segment) {
+    background-color: rgba(251, 146, 60, 0.25);
+    border-left-color: rgba(251, 146, 60, 0.7);
+  }
+
+  /* Keyword pulse animation - yellow for exact matches */
+  :global(.search-keyword-pulse) {
+    animation: keyword-pulse 3s ease-in-out;
+    border-bottom: 3px solid rgba(250, 204, 21, 0.9) !important;
+    background-color: rgba(250, 204, 21, 0.4) !important;
+    border-radius: 3px;
+  }
+
+  @keyframes keyword-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.6);
+    }
+    30% {
+      box-shadow: 0 0 0 10px rgba(250, 204, 21, 0);
+    }
+    60% {
+      box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.4);
+    }
+    100% {
+      box-shadow: 0 0 0 6px rgba(250, 204, 21, 0);
+    }
+  }
+
+  /* Semantic pulse animation - orange for similar content matches */
+  :global(.search-semantic-pulse) {
+    animation: semantic-pulse 3s ease-in-out;
+    border-bottom: 3px solid rgba(251, 146, 60, 0.9) !important;
+    background-color: rgba(251, 146, 60, 0.35) !important;
+    border-radius: 3px;
+  }
+
+  @keyframes semantic-pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.6);
+    }
+    30% {
+      box-shadow: 0 0 0 10px rgba(251, 146, 60, 0);
+    }
+    60% {
+      box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.4);
+    }
+    100% {
+      box-shadow: 0 0 0 6px rgba(251, 146, 60, 0);
+    }
   }
 
   /* Reading progress bar */

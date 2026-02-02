@@ -10,6 +10,7 @@
   import SearchPagination from '$components/search/SearchPagination.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
+  import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
@@ -72,6 +73,7 @@
   $: urlQuery = $page.url.searchParams.get('q') || '';
   $: urlPage = parseInt($page.url.searchParams.get('page') || '1');
   $: urlSort = $page.url.searchParams.get('sort') || 'relevance';
+  $: urlSortOrder = ($page.url.searchParams.get('sort_order') || 'desc') as 'asc' | 'desc';
   $: urlMode = $page.url.searchParams.get('mode') || 'hybrid';
   $: urlSpeakers = $page.url.searchParams.getAll('speakers');
   $: urlTags = $page.url.searchParams.getAll('tags');
@@ -82,6 +84,7 @@
     searchInput = restoredQuery;
 
     searchStore.setSortBy(urlSort);
+    searchStore.setSortOrder(urlSortOrder);
     searchStore.setSearchMode(urlMode);
     if (urlSpeakers.length) searchStore.setSpeakers(urlSpeakers);
     if (urlTags.length) searchStore.setTags(urlTags);
@@ -144,9 +147,9 @@
 
   function buildSearchParamsString(query: string, pageNum: number): string {
     return JSON.stringify({
-      q: query, page: pageNum, sort: $searchStore.sortBy, mode: $searchStore.searchMode,
-      speakers: $searchStore.selectedSpeakers, tags: $searchStore.selectedTags,
-      dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
+      q: query, page: pageNum, sort: $searchStore.sortBy, sortOrder: $searchStore.sortOrder,
+      mode: $searchStore.searchMode, speakers: $searchStore.selectedSpeakers,
+      tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
       fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
       durationRange: $searchStore.durationRange, fileSizeRange: $searchStore.fileSizeRange,
       titleFilter: $searchStore.titleFilter,
@@ -164,6 +167,7 @@
     params.set('q', query);
     if (pageNum > 1) params.set('page', String(pageNum));
     if ($searchStore.sortBy !== 'relevance') params.set('sort', $searchStore.sortBy);
+    if ($searchStore.sortOrder !== 'desc') params.set('sort_order', $searchStore.sortOrder);
     if ($searchStore.searchMode !== 'hybrid') params.set('mode', $searchStore.searchMode);
     $searchStore.selectedSpeakers.forEach((s) => params.append('speakers', s));
     $searchStore.selectedTags.forEach((tag) => params.append('tags', tag));
@@ -176,6 +180,7 @@
         page: pageNum,
         page_size: $searchStore.pageSize,
         sort_by: $searchStore.sortBy,
+        sort_order: $searchStore.sortOrder,
         search_mode: $searchStore.searchMode,
         speakers: $searchStore.selectedSpeakers.length ? $searchStore.selectedSpeakers : undefined,
         tags: $searchStore.selectedTags.length ? $searchStore.selectedTags : undefined,
@@ -255,9 +260,9 @@
     }
   }
 
-  function handleSortChange(e: Event) {
-    const target = e.target as HTMLSelectElement;
-    searchStore.setSortBy(target.value);
+  function handleSortChange(event: CustomEvent<{ sortBy: string; sortOrder: 'asc' | 'desc' }>) {
+    const { sortBy, sortOrder } = event.detail;
+    searchStore.setSort(sortBy, sortOrder);
     if ($searchStore.query) {
       performSearch($searchStore.query, 1);
     }
@@ -602,11 +607,11 @@
                   {$t('search.exactMode')}
                 </button>
               </div>
-              <select class="sort-select" value={$searchStore.sortBy} on:change={handleSortChange}>
-                <option value="relevance">{$t('search.relevance')}</option>
-                <option value="date">{$t('search.date')}</option>
-                <option value="match_count">{$t('search.matchCount')}</option>
-              </select>
+              <SearchSortDropdown
+                sortBy={$searchStore.sortBy}
+                sortOrder={$searchStore.sortOrder}
+                on:change={handleSortChange}
+              />
             </div>
           </div>
         {/if}
@@ -1009,16 +1014,6 @@
     color: var(--text-color, #374151);
   }
 
-  .sort-select {
-    padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-color, #e5e7eb);
-    border-radius: 8px;
-    background: var(--surface-color, #f9fafb);
-    color: var(--text-color, #374151);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    color-scheme: light dark;
-  }
 
   /* Results */
   .results {

@@ -338,7 +338,7 @@ def _send_bulk_update_notification(
         logger.warning(f"Failed to send WebSocket notification for bulk speaker update: {e}")
 
 
-def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
+def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[str, int]:
     """
     Apply retroactive voice matching when a speaker is labeled.
 
@@ -357,7 +357,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
         db (Session): SQLAlchemy database session.
 
     Returns:
-        None
+        dict with 'auto_applied_count' and 'suggested_count' keys
 
     Note:
         - Only processes unverified speakers or those with matching names
@@ -372,7 +372,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
         embedding = get_speaker_embedding(str(updated_speaker.uuid))
         if not embedding:
             logger.warning(f"No embedding found for speaker {updated_speaker.uuid}")
-            return
+            return {"auto_applied_count": 0, "suggested_count": 0}
 
         embedding_array = np.array(embedding)
 
@@ -408,9 +408,12 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> None:
 
         _send_bulk_update_notification(updated_speaker, auto_applied_count, suggested_count)
 
+        return {"auto_applied_count": auto_applied_count, "suggested_count": suggested_count}
+
     except Exception as e:
         logger.error(f"Error in retroactive matching: {e}")
         db.rollback()
+        return {"auto_applied_count": 0, "suggested_count": 0}
 
 
 def store_speaker_match(speaker1_id: int, speaker2_id: int, confidence: float, db: Session) -> None:

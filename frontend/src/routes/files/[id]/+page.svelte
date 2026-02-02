@@ -178,8 +178,7 @@
         // Process the new transcript data
         processTranscriptData();
 
-        // Fetch analytics separately to get the latest data
-        await fetchAnalytics(fileId);
+        // Analytics are pre-computed by the backend and included in the API response
 
       }
     } catch (error) {
@@ -219,8 +218,7 @@
         // Process transcript data from the file response
         processTranscriptData();
 
-        // Fetch analytics separately
-        await fetchAnalytics(targetFileId);
+        // Analytics are pre-computed by the backend and included in the API response
 
         isLoading = false;
       } else {
@@ -298,14 +296,6 @@
       console.error('Error loading AI suggestions:', error);
       // Silent fail - suggestions are optional (404 is expected if none exist)
     }
-  }
-
-  /**
-   * Analytics are provided by the backend - no client-side computation needed
-   */
-  async function fetchAnalytics(fileId: string) {
-    // Analytics are pre-computed by the backend and included in the API response
-    // No client-side processing required - just use what the backend provides
   }
 
   /**
@@ -549,15 +539,8 @@
       return { isValid: false, error: $t('speakerValidation.nameTooLong') };
     }
 
-    // Check for duplicate names (excluding the current speaker)
-    const existingNames = speakerList
-      .filter(s => s.uuid !== speakerId)
-      .map(s => (s.display_name || s.name).toLowerCase());
-
-    if (existingNames.includes(trimmedName.toLowerCase())) {
-      return { isValid: false, error: $t('speakerValidation.nameDuplicate') };
-    }
-
+    // Allow duplicate display names - users can label multiple speakers with the same name
+    // and merge them later using the Speaker Merge feature when confident they're the same person
     return { isValid: true };
   }
 
@@ -1508,6 +1491,7 @@
     loadingVoiceSuggestions = true;
 
     // STEP 3: Update speakers in the backend with decisions
+    // Backend returns immediately after saving to PostgreSQL - heavy processing happens in background
     const updatePromises = speakersToUpdate.map(async (speaker: any) => {
       const decision = decisions.get(speaker.uuid);
       const payload: any = {
@@ -2187,6 +2171,24 @@
                 loadSpeakers().then(() => {
                   loadingVoiceSuggestions = false;
                 });
+              }
+            }
+
+            // Handle speaker background processing complete notification
+            if (latestNotification.type === 'speaker_processing_complete') {
+              // Background processing finished - reload speakers to get fresh data
+              if (loadingVoiceSuggestions) {
+                loadSpeakers().then(() => {
+                  loadingVoiceSuggestions = false;
+                });
+              }
+              // Show toast if labels were auto-applied to other speakers
+              const autoAppliedCount = latestNotification.data?.auto_applied_count || 0;
+              const suggestedCount = latestNotification.data?.suggested_count || 0;
+              if (autoAppliedCount > 0) {
+                toastStore.info($t('speakerProfile.autoAppliedToOthers', { count: autoAppliedCount }));
+              } else if (suggestedCount > 0) {
+                toastStore.info($t('speakerProfile.suggestionsCreated', { count: suggestedCount }));
               }
             }
 

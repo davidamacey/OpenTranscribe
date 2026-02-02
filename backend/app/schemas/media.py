@@ -324,6 +324,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     formatted_file_size: Optional[str] = None  # e.g., "2.5 MB"
     display_status: Optional[str] = None  # User-friendly status text
     status_badge_class: Optional[str] = None  # CSS class for status styling
+    speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
     # Error handling fields
     error_category: Optional[str] = None  # Error category for user-friendly handling
@@ -345,6 +346,17 @@ class MediaFileDetail(MediaFile):
     total_segments: Optional[int] = None  # Total number of transcript segments
     segment_limit: Optional[int] = None  # Max segments returned (None = all)
     segment_offset: Optional[int] = None  # Offset for pagination
+
+
+class PaginatedMediaFileResponse(BaseModel):
+    """Paginated response for media file listings."""
+
+    items: list[MediaFile]
+    total: int  # Total files matching filters
+    page: int  # Current page (1-indexed)
+    page_size: int  # Items per page
+    total_pages: int  # Total pages
+    has_more: bool  # Convenience for infinite scroll
 
 
 class TagBase(BaseModel):

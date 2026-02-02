@@ -135,6 +135,18 @@ async def _run_search_maintenance():
         logger.error(f"Error scheduling search maintenance: {e}")
 
 
+async def _run_thumbnail_migration():
+    """Schedule thumbnail migration from JPEG to WebP after a delay."""
+    try:
+        await asyncio.sleep(45)  # Wait for other startup tasks
+        from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
+
+        result = migrate_thumbnails_to_webp.delay(batch_size=20)
+        logger.info(f"Thumbnail migration task scheduled: {result.id}")
+    except Exception as e:
+        logger.error(f"Error scheduling thumbnail migration: {e}")
+
+
 async def _load_search_settings():
     """Load persisted search model settings from DB into runtime config."""
     try:
@@ -168,11 +180,18 @@ async def lifespan(app: FastAPI):
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
     search_settings_task = asyncio.create_task(_load_search_settings())
+    thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
 
     yield
 
     logger.info("Shutting down application...")
-    for task in [minio_task, recovery_task, search_maintenance, search_settings_task]:
+    for task in [
+        minio_task,
+        recovery_task,
+        search_maintenance,
+        search_settings_task,
+        thumbnail_migration,
+    ]:
         if not task.done():
             task.cancel()
             with suppress(asyncio.CancelledError):

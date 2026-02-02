@@ -88,10 +88,16 @@ UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
 MAX_FILENAME_LENGTH = 255
 DEFAULT_FILE_NAME = "unnamed_file"
 
-# Video processing constants
+# Video processing constants (legacy - kept for backward compatibility)
 THUMBNAIL_MAX_WIDTH = 320
 THUMBNAIL_MAX_HEIGHT = 240
 THUMBNAIL_QUALITY = 85
+
+# Thumbnail settings (WebP optimized, preserves aspect ratio)
+THUMBNAIL_MAX_DIMENSION = 1280  # Longest edge - Full HD for crisp display on any screen
+THUMBNAIL_QUALITY_WEBP = 75  # WebP quality (replaces JPEG 85)
+THUMBNAIL_QUALITY_JPEG = 70  # JPEG fallback quality
+THUMBNAIL_FORMAT = "webp"  # Primary format
 
 # Speaker matching confidence thresholds
 SPEAKER_CONFIDENCE_HIGH = 0.75  # Auto-accept (green)
@@ -126,8 +132,8 @@ OPENSEARCH_MAX_RESULT_WINDOW = 50000
 # Search & RAG constants
 SEARCH_DEFAULT_PAGE_SIZE = 20
 SEARCH_MAX_PAGE_SIZE = 100
-SEARCH_MAX_SNIPPETS_PER_FILE = 5
-SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2
+SEARCH_MAX_SNIPPETS_PER_FILE = 100  # Return all occurrences for frontend navigation
+SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprecated)
 SEARCH_HYBRID_MIN_SCORE = 0.01
 SEARCH_CACHE_TTL_SECONDS = 300
 SEARCH_CACHE_MAX_SIZE = 256

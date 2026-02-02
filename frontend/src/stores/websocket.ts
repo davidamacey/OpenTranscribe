@@ -20,6 +20,7 @@ export type NotificationType =
   | 'file_updated'
   | 'file_deleted'
   | 'speaker_updated'
+  | 'speaker_processing_complete'
   | 'gpu_stats_update';
 
 // Notification interface

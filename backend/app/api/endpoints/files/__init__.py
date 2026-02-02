@@ -24,6 +24,7 @@ from fastapi import UploadFile
 from fastapi import status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -34,6 +35,7 @@ from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import MediaFileDetail
 from app.schemas.media import MediaFileUpdate
+from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.media import ReprocessRequest
 from app.schemas.media import TranscriptSegment
 from app.schemas.media import TranscriptSegmentUpdate
@@ -158,8 +160,12 @@ async def upload_media_file(
     return response
 
 
-@router.get("", response_model=list[MediaFileSchema])
+@router.get("", response_model=PaginatedMediaFileResponse)
 def list_media_files(
+    # Pagination parameters
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    # Existing filters
     search: Optional[str] = None,
     tag: Optional[list[str]] = Query(None),
     speaker: Optional[list[str]] = Query(None),
@@ -174,20 +180,29 @@ def list_media_files(
         None
     ),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
     transcript_search: Optional[str] = None,  # Search in transcript content
+    # Sort parameters (after filters to avoid parameter shifting)
+    sort_by: str = Query(
+        "upload_time",
+        description="Field to sort by: upload_time, completed_at, filename, duration, file_size",
+    ),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
+    # Dependencies
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """List all media files for the current user with optional filters"""
+    """List all media files for the current user with optional filters and pagination"""
     from sqlalchemy.orm import joinedload
 
     # Admin users can see all files, regular users only see their own files
-    # Eagerly load the user relationship to get UUID for validation
+    # Eagerly load the user and speakers relationships
     if current_user.role == "admin":
-        base_query = db.query(MediaFile).options(joinedload(MediaFile.user))
+        base_query = db.query(MediaFile).options(
+            joinedload(MediaFile.user), joinedload(MediaFile.speakers)
+        )
     else:
         base_query = (
             db.query(MediaFile)
-            .options(joinedload(MediaFile.user))
+            .options(joinedload(MediaFile.user), joinedload(MediaFile.speakers))
             .filter(MediaFile.user_id == current_user.id)
         )
 
@@ -210,27 +225,55 @@ def list_media_files(
     # Apply all filters
     filtered_query = apply_all_filters(base_query, filters)
 
-    # Order by most recent
-    filtered_query = filtered_query.order_by(MediaFile.upload_time.desc())
+    # Apply sorting
+    # Note: MediaFile has upload_time, completed_at, filename, duration, file_size
+    sort_field_mapping = {
+        "upload_time": MediaFile.upload_time,
+        "completed_at": MediaFile.completed_at,
+        "filename": MediaFile.filename,
+        "duration": MediaFile.duration,
+        "file_size": MediaFile.file_size,
+    }
 
-    # Get the result
-    result = filtered_query.all()
+    # Get the sort field (default to upload_time if invalid)
+    sort_field = sort_field_mapping.get(sort_by, MediaFile.upload_time)
+
+    # Apply sort order
+    if sort_order.lower() == "asc":
+        filtered_query = filtered_query.order_by(sort_field.asc())
+    else:
+        filtered_query = filtered_query.order_by(sort_field.desc())
+
+    # Get total count BEFORE pagination
+    total_count = filtered_query.count()
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    paginated_query = filtered_query.offset(offset).limit(page_size)
+    result = paginated_query.all()
 
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
         set_file_urls(file)
 
-        # Convert to schema and add formatted fields
-        file_schema = MediaFileSchema.model_validate(file)
-        file_schema.formatted_duration = FormattingService.format_duration(file.duration)
-        file_schema.formatted_upload_date = FormattingService.format_upload_date(file.upload_time)
-        file_schema.display_status = FormattingService.format_status(file.status)
-        file_schema.status_badge_class = FormattingService.get_status_badge_class(file.status.value)
+        # Use the FormattingService method which handles formatting correctly
+        # Pass speakers for speaker_summary in list view
+        formatted_file = FormattingService.format_media_file(file, file.speakers)
+        formatted_files.append(formatted_file)
 
-        formatted_files.append(file_schema)
+    # Calculate pagination metadata
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 0
+    has_more = page < total_pages
 
-    return formatted_files
+    return PaginatedMediaFileResponse(
+        items=formatted_files,
+        total=total_count,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_more=has_more,
+    )
 
 
 @router.get("/metadata-filters", response_model=dict)
@@ -323,6 +366,100 @@ def get_media_file_content(
     return get_content_streaming_response(db_file)
 
 
+def _process_video_download_with_subtitles(
+    db: Session,
+    db_file: MediaFile,
+    user_id: int,
+    include_speakers: bool,
+    endpoint_name: str = "download",
+) -> Optional[StreamingResponse]:
+    """
+    Process a video file and embed subtitles for download.
+
+    Args:
+        db: Database session
+        db_file: The media file database object
+        user_id: The user ID requesting the download
+        include_speakers: Whether to include speaker labels in subtitles
+        endpoint_name: Name of the endpoint for logging (e.g., "download" or "token endpoint")
+
+    Returns:
+        StreamingResponse with the processed video, or None if processing fails
+        (caller should fall back to original file on None)
+    """
+    from app.services.minio_service import MinIOService
+    from app.services.video_processing_service import VideoProcessingService
+
+    file_id = int(db_file.id)
+    file_uuid = str(db_file.uuid)
+
+    try:
+        logger.info(
+            f"Processing video download with subtitles for file {file_uuid} "
+            f"(id: {file_id}, {endpoint_name})"
+        )
+
+        # Initialize services
+        minio_service = MinIOService()
+        video_service = VideoProcessingService(minio_service)
+
+        # Check if ffmpeg is available
+        if not video_service.check_ffmpeg_availability():
+            logger.warning(
+                f"ffmpeg not available, serving original file for {file_uuid} "
+                f"(id: {file_id}, {endpoint_name})"
+            )
+            return None
+
+        logger.info(
+            f"ffmpeg available, processing video {file_uuid} (id: {file_id}) "
+            f"with subtitles ({endpoint_name})"
+        )
+
+        # Process video with embedded subtitles
+        cache_key = video_service.process_video_with_subtitles(
+            db=db,
+            file_id=file_id,
+            original_object_name=str(db_file.storage_path),
+            user_id=user_id,
+            include_speakers=include_speakers,
+            output_format="mp4",
+        )
+
+        logger.info(f"Video processing complete, streaming processed video: {cache_key}")
+
+        # Stream the processed video through backend
+        # Note: request object not available here, will handle basic streaming
+        file_stream, _, _, total_length = video_service._get_cache_file_stream(
+            cache_key,
+            "",  # type: ignore[arg-type]
+        )
+
+        # Generate proper filename for download
+        base_name = (
+            db_file.filename.rsplit(".", 1)[0] if "." in db_file.filename else db_file.filename
+        )
+        download_filename = f"{base_name}_with_subtitles.mp4"
+
+        headers = {
+            "Content-Disposition": f'attachment; filename="{download_filename}"',
+            "Content-Type": "video/mp4",
+            "Accept-Ranges": "bytes",
+        }
+
+        if total_length:
+            headers["Content-Length"] = str(total_length)
+
+        return StreamingResponse(content=file_stream, media_type="video/mp4", headers=headers)
+
+    except Exception as e:
+        logger.error(
+            f"Failed to process video with subtitles for file {file_id} ({endpoint_name}): {e}",
+            exc_info=True,
+        )
+        return None
+
+
 @router.get("/{file_uuid}/download")
 def download_media_file(
     file_uuid: str,
@@ -335,7 +472,6 @@ def download_media_file(
     """Download a media file (with embedded subtitles for videos by default)"""
     is_admin = bool(current_user.role == "admin")
     db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
-    file_id = int(db_file.id)  # Get internal ID for video processing
 
     # Check if this is a video file with available subtitles
     is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -343,82 +479,16 @@ def download_media_file(
 
     # Always embed subtitles for videos when available, unless user explicitly requests original
     if is_video and has_transcript and not original:
-        try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"Processing video download with subtitles for file {file_uuid} (id: {file_id})"
-            )
-
-            from app.services.minio_service import MinIOService
-            from app.services.video_processing_service import VideoProcessingService
-
-            # Initialize services
-            minio_service = MinIOService()
-            video_service = VideoProcessingService(minio_service)
-
-            # Check if ffmpeg is available
-            if not video_service.check_ffmpeg_availability():
-                # Fall back to original file if ffmpeg is not available
-                logger.warning(
-                    f"ffmpeg not available, serving original file for {file_uuid} (id: {file_id})"
-                )
-                return get_content_streaming_response(db_file)
-
-            logger.info(
-                f"ffmpeg available, processing video {file_uuid} (id: {file_id}) with subtitles"
-            )
-
-            # Process video with embedded subtitles
-            cache_key = video_service.process_video_with_subtitles(
-                db=db,
-                file_id=file_id,
-                original_object_name=str(db_file.storage_path),
-                user_id=int(current_user.id),
-                include_speakers=include_speakers,
-                output_format="mp4",
-            )
-
-            logger.info(f"Video processing complete, streaming processed video: {cache_key}")
-
-            # Stream the processed video through backend
-            from fastapi.responses import StreamingResponse
-
-            # Get range header for video streaming support
-            # Note: request object not available here, will handle basic streaming
-
-            file_stream, _, _, total_length = video_service._get_cache_file_stream(
-                cache_key,
-                "",  # type: ignore[arg-type]
-            )
-
-            # Generate proper filename for download
-            base_name = (
-                db_file.filename.rsplit(".", 1)[0] if "." in db_file.filename else db_file.filename
-            )
-            download_filename = f"{base_name}_with_subtitles.mp4"
-
-            headers = {
-                "Content-Disposition": f'attachment; filename="{download_filename}"',
-                "Content-Type": "video/mp4",
-                "Accept-Ranges": "bytes",
-            }
-
-            if total_length:
-                headers["Content-Length"] = str(total_length)
-
-            return StreamingResponse(content=file_stream, media_type="video/mp4", headers=headers)
-
-        except Exception as e:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.error(
-                f"Failed to process video with subtitles for file {file_id}: {e}",
-                exc_info=True,
-            )
-            # Fall back to original file on error
+        response = _process_video_download_with_subtitles(
+            db=db,
+            db_file=db_file,
+            user_id=int(current_user.id),
+            include_speakers=include_speakers,
+            endpoint_name="download",
+        )
+        if response is not None:
+            return response
+        # Fall through to return original file on processing failure
 
     # Return original file
     return get_content_streaming_response(db_file)
@@ -436,14 +506,10 @@ def download_media_file_with_token(
     Download a media file using token parameter (for native browser downloads)
     No authentication required - token is validated manually
     """
-    import logging
-
     from jose import JWTError
     from jose import jwt
 
     from app.core.config import settings
-
-    logger = logging.getLogger(__name__)
 
     try:
         # Validate JWT token manually
@@ -460,7 +526,6 @@ def download_media_file_with_token(
         # Get file and check ownership
         is_admin = bool(user.role == "admin")
         db_file = get_media_file_by_uuid(db, file_uuid, int(user.id), is_admin=is_admin)
-        file_id = int(db_file.id)  # Get internal ID for video processing
 
         # Check if this is a video file with available subtitles
         is_video = db_file.content_type and db_file.content_type.startswith("video/")
@@ -468,80 +533,16 @@ def download_media_file_with_token(
 
         # Always embed subtitles for videos when available, unless user explicitly requests original
         if is_video and has_transcript and not original:
-            try:
-                logger.info(
-                    f"Processing video download with subtitles for file {file_uuid} (id: {file_id}, token endpoint)"
-                )
-
-                from app.services.minio_service import MinIOService
-                from app.services.video_processing_service import VideoProcessingService
-
-                # Initialize services
-                minio_service = MinIOService()
-                video_service = VideoProcessingService(minio_service)
-
-                # Check if ffmpeg is available
-                if not video_service.check_ffmpeg_availability():
-                    # Fall back to original file if ffmpeg is not available
-                    logger.warning(
-                        f"ffmpeg not available, serving original file for {file_id} (token endpoint)"
-                    )
-                    return get_content_streaming_response(db_file)
-
-                logger.info(
-                    f"ffmpeg available, processing video {file_id} with subtitles (token endpoint)"
-                )
-
-                # Process video with embedded subtitles
-                cache_key = video_service.process_video_with_subtitles(
-                    db=db,
-                    file_id=file_id,
-                    original_object_name=str(db_file.storage_path),
-                    user_id=int(user.id),
-                    include_speakers=include_speakers,
-                    output_format="mp4",
-                )
-
-                logger.info(f"Video processing complete, streaming processed video: {cache_key}")
-
-                # Stream the processed video through backend
-                from fastapi.responses import StreamingResponse
-
-                # Get range header for video streaming support
-                # Note: request object not available here, will handle basic streaming
-
-                file_stream, _, _, total_length = video_service._get_cache_file_stream(
-                    cache_key,
-                    "",  # type: ignore[arg-type]
-                )
-
-                # Generate proper filename for download
-                base_name = (
-                    db_file.filename.rsplit(".", 1)[0]
-                    if "." in db_file.filename
-                    else db_file.filename
-                )
-                download_filename = f"{base_name}_with_subtitles.mp4"
-
-                headers = {
-                    "Content-Disposition": f'attachment; filename="{download_filename}"',
-                    "Content-Type": "video/mp4",
-                    "Accept-Ranges": "bytes",
-                }
-
-                if total_length:
-                    headers["Content-Length"] = str(total_length)
-
-                return StreamingResponse(
-                    content=file_stream, media_type="video/mp4", headers=headers
-                )
-
-            except Exception as e:
-                logger.error(
-                    f"Failed to process video with subtitles for file {file_id} (token endpoint): {e}",
-                    exc_info=True,
-                )
-                # Fall back to original file on error
+            response = _process_video_download_with_subtitles(
+                db=db,
+                db_file=db_file,
+                user_id=int(user.id),
+                include_speakers=include_speakers,
+                endpoint_name="token endpoint",
+            )
+            if response is not None:
+                return response
+            # Fall through to return original file on processing failure
 
         # Return original file
         return get_content_streaming_response(db_file)
@@ -646,10 +647,6 @@ def clear_video_cache(
     current_user: User = Depends(get_current_active_user),
 ):
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     try:
         # Verify user owns the file or is admin
         is_admin = bool(current_user.role == "admin")
@@ -685,10 +682,6 @@ def refresh_analytics(
     current_user: User = Depends(get_current_active_user),
 ):
     """Refresh analytics for a media file by recomputing them"""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     try:
         # Verify user owns the file or is admin
         is_admin = bool(current_user.role == "admin")

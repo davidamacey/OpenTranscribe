@@ -42,6 +42,7 @@ celery_app = Celery(
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.thumbnail_migration",
     ],
 )
 

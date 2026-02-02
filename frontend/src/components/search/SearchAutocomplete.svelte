@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
 
@@ -16,6 +17,7 @@
   let abortController: AbortController | null = null;
   let suppressFocusReopen = false;
   let searchExecuted = false;
+  let isFocused = false;
 
   async function fetchSuggestions(query: string) {
     if (query.length < 2) {
@@ -51,13 +53,27 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (!showSuggestions) {
-      if (e.key === 'Enter') {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // Cancel any pending fetch to prevent suggestions from reappearing
+      clearTimeout(debounceTimer);
+      abortController?.abort();
+
+      if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {
+        selectSuggestion(suggestions[selectedIndex]);
+      } else {
+        // Execute search and clear suggestions
+        showSuggestions = false;
         suggestions = [];
+        selectedIndex = -1;
         suppressFocusReopen = true;
         searchExecuted = true;
         dispatch('search');
       }
+      return;
+    }
+
+    if (!showSuggestions) {
       return;
     }
 
@@ -70,18 +86,6 @@
         e.preventDefault();
         selectedIndex = Math.max(selectedIndex - 1, -1);
         break;
-      case 'Enter':
-        e.preventDefault();
-        if (selectedIndex >= 0 && suggestions[selectedIndex]) {
-          selectSuggestion(suggestions[selectedIndex]);
-        } else {
-          showSuggestions = false;
-          suggestions = [];
-          suppressFocusReopen = true;
-          searchExecuted = true;
-          dispatch('search');
-        }
-        break;
       case 'Escape':
         showSuggestions = false;
         selectedIndex = -1;
@@ -90,13 +94,22 @@
   }
 
   function selectSuggestion(suggestion: any) {
-    value = suggestion.text || suggestion.title || suggestion;
     showSuggestions = false;
     selectedIndex = -1;
+
+    // If it's a file suggestion, navigate directly to the file
+    if (suggestion.type === 'title' && suggestion.file_uuid) {
+      goto(`/files/${suggestion.file_uuid}`);
+      return;
+    }
+
+    // Otherwise, populate search input for other suggestion types
+    value = suggestion.text || suggestion.title || suggestion;
     dispatch('select', value);
   }
 
   function handleBlur() {
+    isFocused = false;
     // Delay to allow click on suggestion
     setTimeout(() => {
       showSuggestions = false;
@@ -104,8 +117,13 @@
   }
 
   function handleFocus() {
+    isFocused = true;
     if (suppressFocusReopen) {
       suppressFocusReopen = false;
+      return;
+    }
+    // Don't reopen suggestions after search was executed - wait for new typing
+    if (searchExecuted) {
       return;
     }
     if (suggestions.length > 0 && value.length >= 2) {
@@ -182,7 +200,7 @@
     </div>
   {/if}
 
-  {#if value.startsWith('speaker:') && !showSuggestions && !searchExecuted}
+  {#if value.startsWith('speaker:') && !showSuggestions && !searchExecuted && isFocused}
     <div class="operator-hint">
       <span class="hint-label">{$t('search.searchTips')}</span>
       <code>{$t('search.speakerOperatorExample')}</code>

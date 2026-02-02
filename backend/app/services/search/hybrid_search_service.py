@@ -58,28 +58,214 @@ def _sanitize_html(text: str) -> str:
     return text
 
 
-def _add_semantic_highlights(snippet: str, query: str) -> str:
-    """Highlight query words in semantic snippet using <mark class='semantic'>.
+def _get_word_stem(word: str) -> str:
+    """Get a simple stem for a word by removing common suffixes.
+
+    This is a lightweight stemming approach that handles common English suffixes
+    to match semantic variations like china→chinese, economy→economic, etc.
+    """
+    word = word.lower()
+    # Common suffixes to strip (order matters - check longer ones first)
+    suffixes = [
+        "ization",
+        "isation",
+        "ational",
+        "ousness",
+        "iveness",
+        "fulness",
+        "ically",
+        "iously",
+        "lessly",
+        "ations",
+        "encies",
+        "ancies",
+        "ingly",
+        "ously",
+        "ively",
+        "fully",
+        "ation",
+        "ition",
+        "ement",
+        "ness",
+        "ment",
+        "ence",
+        "ance",
+        "able",
+        "ible",
+        "ally",
+        "ious",
+        "eous",
+        "ical",
+        "less",
+        "ness",
+        "ship",
+        "ward",
+        "wise",
+        "like",
+        "ing",
+        "ies",
+        "ied",
+        "ian",
+        "ese",
+        "ish",
+        "ive",
+        "ous",
+        "ful",
+        "ant",
+        "ent",
+        "ion",
+        "ism",
+        "ist",
+        "ity",
+        "ory",
+        "ary",
+        "ery",
+        "ing",
+        "ed",
+        "er",
+        "ly",
+        "al",
+        "en",
+        "es",
+        "ty",
+        "ry",
+        "ic",
+        "s",
+    ]
+    for suffix in suffixes:
+        if len(word) > len(suffix) + 2 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _get_semantic_similar_words(query: str, all_snippets: list[str]) -> set[str]:
+    """Get semantically similar words for a query across all snippets.
+
+    Computed ONCE per search query for efficiency.
+
+    Args:
+        query: The search query.
+        all_snippets: All snippet texts from semantic matches.
+
+    Returns:
+        Set of words (lowercase) that are semantically similar to the query.
+    """
+    if not query or not all_snippets:
+        return set()
+
+    # Combine all snippets to find similar words across all matches
+    combined_text = " ".join(all_snippets)
+
+    try:
+        embedding_service = SearchEmbeddingService.get_instance()
+        similar_words = embedding_service.find_similar_words(
+            query=query, text=combined_text, threshold=0.35, max_words=50
+        )
+        return set(w.lower() for w in similar_words)
+    except Exception as e:
+        logger.warning(f"Failed to find similar words: {e}")
+        return set()
+
+
+def _matches_query_prefix(word_lower: str, word_stem: str, query_prefixes: list[str]) -> bool:
+    """Check if word or its stem matches any query prefix."""
+    return any(
+        word_lower.startswith(prefix) or word_stem.startswith(prefix) for prefix in query_prefixes
+    )
+
+
+def _matches_query_word_start(word_lower: str, query_words: list[str]) -> bool:
+    """Check if word starts with any query word."""
+    return any(word_lower.startswith(qw) for qw in query_words)
+
+
+def _should_highlight_word(
+    word: str,
+    similar_words_set: set[str],
+    query_words: list[str],
+    query_stems: list[str],
+    query_prefixes: list[str],
+) -> bool:
+    """Check if a word should be highlighted based on semantic or stem matching.
+
+    Args:
+        word: The word to check.
+        similar_words_set: Pre-computed set of semantically similar words.
+        query_words: Lowercase query words (length >= 3).
+        query_stems: Stemmed versions of query words.
+        query_prefixes: Prefixes derived from query words.
+
+    Returns:
+        True if the word should be highlighted.
+    """
+    word_lower = word.lower()
+
+    # Check semantic similarity (from pre-computed set)
+    if word_lower in similar_words_set:
+        return True
+
+    # Check direct word match
+    if word_lower in query_words:
+        return True
+
+    # Fallback: stem matching
+    word_stem = _get_word_stem(word_lower)
+    if word_stem in query_stems:
+        return True
+
+    # Check prefix matching
+    if _matches_query_prefix(word_lower, word_stem, query_prefixes):
+        return True
+
+    # Check if word starts with any query word
+    return _matches_query_word_start(word_lower, query_words)
+
+
+def _add_semantic_highlights(
+    snippet: str, query: str, similar_words_set: set[str] | None = None
+) -> str:
+    """Highlight semantically similar words in snippet using <mark class='semantic'>.
 
     For semantic-only hits, OpenSearch returns no <mark> tags. This function
-    adds indigo-styled highlights for query words that appear in the snippet text.
+    highlights words that are semantically similar to the query.
 
     Args:
         snippet: The snippet text (may contain HTML entities but no <mark> tags).
         query: The original search query string.
+        similar_words_set: Pre-computed set of similar words (for efficiency).
 
     Returns:
-        Snippet with query words wrapped in <mark class="semantic"> tags.
+        Snippet with semantically similar words wrapped in <mark class="semantic"> tags.
     """
-    query_words = query.lower().split()
-    if not query_words:
+    if not query or not snippet:
         return snippet
-    # Only match words with 3+ characters to avoid highlighting articles/prepositions
-    patterns = [re.escape(w) for w in query_words if len(w) >= 3]
-    if not patterns:
-        return snippet
-    regex = re.compile(r"\b(" + "|".join(patterns) + r")\b", re.IGNORECASE)
-    return regex.sub(r'<mark class="semantic">\g<0></mark>', snippet)
+
+    if similar_words_set is None:
+        similar_words_set = set()
+
+    # Prepare query matching data
+    query_words = [w.lower() for w in query.split() if len(w) >= 3]
+    query_stems = [_get_word_stem(w) for w in query_words]
+    query_prefixes = [w[: max(4, len(w) - 2)] for w in query_words if len(w) >= 4]
+
+    # Process snippet word by word, preserving non-word characters
+    result = []
+    current_pos = 0
+    word_pattern = re.compile(r"\b([a-zA-Z]+)\b")
+
+    for match in word_pattern.finditer(snippet):
+        result.append(snippet[current_pos : match.start()])
+        word = match.group(1)
+        if _should_highlight_word(
+            word, similar_words_set, query_words, query_stems, query_prefixes
+        ):
+            result.append(f'<mark class="semantic">{word}</mark>')
+        else:
+            result.append(word)
+        current_pos = match.end()
+
+    result.append(snippet[current_pos:])
+    return "".join(result)
 
 
 def _parse_query_operators(raw_query: str) -> tuple[str, dict[str, str]]:
@@ -196,6 +382,8 @@ class SearchHit:
         default_factory=list
     )  # e.g. ["content", "title", "speaker", "semantic"]
     relevance_percent: int = 0  # 0-100 relevance confidence for display
+    duration: float = 0.0  # Duration in seconds
+    file_size: int = 0  # File size in bytes
 
 
 @dataclass
@@ -328,6 +516,7 @@ class HybridSearchService:
         date_from: str | None = None,
         date_to: str | None = None,
         sort_by: str = "relevance",
+        sort_order: str = "desc",
         search_mode: str = "hybrid",
         file_type: list[str] | None = None,
         collection_id: int | None = None,
@@ -349,7 +538,8 @@ class HybridSearchService:
             tags: Optional tag filter list.
             date_from: Optional start date filter (ISO format).
             date_to: Optional end date filter (ISO format).
-            sort_by: Sort order - relevance, date, or match_count.
+            sort_by: Sort field - relevance, upload_time, completed_at, filename, duration, file_size.
+            sort_order: Sort direction - asc or desc.
             title_filter: Optional filename/title substring filter.
 
         Returns:
@@ -374,6 +564,7 @@ class HybridSearchService:
             date_from=date_from,
             date_to=date_to,
             sort_by=sort_by,
+            sort_order=sort_order,
             search_mode=search_mode,
             file_type=file_type,
             collection_id=collection_id,
@@ -458,6 +649,7 @@ class HybridSearchService:
             query,
             grouped,
             sort_by,
+            sort_order,
             search_mode,
             page,
             page_size,
@@ -551,6 +743,7 @@ class HybridSearchService:
         query: str,
         grouped: list[SearchHit],
         sort_by: str,
+        sort_order: str,
         search_mode: str,
         page: int,
         page_size: int,
@@ -560,18 +753,50 @@ class HybridSearchService:
         """Sort grouped results, paginate, and build SearchResponse.
 
         Keyword-matched files always appear before semantic-only files.
+        For relevance sort, sort_order is ignored (always by score desc).
         """
-        if sort_by == "date":
-            grouped.sort(key=lambda h: (h.semantic_only, h.upload_time), reverse=False)
-            # We want: keyword first (semantic_only=False=0), then semantic (True=1)
-            # Within each group, sort by date descending
-            grouped.sort(key=lambda h: h.upload_time, reverse=True)
-            grouped.sort(key=lambda h: h.semantic_only)
-        elif sort_by == "match_count":
-            grouped.sort(key=lambda h: (-int(not h.semantic_only), -h.keyword_occurrences))
-        else:
-            # Relevance: keyword matches first, then by score
+        is_ascending = sort_order == "asc"
+
+        if sort_by == "relevance":
+            # Relevance: keyword matches first, then by score (always desc)
             grouped.sort(key=lambda h: (-int(not h.semantic_only), -h.relevance_score))
+        elif sort_by == "upload_time":
+            # Sort by upload_time, keyword matches first
+            grouped.sort(
+                key=lambda h: (h.semantic_only, h.upload_time or ""),
+                reverse=not is_ascending,
+            )
+        elif sort_by == "completed_at":
+            # Sort by completed_at, keyword matches first
+            # Note: completed_at may not be in SearchHit, fallback to upload_time
+            grouped.sort(
+                key=lambda h: (h.semantic_only, h.upload_time or ""),
+                reverse=not is_ascending,
+            )
+        elif sort_by == "filename":
+            # Sort by title (case-insensitive), keyword matches first
+            # For filename, asc means A-Z, desc means Z-A
+            if is_ascending:
+                grouped.sort(key=lambda h: (h.semantic_only, (h.title or "").lower()))
+            else:
+                grouped.sort(
+                    key=lambda h: (h.semantic_only, (h.title or "").lower()),
+                    reverse=True,
+                )
+                # Re-sort to put keyword matches first
+                grouped.sort(key=lambda h: h.semantic_only)
+        elif sort_by == "duration":
+            # Sort by duration, keyword matches first
+            if is_ascending:
+                grouped.sort(key=lambda h: (h.semantic_only, h.duration))
+            else:
+                grouped.sort(key=lambda h: (h.semantic_only, -h.duration))
+        elif sort_by == "file_size":
+            # Sort by file_size, keyword matches first
+            if is_ascending:
+                grouped.sort(key=lambda h: (h.semantic_only, h.file_size))
+            else:
+                grouped.sort(key=lambda h: (h.semantic_only, -h.file_size))
 
         total_files = len(grouped)
         total_pages = max(1, (total_files + page_size - 1) // page_size)
@@ -910,6 +1135,8 @@ class HybridSearchService:
                     "language",
                     "content",
                     "content_type",
+                    "duration",
+                    "file_size",
                 ],
             }
         else:
@@ -1001,6 +1228,8 @@ class HybridSearchService:
                 "language",
                 "content",
                 "content_type",
+                "duration",
+                "file_size",
             ],
         }
 
@@ -1011,8 +1240,28 @@ class HybridSearchService:
     ) -> list[SearchHit]:
         """Group OpenSearch hits by file_uuid into SearchHit objects."""
         hits_by_file: dict[str, SearchHit] = {}
+        raw_hits = response.get("hits", {}).get("hits", [])
 
-        for hit in response.get("hits", {}).get("hits", []):
+        # First pass: collect semantic-only snippets for efficient similar word computation
+        semantic_snippets = []
+        for hit in raw_hits:
+            score = hit.get("_score", 0.0) or 0.0
+            if score < settings.SEARCH_HYBRID_MIN_SCORE:
+                continue
+            highlight = hit.get("highlight", {})
+            if not highlight:  # Semantic-only hit
+                source = hit["_source"]
+                snippet, _ = _extract_snippet_and_match_type(source, highlight)
+                semantic_snippets.append(snippet)
+
+        # Compute similar words ONCE for all semantic matches (efficient)
+        similar_words_set: set[str] = set()
+        if semantic_snippets and query:
+            similar_words_set = _get_semantic_similar_words(query, semantic_snippets)
+            logger.debug(f"Found {len(similar_words_set)} similar words for query '{query}'")
+
+        # Second pass: process all hits
+        for hit in raw_hits:
             score = hit.get("_score", 0.0) or 0.0
             if score < settings.SEARCH_HYBRID_MIN_SCORE:
                 continue
@@ -1028,9 +1277,9 @@ class HybridSearchService:
             # Classify: keyword match if highlight dict has any entries
             has_keyword_match = bool(highlight)
 
-            # For semantic-only hits, highlight query words in snippet
+            # For semantic-only hits, highlight similar words in snippet
             if not has_keyword_match and query:
-                snippet = _add_semantic_highlights(snippet, query)
+                snippet = _add_semantic_highlights(snippet, query, similar_words_set)
 
             occurrence = SearchOccurrence(
                 snippet=snippet,
@@ -1057,6 +1306,8 @@ class HybridSearchService:
                     content_type=source.get("content_type", ""),
                     relevance_score=score,
                     title_highlighted=title_highlighted,
+                    duration=source.get("duration") or 0.0,
+                    file_size=source.get("file_size") or 0,
                 )
 
             file_hit = hits_by_file[file_uuid]

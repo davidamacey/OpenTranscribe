@@ -58,6 +58,8 @@ def _search_response_to_schema(response) -> dict[str, Any]:
                 "semantic_confidence": hit.semantic_confidence,
                 "match_sources": hit.match_sources,
                 "relevance_percent": hit.relevance_percent,
+                "duration": hit.duration,
+                "file_size": hit.file_size,
             }
             for hit in response.results
         ],
@@ -83,7 +85,14 @@ def search_transcripts(
     tags: list[str] = Query(None, description="Filter by tags"),
     date_from: str | None = Query(None, description="Filter from date (ISO format)"),
     date_to: str | None = Query(None, description="Filter to date (ISO format)"),
-    sort_by: str = Query("relevance", description="Sort by: relevance, date, match_count"),
+    sort_by: str = Query(
+        "relevance",
+        description=(
+            "Sort by: relevance, upload_time, completed_at, filename, duration, file_size. "
+            "Note: completed_at uses upload_time for search results (completion time not indexed)."
+        ),
+    ),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
     search_mode: str = Query("hybrid", description="Search mode: hybrid or keyword"),
     file_type: list[str] | None = Query(None, description="Filter by file type: audio, video"),
     collection_id: int | None = Query(None, description="Filter by collection ID"),
@@ -111,15 +120,34 @@ def search_transcripts(
         tags: Optional tag filters.
         date_from: Optional start date filter.
         date_to: Optional end date filter.
-        sort_by: Sort order - relevance, date, or match_count.
+        sort_by: Sort field - relevance, upload_time, completed_at, filename, duration, file_size.
+        sort_order: Sort direction - asc or desc.
 
     Returns:
         Search results grouped by file with highlighted snippets.
+
+    Notes:
+        - Sorting by 'relevance' always places keyword matches before semantic-only matches,
+          regardless of sort_order.
+        - Sorting by 'completed_at' uses upload_time as a fallback since the completion
+          timestamp is not indexed in the search layer.
     """
-    if sort_by not in ("relevance", "date", "match_count"):
+    valid_sort_fields = (
+        "relevance",
+        "upload_time",
+        "completed_at",
+        "filename",
+        "duration",
+        "file_size",
+    )
+    if sort_by not in valid_sort_fields:
         raise HTTPException(
-            status_code=400, detail="sort_by must be: relevance, date, or match_count"
+            status_code=400,
+            detail=f"sort_by must be one of: {', '.join(valid_sort_fields)}",
         )
+
+    if sort_order not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="sort_order must be: asc or desc")
 
     if search_mode not in ("hybrid", "keyword"):
         raise HTTPException(status_code=400, detail="search_mode must be: hybrid or keyword")
@@ -137,6 +165,7 @@ def search_transcripts(
         date_from=date_from,
         date_to=date_to,
         sort_by=sort_by,
+        sort_order=sort_order,
         search_mode=search_mode,
         file_type=file_type,
         collection_id=collection_id,
@@ -303,6 +332,43 @@ def trigger_reindex(
     }
 
 
+def _check_reindex_task_active(user_id: int) -> bool:
+    """Check if a reindex task is currently active for this user.
+
+    Uses Celery's inspect API to check for active tasks. Returns False
+    on any error to avoid blocking the status endpoint.
+
+    Args:
+        user_id: The user ID to check for active reindex tasks.
+
+    Returns:
+        True if a reindex task is actively running for this user.
+    """
+    try:
+        from app.core.celery import celery_app
+
+        # Inspect active tasks across all workers (with short timeout)
+        inspector = celery_app.control.inspect(timeout=1.0)
+        active_tasks = inspector.active()
+
+        if not active_tasks:
+            return False
+
+        # Check all workers for active reindex tasks for this user
+        for _worker, tasks in active_tasks.items():
+            for task in tasks:
+                if task.get("name") == "reindex_transcripts":
+                    # Check if task args contain this user_id
+                    task_kwargs = task.get("kwargs", {})
+                    if task_kwargs.get("user_id") == user_id:
+                        return True
+    except Exception as e:
+        # Log but don't fail the status endpoint
+        logger.debug(f"Could not check Celery task state: {e}")
+
+    return False
+
+
 @router.get("/reindex/status")
 def reindex_status(
     current_user: User = Depends(get_current_active_user),
@@ -352,11 +418,14 @@ def reindex_status(
         except Exception as e:
             logger.error(f"Error checking index status: {e}")
 
+    # Check if a reindex task is actively running for this user
+    in_progress = _check_reindex_task_active(int(current_user.id))
+
     return {
         "total_files": total_files,
         "indexed_files": indexed_files,
         "pending_files": max(0, total_files - indexed_files),
-        "in_progress": False,  # TODO: check Celery task state
+        "in_progress": in_progress,
         "current_model": settings.SEARCH_EMBEDDING_MODEL,
         "current_dimension": settings.SEARCH_EMBEDDING_DIMENSION,
         "last_indexed_at": last_indexed_at,

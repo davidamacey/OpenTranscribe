@@ -661,27 +661,26 @@
     }
   }
 
-  /* Highlight text matches */
+  /* Highlight text matches - consistent with SearchTranscriptModal */
   :global(.transcript-search-highlight) {
-    background-color: rgba(255, 235, 59, 0.7);
-    padding: 1px 2px;
+    background-color: rgba(250, 204, 21, 0.4);
+    padding: 0.05em 0.15em;
     border-radius: 2px;
-    font-weight: 600;
   }
 
   :global(.transcript-search-highlight.current) {
-    background-color: rgba(255, 152, 0, 0.8);
-    color: white;
+    background-color: rgba(250, 204, 21, 0.6);
+    border: 1px solid rgba(250, 204, 21, 0.8);
   }
 
   /* Dark mode highlighting */
   :global([data-theme='dark']) :global(.transcript-search-highlight) {
-    background-color: rgba(255, 193, 7, 0.3);
+    background-color: rgba(250, 204, 21, 0.3);
     color: var(--text-primary);
   }
 
   :global([data-theme='dark']) :global(.transcript-search-highlight.current) {
-    background-color: rgba(255, 152, 0, 0.6);
-    color: white;
+    background-color: rgba(250, 204, 21, 0.5);
+    border: 1px solid rgba(250, 204, 21, 0.7);
   }
 </style>

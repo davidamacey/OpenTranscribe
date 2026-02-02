@@ -7,9 +7,12 @@
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
   import { hasActiveUploads, uploadsStore } from '$stores/uploads';
-  import { galleryStore, galleryState, selectedCount } from '$stores/gallery';
+  import { galleryStore, galleryState, selectedCount, hasMoreFiles, isLoadingMore, galleryTotalCount, galleryViewMode } from '$stores/gallery';
   import { t } from '$stores/locale';
   import ConfirmationModal from '../components/ConfirmationModal.svelte';
+  import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
+  import GallerySortDropdown from '$components/gallery/GallerySortDropdown.svelte';
+  import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
 
   // Modal state
   let showUploadModal = false;
@@ -73,6 +76,12 @@
     title?: string;
     author?: string;
     description?: string;
+
+    // Speaker summary from backend
+    speaker_summary?: {
+      count: number;
+      primary_speakers: string[];
+    };
   }
 
   interface DurationRange {
@@ -120,6 +129,10 @@
   let pendingDeletions = new Set<string>();
   let refreshTimeouts = new Map<string, number>();
 
+  // Infinite scroll state
+  let infiniteScrollSentinel: HTMLElement | null = null;
+  let intersectionObserver: IntersectionObserver | null = null;
+
   // View state
   let selectedCollectionId: string | null = null;
   let showCollectionsModal = false;
@@ -153,6 +166,15 @@
   let selectedStatuses: string[] = [];
   // Use store for showFilters
   $: showFilters = $galleryState.showFilters;
+
+  // Sort state
+  let sortBy: string = 'upload_time';
+  let sortOrder: 'asc' | 'desc' = 'desc';
+
+  // Observe the sentinel element when it becomes available (after files load)
+  $: if (infiniteScrollSentinel && intersectionObserver) {
+    intersectionObserver.observe(infiniteScrollSentinel);
+  }
 
   /**
    * Show confirmation modal
@@ -215,8 +237,75 @@
     clearSelection();
   }
 
-  // Fetch media files with smooth update support
+  // Build query parameters for API calls
+  function buildQueryParams(page: number = 1): URLSearchParams {
+    const params = new URLSearchParams();
+
+    // Pagination
+    params.append('page', page.toString());
+    params.append('page_size', '20');
+
+    // Sort
+    params.append('sort_by', sortBy);
+    params.append('sort_order', sortOrder);
+
+    // Search
+    if (searchQuery) {
+      params.append('search', searchQuery);
+    }
+
+    // Tags
+    if (selectedTags.length > 0) {
+      selectedTags.forEach(tag => params.append('tag', tag));
+    }
+
+    // Speakers
+    if (selectedSpeakers.length > 0) {
+      selectedSpeakers.forEach(speaker => params.append('speaker', speaker));
+    }
+
+    // Date range
+    if (dateRange.from) {
+      params.append('from_date', dateRange.from.toISOString());
+    }
+    if (dateRange.to) {
+      params.append('to_date', dateRange.to.toISOString());
+    }
+
+    // Duration range
+    if (durationRange.min !== null) {
+      params.append('min_duration', durationRange.min.toString());
+    }
+    if (durationRange.max !== null) {
+      params.append('max_duration', durationRange.max.toString());
+    }
+
+    // File size range
+    if (fileSizeRange.min !== null) {
+      params.append('min_file_size', fileSizeRange.min.toString());
+    }
+    if (fileSizeRange.max !== null) {
+      params.append('max_file_size', fileSizeRange.max.toString());
+    }
+
+    // File types
+    if (selectedFileTypes.length > 0) {
+      selectedFileTypes.forEach(fileType => params.append('file_type', fileType));
+    }
+
+    // Statuses
+    if (selectedStatuses.length > 0) {
+      selectedStatuses.forEach(status => params.append('status', status));
+    }
+
+    return params;
+  }
+
+  // Fetch media files with smooth update support and pagination
   async function fetchFiles(isInitialLoad: boolean = false, skipAnimation: boolean = false) {
+    // Reset pagination on new fetch
+    galleryStore.resetPagination();
+
     // Only show loading state on initial load
     if (isInitialLoad || files.length === 0) {
       loading = true;
@@ -224,82 +313,102 @@
     error = null;
 
     try {
-      // Build query parameters
-      let params = new URLSearchParams();
+      const params = buildQueryParams(1);
 
-      if (searchQuery) {
-        params.append('search', searchQuery);
-      }
-
-      if (selectedTags.length > 0) {
-        selectedTags.forEach(tag => params.append('tag', tag));
-      }
-
-      if (selectedSpeakers.length > 0) {
-        selectedSpeakers.forEach(speaker => params.append('speaker', speaker));
-      }
-
-      if (dateRange.from) {
-        params.append('from_date', dateRange.from.toISOString());
-      }
-
-      if (dateRange.to) {
-        params.append('to_date', dateRange.to.toISOString());
-      }
-
-      // Add duration filter parameters
-      if (durationRange.min !== null) {
-        params.append('min_duration', durationRange.min.toString());
-      }
-
-      if (durationRange.max !== null) {
-        params.append('max_duration', durationRange.max.toString());
-      }
-
-      // Add file size filter parameters
-      if (fileSizeRange.min !== null) {
-        params.append('min_file_size', fileSizeRange.min.toString());
-      }
-
-      if (fileSizeRange.max !== null) {
-        params.append('max_file_size', fileSizeRange.max.toString());
-      }
-
-      // Add file type filter parameters
-      if (selectedFileTypes.length > 0) {
-        selectedFileTypes.forEach(fileType => params.append('file_type', fileType));
-      }
-
-      // Add status filter parameters
-      if (selectedStatuses.length > 0) {
-        selectedStatuses.forEach(status => params.append('status', status));
-      }
-
-      let newFiles: MediaFile[] = [];
+      let response: any;
 
       // If a collection is selected, fetch files from that collection
       if (selectedCollectionId !== null) {
-        const response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
-        newFiles = response.data;
-      } else {
-        const response = await axiosInstance.get('/files', { params });
-        newFiles = response.data;
-      }
-
-      // Update files with smooth transitions
-      if (!skipAnimation && files.length > 0 && !isInitialLoad) {
-        updateFilesSmooth(newFiles);
-      } else {
+        response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
+        // Collections endpoint might not have pagination yet, handle both formats
+        const newFiles = response.data.items || response.data;
         files = newFiles;
         galleryStore.setFiles(newFiles);
-        updateFileMap();
+
+        // Update pagination metadata if available
+        if (response.data.items) {
+          galleryStore.appendFiles(newFiles, {
+            page: response.data.page || 1,
+            pageSize: response.data.page_size || newFiles.length,
+            total: response.data.total || newFiles.length,
+            totalPages: response.data.total_pages || 1,
+            hasMore: response.data.has_more || false,
+          });
+        }
+      } else {
+        response = await axiosInstance.get('/files', { params });
+        const data = response.data;
+
+        // Handle paginated response
+        files = data.items;
+        galleryStore.setFiles(data.items);
+        galleryStore.appendFiles(data.items, {
+          page: data.page,
+          pageSize: data.page_size,
+          total: data.total,
+          totalPages: data.total_pages,
+          hasMore: data.has_more,
+        });
       }
+
+      updateFileMap();
 
     } catch (err) {
       console.error('Error fetching files:', err);
       error = $t('gallery.loadFilesFailed');
     } finally {
       loading = false;
+    }
+  }
+
+  // Load more files for infinite scroll
+  async function loadMoreFiles() {
+    if (!$hasMoreFiles || $isLoadingMore || loading) return;
+
+    galleryStore.setLoadingMore(true);
+
+    try {
+      const nextPage = $galleryState.currentPage + 1;
+      const params = buildQueryParams(nextPage);
+
+      let response: any;
+
+      if (selectedCollectionId !== null) {
+        response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
+        const newFiles = response.data.items || response.data;
+        files = [...files, ...newFiles];
+        galleryStore.setFiles(files);
+
+        if (response.data.items) {
+          galleryStore.appendFiles(newFiles, {
+            page: response.data.page || nextPage,
+            pageSize: response.data.page_size || newFiles.length,
+            total: response.data.total || files.length,
+            totalPages: response.data.total_pages || nextPage,
+            hasMore: response.data.has_more || false,
+          });
+        }
+      } else {
+        response = await axiosInstance.get('/files', { params });
+        const data = response.data;
+
+        files = [...files, ...data.items];
+        galleryStore.setFiles(files);
+        galleryStore.appendFiles(data.items, {
+          page: data.page,
+          pageSize: data.page_size,
+          total: data.total,
+          totalPages: data.total_pages,
+          hasMore: data.has_more,
+        });
+      }
+
+      updateFileMap();
+    } catch (err) {
+      console.error('Error loading more:', err);
+      toastStore.error($t('gallery.loadMoreError'));
+    } finally {
+      galleryStore.setLoadingMore(false);
     }
   }
 
@@ -348,15 +457,40 @@
       return;
     }
 
-    // Add new file to the beginning
-    pendingNewFiles.add(newFile.uuid);
-    files = [newFile, ...files];
-    fileMap.set(newFile.uuid, newFile);
+    // Only add to top if on first page
+    if ($galleryState.currentPage === 1) {
+      // Add new file to the beginning
+      pendingNewFiles.add(newFile.uuid);
+      files = [newFile, ...files];
+      fileMap.set(newFile.uuid, newFile);
+      galleryStore.setFiles(files);
 
-    // Clear new file marker after animation
-    setTimeout(() => {
-      pendingNewFiles.delete(newFile.uuid);
-    }, 600);
+      // Increment total count
+      galleryStore.appendFiles([], {
+        page: $galleryState.currentPage,
+        pageSize: $galleryState.pageSize,
+        total: $galleryState.totalFiles + 1,
+        totalPages: $galleryState.totalPages,
+        hasMore: $galleryState.hasMoreFiles,
+      });
+
+      // Clear new file marker after animation
+      setTimeout(() => {
+        pendingNewFiles.delete(newFile.uuid);
+      }, 600);
+    } else {
+      // Show toast notification instead
+      toastStore.info($t('gallery.newFileAvailable'));
+
+      // Increment total count only
+      galleryStore.appendFiles([], {
+        page: $galleryState.currentPage,
+        pageSize: $galleryState.pageSize,
+        total: $galleryState.totalFiles + 1,
+        totalPages: Math.ceil(($galleryState.totalFiles + 1) / $galleryState.pageSize),
+        hasMore: true, // New file means there might be more
+      });
+    }
   }
 
   // Throttled refresh function to prevent spam
@@ -376,10 +510,9 @@
   // Remove files smoothly with animation
   function removeFilesSmooth(fileIds: string[]) {
     // Mark files for deletion animation
-    fileIds.forEach(id => {
-      if (fileMap.has(id)) {
-        pendingDeletions.add(id);
-      }
+    const actualDeletions = fileIds.filter(id => fileMap.has(id));
+    actualDeletions.forEach(id => {
+      pendingDeletions.add(id);
     });
 
     // Wait for exit animation to complete, then remove from array
@@ -389,6 +522,19 @@
         fileMap.delete(id);
         pendingDeletions.delete(id);
       });
+      galleryStore.setFiles(files);
+
+      // Decrement total count
+      if (actualDeletions.length > 0) {
+        const newTotal = Math.max(0, $galleryState.totalFiles - actualDeletions.length);
+        galleryStore.appendFiles([], {
+          page: $galleryState.currentPage,
+          pageSize: $galleryState.pageSize,
+          total: newTotal,
+          totalPages: Math.ceil(newTotal / $galleryState.pageSize),
+          hasMore: $galleryState.currentPage < Math.ceil(newTotal / $galleryState.pageSize),
+        });
+      }
     }, 250); // Match fade out animation duration
   }
 
@@ -413,6 +559,13 @@
     if (fileTypes !== undefined) selectedFileTypes = fileTypes;
     if (statuses !== undefined) selectedStatuses = statuses;
 
+    fetchFiles();
+  }
+
+  // Handle sort change
+  function handleSortChange(event: CustomEvent<{ sortBy: string; sortOrder: 'asc' | 'desc' }>) {
+    sortBy = event.detail.sortBy;
+    sortOrder = event.detail.sortOrder;
     fetchFiles();
   }
 
@@ -777,10 +930,29 @@
 
     fetchFiles(true); // Initial load
 
+    // Setup infinite scroll observer (will observe sentinel via reactive statement)
+    intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && $hasMoreFiles && !$isLoadingMore) {
+            loadMoreFiles();
+          }
+        });
+      },
+      {
+        root: null,
+        rootMargin: '200px',  // Trigger 200px before bottom
+        threshold: 0.1,
+      }
+    );
+
     // Return cleanup function
     return () => {
       window.removeEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
       window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
+      if (intersectionObserver) {
+        intersectionObserver.disconnect();
+      }
     };
   });
 
@@ -892,19 +1064,52 @@
           <p>{$t('gallery.uploadFirstFile')}</p>
         </div>
       {:else}
-        <div class="file-grid">
-          {#each files as file (file.uuid)}
-            <div
-              class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
-              animate:flip={{ duration: 300 }}
-              in:scale={{ duration: 300, start: 0.8 }}
-              out:fade={{ duration: 250 }}
-            >
+        <!-- Gallery Header (sticky) with sort dropdown and count chip -->
+        {#if !loading || files.length > 0}
+          <div class="gallery-header">
+            <div class="gallery-header-right">
+              <GallerySortDropdown
+                {sortBy}
+                {sortOrder}
+                on:change={handleSortChange}
+              />
+              <GalleryViewToggle />
+              <GalleryCountChip loading={loading} filesLoaded={files.length} />
+            </div>
+          </div>
+        {/if}
+
+        {#if $galleryViewMode === 'list'}
+          <!-- List View -->
+          <div class="file-list">
+            <!-- List Header -->
+            <div class="file-list-header">
+              {#if isSelecting}
+                <div class="list-cell list-cell-checkbox"></div>
+              {/if}
+              <div class="list-cell list-cell-type">{$t('gallery.columnType')}</div>
+              <div class="list-cell list-cell-title">{$t('gallery.columnTitle')}</div>
+              <div class="list-cell list-cell-speakers">{$t('gallery.columnSpeakers')}</div>
+              <div class="list-cell list-cell-duration">{$t('gallery.columnDuration')}</div>
+              <div class="list-cell list-cell-date">{$t('gallery.columnDate')}</div>
+              <div class="list-cell list-cell-size">{$t('gallery.columnSize')}</div>
+              <div class="list-cell list-cell-status">{$t('gallery.columnStatus')}</div>
+            </div>
+
+            <!-- List Rows -->
+            {#each files as file, index (file.uuid)}
+              <div
+                class="file-list-row {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
+                class:even={index % 2 === 0}
+                animate:flip={{ duration: 300 }}
+                in:scale={{ duration: 300, start: 0.98 }}
+                out:fade={{ duration: 250 }}
+              >
                 {#if isSelecting}
                   <!-- svelte-ignore a11y-click-events-have-key-events -->
                   <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
                   <label
-                    class="file-selector"
+                    class="list-cell list-cell-checkbox"
                     on:click|stopPropagation={(e) => {
                       if (e.shiftKey || e.ctrlKey || e.metaKey) {
                         e.preventDefault();
@@ -922,9 +1127,10 @@
                     <span class="checkmark"></span>
                   </label>
                 {/if}
+
                 <a
                   href={isSelecting ? '#' : `/files/${file.uuid}`}
-                  class="file-card-link"
+                  class="file-list-link"
                   on:click={(e) => {
                     if (isSelecting) {
                       e.preventDefault();
@@ -942,46 +1148,62 @@
                     }
                   }}
                 >
-                <div class="file-content">
-                  {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
-                    <div class="file-thumbnail">
-                      <img
-                        src={file.thumbnail_url}
-                        alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
-                        loading="lazy"
-                        class="thumbnail-image"
-                      />
-                      <div class="video-overlay">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                        </svg>
-                      </div>
-                    </div>
-                  {:else if file.content_type && file.content_type.startsWith('video/')}
-                    <div class="file-thumbnail video-placeholder">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <!-- Type Icon -->
+                  <div class="list-cell list-cell-type">
+                    {#if file.content_type && file.content_type.startsWith('video/')}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="type-icon video">
                         <polygon points="23 7 16 12 23 17 23 7"></polygon>
                         <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
                       </svg>
-                    </div>
-                  {:else if file.content_type && file.content_type.startsWith('audio/')}
-                    <div class="file-thumbnail audio-placeholder">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    {:else if file.content_type && file.content_type.startsWith('audio/')}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="type-icon audio">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                         <line x1="12" y1="19" x2="12" y2="23"></line>
                         <line x1="8" y1="23" x2="16" y2="23"></line>
                       </svg>
-                    </div>
-                  {/if}
-
-                  <h2 class="file-name">{file.title || file.filename}</h2>
-
-                  <div class="file-meta">
-                    <span class="file-date">{file.formatted_upload_date}</span>
-                    {#if file.formatted_duration}
-                      <span class="file-duration">{file.formatted_duration}</span>
+                    {:else}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="type-icon">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                      </svg>
                     {/if}
+                  </div>
+
+                  <!-- Title -->
+                  <div class="list-cell list-cell-title">
+                    <span class="file-title">{file.title || file.filename}</span>
+                  </div>
+
+                  <!-- Speakers -->
+                  <div class="list-cell list-cell-speakers">
+                    {#if file.speaker_summary && file.speaker_summary.count > 0}
+                      <span class="speaker-names" title={file.speaker_summary.primary_speakers.join(', ')}>
+                        {file.speaker_summary.primary_speakers.join(', ')}
+                      </span>
+                      <span class="speaker-count">{file.speaker_summary.count}</span>
+                    {:else}
+                      <span class="no-speakers">-</span>
+                    {/if}
+                  </div>
+
+                  <!-- Duration -->
+                  <div class="list-cell list-cell-duration">
+                    {file.formatted_duration || '-'}
+                  </div>
+
+                  <!-- Date -->
+                  <div class="list-cell list-cell-date">
+                    {file.formatted_upload_date || '-'}
+                  </div>
+
+                  <!-- Size -->
+                  <div class="list-cell list-cell-size">
+                    {file.formatted_file_size || '-'}
+                  </div>
+
+                  <!-- Status -->
+                  <div class="list-cell list-cell-status">
                     <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
                       <span class="status-dot"></span>
                       {#if file.status === 'error' && file.last_error_message}
@@ -1005,11 +1227,167 @@
                       {/if}
                     </div>
                   </div>
-                </div>
-              </a>
+                </a>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <!-- Grid View -->
+          <div class="file-grid">
+            {#each files as file (file.uuid)}
+              <div
+                class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
+                animate:flip={{ duration: 300 }}
+                in:scale={{ duration: 300, start: 0.8 }}
+                out:fade={{ duration: 250 }}
+              >
+                  {#if isSelecting}
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+                    <label
+                      class="file-selector"
+                      on:click|stopPropagation={(e) => {
+                        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                          e.preventDefault();
+                          galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+                        }
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        class="file-checkbox"
+                        checked={selectedFiles.has(file.uuid)}
+                        on:change={(e) => toggleFileSelection(file.uuid, e)}
+                        title={$t('gallery.selectFileTooltip')}
+                      />
+                      <span class="checkmark"></span>
+                    </label>
+                  {/if}
+                  <a
+                    href={isSelecting ? '#' : `/files/${file.uuid}`}
+                    class="file-card-link"
+                    on:click={(e) => {
+                      if (isSelecting) {
+                        e.preventDefault();
+                        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                          galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+                        } else {
+                          toggleFileSelection(file.uuid, e);
+                        }
+                      } else if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                        e.preventDefault();
+                        galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+                      } else {
+                        e.preventDefault();
+                        goto(`/files/${file.uuid}`);
+                      }
+                    }}
+                  >
+                  <div class="file-content">
+                    {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
+                      <div class="file-thumbnail">
+                        <img
+                          src={file.thumbnail_url}
+                          alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
+                          loading="lazy"
+                          decoding="async"
+                          class="thumbnail-image"
+                        />
+                        <div class="video-overlay">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                          </svg>
+                        </div>
+                      </div>
+                    {:else if file.content_type && file.content_type.startsWith('video/')}
+                      <div class="file-thumbnail video-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                        </svg>
+                      </div>
+                    {:else if file.content_type && file.content_type.startsWith('audio/')}
+                      <div class="file-thumbnail audio-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                          <line x1="12" y1="19" x2="12" y2="23"></line>
+                          <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                      </div>
+                    {/if}
+
+                    <h2 class="file-name">{file.title || file.filename}</h2>
+
+                    <div class="file-meta">
+                      <span class="file-date">{file.formatted_upload_date}</span>
+                      {#if file.formatted_duration}
+                        <span class="file-duration">{file.formatted_duration}</span>
+                      {/if}
+                      <div class="file-status status-{file.status}" class:clickable-error={file.status === 'error' && file.last_error_message}>
+                        <span class="status-dot"></span>
+                        {#if file.status === 'error' && file.last_error_message}
+                          <!-- svelte-ignore a11y-click-events-have-key-events -->
+                          <!-- svelte-ignore a11y-no-static-element-interactions -->
+                          <span
+                            class="error-details-trigger"
+                            on:click|preventDefault|stopPropagation={() => showEnhancedErrorNotification(file)}
+                            title={$t('gallery.errorClickForDetails')}
+                          >
+                            {$t('common.error')}
+                          </span>
+                        {:else if file.status === 'completed'}
+                          {$t('common.completed')}
+                        {:else if file.status === 'processing'}
+                          {$t('common.processing')}
+                        {:else if file.status === 'pending'}
+                          {$t('common.pending')}
+                        {:else}
+                          {file.display_status || file.status}
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Infinite scroll sentinel -->
+        <div bind:this={infiniteScrollSentinel} class="scroll-sentinel"></div>
+
+        <!-- Loading indicator -->
+        {#if $isLoadingMore}
+          <div class="loading-more" transition:fade={{ duration: 200 }}>
+            <div class="loading-spinner"></div>
+            <p>{$t('gallery.loadingMore')}</p>
+          </div>
+        {/if}
+
+        <!-- End of Results Indicator -->
+        {#if !$hasMoreFiles && files.length > 0 && !loading}
+          <div class="end-of-results" in:fade={{ duration: 300 }}>
+            <div class="end-indicator-line"></div>
+            <div class="end-indicator-content">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>{$t('gallery.allFilesLoaded')}</span>
             </div>
-          {/each}
-        </div>
+            <div class="end-indicator-line"></div>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -1490,7 +1868,7 @@
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
-    padding-top: 1.5rem; /* Match filter sidebar padding */
+    padding-top: 0; /* Gallery header provides top spacing */
   }
 
   /* Compact Button Styles */
@@ -1675,7 +2053,8 @@
   .file-thumbnail {
     position: relative;
     width: 100%;
-    height: 120px;
+    max-height: 180px;        /* Maximum height for consistency */
+    min-height: 100px;        /* Minimum height for very wide videos */
     margin-bottom: 1rem;
     border-radius: 8px;
     overflow: hidden;
@@ -1692,8 +2071,9 @@
 
   .thumbnail-image {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;             /* Let height be determined by aspect ratio */
+    max-height: 180px;        /* Cap height for very tall images */
+    object-fit: contain;      /* Show full image without cropping */
     transition: transform 0.3s ease;
   }
 
@@ -2058,6 +2438,43 @@
     margin-left: auto;
   }
 
+  /* Infinite scroll sentinel - invisible trigger element */
+  .scroll-sentinel {
+    height: 20px;
+    margin-top: 2rem;
+    pointer-events: none;
+  }
+
+  /* Loading more indicator */
+  .loading-more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    gap: 1rem;
+  }
+
+  .loading-more p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
   /* Responsive design */
   @media (max-width: 768px) {
     .media-library-container {
@@ -2243,5 +2660,402 @@
     border-color: #2563eb !important;
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25) !important;
+  }
+
+  /* Gallery Header with Sort and Count Chips */
+  .gallery-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0;
+    background-color: var(--background-color);
+    border-bottom: 1px solid var(--border-color);
+    margin-left: -1.5rem;
+    margin-right: -1.5rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .gallery-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 768px) {
+    .gallery-header {
+      gap: 0.5rem;
+      margin-left: -1rem;
+      margin-right: -1rem;
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    .gallery-header-right {
+      gap: 0.375rem;
+    }
+  }
+
+  /* End of Results Indicator */
+  .end-of-results {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 3rem 1rem;
+  }
+
+  .end-indicator-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--border-color) 50%, transparent);
+    max-width: 200px;
+  }
+
+  .end-indicator-content {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .end-indicator-content svg {
+    flex-shrink: 0;
+    color: var(--success-color, #10b981);
+  }
+
+  /* ========================================
+     LIST VIEW STYLES
+     ======================================== */
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface-color);
+  }
+
+  .file-list-header {
+    display: grid;
+    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface-color);
+    border-bottom: 2px solid var(--border-color);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+  }
+
+  /* When selecting, add checkbox column */
+  .file-list-header:has(+ .file-list-row.selecting-mode) {
+    grid-template-columns: 40px 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+  }
+
+  .file-list-row {
+    display: contents;
+  }
+
+  .file-list-row.selecting-mode .file-list-link {
+    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+  }
+
+  .file-list-link {
+    display: grid;
+    grid-template-columns: 48px minmax(150px, 1.2fr) minmax(180px, 1fr) 90px 100px 90px 110px;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    color: inherit;
+    background: var(--surface-color);
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.15s ease;
+    align-items: center;
+  }
+
+  /* When selecting, row needs to account for checkbox */
+  .file-list-row.selecting-mode {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    padding: 0;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-color);
+    transition: background-color 0.15s ease;
+  }
+
+  .file-list-row.selecting-mode .file-list-link {
+    padding: 0.75rem 1rem 0.75rem 0;
+    border-bottom: none;
+  }
+
+  .file-list-row.selecting-mode .list-cell-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 0 0.75rem 1rem;
+  }
+
+  .file-list-link:hover,
+  .file-list-row.selecting-mode:hover {
+    background-color: var(--hover-bg, rgba(0, 0, 0, 0.02));
+  }
+
+  :global([data-theme='dark']) .file-list-link:hover,
+  :global([data-theme='dark']) .file-list-row.selecting-mode:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .file-list-row.even .file-list-link,
+  .file-list-row.even.selecting-mode {
+    background-color: rgba(0, 0, 0, 0.01);
+  }
+
+  :global([data-theme='dark']) .file-list-row.even .file-list-link,
+  :global([data-theme='dark']) .file-list-row.even.selecting-mode {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+
+  .file-list-row.selected .file-list-link,
+  .file-list-row.selected.selecting-mode {
+    background-color: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  :global([data-theme='dark']) .file-list-row.selected .file-list-link,
+  :global([data-theme='dark']) .file-list-row.selected.selecting-mode {
+    background-color: rgba(59, 130, 246, 0.15);
+  }
+
+  .file-list-row.new-file .file-list-link {
+    animation: listNewFileGlow 0.6s ease-out;
+  }
+
+  @keyframes listNewFileGlow {
+    0% {
+      background-color: rgba(59, 130, 246, 0.15);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  .file-list-row.deleting .file-list-link {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .list-cell {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .list-cell-checkbox {
+    width: 40px;
+    justify-content: center;
+  }
+
+  .list-cell-checkbox .checkmark {
+    width: 18px;
+    height: 18px;
+    background-color: var(--background-color);
+    border: 2px solid var(--border-color);
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .list-cell-checkbox:hover .checkmark {
+    border-color: #3b82f6;
+  }
+
+  .list-cell-checkbox .file-checkbox:checked ~ .checkmark {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+  }
+
+  .list-cell-checkbox .file-checkbox {
+    position: absolute;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .list-cell-checkbox .checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  .list-cell-checkbox .file-checkbox:checked ~ .checkmark:after {
+    display: block;
+  }
+
+  .list-cell-type {
+    width: 48px;
+    justify-content: center;
+  }
+
+  .type-icon {
+    color: var(--text-secondary);
+  }
+
+  .type-icon.video,
+  .type-icon.audio {
+    color: var(--primary-color, #4f46e5);
+  }
+
+  .list-cell-title {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .file-title {
+    display: block;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .list-cell-speakers {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.375rem;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .speaker-names {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .speaker-count {
+    flex: 0 0 auto;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--primary-color);
+    background: var(--primary-color-alpha, rgba(59, 130, 246, 0.1));
+    padding: 0.125rem 0.375rem;
+    border-radius: 9999px;
+    white-space: nowrap;
+    margin-left: 0.25rem;
+  }
+
+  .no-speakers {
+    color: var(--text-tertiary);
+  }
+
+  .list-cell-duration,
+  .list-cell-date,
+  .list-cell-size {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .list-cell-status {
+    justify-content: flex-end;
+  }
+
+  .list-cell-status .file-status {
+    font-size: 0.7rem;
+  }
+
+  /* Hide speakers and size columns on tablets */
+  @media (max-width: 1024px) {
+    .file-list-header {
+      grid-template-columns: 48px 1fr 90px 100px 110px;
+    }
+
+    .file-list-link {
+      grid-template-columns: 48px 1fr 90px 100px 110px;
+    }
+
+    .file-list-row.selecting-mode .file-list-link {
+      grid-template-columns: 48px 1fr 90px 100px 110px;
+    }
+
+    .list-cell-speakers,
+    .list-cell-size {
+      display: none;
+    }
+  }
+
+  /* On mobile, fallback to grid view is handled by hiding list toggle,
+     but if list view is still active, simplify columns */
+  @media (max-width: 768px) {
+    .file-list-header {
+      grid-template-columns: 40px 1fr 80px;
+    }
+
+    .file-list-link {
+      grid-template-columns: 40px 1fr 80px;
+    }
+
+    .file-list-row.selecting-mode .file-list-link {
+      grid-template-columns: 40px 1fr 80px;
+    }
+
+    .list-cell-speakers,
+    .list-cell-duration,
+    .list-cell-date,
+    .list-cell-size {
+      display: none;
+    }
+
+    .list-cell-type {
+      width: 40px;
+    }
+  }
+
+  /* Reduced motion support for list view */
+  @media (prefers-reduced-motion: reduce) {
+    .file-list-row.new-file .file-list-link {
+      animation: none;
+    }
+
+    .file-list-link {
+      transition: none;
+    }
+  }
+
+  /* Prevent text selection during shift+click in list view */
+  .file-list-row.selecting-mode {
+    user-select: none;
+    -webkit-user-select: none;
   }
 </style>

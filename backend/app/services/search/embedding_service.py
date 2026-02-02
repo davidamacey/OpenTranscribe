@@ -132,3 +132,67 @@ class SearchEmbeddingService:
     def dimension(self) -> int:
         """Return the embedding dimension."""
         return settings.SEARCH_EMBEDDING_DIMENSION
+
+    def find_similar_words(
+        self, query: str, text: str, threshold: float = 0.3, max_words: int = 20
+    ) -> list[str]:
+        """Find words in text that are semantically similar to the query.
+
+        Uses embedding similarity to identify words/phrases that are conceptually
+        related to the search query, even if they don't share common stems.
+
+        Args:
+            query: The search query.
+            text: The text passage to search for similar words.
+            threshold: Minimum cosine similarity score (0-1) to consider a match.
+            max_words: Maximum number of similar words to return.
+
+        Returns:
+            List of words from the text that are semantically similar to the query.
+        """
+        import re
+
+        import numpy as np
+
+        if not query or not text:
+            return []
+
+        # Extract unique words from text (3+ characters, alphabetic)
+        words = list(set(re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())))
+        if not words:
+            return []
+
+        # Limit words to process for efficiency
+        words = words[:100]
+
+        try:
+            # Get query embedding
+            query_embedding = np.array(self.embed_query(query))
+
+            # Get embeddings for all words in batch
+            word_embeddings = np.array(self.embed_texts(words))
+
+            if len(word_embeddings) == 0:
+                return []
+
+            # Compute cosine similarities (embeddings are already normalized)
+            similarities = np.dot(word_embeddings, query_embedding)
+
+            # Find words above threshold
+            similar_indices = np.where(similarities >= threshold)[0]
+
+            # Sort by similarity (highest first) and take top max_words
+            sorted_indices = similar_indices[np.argsort(similarities[similar_indices])[::-1]]
+            top_indices = sorted_indices[:max_words]
+
+            # Return the similar words
+            similar_words = [words[i] for i in top_indices]
+
+            logger.debug(
+                f"Found {len(similar_words)} similar words for query '{query}': {similar_words[:5]}"
+            )
+            return similar_words
+
+        except Exception as e:
+            logger.warning(f"Error finding similar words: {e}")
+            return []

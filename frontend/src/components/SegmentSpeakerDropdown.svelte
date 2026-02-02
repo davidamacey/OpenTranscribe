@@ -74,13 +74,14 @@
       portalContainer = null;
     }
     document.removeEventListener('click', handleGlobalClick, true);
-    window.removeEventListener('scroll', closeDropdown, true);
     window.removeEventListener('resize', closeDropdown);
   });
 
   function closeDropdown() {
     if (isOpen) {
       isOpen = false;
+      document.removeEventListener('click', handleGlobalClick, true);
+      window.removeEventListener('resize', closeDropdown);
       renderPortal();
     }
   }
@@ -100,11 +101,9 @@
 
     if (isOpen) {
       document.addEventListener('click', handleGlobalClick, true);
-      window.addEventListener('scroll', closeDropdown, true);
       window.addEventListener('resize', closeDropdown);
     } else {
       document.removeEventListener('click', handleGlobalClick, true);
-      window.removeEventListener('scroll', closeDropdown, true);
       window.removeEventListener('resize', closeDropdown);
     }
 
@@ -124,21 +123,107 @@
     return segment.speaker.uuid === speakerUuid;
   }
 
-  function getMenuPosition(): { top: number; left: number } {
-    if (!triggerButton) return { top: 0, left: 0 };
+  function getMenuPosition(): { top: number; left: number; openUpward: boolean } {
+    if (!triggerButton) return { top: 0, left: 0, openUpward: false };
 
     const rect = triggerButton.getBoundingClientRect();
-    const menuHeight = 300;
+    // Estimate menu height: header + no speaker + divider + speakers + divider + create button
+    const itemHeight = 36;
+    const headerHeight = 28;
+    const dividerHeight = 9;
+    const estimatedHeight = headerHeight + itemHeight + dividerHeight + (speakers.length * itemHeight) + (mediaFileUuid ? dividerHeight + itemHeight : 0);
+
     const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+
+    // Open upward if not enough space below and more space above
+    const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
     let top: number;
-    if (rect.bottom + menuHeight + 4 > viewportHeight) {
-      top = Math.max(4, rect.top - menuHeight - 4);
+    if (openUpward) {
+      top = rect.top - 4;
     } else {
       top = rect.bottom + 4;
     }
 
-    return { top, left: rect.left };
+    return { top, left: rect.left, openUpward };
+  }
+
+  // Helper to create SVG checkmark element
+  function createCheckmarkSvg(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', '20 6 9 17 4 12');
+    svg.appendChild(polyline);
+    return svg;
+  }
+
+  // Helper to create SVG plus icon element
+  function createPlusSvg(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '14');
+    svg.setAttribute('height', '14');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line1.setAttribute('x1', '12');
+    line1.setAttribute('y1', '5');
+    line1.setAttribute('x2', '12');
+    line1.setAttribute('y2', '19');
+    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line2.setAttribute('x1', '5');
+    line2.setAttribute('y1', '12');
+    line2.setAttribute('x2', '19');
+    line2.setAttribute('y2', '12');
+    svg.appendChild(line1);
+    svg.appendChild(line2);
+    return svg;
+  }
+
+  // Helper to create a speaker dropdown item button using DOM methods (XSS-safe)
+  function createDropdownItem(
+    speakerUuid: string,
+    label: string,
+    isSelected: boolean,
+    colorBg?: string,
+    colorBorder?: string,
+    isNoSpeaker: boolean = false
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.className = `dropdown-item${isSelected ? ' selected' : ''}`;
+    button.dataset.speakerUuid = speakerUuid;
+
+    const speakerOption = document.createElement('div');
+    speakerOption.className = 'speaker-option';
+
+    const colorIndicator = document.createElement('div');
+    colorIndicator.className = `speaker-color-indicator${isNoSpeaker ? ' no-speaker' : ''}`;
+    if (colorBg && colorBorder) {
+      colorIndicator.style.backgroundColor = colorBg;
+      colorIndicator.style.borderColor = colorBorder;
+    }
+
+    const span = document.createElement('span');
+    span.textContent = label; // textContent is XSS-safe
+
+    speakerOption.appendChild(colorIndicator);
+    speakerOption.appendChild(span);
+    button.appendChild(speakerOption);
+
+    if (isSelected) {
+      button.appendChild(createCheckmarkSvg());
+    }
+
+    return button;
   }
 
   function renderPortal() {
@@ -152,68 +237,90 @@
     const pos = getMenuPosition();
     const currentSpeakerUuid = segment.speaker?.uuid;
 
-    // Build menu HTML
-    let menuHtml = `
-      <div class="dropdown-menu" style="top: ${pos.top}px; left: ${pos.left}px;">
-        <div class="dropdown-header">${$t('speaker.assignSpeaker')}</div>
-        <button class="dropdown-item ${!segment.speaker ? 'selected' : ''}" data-speaker-uuid="">
-          <div class="speaker-option">
-            <div class="speaker-color-indicator no-speaker"></div>
-            <span>${$t('speaker.noSpeaker')}</span>
-          </div>
-          ${!segment.speaker ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
-        </button>
-        <div class="dropdown-divider"></div>
-    `;
+    // Build menu using DOM methods to prevent XSS
+    const menu = document.createElement('div');
+    menu.className = `dropdown-menu${pos.openUpward ? ' open-upward' : ''}`;
+    menu.style.top = `${pos.top}px`;
+    menu.style.left = `${pos.left}px`;
+    if (pos.openUpward) {
+      menu.style.transform = 'translateY(-100%)';
+    }
 
+    // Header
+    const header = document.createElement('div');
+    header.className = 'dropdown-header';
+    header.textContent = $t('speaker.assignSpeaker');
+    menu.appendChild(header);
+
+    // "No Speaker" option
+    const noSpeakerBtn = createDropdownItem(
+      '',
+      $t('speaker.noSpeaker'),
+      !segment.speaker,
+      undefined,
+      undefined,
+      true
+    );
+    noSpeakerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleSpeakerSelect(null);
+    });
+    menu.appendChild(noSpeakerBtn);
+
+    // Divider
+    const divider1 = document.createElement('div');
+    divider1.className = 'dropdown-divider';
+    menu.appendChild(divider1);
+
+    // Speaker options
     for (const speaker of speakers) {
       const isSelected = speaker.uuid === currentSpeakerUuid;
       const color = getSpeakerColor(speaker.name);
-      menuHtml += `
-        <button class="dropdown-item ${isSelected ? 'selected' : ''}" data-speaker-uuid="${speaker.uuid}">
-          <div class="speaker-option">
-            <div class="speaker-color-indicator" style="background-color: ${color.bg}; border-color: ${color.border};"></div>
-            <span>${translateSpeakerLabel(speaker.display_name || speaker.name)}</span>
-          </div>
-          ${isSelected ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
-        </button>
-      `;
+      const speakerBtn = createDropdownItem(
+        speaker.uuid,
+        translateSpeakerLabel(speaker.display_name || speaker.name),
+        isSelected,
+        color.bg,
+        color.border
+      );
+      speakerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSpeakerSelect(speaker.uuid);
+      });
+      menu.appendChild(speakerBtn);
     }
 
     // Add "Create New Speaker" button if mediaFileUuid is available
     if (mediaFileUuid) {
       const nextSpeakerName = getNextSpeakerName();
-      menuHtml += `
-        <div class="dropdown-divider"></div>
-        <button class="dropdown-item create-speaker-btn" data-action="create-speaker">
-          <div class="speaker-option">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>${$t('speaker.createNew')} ${nextSpeakerName}</span>
-          </div>
-        </button>
-      `;
+
+      const divider2 = document.createElement('div');
+      divider2.className = 'dropdown-divider';
+      menu.appendChild(divider2);
+
+      const createBtn = document.createElement('button');
+      createBtn.className = 'dropdown-item create-speaker-btn';
+      createBtn.dataset.action = 'create-speaker';
+
+      const createOption = document.createElement('div');
+      createOption.className = 'speaker-option';
+      createOption.appendChild(createPlusSvg());
+
+      const createSpan = document.createElement('span');
+      createSpan.textContent = `${$t('speaker.createNew')} ${nextSpeakerName}`;
+      createOption.appendChild(createSpan);
+
+      createBtn.appendChild(createOption);
+      createBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleCreateNewSpeaker();
+      });
+      menu.appendChild(createBtn);
     }
 
-    menuHtml += '</div>';
-    portalContainer.innerHTML = menuHtml;
-
-    // Add click handlers
-    const buttons = portalContainer.querySelectorAll('.dropdown-item');
-    buttons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const action = (btn as HTMLElement).dataset.action;
-        if (action === 'create-speaker') {
-          handleCreateNewSpeaker();
-          return;
-        }
-        const uuid = (btn as HTMLElement).dataset.speakerUuid;
-        handleSpeakerSelect(uuid === '' ? null : uuid || null);
-      });
-    });
+    // Clear and append
+    portalContainer.innerHTML = '';
+    portalContainer.appendChild(menu);
   }
 </script>
 
@@ -227,8 +334,6 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       z-index: 10000;
       min-width: 200px;
-      max-height: 300px;
-      overflow-y: auto;
       padding: 4px;
     }
 
@@ -310,20 +415,6 @@
       color: var(--primary-color, #3b82f6);
       margin-right: 4px;
     }
-
-    .speaker-dropdown-portal .dropdown-menu::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .speaker-dropdown-portal .dropdown-menu::-webkit-scrollbar-track {
-      background: var(--background-secondary, #0f172a);
-      border-radius: 3px;
-    }
-
-    .speaker-dropdown-portal .dropdown-menu::-webkit-scrollbar-thumb {
-      background: var(--border-color, #475569);
-      border-radius: 3px;
-    }
   </style>
 </svelte:head>
 
@@ -377,7 +468,6 @@
     padding: 2px 8px;
     border-radius: 12px;
     white-space: nowrap;
-    min-width: fit-content;
     max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;

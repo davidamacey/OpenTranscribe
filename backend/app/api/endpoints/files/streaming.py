@@ -1,3 +1,4 @@
+import hashlib
 import io
 import logging
 import os
@@ -249,6 +250,8 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
     """
     Get streaming response for a thumbnail image.
 
+    Supports both WebP and JPEG thumbnails with ETag-based caching.
+
     Args:
         db_file: MediaFile object
 
@@ -264,22 +267,37 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
             detail="Thumbnail not available for this file",
         )
 
+    # Detect format from path extension
+    thumbnail_path = str(db_file.thumbnail_path)
+    if thumbnail_path.endswith(".webp"):
+        media_type = "image/webp"
+        ext = "webp"
+    else:
+        media_type = "image/jpeg"
+        ext = "jpg"
+
     if os.environ.get("SKIP_S3", "False").lower() == "true":
         return StreamingResponse(
-            content=io.BytesIO(b"Mock thumbnail content"), media_type="image/jpeg"
+            content=io.BytesIO(b"Mock thumbnail content"), media_type=media_type
         )
 
     try:
         # download_file returns a tuple of (BytesIO, content_length, content_type)
-        thumbnail_io, content_length, _ = download_file(str(db_file.thumbnail_path))
+        thumbnail_io, content_length, _ = download_file(thumbnail_path)
+
+        # Generate ETag from thumbnail path (changes when thumbnail is regenerated)
+        # Using MD5 for ETag generation is safe - it's not used for security purposes
+        etag = hashlib.md5(thumbnail_path.encode()).hexdigest()  # noqa: S324  # nosec B324
 
         return StreamingResponse(
             content=thumbnail_io,
-            media_type="image/jpeg",  # Thumbnails are generated as JPEG
+            media_type=media_type,
             headers={
-                "Content-Disposition": f'inline; filename="{os.path.basename(str(db_file.thumbnail_path))}"',
-                "Cache-Control": "public, max-age=86400",  # Cache thumbnails for 1 day
+                "Content-Disposition": f'inline; filename="thumbnail.{ext}"',
+                "Cache-Control": "public, max-age=86400, must-revalidate",  # 1 day, then validate
+                "ETag": f'"{etag}"',
                 "Content-Length": str(content_length),
+                "Vary": "Accept",  # CDN compatibility for content negotiation
             },
         )
     except Exception as e:

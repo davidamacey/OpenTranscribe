@@ -1052,8 +1052,15 @@ def _update_opensearch_speaker_name(speaker_uuid: str, display_name: str) -> Non
         logger.error(f"Failed to update speaker display name in OpenSearch: {e}")
 
 
-def _handle_speaker_labeling_workflow(speaker: Speaker, display_name: str, db: Session) -> None:
-    """Handle auto-creation of profiles and retroactive matching when speaker is labeled."""
+def _handle_speaker_labeling_workflow(
+    speaker: Speaker, display_name: str, db: Session
+) -> dict[str, int]:
+    """
+    Handle auto-creation of profiles and retroactive matching when speaker is labeled.
+
+    Returns:
+        dict with 'auto_applied_count' and 'suggested_count' keys
+    """
     # Auto-create profile if needed and assign speaker to it
     from app.api.endpoints.speaker_update import auto_create_or_assign_profile
 
@@ -1066,7 +1073,7 @@ def _handle_speaker_labeling_workflow(speaker: Speaker, display_name: str, db: S
     # Then trigger retroactive matching for all other speakers
     from app.api.endpoints.speaker_update import trigger_retroactive_matching
 
-    trigger_retroactive_matching(speaker, db)
+    return trigger_retroactive_matching(speaker, db)
 
 
 def _clear_video_cache_for_speaker(db: Session, media_file_id: int) -> None:
@@ -1267,8 +1274,13 @@ def update_speaker(
 ):
     """
     Update a speaker's information including display name and verification status.
-    This also handles profile embedding updates when speakers are corrected or reassigned.
+
+    This endpoint returns immediately after saving to PostgreSQL. Heavy processing
+    (profile embeddings, OpenSearch updates, cross-media matching) happens in a
+    background Celery task. A WebSocket notification is sent when processing completes.
     """
+    from app.tasks.speaker_tasks import process_speaker_update_background
+
     # Find and validate speaker
     speaker = get_speaker_by_uuid(db, speaker_uuid)
     if speaker.user_id != current_user.id:
@@ -1277,6 +1289,7 @@ def update_speaker(
     speaker_id = int(speaker.id)
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
+    media_file_id = int(speaker.media_file_id)
 
     # Update speaker fields
     update_data = speaker_update.model_dump(exclude_unset=True)
@@ -1285,7 +1298,7 @@ def update_speaker(
     for field, value in update_data.items():
         setattr(speaker, field, value)
 
-    # Handle profile actions
+    # Handle profile actions (synchronous - needed for immediate response)
     _handle_profile_action(
         profile_action, speaker_update, speaker, old_profile_id, current_user, db
     )
@@ -1293,32 +1306,32 @@ def update_speaker(
     # Handle verification when display name is set
     _apply_verification_on_display_name(speaker, speaker_update)
 
+    # Commit to PostgreSQL immediately
     db.commit()
     db.refresh(speaker)
 
-    # Process side effects
+    # Determine what changed
     display_name_changed = speaker_update.display_name is not None
+    new_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    display_name = str(speaker.display_name) if speaker.display_name else ""
 
-    _handle_profile_embedding_updates(
-        db,
-        speaker_id,
-        old_profile_id,
-        int(speaker.profile_id) if speaker.profile_id else None,
-        was_auto_labeled,
-        display_name_changed,
-    )
+    # Queue background processing for heavy operations
+    # This handles: profile embeddings, OpenSearch updates, retroactive matching, cache clearing
+    if display_name_changed or old_profile_id != new_profile_id:
+        process_speaker_update_background.delay(
+            speaker_uuid=str(speaker.uuid),
+            user_id=int(current_user.id),
+            display_name=display_name,
+            speaker_id=speaker_id,
+            old_profile_id=old_profile_id,
+            new_profile_id=new_profile_id,
+            was_auto_labeled=was_auto_labeled,
+            display_name_changed=display_name_changed,
+            media_file_id=media_file_id,
+        )
+        logger.info(f"Queued background processing for speaker {speaker_uuid}")
 
-    if speaker_update.display_name is not None:
-        _update_opensearch_speaker_name(str(speaker.uuid), str(speaker.display_name))
-
-    _update_opensearch_profile_info(speaker, old_profile_id, display_name_changed, db)
-
-    if speaker_update.display_name is not None and speaker_update.display_name.strip():
-        _handle_speaker_labeling_workflow(speaker, speaker_update.display_name, db)
-
-    _clear_video_cache_for_speaker(db, int(speaker.media_file_id))
-    _send_websocket_notification(speaker, current_user, db)
-
+    # Add computed status for immediate response
     SpeakerStatusService.add_computed_status(speaker)
     _set_no_cache_headers(response)
 

@@ -833,6 +833,22 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    position: relative;
+  }
+
+  .filter-section:not(:first-child) {
+    padding-top: 0.25rem;
+  }
+
+  .filter-section:not(:first-child)::before {
+    content: '';
+    position: absolute;
+    top: -0.5rem;
+    left: 5%;
+    right: 5%;
+    height: 2px;
+    background: linear-gradient(to right, transparent 0%, var(--text-secondary) 20%, var(--text-secondary) 80%, transparent 100%);
+    opacity: 0.3;
   }
 
   .filter-section h3 {

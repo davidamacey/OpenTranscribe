@@ -145,8 +145,9 @@ class FormattingService:
             return {"count": 0, "primary_speakers": []}
 
         # Get display names, fallback to original names
+        # Return all speakers - frontend handles truncation based on available space
         speaker_names = []
-        for speaker in speakers[:3]:  # Only show first 3 speakers
+        for speaker in speakers:
             display_name = speaker.display_name or speaker.name
             speaker_names.append(display_name)
 
@@ -166,22 +167,26 @@ class FormattingService:
         Returns:
             MediaFileSchema with formatted fields
         """
-        # Convert to schema
-        file_data = MediaFileSchema.model_validate(media_file)
+        # Convert to dict first to allow modifications
+        file_dict = MediaFileSchema.model_validate(media_file).model_dump()
 
-        # Add basic formatted fields
-        file_data.formatted_duration = FormattingService.format_duration(
+        # Add formatted fields to the dict
+        file_dict["formatted_duration"] = FormattingService.format_duration(
             float(media_file.duration) if media_file.duration is not None else None
         )
-        file_data.formatted_upload_date = FormattingService.format_upload_date(
+        file_dict["formatted_upload_date"] = FormattingService.format_upload_date(
             media_file.upload_time  # type: ignore[arg-type]
         )
-        file_data.formatted_file_age = FormattingService.format_file_age(media_file.upload_time)  # type: ignore[arg-type]
-        file_data.formatted_file_size = FormattingService.format_bytes_detailed(
+        file_dict["formatted_file_age"] = FormattingService.format_file_age(
+            media_file.upload_time  # type: ignore[arg-type]
+        )
+        file_dict["formatted_file_size"] = FormattingService.format_bytes_detailed(
             int(media_file.file_size) if media_file.file_size is not None else None
         )
-        file_data.display_status = FormattingService.format_status(media_file.status)  # type: ignore[arg-type]
-        file_data.status_badge_class = FormattingService.get_status_badge_class(
+        file_dict["display_status"] = FormattingService.format_status(
+            media_file.status  # type: ignore[arg-type]
+        )
+        file_dict["status_badge_class"] = FormattingService.get_status_badge_class(
             media_file.status.value  # type: ignore[arg-type]
         )
 
@@ -192,11 +197,16 @@ class FormattingService:
                 if media_file.last_error_message is not None
                 else None
             )
-            file_data.error_category = error_info["category"]
-            file_data.error_suggestions = error_info["suggestions"]
-            file_data.is_retryable = error_info["is_retryable"]
+            file_dict["error_category"] = error_info["category"]
+            file_dict["error_suggestions"] = error_info["suggestions"]
+            file_dict["is_retryable"] = error_info["is_retryable"]
 
-        return file_data  # type: ignore[no-any-return]
+        # Add speaker summary if speakers provided
+        if speakers:
+            file_dict["speaker_summary"] = FormattingService.create_speaker_summary(speakers)
+
+        # Create a new schema instance from the enriched dict
+        return MediaFileSchema.model_validate(file_dict)  # type: ignore[no-any-return]
 
     @staticmethod
     def format_transcript_segment(
@@ -218,44 +228,45 @@ class FormattingService:
 
         # Convert to schema if needed (segment is a SQLAlchemy model, convert to Pydantic schema)
         try:
-            segment_data = TranscriptSegment.model_validate(segment)
+            segment_dict = TranscriptSegment.model_validate(segment).model_dump()
         except Exception as e:
             logger.error(f"Failed to validate segment data: {e}")
             raise ValueError(f"Invalid segment data: {e}") from e
 
         # Add formatted timestamps
-        segment_data.formatted_timestamp = FormattingService.format_duration_with_millis(
-            segment_data.start_time
+        segment_dict["formatted_timestamp"] = FormattingService.format_duration_with_millis(
+            segment_dict["start_time"]
         )
-        segment_data.display_timestamp = FormattingService.format_duration_with_millis(
-            segment_data.start_time
+        segment_dict["display_timestamp"] = FormattingService.format_duration_with_millis(
+            segment_dict["start_time"]
         )
 
         # Resolve speaker label and name
         # speaker_label ALWAYS contains the original speaker ID (e.g., "SPEAKER_01") for color consistency
         # resolved_speaker_name contains the display name for UI
-        if segment_data.speaker:
+        if segment_dict.get("speaker"):
             # Preserve original speaker ID in speaker_label
-            segment_data.speaker_label = segment_data.speaker.name or "Unknown"
+            segment_dict["speaker_label"] = segment_dict["speaker"].get("name", "Unknown")
             # Set display name in resolved_speaker_name
             resolved_name = (
-                segment_data.speaker.resolved_display_name
-                or segment_data.speaker.display_name
-                or segment_data.speaker.name
+                segment_dict["speaker"].get("resolved_display_name")
+                or segment_dict["speaker"].get("display_name")
+                or segment_dict["speaker"].get("name")
                 or "Unknown"
             )
-            segment_data.resolved_speaker_name = resolved_name
-        elif speaker_mapping and hasattr(segment_data, "speaker_id"):
+            segment_dict["resolved_speaker_name"] = resolved_name
+        elif speaker_mapping and segment_dict.get("speaker_id"):
             # For segments without speaker objects, we can't preserve original ID
             # Use mapping for both fields as fallback
-            resolved_name = speaker_mapping.get(str(segment_data.speaker_id), "Unknown")
-            segment_data.speaker_label = resolved_name
-            segment_data.resolved_speaker_name = resolved_name
+            resolved_name = speaker_mapping.get(str(segment_dict["speaker_id"]), "Unknown")
+            segment_dict["speaker_label"] = resolved_name
+            segment_dict["resolved_speaker_name"] = resolved_name
         else:
-            segment_data.speaker_label = "Unknown"
-            segment_data.resolved_speaker_name = "Unknown"
+            segment_dict["speaker_label"] = "Unknown"
+            segment_dict["resolved_speaker_name"] = "Unknown"
 
-        return segment_data  # type: ignore[no-any-return]
+        # Create a new schema instance from the enriched dict
+        return TranscriptSegment.model_validate(segment_dict)  # type: ignore[no-any-return]
 
     @staticmethod
     def format_file_size(file_size: Optional[int]) -> Optional[str]:

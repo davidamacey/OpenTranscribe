@@ -1,17 +1,50 @@
 import { writable, derived } from 'svelte/store';
+import { browser } from '$app/environment';
+
+// LocalStorage key for view mode persistence
+const VIEW_MODE_STORAGE_KEY = 'gallery-view-mode';
+
+// Helper to get persisted view mode
+function getPersistedViewMode(): 'grid' | 'list' {
+  if (!browser) return 'grid';
+  const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+  if (stored === 'list' || stored === 'grid') {
+    return stored;
+  }
+  return 'grid';
+}
+
+// Pagination metadata interface
+interface PaginationMetadata {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
 
 // Types for gallery state
+export type ViewMode = 'grid' | 'list';
+
 export interface GalleryState {
   activeTab: 'gallery' | 'status';
+  viewMode: ViewMode;
   isSelecting: boolean;
   selectedFiles: Set<string>; // UUIDs
   lastSelectedId: string | null; // For shift+click range selection
   files: any[];
   showFilters: boolean;
+  currentPage: number; // 0 = nothing loaded
+  pageSize: number;
+  totalFiles: number;
+  totalPages: number;
+  hasMoreFiles: boolean;
+  isLoadingMore: boolean;
 }
 
 export interface GalleryActions {
   setActiveTab: (tab: 'gallery' | 'status') => void;
+  setViewMode: (mode: ViewMode) => void;
   toggleSelection: () => void;
   setSelecting: (selecting: boolean) => void;
   toggleFileSelection: (fileId: string) => void; // UUID
@@ -24,16 +57,26 @@ export interface GalleryActions {
   triggerCollections: () => void;
   triggerAddToCollection: () => void;
   triggerDeleteSelected: () => void;
+  appendFiles: (newFiles: any[], metadata: PaginationMetadata) => void;
+  resetPagination: () => void;
+  setLoadingMore: (loading: boolean) => void;
 }
 
 // Initial state
 const initialState: GalleryState = {
   activeTab: 'gallery',
+  viewMode: getPersistedViewMode(),
   isSelecting: false,
   selectedFiles: new Set<string>(), // UUIDs
   lastSelectedId: null,
   files: [],
   showFilters: true,
+  currentPage: 0,
+  pageSize: 20,
+  totalFiles: 0,
+  totalPages: 0,
+  hasMoreFiles: false,
+  isLoadingMore: false,
 };
 
 // Create the store
@@ -51,6 +94,13 @@ function createGalleryStore() {
     // State management actions
     setActiveTab: (tab: 'gallery' | 'status') => {
       update((state) => ({ ...state, activeTab: tab }));
+    },
+
+    setViewMode: (mode: ViewMode) => {
+      if (browser) {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+      }
+      update((state) => ({ ...state, viewMode: mode }));
     },
 
     setSelecting: (selecting: boolean) => {
@@ -170,6 +220,33 @@ function createGalleryStore() {
       deleteSelectedTrigger.update((n) => n + 1);
     },
 
+    appendFiles: (newFiles: any[], metadata: PaginationMetadata) => {
+      update((state) => ({
+        ...state,
+        files: metadata.page === 1 ? newFiles : [...state.files, ...newFiles],
+        currentPage: metadata.page,
+        pageSize: metadata.pageSize,
+        totalFiles: metadata.total,
+        totalPages: metadata.totalPages,
+        hasMoreFiles: metadata.hasMore,
+      }));
+    },
+
+    resetPagination: () => {
+      update((state) => ({
+        ...state,
+        currentPage: 0,
+        totalFiles: 0,
+        totalPages: 0,
+        hasMoreFiles: false,
+        isLoadingMore: false,
+      }));
+    },
+
+    setLoadingMore: (loading: boolean) => {
+      update((state) => ({ ...state, isLoadingMore: loading }));
+    },
+
     // Subscribe to action triggers (skip initial values)
     onUploadTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
@@ -218,8 +295,12 @@ export const galleryStore = createGalleryStore();
 // Derived stores for convenient access
 export const galleryState = derived(galleryStore, ($store) => $store);
 export const isGalleryPage = derived(galleryStore, ($store) => $store.activeTab === 'gallery');
+export const galleryViewMode = derived(galleryStore, ($store) => $store.viewMode);
 export const selectedCount = derived(galleryStore, ($store) => $store.selectedFiles.size);
 export const allFilesSelected = derived(
   galleryStore,
   ($store) => $store.files.length > 0 && $store.selectedFiles.size === $store.files.length
 );
+export const hasMoreFiles = derived(galleryStore, ($store) => $store.hasMoreFiles);
+export const isLoadingMore = derived(galleryStore, ($store) => $store.isLoadingMore);
+export const galleryTotalCount = derived(galleryStore, ($store) => $store.totalFiles);

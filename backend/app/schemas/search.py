@@ -17,6 +17,10 @@ class SearchOccurrenceSchema(BaseModel):
     match_type: str = Field("content", description="Match type: content, title, or speaker")
     has_keyword_match: bool = Field(True, description="False for semantic-only hits")
     highlight_type: str = Field("keyword", description="Highlight type: keyword or semantic")
+    similar_words: list[str] = Field(
+        default_factory=list,
+        description="Semantically similar words to highlight (for semantic matches)",
+    )
 
 
 class SearchHitSchema(BaseModel):
