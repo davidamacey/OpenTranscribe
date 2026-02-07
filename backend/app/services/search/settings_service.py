@@ -1,4 +1,5 @@
 """Service for persisting search settings to the database."""
+
 import logging
 from typing import Optional
 

@@ -1534,13 +1534,6 @@
     color: var(--text-light);
   }
 
-  .form-text code {
-    background-color: var(--surface-color);
-    padding: 0.125rem 0.25rem;
-    border-radius: 2px;
-    font-family: monospace;
-  }
-
   .modal-actions {
     display: flex;
     gap: 1rem;

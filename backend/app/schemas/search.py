@@ -1,4 +1,5 @@
 """Pydantic schemas for search API responses."""
+
 from typing import Any
 
 from pydantic import BaseModel

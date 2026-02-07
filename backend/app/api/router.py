@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from . import websockets
 from .endpoints import admin
 from .endpoints import auth
+from .endpoints import auth_config
 from .endpoints import comments
 from .endpoints import embedding_migration
 from .endpoints import llm_settings
@@ -67,6 +68,9 @@ include_router_with_consistency(tags.router, prefix="/tags", tags=["tags"])
 include_router_with_consistency(users.router, prefix="/users", tags=["users"])
 include_router_with_consistency(tasks.router, prefix="/tasks", tags=["tasks"])
 include_router_with_consistency(admin.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(
+    auth_config.router, prefix="/admin/auth-config", tags=["auth-config"]
+)
 include_router_with_consistency(system.router, prefix="/system", tags=["system"])
 include_router_with_consistency(
     media_collections.router, prefix="/collections", tags=["collections"]

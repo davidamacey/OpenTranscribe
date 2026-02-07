@@ -8,12 +8,12 @@ Handles both fresh installs and upgrades from previous versions.
 import logging
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
 
 from alembic import command  # type: ignore[attr-defined]
-from alembic.config import Config
-from alembic.runtime.migration import MigrationContext
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -52,17 +52,26 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:
         "WHERE table_name='user' AND column_name='keycloak_id')"
     )
     has_fedramp = _check_exists(
-        "SELECT EXISTS(SELECT 1 FROM information_schema.tables " "WHERE table_name='user_mfa')"
+        "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='user_mfa')"
     )
     has_search_settings = "system_settings" in tables and _check_exists(
-        "SELECT EXISTS(SELECT 1 FROM system_settings " "WHERE key = 'search.embedding_model')"
+        "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'search.embedding_model')"
     )
     has_overlap_column = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='transcript_segment' AND column_name='is_overlap')"
     )
+    has_pki_fingerprint = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='user' AND column_name='pki_fingerprint_sha256')"
+    )
+    has_auth_config = "auth_config" in tables
 
     # Return the highest version stamp that matches
+    if has_auth_config:
+        return "v080_add_auth_config"
+    if has_pki_fingerprint:
+        return "v070_pki_security"
     if has_overlap_column:
         return "v060_add_transcript_overlap"
     if has_fedramp and has_search_settings:
@@ -97,15 +106,28 @@ def run_migrations() -> None:
         tables = inspector.get_table_names()
         detected_version = _detect_schema_version(conn, tables)
 
+    # Dispose the engine to release all pooled connections before Alembic opens its own
+    engine.dispose()
+
     config = get_alembic_config()
+
+    # Get the head revision from Alembic scripts
+    from alembic.script import ScriptDirectory
+
+    script_dir = ScriptDirectory.from_config(config)
+    head_rev = script_dir.get_current_head()
 
     if current_rev:
         logger.info(f"Current migration version: {current_rev}")
-        command.upgrade(config, "head")
+        if current_rev == head_rev:
+            logger.info("Database is up to date, no migrations needed")
+        else:
+            logger.info(f"Upgrading from {current_rev} to {head_rev}...")
+            command.upgrade(config, "head")
     elif detected_version:
         logger.info(f"Existing database detected, stamping {detected_version}...")
         command.stamp(config, detected_version)
-        if detected_version != "v060_add_transcript_overlap":
+        if detected_version != "v080_add_auth_config":
             logger.info("Applying migrations to upgrade to current version...")
             command.upgrade(config, "head")
     elif tables:

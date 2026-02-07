@@ -1,4 +1,5 @@
 """Periodic search index maintenance task."""
+
 import logging
 from typing import Any
 
@@ -82,7 +83,7 @@ def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> None:
                 user_id=user_id,
                 file_uuids=file_uuids,
             )
-            logger.info(f"Dispatched reindex for user {user_id}: " f"{len(file_uuids)} files")
+            logger.info(f"Dispatched reindex for user {user_id}: {len(file_uuids)} files")
         except Exception as e:
             logger.error(f"Failed to dispatch reindex for user {user_id}: {e}")
 

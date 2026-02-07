@@ -111,8 +111,8 @@ def update_gpu_stats(self):
             # Format: memory.used,memory.total,memory.free (in MiB)
             # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
             # Only dynamic parameter is device_id (integer), preventing command injection.
-            result = subprocess.run(
-                [  # noqa: S603 S607 # nosec B603 B607 - hardcoded nvidia-smi, integer device_id
+            result = subprocess.run(  # noqa: S603 - hardcoded nvidia-smi, integer device_id
+                [  # noqa: S607 # nosec B603 B607
                     "nvidia-smi",
                     "--query-gpu=memory.used,memory.total,memory.free",
                     "--format=csv,noheader,nounits",

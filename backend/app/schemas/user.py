@@ -149,7 +149,7 @@ class MFAVerifyRequest(BaseModel):
 
     mfa_token: str  # Short-lived token from initial login
     code: str = Field(
-        ..., min_length=6, max_length=8, description="6-digit TOTP code or 8-char backup code"
+        ..., min_length=6, max_length=9, description="6-digit TOTP code or backup code (XXXX-XXXX)"
     )
 
 
@@ -157,7 +157,7 @@ class MFAVerifyResponse(BaseModel):
     """Response from successful MFA verification during login."""
 
     access_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 - OAuth2 spec constant, not a password
     refresh_token: Optional[str] = None
     expires_in: Optional[int] = None
 
@@ -166,7 +166,7 @@ class MFADisableRequest(BaseModel):
     """Request to disable MFA for current user."""
 
     code: str = Field(
-        ..., min_length=6, max_length=8, description="6-digit TOTP code or 8-char backup code"
+        ..., min_length=6, max_length=9, description="6-digit TOTP code or backup code (XXXX-XXXX)"
     )
 
 
@@ -185,3 +185,37 @@ class MFALoginResponse(BaseModel):
     mfa_required: bool = True
     mfa_token: str  # Short-lived token for MFA verification step
     message: str = "MFA verification required"
+
+
+# ===== Login Banner Schemas (FedRAMP AC-8) =====
+
+
+class LoginBannerResponse(BaseModel):
+    """Response for login banner endpoint."""
+
+    enabled: bool
+    text: str
+    classification: str
+    requires_acknowledgment: bool
+
+
+class BannerAcknowledgmentRequest(BaseModel):
+    """Request to acknowledge login banner."""
+
+    # No body required, user info comes from auth token
+
+
+# ===== Admin Password Reset Schema =====
+
+
+class AdminPasswordResetRequest(BaseModel):
+    """Request body for admin-initiated password reset.
+
+    Moving password from query parameter to request body prevents
+    password exposure in server logs, browser history, and referrer headers.
+    """
+
+    new_password: str = Field(..., min_length=8, description="New password for the user")
+    force_change: bool = Field(
+        default=True, description="If true, user must change password on next login"
+    )

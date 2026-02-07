@@ -123,12 +123,12 @@ _pki_trusted_proxy_networks = _parse_pki_trusted_proxies(settings.PKI_TRUSTED_PR
 
 _cache_lock = threading.Lock()
 # Using OrderedDict for LRU behavior - most recently used items are moved to end
-_ocsp_cache: OrderedDict[
-    str, tuple[bool, float]
-] = OrderedDict()  # serial_number -> (is_revoked, expiry_time)
-_crl_cache: OrderedDict[
-    str, tuple[x509.CertificateRevocationList, float]
-] = OrderedDict()  # url -> (crl, expiry_time)
+_ocsp_cache: OrderedDict[str, tuple[bool, float]] = (
+    OrderedDict()
+)  # serial_number -> (is_revoked, expiry_time)
+_crl_cache: OrderedDict[str, tuple[x509.CertificateRevocationList, float]] = (
+    OrderedDict()
+)  # url -> (crl, expiry_time)
 
 
 def _evict_lru_ocsp_cache() -> None:
@@ -162,6 +162,14 @@ class PKIUserData(TypedDict):
     common_name: str  # CN from certificate
     email: str  # Email from certificate (if present)
     is_admin: bool
+    # Certificate metadata (optional - populated when full cert is available)
+    serial_number: str | None  # Hex format
+    issuer_dn: str | None
+    organization: str | None
+    organizational_unit: str | None
+    not_before: str | None  # ISO format
+    not_after: str | None  # ISO format
+    fingerprint: str | None  # SHA-256, colon-separated hex
 
 
 @dataclass
@@ -172,10 +180,97 @@ class CertificateInfo:
     common_name: str
     email: str | None
     organization: str | None
-    serial_number: str
+    organizational_unit: str | None
+    serial_number: str  # Hex format
     issuer_dn: str
-    not_before: str
-    not_after: str
+    not_before: str  # ISO format
+    not_after: str  # ISO format
+    fingerprint: str  # SHA-256, colon-separated hex
+
+
+def _extract_certificate_metadata(cert: x509.Certificate) -> dict:
+    """Extract comprehensive metadata from X.509 certificate.
+
+    Args:
+        cert: The parsed X.509 certificate
+
+    Returns:
+        Dictionary with certificate metadata including serial number (hex),
+        issuer DN, organization, organizational unit, validity dates (ISO format),
+        and SHA-256 fingerprint (colon-separated hex)
+    """
+    # Serial number in hex format
+    serial_hex = format(cert.serial_number, "X")
+
+    # Issuer DN
+    issuer_dn = cert.issuer.rfc4514_string()
+
+    # Organization and OU from subject
+    org = None
+    ou = None
+    for attr in cert.subject:
+        if attr.oid == x509.oid.NameOID.ORGANIZATION_NAME:
+            org = str(attr.value)
+        elif attr.oid == x509.oid.NameOID.ORGANIZATIONAL_UNIT_NAME:
+            ou = str(attr.value)
+
+    # Fingerprint (SHA-256) - colon-separated hex pairs
+    fingerprint = cert.fingerprint(hashes.SHA256()).hex().upper()
+    fingerprint_formatted = ":".join(fingerprint[i : i + 2] for i in range(0, len(fingerprint), 2))
+
+    return {
+        "serial_number": serial_hex,
+        "issuer_dn": issuer_dn,
+        "organization": org,
+        "organizational_unit": ou,
+        "not_before": cert.not_valid_before_utc.isoformat(),
+        "not_after": cert.not_valid_after_utc.isoformat(),
+        "fingerprint": fingerprint_formatted,
+    }
+
+
+def extract_display_name_from_gov_dn(subject_dn: str) -> str:
+    """
+    Extract a user-friendly display name from government certificate DNs.
+
+    Supports common government certificate formats:
+    - DoD CAC: CN=LAST.FIRST.MIDDLE.EDIPI (e.g., CN=SMITH.JOHN.WILLIAM.1234567890)
+    - PIV: CN=LAST.FIRST.M or CN=LAST.FIRST (e.g., CN=SMITH.JOHN.W)
+
+    Args:
+        subject_dn: Certificate subject Distinguished Name string
+
+    Returns:
+        User-friendly display name (e.g., "John William Smith" or "John W. Smith"),
+        or the original CN if pattern doesn't match
+    """
+    import re
+
+    # Extract CN from DN
+    cn_match = re.search(r"CN=([^,]+)", subject_dn, re.IGNORECASE)
+    if not cn_match:
+        return subject_dn
+
+    cn = cn_match.group(1)
+
+    # DoD CAC format: LAST.FIRST.MIDDLE.EDIPI (10-digit EDIPI)
+    dod_match = re.match(r"^([A-Z]+)\.([A-Z]+)\.([A-Z]*)\.(\d{10})$", cn, re.IGNORECASE)
+    if dod_match:
+        last, first, middle, _edipi = dod_match.groups()
+        if middle:
+            return f"{first.title()} {middle.title()}. {last.title()}"
+        return f"{first.title()} {last.title()}"
+
+    # PIV format: LAST.FIRST.M or LAST.FIRST
+    piv_match = re.match(r"^([A-Z]+)\.([A-Z]+)\.?([A-Z]?)$", cn, re.IGNORECASE)
+    if piv_match:
+        last, first, middle = piv_match.groups()
+        if middle:
+            return f"{first.title()} {middle.upper()}. {last.title()}"
+        return f"{first.title()} {last.title()}"
+
+    # Default: return CN as-is
+    return cn
 
 
 def _get_ocsp_cache(serial_number: str) -> bool | None:
@@ -926,19 +1021,22 @@ def extract_dn_from_headers(request) -> str | None:
 
 def parse_certificate(cert_pem: str) -> CertificateInfo | None:
     """
-    Parse X.509 certificate and extract information.
+    Parse X.509 certificate and extract comprehensive information.
+
+    Extracts all certificate metadata including subject DN, issuer DN,
+    organization, organizational unit, validity dates, serial number
+    (in hex format), and SHA-256 fingerprint.
 
     Args:
         cert_pem: PEM-encoded certificate string
 
     Returns:
-        CertificateInfo or None if parsing fails
+        CertificateInfo with all metadata or None if parsing fails
     """
     try:
         cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
 
         subject = cert.subject
-        issuer = cert.issuer
 
         # Extract common name
         cn_attrs = subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
@@ -962,19 +1060,20 @@ def parse_certificate(cert_pem: str) -> CertificateInfo | None:
             except x509.ExtensionNotFound:
                 pass
 
-        # Extract organization
-        org_attrs = subject.get_attributes_for_oid(x509.oid.NameOID.ORGANIZATION_NAME)
-        organization: str | None = str(org_attrs[0].value) if org_attrs else None
+        # Extract comprehensive metadata using helper function
+        metadata = _extract_certificate_metadata(cert)
 
         return CertificateInfo(
             subject_dn=subject.rfc4514_string(),
             common_name=common_name,
             email=email,
-            organization=organization,
-            serial_number=str(cert.serial_number),
-            issuer_dn=issuer.rfc4514_string(),
-            not_before=cert.not_valid_before_utc.isoformat(),
-            not_after=cert.not_valid_after_utc.isoformat(),
+            organization=metadata["organization"],
+            organizational_unit=metadata["organizational_unit"],
+            serial_number=metadata["serial_number"],
+            issuer_dn=metadata["issuer_dn"],
+            not_before=metadata["not_before"],
+            not_after=metadata["not_after"],
+            fingerprint=metadata["fingerprint"],
         )
     except Exception as e:
         logger.error(f"Failed to parse certificate: {e}")
@@ -1007,7 +1106,7 @@ def _parse_dn_components(dn: str) -> tuple[str, str]:
     return common_name, email
 
 
-def _normalize_dn(dn: str) -> str:
+def _normalize_dn(dn: str | None) -> str:
     """
     Normalize a Distinguished Name for case-insensitive comparison.
 
@@ -1021,10 +1120,10 @@ def _normalize_dn(dn: str) -> str:
         "CN=John Doe, O=My Org, C=US" -> "cn=john doe,o=my org,c=us"
 
     Args:
-        dn: Distinguished Name string
+        dn: Distinguished Name string or None
 
     Returns:
-        Normalized DN string for comparison
+        Normalized DN string for comparison (empty string if dn is None or empty)
     """
     if not dn:
         return ""
@@ -1181,11 +1280,11 @@ def pki_authenticate(request) -> PKIUserData | None:
         request: FastAPI Request object
 
     Returns:
-        PKIUserData or None if authentication fails
+        PKIUserData with certificate metadata or None if authentication fails
     """
-    if not settings.PKI_ENABLED:
-        logger.warning("PKI authentication attempted but PKI is not enabled")
-        return None
+    # Note: PKI_ENABLED check is done by the caller (pki_login endpoint)
+    # which checks the database setting first, then falls back to env.
+    # We skip the env-only check here to support database-driven config.
 
     # Validate that PKI headers come from trusted proxies
     if _validate_pki_headers_source(request) is False:
@@ -1194,10 +1293,40 @@ def pki_authenticate(request) -> PKIUserData | None:
     # Extract certificate from headers - needed for revocation checking
     cert_pem = extract_certificate_from_headers(request)
     cert = None
+    cert_metadata: dict | None = None
 
     if cert_pem:
         try:
             cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
+            # Extract comprehensive certificate metadata
+            cert_metadata = _extract_certificate_metadata(cert)
+
+            # Validate certificate validity period
+            from datetime import datetime
+            from datetime import timezone
+
+            now = datetime.now(timezone.utc)
+
+            # Check not_before (certificate not yet valid)
+            if cert_metadata.get("not_before"):
+                not_before = datetime.fromisoformat(
+                    cert_metadata["not_before"].replace("Z", "+00:00")
+                )
+                if now < not_before:
+                    logger.warning(
+                        f"Certificate not yet valid: valid from {cert_metadata['not_before']}"
+                    )
+                    return None
+
+            # Check not_after (certificate expired)
+            if cert_metadata.get("not_after"):
+                not_after = datetime.fromisoformat(
+                    cert_metadata["not_after"].replace("Z", "+00:00")
+                )
+                if now > not_after:
+                    logger.warning(f"Certificate expired: expired at {cert_metadata['not_after']}")
+                    return None
+
         except Exception as e:
             logger.error(f"Failed to parse certificate: {e}")
             return None
@@ -1223,6 +1352,14 @@ def pki_authenticate(request) -> PKIUserData | None:
         common_name=common_name,
         email=email,
         is_admin=is_admin,
+        # Include certificate metadata if available
+        serial_number=cert_metadata["serial_number"] if cert_metadata else None,
+        issuer_dn=cert_metadata["issuer_dn"] if cert_metadata else None,
+        organization=cert_metadata["organization"] if cert_metadata else None,
+        organizational_unit=cert_metadata["organizational_unit"] if cert_metadata else None,
+        not_before=cert_metadata["not_before"] if cert_metadata else None,
+        not_after=cert_metadata["not_after"] if cert_metadata else None,
+        fingerprint=cert_metadata["fingerprint"] if cert_metadata else None,
     )
 
 
@@ -1255,12 +1392,36 @@ def _create_pki_user(db, pki_data: PKIUserData):
 
     logger.info(f"Creating new user from PKI: {subject_dn}")
 
+    # Parse validity dates from ISO strings if available
+    pki_not_before = None
+    pki_not_after = None
+    not_before_str = pki_data.get("not_before")
+    if not_before_str:
+        from datetime import datetime
+
+        pki_not_before = datetime.fromisoformat(not_before_str)
+    not_after_str = pki_data.get("not_after")
+    if not_after_str:
+        from datetime import datetime
+
+        pki_not_after = datetime.fromisoformat(not_after_str)
+
+    fingerprint = pki_data.get("fingerprint")
     user = User(
         email=email,
         full_name=pki_data["common_name"] or email.split("@")[0],
         hashed_password=EXTERNAL_AUTH_NO_PASSWORD,
         auth_type=AUTH_TYPE_PKI,
         pki_subject_dn=subject_dn,
+        # Certificate metadata fields
+        pki_serial_number=pki_data.get("serial_number"),
+        pki_issuer_dn=pki_data.get("issuer_dn"),
+        pki_organization=pki_data.get("organization"),
+        pki_organizational_unit=pki_data.get("organizational_unit"),
+        pki_common_name=pki_data["common_name"],
+        pki_not_before=pki_not_before,
+        pki_not_after=pki_not_after,
+        pki_fingerprint_sha256=fingerprint.replace(":", "") if fingerprint else None,
         role="admin" if pki_data["is_admin"] else "user",
         is_active=True,
         is_superuser=pki_data["is_admin"],
@@ -1286,12 +1447,12 @@ def _create_pki_user(db, pki_data: PKIUserData):
 
 def _update_pki_user(db, user, pki_data: PKIUserData):
     """
-    Update an existing user's PKI data.
+    Update an existing user's PKI data and certificate metadata.
 
     Args:
         db: Database session
         user: Existing User object
-        pki_data: PKI user data
+        pki_data: PKI user data with certificate metadata
 
     Returns:
         Updated User object
@@ -1312,6 +1473,32 @@ def _update_pki_user(db, user, pki_data: PKIUserData):
 
     user.pki_subject_dn = subject_dn
     user.auth_type = AUTH_TYPE_PKI
+
+    # Update certificate metadata if available
+    if pki_data.get("serial_number"):
+        user.pki_serial_number = pki_data["serial_number"]
+    if pki_data.get("issuer_dn"):
+        user.pki_issuer_dn = pki_data["issuer_dn"]
+    if pki_data.get("organization"):
+        user.pki_organization = pki_data["organization"]
+    if pki_data.get("organizational_unit"):
+        user.pki_organizational_unit = pki_data["organizational_unit"]
+    if pki_data["common_name"]:
+        user.pki_common_name = pki_data["common_name"]
+    not_before_str = pki_data.get("not_before")
+    if not_before_str:
+        from datetime import datetime
+
+        user.pki_not_before = datetime.fromisoformat(not_before_str)
+    not_after_str = pki_data.get("not_after")
+    if not_after_str:
+        from datetime import datetime
+
+        user.pki_not_after = datetime.fromisoformat(not_after_str)
+    fingerprint = pki_data.get("fingerprint")
+    if fingerprint:
+        # Store fingerprint without colons for consistent storage
+        user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
@@ -1338,6 +1525,7 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
     - auth_type is set to 'pki'
     - hashed_password is cleared (PKI users don't have local passwords)
     - pki_subject_dn is set from the certificate
+    - Certificate metadata is stored
     - Admin role is updated based on PKI_ADMIN_DNS
 
     Args:
@@ -1356,6 +1544,32 @@ def _convert_local_user_to_pki(db, user, pki_data: PKIUserData):
     user.auth_type = AUTH_TYPE_PKI
     user.pki_subject_dn = subject_dn
     user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD  # Clear local password
+
+    # Store certificate metadata
+    if pki_data.get("serial_number"):
+        user.pki_serial_number = pki_data["serial_number"]
+    if pki_data.get("issuer_dn"):
+        user.pki_issuer_dn = pki_data["issuer_dn"]
+    if pki_data.get("organization"):
+        user.pki_organization = pki_data["organization"]
+    if pki_data.get("organizational_unit"):
+        user.pki_organizational_unit = pki_data["organizational_unit"]
+    if pki_data["common_name"]:
+        user.pki_common_name = pki_data["common_name"]
+    not_before_str = pki_data.get("not_before")
+    if not_before_str:
+        from datetime import datetime
+
+        user.pki_not_before = datetime.fromisoformat(not_before_str)
+    not_after_str = pki_data.get("not_after")
+    if not_after_str:
+        from datetime import datetime
+
+        user.pki_not_after = datetime.fromisoformat(not_after_str)
+    fingerprint = pki_data.get("fingerprint")
+    if fingerprint:
+        # Store fingerprint without colons for consistent storage
+        user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:

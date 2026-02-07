@@ -3,6 +3,7 @@ API endpoints for speaker embedding migration (v3 to v4).
 
 Includes safeguards against concurrent migrations and progress tracking.
 """
+
 import logging
 
 from fastapi import APIRouter

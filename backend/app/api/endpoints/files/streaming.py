@@ -44,10 +44,18 @@ def create_mock_response(db_file: MediaFile) -> StreamingResponse:
         db_file: MediaFile object
 
     Returns:
-        Mock response StreamingResponse
+        Mock response StreamingResponse with security headers matching production
     """
+    is_public = getattr(db_file, "is_public", False)
+    cache_control = "public, max-age=3600" if is_public else "private, no-store, max-age=0"
     return StreamingResponse(
-        content=io.BytesIO(b"Mock video content"), media_type=str(db_file.content_type)
+        content=io.BytesIO(b"Mock video content"),
+        media_type=str(db_file.content_type),
+        headers={
+            "Content-Disposition": create_content_disposition_header(str(db_file.filename)),
+            "Cache-Control": cache_control,
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -116,6 +124,8 @@ def get_video_streaming_response(
             "Access-Control-Allow-Methods": "GET, OPTIONS",
             "Access-Control-Allow-Headers": "Range, Content-Type, Accept",
             "Content-Type": str(db_file.content_type),
+            # Security headers (OWASP recommendations)
+            "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
         }
 
         # Determine status code based on range request
@@ -184,6 +194,8 @@ def get_enhanced_video_streaming_response(
             "Access-Control-Allow-Origin": "*",  # Allow any origin for development
             "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
             "Access-Control-Allow-Headers": "Range, Origin, Content-Type, Accept",
+            # Security headers (OWASP recommendations)
+            "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
         }
 
         # Add Content-Range header for range requests (required for 206 responses)
@@ -202,17 +214,24 @@ def get_enhanced_video_streaming_response(
             # For full file requests, content length is the total file size
             headers["Content-Length"] = str(total_length)
 
-        # Add caching headers based on content type
-        if media_type.startswith(("video/", "audio/")):
-            headers[
-                "Cache-Control"
-            ] = "public, max-age=86400, stale-while-revalidate=604800"  # 1 day cache, 7 day stale
-            # Add ETag if available to support conditional requests
-            if hasattr(db_file, "md5_hash") and db_file.md5_hash:
-                headers["ETag"] = f'"{str(db_file.md5_hash)}"'
+        # Add caching headers based on file visibility (OWASP recommendation)
+        # Private files should not be cached by shared caches (proxies, CDNs)
+        is_public = getattr(db_file, "is_public", False)
+        if is_public:
+            # Public files can be cached by shared caches
+            if media_type.startswith(("video/", "audio/")):
+                headers["Cache-Control"] = (
+                    "public, max-age=86400, stale-while-revalidate=604800"  # 1 day cache, 7 day stale
+                )
+            else:
+                headers["Cache-Control"] = "public, max-age=3600"  # 1 hour cache
         else:
-            # Other media types get shorter cache times
-            headers["Cache-Control"] = "public, max-age=3600"  # 1 hour cache
+            # Private files: no shared caching (OWASP secure headers recommendation)
+            headers["Cache-Control"] = "private, no-store, max-age=0"
+
+        # Add ETag if available to support conditional requests
+        if hasattr(db_file, "md5_hash") and db_file.md5_hash:
+            headers["ETag"] = f'"{str(db_file.md5_hash)}"'
 
         # Return a streaming response that doesn't load the entire file into memory
         return StreamingResponse(
@@ -289,15 +308,25 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         # Using MD5 for ETag generation is safe - it's not used for security purposes
         etag = hashlib.md5(thumbnail_path.encode()).hexdigest()  # noqa: S324  # nosec B324
 
+        # Use private caching for private files (OWASP recommendation)
+        is_public = getattr(db_file, "is_public", False)
+        cache_control = (
+            "public, max-age=86400, must-revalidate"
+            if is_public
+            else "private, no-store, max-age=0"
+        )
+
         return StreamingResponse(
             content=thumbnail_io,
             media_type=media_type,
             headers={
                 "Content-Disposition": f'inline; filename="thumbnail.{ext}"',
-                "Cache-Control": "public, max-age=86400, must-revalidate",  # 1 day, then validate
+                "Cache-Control": cache_control,
                 "ETag": f'"{etag}"',
                 "Content-Length": str(content_length),
                 "Vary": "Accept",  # CDN compatibility for content negotiation
+                # Security headers (OWASP recommendations)
+                "X-Content-Type-Options": "nosniff",  # Prevent MIME type sniffing
             },
         )
     except Exception as e:

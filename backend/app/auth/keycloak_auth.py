@@ -3,6 +3,7 @@ Keycloak/OIDC authentication module.
 
 Handles authentication via OpenID Connect with Keycloak.
 Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
+Configuration is loaded from database first, falling back to environment variables.
 """
 
 import base64
@@ -20,7 +21,7 @@ from jose import jwt
 
 from app.auth.constants import AUTH_TYPE_KEYCLOAK
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
-from app.core.config import settings
+from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,25 +36,124 @@ PKCE_UNRESERVED_CHARS = frozenset(
 )
 
 
-def validate_pkce_code_verifier(code_verifier: str) -> bool:
+@dataclass(frozen=True)
+class KeycloakConfig:
+    """Immutable Keycloak/OIDC configuration resolved from database or environment.
+
+    Created once per request, passed to all helper functions.
+    No global state mutation.
     """
-    Validate that a PKCE code verifier meets RFC 7636 requirements.
+
+    enabled: bool = False
+    server_url: str = ""
+    internal_url: str = ""
+    realm: str = "opentranscribe"
+    client_id: str = ""
+    client_secret: str = ""
+    callback_url: str = ""
+    admin_role: str = "admin"
+    timeout: int = 30
+    use_pkce: bool = True
+    verify_issuer: bool = True
+    verify_audience: bool = False
+    audience: str = ""
+
+    @classmethod
+    def from_env(cls) -> "KeycloakConfig":
+        """Create config from environment variables only."""
+        return cls(
+            enabled=env_settings.KEYCLOAK_ENABLED,
+            server_url=env_settings.KEYCLOAK_SERVER_URL,
+            internal_url=getattr(env_settings, "KEYCLOAK_INTERNAL_URL", ""),
+            realm=env_settings.KEYCLOAK_REALM,
+            client_id=env_settings.KEYCLOAK_CLIENT_ID,
+            client_secret=env_settings.KEYCLOAK_CLIENT_SECRET,
+            callback_url=env_settings.KEYCLOAK_CALLBACK_URL,
+            admin_role=env_settings.KEYCLOAK_ADMIN_ROLE,
+            timeout=env_settings.KEYCLOAK_TIMEOUT,
+            use_pkce=env_settings.KEYCLOAK_USE_PKCE,
+            verify_issuer=getattr(env_settings, "KEYCLOAK_VERIFY_ISSUER", True),
+            verify_audience=getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", False),
+            audience=getattr(env_settings, "KEYCLOAK_AUDIENCE", ""),
+        )
+
+    @classmethod
+    def from_db(cls, db) -> "KeycloakConfig":
+        """Create config from database with env fallback.
+
+        Uses DynamicAuthSettings which checks DB > .env > defaults.
+        """
+        from app.core.auth_settings import get_auth_settings
+
+        auth = get_auth_settings(db)
+
+        def _get(key: str, default):
+            val = auth.get(key)
+            return val if val is not None else default
+
+        def _get_bool(key: str, default: bool) -> bool:
+            val = auth.get(key)
+            if val is None:
+                return default
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                return val.lower() in ("true", "1", "yes", "on")
+            return bool(val)
+
+        def _get_int(key: str, default: int) -> int:
+            val = auth.get(key)
+            if val is None:
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
+        return cls(
+            enabled=_get_bool("keycloak_enabled", env_settings.KEYCLOAK_ENABLED),
+            server_url=str(_get("keycloak_server_url", env_settings.KEYCLOAK_SERVER_URL) or ""),
+            internal_url=str(
+                _get("keycloak_internal_url", getattr(env_settings, "KEYCLOAK_INTERNAL_URL", ""))
+                or ""
+            ),
+            realm=str(_get("keycloak_realm", env_settings.KEYCLOAK_REALM) or "opentranscribe"),
+            client_id=str(_get("keycloak_client_id", env_settings.KEYCLOAK_CLIENT_ID) or ""),
+            client_secret=str(
+                _get("keycloak_client_secret", env_settings.KEYCLOAK_CLIENT_SECRET) or ""
+            ),
+            callback_url=str(
+                _get("keycloak_callback_url", env_settings.KEYCLOAK_CALLBACK_URL) or ""
+            ),
+            admin_role=str(
+                _get("keycloak_admin_role", env_settings.KEYCLOAK_ADMIN_ROLE) or "admin"
+            ),
+            timeout=_get_int("keycloak_timeout", env_settings.KEYCLOAK_TIMEOUT),
+            use_pkce=_get_bool("keycloak_use_pkce", env_settings.KEYCLOAK_USE_PKCE),
+            verify_issuer=_get_bool(
+                "keycloak_verify_issuer", getattr(env_settings, "KEYCLOAK_VERIFY_ISSUER", True)
+            ),
+            verify_audience=_get_bool(
+                "keycloak_verify_audience",
+                getattr(env_settings, "KEYCLOAK_VERIFY_AUDIENCE", False),
+            ),
+            audience=str(
+                _get("keycloak_audience", getattr(env_settings, "KEYCLOAK_AUDIENCE", "")) or ""
+            ),
+        )
+
+
+def validate_pkce_code_verifier(code_verifier: str) -> bool:
+    """Validate that a PKCE code verifier meets RFC 7636 requirements.
 
     RFC 7636 Section 4.1 specifies:
     - Length: 43-128 characters
     - Characters: Only unreserved characters (A-Z, a-z, 0-9, -, ., _, ~)
-
-    Args:
-        code_verifier: The code verifier string to validate
-
-    Returns:
-        True if valid, False otherwise
     """
     if not code_verifier:
         logger.warning("PKCE code_verifier is empty")
         return False
 
-    # Check length requirements
     if len(code_verifier) < PKCE_CODE_VERIFIER_MIN_LENGTH:
         logger.warning(
             f"PKCE code_verifier too short: {len(code_verifier)} chars "
@@ -68,7 +168,6 @@ def validate_pkce_code_verifier(code_verifier: str) -> bool:
         )
         return False
 
-    # Check character requirements (RFC 7636 unreserved characters only)
     invalid_chars = set(code_verifier) - PKCE_UNRESERVED_CHARS
     if invalid_chars:
         logger.warning(f"PKCE code_verifier contains invalid characters: {invalid_chars!r}")
@@ -80,12 +179,20 @@ def validate_pkce_code_verifier(code_verifier: str) -> bool:
 class KeycloakUserData(TypedDict):
     """User data extracted from Keycloak token."""
 
-    keycloak_id: str  # Subject (sub) from token
+    keycloak_id: str
     email: str
     full_name: str
     username: str
     is_admin: bool
     roles: list[str]
+    cert_dn: str | None
+    cert_serial: str | None
+    cert_issuer: str | None
+    cert_org: str | None
+    cert_ou: str | None
+    cert_valid_from: str | None
+    cert_valid_until: str | None
+    cert_fingerprint: str | None
 
 
 @dataclass
@@ -100,25 +207,9 @@ class KeycloakTokens:
 
 
 def generate_pkce_pair() -> tuple[str, str]:
-    """
-    Generate a PKCE code verifier and code challenge pair.
-
-    Following RFC 7636:
-    - code_verifier: 43-128 character cryptographically random string
-    - code_challenge: SHA256(code_verifier), base64url encoded, no padding
-
-    Returns:
-        tuple[str, str]: (code_verifier, code_challenge)
-    """
-    # Generate cryptographically secure random bytes
-    # We need enough bytes to produce a 64-character base64url string
-    # 48 bytes -> 64 base64 characters (4 * 48 / 3 = 64)
+    """Generate a PKCE code verifier and code challenge pair (RFC 7636)."""
     random_bytes = secrets.token_bytes(48)
-
-    # Create code_verifier using base64url encoding without padding
     code_verifier = base64.urlsafe_b64encode(random_bytes).rstrip(b"=").decode("ascii")
-
-    # Create code_challenge = BASE64URL(SHA256(code_verifier))
     sha256_digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(sha256_digest).rstrip(b"=").decode("ascii")
 
@@ -126,27 +217,21 @@ def generate_pkce_pair() -> tuple[str, str]:
         f"Generated PKCE pair: verifier length={len(code_verifier)}, "
         f"challenge length={len(code_challenge)}"
     )
-
     return code_verifier, code_challenge
 
 
-def _get_keycloak_urls(internal: bool = False) -> dict:
+def _get_keycloak_urls(cfg: KeycloakConfig, internal: bool = False) -> dict:
     """Get Keycloak endpoint URLs.
 
     Args:
+        cfg: Keycloak configuration
         internal: If True, use internal URL for backend-to-Keycloak communication.
-                  If False, use public URL for browser redirects.
     """
-    # Use internal URL for backend requests (token exchange, JWKS fetch)
-    # Use public URL for browser redirects (authorization)
-    if internal and settings.KEYCLOAK_INTERNAL_URL:
-        base_url = settings.KEYCLOAK_INTERNAL_URL
-    else:
-        base_url = settings.KEYCLOAK_SERVER_URL
+    base_url = cfg.internal_url if internal and cfg.internal_url else cfg.server_url
 
-    base = f"{base_url}/realms/{settings.KEYCLOAK_REALM}"
+    base = f"{base_url}/realms/{cfg.realm}"
     return {
-        "authorization": f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}/protocol/openid-connect/auth",
+        "authorization": f"{cfg.server_url}/realms/{cfg.realm}/protocol/openid-connect/auth",
         "token": f"{base}/protocol/openid-connect/token",
         "userinfo": f"{base}/protocol/openid-connect/userinfo",
         "logout": f"{base}/protocol/openid-connect/logout",
@@ -154,31 +239,34 @@ def _get_keycloak_urls(internal: bool = False) -> dict:
     }
 
 
-def get_authorization_url(state: str) -> tuple[str, Optional[str]]:
-    """
-    Generate the Keycloak authorization URL for OIDC login.
+def get_authorization_url(
+    state: str, cfg: Optional[KeycloakConfig] = None
+) -> tuple[str, Optional[str]]:
+    """Generate the Keycloak authorization URL for OIDC login.
 
-    Supports PKCE (RFC 7636) for OAuth 2.1 compliance when KEYCLOAK_USE_PKCE is enabled.
+    Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
 
     Args:
         state: Random state parameter for CSRF protection
+        cfg: Keycloak configuration (if None, loads from env)
 
     Returns:
-        tuple[str, Optional[str]]: (authorization_url, code_verifier or None if PKCE disabled)
-            The code_verifier must be stored and passed to exchange_code_for_tokens()
+        (authorization_url, code_verifier or None if PKCE disabled)
     """
-    urls = _get_keycloak_urls()
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
+
+    urls = _get_keycloak_urls(cfg)
     params = {
-        "client_id": settings.KEYCLOAK_CLIENT_ID,
-        "redirect_uri": settings.KEYCLOAK_CALLBACK_URL,
+        "client_id": cfg.client_id,
+        "redirect_uri": cfg.callback_url,
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
     }
 
     code_verifier = None
-
-    if settings.KEYCLOAK_USE_PKCE:
+    if cfg.use_pkce:
         code_verifier, code_challenge = generate_pkce_pair()
         params["code_challenge"] = code_challenge
         params["code_challenge_method"] = "S256"
@@ -188,45 +276,42 @@ def get_authorization_url(state: str) -> tuple[str, Optional[str]]:
 
 
 async def exchange_code_for_tokens(
-    code: str, code_verifier: Optional[str] = None
+    code: str,
+    code_verifier: Optional[str] = None,
+    cfg: Optional[KeycloakConfig] = None,
 ) -> Optional[KeycloakTokens]:
-    """
-    Exchange authorization code for tokens.
+    """Exchange authorization code for tokens.
 
-    Supports PKCE (RFC 7636) for OAuth 2.1 compliance when code_verifier is provided.
+    Supports PKCE (RFC 7636) for OAuth 2.1 compliance.
 
     Args:
         code: Authorization code from Keycloak callback
-        code_verifier: PKCE code verifier (required if PKCE was used in authorization request)
-
-    Returns:
-        KeycloakTokens or None if exchange fails
+        code_verifier: PKCE code verifier (required if PKCE was used)
+        cfg: Keycloak configuration (if None, loads from env)
     """
-    urls = _get_keycloak_urls(internal=True)
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
+
+    urls = _get_keycloak_urls(cfg, internal=True)
 
     token_data = {
         "grant_type": "authorization_code",
-        "client_id": settings.KEYCLOAK_CLIENT_ID,
-        "client_secret": settings.KEYCLOAK_CLIENT_SECRET,
+        "client_id": cfg.client_id,
+        "client_secret": cfg.client_secret,
         "code": code,
-        "redirect_uri": settings.KEYCLOAK_CALLBACK_URL,
+        "redirect_uri": cfg.callback_url,
     }
 
-    # Add code_verifier for PKCE if provided
     if code_verifier:
-        # Validate code_verifier meets RFC 7636 requirements before sending
         if not validate_pkce_code_verifier(code_verifier):
             logger.error("PKCE code_verifier validation failed - rejecting token exchange")
             return None
         token_data["code_verifier"] = code_verifier
         logger.debug("PKCE enabled: added code_verifier to token exchange request")
 
-    async with httpx.AsyncClient(timeout=settings.KEYCLOAK_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=cfg.timeout) as client:
         try:
-            response = await client.post(
-                urls["token"],
-                data=token_data,
-            )
+            response = await client.post(urls["token"], data=token_data)
             response.raise_for_status()
             data = response.json()
 
@@ -242,65 +327,79 @@ async def exchange_code_for_tokens(
             return None
 
 
-async def get_keycloak_jwks() -> Optional[dict]:
-    """
-    Fetch Keycloak public keys (JWKS).
+async def get_keycloak_jwks(cfg: Optional[KeycloakConfig] = None) -> Optional[dict]:
+    """Fetch Keycloak public keys (JWKS)."""
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
 
-    Returns:
-        JWKS dict or None if fetch fails
-    """
-    urls = _get_keycloak_urls(internal=True)
+    urls = _get_keycloak_urls(cfg, internal=True)
 
-    async with httpx.AsyncClient(timeout=settings.KEYCLOAK_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=cfg.timeout) as client:
         try:
             response = await client.get(urls["certs"])
             response.raise_for_status()
-            return response.json()  # type: ignore[no-any-return]
+            jwks: dict = response.json()
+            return jwks
         except httpx.HTTPError as e:
             logger.error(f"Failed to fetch Keycloak JWKS: {e}")
             return None
 
 
-async def validate_token(access_token: str) -> Optional[KeycloakUserData]:
+def _extract_certificate_claims(token_claims: dict) -> dict:
+    """Extract certificate claims from Keycloak OIDC token.
+
+    When Keycloak is configured with X.509 certificate authentication,
+    certificate metadata may be included in the token claims.
     """
-    Validate Keycloak access token and extract user data.
+    return {
+        "cert_dn": token_claims.get("cert_dn") or token_claims.get("x509_cert_dn"),
+        "cert_serial": token_claims.get("cert_serial") or token_claims.get("x509_cert_serial"),
+        "cert_issuer": token_claims.get("cert_issuer") or token_claims.get("x509_cert_issuer"),
+        "cert_org": token_claims.get("cert_org") or token_claims.get("x509_cert_org"),
+        "cert_ou": token_claims.get("cert_ou") or token_claims.get("x509_cert_ou"),
+        "cert_valid_from": token_claims.get("cert_valid_from")
+        or token_claims.get("x509_cert_not_before"),
+        "cert_valid_until": token_claims.get("cert_valid_until")
+        or token_claims.get("x509_cert_not_after"),
+        "cert_fingerprint": token_claims.get("cert_fingerprint")
+        or token_claims.get("x509_cert_sha256_fingerprint"),
+    }
+
+
+async def validate_token(
+    access_token: str, cfg: Optional[KeycloakConfig] = None
+) -> Optional[KeycloakUserData]:
+    """Validate Keycloak access token and extract user data.
 
     Args:
         access_token: JWT access token from Keycloak
-
-    Returns:
-        KeycloakUserData or None if validation fails
+        cfg: Keycloak configuration (if None, loads from env)
     """
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
+
     try:
-        # Fetch Keycloak public keys
-        jwks = await get_keycloak_jwks()
+        jwks = await get_keycloak_jwks(cfg)
         if not jwks:
             logger.error("Failed to fetch Keycloak JWKS for token validation")
             return None
 
         logger.debug(f"JWKS fetched successfully, keys count: {len(jwks.get('keys', []))}")
 
-        # Decode and validate token
-        # Note: python-jose handles key matching from JWKS
-        # Audience validation is configurable - enable when Keycloak is configured with audience
         jwt_options = {}
         decode_kwargs = {}
 
-        if settings.KEYCLOAK_VERIFY_AUDIENCE:
-            # Validate audience claim (OWASP recommended)
+        if cfg.verify_audience:
             jwt_options["verify_aud"] = True
-            audience = settings.KEYCLOAK_AUDIENCE or settings.KEYCLOAK_CLIENT_ID
+            audience = cfg.audience or cfg.client_id
             decode_kwargs["audience"] = audience
             logger.debug(f"Validating token audience against: {audience}")
         else:
-            # Keycloak access tokens may not have audience claim by default
             jwt_options["verify_aud"] = False
 
-        if settings.KEYCLOAK_VERIFY_ISSUER:
-            # Validate issuer claim (OWASP recommended)
-            # Expected issuer is: {KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}
+        if cfg.verify_issuer:
             jwt_options["verify_iss"] = True
-            expected_issuer = f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}"
+            expected_issuer = f"{cfg.server_url}/realms/{cfg.realm}"
             decode_kwargs["issuer"] = expected_issuer
             logger.debug(f"Validating token issuer against: {expected_issuer}")
         else:
@@ -318,9 +417,10 @@ async def validate_token(access_token: str) -> Optional[KeycloakUserData]:
             f"Token decoded successfully for user: {payload.get('preferred_username', 'unknown')}"
         )
 
-        # Extract user data from token claims
         roles = payload.get("realm_access", {}).get("roles", [])
-        is_admin = settings.KEYCLOAK_ADMIN_ROLE in roles
+        is_admin = cfg.admin_role in roles
+
+        cert_claims = _extract_certificate_claims(payload)
 
         return KeycloakUserData(
             keycloak_id=payload["sub"],
@@ -329,6 +429,14 @@ async def validate_token(access_token: str) -> Optional[KeycloakUserData]:
             username=payload.get("preferred_username", ""),
             is_admin=is_admin,
             roles=roles,
+            cert_dn=cert_claims["cert_dn"],
+            cert_serial=cert_claims["cert_serial"],
+            cert_issuer=cert_claims["cert_issuer"],
+            cert_org=cert_claims["cert_org"],
+            cert_ou=cert_claims["cert_ou"],
+            cert_valid_from=cert_claims["cert_valid_from"],
+            cert_valid_until=cert_claims["cert_valid_until"],
+            cert_fingerprint=cert_claims["cert_fingerprint"],
         )
     except JWTError as e:
         logger.warning(f"Invalid Keycloak token (JWTError): {e}")
@@ -339,19 +447,7 @@ async def validate_token(access_token: str) -> Optional[KeycloakUserData]:
 
 
 def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
-    """
-    Create a new user from Keycloak data.
-
-    Args:
-        db: Database session
-        keycloak_data: Keycloak user data
-
-    Returns:
-        Created User object
-
-    Raises:
-        ValueError: If user cannot be created or found after race condition
-    """
+    """Create a new user from Keycloak data."""
     from sqlalchemy.exc import IntegrityError
 
     from app.models.user import User
@@ -359,18 +455,45 @@ def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
 
-    # Use username from Keycloak if email is not available
     if not email:
         email = f"{keycloak_data['username']}@keycloak.local"
 
     logger.info(f"Creating new user from Keycloak: {keycloak_id} ({email})")
 
+    pki_not_before = None
+    pki_not_after = None
+    cert_valid_from = keycloak_data.get("cert_valid_from")
+    if cert_valid_from:
+        try:
+            from datetime import datetime
+
+            pki_not_before = datetime.fromisoformat(cert_valid_from)
+        except ValueError:
+            logger.warning(f"Invalid cert_valid_from format: {cert_valid_from}")
+    cert_valid_until = keycloak_data.get("cert_valid_until")
+    if cert_valid_until:
+        try:
+            from datetime import datetime
+
+            pki_not_after = datetime.fromisoformat(cert_valid_until)
+        except ValueError:
+            logger.warning(f"Invalid cert_valid_until format: {cert_valid_until}")
+
+    cert_fingerprint = keycloak_data.get("cert_fingerprint")
     user = User(
         email=email,
         full_name=keycloak_data["full_name"] or keycloak_data["username"] or email.split("@")[0],
         hashed_password=EXTERNAL_AUTH_NO_PASSWORD,
         auth_type=AUTH_TYPE_KEYCLOAK,
         keycloak_id=keycloak_id,
+        pki_subject_dn=keycloak_data.get("cert_dn"),
+        pki_serial_number=keycloak_data.get("cert_serial"),
+        pki_issuer_dn=keycloak_data.get("cert_issuer"),
+        pki_organization=keycloak_data.get("cert_org"),
+        pki_organizational_unit=keycloak_data.get("cert_ou"),
+        pki_not_before=pki_not_before,
+        pki_not_after=pki_not_after,
+        pki_fingerprint_sha256=cert_fingerprint.replace(":", "") if cert_fingerprint else None,
         role="admin" if keycloak_data["is_admin"] else "user",
         is_active=True,
         is_superuser=keycloak_data["is_admin"],
@@ -381,7 +504,6 @@ def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
         db.commit()
         return user
     except IntegrityError:
-        # Race condition: user was created by concurrent request
         db.rollback()
         logger.info(f"User {keycloak_id} was created by concurrent request, fetching existing user")
         user = db.query(User).filter(User.keycloak_id == keycloak_id).first()
@@ -393,23 +515,12 @@ def _create_keycloak_user(db, keycloak_data: KeycloakUserData):
 
 
 def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
-    """
-    Update an existing user's Keycloak data.
-
-    Args:
-        db: Database session
-        user: Existing User object
-        keycloak_data: Keycloak user data
-
-    Returns:
-        Updated User object
-    """
+    """Update an existing user's Keycloak data and certificate metadata."""
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
 
     logger.info(f"Updating existing user from Keycloak: {keycloak_id} ({email})")
 
-    # Log email changes at WARNING level for audit purposes
     if email and email != user.email:
         logger.warning(
             f"SECURITY: User email changed during Keycloak login. "
@@ -421,14 +532,43 @@ def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
     user.keycloak_id = keycloak_id
     user.auth_type = AUTH_TYPE_KEYCLOAK
 
-    # Update admin role based on Keycloak roles
+    # Update certificate metadata if present
+    if keycloak_data.get("cert_dn"):
+        user.pki_subject_dn = keycloak_data["cert_dn"]
+    if keycloak_data.get("cert_serial"):
+        user.pki_serial_number = keycloak_data["cert_serial"]
+    if keycloak_data.get("cert_issuer"):
+        user.pki_issuer_dn = keycloak_data["cert_issuer"]
+    if keycloak_data.get("cert_org"):
+        user.pki_organization = keycloak_data["cert_org"]
+    if keycloak_data.get("cert_ou"):
+        user.pki_organizational_unit = keycloak_data["cert_ou"]
+    cert_valid_from = keycloak_data.get("cert_valid_from")
+    if cert_valid_from:
+        try:
+            from datetime import datetime
+
+            user.pki_not_before = datetime.fromisoformat(cert_valid_from)
+        except ValueError:
+            logger.warning(f"Invalid cert_valid_from format: {cert_valid_from}")
+    cert_valid_until = keycloak_data.get("cert_valid_until")
+    if cert_valid_until:
+        try:
+            from datetime import datetime
+
+            user.pki_not_after = datetime.fromisoformat(cert_valid_until)
+        except ValueError:
+            logger.warning(f"Invalid cert_valid_until format: {cert_valid_until}")
+    cert_fingerprint = keycloak_data.get("cert_fingerprint")
+    if cert_fingerprint:
+        user.pki_fingerprint_sha256 = cert_fingerprint.replace(":", "")
+
     if keycloak_data["is_admin"]:
         if user.role != "admin":
             logger.info(f"Promoting Keycloak user {keycloak_id} to admin")
         user.role = "admin"
         user.is_superuser = True
     elif user.role == "admin":
-        # Demote if user was admin but no longer has admin role in Keycloak
         logger.info(f"Demoting Keycloak user {keycloak_id} from admin")
         user.role = "user"
         user.is_superuser = False
@@ -438,36 +578,16 @@ def _update_keycloak_user(db, user, keycloak_data: KeycloakUserData):
 
 
 def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
-    """
-    Convert an existing local user to Keycloak authentication.
-
-    This is called when a user with auth_type='local' authenticates
-    via Keycloak. The user is converted to Keycloak auth, which means:
-    - auth_type is set to 'keycloak'
-    - hashed_password is cleared (Keycloak users don't have local passwords)
-    - keycloak_id is set from the token
-    - Admin role is updated based on Keycloak roles
-
-    Args:
-        db: Database session
-        user: Existing User object with auth_type='local'
-        keycloak_data: Keycloak user data from token
-
-    Returns:
-        Updated User object
-    """
+    """Convert an existing local user to Keycloak authentication."""
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
 
     logger.info(f"Converting local user {user.email} to Keycloak auth: {keycloak_id}")
 
-    # Convert to Keycloak authentication
     user.auth_type = AUTH_TYPE_KEYCLOAK
     user.keycloak_id = keycloak_id
-    user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD  # Clear local password
+    user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD
 
-    # Update email and name if provided
-    # Log email changes at WARNING level for audit purposes
     if email and email != user.email:
         logger.warning(
             f"SECURITY: User email changed during Keycloak conversion. "
@@ -477,14 +597,12 @@ def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
     if keycloak_data["full_name"]:
         user.full_name = keycloak_data["full_name"]
 
-    # Update admin role based on Keycloak roles
     if keycloak_data["is_admin"]:
         if user.role != "admin":
             logger.info(f"Promoting converted Keycloak user {keycloak_id} to admin")
         user.role = "admin"
         user.is_superuser = True
     elif user.role == "admin":
-        # Demote if user was admin locally but not in Keycloak admin role
         logger.info(
             f"Demoting converted Keycloak user {keycloak_id} from admin (no admin role in Keycloak)"
         )
@@ -496,25 +614,10 @@ def _convert_local_user_to_keycloak(db, user, keycloak_data: KeycloakUserData):
 
 
 def sync_keycloak_user_to_db(db, keycloak_data: KeycloakUserData):
-    """
-    Create or update a user in the database from Keycloak data.
+    """Create or update a user in the database from Keycloak data.
 
-    Handles:
-    - Creating new users on first Keycloak login
-    - Updating existing Keycloak users
-    - Protecting existing local users from being converted
-    - Admin role promotion and demotion based on Keycloak roles
-    - Race conditions when multiple concurrent logins occur
-
-    Args:
-        db: Database session
-        keycloak_data: User data from Keycloak token
-
-    Returns:
-        User: The created or updated User object
-
-    Raises:
-        ValueError: If user cannot be created or found after race condition
+    Handles creating new users, updating existing Keycloak users,
+    converting local users to Keycloak, and race conditions.
     """
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.models.user import User
@@ -522,7 +625,6 @@ def sync_keycloak_user_to_db(db, keycloak_data: KeycloakUserData):
     keycloak_id = keycloak_data["keycloak_id"]
     email = keycloak_data["email"]
 
-    # Check if user exists by keycloak_id first (most specific)
     user = db.query(User).filter(User.keycloak_id == keycloak_id).first()
     if not user and email:
         user = db.query(User).filter(User.email == email).first()
@@ -530,9 +632,6 @@ def sync_keycloak_user_to_db(db, keycloak_data: KeycloakUserData):
     if not user:
         user = _create_keycloak_user(db, keycloak_data)
     elif user.auth_type == AUTH_TYPE_LOCAL:
-        # Convert local users to Keycloak auth when they authenticate via Keycloak
-        # This ensures they use Keycloak going forward and cannot change their password
-        # (since Keycloak users don't have local passwords)
         logger.warning(
             f"SECURITY: Converting local user {email} to Keycloak auth. "
             "User will now authenticate exclusively via Keycloak. "

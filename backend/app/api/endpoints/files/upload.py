@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.minio_service import upload_file
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.waveform import generate_waveform_task
+from app.utils.file_validation import validate_uploaded_file
 from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
 from app.utils.thumbnail import generate_and_upload_thumbnail
@@ -364,6 +365,17 @@ async def process_file_upload(
     try:
         # Read file content in chunks
         file_content, file_size = await _read_file_content(file)
+
+        # Validate magic bytes match declared MIME type (security measure)
+        is_valid, validation_result = validate_uploaded_file(
+            bytes(file_content), file.content_type, file.filename
+        )
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=validation_result,  # User-friendly message from validator
+            )
+        logger.info(f"File validated: {file.filename} (detected: {validation_result})")
 
         # Update file hash
         _update_file_hash(db_file, client_file_hash, file.filename or "unknown")

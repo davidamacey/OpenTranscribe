@@ -1,4 +1,5 @@
 """Search API endpoints with hybrid BM25 + vector search."""
+
 import logging
 from typing import Any
 
@@ -814,9 +815,7 @@ def set_active_neural_model(
         file_uuids=None,  # All files
     )
 
-    logger.info(
-        f"Set active neural model to {model_name} ({model_id}), " f"reindex task: {task.id}"
-    )
+    logger.info(f"Set active neural model to {model_name} ({model_id}), reindex task: {task.id}")
 
     return {
         "status": "active_model_set",
@@ -825,8 +824,7 @@ def set_active_neural_model(
         "dimension": new_dimension,
         "reindex_task_id": task.id,
         "message": (
-            f"Switched to {model_info['name']}. "
-            f"Re-indexing all transcripts with neural pipeline."
+            f"Switched to {model_info['name']}. Re-indexing all transcripts with neural pipeline."
         ),
     }
 

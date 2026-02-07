@@ -2,13 +2,27 @@ import { writable, derived, get } from 'svelte/store';
 import axios from 'axios';
 import axiosInstance from '../lib/axios';
 
+// Certificate information for PKI authentication
+export interface CertificateInfo {
+  has_certificate: boolean;
+  subject_dn?: string;
+  serial_number?: string;
+  issuer_dn?: string;
+  organization?: string;
+  organizational_unit?: string;
+  valid_from?: string;
+  valid_until?: string;
+  fingerprint?: string;
+}
+
 // Define user interface
 export interface User {
   uuid: string;
   email: string;
   full_name: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'super_admin';
   auth_type: 'local' | 'ldap' | 'keycloak' | 'pki'; // Authentication type for password change UI
+  certificate?: CertificateInfo;
   created_at: string;
   updated_at: string;
 }
@@ -321,6 +335,12 @@ export function logout() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
 
+  // Clear presigned URL cache on logout (security: prevents cached URLs from being used after logout)
+  // We import this lazily to avoid circular dependencies
+  import('$lib/api/mediaUrl').then(({ clearMediaUrlCache }) => {
+    clearMediaUrlCache();
+  });
+
   authStore.reset();
 }
 
@@ -486,5 +506,16 @@ export async function verifyMFA(
     }
 
     return { success: false, message };
+  }
+}
+
+// Fetch certificate info for PKI authenticated users
+export async function fetchCertificateInfo(): Promise<CertificateInfo | null> {
+  try {
+    const response = await axiosInstance.get('/auth/me/certificate');
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch certificate info:', error);
+    return null;
   }
 }

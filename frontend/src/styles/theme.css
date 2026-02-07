@@ -33,6 +33,26 @@
   --link-color: #2563eb; /* Blue for links */
   --link-hover: #1d4ed8;
   --link-visited: #4f46e5; /* Royal blue for visited links */
+
+  /* Aliases for settings components */
+  --color-primary: var(--primary-color);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-alpha: rgba(59, 130, 246, 0.2);
+  --color-text: var(--text-color);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: #94a3b8;
+  --color-bg: var(--background-color);
+  --color-bg-secondary: #f1f5f9;
+  --color-bg-tertiary: #e2e8f0;
+  --color-border: var(--border-color);
+  --color-surface: var(--surface-color);
+  --color-warning: var(--warning-color);
+  --color-warning-bg: rgba(245, 158, 11, 0.1);
+  --color-warning-border: rgba(245, 158, 11, 0.3);
+  --color-warning-text: #b45309;
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+  --color-info-border: rgba(59, 130, 246, 0.3);
+  --color-info: var(--info-color);
 }
 
 /* Dark Theme */
@@ -68,6 +88,26 @@
   --link-color: #60a5fa; /* Brighter blue for links in dark mode */
   --link-hover: #93c5fd;
   --link-visited: #818cf8; /* Light indigo instead of purple */
+
+  /* Aliases for settings components - dark mode */
+  --color-primary: var(--primary-color);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-alpha: rgba(96, 165, 250, 0.2);
+  --color-text: var(--text-color);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: #94a3b8;
+  --color-bg: var(--background-color);
+  --color-bg-secondary: #1e293b;
+  --color-bg-tertiary: #334155;
+  --color-border: var(--border-color);
+  --color-surface: var(--surface-color);
+  --color-warning: var(--warning-color);
+  --color-warning-bg: rgba(251, 191, 36, 0.15);
+  --color-warning-border: rgba(251, 191, 36, 0.3);
+  --color-warning-text: #fbbf24;
+  --color-info-bg: rgba(96, 165, 250, 0.15);
+  --color-info-border: rgba(96, 165, 250, 0.3);
+  --color-info: var(--info-color);
 }
 
 /* Global styles that should adapt to theme */

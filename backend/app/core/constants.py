@@ -12,6 +12,7 @@ Language Data Sources:
 """
 
 import logging
+import os as _os
 
 _logger = logging.getLogger(__name__)
 
@@ -20,17 +21,27 @@ _logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Import alignment languages from whisperx (public API)
-try:
-    from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF
-    from whisperx.alignment import DEFAULT_ALIGN_MODELS_TORCH
+# Skip in test mode to avoid heavy torch import (~6s)
 
-    LANGUAGES_WITH_ALIGNMENT = set(DEFAULT_ALIGN_MODELS_TORCH.keys()) | set(
-        DEFAULT_ALIGN_MODELS_HF.keys()
-    )
-except ImportError:
-    _logger.warning(
-        "Could not import whisperx alignment models, using fallback alignment language list"
-    )
+if _os.environ.get("SKIP_CELERY", "").lower() == "true":
+    # Use fallback list in test mode - avoid loading torch/whisperx
+    _logger.debug("Test mode: using fallback alignment language list")
+    LANGUAGES_WITH_ALIGNMENT = None  # Will be set below in fallback
+else:
+    try:
+        from whisperx.alignment import DEFAULT_ALIGN_MODELS_HF
+        from whisperx.alignment import DEFAULT_ALIGN_MODELS_TORCH
+
+        LANGUAGES_WITH_ALIGNMENT = set(DEFAULT_ALIGN_MODELS_TORCH.keys()) | set(
+            DEFAULT_ALIGN_MODELS_HF.keys()
+        )
+    except ImportError:
+        _logger.warning(
+            "Could not import whisperx alignment models, using fallback alignment language list"
+        )
+        LANGUAGES_WITH_ALIGNMENT = None
+
+if LANGUAGES_WITH_ALIGNMENT is None:
     # Fallback: known alignment languages as of whisperx 3.3.1
     LANGUAGES_WITH_ALIGNMENT = {
         "ar",
@@ -75,13 +86,18 @@ except ImportError:
     }
 
 # Try to import language codes from faster_whisper for validation
-try:
-    from faster_whisper.tokenizer import _LANGUAGE_CODES
+# Skip in test mode to avoid heavy torch import
+if _os.environ.get("SKIP_CELERY", "").lower() == "true":
+    _logger.debug("Test mode: using None for WHISPER_LANGUAGE_CODES")
+    WHISPER_LANGUAGE_CODES: set[str] | None = None
+else:
+    try:
+        from faster_whisper.tokenizer import _LANGUAGE_CODES
 
-    WHISPER_LANGUAGE_CODES: set[str] | None = set(_LANGUAGE_CODES)
-except ImportError:
-    _logger.warning("Could not import faster_whisper language codes for validation")
-    WHISPER_LANGUAGE_CODES = None
+        WHISPER_LANGUAGE_CODES = set(_LANGUAGE_CODES)
+    except ImportError:
+        _logger.warning("Could not import faster_whisper language codes for validation")
+        WHISPER_LANGUAGE_CODES = None
 
 # File upload constants
 UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads

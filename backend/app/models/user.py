@@ -26,7 +26,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    role = Column(String, default="user", nullable=False)  # "user" or "admin"
+    role = Column(String, default="user", nullable=False)  # "user", "admin", or "super_admin"
     auth_type = Column(
         String, default="local", nullable=False
     )  # "local", "ldap", "keycloak", "pki"
@@ -35,6 +35,18 @@ class User(Base):
     pki_subject_dn = Column(
         String(512), unique=True, nullable=True, index=True
     )  # X.509 certificate DN
+
+    # PKI certificate metadata fields
+    pki_serial_number = Column(String(128), nullable=True)  # Certificate serial number
+    pki_issuer_dn = Column(String(512), nullable=True)  # Certificate issuer DN
+    pki_organization = Column(String(256), nullable=True)  # Organization from cert
+    pki_organizational_unit = Column(String(256), nullable=True)  # Organizational unit from cert
+    pki_common_name = Column(String(256), nullable=True)  # Common name from cert
+    pki_not_before = Column(DateTime(timezone=True), nullable=True)  # Cert valid from
+    pki_not_after = Column(DateTime(timezone=True), nullable=True)  # Cert valid until
+    pki_fingerprint_sha256 = Column(
+        String(64), nullable=True, index=True
+    )  # SHA256 fingerprint for cert tracking
 
     # FedRAMP compliance fields
     password_hash_version = Column(String(20), default="bcrypt", nullable=True)  # bcrypt, pbkdf2

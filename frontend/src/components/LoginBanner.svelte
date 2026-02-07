@@ -1,0 +1,171 @@
+<script lang="ts">
+  import { createEventDispatcher, onMount } from 'svelte';
+  import { axiosInstance } from '$lib/axios';
+
+  export let onAcknowledge: () => void = () => {};
+
+  const dispatch = createEventDispatcher();
+
+  let banner = {
+    enabled: false,
+    text: '',
+    classification: 'UNCLASSIFIED',
+    requires_acknowledgment: false
+  };
+  let loading = true;
+
+  const classificationColors: Record<string, string> = {
+    'UNCLASSIFIED': '#4ade80',
+    'CUI': '#a855f7',
+    'FOUO': '#3b82f6',
+    'CONFIDENTIAL': '#3b82f6',
+    'SECRET': '#ef4444',
+    'TOP SECRET': '#f97316',
+    'TOP SECRET//SCI': '#eab308'
+  };
+
+  onMount(async () => {
+    try {
+      const response = await axiosInstance.get('/auth/banner');
+      banner = response.data;
+    } catch (error) {
+      console.error('Failed to fetch login banner:', error);
+    } finally {
+      loading = false;
+    }
+  });
+
+  function handleAcknowledge() {
+    dispatch('acknowledge');
+    onAcknowledge();
+  }
+
+  function handleDecline() {
+    window.location.href = 'about:blank';
+  }
+</script>
+
+{#if !loading && banner.enabled}
+  <div class="banner-overlay">
+    <div class="banner-modal">
+      <div
+        class="classification-header"
+        style="background-color: {classificationColors[banner.classification] || '#4ade80'}"
+      >
+        {banner.classification}
+      </div>
+
+      <div class="banner-content">
+        <h2>System Use Notification</h2>
+        <div class="banner-text">
+          {banner.text}
+        </div>
+
+        <p class="legal-notice">
+          By clicking "I Acknowledge", you consent to the terms above and confirm
+          that you are authorized to access this system.
+        </p>
+      </div>
+
+      <div class="banner-actions">
+        <button class="btn-decline" on:click={handleDecline}>
+          Decline
+        </button>
+        <button class="btn-acknowledge" on:click={handleAcknowledge}>
+          I Acknowledge
+        </button>
+      </div>
+
+      <div
+        class="classification-footer"
+        style="background-color: {classificationColors[banner.classification] || '#4ade80'}"
+      >
+        {banner.classification}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .banner-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .banner-modal {
+    background: white;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .classification-header,
+  .classification-footer {
+    padding: 8px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .banner-content {
+    padding: 24px;
+    color: #1f2937;
+  }
+
+  .banner-content h2 {
+    margin: 0 0 16px;
+    font-size: 1.5rem;
+  }
+
+  .banner-text {
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 16px 0;
+    padding: 16px;
+    background: #f5f5f5;
+    border-radius: 4px;
+  }
+
+  .legal-notice {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-style: italic;
+  }
+
+  .banner-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    padding: 16px;
+    border-top: 1px solid #eee;
+  }
+
+  .btn-acknowledge {
+    background: var(--color-primary, #3b82f6);
+    color: white;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 4px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  .btn-decline {
+    background: #ddd;
+    color: #666;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+</style>

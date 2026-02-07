@@ -762,6 +762,7 @@
       class="modal-container"
       role="dialog"
       aria-modal="true"
+      tabindex="-1"
       on:click={handleModalClick}
     >
       <!-- Header -->

@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.auth import get_optional_current_user
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -347,11 +348,93 @@ def delete_media_file_endpoint(
 @router.get("/{file_uuid}/stream-url")
 def get_media_file_stream_url(
     file_uuid: str,
+    media_type: str = Query("video", description="Type of media: video, thumbnail, or audio"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Get a streaming URL for the media file that works from any client"""
-    return get_stream_url_info(db, file_uuid, current_user)
+    """
+    Generate a short-lived presigned URL for secure media streaming.
+
+    This follows AWS/GCS best practices for secure content delivery:
+    - Short expiration (5 minutes for video, 15 minutes for thumbnails)
+    - Cryptographically signed by MinIO (AWS Signature V4)
+    - User must be authenticated and authorized
+
+    Args:
+        file_uuid: UUID of the media file
+        media_type: Type of media to stream - "video", "thumbnail", or "audio"
+
+    Returns:
+        url: Presigned URL for direct MinIO access
+        expires_in: Seconds until URL expires
+        content_type: MIME type of the content
+        is_public: Whether the file is public
+    """
+    from app.core.config import settings
+    from app.services.minio_service import get_file_url
+
+    # Validate media_type
+    if media_type not in ("video", "thumbnail", "audio"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid media_type: {media_type}. Must be 'video', 'thumbnail', or 'audio'",
+        )
+
+    # Verify user has permission (ownership check)
+    is_admin = bool(current_user.role == "admin")
+    db_file = get_media_file_by_uuid(db, file_uuid, int(current_user.id), is_admin=is_admin)
+
+    # Determine storage path and expiration based on media type
+    if media_type == "thumbnail":
+        storage_path = db_file.thumbnail_path
+        expires_seconds = settings.THUMBNAIL_URL_EXPIRE_SECONDS
+        content_type = (
+            "image/webp" if storage_path and str(storage_path).endswith(".webp") else "image/jpeg"
+        )
+    else:
+        storage_path = db_file.storage_path
+        expires_seconds = settings.MEDIA_URL_EXPIRE_SECONDS
+        content_type = (
+            str(db_file.content_type) if db_file.content_type else "application/octet-stream"
+        )
+
+    if not storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{media_type.title()} not found for this file",
+        )
+
+    # Generate presigned URL (uses existing minio_service function)
+    import os
+
+    if os.environ.get("SKIP_S3", "False").lower() == "true":
+        # Test environment - return mock URL
+        logger.info("Returning mock presigned URL in test environment")
+        return {
+            "url": f"/api/files/{db_file.uuid}/{media_type}",
+            "expires_in": expires_seconds,
+            "content_type": content_type,
+            "is_public": getattr(db_file, "is_public", False),
+        }
+
+    try:
+        presigned_url = get_file_url(str(storage_path), expires=expires_seconds)
+        logger.info(
+            f"Generated presigned URL for {media_type} (file: {file_uuid}, expires: {expires_seconds}s)"
+        )
+
+        return {
+            "url": presigned_url,
+            "expires_in": expires_seconds,
+            "content_type": content_type,
+            "is_public": getattr(db_file, "is_public", False),
+        }
+    except Exception as e:
+        logger.error(f"Error generating presigned URL for file {file_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating streaming URL: {str(e)}",
+        ) from e
 
 
 @router.get("/{file_uuid}/content")
@@ -555,44 +638,116 @@ def download_media_file_with_token(
 
 
 @router.get("/{file_uuid}/video")
-async def video_file(file_uuid: str, request: Request, db: Session = Depends(get_db)):
+async def video_file(
+    file_uuid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
-    Direct video endpoint for video player
-    No authentication required - this is a public endpoint for video files only
+    Direct video endpoint for video player.
+
+    Security: Requires authentication OR file must be public.
+    For secure access, use GET /{file_uuid}/stream-url to get a presigned URL instead.
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
+
+    # Security check: must be public OR user must be authenticated and own file (or be admin)
+    is_public = getattr(db_file, "is_public", False)
+    if not is_public:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        is_admin = current_user.role in ("admin", "super_admin")
+        if not is_admin and db_file.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this file",
+            )
 
     range_header = request.headers.get("range") or ""
     return get_video_streaming_response(db_file, range_header)
 
 
 @router.get("/{file_uuid}/simple-video")
-async def simple_video(file_uuid: str, request: Request, db: Session = Depends(get_db)):
+async def simple_video(
+    file_uuid: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
-    Enhanced video streaming endpoint that efficiently serves video content with YouTube-like streaming.
+    Enhanced video streaming endpoint with YouTube-like streaming.
+
+    Security: Requires authentication OR file must be public.
+    For secure access, use GET /{file_uuid}/stream-url to get a presigned URL instead.
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
+
+    # Security check: must be public OR user must be authenticated and own file (or be admin)
+    is_public = getattr(db_file, "is_public", False)
+    if not is_public:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for private files. Use /stream-url endpoint for presigned URLs.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        is_admin = current_user.role in ("admin", "super_admin")
+        if not is_admin and db_file.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this file",
+            )
 
     range_header = request.headers.get("range") or ""
     return get_enhanced_video_streaming_response(db_file, range_header)
 
 
 @router.get("/{file_uuid}/thumbnail")
-async def get_thumbnail(file_uuid: str, db: Session = Depends(get_db)):
+async def get_thumbnail(
+    file_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
     Get the thumbnail image for a media file.
-    No authentication required - this is a public endpoint for thumbnail images only.
+
+    Security: Requires authentication OR file must be public.
+
+    Note: For gallery/list views, use the presigned thumbnail_url returned in the
+    file listing response. This endpoint is a fallback for direct access.
     """
     from app.utils.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
     validate_file_exists(db_file)
+
+    # Security check: must be public OR user must be authenticated and own file (or be admin)
+    is_public = getattr(db_file, "is_public", False)
+    if not is_public:
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required. Use presigned thumbnail_url from file listing.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        is_admin = current_user.role in ("admin", "super_admin")
+        if not is_admin and db_file.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this file",
+            )
+
     return get_thumbnail_streaming_response(db_file)
 
 

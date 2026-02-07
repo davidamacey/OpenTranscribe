@@ -7,6 +7,7 @@
   import { t } from '$stores/locale';
   import { browser } from '$app/environment';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
+  import LoginBanner from '$components/LoginBanner.svelte';
 
   // Import logo asset for proper Vite processing
   import logoBanner from '../../assets/logo-banner.png';
@@ -34,6 +35,7 @@
   let bannerEnabled = false;
   let bannerText = "";
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
+  let showLoginBanner = false;
 
   // Authentication methods
   let authMethods: AuthMethods = {
@@ -53,100 +55,113 @@
   let passwordValid = true;
 
   // Focus the email field on mount and fetch auth methods
-  onMount(async () => {
-    // Reset loading states on mount (handles browser back button)
-    keycloakLoading = false;
-    pkiLoading = false;
-    loading = false;
+  onMount(() => {
+    let handleVisibilityChange: (() => void) | undefined;
+    let handlePageShow: (() => void) | undefined;
 
-    // Check for Keycloak callback parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-
-    if (code && state) {
-      // Clear URL parameters immediately to prevent double-processing on refresh
-      window.history.replaceState({}, document.title, window.location.pathname);
-
-      // Check if we already processed this callback (prevents double toast)
-      const processedKey = `keycloak_callback_${state}`;
-      if (sessionStorage.getItem(processedKey)) {
-        // Already processed this callback, skip
-        window.location.href = "/";
-        return;
-      }
-      sessionStorage.setItem(processedKey, 'true');
-
-      // Handle Keycloak callback
-      keycloakLoading = true;
-      const result = await handleKeycloakCallback(code, state);
+    (async () => {
+      // Reset loading states on mount (handles browser back button)
       keycloakLoading = false;
+      pkiLoading = false;
+      loading = false;
 
-      if (result.success) {
-        successMessage = $t('auth.loginSuccess');
-        toastStore.success($t('auth.loginSuccess'));
-        setTimeout(() => {
+      // Check for Keycloak callback parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+
+      if (code && state) {
+        // Clear URL parameters immediately to prevent double-processing on refresh
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        // Check if we already processed this callback (prevents double toast)
+        const processedKey = `keycloak_callback_${state}`;
+        if (sessionStorage.getItem(processedKey)) {
+          // Already processed this callback, skip
           window.location.href = "/";
-        }, 1000);
-        return;
-      } else {
-        // Only show error if it's not a state-related issue (likely double-request)
-        if (!result.message?.includes('state')) {
-          toastStore.error(result.message || $t('auth.loginFailed'));
-        } else {
-          // State error but user might already be logged in, check and redirect
-          const token = localStorage.getItem('token');
-          if (token) {
+          return;
+        }
+        sessionStorage.setItem(processedKey, 'true');
+
+        // Handle Keycloak callback
+        keycloakLoading = true;
+        const result = await handleKeycloakCallback(code, state);
+        keycloakLoading = false;
+
+        if (result.success) {
+          successMessage = $t('auth.loginSuccess');
+          toastStore.success($t('auth.loginSuccess'));
+          setTimeout(() => {
             window.location.href = "/";
-            return;
+          }, 1000);
+          return;
+        } else {
+          // Only show error if it's not a state-related issue (likely double-request)
+          if (!result.message?.includes('state')) {
+            toastStore.error(result.message || $t('auth.loginFailed'));
+          } else {
+            // State error but user might already be logged in, check and redirect
+            const token = localStorage.getItem('token');
+            if (token) {
+              window.location.href = "/";
+              return;
+            }
+            toastStore.error(result.message || $t('auth.loginFailed'));
           }
-          toastStore.error(result.message || $t('auth.loginFailed'));
         }
       }
-    }
 
-    // Fetch available auth methods
-    authMethods = await getAuthMethods();
+      // Fetch available auth methods
+      authMethods = await getAuthMethods();
 
-    // Check for banner settings
-    if (authMethods.login_banner_enabled) {
-      bannerEnabled = true;
-      bannerText = authMethods.login_banner_text || "";
-      bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
+      // Check for banner settings
+      if (authMethods.login_banner_enabled) {
+        bannerEnabled = true;
+        bannerText = authMethods.login_banner_text || "";
+        bannerClassification = (authMethods.login_banner_classification as typeof bannerClassification) || "UNCLASSIFIED";
 
-      // Check if user has previously acknowledged banner (session-based)
-      const acknowledged = sessionStorage.getItem('banner_acknowledged');
-      if (!acknowledged) {
-        showBannerConsent = true;
-      } else {
-        bannerAcknowledged = true;
+        // Check if user has previously acknowledged banner (session-based)
+        const acknowledged = sessionStorage.getItem('banner_acknowledged');
+        if (!acknowledged) {
+          showBannerConsent = true;
+          showLoginBanner = true;
+        } else {
+          bannerAcknowledged = true;
+        }
       }
-    }
 
-    const emailInput = document.getElementById('email');
-    if (emailInput && !showBannerConsent) emailInput.focus();
+      const emailInput = document.getElementById('email');
+      if (emailInput && !showBannerConsent) emailInput.focus();
 
-    // Handle page visibility change (user returns via back button)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Reset loading states when page becomes visible again
+      // Handle page visibility change (user returns via back button)
+      handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          // Reset loading states when page becomes visible again
+          keycloakLoading = false;
+          pkiLoading = false;
+        }
+      };
+
+      handlePageShow = () => {
         keycloakLoading = false;
         pkiLoading = false;
-      }
-    };
+      };
 
-    if (browser) {
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      // Also handle popstate (browser back/forward)
-      window.addEventListener('pageshow', () => {
-        keycloakLoading = false;
-        pkiLoading = false;
-      });
-    }
+      if (browser) {
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        // Also handle popstate (browser back/forward)
+        window.addEventListener('pageshow', handlePageShow);
+      }
+    })();
 
     return () => {
       if (browser) {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        if (handleVisibilityChange) {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+        }
+        if (handlePageShow) {
+          window.removeEventListener('pageshow', handlePageShow);
+        }
       }
     };
   });
@@ -343,6 +358,7 @@
   function handleBannerAcknowledge() {
     bannerAcknowledged = true;
     showBannerConsent = false;
+    showLoginBanner = false;
     sessionStorage.setItem('banner_acknowledged', 'true');
     // Focus email field after acknowledgment
     setTimeout(() => {
@@ -367,6 +383,11 @@
     on:acknowledge={handleBannerAcknowledge}
     on:decline={handleBannerDecline}
   />
+{/if}
+
+<!-- Login Banner Modal (shows consent dialog before login) -->
+{#if showLoginBanner && !bannerAcknowledged}
+  <LoginBanner onAcknowledge={handleBannerAcknowledge} />
 {/if}
 
 <div class="auth-container" class:banner-offset={bannerEnabled}>
@@ -407,6 +428,7 @@
                 {$t('auth.mfaCode') || 'Authentication Code'}
               {/if}
             </label>
+            <!-- svelte-ignore a11y_autofocus -->
             <input
               type="text"
               id="mfaCode"

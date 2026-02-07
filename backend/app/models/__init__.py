@@ -4,6 +4,8 @@ SQLAlchemy ORM models for OpenTranscribe.
 This package contains database models for all entities in the system.
 """
 
+from .auth_config import AuthConfig
+from .auth_config import AuthConfigAudit
 from .media import Analytics
 from .media import Collection
 from .media import CollectionMember
@@ -50,4 +52,6 @@ __all__ = [
     "RefreshToken",
     "UserMFA",
     "PasswordHistory",
+    "AuthConfig",
+    "AuthConfigAudit",
 ]

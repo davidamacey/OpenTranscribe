@@ -7,6 +7,7 @@ Supports logging of authentication events, security events, and administrative a
 
 import json
 import logging
+import os
 import uuid
 from contextvars import ContextVar
 from datetime import datetime
@@ -51,10 +52,12 @@ class AuditEventType(str, Enum):
     # Token events (event type names, not passwords)
     AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 # nosec B105
     AUTH_TOKEN_REVOKE = "auth.token.revoke"  # noqa: S105 # nosec B105
+    AUTH_TOKEN_VERIFY = "auth.token.verify"  # noqa: S105 # nosec B105
 
     # Session events
     AUTH_SESSION_CREATED = "auth.session.created"
     AUTH_SESSION_EXPIRED = "auth.session.expired"
+    AUTH_SESSION_TERMINATED = "auth.session.terminated"
     AUTH_SESSION_LIMIT_EXCEEDED = "auth.session.limit_exceeded"
 
     # Administrative events
@@ -160,10 +163,34 @@ class AuditLogger:
             f"{severity}|{extension_str}"
         )
 
+    def _write_fallback_log(self, event: dict) -> None:
+        """Write audit event to fallback file when OpenSearch is unavailable.
+
+        Creates the directory structure if it doesn't exist and appends
+        the event as a JSON line to the fallback file.
+
+        Args:
+            event: The audit event dictionary to write.
+        """
+        try:
+            fallback_path = settings.AUDIT_LOG_FALLBACK_PATH
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
+
+            # Append event as JSON line
+            with open(fallback_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(event, default=str, ensure_ascii=False) + "\n")
+        except Exception as e:
+            self._logger.error(f"Failed to write to audit fallback log: {e}")
+
     def _index_to_opensearch(self, event: dict) -> None:
         """Index audit event to OpenSearch."""
         client = self._get_opensearch_client()
         if client is None:
+            # OpenSearch client not available, use fallback if enabled
+            if settings.AUDIT_LOG_FALLBACK_ENABLED:
+                self._logger.warning("OpenSearch client unavailable, using fallback file logging")
+                self._write_fallback_log(event)
             return
 
         try:
@@ -198,6 +225,10 @@ class AuditLogger:
             client.index(index=index_name, body=event)
         except Exception as e:
             self._logger.warning(f"Failed to index audit event to OpenSearch: {e}")
+            # Use fallback logging if enabled
+            if settings.AUDIT_LOG_FALLBACK_ENABLED:
+                self._logger.warning("Using fallback file logging for audit event")
+                self._write_fallback_log(event)
 
     def log(
         self,

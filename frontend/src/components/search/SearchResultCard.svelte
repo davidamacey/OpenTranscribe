@@ -5,7 +5,6 @@
   import SearchOccurrence from './SearchOccurrence.svelte';
 
   export let hit: SearchHit;
-  export let query: string = '';
   export let activePreview: { fileUuid: string; startTime: number } | null = null;
 
   const dispatch = createEventDispatcher();

@@ -549,6 +549,14 @@
             {/if}
           </div>
           <span class="username">{$user ? $user.full_name : $t('nav.user')}</span>
+          {#if $user?.auth_type === 'pki'}
+            <div class="pki-badge" title={$t('nav.pkiAuthenticated') || 'Authenticated with X.509 Certificate'}>
+              <svg class="shield-icon" viewBox="0 0 24 24" width="16" height="16">
+                <path fill="#059669" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+                <path fill="white" d="M10 17l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+              </svg>
+            </div>
+          {/if}
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="dropdown-icon">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
@@ -1011,6 +1019,19 @@
   .dropdown-icon {
     margin-left: 0.25rem;
     opacity: 0.7;
+  }
+
+  .pki-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.25rem;
+  }
+
+  .pki-badge .shield-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
   }
 
   .dropdown-menu {

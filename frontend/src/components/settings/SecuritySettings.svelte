@@ -3,7 +3,8 @@
   import axiosInstance from '$lib/axios';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
-  import { getAuthMethods } from '$stores/auth';
+  import { getAuthMethods, user as userStore } from '$stores/auth';
+  import CertificateInfo from './CertificateInfo.svelte';
 
   // MFA Status
   interface MFAStatus {
@@ -37,6 +38,9 @@
   let showDisableConfirm = false;
   let disableCode = '';
   let disableLoading = false;
+
+  // PKI user detection
+  $: isPKIUser = $userStore?.auth_type === 'pki';
 
   onMount(async () => {
     await loadMFAStatus();
@@ -164,6 +168,11 @@
 </script>
 
 <div class="security-settings">
+  <!-- Certificate Info for PKI Users -->
+  {#if isPKIUser}
+    <CertificateInfo />
+  {/if}
+
   {#if loading}
     <div class="loading-state">
       <div class="spinner"></div>

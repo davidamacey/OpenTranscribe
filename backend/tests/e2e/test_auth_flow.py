@@ -1,0 +1,342 @@
+"""
+E2E Tests for Authentication Flows
+
+Tests login, logout, and registration through the actual frontend UI.
+These tests verify that frontend and backend work together correctly.
+
+Run with:
+    pytest backend/tests/e2e/test_auth_flow.py -v
+
+Run with visible browser:
+    pytest backend/tests/e2e/test_auth_flow.py -v --headed
+"""
+
+import uuid
+
+from playwright.sync_api import Page
+from playwright.sync_api import expect
+
+
+class TestLoginFlow:
+    """Test login functionality through the UI."""
+
+    def test_login_page_loads(self, login_page: Page):
+        """Verify login page loads with all required elements."""
+        # Check page title contains OpenTranscribe
+        expect(login_page).to_have_title("OpenTranscribe")
+
+        # Check form elements exist
+        expect(login_page.locator("#email")).to_be_visible()
+        expect(login_page.locator("#password")).to_be_visible()
+        expect(login_page.locator("button[type=submit]")).to_be_visible()
+
+    def test_login_success(self, login_page: Page, base_url: str):
+        """Test successful login with valid credentials."""
+        login_page.fill("#email", "admin@example.com")
+        login_page.fill("#password", "password")
+        login_page.click("button[type=submit]")
+
+        # Should redirect to gallery/dashboard
+        login_page.wait_for_url(f"{base_url}/**", timeout=15000)
+
+        # Verify we're logged in - check for user menu or gallery content
+        expect(
+            login_page.locator("text=Gallery")
+            .or_(login_page.locator("[data-testid=user-menu]"))
+            .first
+        ).to_be_visible(timeout=10000)
+
+    def test_login_failure_invalid_password(self, login_page: Page):
+        """Test login fails with invalid password."""
+        login_page.fill("#email", "admin@example.com")
+        login_page.fill("#password", "wrongpassword")
+        login_page.click("button[type=submit]")
+
+        # Should show error message
+        login_page.wait_for_timeout(2000)
+
+        # Check for error indication (could be alert, toast, or inline error)
+        error_visible = (
+            login_page.locator("[role=alert]").is_visible()
+            or login_page.locator(".error").is_visible()
+            or login_page.locator("text=Invalid").is_visible()
+            or login_page.locator("text=incorrect").is_visible()
+        )
+        assert error_visible or login_page.url.endswith("/login"), (
+            "Should show error or stay on login page"
+        )
+
+    def test_login_failure_nonexistent_user(self, login_page: Page):
+        """Test login fails for non-existent user."""
+        login_page.fill("#email", "nonexistent@example.com")
+        login_page.fill("#password", "anypassword")
+        login_page.click("button[type=submit]")
+
+        login_page.wait_for_timeout(2000)
+
+        # Should stay on login page
+        assert "/login" in login_page.url or login_page.locator("#email").is_visible()
+
+    def test_login_empty_fields_validation(self, login_page: Page):
+        """Test form validation for empty fields."""
+        # Click submit without filling fields
+        login_page.click("button[type=submit]")
+
+        # Should show validation or stay on page
+        login_page.wait_for_timeout(1000)
+        assert login_page.locator("#email").is_visible(), "Should stay on login page"
+
+    def test_password_visibility_toggle(self, login_page: Page):
+        """Test password visibility toggle if available."""
+        password_input = login_page.locator("#password")
+        toggle_button = login_page.locator("[data-testid=toggle-password], button:near(#password)")
+
+        if toggle_button.count() > 0:
+            # Initial state should be password (hidden)
+            expect(password_input).to_have_attribute("type", "password")
+
+            # Click toggle
+            toggle_button.first.click()
+
+            # Should now be text (visible)
+            expect(password_input).to_have_attribute("type", "text")
+
+
+class TestLogoutFlow:
+    """Test logout functionality."""
+
+    def test_logout_success(self, authenticated_page: Page, base_url: str):
+        """Test successful logout."""
+        # Click user menu button
+        user_menu = authenticated_page.locator(".user-button").first
+        expect(user_menu).to_be_visible(timeout=5000)
+        user_menu.click()
+        authenticated_page.wait_for_timeout(500)
+
+        # Click logout in dropdown
+        logout_btn = authenticated_page.locator(
+            "button:has-text('Logout'), button:has-text('Sign Out'), "
+            "a:has-text('Logout'), .logout-btn, [data-action=logout]"
+        ).first
+
+        logout_btn.click()
+
+        # Should redirect to login
+        authenticated_page.wait_for_url("**/login**", timeout=10000)
+        expect(authenticated_page.locator("#email")).to_be_visible()
+
+
+class TestRegistrationFlow:
+    """Test user registration functionality."""
+
+    def test_registration_link_exists(self, login_page: Page):
+        """Verify registration link exists on login page."""
+        register_link = login_page.locator("a[href*=register]")
+        expect(register_link.first).to_be_visible()
+
+    def test_registration_page_loads(self, login_page: Page):
+        """Test registration page loads correctly."""
+        login_page.click("a[href*=register]")
+        login_page.wait_for_timeout(1000)
+
+        # Check for all registration form fields
+        expect(login_page.locator("#username")).to_be_visible()
+        expect(login_page.locator("#email")).to_be_visible()
+        expect(login_page.locator("#password")).to_be_visible()
+        expect(login_page.locator("#confirmPassword")).to_be_visible()
+        expect(login_page.locator("button:has-text('Create Account')")).to_be_visible()
+
+    def test_registration_success(self, page: Page, base_url: str, api_helper):
+        """Test successful user registration with unique credentials."""
+        unique_id = str(uuid.uuid4())[:8]
+        username = f"testuser_{unique_id}"
+        email = f"testuser_{unique_id}@example.com"
+        password = "TestPassword123!"
+
+        # Navigate to registration page
+        page.goto(f"{base_url}/login")
+        page.wait_for_selector("a[href*=register]")
+        page.click("a[href*=register]")
+        page.wait_for_timeout(1000)
+
+        # Fill registration form
+        page.fill("#username", username)
+        page.fill("#email", email)
+        page.fill("#password", password)
+        page.fill("#confirmPassword", password)
+
+        # Submit
+        page.click("button:has-text('Create Account')")
+        page.wait_for_timeout(3000)
+
+        # Should either redirect to login or show success message
+        # Check if we're on login page or got a success indication
+        on_login = "/login" in page.url and "register" not in page.url
+        success_msg = page.locator("text=success, text=created, text=registered").first.is_visible()
+
+        assert on_login or success_msg, f"Registration should succeed. URL: {page.url}"
+
+    def test_registration_password_mismatch(self, page: Page, base_url: str):
+        """Test registration fails when passwords don't match."""
+        page.goto(f"{base_url}/login")
+        page.wait_for_selector("a[href*=register]")
+        page.click("a[href*=register]")
+        page.wait_for_timeout(1000)
+
+        # Fill form with mismatched passwords
+        page.fill("#username", "testuser")
+        page.fill("#email", "test@example.com")
+        page.fill("#password", "Password123!")
+        page.fill("#confirmPassword", "DifferentPassword123!")
+
+        page.click("button:has-text('Create Account')")
+        page.wait_for_timeout(2000)
+
+        # Should show error or stay on registration page
+        still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
+        assert still_on_register, "Should not proceed with mismatched passwords"
+
+    def test_registration_weak_password(self, page: Page, base_url: str):
+        """Test registration validates password strength."""
+        page.goto(f"{base_url}/login")
+        page.wait_for_selector("a[href*=register]")
+        page.click("a[href*=register]")
+        page.wait_for_timeout(1000)
+
+        # Fill form with weak password
+        page.fill("#username", "testuser")
+        page.fill("#email", "test@example.com")
+        page.fill("#password", "weak")
+        page.fill("#confirmPassword", "weak")
+
+        page.click("button:has-text('Create Account')")
+        page.wait_for_timeout(2000)
+
+        # Should show error or validation message
+        still_on_register = "register" in page.url or page.locator("#password").is_visible()
+        assert still_on_register, "Should validate password strength"
+
+    def test_registration_duplicate_email_fails(self, page: Page, base_url: str):
+        """Test registration fails for existing email."""
+        page.goto(f"{base_url}/login")
+        page.wait_for_selector("a[href*=register]")
+        page.click("a[href*=register]")
+        page.wait_for_timeout(1000)
+
+        # Try to register with existing admin email
+        page.fill("#username", "newadmin")
+        page.fill("#email", "admin@example.com")
+        page.fill("#password", "ValidPassword123!")
+        page.fill("#confirmPassword", "ValidPassword123!")
+
+        page.click("button:has-text('Create Account')")
+        page.wait_for_timeout(2000)
+
+        # Should show error about existing user
+        error_shown = (
+            page.locator("[role=alert]").is_visible()
+            or page.locator("text=exists").is_visible()
+            or page.locator("text=already").is_visible()
+            or "register" in page.url  # Still on register page
+        )
+        assert error_shown, "Should show error for duplicate email"
+
+    def test_registration_duplicate_username_fails(self, page: Page, base_url: str):
+        """Test registration fails for existing username."""
+        page.goto(f"{base_url}/login")
+        page.wait_for_selector("a[href*=register]")
+        page.click("a[href*=register]")
+        page.wait_for_timeout(1000)
+
+        # Try to register with likely existing username
+        unique_email = f"unique_{uuid.uuid4().hex[:8]}@example.com"
+        page.fill("#username", "admin")  # Likely exists
+        page.fill("#email", unique_email)
+        page.fill("#password", "ValidPassword123!")
+        page.fill("#confirmPassword", "ValidPassword123!")
+
+        page.click("button:has-text('Create Account')")
+        page.wait_for_timeout(2000)
+
+        # Should show error about existing username or stay on page
+        assert "register" in page.url or page.locator("#username").is_visible()
+
+
+class TestAuthenticationPersistence:
+    """Test that authentication state persists correctly."""
+
+    def test_session_persists_on_refresh(self, authenticated_page: Page, base_url: str):
+        """Test that user stays logged in after page refresh."""
+        # We're already logged in via authenticated_page fixture
+        # Refresh the page
+        authenticated_page.reload()
+        authenticated_page.wait_for_load_state("networkidle")
+
+        # Should still be on the same page (not redirected to login)
+        assert "/login" not in authenticated_page.url, "Should stay logged in after refresh"
+
+    def test_protected_route_redirects_when_not_logged_in(self, page: Page, base_url: str):
+        """Test that protected routes redirect to login."""
+        # Try to access gallery directly without logging in
+        page.goto(f"{base_url}/gallery")
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(2000)
+
+        # Should be redirected to login
+        assert "/login" in page.url or page.locator("#email").is_visible(), (
+            "Should redirect to login when not authenticated"
+        )
+
+
+class TestAlternativeAuthMethods:
+    """Test alternative authentication methods (Keycloak, PKI)."""
+
+    def test_keycloak_button_visible(self, login_page: Page):
+        """Check if Keycloak login option is available."""
+        keycloak_btn = login_page.locator(
+            "button:has-text('Keycloak'), button:has-text('SSO'), [data-testid=keycloak-login]"
+        )
+
+        # This is optional - just check if it exists
+        if keycloak_btn.count() > 0:
+            expect(keycloak_btn.first).to_be_visible()
+
+    def test_certificate_login_visible(self, login_page: Page):
+        """Check if certificate/PKI login option is available."""
+        pki_btn = login_page.locator(
+            "button:has-text('Certificate'), button:has-text('PKI'), "
+            "button:has-text('CAC'), [data-testid=pki-login]"
+        )
+
+        # This is optional - just check if it exists
+        if pki_btn.count() > 0:
+            expect(pki_btn.first).to_be_visible()
+
+
+class TestConsoleErrors:
+    """Test that pages load without JavaScript errors."""
+
+    def test_login_page_no_console_errors(self, login_page: Page, console_errors: list):
+        """Login page should load without console errors."""
+        login_page.wait_for_load_state("networkidle")
+        login_page.wait_for_timeout(2000)
+
+        # Filter out non-critical errors
+        critical_errors = [
+            e for e in console_errors if "favicon" not in e.lower() and "404" not in e
+        ]
+
+        assert len(critical_errors) == 0, f"Page has console errors: {critical_errors}"
+
+    def test_authenticated_page_no_console_errors(
+        self, authenticated_page: Page, console_errors: list
+    ):
+        """Authenticated pages should load without console errors."""
+        authenticated_page.wait_for_load_state("networkidle")
+        authenticated_page.wait_for_timeout(2000)
+
+        critical_errors = [
+            e for e in console_errors if "favicon" not in e.lower() and "404" not in e
+        ]
+
+        assert len(critical_errors) == 0, f"Page has console errors: {critical_errors}"

@@ -1,4 +1,5 @@
 """Transcript indexing service for OpenSearch chunk-level search."""
+
 import datetime
 import logging
 import time
@@ -185,8 +186,7 @@ def recreate_index_for_dimension(dimension: int) -> bool:
                 return True
 
             logger.info(
-                f"Dimension mismatch: index has {current_dim}, need {dimension}. "
-                f"Recreating index."
+                f"Dimension mismatch: index has {current_dim}, need {dimension}. Recreating index."
             )
 
             # Remove alias first if it exists

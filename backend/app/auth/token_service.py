@@ -7,10 +7,11 @@ Implements FedRAMP AC-12 compliant token management:
 - Session management through refresh token tracking
 
 Security Features:
-- Refresh tokens stored as SHA-256 hashes in database
+- Refresh tokens stored as SHA-512 hashes in database (FIPS 140-3 compliant)
 - JTI-based revocation via Redis with TTL = remaining token lifetime
 - Automatic cleanup of expired tokens
 - Rate limiting on token refresh operations
+- Dual JWT verification for FIPS 140-3 migration (HS512/HS256 fallback)
 """
 
 import hashlib
@@ -21,6 +22,7 @@ from datetime import timedelta
 from datetime import timezone
 from typing import Optional
 
+from jose import JWTError
 from jose import jwt
 from sqlalchemy.orm import Session
 
@@ -71,15 +73,124 @@ class TokenService:
     @staticmethod
     def _hash_token(token: str) -> str:
         """
-        Create SHA-256 hash of a token.
+        Hash token using SHA-512 for FIPS 140-3 compliance.
 
         Args:
             token: The token string to hash
 
         Returns:
-            64-character hex string of the SHA-256 hash
+            128-character hex string of the SHA-512 hash
         """
-        return hashlib.sha256(token.encode()).hexdigest()
+        return hashlib.sha512(token.encode()).hexdigest()
+
+    def verify_token_with_fallback(self, token: str) -> dict:
+        """
+        Verify JWT token with algorithm fallback for FIPS 140-3 migration.
+
+        Tries HS512 first (FIPS 140-3), falls back to HS256 (legacy).
+        This allows for seamless migration from legacy tokens to FIPS 140-3
+        compliant tokens without forcing all users to re-authenticate.
+
+        Args:
+            token: The JWT token string to verify
+
+        Returns:
+            The decoded token payload as a dictionary
+
+        Raises:
+            JWTError: If token verification fails with all algorithms
+        """
+        algorithms_to_try = []
+
+        # FIPS 140-3 uses HS512
+        if settings.FIPS_VERSION == "140-3":
+            algorithms_to_try = ["HS512", "HS256"]
+        else:
+            algorithms_to_try = ["HS256", "HS512"]
+
+        last_error = None
+        for algorithm in algorithms_to_try:
+            try:
+                payload = jwt.decode(
+                    token,
+                    settings.JWT_SECRET_KEY,
+                    algorithms=[algorithm],
+                )
+                return dict(payload)
+            except JWTError as e:
+                last_error = e
+                continue
+
+        raise last_error or JWTError("Token verification failed")
+
+    def create_token(
+        self,
+        data: dict,
+        expires_delta: Optional[timedelta] = None,
+        token_type: str = "access",  # noqa: S107 - JWT type identifier, not a password  # nosec B107
+    ) -> str:
+        """
+        Create JWT token with FIPS-compliant algorithm.
+
+        Creates a JWT token with the provided data and appropriate claims.
+        Uses HS512 algorithm when FIPS 140-3 mode is enabled, otherwise HS256.
+
+        Args:
+            data: Dictionary of claims to include in the token
+            expires_delta: Optional expiration time delta (default: 15 minutes)
+            token_type: Type of token ('access' or 'refresh')
+
+        Returns:
+            The encoded JWT token string
+        """
+        to_encode = data.copy()
+
+        if expires_delta:
+            expire = datetime.now(timezone.utc) + expires_delta
+        else:
+            expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+        to_encode.update(
+            {
+                "exp": expire,
+                "iat": datetime.now(timezone.utc),
+                "jti": str(uuid.uuid4()),
+                "type": token_type,
+            }
+        )
+
+        # Use FIPS 140-3 compliant algorithm
+        algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
+
+        return str(
+            jwt.encode(
+                to_encode,
+                settings.JWT_SECRET_KEY,
+                algorithm=algorithm,
+            )
+        )
+
+    def token_needs_upgrade(self, token: str) -> bool:
+        """
+        Check if token was issued with legacy algorithm and needs upgrade.
+
+        Used during migration to FIPS 140-3 to identify tokens that should
+        be re-issued with the new HS512 algorithm.
+
+        Args:
+            token: The JWT token string to check
+
+        Returns:
+            True if token is legacy (HS256) and system is in FIPS 140-3 mode,
+            False otherwise
+        """
+        try:
+            # Try to decode with HS256 only - if it works, token is legacy
+            jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+            # If we're in FIPS 140-3 mode, this token needs upgrade
+            return settings.FIPS_VERSION == "140-3"
+        except JWTError:
+            return False
 
     def create_refresh_token(
         self,
@@ -130,11 +241,12 @@ class TokenService:
             "type": "refresh",
         }
 
-        # Encode token
+        # Encode token with FIPS-compliant algorithm
+        algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
         token = jwt.encode(
             token_data,
             settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM,
+            algorithm=algorithm,
         )
 
         # Hash token for storage
@@ -183,12 +295,8 @@ class TokenService:
             Tuple of (payload_dict, RefreshToken model) if valid, (None, None) if invalid
         """
         try:
-            # Decode token
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM],
-            )
+            # Decode token with algorithm fallback for FIPS 140-3 migration
+            payload = self.verify_token_with_fallback(token)
 
             # Verify token type
             if payload.get("type") != "refresh":
@@ -441,7 +549,21 @@ class TokenService:
         Returns:
             Tuple of (new_token_string, new_RefreshToken model instance)
         """
-        # Revoke the old token first
+        # Create new refresh token FIRST (atomic safety: if this fails, user keeps old token)
+        new_token, new_token_record = self.create_refresh_token(
+            db=db,
+            user_id=user_id,
+            user_uuid=user_uuid,
+            role=role,
+            user_agent=user_agent,
+            ip_address=ip_address,
+        )
+
+        logger.info(
+            f"Issued new refresh token for user {user_id} (new_jti={new_token_record.jti[:8]}...)"
+        )
+
+        # Revoke the old token AFTER new token is created (safe if this fails - user has new token)
         old_jti = str(old_token_record.jti)
         old_expires = datetime(
             old_token_record.expires_at.year,
@@ -456,20 +578,6 @@ class TokenService:
         self.revoke_token(db, old_jti, old_expires)
 
         logger.info(f"Rotated out old refresh token for user {user_id} (old_jti={old_jti[:8]}...)")
-
-        # Create new refresh token
-        new_token, new_token_record = self.create_refresh_token(
-            db=db,
-            user_id=user_id,
-            user_uuid=user_uuid,
-            role=role,
-            user_agent=user_agent,
-            ip_address=ip_address,
-        )
-
-        logger.info(
-            f"Issued new refresh token for user {user_id} (new_jti={new_token_record.jti[:8]}...)"
-        )
 
         return new_token, new_token_record
 

@@ -118,11 +118,23 @@ PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTransc
 
 ### Step 3: Start with PKI Overlay
 
-```bash
-# Development mode with PKI
-docker compose -f docker-compose.yml -f docker-compose.pki.yml up -d --build
+**IMPORTANT:** PKI authentication requires production mode because it needs nginx with mTLS (mutual TLS) to verify client certificates. Dev mode uses Vite dev server which cannot handle client certificate verification.
 
-# OR Production mode with PKI (local images)
+**Recommended Method (using opentr.sh):**
+```bash
+# Production mode with PKI (test before push)
+./opentr.sh start prod --build --with-pki
+
+# Production mode with PKI (Docker Hub images)
+./opentr.sh start prod --with-pki
+```
+
+**Advanced Method (manual docker compose):**
+```bash
+# Production mode with PKI (local images)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d --build
+
+# Production mode with PKI (local images)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d --build
 ```
 

@@ -1,0 +1,135 @@
+/**
+ * API client for authentication configuration management.
+ */
+import { axiosInstance } from '../axios';
+
+export interface AuthConfigResponse {
+  id: number;
+  uuid: string;
+  config_key: string;
+  config_value: string | null;
+  is_sensitive: boolean;
+  category: string;
+  data_type: string;
+  description: string | null;
+  requires_restart: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthConfigAuditResponse {
+  id: number;
+  uuid: string;
+  config_key: string;
+  old_value: string | null;
+  new_value: string | null;
+  change_type: string;
+  ip_address: string | null;
+  created_at: string;
+}
+
+export interface AuthMethodTestResponse {
+  success: boolean;
+  message: string;
+  details?: Record<string, any>;
+}
+
+export interface LDAPConfig {
+  ldap_enabled: boolean;
+  ldap_server: string;
+  ldap_port: number;
+  ldap_use_ssl: boolean;
+  ldap_use_tls: boolean;
+  ldap_bind_dn: string;
+  ldap_bind_password?: string;
+  ldap_search_base: string;
+  ldap_username_attr: string;
+  ldap_email_attr: string;
+  ldap_name_attr: string;
+  ldap_user_search_filter: string;
+  ldap_timeout: number;
+  ldap_admin_users: string;
+  ldap_admin_groups: string;
+  ldap_user_groups: string;
+  ldap_recursive_groups: boolean;
+  ldap_group_attr: string;
+}
+
+export interface KeycloakConfig {
+  keycloak_enabled: boolean;
+  keycloak_server_url: string;
+  keycloak_internal_url: string;
+  keycloak_realm: string;
+  keycloak_client_id: string;
+  keycloak_client_secret?: string;
+  keycloak_callback_url: string;
+  keycloak_admin_role: string;
+  keycloak_timeout: number;
+  keycloak_verify_audience: boolean;
+  keycloak_audience: string;
+  keycloak_use_pkce: boolean;
+  keycloak_verify_issuer: boolean;
+}
+
+export interface PKIConfig {
+  pki_enabled: boolean;
+  pki_ca_cert_path: string;
+  pki_verify_revocation: boolean;
+  pki_cert_header: string;
+  pki_cert_dn_header: string;
+  pki_admin_dns: string;
+  pki_ocsp_timeout_seconds: number;
+  pki_crl_cache_seconds: number;
+  pki_revocation_soft_fail: boolean;
+  pki_trusted_proxies: string;
+  pki_mode: string;
+  pki_allow_password_fallback: boolean;
+}
+
+export interface SessionConfig {
+  jwt_access_token_expire_minutes: number;
+  jwt_refresh_token_expire_days: number;
+  session_idle_timeout_minutes: number;
+  session_absolute_timeout_minutes: number;
+  max_concurrent_sessions: number;
+  concurrent_session_policy: string;
+}
+
+export class AuthConfigApi {
+  static async getAllConfigs(): Promise<Record<string, AuthConfigResponse[]>> {
+    const response = await axiosInstance.get('/admin/auth-config');
+    return response.data;
+  }
+
+  static async getConfigByCategory(category: string): Promise<Record<string, any>> {
+    const response = await axiosInstance.get(`/admin/auth-config/${category}`);
+    return response.data;
+  }
+
+  static async updateCategory(category: string, config: Record<string, any>): Promise<void> {
+    await axiosInstance.put(`/admin/auth-config/${category}`, config);
+  }
+
+  static async testConnection(
+    category: string,
+    config: Record<string, any>
+  ): Promise<AuthMethodTestResponse> {
+    const response = await axiosInstance.post(`/admin/auth-config/${category}/test`, config);
+    return response.data;
+  }
+
+  static async getAuditLog(
+    category: string,
+    limit: number = 100
+  ): Promise<AuthConfigAuditResponse[]> {
+    const response = await axiosInstance.get(`/admin/auth-config/audit/${category}`, {
+      params: { limit },
+    });
+    return response.data;
+  }
+
+  static async migrateFromEnv(): Promise<{ migrated_count: number }> {
+    const response = await axiosInstance.post('/admin/auth-config/migrate');
+    return response.data;
+  }
+}

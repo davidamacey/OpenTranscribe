@@ -31,24 +31,27 @@ show_help() {
   echo "Usage: ./opentr.sh [command] [options]"
   echo ""
   echo "Basic Commands:"
-  echo "  start [dev|prod] [--build] [--pull] [--gpu-scale]  - Start the application (dev mode by default)"
-  echo "                                                        --build: Build prod images locally (test before push)"
-  echo "                                                        --pull:  Force pull prod images from Docker Hub"
-  echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
-  echo "  stop                                       - Stop OpenTranscribe containers"
-  echo "  status                                     - Show container status"
-  echo "  logs [service]                             - View logs (all services by default)"
+  echo "  start [dev|prod] [options]             - Start the application (dev mode by default)"
+  echo "  stop                                   - Stop OpenTranscribe containers"
+  echo "  status                                 - Show container status"
+  echo "  logs [service]                         - View logs (all services by default)"
+  echo ""
+  echo "Start/Reset Options:"
+  echo "  --build              - Build prod images locally (test before push)"
+  echo "  --pull               - Force pull prod images from Docker Hub"
+  echo "  --gpu-scale          - Enable multi-GPU worker scaling"
+  echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
+  echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
+  echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
   echo ""
   echo "Reset & Database Commands:"
-  echo "  reset [dev|prod] [--build] [--pull] [--gpu-scale]   - Reset and reinitialize (deletes all data!)"
-  echo "                                                        --build: Build prod images locally (test before push)"
-  echo "                                                        --pull:  Force pull prod images from Docker Hub"
-  echo "                                                        --gpu-scale: Enable multi-GPU worker scaling"
+  echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
+  echo "                                           (Accepts same options as 'start' command)"
   echo "  backup              - Create a database backup"
   echo "  restore [file]      - Restore database from backup"
   echo ""
   echo "Development Commands:"
-  echo "  restart-backend     - Restart backend, celery-worker, celery-beat & flower without database reset"
+  echo "  restart-backend     - Restart backend, all celery workers & flower without database reset"
   echo "  restart-frontend    - Restart frontend without affecting backend services"
   echo "  restart-all         - Restart all services without resetting database"
   echo "  rebuild-backend     - Rebuild and update backend services with code changes"
@@ -71,13 +74,16 @@ show_help() {
   echo "  See docs/NGINX_SETUP.md for full instructions"
   echo ""
   echo "Examples:"
-  echo "  ./opentr.sh start                    # Start in development mode"
-  echo "  ./opentr.sh start dev --gpu-scale    # Start with multi-GPU scaling enabled"
-  echo "  ./opentr.sh start prod               # Start in production mode (pulls from Docker Hub)"
-  echo "  ./opentr.sh start prod --build       # Test production build locally (before pushing)"
-  echo "  ./opentr.sh reset dev                # Reset development environment"
-  echo "  ./opentr.sh logs backend             # View backend logs"
-  echo "  ./opentr.sh restart-backend          # Restart backend services only"
+  echo "  ./opentr.sh start                            # Start in development mode"
+  echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling"
+  echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
+  echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
+  echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
+  echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
+  echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
+  echo "  ./opentr.sh reset dev                        # Reset development environment"
+  echo "  ./opentr.sh logs backend                     # View backend logs"
+  echo "  ./opentr.sh restart-backend                  # Restart backend services only"
   echo ""
 }
 
@@ -168,6 +174,9 @@ start_app() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   PULL_FLAG=""
+  WITH_PKI_FLAG=""
+  WITH_LDAP_TEST_FLAG=""
+  WITH_KEYCLOAK_TEST_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -183,12 +192,36 @@ start_app() {
         GPU_SCALE_FLAG="--gpu-scale"
         shift
         ;;
+      --with-pki)
+        WITH_PKI_FLAG="--with-pki"
+        shift
+        ;;
+      --with-ldap-test)
+        WITH_LDAP_TEST_FLAG="--with-ldap-test"
+        shift
+        ;;
+      --with-keycloak-test)
+        WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
       *)
         echo "⚠️  Unknown flag: $1"
         shift
         ;;
     esac
   done
+
+  # PKI requires production mode (nginx with mTLS)
+  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
+    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
+    echo "   Use: ./opentr.sh start prod --build --with-pki"
+    echo ""
+    echo "   PKI cannot work in dev mode because:"
+    echo "   - Dev mode uses Vite dev server (no nginx)"
+    echo "   - PKI requires nginx to verify client certificates (mTLS)"
+    echo "   - Certificate headers must be set by nginx, not the browser"
+    exit 1
+  fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
@@ -291,6 +324,65 @@ start_app() {
     fi
   fi
 
+  # Add PKI overlay if requested
+  if [ -n "$WITH_PKI_FLAG" ]; then
+    if [ -f "docker-compose.pki.yml" ]; then
+      # Check for PKI certificates
+      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
+        echo "⚠️  PKI certificates not found. Generating test certificates..."
+        ./scripts/pki/setup-test-pki.sh || {
+          echo "❌ Failed to generate PKI certificates"
+          exit 1
+        }
+      fi
+
+      # Check for server certificate
+      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
+        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
+        cd scripts/pki/test-certs/nginx || exit 1
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout server.key -out server.crt \
+          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
+          echo "❌ Failed to generate server certificate"
+          exit 1
+        }
+        cd - > /dev/null || exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
+      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
+      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
+      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
+    else
+      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
+    fi
+  fi
+
+  # Add LDAP test container if requested
+  if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
+    if [ -f "docker-compose.ldap-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
+      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
+      echo "   LDAP server: localhost:3890"
+      echo "   Web UI: http://localhost:17170"
+    else
+      echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
+    fi
+  fi
+
+  # Add Keycloak test container if requested
+  if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.keycloak.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.keycloak.yml"
+      echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
+      echo "   Keycloak URL: http://localhost:8180"
+      echo "   Admin credentials: admin / admin"
+    else
+      echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
   # Start services with appropriate compose files
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES up -d $BUILD_CMD
@@ -329,6 +421,9 @@ reset_and_init() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   PULL_FLAG=""
+  WITH_PKI_FLAG=""
+  WITH_LDAP_TEST_FLAG=""
+  WITH_KEYCLOAK_TEST_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -344,12 +439,36 @@ reset_and_init() {
         GPU_SCALE_FLAG="--gpu-scale"
         shift
         ;;
+      --with-pki)
+        WITH_PKI_FLAG="--with-pki"
+        shift
+        ;;
+      --with-ldap-test)
+        WITH_LDAP_TEST_FLAG="--with-ldap-test"
+        shift
+        ;;
+      --with-keycloak-test)
+        WITH_KEYCLOAK_TEST_FLAG="--with-keycloak-test"
+        shift
+        ;;
       *)
         echo "⚠️  Unknown flag: $1"
         shift
         ;;
     esac
   done
+
+  # PKI requires production mode (nginx with mTLS)
+  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
+    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
+    echo "   Use: ./opentr.sh reset prod --build --with-pki"
+    echo ""
+    echo "   PKI cannot work in dev mode because:"
+    echo "   - Dev mode uses Vite dev server (no nginx)"
+    echo "   - PKI requires nginx to verify client certificates (mTLS)"
+    echo "   - Certificate headers must be set by nginx, not the browser"
+    exit 1
+  fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale"
@@ -445,6 +564,65 @@ reset_and_init() {
     fi
   fi
 
+  # Add PKI overlay if requested
+  if [ -n "$WITH_PKI_FLAG" ]; then
+    if [ -f "docker-compose.pki.yml" ]; then
+      # Check for PKI certificates
+      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
+        echo "⚠️  PKI certificates not found. Generating test certificates..."
+        ./scripts/pki/setup-test-pki.sh || {
+          echo "❌ Failed to generate PKI certificates"
+          exit 1
+        }
+      fi
+
+      # Check for server certificate
+      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
+        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
+        cd scripts/pki/test-certs/nginx || exit 1
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout server.key -out server.crt \
+          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
+          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
+          echo "❌ Failed to generate server certificate"
+          exit 1
+        }
+        cd - > /dev/null || exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
+      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
+      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
+      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
+    else
+      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
+    fi
+  fi
+
+  # Add LDAP test container if requested
+  if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
+    if [ -f "docker-compose.ldap-test.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
+      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
+      echo "   LDAP server: localhost:3890"
+      echo "   Web UI: http://localhost:17170"
+    else
+      echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
+    fi
+  fi
+
+  # Add Keycloak test container if requested
+  if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
+    if [ -f "docker-compose.keycloak.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.keycloak.yml"
+      echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
+      echo "   Keycloak URL: http://localhost:8180"
+      echo "   Admin credentials: admin / admin"
+    else
+      echo "⚠️  --with-keycloak-test specified but docker-compose.keycloak.yml not found"
+    fi
+  fi
+
   echo "🛑 Stopping all containers and removing volumes..."
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES down -v
@@ -523,12 +701,23 @@ restore_database() {
   fi
 }
 
-# Function to restart backend services (backend, celery, flower) without database reset
+# Function to restart backend services (backend, all celery workers, flower) without database reset
 restart_backend() {
-  echo "🔄 Restarting backend services (backend, celery-worker, celery-beat, flower)..."
+  echo "🔄 Restarting backend services (backend, all celery workers, flower)..."
 
-  # Restart backend services in place
-  docker compose restart backend celery-worker celery-beat flower
+  # Restart backend and all celery services in place
+  # Note: celery-worker-gpu-scaled is optional (scale: 0 by default) so we ignore errors for it
+  docker compose restart backend \
+    celery-worker \
+    celery-download-worker \
+    celery-cpu-worker \
+    celery-nlp-worker \
+    celery-embedding-worker \
+    celery-beat \
+    flower 2>/dev/null
+
+  # Try to restart gpu-scaled worker if it exists (optional service)
+  docker compose restart celery-worker-gpu-scaled 2>/dev/null || true
 
   echo "✅ Backend services restarted successfully."
 

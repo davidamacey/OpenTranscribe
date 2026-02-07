@@ -1,4 +1,5 @@
 """Celery task for re-indexing transcripts with chunk-level embeddings."""
+
 import logging
 from typing import Any
 
@@ -269,8 +270,7 @@ def reindex_transcripts_task(
                     )
 
                     logger.info(
-                        f"Re-indexed file {file_uuid}: {chunk_count} chunks "
-                        f"({i + 1}/{len(files)})"
+                        f"Re-indexed file {file_uuid}: {chunk_count} chunks ({i + 1}/{len(files)})"
                     )
 
                 except Exception as e:

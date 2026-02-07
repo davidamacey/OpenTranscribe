@@ -4,6 +4,23 @@ Pydantic schemas for OpenTranscribe API.
 This package contains validation schemas for request/response models.
 """
 
+from .auth_config import AuthConfigAuditResponse
+from .auth_config import AuthConfigBase
+from .auth_config import AuthConfigCategoryResponse
+from .auth_config import AuthConfigCreate
+from .auth_config import AuthConfigResponse
+from .auth_config import AuthConfigStatusResponse
+from .auth_config import AuthConfigUpdate
+from .auth_config import AuthMethodTestRequest
+from .auth_config import AuthMethodTestResponse
+from .auth_config import BulkConfigUpdate
+from .auth_config import KeycloakConfig
+from .auth_config import LDAPConfig
+from .auth_config import LoginBannerConfig
+from .auth_config import MFAConfig
+from .auth_config import PasswordPolicyConfig
+from .auth_config import PKIConfig
+from .auth_config import SessionConfig
 from .llm_settings import ConnectionStatus
 from .llm_settings import ConnectionTestRequest
 from .llm_settings import ConnectionTestResponse
@@ -108,4 +125,22 @@ __all__ = [
     "TranscriptionSettings",
     "TranscriptionSettingsUpdate",
     "TranscriptionSystemDefaults",
+    # Auth config schemas
+    "AuthConfigBase",
+    "AuthConfigCreate",
+    "AuthConfigUpdate",
+    "AuthConfigResponse",
+    "AuthConfigAuditResponse",
+    "AuthConfigCategoryResponse",
+    "AuthConfigStatusResponse",
+    "AuthMethodTestRequest",
+    "AuthMethodTestResponse",
+    "BulkConfigUpdate",
+    "LDAPConfig",
+    "KeycloakConfig",
+    "PKIConfig",
+    "PasswordPolicyConfig",
+    "MFAConfig",
+    "SessionConfig",
+    "LoginBannerConfig",
 ]

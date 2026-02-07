@@ -242,6 +242,11 @@ async def _initialize_neural_search():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
+    if os.environ.get("TESTING", "").lower() == "true":
+        logger.info("Test mode: skipping startup tasks")
+        yield
+        return
+
     logger.info("Starting application...")
     _validate_production_secrets()
 

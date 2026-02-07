@@ -80,6 +80,55 @@ CREATE INDEX IF NOT EXISTS idx_password_history_uuid ON password_history(uuid);
 CREATE INDEX IF NOT EXISTS idx_password_history_user_id ON password_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_password_history_created_at ON password_history(created_at);
 
+-- Authentication Configuration (Super Admin UI)
+CREATE TABLE IF NOT EXISTS auth_config (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    config_key VARCHAR(100) UNIQUE NOT NULL,
+    config_value TEXT NULL,
+    is_sensitive BOOLEAN DEFAULT FALSE,
+    category VARCHAR(50) NOT NULL,
+    data_type VARCHAR(20) DEFAULT 'string',
+    description TEXT NULL,
+    requires_restart BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_by INTEGER REFERENCES "user"(id),
+    updated_by INTEGER REFERENCES "user"(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_config_category ON auth_config(category);
+CREATE INDEX IF NOT EXISTS idx_auth_config_key ON auth_config(config_key);
+
+-- Authentication Configuration Audit Log
+CREATE TABLE IF NOT EXISTS auth_config_audit (
+    id SERIAL PRIMARY KEY,
+    uuid UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    config_key VARCHAR(100) NOT NULL,
+    old_value TEXT NULL,
+    new_value TEXT NULL,
+    changed_by INTEGER NOT NULL REFERENCES "user"(id),
+    change_type VARCHAR(20) NOT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent VARCHAR(512) NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_config_audit_key ON auth_config_audit(config_key);
+CREATE INDEX IF NOT EXISTS idx_auth_config_audit_created ON auth_config_audit(created_at);
+
+-- User Certificate Preferences
+CREATE TABLE IF NOT EXISTS user_certificate_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    show_cert_badge BOOLEAN DEFAULT TRUE,
+    show_cert_in_profile BOOLEAN DEFAULT TRUE,
+    show_expiration_warnings BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id)
+);
+
 -- Media files table
 CREATE TABLE IF NOT EXISTS media_file (
     id SERIAL PRIMARY KEY,
@@ -833,6 +882,73 @@ INSERT INTO summary_prompt (name, description, prompt_text, is_system_default, c
 ('Interview & Podcast Style', 'Designed for interviews, podcasts, and conversational content', 'INTERVIEW_PROMPT_HERE', TRUE, 'interview', TRUE),
 ('Documentary & Educational', 'Tailored for documentaries, lectures, and educational content', 'DOCUMENTARY_PROMPT_HERE', TRUE, 'documentary', TRUE);
 */
+
+-- ========================================
+-- Authentication System Enhancements
+-- ========================================
+-- These modifications support super_admin role, PKI certificate metadata,
+-- and FIPS 140-3 compliant token storage
+
+-- Update role constraint to include 'super_admin'
+-- Note: For fresh installs, the constraint is already in the CREATE TABLE
+-- This handles existing databases that need the constraint updated
+DO $$
+BEGIN
+    -- Drop existing constraint if it exists
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'users_role_check'
+        AND conrelid = '"user"'::regclass
+    ) THEN
+        ALTER TABLE "user" DROP CONSTRAINT users_role_check;
+    END IF;
+
+    -- Add the updated constraint with super_admin
+    ALTER TABLE "user" ADD CONSTRAINT users_role_check
+        CHECK (role IN ('user', 'admin', 'super_admin'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Certificate metadata columns for PKI users
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_serial_number VARCHAR(128);
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_issuer_dn VARCHAR(512);
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_organization VARCHAR(256);
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_organizational_unit VARCHAR(256);
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_cert_valid_from TIMESTAMP WITH TIME ZONE;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_cert_valid_until TIMESTAMP WITH TIME ZONE;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_cert_fingerprint VARCHAR(128);
+
+-- Expand token_hash for SHA-512 (FIPS 140-3 compliance)
+-- Note: This changes from VARCHAR(64) to VARCHAR(128) to accommodate SHA-512 hashes
+ALTER TABLE refresh_token ALTER COLUMN token_hash TYPE VARCHAR(128);
+
+-- PKI common name column for display purposes
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_common_name VARCHAR(256);
+
+-- PKI fingerprint SHA-256 column for secure certificate identification
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS pki_fingerprint_sha256 VARCHAR(64);
+
+-- PKI lookup indexes (FedRAMP security enhancement)
+CREATE INDEX IF NOT EXISTS idx_user_pki_fingerprint_sha256 ON "user" (pki_fingerprint_sha256);
+CREATE INDEX IF NOT EXISTS idx_user_pki_issuer_dn ON "user" (pki_issuer_dn);
+
+-- Certificate uniqueness constraint (prevents duplicate cert registrations)
+-- Note: DEFERRABLE allows bulk imports that temporarily violate constraint
+-- Using DO block to handle IF NOT EXISTS since PostgreSQL doesn't support it directly for constraints
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'user_pki_cert_unique'
+        AND conrelid = '"user"'::regclass
+    ) THEN
+        ALTER TABLE "user" ADD CONSTRAINT user_pki_cert_unique
+            UNIQUE (pki_serial_number, pki_issuer_dn) DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Insert default admin user (admin@example.com / password)
 INSERT INTO "user" (email, hashed_password, full_name, is_active, is_superuser, role, created_at, updated_at)

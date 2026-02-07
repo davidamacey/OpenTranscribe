@@ -358,10 +358,14 @@ def _handle_successful_login(
     record.last_failed_attempt = None
     record.admin_unlocked_at = None
 
-    pipe = store.pipeline()
     ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
-    pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
-    pipe.execute()
+    pipe = store.pipeline(True)  # Transaction mode
+    try:
+        pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
+        pipe.execute()
+    except Exception:
+        pipe.reset()
+        raise
     return False, None
 
 
@@ -424,10 +428,14 @@ def _handle_failed_login(
 
     is_locked, unlock_time = _check_lockout_threshold(record, now, identifier)
 
-    pipe = store.pipeline()
     ttl = (settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES + 1440) * 60
-    pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
-    pipe.execute()
+    pipe = store.pipeline(True)  # Transaction mode
+    try:
+        pipe.set(key, json.dumps(record.to_dict()), ex=ttl)
+        pipe.execute()
+    except Exception:
+        pipe.reset()
+        raise
     return is_locked, unlock_time
 
 

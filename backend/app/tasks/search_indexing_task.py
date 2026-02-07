@@ -1,4 +1,5 @@
 """Celery task for search indexing after transcription completion."""
+
 import logging
 import time
 from typing import Any

@@ -169,8 +169,8 @@ def _run_ffmpeg(ffmpeg_cmd: list[str], file_id: int) -> None:
 
     # Using validated ffmpeg executable path with internally generated file paths
     # All paths are validated/sanitized by _validate_ffmpeg_paths() - not user input
-    result = subprocess.run(
-        ffmpeg_cmd,  # noqa: S603 # nosec B603 - validated paths, not user input
+    result = subprocess.run(  # noqa: S603 - validated paths, not user input
+        ffmpeg_cmd,  # nosec B603
         capture_output=True,
         text=True,
         timeout=300,
@@ -603,8 +603,8 @@ class VideoProcessingService:
 
             # Using validated ffmpeg executable path from shutil.which() with hardcoded -version flag
             # No user input involved - only checking if ffmpeg is available on the system
-            result = subprocess.run(
-                [ffmpeg_path, "-version"],  # noqa: S603 # nosec B603 - hardcoded, no user input
+            result = subprocess.run(  # noqa: S603 - hardcoded, no user input
+                [ffmpeg_path, "-version"],  # nosec B603
                 capture_output=True,
                 text=True,
                 timeout=10,

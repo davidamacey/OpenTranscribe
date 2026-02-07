@@ -41,6 +41,18 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path,
         },
+        // MinIO proxy for presigned URLs (secure media streaming)
+        // Use VITE_MINIO_URL env var for remote dev (e.g., Mac -> Linux server)
+        // Default: http://minio:9000 (Docker internal, works when frontend runs in Docker)
+        '/minio': {
+          target: env.VITE_MINIO_URL || 'http://minio:9000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/minio/, ''),
+          // Set Host header to match what MinIO signed the URL with
+          headers: {
+            Host: 'minio:9000',
+          },
+        },
       },
       // Add historyApiFallback to handle client-side routing
       fs: {

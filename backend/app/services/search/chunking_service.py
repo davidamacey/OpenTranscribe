@@ -1,4 +1,5 @@
 """Transcript chunking service for search indexing."""
+
 import logging
 from typing import Any
 

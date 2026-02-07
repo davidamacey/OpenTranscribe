@@ -255,8 +255,8 @@ def extract_media_metadata(file_path: str) -> Optional[dict[str, Any]]:
             # Security: file_path is validated and originates from internal MinIO storage,
             # not direct user input. The file has been uploaded to our controlled storage
             # system and the path is generated internally by the application.
-            exif_process = subprocess.run(
-                ["exiftool", "-json", "-n", file_path],  # noqa: S603 S607 # nosec B603 B607 - validated MinIO path
+            exif_process = subprocess.run(  # noqa: S603 - validated MinIO path, not user input
+                ["exiftool", "-json", "-n", file_path],  # noqa: S607 # nosec B603 B607
                 capture_output=True,
                 text=True,
                 check=True,

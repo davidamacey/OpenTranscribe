@@ -2,12 +2,36 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: Local Code vs Docker Hub Images
+
+**When developing and testing, you MUST use locally built Docker images, NOT Docker Hub images.** The Docker Hub images contain older compiled code and will NOT include your local changes. This applies to BOTH frontend AND backend containers.
+
+**Before testing ANY code changes:**
+```bash
+# Rebuild frontend from local code
+docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/
+
+# Rebuild backend from local code
+docker build -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
+
+# Restart changed services
+docker stop opentranscribe-frontend && docker rm opentranscribe-frontend
+docker stop opentranscribe-backend && docker rm opentranscribe-backend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.nginx.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d --no-deps --force-recreate frontend backend
+```
+
+**Why this matters:**
+- `docker-compose.prod.yml` uses the Docker Hub image tag (`davidamacey/opentranscribe-*:latest`)
+- `docker-compose.local.yml` sets `pull_policy: never` but does NOT mount local source code
+- The `docker-compose.override.yml` (dev mode with Vite/hot-reload) is NOT loaded when using explicit `-f` flags
+- **If you see 404 errors on API endpoints or missing UI features, the container is running old Docker Hub code**
+
 ## Project Architecture
 
 OpenTranscribe is a containerized AI-powered transcription application with these core services:
 - **Frontend**: Svelte/TypeScript SPA with Progressive Web App capabilities
 - **Backend**: FastAPI with async support and OpenAPI documentation
-- **Database**: PostgreSQL with SQLAlchemy ORM (no migrations during development)
+- **Database**: PostgreSQL with SQLAlchemy ORM and Alembic migrations
 - **Storage**: MinIO S3-compatible object storage
 - **Search**: OpenSearch 3.4.0 (Apache Lucene 10) for full-text and vector search
 - **Queue**: Celery with Redis for background AI processing
@@ -94,6 +118,71 @@ docker compose logs -f celery-worker-gpu-scaled
 
 **Scaling**: Simply change `GPU_SCALE_WORKERS` in your `.env` file to adjust the number of concurrent workers (e.g., 2, 4, 6, 8) based on your GPU's memory and processing capacity.
 
+### Authentication Method Deployment
+
+OpenTranscribe supports multiple authentication methods. Use these commands to deploy with specific auth configurations:
+
+**PKI Certificate Authentication (Production Only):**
+```bash
+# Production with PKI (test before push)
+./opentr.sh start prod --build --with-pki
+
+# Production with PKI (Docker Hub images)
+./opentr.sh start prod --with-pki
+
+# Access: https://localhost:5182
+# Requires client certificate (.p12 files in scripts/pki/test-certs/clients/)
+
+# Note: PKI requires nginx with mTLS and only works in production mode
+# Dev mode uses Vite dev server which cannot handle client certificate verification
+```
+
+**LDAP/Active Directory Testing:**
+```bash
+# Development with LDAP test container
+./opentr.sh start dev --with-ldap-test
+
+# Production with LDAP test container (test before push)
+./opentr.sh start prod --build --with-ldap-test
+
+# LDAP server: localhost:3890
+# Web UI: http://localhost:17170
+# Admin: admin / admin_password
+```
+
+**Keycloak/OIDC Testing:**
+```bash
+# Development with Keycloak test container
+./opentr.sh start dev --with-keycloak-test
+
+# Production with Keycloak test container (test before push)
+./opentr.sh start prod --build --with-keycloak-test
+
+# Keycloak URL: http://localhost:8180
+# Admin credentials: admin / admin
+```
+
+**Combined Authentication Methods:**
+```bash
+# LDAP + Keycloak testing (dev mode)
+./opentr.sh start dev --with-ldap-test --with-keycloak-test
+
+# All auth methods including PKI (production only)
+./opentr.sh start prod --build --with-pki --with-ldap-test --with-keycloak-test
+```
+
+**Configuration Notes:**
+- Configure auth methods via Admin UI: Settings → Authentication
+- Database configuration takes precedence over `.env` variables
+- PKI requires nginx with mTLS (automatically enabled with `--with-pki`)
+- LDAP/Keycloak test containers are for development only
+- Production deployments should connect to organization's AD/Keycloak servers
+
+**Documentation:**
+- PKI Setup: `docs/PKI_SETUP.md`
+- LDAP/AD Setup: `docs/LDAP_AUTH.md`
+- Keycloak Setup: `docs/KEYCLOAK_SETUP.md`
+
 ### Docker Build & Push (Production Images)
 
 Build and push production Docker images to Docker Hub:
@@ -117,23 +206,42 @@ See [scripts/README.md](scripts/README.md) for detailed documentation.
 
 ### Local Development Builds (No Docker Hub Push)
 
-When making code changes and testing locally without pushing to Docker Hub:
+**CRITICAL: Production/nginx testing always requires locally built images.** The Docker Hub images contain older compiled code. When running with prod overlays (`docker-compose.prod.yml`, `docker-compose.nginx.yml`, `docker-compose.pki.yml`), the frontend serves pre-compiled static assets from the Docker image — NOT the local source code. You **must** rebuild locally after any frontend or backend code changes.
 
 ```bash
-# Build backend image locally (always use --no-cache for code changes)
-cd ~/prj/src/OpenTranscribe
-docker build --no-cache -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
+# Build backend image locally
+docker build -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend/
 
-# Restart production with local image (use docker-compose.local.yml to prevent pulling)
-cd ~/prj/opentranscribe
+# Build frontend image locally
+docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/
+
+# Restart with local images (use docker-compose.local.yml to prevent pulling)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml up -d --force-recreate
 ```
 
-**Important:**
-- `--no-cache` is required because Docker may cache the COPY layer even when files changed
-- `--force-recreate` ensures containers use the new image
+**When using PKI/nginx overlays**, rebuild and recreate only the frontend:
+```bash
+docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/
+docker stop opentranscribe-frontend && docker rm opentranscribe-frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.nginx.yml -f docker-compose.local.yml -f docker-compose.pki.yml up -d --no-deps --force-recreate frontend
+```
+
+**Important - Docker Build Caching:**
+- Docker uses content hashing for COPY layers - if file content hasn't changed, the layer is cached
+- If code changes aren't being picked up, touch a file or add a comment to invalidate the cache:
+  ```bash
+  echo "<!-- Build: $(date +%s) -->" >> frontend/src/components/SomeFile.svelte
+  docker build -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend/
+  ```
+- **Avoid `--no-cache`** for routine builds - it rebuilds everything including `npm ci` which is slow
+- Only use `--no-cache` when dependencies change or you suspect deep caching issues
+
+**Important - Local vs Docker Hub Images:**
 - `docker-compose.local.yml` sets `pull_policy: never` to prevent overwriting local images with Docker Hub versions
-- Never use `./opentranscribe.sh update` with local builds (it pulls from Docker Hub)
+- `--force-recreate` ensures containers use the new image
+- **Never use `./opentranscribe.sh update` with local builds** (it pulls from Docker Hub)
+- When testing local code changes, always use the local compose overlay
+- **The `docker-compose.override.yml` (dev Vite server) is NOT loaded when using explicit `-f` flags** — only the specified files are used
 
 ### Frontend Development
 ```bash
@@ -142,6 +250,109 @@ npm run dev          # Start dev server
 npm run build        # Production build
 npm run check        # Type checking
 ```
+
+### Browser Automation (Claude Code)
+
+System-wide Playwright browser automation for testing and debugging. Claude Code can use this to interact with the frontend, capture screenshots, see console errors, and automate UI testing.
+
+**Location:** `~/bin/browser-tools/` (see `~/bin/browser-tools/README.md` for full docs)
+
+**Setup (one-time):**
+```bash
+sudo npm install -g playwright
+npx playwright install chromium
+cd ~/bin/browser-tools && npm install
+```
+
+**Usage:**
+```bash
+# Basic - open URL, screenshot, check for errors
+node ~/bin/browser-tools/browse.js http://localhost:5173
+
+# With visible browser on XRDP (display :13)
+node ~/bin/browser-tools/browse.js http://localhost:5173 --display=:13
+
+# Login flow example
+node ~/bin/browser-tools/browse.js http://localhost:5173 --display=:13 \
+  'fill:#email:admin@example.com' \
+  'fill:#password:password' \
+  'click:button[type=submit]' \
+  'wait:2000' \
+  'screenshot:after-login'
+```
+
+**Actions:**
+| Action | Description |
+|--------|-------------|
+| `fill:<selector>:<value>` | Fill input field |
+| `click:<selector>` | Click element |
+| `screenshot:<name>` | Save screenshot |
+| `wait:<ms>` | Wait milliseconds |
+| `waitfor:<selector>` | Wait for element |
+| `eval:<javascript>` | Execute JS, print result |
+| `title` | Print page title |
+| `text` | Print page text |
+
+**Options:**
+- `--display=:13` - Show browser on XRDP display (user can watch)
+- `--keep` - Keep browser open after actions
+- `--timeout=30000` - Navigation timeout
+
+**Screenshots saved to:** `~/bin/browser-tools/screenshots/`
+
+**Test credentials:** `admin@example.com` / `password`
+
+### E2E Testing (pytest + Playwright)
+
+End-to-end tests that verify frontend and backend work together through real browser automation.
+
+**Location:** `backend/tests/e2e/`
+
+**Test Files:**
+- `conftest.py` - Fixtures (login_page, authenticated_page, auth_helper, api_helper)
+- `test_login.py` - Comprehensive login tests (~50 tests)
+- `test_registration.py` - Comprehensive registration tests (~35 tests)
+- `test_auth_flow.py` - Combined auth flow tests
+
+**Running E2E Tests:**
+```bash
+# Activate venv first
+source backend/venv/bin/activate
+
+# Run all E2E tests (headless - fast)
+pytest backend/tests/e2e/ -v
+
+# Run with visible browser on XRDP (watch the tests)
+DISPLAY=:13 pytest backend/tests/e2e/ -v --headed
+
+# Run specific test file
+pytest backend/tests/e2e/test_login.py -v
+
+# Run specific test class
+pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v --headed
+
+# Run with screenshots on failure
+pytest backend/tests/e2e/ -v --screenshot only-on-failure
+```
+
+**Test Categories:**
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| Login | ~50 | Form validation, success/failure, security, session, UI |
+| Registration | ~35 | All fields, username/email/password validation, duplicates |
+| Auth Flow | ~15 | Login → use app → logout, session persistence |
+
+**Requirements:**
+- Dev environment running (`./opentr.sh start dev`)
+- Frontend at `localhost:5173`
+- Backend at `localhost:5174`
+- pytest-playwright installed (`pip install pytest-playwright`)
+
+**Fixtures Available:**
+- `login_page` - Page navigated to login, ready for input
+- `authenticated_page` - Already logged in as admin
+- `auth_helper` - Helper for login/logout/register operations
+- `api_helper` - Helper for backend API calls during tests
 
 ### Backend Development
 ```bash
@@ -197,16 +408,66 @@ pip install pre-commit mypy ruff bandit
 
 ## Database Management
 
-**IMPORTANT**: During development, do NOT create Alembic migrations. Instead:
-1. Update `database/init_db.sql` directly
-2. Update SQLAlchemy models in `backend/app/models/`
-3. Update Pydantic schemas in `backend/app/schemas/`
-4. Reset the development database: `./opentr.sh reset dev`
+OpenTranscribe uses **Alembic migrations** for all database schema changes. Migrations run automatically on backend startup, ensuring existing user data is preserved during upgrades.
 
-For production deployments, the backend now includes an **automatic migration system** that runs on startup:
-- Migrations are located in `backend/app/db/migrations.py`
-- Fresh installs, upgrades from v0.1.0, and already-tracked databases are handled automatically
-- No manual migration commands required for normal operation
+### Adding Schema Changes (The Standard Process)
+
+When you need to add columns, indexes, or constraints:
+
+1. **Create an Alembic migration** in `backend/alembic/versions/`:
+   ```python
+   # Example: backend/alembic/versions/v070_add_pki_security_enhancements.py
+   revision = "v070_add_pki_security_enhancements"
+   down_revision = "v060_add_transcript_overlap"  # Previous migration
+
+   def upgrade():
+       # Use idempotent SQL (IF NOT EXISTS) to be safe
+       op.execute("""
+           DO $$
+           BEGIN
+               IF NOT EXISTS (
+                   SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'user' AND column_name = 'new_column'
+               ) THEN
+                   ALTER TABLE "user" ADD COLUMN new_column VARCHAR(256);
+               END IF;
+           END $$;
+       """)
+
+   def downgrade():
+       op.execute('ALTER TABLE "user" DROP COLUMN IF EXISTS new_column')
+   ```
+
+2. **Update SQLAlchemy models** in `backend/app/models/` to match
+
+3. **Update Pydantic schemas** in `backend/app/schemas/` if needed
+
+4. **Update `database/init_db.sql`** for fresh installs (add the same columns/indexes)
+
+5. **Update migration detection** in `backend/app/db/migrations.py`:
+   - Add detection logic for the new schema version
+   - Update the latest version check
+
+### Migration Files
+
+| File | Purpose |
+|------|---------|
+| `backend/alembic/versions/*.py` | Alembic migrations (versioned, run on existing DBs) |
+| `backend/app/db/migrations.py` | Auto-detection and startup runner |
+| `database/init_db.sql` | Fresh install schema (used by `./opentr.sh reset dev`) |
+
+### How Migrations Run
+
+On backend startup, `migrations.py` automatically:
+1. Detects current database schema version
+2. Stamps untracked databases with the appropriate version
+3. Runs any pending Alembic migrations to bring DB to current version
+
+### Development Workflow
+
+- **Testing schema changes**: Use `./opentr.sh reset dev` (deletes data, uses init_db.sql)
+- **Testing migrations**: Rebuild backend and restart (migrations run on startup)
+- **Production upgrades**: Just restart the backend - migrations apply automatically
 
 ## Code Organization Patterns
 
@@ -281,12 +542,46 @@ backend/app/auth/
 
 ## Development Guidelines
 
+### Production Quality Standards
+This is a professional production application. All code must meet production-quality standards:
+- **No cheating or workarounds**: Every feature must work correctly end-to-end. No skipping validation, no placeholder implementations, no "good enough" shortcuts
+- **No mocking in production code**: Mocks are only acceptable in test fixtures. Production code paths must use real implementations
+- **Industry standards compliance**: All security features (MFA, authentication, encryption) must follow established RFCs and industry standards (e.g., RFC 6238 for TOTP, RFC 4226 for HOTP)
+- **Real integration testing**: If a test requires external services (Redis, PostgreSQL, OpenSearch), run the test against real services or clearly document the dependency. Do not silently skip critical test paths
+- **Authenticator app compatibility**: MFA/TOTP must be compatible with standard authenticator apps (Google Authenticator, Microsoft Authenticator, Authy, etc.)
+
 ### Code Quality
 - Keep files under 200-300 lines
 - Use Google-style docstrings for Python code
 - Follow existing patterns before creating new ones
 - Always check for TypeScript errors
 - Ensure light/dark mode compliance for frontend changes
+
+### Frontend Build Verification
+
+A pre-commit hook automatically runs `svelte-check` and `vite build` when frontend source files are modified.
+
+**Behavior:**
+- Only triggers when `.svelte`, `.ts`, `.js`, `.css`, or `.html` files under `frontend/src/` are staged
+- Runs `svelte-check --threshold warning` (fails on both errors and warnings)
+- Runs `vite build` to verify the production build succeeds
+- If Claude CLI is available, attempts automatic fixes on failure
+- Falls back to showing error output if Claude is unavailable or cannot fix
+
+**Manual usage:**
+```bash
+# Run the frontend check script directly
+./scripts/frontend-check.sh
+
+# Run without Claude auto-fix
+./scripts/frontend-check.sh --no-claude
+
+# Run only svelte-check (skip build, faster)
+./scripts/frontend-check.sh --check-only
+
+# Use Claude Code skill to fix frontend errors (inside a Claude Code session)
+/fix-frontend
+```
 
 ### Docker and Services
 - Use `docker compose` (not `docker-compose`)
@@ -320,7 +615,7 @@ backend/app/auth/
 
 ### Important File Locations
 - Environment config: `.env` (never overwrite without confirmation)
-- Environment template: `.env.example` (template for all installations)
+- Environment template: `.env.example` (freely editable - keep in sync when adding new env vars)
 - Database init: `database/init_db.sql`
 - Docker base config: `docker-compose.yml` (common to all environments)
 - Docker dev config: `docker-compose.override.yml` (auto-loaded in dev)

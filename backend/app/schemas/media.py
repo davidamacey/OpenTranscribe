@@ -245,9 +245,9 @@ class TranscriptSegment(TranscriptSegmentBase, UUIDBaseSchema):
     # Formatted fields for frontend display
     formatted_timestamp: Optional[str] = None  # e.g., "0:45.2"
     display_timestamp: Optional[str] = None  # e.g., "0:45.2" for transcript UI
-    speaker_label: Optional[
-        str
-    ] = None  # ALWAYS original speaker ID (e.g., "SPEAKER_01") for color consistency
+    speaker_label: Optional[str] = (
+        None  # ALWAYS original speaker ID (e.g., "SPEAKER_01") for color consistency
+    )
     resolved_speaker_name: Optional[str] = None  # Display name (user label or original ID)
 
 

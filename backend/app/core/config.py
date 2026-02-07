@@ -110,6 +110,21 @@ class Settings(BaseSettings):
     # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
     PBKDF2_ITERATIONS: int = int(os.getenv("PBKDF2_ITERATIONS", "210000"))
 
+    # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
+    FIPS_VERSION: str = os.getenv("FIPS_VERSION", "140-3")  # "140-2" or "140-3"
+    PBKDF2_ITERATIONS_V3: int = int(
+        os.getenv("PBKDF2_ITERATIONS_V3", "600000")
+    )  # NIST SP 800-132 2024
+    JWT_ALGORITHM_V3: str = os.getenv("JWT_ALGORITHM_V3", "HS512")
+    ENCRYPTION_ALGORITHM_V3: str = os.getenv("ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")
+    FIPS_MIGRATION_MODE: str = os.getenv(
+        "FIPS_MIGRATION_MODE", "compatible"
+    )  # "compatible" or "strict"
+    FIPS_VALIDATE_ENTROPY: bool = os.getenv("FIPS_VALIDATE_ENTROPY", "true").lower() == "true"
+    TOTP_ALGORITHM: str = os.getenv(
+        "TOTP_ALGORITHM", "SHA1"
+    )  # SHA1, SHA256, SHA512 (SHA1 for app compatibility)
+
     # ===== Password Policy (FedRAMP IA-5) =====
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
@@ -171,6 +186,13 @@ class Settings(BaseSettings):
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
     AUDIT_LOG_RETENTION_DAYS: int = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365"))
+    # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
+    AUDIT_LOG_FALLBACK_ENABLED: bool = (
+        os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
+    )
+    AUDIT_LOG_FALLBACK_PATH: str = os.getenv(
+        "AUDIT_LOG_FALLBACK_PATH", "/var/log/opentranscribe/audit-fallback.jsonl"
+    )
 
     # ===== Login Banner (FedRAMP AC-8) =====
     LOGIN_BANNER_ENABLED: bool = os.getenv("LOGIN_BANNER_ENABLED", "false").lower() == "true"
@@ -184,7 +206,13 @@ class Settings(BaseSettings):
     )
 
     # ===== Concurrent Session Limits (FedRAMP AC-10) =====
-    MAX_CONCURRENT_SESSIONS: int = int(os.getenv("MAX_CONCURRENT_SESSIONS", "0"))  # 0 = unlimited
+    MAX_CONCURRENT_SESSIONS: int = int(os.getenv("MAX_CONCURRENT_SESSIONS", "5"))  # 0 = unlimited
+    CONCURRENT_SESSION_POLICY: str = os.getenv(
+        "CONCURRENT_SESSION_POLICY", "terminate_oldest"
+    )  # or "reject"
+
+    # ===== Super Admin Bootstrap =====
+    BOOTSTRAP_SUPER_ADMIN_EMAIL: str = os.getenv("BOOTSTRAP_SUPER_ADMIN_EMAIL", "")
 
     # Encryption settings for sensitive data (API keys, etc.)
     ENCRYPTION_KEY: str = os.getenv(
@@ -209,6 +237,15 @@ class Settings(BaseSettings):
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
     MINIO_SECURE: bool = False  # Use HTTPS for MinIO
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
+
+    # Presigned URL expiration settings (AWS/GCS best practices: shortest practical time)
+    # Video URLs: 5 minutes default - refreshed automatically for long playback
+    MEDIA_URL_EXPIRE_SECONDS: int = int(os.getenv("MEDIA_URL_EXPIRE_SECONDS", "300"))
+    # Thumbnail URLs: 15 minutes default - longer since they're static images
+    THUMBNAIL_URL_EXPIRE_SECONDS: int = int(os.getenv("THUMBNAIL_URL_EXPIRE_SECONDS", "900"))
+    # Public URL for presigned URLs (how browsers access MinIO)
+    # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
+    MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")
 
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
@@ -285,13 +322,29 @@ class Settings(BaseSettings):
         """Validate that required fields are set when authentication features are enabled.
 
         Delegates to helper functions for each authentication type.
+        Also validates JWT key security settings.
 
         Raises:
             ValueError: If a required field is missing when its feature is enabled.
         """
+        import warnings
+
         _validate_ldap_settings(self)
         _validate_keycloak_settings(self)
         _validate_pki_settings(self)
+
+        # Warn if using the default JWT_SECRET_KEY
+        if self.JWT_SECRET_KEY == "this_should_be_changed_in_production":  # noqa: S105 - checking for default value  # nosec B105
+            warnings.warn("SECURITY: Using default JWT_SECRET_KEY!", RuntimeWarning, stacklevel=2)
+
+        # Warn if JWT key is too short for HS512 in FIPS 140-3 mode
+        if self.FIPS_VERSION == "140-3" and len(self.JWT_SECRET_KEY) < 64:
+            warnings.warn(
+                f"JWT_SECRET_KEY is {len(self.JWT_SECRET_KEY)} bytes but HS512 requires 64+ bytes",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
         return self
 
     # Hardware Detection Settings (auto-detected by default)
@@ -390,6 +443,13 @@ class Settings(BaseSettings):
     MFA_BACKUP_CODE_COUNT: int = int(os.getenv("MFA_BACKUP_CODE_COUNT", "10"))
     # MFA token expiry in minutes (short-lived token for MFA verification step)
     MFA_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("MFA_TOKEN_EXPIRE_MINUTES", "5"))
+    # TOTP verification window (number of time steps before/after to accept)
+    # 1 = allow 1 step before/after for clock drift (±30 seconds)
+    TOTP_VALID_WINDOW: int = int(os.getenv("TOTP_VALID_WINDOW", "1"))
+    # Require Redis for MFA token blacklist (fail-secure mode)
+    # When true, MFA verification fails if Redis is unavailable
+    # When false, logs warning but allows MFA (reduced replay protection)
+    MFA_REQUIRE_REDIS: bool = os.getenv("MFA_REQUIRE_REDIS", "false").lower() == "true"
 
     # ===== PKI/X.509 Certificate Configuration =====
     PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
@@ -513,6 +573,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Ignore env vars not defined in Settings (e.g., from docker-compose)
 
 
 settings = Settings()

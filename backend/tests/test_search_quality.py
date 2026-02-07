@@ -14,12 +14,22 @@ These tests validate search behavior against a real dataset:
 - Apollo 11 (47 chunks)
 - Scam Factories (46 chunks)
 - And more (20 files total)
+
+NOTE: These tests require a running OpenTranscribe server with specific indexed data.
+They are skipped by default. Set RUN_SEARCH_QUALITY_TESTS=true to run them.
 """
 
+import os
 import re
 
 import pytest
 import requests
+
+# Skip all tests - requires live server with specific indexed data
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_SEARCH_QUALITY_TESTS", "false").lower() != "true",
+    reason="Search quality tests require live server with indexed data (set RUN_SEARCH_QUALITY_TESTS=true to run)",
+)
 
 BASE = "http://localhost:5174/api"
 
@@ -70,9 +80,9 @@ class TestSemanticSuppression:
         data = search(headers, "china")
         kw = [r for r in data["results"] if not r["semantic_only"]]
         kw_titles = [r["title"] for r in kw]
-        assert any(
-            "AI Arms Race" in t or "China" in t for t in kw_titles
-        ), f"Missing China-related keyword files: {kw_titles}"
+        assert any("AI Arms Race" in t or "China" in t for t in kw_titles), (
+            f"Missing China-related keyword files: {kw_titles}"
+        )
         assert len(kw) >= 5, f"Expected >= 5 keyword files for 'china', got {len(kw)}"
 
     def test_fight_suppresses_irrelevant(self, headers):
@@ -86,9 +96,9 @@ class TestSemanticSuppression:
         """'nasa' must return Apollo 11, NASA Spy Agency, Bridge to Space, Warp Drive."""
         data = search(headers, "NASA")
         kw_titles = [r["title"] for r in data["results"] if not r["semantic_only"]]
-        assert any(
-            "Apollo" in t or "Eagle" in t or "NASA" in t for t in kw_titles
-        ), f"Missing NASA-related files: {kw_titles}"
+        assert any("Apollo" in t or "Eagle" in t or "NASA" in t for t in kw_titles), (
+            f"Missing NASA-related files: {kw_titles}"
+        )
 
 
 # ── Exact Mode Precision Tests ──────────────────────────────
@@ -117,9 +127,9 @@ class TestExactMode:
         for q in ["fight", "china", "NASA", "Trump", "fraud"]:
             data = search(headers, q, mode="keyword")
             for r in data["results"]:
-                assert not r[
-                    "semantic_only"
-                ], f"'{q}' keyword mode returned semantic result: {r['title']}"
+                assert not r["semantic_only"], (
+                    f"'{q}' keyword mode returned semantic result: {r['title']}"
+                )
 
 
 # ── Match Count Accuracy Tests ──────────────────────────────
@@ -134,9 +144,9 @@ class TestMatchCounts:
             data = search(headers, q)
             for r in data["results"]:
                 if not r["semantic_only"]:
-                    assert (
-                        r["keyword_occurrences"] > 0
-                    ), f"'{q}': {r['title']} has kw_occ=0 but isn't semantic_only"
+                    assert r["keyword_occurrences"] > 0, (
+                        f"'{q}': {r['title']} has kw_occ=0 but isn't semantic_only"
+                    )
 
     def test_semantic_files_zero_keyword_count(self, headers):
         """Semantic-only files must have keyword_occurrences == 0."""
@@ -157,16 +167,16 @@ class TestSpeakerSearch:
         data = search(headers, "Joe Rogan")
         for r in data["results"]:
             if "Joe Rogan" in r.get("speakers", []):
-                assert (
-                    "metadata_speaker" in r["match_sources"]
-                ), f"Missing metadata_speaker: {r['title']}, src={r['match_sources']}"
+                assert "metadata_speaker" in r["match_sources"], (
+                    f"Missing metadata_speaker: {r['title']}, src={r['match_sources']}"
+                )
 
     def test_speaker_search_finds_files(self, headers):
         """Searching speaker name must return files they appear in."""
         data = search(headers, "Joe Rogan")
-        assert (
-            data["total_files"] >= 10
-        ), f"Joe Rogan is in 15+ files but search found {data['total_files']}"
+        assert data["total_files"] >= 10, (
+            f"Joe Rogan is in 15+ files but search found {data['total_files']}"
+        )
 
     def test_trump_in_title_and_content(self, headers):
         """'Trump' should match title and content sources."""
@@ -188,9 +198,9 @@ class TestHighlightType:
         for r in data["results"]:
             if not r["semantic_only"]:
                 types = {occ.get("highlight_type") for occ in r["occurrences"]}
-                assert (
-                    "keyword" in types
-                ), f"Keyword file '{r['title']}' has no keyword highlights: {types}"
+                assert "keyword" in types, (
+                    f"Keyword file '{r['title']}' has no keyword highlights: {types}"
+                )
 
     def test_semantic_type(self, headers):
         """Semantic-only occurrences must have highlight_type='semantic'."""
@@ -229,17 +239,17 @@ class TestSemanticQuality:
         """'espionage' should find NASA Spy Agency and surveillance content."""
         data = search(headers, "espionage")
         titles = [r["title"] for r in data["results"]]
-        assert any(
-            "spy" in t.lower() or "nasa" in t.lower() for t in titles
-        ), f"Espionage should find spy/NASA content: {titles}"
+        assert any("spy" in t.lower() or "nasa" in t.lower() for t in titles), (
+            f"Espionage should find spy/NASA content: {titles}"
+        )
 
     def test_artificial_intelligence_finds_ai(self, headers):
         """'artificial intelligence' should find AI Arms Race, Warp Drive AI, etc."""
         data = search(headers, "artificial intelligence")
         titles = [r["title"] for r in data["results"]]
-        assert any(
-            "AI" in t for t in titles
-        ), f"'artificial intelligence' should find AI content: {titles}"
+        assert any("AI" in t for t in titles), (
+            f"'artificial intelligence' should find AI content: {titles}"
+        )
 
     def test_cryptocurrency_fraud_finds_scam(self, headers):
         """'cryptocurrency fraud' should find Scam Factories."""
@@ -260,17 +270,17 @@ class TestSemanticQuality:
         """'government corruption' should find Nancy Pelosi insider trading."""
         data = search(headers, "government corruption insider trading")
         titles = [r["title"] for r in data["results"]]
-        assert any(
-            "Pelosi" in t or "insider" in t.lower() for t in titles
-        ), f"Corruption search should find Pelosi: {titles}"
+        assert any("Pelosi" in t or "insider" in t.lower() for t in titles), (
+            f"Corruption search should find Pelosi: {titles}"
+        )
 
     def test_archaeology_finds_pyramids(self, headers):
         """'ancient archaeology discoveries' should find pyramid content."""
         data = search(headers, "ancient archaeology discoveries")
         titles = [r["title"] for r in data["results"]]
-        assert any(
-            "Pyramid" in t or "Sahara" in t for t in titles
-        ), f"Archaeology should find pyramids: {titles}"
+        assert any("Pyramid" in t or "Sahara" in t for t in titles), (
+            f"Archaeology should find pyramids: {titles}"
+        )
 
 
 # ── Multi-word and Phrase Tests ─────────────────────────────
@@ -308,18 +318,18 @@ class TestSpeakerScopedSearch:
         data = search(headers, 'speaker:"Joe Rogan" china')
         for r in data["results"]:
             for occ in r["occurrences"]:
-                assert (
-                    occ["speaker"] == "Joe Rogan"
-                ), f"Wrong speaker: {occ['speaker']} (expected Joe Rogan)"
+                assert occ["speaker"] == "Joe Rogan", (
+                    f"Wrong speaker: {occ['speaker']} (expected Joe Rogan)"
+                )
 
     def test_speaker_operator_filters_occurrences(self, headers):
         """Speaker-scoped search must only return occurrences from that speaker."""
         scoped = search(headers, 'speaker:"Joe Rogan" china')
         for r in scoped["results"]:
             for occ in r["occurrences"]:
-                assert (
-                    occ["speaker"] == "Joe Rogan"
-                ), f"Scoped search returned wrong speaker: {occ['speaker']}"
+                assert occ["speaker"] == "Joe Rogan", (
+                    f"Scoped search returned wrong speaker: {occ['speaker']}"
+                )
 
     def test_speaker_only_returns_all_content(self, headers):
         """Just 'speaker:"Joe Rogan"' should return all files with that speaker."""

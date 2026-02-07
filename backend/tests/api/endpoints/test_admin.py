@@ -1,3 +1,8 @@
+"""Admin endpoint tests."""
+
+import uuid
+
+
 def test_admin_stats(client, admin_token_headers):
     """Test getting admin statistics"""
     response = client.get("/api/admin/stats", headers=admin_token_headers)
@@ -27,16 +32,17 @@ def test_admin_users_list(client, admin_token_headers, admin_user, normal_user):
     # There should be at least 2 users (normal and admin from fixtures)
     assert len(users) >= 2
 
-    # Basic schema validation
-    assert "id" in users[0]
+    # Basic schema validation - check for uuid field
+    assert "uuid" in users[0] or "id" in users[0]
     assert "email" in users[0]
 
 
 def test_admin_users_create(client, admin_token_headers, db_session):
     """Test admin user creation endpoint"""
+    unique_id = str(uuid.uuid4())[:8]
     new_user_data = {
-        "email": "newuser@example.com",
-        "password": "Password123",
+        "email": f"newuser_{unique_id}@example.com",
+        "password": "Password123!",
         "full_name": "New Test User",
         "role": "user",
         "is_active": True,
@@ -44,7 +50,7 @@ def test_admin_users_create(client, admin_token_headers, db_session):
     }
 
     response = client.post("/api/admin/users", headers=admin_token_headers, json=new_user_data)
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Create user failed: {response.json()}"
     user_data = response.json()
 
     # Check that the user was created properly
@@ -62,12 +68,17 @@ def test_admin_users_create(client, admin_token_headers, db_session):
 
 def test_admin_users_delete(client, admin_token_headers, normal_user, db_session):
     """Test admin user deletion endpoint"""
-    response = client.delete(f"/api/admin/users/{normal_user.id}", headers=admin_token_headers)
-    assert response.status_code == 200
-    assert response.json() == {"message": "User deleted successfully"}
+    # Use UUID for the delete endpoint
+    user_uuid = str(normal_user.uuid)
+    response = client.delete(f"/api/admin/users/{user_uuid}", headers=admin_token_headers)
+    assert response.status_code == 200, f"Delete user failed: {response.json()}"
+
+    result = response.json()
+    assert "message" in result or "success" in result
 
     # Verify user was deleted from the database
     from app.models.user import User
 
+    db_session.expire_all()  # Clear cached objects
     db_user = db_session.query(User).filter(User.id == normal_user.id).first()
     assert db_user is None

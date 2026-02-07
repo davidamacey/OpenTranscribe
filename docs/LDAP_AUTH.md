@@ -334,6 +334,72 @@ ldapsearch -H ldaps://ad-server.domain.com:636 \
     - Frontend hides password change options for LDAP users
     - If user needs local password, update `auth_type` to 'local' in database
 
+## Deployment
+
+### Development/Testing with LDAP Test Container
+
+For development and testing, use the built-in LLDAP test container:
+
+```bash
+# Start OpenTranscribe with LDAP test container
+./opentr.sh start dev --with-ldap-test
+
+# Or for production mode (testing before push)
+./opentr.sh start prod --build --with-ldap-test
+```
+
+**Test Container Details:**
+- LDAP server: `localhost:3890`
+- Web UI: `http://localhost:17170`
+- Admin credentials: `admin` / `admin_password`
+- Base DN: `dc=example,dc=com`
+
+**Configure OpenTranscribe to use test LDAP:**
+1. Log in as super_admin (admin@example.com / password)
+2. Go to Settings → Authentication → LDAP
+3. Configure:
+   - Server: `lldap-test` (container name)
+   - Port: `3890`
+   - Use SSL: `false`
+   - Bind DN: `uid=admin,ou=people,dc=example,dc=com`
+   - Bind Password: `admin_password`
+   - Search Base: `dc=example,dc=com`
+   - Username Attribute: `uid`
+
+### Production Deployment with Active Directory
+
+For production with your organization's Active Directory:
+
+```bash
+# Production mode (Docker Hub images)
+./opentr.sh start prod
+
+# Or with local builds (test before push)
+./opentr.sh start prod --build
+```
+
+**Configure OpenTranscribe:**
+1. Log in as super_admin
+2. Go to Settings → Authentication → LDAP
+3. Configure with your AD settings:
+   - Server: `ldaps://your-ad-server.domain.com`
+   - Port: `636`
+   - Use SSL: `true`
+   - Bind DN: `CN=service-account,CN=Users,DC=domain,DC=com`
+   - Bind Password: (your service account password)
+   - Search Base: `DC=domain,DC=com`
+   - Username Attribute: `sAMAccountName`
+   - Admin Users: (comma-separated list of AD usernames)
+
+**Advanced (manual docker compose):**
+```bash
+# With LDAP test container
+docker compose -f docker-compose.yml -f docker-compose.ldap-test.yml up -d
+
+# Production mode
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
 ## Testing
 
 ### Test LDAP Authentication

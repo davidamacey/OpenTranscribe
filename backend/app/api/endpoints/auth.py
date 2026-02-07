@@ -2,6 +2,7 @@ import logging
 import os
 import secrets
 from datetime import timedelta
+from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -15,6 +16,7 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from jose import jwt
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.audit import AuditEventType
@@ -25,6 +27,7 @@ from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import AUTH_TYPE_PKI
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.direct_auth import direct_authenticate_user
+from app.auth.keycloak_auth import KeycloakConfig
 from app.auth.keycloak_auth import exchange_code_for_tokens
 from app.auth.keycloak_auth import get_authorization_url
 from app.auth.keycloak_auth import sync_keycloak_user_to_db
@@ -42,12 +45,14 @@ from app.auth.rate_limit import limiter
 from app.auth.session import OIDCStateStore
 from app.auth.session import get_redis_client
 from app.auth.token_service import token_service
+from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.core.security import authenticate_user
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
+from app.schemas.user import LoginBannerResponse
 from app.schemas.user import MFADisableRequest
 from app.schemas.user import MFASetupResponse
 from app.schemas.user import MFAStatusResponse
@@ -172,13 +177,69 @@ def get_current_active_user(
     return current_user
 
 
+def get_optional_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    Get the current user if a valid token is provided, otherwise return None.
+
+    This is used for endpoints that support both authenticated and unauthenticated
+    access (e.g., public files can be accessed without auth, private files require auth).
+
+    Returns:
+        User object if valid token provided, None otherwise
+    """
+    # Check for Authorization header
+    authorization = request.headers.get("Authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    token = authorization.replace("Bearer ", "")
+
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        user_uuid_str: str = payload.get("sub")
+        token_jti: str = payload.get("jti")
+
+        if user_uuid_str is None:
+            return None
+
+        # Check token revocation blacklist
+        if (
+            settings.TOKEN_REVOCATION_ENABLED
+            and token_jti
+            and token_service.is_token_revoked(token_jti)
+        ):
+            return None
+
+        # Validate UUID format
+        try:
+            user_uuid = UUID(user_uuid_str)
+        except ValueError:
+            return None
+
+        # Look up user by UUID
+        user = db.query(User).filter(User.uuid == user_uuid).first()
+        if user is None or not user.is_active:
+            return None
+
+        return user  # type: ignore[no-any-return]
+
+    except JWTError:
+        return None
+    except Exception as e:
+        logger.debug(f"Error in optional auth: {e}")
+        return None
+
+
 def get_current_admin_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
-    Check if the current user is an admin
+    Check if the current user is an admin or super_admin
     """
-    if current_user.role != "admin":
+    if current_user.role not in ("admin", "super_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
@@ -249,14 +310,18 @@ def _authenticate_ldap_user(db: Session, username: str, password: str) -> tuple[
     Raises:
         HTTPException: If authentication fails
     """
-    if not settings.LDAP_ENABLED:
+    # Check DB config first, fall back to .env
+    from app.core.auth_settings import get_auth_settings
+
+    auth_settings = get_auth_settings(db)
+    if not auth_settings.ldap_enabled:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="LDAP authentication is not enabled",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    ldap_user = ldap_authenticate(username, password)
+    ldap_user = ldap_authenticate(username, password, db=db)
 
     if not ldap_user:
         logger.warning(f"LDAP authentication failed for user: {username}")
@@ -566,8 +631,8 @@ def _check_mfa_requirement(
     Returns:
         JSONResponse with MFA token if MFA required, None otherwise
     """
-    # Skip MFA check if MFA is disabled
-    if not settings.MFA_ENABLED:
+    # Skip MFA check if MFA is disabled (check DB first, then .env)
+    if not _is_mfa_enabled(db):
         return None
 
     # Skip MFA for PKI and Keycloak users (they have their own 2FA)
@@ -724,6 +789,56 @@ def login_for_access_token(
         # Get user's role for inclusion in the token
         user_role = _get_user_role(db, user_uuid_str, user_data)
 
+        # FedRAMP AC-10: Enforce concurrent session limit
+        if settings.MAX_CONCURRENT_SESSIONS > 0:
+            from datetime import datetime
+            from datetime import timezone
+
+            from app.models.refresh_token import RefreshToken
+
+            # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
+            # This acquires row-level locks on the user's active sessions
+            # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
+            sessions_stmt = (
+                select(RefreshToken)
+                .where(
+                    RefreshToken.user_id == user_db.id,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > datetime.now(timezone.utc),
+                )
+                .with_for_update()
+            )
+            active_session_rows = db.execute(sessions_stmt).scalars().all()
+            active_sessions = len(active_session_rows)
+
+            if active_sessions >= settings.MAX_CONCURRENT_SESSIONS:
+                if settings.CONCURRENT_SESSION_POLICY == "reject":
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Maximum {settings.MAX_CONCURRENT_SESSIONS} concurrent sessions reached. Please logout from another device.",
+                    )
+                elif (
+                    settings.CONCURRENT_SESSION_POLICY == "terminate_oldest" and active_session_rows
+                ):
+                    # Terminate oldest session - rows are already locked from the query above
+                    # Sort by created_at to find the oldest
+                    oldest_token = min(active_session_rows, key=lambda t: t.created_at)
+                    oldest_token.revoked_at = datetime.now(timezone.utc)
+                    db.commit()
+
+                    audit_logger.log(
+                        event_type=AuditEventType.AUTH_SESSION_EXPIRED,
+                        user_id=int(user_db.id),
+                        username=str(user_db.email),
+                        outcome=AuditOutcome.SUCCESS,
+                        source_ip=client_ip,
+                        user_agent=user_agent,
+                        details={
+                            "reason": "concurrent_session_limit",
+                            "policy": "terminate_oldest",
+                        },
+                    )
+
         # Check if MFA is required for this user (FedRAMP IA-2)
         mfa_response = _check_mfa_requirement(db, user_db, user_uuid_str, user_role)
         if mfa_response:
@@ -735,7 +850,16 @@ def login_for_access_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error during authentication: {str(e)}")
+        import sys
+        import traceback
+
+        error_msg = f"Unexpected error during authentication: {str(e)}"
+        tb = traceback.format_exc()
+        logger.error(error_msg)
+        logger.error(f"Traceback: {tb}")
+        # Also print to stderr to ensure it shows in logs
+        print(f"AUTH ERROR: {error_msg}", file=sys.stderr, flush=True)
+        print(f"AUTH TRACEBACK: {tb}", file=sys.stderr, flush=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred during authentication",
@@ -838,6 +962,63 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("/me/certificate", summary="Get current user's certificate info")
+def get_user_certificate_info(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Get certificate information for the current user.
+
+    Returns certificate metadata for users who authenticated via PKI (X.509)
+    or via Keycloak with X.509 certificate authentication.
+
+    For non-PKI users, returns has_certificate: false.
+
+    Certificate metadata includes:
+    - subject_dn: Full Distinguished Name from certificate
+    - serial_number: Certificate serial number (hex format)
+    - issuer_dn: Certificate issuer Distinguished Name
+    - organization: Organization from certificate subject
+    - organizational_unit: Organizational unit from certificate subject
+    - valid_from: Certificate validity start date (ISO format)
+    - valid_until: Certificate validity end date (ISO format)
+    - fingerprint: SHA-256 fingerprint (colon-separated hex)
+    """
+    # Check if user has certificate metadata stored
+    has_cert_metadata = bool(
+        current_user.pki_subject_dn
+        or current_user.pki_fingerprint_sha256
+        or current_user.pki_serial_number
+    )
+
+    if not has_cert_metadata:
+        return {"has_certificate": False}
+
+    # Format fingerprint with colons for display
+    fingerprint_formatted = None
+    if current_user.pki_fingerprint_sha256:
+        fp = str(current_user.pki_fingerprint_sha256)
+        fingerprint_formatted = ":".join(fp[i : i + 2] for i in range(0, len(fp), 2)).upper()
+
+    return {
+        "has_certificate": True,
+        "subject_dn": current_user.pki_subject_dn,
+        "common_name": current_user.pki_common_name,
+        "serial_number": current_user.pki_serial_number,
+        "issuer_dn": current_user.pki_issuer_dn,
+        "organization": current_user.pki_organization,
+        "organizational_unit": current_user.pki_organizational_unit,
+        "valid_from": current_user.pki_not_before.isoformat()
+        if current_user.pki_not_before
+        else None,
+        "valid_until": current_user.pki_not_after.isoformat()
+        if current_user.pki_not_after
+        else None,
+        "fingerprint": fingerprint_formatted,
+    }
+
+
 # ============== OIDC/Keycloak Authentication ==============
 
 
@@ -850,7 +1031,7 @@ _OIDC_STATE_EXPIRY_SECONDS = 600
 
 
 @router.get("/keycloak/login")
-async def keycloak_login():
+async def keycloak_login(db: Session = Depends(get_db)):
     """
     Initiate Keycloak OIDC login flow.
 
@@ -862,7 +1043,9 @@ async def keycloak_login():
     - Enforces maximum state count to prevent state exhaustion attacks
     - States expire after 10 minutes and are single-use
     """
-    if not settings.KEYCLOAK_ENABLED:
+    # Load Keycloak config from database (DB > .env > defaults)
+    kc_cfg = KeycloakConfig.from_db(db)
+    if not kc_cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak authentication is not enabled",
@@ -872,7 +1055,7 @@ async def keycloak_login():
     state = secrets.token_urlsafe(32)
 
     # Generate authorization URL (with PKCE if enabled)
-    authorization_url, code_verifier = get_authorization_url(state)
+    authorization_url, code_verifier = get_authorization_url(state, cfg=kc_cfg)
 
     # Store state with PKCE verifier in Redis-backed store
     # Returns False if state limit exceeded (prevents exhaustion attack)
@@ -918,7 +1101,9 @@ async def keycloak_callback(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    if not settings.KEYCLOAK_ENABLED:
+    # Load Keycloak config from database (DB > .env > defaults)
+    kc_cfg = KeycloakConfig.from_db(db)
+    if not kc_cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Keycloak authentication is not enabled",
@@ -928,7 +1113,6 @@ async def keycloak_callback(
     state_data = _oidc_state_store.get_state(state)
     if state_data is None:
         logger.warning("Invalid OIDC state parameter received")
-        # Log Keycloak login failure
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -945,10 +1129,9 @@ async def keycloak_callback(
     code_verifier = state_data.get("code_verifier")
 
     # Exchange code for tokens (with PKCE verifier if available)
-    tokens = await exchange_code_for_tokens(code, code_verifier)
+    tokens = await exchange_code_for_tokens(code, code_verifier, cfg=kc_cfg)
     if not tokens:
         logger.error("Failed to exchange authorization code for tokens")
-        # Log Keycloak login failure
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -962,7 +1145,7 @@ async def keycloak_callback(
         )
 
     # Validate token and get user data
-    keycloak_data = await validate_keycloak_token(tokens.access_token)
+    keycloak_data = await validate_keycloak_token(tokens.access_token, cfg=kc_cfg)
     if not keycloak_data:
         logger.error("Invalid access token received from Keycloak")
         # Log Keycloak login failure
@@ -1026,7 +1209,11 @@ async def pki_login(request: Request, db: Session = Depends(get_db)):
     The reverse proxy (Nginx) must be configured to pass the client
     certificate information via headers (X-Client-Cert or X-Client-Cert-DN).
     """
-    if not settings.PKI_ENABLED:
+    # Check database settings first, then fall back to .env
+    auth_settings = get_auth_settings(db)
+    pki_enabled = auth_settings.pki_enabled or settings.PKI_ENABLED
+
+    if not pki_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="PKI authentication is not enabled",
@@ -1092,35 +1279,105 @@ async def pki_login(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/methods")
-async def get_auth_methods():
+async def get_auth_methods(db: Session = Depends(get_db)):
     """
     Get available authentication methods.
 
     Returns a list of enabled authentication methods that the frontend
-    can use to display appropriate login options.
+    can use to display appropriate login options. Checks database settings
+    first (set via admin UI), falls back to environment variables.
     """
+    # Use dynamic settings to check database first, then fall back to .env
+    auth_settings = get_auth_settings(db)
+
+    ldap_enabled = auth_settings.get_bool("ldap_enabled", settings.LDAP_ENABLED)
+    keycloak_enabled = auth_settings.get_bool("keycloak_enabled", settings.KEYCLOAK_ENABLED)
+    pki_enabled = auth_settings.pki_enabled or settings.PKI_ENABLED
+    mfa_enabled = auth_settings.mfa_enabled or settings.MFA_ENABLED
+    mfa_required = auth_settings.get_bool("mfa_required", settings.MFA_REQUIRED)
+    login_banner_enabled = auth_settings.get_bool(
+        "login_banner_enabled", settings.LOGIN_BANNER_ENABLED
+    )
+
     methods = ["local"]  # Always available
 
-    if settings.LDAP_ENABLED:
+    if ldap_enabled:
         methods.append("ldap")
-    if settings.KEYCLOAK_ENABLED:
+    if keycloak_enabled:
         methods.append("keycloak")
-    if settings.PKI_ENABLED:
+    if pki_enabled:
         methods.append("pki")
 
     return {
         "methods": methods,
-        "keycloak_enabled": settings.KEYCLOAK_ENABLED,
-        "pki_enabled": settings.PKI_ENABLED,
-        "ldap_enabled": settings.LDAP_ENABLED,
-        "mfa_enabled": settings.MFA_ENABLED,
-        "mfa_required": settings.MFA_REQUIRED,
-        "login_banner_enabled": settings.LOGIN_BANNER_ENABLED,
-        "login_banner_text": settings.LOGIN_BANNER_TEXT if settings.LOGIN_BANNER_ENABLED else "",
+        "keycloak_enabled": keycloak_enabled,
+        "pki_enabled": pki_enabled,
+        "ldap_enabled": ldap_enabled,
+        "mfa_enabled": mfa_enabled,
+        "mfa_required": mfa_required,
+        "login_banner_enabled": login_banner_enabled,
+        "login_banner_text": settings.LOGIN_BANNER_TEXT if login_banner_enabled else "",
         "login_banner_classification": settings.LOGIN_BANNER_CLASSIFICATION
-        if settings.LOGIN_BANNER_ENABLED
+        if login_banner_enabled
         else "UNCLASSIFIED",
     }
+
+
+# ============== Login Banner (FedRAMP AC-8) ==============
+
+
+@router.get("/banner", response_model=LoginBannerResponse)
+async def get_login_banner():
+    """
+    PUBLIC endpoint - returns banner text without authentication.
+    Called before login to display classification banner.
+    FedRAMP AC-8 compliance.
+    """
+    if not settings.LOGIN_BANNER_ENABLED:
+        return LoginBannerResponse(
+            enabled=False,
+            text="",
+            classification="",
+            requires_acknowledgment=False,
+        )
+
+    return LoginBannerResponse(
+        enabled=True,
+        text=settings.LOGIN_BANNER_TEXT,
+        classification=settings.LOGIN_BANNER_CLASSIFICATION,
+        requires_acknowledgment=True,
+    )
+
+
+@router.post("/banner/acknowledge")
+async def acknowledge_banner(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Record banner acknowledgment for the current user.
+    Must be called after login before granting full access.
+    FedRAMP AC-8 compliance.
+    """
+    from datetime import datetime
+    from datetime import timezone
+
+    current_user.banner_acknowledged_at = datetime.now(timezone.utc)
+    db.commit()
+
+    # Audit log
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_BANNER_ACKNOWLEDGED,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        source_ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    return {"acknowledged": True}
 
 
 # ============== MFA/TOTP Authentication (FedRAMP IA-2) ==============
@@ -1142,6 +1399,18 @@ def _user_can_setup_mfa(user: User) -> bool:
     return user.auth_type not in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
 
 
+def _is_mfa_enabled(db: Session) -> bool:
+    """Check if MFA is enabled via database auth_config (primary) or .env fallback."""
+    auth_settings = get_auth_settings(db)
+    return auth_settings.mfa_enabled or settings.MFA_ENABLED
+
+
+def _is_mfa_required(db: Session) -> bool:
+    """Check if MFA is required via database auth_config (primary) or .env fallback."""
+    auth_settings = get_auth_settings(db)
+    return auth_settings.get_bool("mfa_required", settings.MFA_REQUIRED) and _is_mfa_enabled(db)
+
+
 # Redis key prefix for MFA token JTI blacklist (not a password)
 MFA_TOKEN_BLACKLIST_PREFIX = "mfa:jti:"  # noqa: S105 # nosec B105
 
@@ -1157,6 +1426,9 @@ def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
 
     Returns:
         bool: True if blacklisted successfully, False otherwise
+
+    Raises:
+        HTTPException: 503 if Redis unavailable and MFA_REQUIRE_REDIS is True
     """
     try:
         redis_client = get_redis_client()
@@ -1166,12 +1438,26 @@ def _blacklist_mfa_token(jti: str, expires_seconds: int) -> bool:
             logger.debug(f"MFA token JTI blacklisted: {jti[:8]}...")
             return True
         else:
-            # No Redis available - log warning but allow operation
-            # In production, Redis should always be available
-            logger.warning("Redis not available for MFA token blacklisting")
-            return False
+            # No Redis available - check fail-secure mode
+            if settings.MFA_REQUIRE_REDIS:
+                logger.error("Redis not available for MFA token blacklisting (fail-secure mode)")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Auth service unavailable",
+                )
+            else:
+                # Fail-open mode: log warning but allow operation
+                logger.warning("Redis not available for MFA token blacklisting")
+                return False
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to blacklist MFA token JTI: {e}")
+        if settings.MFA_REQUIRE_REDIS:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Auth service unavailable",
+            ) from e
         return False
 
 
@@ -1182,7 +1468,8 @@ def _is_mfa_token_blacklisted(jti: str) -> bool:
         jti: JWT ID to check
 
     Returns:
-        bool: True if token is blacklisted (already used), False otherwise
+        bool: True if token is blacklisted (already used), False otherwise.
+               In fail-secure mode (MFA_REQUIRE_REDIS=True), returns True if Redis unavailable.
     """
     try:
         redis_client = get_redis_client()
@@ -1190,12 +1477,19 @@ def _is_mfa_token_blacklisted(jti: str) -> bool:
             key = f"{MFA_TOKEN_BLACKLIST_PREFIX}{jti}"
             return bool(redis_client.exists(key) > 0)
         else:
-            # No Redis available - allow operation but log warning
-            logger.warning("Redis not available for MFA token blacklist check")
-            return False
+            # No Redis available - check fail-secure mode
+            if settings.MFA_REQUIRE_REDIS:
+                # Fail-secure: assume token is blacklisted (deny access)
+                logger.error("Redis not available for MFA token blacklist check (fail-secure mode)")
+                return True
+            else:
+                # Fail-open mode: allow operation but log warning
+                logger.warning("Redis not available for MFA token blacklist check")
+                return False
     except Exception as e:
         logger.error(f"Failed to check MFA token blacklist: {e}")
-        return False
+        # Fail-secure when Redis required (deny access), fail-open otherwise
+        return bool(settings.MFA_REQUIRE_REDIS)
 
 
 def _create_mfa_token(user_uuid_str: str, user_role: str) -> str:
@@ -1475,11 +1769,13 @@ def get_mfa_status(
     # Check if user has MFA configured
     user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(current_user.id)).first()
 
+    mfa_enabled = _is_mfa_enabled(db)
+
     return MFAStatusResponse(
         mfa_enabled=bool(user_mfa.totp_enabled) if user_mfa else False,
-        mfa_configured=user_mfa is not None,
-        mfa_required=settings.MFA_REQUIRED and settings.MFA_ENABLED,
-        can_setup_mfa=settings.MFA_ENABLED and _user_can_setup_mfa(current_user),
+        mfa_configured=bool(user_mfa.totp_enabled) if user_mfa else False,
+        mfa_required=_is_mfa_required(db),
+        can_setup_mfa=mfa_enabled and _user_can_setup_mfa(current_user),
     )
 
 
@@ -1498,7 +1794,7 @@ def setup_mfa(
     Note: This endpoint is only available when MFA is enabled and the user
     is not using PKI or Keycloak authentication (which handle MFA separately).
     """
-    if not settings.MFA_ENABLED:
+    if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MFA is not enabled on this system",
@@ -1582,7 +1878,7 @@ def verify_mfa_setup(
     This completes the MFA setup process and generates backup codes.
     Backup codes are returned only once - the user must save them securely.
     """
-    if not settings.MFA_ENABLED:
+    if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MFA is not enabled on this system",
@@ -1675,7 +1971,7 @@ def verify_mfa(
 
     Rate limited to prevent brute force attacks on TOTP codes.
     """
-    if not settings.MFA_ENABLED:
+    if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MFA is not enabled on this system",
@@ -1753,7 +2049,7 @@ def disable_mfa(
 
     Requires a valid TOTP code or backup code to confirm the action.
     """
-    if not settings.MFA_ENABLED:
+    if not _is_mfa_enabled(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="MFA is not enabled on this system",

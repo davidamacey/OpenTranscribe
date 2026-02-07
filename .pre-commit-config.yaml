@@ -26,7 +26,7 @@ repos:
 
   # Python formatting and linting with Ruff (replaces Black, isort, flake8)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.2.2
+    rev: v0.14.0
     hooks:
       - id: ruff
         args: [--fix, --show-fixes]
@@ -55,6 +55,19 @@ repos:
         files: ^frontend/
         types_or: [javascript, jsx, ts, tsx, json, yaml, html, css, scss, markdown]
         args: [--write, --ignore-unknown]
+
+  # Frontend type checking and build verification
+  - repo: local
+    hooks:
+      - id: frontend-check
+        name: Frontend Build Verification
+        entry: scripts/frontend-check.sh
+        language: system
+        files: ^frontend/src/
+        types_or: [svelte, ts, javascript, css, html]
+        pass_filenames: false
+        stages: [pre-commit]
+        verbose: true
 
   # Dockerfile linting
   - repo: https://github.com/hadolint/hadolint

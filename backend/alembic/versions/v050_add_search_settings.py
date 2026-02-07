@@ -19,7 +19,6 @@ OpenSearch changes (handled lazily at runtime, not in this migration):
     - transcript-hybrid-search pipeline created on first search
 """
 
-
 from alembic import op
 
 # revision identifiers, used by Alembic.

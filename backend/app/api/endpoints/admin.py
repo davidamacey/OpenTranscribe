@@ -4,27 +4,39 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from typing import Any
+from typing import Optional
 
 import psutil
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import status
 from sqlalchemy import func
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
+from app.auth.lockout import unlock_account as lockout_unlock_account
+from app.core.config import settings
+from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.media import Analytics
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.models.user_mfa import UserMFA
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
 from app.schemas.admin import RetryConfig
 from app.schemas.admin import RetryConfigUpdate
+from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
@@ -703,3 +715,535 @@ async def update_garbage_cleanup_configuration(
     )
 
     return GarbageCleanupConfig(**updated)
+
+
+# ============== Super Admin Role Verification ==============
+
+
+def get_current_super_admin_user(
+    current_user: User = Depends(get_current_admin_user),
+) -> User:
+    """Verify user has super_admin role."""
+    if current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return current_user
+
+
+# ============== Account Management (FedRAMP AC-2) ==============
+
+
+@router.post("/users/{user_uuid}/reset-password")
+async def admin_reset_user_password(
+    user_uuid: str,
+    request_body: AdminPasswordResetRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """Admin-initiated password reset. Requires super_admin role.
+
+    Security: Password is passed in request body (not query parameter) to prevent
+    exposure in server logs, browser history, and HTTP referrer headers.
+    """
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.hashed_password = get_password_hash(request_body.new_password)
+    user.must_change_password = request_body.force_change
+    user.password_changed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_USER_UPDATE,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "action": "password_reset",
+            "target_user": user_uuid,
+            "force_change": request_body.force_change,
+        },
+    )
+
+    return {"success": True}
+
+
+@router.post("/users/{user_uuid}/unlock")
+async def admin_unlock_account(
+    user_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Admin unlock of locked account."""
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Use the lockout manager to unlock the account
+    unlocked = lockout_unlock_account(str(user.email))
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "target_user": user_uuid,
+            "unlocked_by": "admin",
+            "was_locked": unlocked,
+        },
+    )
+
+    return {"success": True, "was_locked": unlocked}
+
+
+@router.post("/users/{user_uuid}/lock")
+async def admin_lock_account(
+    user_uuid: str,
+    reason: str = Query("Admin action", description="Reason for locking the account"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Admin lock of user account."""
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = False
+    db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "target_user": user_uuid,
+            "reason": reason,
+            "locked_by": "admin",
+        },
+    )
+
+    return {"success": True}
+
+
+@router.delete("/users/{user_uuid}/sessions")
+async def admin_terminate_user_sessions(
+    user_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Force logout user by terminating all sessions."""
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Revoke all refresh tokens
+    now = datetime.now(timezone.utc)
+    tokens = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .all()
+    )
+
+    count = 0
+    for token in tokens:
+        token.revoked_at = now
+        count += 1
+
+    db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_LOGOUT_ALL,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "target_user": user_uuid,
+            "sessions_terminated": count,
+            "terminated_by": "admin",
+        },
+    )
+
+    return {"success": True, "sessions_terminated": count}
+
+
+@router.get("/users/{user_uuid}/sessions")
+async def admin_get_user_sessions(
+    user_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """View all active sessions for a user."""
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    sessions = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > datetime.now(timezone.utc),
+        )
+        .all()
+    )
+
+    return {
+        "sessions": [
+            {
+                "id": str(s.jti),
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+                "ip_address": s.ip_address,
+                "user_agent": s.user_agent,
+            }
+            for s in sessions
+        ]
+    }
+
+
+@router.put("/users/{user_uuid}/role")
+async def admin_change_user_role(
+    user_uuid: str,
+    new_role: str = Query(..., description="New role for the user (user, admin, super_admin)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """Change user role. Only super_admin can promote to super_admin."""
+    if new_role not in ("user", "admin", "super_admin"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(user.uuid) == str(current_user.uuid):
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+
+    old_role = user.role
+    user.role = new_role
+    db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_ROLE_CHANGE,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "target_user": user_uuid,
+            "old_role": old_role,
+            "new_role": new_role,
+        },
+    )
+
+    return {"success": True, "old_role": old_role, "new_role": new_role}
+
+
+# ============== MFA Management ==============
+
+
+@router.post("/users/{user_uuid}/mfa/reset")
+async def admin_reset_user_mfa(
+    user_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """Admin reset of user MFA (if user loses device). Requires super_admin role."""
+    user = db.query(User).filter(User.uuid == user_uuid).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    mfa_settings = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    if mfa_settings:
+        mfa_settings.totp_enabled = False
+        mfa_settings.totp_secret = None
+        mfa_settings.backup_codes = []
+        db.commit()
+
+    audit_logger.log(
+        event_type=AuditEventType.AUTH_MFA_DISABLE,
+        user_id=int(current_user.id),
+        username=str(current_user.email),
+        outcome=AuditOutcome.SUCCESS,
+        details={
+            "target_user": user_uuid,
+            "reset_by": "admin",
+        },
+    )
+
+    return {"success": True}
+
+
+# ============== User Search ==============
+
+
+@router.get("/users/search")
+async def admin_search_users(
+    query: Optional[str] = Query(None, description="Search query for email or name"),
+    role: Optional[str] = Query(None, description="Filter by role"),
+    auth_type: Optional[str] = Query(None, description="Filter by auth type"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    limit: int = Query(default=50, le=200, description="Maximum results to return"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Advanced user search with filtering and pagination."""
+    q = db.query(User)
+
+    if query:
+        q = q.filter(or_(User.email.ilike(f"%{query}%"), User.full_name.ilike(f"%{query}%")))
+
+    if role:
+        q = q.filter(User.role == role)
+
+    if auth_type:
+        q = q.filter(User.auth_type == auth_type)
+
+    if is_active is not None:
+        q = q.filter(User.is_active == is_active)
+
+    total = q.count()
+    users = q.offset(offset).limit(limit).all()
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "users": [
+            {
+                "uuid": str(u.uuid),
+                "email": u.email,
+                "full_name": u.full_name,
+                "role": u.role,
+                "auth_type": u.auth_type,
+                "is_active": u.is_active,
+                "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in users
+        ],
+    }
+
+
+# ============== Reporting ==============
+
+
+@router.get("/reports/account-status")
+async def get_account_status_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
+    """Account status summary for compliance reporting."""
+    total = db.query(func.count(User.id)).scalar()
+    active = db.query(func.count(User.id)).filter(User.is_active == True).scalar()  # noqa: E712
+    inactive = total - active
+
+    # MFA enabled count
+    mfa_enabled = db.query(func.count(UserMFA.id)).filter(UserMFA.totp_enabled == True).scalar()  # noqa: E712
+
+    # Password expired (past max age)
+    expiry_threshold = datetime.now(timezone.utc) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
+    pwd_expired = (
+        db.query(func.count(User.id)).filter(User.password_changed_at < expiry_threshold).scalar()
+    )
+
+    return {
+        "total_users": total,
+        "active_users": active,
+        "inactive_users": inactive,
+        "mfa_enabled_users": mfa_enabled,
+        "password_expired_users": pwd_expired,
+    }
+
+
+# ============== Audit Logs (FedRAMP AU-2/AU-3) ==============
+
+
+@router.get("/audit-logs")
+async def get_audit_logs(
+    start_date: Optional[datetime] = Query(None, description="Start date for log query"),
+    end_date: Optional[datetime] = Query(None, description="End date for log query"),
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    user_id: Optional[int] = Query(None, description="Filter by user ID"),
+    outcome: Optional[str] = Query(None, description="Filter by outcome"),
+    limit: int = Query(default=100, le=1000, description="Maximum results"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """
+    Query audit logs with filtering. Super admin only.
+
+    Note: This endpoint queries OpenSearch if audit logging to OpenSearch is enabled.
+    If OpenSearch is not available, returns an error message.
+    """
+    # Check if OpenSearch audit logging is enabled
+    if not settings.AUDIT_LOG_TO_OPENSEARCH:
+        return {
+            "error": "Audit log querying requires AUDIT_LOG_TO_OPENSEARCH=true",
+            "logs": [],
+            "total": 0,
+        }
+
+    try:
+        from opensearchpy import OpenSearch
+
+        client = OpenSearch(
+            hosts=[
+                {
+                    "host": settings.OPENSEARCH_HOST,
+                    "port": int(settings.OPENSEARCH_PORT),
+                }
+            ],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=False,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+        )
+
+        # Build OpenSearch query
+        must_clauses: list[dict] = []
+
+        if start_date:
+            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
+        if end_date:
+            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
+        if event_type:
+            must_clauses.append({"term": {"event_type": event_type}})
+        if user_id:
+            must_clauses.append({"term": {"user_id": user_id}})
+        if outcome:
+            must_clauses.append({"term": {"outcome": outcome}})
+
+        query = {
+            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
+            "sort": [{"timestamp": {"order": "desc"}}],
+            "from": offset,
+            "size": limit,
+        }
+
+        # Search across all audit log indices
+        index_pattern = "audit-logs-*"
+        response = client.search(index=index_pattern, body=query)
+
+        logs = [hit["_source"] for hit in response["hits"]["hits"]]
+        total = response["hits"]["total"]["value"]
+
+        return {
+            "logs": logs,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    except Exception as e:
+        logger.error(f"Error querying audit logs: {e}")
+        return {
+            "error": f"Failed to query audit logs: {str(e)}",
+            "logs": [],
+            "total": 0,
+        }
+
+
+@router.get("/audit-logs/export")
+async def export_audit_logs(
+    export_format: str = Query("csv", description="Export format (csv or json)"),
+    start_date: Optional[datetime] = Query(None, description="Start date for export"),
+    end_date: Optional[datetime] = Query(None, description="End date for export"),
+    current_user: User = Depends(get_current_super_admin_user),
+):
+    """Export audit logs for compliance reporting. Super admin only."""
+    import csv
+    import io
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    if export_format not in ("csv", "json"):
+        raise HTTPException(status_code=400, detail="Format must be csv or json")
+
+    # Check if OpenSearch audit logging is enabled
+    if not settings.AUDIT_LOG_TO_OPENSEARCH:
+        raise HTTPException(
+            status_code=400,
+            detail="Audit log export requires AUDIT_LOG_TO_OPENSEARCH=true",
+        )
+
+    try:
+        from opensearchpy import OpenSearch
+
+        client = OpenSearch(
+            hosts=[
+                {
+                    "host": settings.OPENSEARCH_HOST,
+                    "port": int(settings.OPENSEARCH_PORT),
+                }
+            ],
+            http_auth=(settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD),
+            use_ssl=False,
+            verify_certs=settings.OPENSEARCH_VERIFY_CERTS,
+        )
+
+        # Build query
+        must_clauses = []
+        if start_date:
+            must_clauses.append({"range": {"timestamp": {"gte": start_date.isoformat()}}})
+        if end_date:
+            must_clauses.append({"range": {"timestamp": {"lte": end_date.isoformat()}}})
+
+        query = {
+            "query": {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}},
+            "sort": [{"timestamp": {"order": "desc"}}],
+            "size": 10000,  # Maximum export size
+        }
+
+        index_pattern = "audit-logs-*"
+        response = client.search(index=index_pattern, body=query)
+        logs = [hit["_source"] for hit in response["hits"]["hits"]]
+
+        if export_format == "json":
+            content = json.dumps(logs, indent=2, default=str)
+            media_type = "application/json"
+        else:
+            # CSV format
+            output = io.StringIO()
+            if logs:
+                fieldnames = [
+                    "timestamp",
+                    "event_type",
+                    "outcome",
+                    "user_id",
+                    "username",
+                    "source_ip",
+                    "user_agent",
+                    "error_code",
+                    "details",
+                ]
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                for log in logs:
+                    # Convert details dict to string for CSV
+                    if "details" in log and isinstance(log["details"], dict):
+                        log["details"] = json.dumps(log["details"])
+                    writer.writerow(log)
+            content = output.getvalue()
+            media_type = "text/csv"
+
+        filename = f"audit-logs-{datetime.now().strftime('%Y%m%d')}.{export_format}"
+
+        return StreamingResponse(
+            iter([content]),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting audit logs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export audit logs: {str(e)}",
+        ) from e

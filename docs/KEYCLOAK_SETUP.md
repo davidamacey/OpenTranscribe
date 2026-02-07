@@ -14,6 +14,16 @@ Keycloak provides enterprise-grade identity and access management. OpenTranscrib
 
 ### Step 1: Start Keycloak
 
+**Recommended Method (using opentr.sh):**
+```bash
+# Start OpenTranscribe with Keycloak test container
+./opentr.sh start dev --with-keycloak-test
+
+# Or for production mode (testing before push)
+./opentr.sh start prod --build --with-keycloak-test
+```
+
+**Advanced Method (manual docker compose):**
 ```bash
 # Start Keycloak dev server (from OpenTranscribe root directory)
 docker compose -f docker-compose.yml -f docker-compose.keycloak.yml up -d keycloak
@@ -51,10 +61,13 @@ Default credentials: `admin` / `admin`
    - Click **Next**
 5. Login settings:
    - **Valid redirect URIs**:
-     - `http://localhost:5174/api/auth/keycloak/callback` (dev)
-     - `https://yourdomain.com/api/auth/keycloak/callback` (prod)
+     - `http://localhost:5173/login` (local dev)
+     - `http://your-server-ip/login` (LAN access - replace with your IP)
+     - `https://yourdomain.com/login` (production)
    - **Valid post logout redirect URIs**: `+`
    - **Web origins**: `+` (allows all origins from redirect URIs)
+
+   > **IMPORTANT**: Redirect URIs must point to the FRONTEND login page, not the backend API endpoint.
 6. Click **Save**
 
 ### Step 4: Get Client Secret
@@ -94,19 +107,45 @@ Default credentials: `admin` / `admin`
 
 ### Step 7: Configure OpenTranscribe
 
-Add to your `.env` file:
+**Recommended Method: Via Admin UI** (stores config in database)
+
+1. Log in to OpenTranscribe as a super admin
+2. Go to **Settings** → **Authentication**
+3. Enable **Keycloak/OIDC**
+4. Configure the following settings:
+   - **Server URL**: `http://localhost:8180` (must be accessible from user's browser)
+   - **Internal URL**: `http://transcribe-app-keycloak-1:8080` (for backend-to-Keycloak communication)
+   - **Realm**: `opentranscribe`
+   - **Client ID**: `opentranscribe-app`
+   - **Client Secret**: Paste the secret from Step 4
+   - **Callback URL**: `http://localhost:5173/login` (FRONTEND login page, NOT backend API)
+   - **Admin Role**: `admin`
+5. Click **Save**
+
+> **CRITICAL - For LAN Access**: If accessing OpenTranscribe from other devices on your network (e.g., from Mac on local network), use your server's IP address:
+> - **Server URL**: `http://192.168.x.x:8180` (replace with your server IP)
+> - **Callback URL**: `http://192.168.x.x/login` (match your server IP)
+>
+> The callback URL must be accessible from the user's browser and must point to the frontend login page.
+
+**Alternative Method: Via .env file** (fallback if database not configured)
+
+If you prefer to use environment variables instead:
 
 ```bash
 # Keycloak/OIDC Configuration
 KEYCLOAK_ENABLED=true
-KEYCLOAK_SERVER_URL=http://localhost:8180
+KEYCLOAK_SERVER_URL=http://localhost:8180           # Must be accessible from browser
+KEYCLOAK_INTERNAL_URL=http://transcribe-app-keycloak-1:8080
 KEYCLOAK_REALM=opentranscribe
 KEYCLOAK_CLIENT_ID=opentranscribe-app
 KEYCLOAK_CLIENT_SECRET=<paste-client-secret-from-step-4>
-KEYCLOAK_CALLBACK_URL=http://localhost:5174/api/auth/keycloak/callback
+KEYCLOAK_CALLBACK_URL=http://localhost:5173/login   # Frontend login page, NOT backend API
 KEYCLOAK_ADMIN_ROLE=admin
 KEYCLOAK_TIMEOUT=30
 ```
+
+> **Note**: Database configuration (via admin UI) takes precedence over .env variables.
 
 ### Step 8: Restart OpenTranscribe
 
@@ -137,7 +176,7 @@ KEYCLOAK_SERVER_URL=https://keycloak.yourdomain.com
 KEYCLOAK_REALM=opentranscribe
 KEYCLOAK_CLIENT_ID=opentranscribe-app
 KEYCLOAK_CLIENT_SECRET=<secure-secret>
-KEYCLOAK_CALLBACK_URL=https://yourdomain.com/api/auth/keycloak/callback
+KEYCLOAK_CALLBACK_URL=https://yourdomain.com/login  # Frontend login page
 KEYCLOAK_ADMIN_ROLE=admin
 ```
 
@@ -182,6 +221,18 @@ To enable Google, GitHub, etc.:
 - Verify client secret is correct
 - Check Keycloak logs: `docker compose logs keycloak`
 - Ensure callback URL matches exactly
+
+**Keycloak login page doesn't load or loads slowly**
+- Check that `KEYCLOAK_SERVER_URL` is accessible from your browser (not just from the server)
+- For LAN access, use server IP address (e.g., `http://192.168.x.x:8180`) instead of `localhost`
+- Update Keycloak client redirect URIs to include your access URL
+- Verify with: `curl http://your-server-ip:8180/realms/opentranscribe/.well-known/openid-configuration`
+
+**Browser shows raw JSON instead of logging in**
+- This means the callback URL is pointing to the backend API instead of frontend
+- Callback URL MUST be: `http://your-domain/login` (frontend page)
+- NOT: `http://your-domain/api/auth/keycloak/callback` (backend API)
+- Update via Admin UI → Settings → Authentication → Keycloak → Callback URL
 
 **User created but has wrong role**
 - Verify role mapping in Keycloak user's "Role mapping" tab

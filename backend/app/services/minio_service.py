@@ -331,18 +331,22 @@ def get_file_url(object_name: str, expires: int = 86400) -> str:
             raise ValueError(f"Invalid URL generated: {url}")
 
         # Replace the internal minio URL with the externally accessible URL
-        # For development, use the host IP and port defined in env vars
-        if "MINIO_PUBLIC_HOST" in os.environ and "MINIO_PUBLIC_PORT" in os.environ:
-            # Extract the container host and port from the URL
-            minio_server = f"{settings.MINIO_HOST}:{settings.MINIO_PORT}"
-            if minio_server in url:
-                # Replace with public host:port
-                public_url = url.replace(
-                    minio_server,
-                    f"{os.environ.get('MINIO_PUBLIC_HOST')}:{os.environ.get('MINIO_PUBLIC_PORT')}",
-                )
-                logger.info(f"Replaced internal {minio_server} with public host in URL")
-                url = public_url
+        # This is required because MinIO generates URLs with its internal hostname
+        minio_internal = f"http://{settings.MINIO_HOST}:{settings.MINIO_PORT}"
+
+        if minio_internal in url:
+            # Determine the public URL for MinIO
+            if settings.MINIO_PUBLIC_URL:
+                # Explicit public URL configured (k8s, custom setups)
+                public_base = settings.MINIO_PUBLIC_URL.rstrip("/")
+            else:
+                # Default: Use /s3 path which nginx proxies to MinIO API (port 9000)
+                # Note: /minio/ goes to console (9001), /s3/ goes to API (9000)
+                # The browser resolves /s3 relative to current origin
+                public_base = "/s3"
+
+            url = url.replace(minio_internal, public_base)
+            logger.info(f"Replaced {minio_internal} with {public_base} in presigned URL")
 
         # Log the generated URL (truncated for security)
         logger.info(f"Generated presigned URL: {url[:50]}...")

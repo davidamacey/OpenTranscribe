@@ -177,9 +177,16 @@ def set_file_urls(db_file: MediaFile) -> None:
     """
     Set download, preview, and thumbnail URLs for a media file.
 
+    Thumbnails use presigned URLs (industry standard: Google, AWS, Apple).
+    This embeds authentication in the URL itself, allowing <img> tags to load
+    without HTTP auth headers.
+
     Args:
         db_file: MediaFile object to update
     """
+    from app.core.config import settings
+    from app.services.minio_service import get_file_url
+
     if db_file.storage_path:
         # Skip S3 operations in test environment
         if os.environ.get("SKIP_S3", "False").lower() == "true":
@@ -199,9 +206,18 @@ def set_file_urls(db_file: MediaFile) -> None:
             # Audio files can use the download endpoint
             db_file.preview_url = f"/api/files/{db_file.uuid}/download"
 
-        # Set thumbnail URL if thumbnail exists
+        # Set thumbnail URL as presigned URL (industry standard)
+        # This allows <img> tags to load without auth headers
         if db_file.thumbnail_path:
-            db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
+            try:
+                db_file.thumbnail_url = get_file_url(
+                    str(db_file.thumbnail_path),
+                    expires=settings.THUMBNAIL_URL_EXPIRE_SECONDS,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate presigned thumbnail URL: {e}")
+                # Fallback to API endpoint (requires auth)
+                db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 
 
 def _get_or_compute_analytics(db: Session, file_id: int, file_status: str) -> Analytics | None:

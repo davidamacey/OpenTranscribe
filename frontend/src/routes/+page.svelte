@@ -122,7 +122,6 @@
   let loading: boolean = true;
   let error: string | null = null;
 
-
   // Animation and smooth update state
   let fileMap = new Map<string, MediaFile>();
   let pendingNewFiles = new Set<string>();

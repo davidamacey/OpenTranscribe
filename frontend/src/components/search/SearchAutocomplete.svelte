@@ -164,6 +164,7 @@
     {placeholder}
     autocomplete="off"
     role="combobox"
+    aria-controls="search-suggestions-listbox"
     aria-expanded={showSuggestions}
     aria-autocomplete="list"
   />
@@ -179,7 +180,7 @@
   {/if}
 
   {#if showSuggestions}
-    <div class="suggestions-dropdown" role="listbox">
+    <div class="suggestions-dropdown" role="listbox" id="search-suggestions-listbox">
       {#each suggestions as suggestion, i}
         <button
           class="suggestion-item"

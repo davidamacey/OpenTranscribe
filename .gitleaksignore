@@ -8,3 +8,29 @@ security-reports/
 # Specific patterns in security reports
 security-reports/**/*.txt
 security-reports/**/*.json
+
+# Test credentials - hardcoded test passwords for E2E and unit tests
+# These are well-known dev-only values (admin@example.com / password)
+backend/tests/api/endpoints/test_auth_comprehensive.py:hashicorp-tf-password:479
+backend/tests/e2e/conftest.py:hashicorp-tf-password:33
+backend/tests/e2e/conftest.py:hashicorp-tf-password:34
+backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:38
+backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:39
+backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:40
+backend/tests/e2e/test_auth_buttons.py:hashicorp-tf-password:41
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:55
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:56
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:59
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:60
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:66
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:67
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:70
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:71
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:74
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:75
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:78
+backend/tests/e2e/test_ldap_keycloak.py:hashicorp-tf-password:79
+backend/tests/e2e/test_mfa.py:hashicorp-tf-password:37
+backend/tests/e2e/test_mfa.py:hashicorp-tf-password:38
+backend/tests/test_auth_config_integration.py:hashicorp-tf-password:273
+scripts/run-auth-e2e.sh:hashicorp-tf-password:35

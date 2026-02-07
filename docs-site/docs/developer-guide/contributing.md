@@ -26,9 +26,27 @@ cd OpenTranscribe
 ## Code Guidelines
 
 - Follow existing code style
-- Add tests for new features
+- Add tests for new features (see [Testing Guide](./testing.md))
 - Update documentation
 - Keep commits focused
+
+## Testing Requirements
+
+All contributions should include appropriate tests:
+
+- **Backend changes**: Add unit tests in `backend/tests/`
+- **Frontend changes**: Add E2E tests in `backend/tests/e2e/`
+- **API changes**: Update API endpoint tests
+
+Run tests before submitting:
+
+```bash
+# Unit tests
+pytest backend/tests/ --ignore=backend/tests/e2e/ -v
+
+# E2E tests (requires dev environment)
+pytest backend/tests/e2e/ -v
+```
 
 ## Reporting Issues
 
@@ -40,4 +58,5 @@ Use GitHub Issues to report:
 ## Next Steps
 
 - [Architecture](./architecture.md)
+- [Testing Guide](./testing.md)
 - [GitHub Repository](https://github.com/davidamacey/OpenTranscribe)

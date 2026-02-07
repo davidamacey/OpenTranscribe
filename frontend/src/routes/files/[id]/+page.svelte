@@ -23,7 +23,8 @@
   import { isLLMAvailable } from '$stores/llmStatus';
   import { transcriptStore, processedTranscriptSegments } from '$stores/transcriptStore';
   import { getAISuggestions, type TagSuggestion, type CollectionSuggestion } from '$lib/api/suggestions';
-  import { getAppBaseUrl, getVideoUrl } from '$lib/utils/url';
+  import { getAppBaseUrl } from '$lib/utils/url';
+  import { getMediaStreamUrl, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import {
     getTranscriptionSettings,
     getTranscriptionSystemDefaults,
@@ -446,24 +447,49 @@
     }
   }
 
+  // URL refresher for long video playback
+  let urlRefresher: { stop: () => void } | null = null;
+
   /**
-   * Set up the video URL for streaming
+   * Set up the video URL for streaming using secure presigned URLs.
+   *
+   * This follows AWS/GCS best practices:
+   * - Short-lived presigned URLs (5 minutes default)
+   * - Automatic refresh before expiration for long playback
+   * - Cryptographically signed by MinIO
    */
-  function setupVideoUrl(fileId: string) {
-    // Check if this is a video file with completed transcription
-    const isVideo = file?.content_type && file.content_type.startsWith('video/');
-    const hasTranscript = file?.status === 'completed';
+  async function setupVideoUrl(fileId: string) {
+    try {
+      // Stop any existing URL refresher
+      if (urlRefresher) {
+        urlRefresher.stop();
+        urlRefresher = null;
+      }
 
-    // Always use the original video for playback - we'll add subtitles via WebVTT tracks
-    videoUrl = getVideoUrl(fileId);
+      // Clear cached URL to ensure fresh presigned URL
+      clearMediaUrlCache(fileId);
 
-    // Ensure URL has proper formatting
-    if (videoUrl && !videoUrl.startsWith('/') && !videoUrl.startsWith('http')) {
-      videoUrl = '/' + videoUrl;
+      // Get presigned URL from backend (authenticated, time-limited)
+      videoUrl = await getMediaStreamUrl(fileId, 'video');
+
+      // Set up automatic URL refresh for long videos
+      // Default expiration is 300 seconds (5 minutes)
+      urlRefresher = createUrlRefresher(
+        fileId,
+        (newUrl) => {
+          console.log('Video URL refreshed for continued playback');
+          videoUrl = newUrl;
+        },
+        300 // 5 minute expiration
+      );
+
+      // Reset video element check flag to prompt afterUpdate to try initialization
+      videoElementChecked = false;
+    } catch (error) {
+      console.error('Failed to get video URL:', error);
+      videoUrl = '';
+      errorMessage = 'Failed to load video. Please try refreshing the page.';
     }
-
-    // Reset video element check flag to prompt afterUpdate to try initialization
-    videoElementChecked = false;
   }
 
 
@@ -2234,6 +2260,12 @@
   onDestroy(() => {
     // Player cleanup is now handled by VideoPlayer component
     playerInitialized = false;
+
+    // Stop URL refresher for presigned URLs
+    if (urlRefresher) {
+      urlRefresher.stop();
+      urlRefresher = null;
+    }
 
     // LLM status cleanup is handled by the Settings component
 

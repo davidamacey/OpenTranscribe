@@ -7,6 +7,7 @@ embeddings from PyAnnote v3 (512-dim) to v4 (256-dim WeSpeaker).
 Includes safeguards against concurrent migrations and progress tracking via Redis.
 WebSocket notifications are sent for real-time progress updates via Redis pub/sub.
 """
+
 import logging
 
 from app.core.celery import celery_app

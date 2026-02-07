@@ -773,5 +773,5 @@ def get_transcription_system_defaults() -> TranscriptionSystemDefaults:
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
         common_languages=COMMON_LANGUAGES,
-        languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT)),
+        languages_with_alignment=sorted(list(LANGUAGES_WITH_ALIGNMENT or [])),
     )

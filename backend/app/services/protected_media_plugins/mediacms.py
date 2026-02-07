@@ -58,15 +58,12 @@ class MediacmsProvider(ProtectedMediaProvider):
                 return True
 
             path_parts = [p for p in parsed.path.split("/") if p]
-            if (
+            return (
                 len(path_parts) >= 3
                 and path_parts[0] == "api"
                 and path_parts[1] == "v1"
                 and path_parts[2] == "media"
-            ):
-                return True
-
-            return False
+            )
         except Exception:
             return False
 

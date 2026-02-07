@@ -1,13 +1,17 @@
-def test_get_users(client, admin_token_headers):
+"""User endpoint tests."""
+
+
+def test_get_users(client, admin_token_headers, normal_user, admin_user):
     """Test listing all users (admin only endpoint)"""
-    response = client.get("/api/users/", headers=admin_token_headers)
+    response = client.get("/api/users", headers=admin_token_headers)
     assert response.status_code == 200
     users = response.json()
     assert isinstance(users, list)
-    assert len(users) > 0
+    # With fixtures, we should have at least 2 users
+    assert len(users) >= 2
 
-    # Basic schema validation
-    assert "id" in users[0]
+    # Basic schema validation - response uses uuid not id
+    assert "uuid" in users[0]
     assert "email" in users[0]
     assert "full_name" in users[0]
     assert "is_active" in users[0]
@@ -16,7 +20,7 @@ def test_get_users(client, admin_token_headers):
 
 def test_get_users_unauthorized(client, user_token_headers):
     """Test that regular users cannot list all users"""
-    response = client.get("/api/users/", headers=user_token_headers)
+    response = client.get("/api/users", headers=user_token_headers)
     assert response.status_code in (401, 403)  # Either unauthorized or forbidden
 
 
@@ -27,7 +31,8 @@ def test_get_current_user(client, user_token_headers, normal_user):
     user_data = response.json()
     assert user_data["email"] == normal_user.email
     assert user_data["full_name"] == normal_user.full_name
-    assert user_data["id"] == normal_user.id
+    # Response uses uuid not id
+    assert user_data["uuid"] == str(normal_user.uuid)
 
 
 def test_update_current_user(client, user_token_headers):
@@ -102,6 +107,7 @@ def test_delete_user(client, admin_token_headers, normal_user, db_session):
     # Verify the user is deleted from the database
     from app.models.user import User
 
+    db_session.expire_all()
     deleted_user = db_session.query(User).filter(User.id == user_id).first()
     assert deleted_user is None
 

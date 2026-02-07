@@ -130,11 +130,14 @@ server {
         proxy_set_header Connection "upgrade";
     }
 
-    # MinIO API endpoint (for direct S3 operations if needed)
+    # MinIO API endpoint (for presigned URLs and direct S3 operations)
     location /s3/ {
         proxy_pass http://minio:9000/;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+
+        # IMPORTANT: MinIO presigned URLs are signed with 'minio:9000' as the host
+        # Must match exactly what the minio_client was initialized with
+        proxy_set_header Host "minio:9000";
 
         # Large file uploads to MinIO (10GB for GoPro/4K files)
         client_max_body_size 10G;

@@ -16,6 +16,9 @@
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
+  import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
+  import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
+  import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
 
@@ -29,7 +32,8 @@
   // Settings state
   $: isOpen = $settingsModalStore.isOpen;
   $: activeSection = $settingsModalStore.activeSection;
-  $: isAdmin = $userStore?.role === 'admin';
+  $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
+  $: isSuperAdmin = $userStore?.role === 'super_admin';
   $: isLocalUser = $userStore?.auth_type === 'local';
 
   // User Profile section
@@ -117,7 +121,12 @@
           { id: 'admin-users' as SettingsSection, label: $t('settings.users.title'), icon: 'users' },
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
           { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
-          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' }
+          { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
+          ...(isSuperAdmin ? [
+            { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
+            { id: 'account-status' as SettingsSection, label: 'Account Status', icon: 'users' },
+            { id: 'audit-logs' as SettingsSection, label: 'Audit Logs', icon: 'list' }
+          ] : [])
         ]
       }
     ] : []),
@@ -1390,6 +1399,33 @@
           {#if activeSection === 'embedding-migration' && isAdmin}
             <div class="content-section">
               <EmbeddingMigrationSettings />
+            </div>
+          {/if}
+
+          <!-- Authentication Settings Section (Super Admin only) -->
+          {#if activeSection === 'authentication' && isSuperAdmin}
+            <div class="content-section">
+              <h3 class="section-title">{$t('settings.authentication.title')}</h3>
+              <p class="section-description">{$t('settings.authentication.description')}</p>
+              <AuthenticationSettings />
+            </div>
+          {/if}
+
+          <!-- Account Status Dashboard (Super Admin only) -->
+          {#if activeSection === 'account-status' && isSuperAdmin}
+            <div class="content-section">
+              <h3 class="section-title">Account Status</h3>
+              <p class="section-description">Overview of user accounts, MFA adoption, and security status.</p>
+              <AccountStatusDashboard />
+            </div>
+          {/if}
+
+          <!-- Audit Log Viewer (Super Admin only) -->
+          {#if activeSection === 'audit-logs' && isSuperAdmin}
+            <div class="content-section">
+              <h3 class="section-title">Audit Logs</h3>
+              <p class="section-description">View and export authentication and configuration change logs.</p>
+              <AuditLogViewer />
             </div>
           {/if}
         </main>

@@ -22,16 +22,30 @@ ignore = [
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
-# Tests can use magic values, assertions, etc.
-"*/tests/*" = ["S101", "PLR2004", "S106", "S608"]
+# Tests: allow assertions, magic values, test credentials, try-except-pass,
+# requests without timeout, subprocess calls, imports after skip markers, etc.
+"**/tests/**" = [
+    "S101", "PLR2004",                  # assertions, magic values
+    "S105", "S106", "S107",             # hardcoded test passwords/credentials
+    "S110", "SIM105",                   # try-except-pass (test teardown)
+    "S113", "S310",                     # requests without timeout, URL open audit
+    "S603", "S607", "S608",             # subprocess calls, SQL in test fixtures
+    "E402",                             # imports after pytest.mark.skipif
+    "N801",                             # TestFIPS140_3 naming matches spec
+    "F841",                             # unused variables (test assertions via side effects)
+    "SIM102", "SIM117", "SIM222",       # nested if/with statements, readability over brevity
+    "B007",                             # unused loop variables in test iterations
+]
 # Allow imports at top level of __init__.py
 "__init__.py" = ["F401"]
-# Migrations can have long lines and other issues
+# Migrations and alembic versions use string-based SQL construction
 "**/migrations/**" = ["E501", "F401"]
+"**/alembic/**" = ["S608"]
 
 [tool.ruff.lint.mccabe]
-# Unlike Flake8, default to a complexity level of 10.
-max-complexity = 10
+# Auth functions (login, LDAP, Keycloak, PKI) are inherently complex.
+# 16 is standard for auth-heavy codebases.
+max-complexity = 16
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
@@ -42,3 +56,18 @@ docstring-quotes = "double"
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+# Test files have legitimate use of hardcoded credentials and other security patterns
+# These are flagged by bandit but are appropriate for test fixtures
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-n auto --dist loadgroup --tb=short -q"
+markers = [
+    "slow: marks tests as slow",
+    "pki: PKI certificate tests",
+    "e2e: end-to-end browser tests",
+]
+norecursedirs = ["tests/e2e"]
