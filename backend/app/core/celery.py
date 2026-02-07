@@ -16,7 +16,21 @@ def _patched_torch_load(*args, **kwargs):
 
 torch.load = _patched_torch_load
 
-# Imports must come after torch.load patch to prevent caching issues
+# WhisperX 3.7.0 passes deprecated use_auth_token to newer huggingface_hub
+# which no longer accepts it. Patch hf_hub_download to convert the parameter.
+import huggingface_hub
+from huggingface_hub import hf_hub_download as _original_hf_hub_download
+
+
+def _patched_hf_hub_download(*args, **kwargs):
+    if "use_auth_token" in kwargs:
+        kwargs["token"] = kwargs.pop("use_auth_token")
+    return _original_hf_hub_download(*args, **kwargs)
+
+
+huggingface_hub.hf_hub_download = _patched_hf_hub_download
+
+# Imports must come after patches to prevent caching issues
 from celery import Celery  # noqa: E402
 from celery.schedules import crontab  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
@@ -100,8 +114,22 @@ celery_app.conf.update(
 # Signal handlers for proper database connection management
 @worker_process_init.connect
 def init_worker_process(**kwargs):
-    """Initialize worker process - dispose of any existing connections."""
+    """Initialize worker process - dispose of any existing connections and set auth tokens."""
+    import os
+
     from app.db.base import engine
+
+    # Register HF token so pyannote/whisperx can access gated models
+    if settings.HUGGINGFACE_TOKEN:
+        os.environ["HF_TOKEN"] = settings.HUGGINGFACE_TOKEN
+        try:
+            from huggingface_hub import login
+
+            login(token=settings.HUGGINGFACE_TOKEN, add_to_git_credential=False)
+        except Exception as e:
+            import logging
+
+            logging.getLogger(__name__).warning(f"HuggingFace login failed: {e}")
 
     engine.dispose()
 

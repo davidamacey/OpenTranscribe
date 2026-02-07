@@ -327,6 +327,22 @@ class WhisperXService:
 
             return diarize_segments  # type: ignore[no-any-return]
 
+        except AttributeError as e:
+            # Pipeline.from_pretrained() returns None when gated model access is denied,
+            # causing .to(device) to raise "'NoneType' object has no attribute 'to'"
+            if "'NoneType'" in str(e) and "'to'" in str(e):
+                logger.error(f"Diarization model failed to load (gated access): {e}")
+                raise PermissionError(
+                    "Speaker diarization model failed to load. This typically means "
+                    "your HuggingFace token does not have access to the required gated models. "
+                    "To fix: 1) Verify HUGGINGFACE_TOKEN is set in your .env file. "
+                    "2) Accept BOTH model agreements: "
+                    "https://huggingface.co/pyannote/segmentation-3.0 and "
+                    "https://huggingface.co/pyannote/speaker-diarization-3.1 "
+                    "3) Restart the application containers."
+                ) from e
+            raise
+
         except Exception as e:
             error_msg = str(e)
 
