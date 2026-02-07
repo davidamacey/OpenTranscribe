@@ -25,12 +25,37 @@ OpenTranscribe uses WhisperX with the faster-whisper backend for state-of-the-ar
 
 ### Accuracy
 
-OpenTranscribe uses the **large-v2** model by default:
+OpenTranscribe uses the **large-v3-turbo** model by default (as of v0.4.0):
 
 - Word Error Rate (WER): ~3-5% on clean audio
 - Robust to accents and speech variations
 - Handles technical terminology well
 - Works with background noise
+- **6x faster than previous large-v2 model**
+
+## Model Selection
+
+Choose the right Whisper model for your use case:
+
+| Use Case | Model | Speed | Accuracy | Why |
+|----------|-------|-------|----------|-----|
+| **English audio** | `large-v3-turbo` | **6x faster** | Excellent | Default, fastest option |
+| **Spanish/French/German/Japanese** | `large-v3-turbo` | **6x faster** | Excellent | Good accuracy, fast |
+| **Thai/Cantonese/Vietnamese** | `large-v3` | Standard | Better | Turbo has reduced accuracy for these |
+| **Translation to English** | `large-v3` | Standard | Excellent | **Turbo cannot translate** |
+| **Maximum accuracy needed** | `large-v3` | Standard | **Best** | Slightly better than turbo |
+
+**Critical Note**: The `large-v3-turbo` model cannot translate audio to English. If you enable "Translate to English" in settings, you must switch to `large-v3`.
+
+**Configuration**:
+
+Set the model in Settings → Transcription → Model Selection, or via environment variable:
+
+```bash
+WHISPER_MODEL=large-v3-turbo  # Default (6x faster)
+WHISPER_MODEL=large-v3        # For translation or maximum accuracy
+WHISPER_MODEL=large-v2        # Legacy (not recommended)
+```
 
 ## Multi-Language Support
 
@@ -100,20 +125,23 @@ Every word gets precise timing:
 - Sample rate conversion
 - Multi-channel audio support
 
-## Model Selection
+## Available Models (Advanced)
 
-Choose model based on your needs:
+While `large-v3-turbo` is recommended for most users, other models are available for specific needs:
 
 | Model | VRAM | Speed | Accuracy | Use Case |
 |-------|------|-------|----------|----------|
-| tiny | 1GB | Fastest | Good | Quick drafts |
+| tiny | 1GB | Fastest | Good | Quick drafts, testing |
 | base | 1GB | Very fast | Better | Testing |
 | small | 2GB | Fast | Great | CPU systems |
-| medium | 5GB | Moderate | Excellent | Balanced |
-| **large-v2** | 6GB | Standard | **Best** | **Production** |
-| large-v3 | 6GB | Standard | Best | Latest model |
+| medium | 5GB | Moderate | Excellent | Balanced performance |
+| large-v2 | 6GB | Slower | Excellent | Legacy (slower than turbo) |
+| **large-v3-turbo** | 6GB | **6x faster** | **Excellent** | **Production (default)** |
+| large-v3 | 6GB | Standard | **Best** | Translation, maximum accuracy |
 
-**Recommendation**: Use `large-v2` for production (best accuracy/speed balance)
+**Default Recommendation**: Use `large-v3-turbo` for production (6x faster with excellent accuracy)
+
+**Alternative**: Use `large-v3` if you need translation to English or maximum accuracy
 
 ## Technical Details
 
@@ -157,7 +185,7 @@ Choose model based on your needs:
 - Use `float16` compute type
 - Increase batch size (if VRAM available)
 - Enable GPU acceleration
-- Use large-v2 model
+- Use large-v3-turbo model (default, 6x faster)
 
 **CPU Optimization**:
 - Use smaller model (small or medium)

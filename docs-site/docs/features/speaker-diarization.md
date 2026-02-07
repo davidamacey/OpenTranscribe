@@ -8,13 +8,26 @@ OpenTranscribe identifies different speakers and segments audio by "who spoke wh
 
 ## PyAnnote.audio Technology
 
-**State-of-the-art speaker diarization**:
+**State-of-the-art speaker diarization** (upgraded to PyAnnote v4):
 
+### Core Features
 - Neural network-based speaker detection
 - Voice activity detection (VAD)
 - Speaker embedding extraction
-- Overlap detection
+- Overlap detection with visual highlighting
 - Clustering for speaker assignment
+
+### Recent Improvements (v4 Migration)
+
+**New Capabilities**:
+- **Speaker Overlap Detection**: Automatically identifies and highlights segments where multiple speakers talk simultaneously with primary/secondary speaker classification and confidence scores
+- **Warm Model Caching**: Models are cached on startup, reducing initialization time by 40-60 seconds on subsequent restarts
+- **Fast Speaker Assignment**: 273x faster speaker clustering using optimized embedding algorithms
+
+**Technical Updates**:
+- **Embedding Dimension**: Upgraded from 192-dimensional to 256-dimensional speaker embeddings for improved voice fingerprinting accuracy
+- **Better Noise Handling**: Improved performance with background noise and overlapping speech
+- **Optimized Processing**: Faster GPU utilization with reduced memory overhead
 
 ## How It Works
 
@@ -29,10 +42,10 @@ OpenTranscribe identifies different speakers and segments audio by "who spoke wh
 ### Speaker Fingerprinting
 
 Each speaker gets a unique voice embedding:
-- 192-dimensional vector
-- Captures voice characteristics
+- 256-dimensional vector (PyAnnote v4)
+- Captures voice characteristics with high precision
 - Used for cross-video matching
-- Enables speaker recognition
+- Enables speaker recognition across videos
 
 ## Speaker Management
 
@@ -165,10 +178,23 @@ MAX_SPEAKERS=20  # Maximum speakers (no hard limit)
 ### Overlap Detection
 
 Identifies when multiple speakers talk simultaneously:
-- Overlap segments highlighted
-- Primary/secondary speaker identification
-- Overlap duration tracking
-- Interruption analysis
+
+**Visual Highlighting**:
+- Overlapping segments are highlighted in the transcript interface
+- Primary speaker (dominant voice) is identified first
+- Secondary speakers shown with reduced emphasis
+- Duration of overlap clearly marked
+
+**Technical Details**:
+- **Confidence Scoring**: Each overlap includes `overlap_confidence` (0-100) indicating detection certainty
+- **Primary/Secondary Classification**: PyAnnote v4 automatically ranks speakers by acoustic dominance during overlap
+- **Overlap Duration**: Precise timing of when speakers overlap, measured in milliseconds
+
+**Use Cases**:
+- **Interruption Analysis**: Track when speakers interrupt each other
+- **Dialogue Dynamics**: Understand conversation flow and turn-taking patterns
+- **Quality Control**: Identify audio issues or multiple speakers in a single recording
+- **Meeting Insights**: Analyze discussion intensity and participation intensity
 
 ### Speaker Verification Status
 
@@ -211,18 +237,32 @@ Configure speaker detection for each upload or reprocess:
 - Speaker detection: ~95% on clear audio
 - Voice matching: ~90% across videos
 - Overlap detection: ~85% accuracy
+- Overlap confidence scoring: Reliable 0-100 scale
 
-### Processing Time
+### Processing Time (PyAnnote v4)
 
-- Diarization adds ~30% to transcription time
-- Example: 1-hour audio = ~65 seconds total
-- Parallel with transcription (optimized)
+**Startup Impact**:
+- Cold start (first transcription): Normal baseline + model loading
+- Warm cache (subsequent transcriptions): **40-60 seconds faster** due to pre-loaded models
+- **Fast speaker assignment**: 273x faster clustering on GPU
+
+**Per-File Processing**:
+- Base diarization: ~20-30 seconds for 1-hour audio
+- With word-level alignment: +17-120 seconds depending on language
+- Parallel with transcription (optimized pipeline)
+- Diarization adds ~30% overhead to total transcription time
+
+**Example Timelines** (with warm cache):
+- 30 minutes audio: ~20 seconds diarization
+- 1 hour audio: ~30 seconds diarization
+- 2 hours audio: ~45 seconds diarization
 
 ### Resource Usage
 
-- **VRAM**: Additional 2GB for diarization
+- **VRAM**: Additional 2GB for diarization (256-dimensional embeddings)
 - **Total**: 8GB VRAM recommended
 - **CPU mode**: Slower but functional
+- **Model Cache**: ~2.6GB total (huggingface + torch models)
 
 ## Use Cases
 
@@ -253,6 +293,56 @@ Configure speaker detection for each upload or reprocess:
 - Medical consultation records
 - Deposition transcripts
 - Accurate speaker attribution
+
+## Performance Optimization
+
+OpenTranscribe v4 includes several optimizations to speed up speaker diarization processing:
+
+### Warm Model Caching
+
+**What it does**: AI models are loaded into memory on server startup and kept warm between transcriptions.
+
+**Benefits**:
+- **40-60 seconds faster** on first transcription after startup
+- Subsequent transcriptions use pre-loaded models
+- No repeated model initialization overhead
+- Configurable cache location via `MODEL_CACHE_DIR` environment variable
+
+**How it works**:
+```bash
+# Models cached in these locations
+${MODEL_CACHE_DIR}/huggingface/        # PyAnnote transformer model (~500MB)
+${MODEL_CACHE_DIR}/torch/pyannote/      # PyAnnote voice embeddings
+```
+
+### Fast Speaker Assignment
+
+**What it does**: PyAnnote v4 uses optimized clustering algorithms for speaker detection.
+
+**Performance**:
+- **273x faster** than previous speaker assignment methods
+- Clustering completes in milliseconds vs seconds
+- Particularly noticeable on high-speaker-count files (10+ speakers)
+
+**Technical**: Uses sklearn's `AgglomerativeClustering` with optimized similarity thresholds
+
+### Optional Word-Level Alignment Toggle
+
+**What it does**: The system can optionally align transcript words to precise timing in the audio.
+
+**Performance Impact**:
+- **Saves 17-120 seconds** per file depending on duration
+- Slower on languages without pre-trained alignment models (~42 languages have full support)
+- Can be disabled in user settings if speed is critical
+
+**When to disable**:
+- Processing very long files (4+ hours) for speed
+- Languages without alignment support (fallback to segment-level timing)
+- Batch processing large volumes where precision timing isn't needed
+
+**User Configuration**:
+- Can be toggled per-user in Settings → Transcription
+- Can be overridden per-file during upload
 
 ## Troubleshooting
 

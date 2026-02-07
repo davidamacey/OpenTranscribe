@@ -22,6 +22,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🎧 **Advanced Transcription**
 - **High-Accuracy Speech Recognition**: Powered by WhisperX with faster-whisper backend
+- **Ultra-Fast Default Model**: large-v3-turbo model (6x faster than large-v3, excellent accuracy for English)
 - **Word-Level Timestamps**: Precise timing for every word using WAV2VEC2 alignment
 - **100+ Language Support**: Transcribe in 100+ languages with optional English translation
 - **Configurable Source Language**: Auto-detect or specify source language for improved accuracy
@@ -34,7 +35,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Recording Controls**: Pause/resume recording with duration tracking and quality settings
 
 ### 👥 **Smart Speaker Management**
-- **Automatic Speaker Diarization**: Identify different speakers using PyAnnote.audio
+- **Automatic Speaker Diarization**: Identify different speakers using PyAnnote v4 with enhanced accuracy
+- **Speaker Overlap Detection**: Detect and handle multiple simultaneous speakers with advanced PyAnnote v4 capabilities
 - **Cross-Video Speaker Recognition**: AI-powered voice fingerprinting to identify speakers across different media files
 - **Speaker Profile System**: Create and manage global speaker profiles that persist across all transcriptions
 - **Intelligent Speaker Suggestions**: Consolidated speaker identification with confidence scoring and automatic profile matching
@@ -67,8 +69,9 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🔍 **Powerful Search & Discovery**
 - **Hybrid Search**: Combine keyword and semantic search capabilities
-- **Full-Text Indexing**: Lightning-fast content search with OpenSearch 3.3.1 (Apache Lucene 10)
-- **9.5x Faster Vector Search**: Significantly improved semantic search performance
+- **OpenSearch Neural Search**: Native neural search engine for advanced vector-based semantic search
+- **Full-Text Indexing**: Lightning-fast content search with OpenSearch 3.4.0 (Apache Lucene 10)
+- **9.5x Faster Vector Search**: Significantly improved neural search performance
 - **25% Faster Queries**: Enhanced full-text search with lower latency
 - **Advanced Filtering**: Filter by speaker, date, tags, duration, and more with searchable dropdowns
 - **Smart Tagging**: Organize content with custom tags and categories
@@ -128,10 +131,15 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Multi-Model Support**: Works with models from 3B to 200B+ parameters
 - **Local & Cloud Processing**: Support for both local (privacy-first) and cloud AI providers
 
-### 🔐 **Authentication & Security**
-- **Multiple Authentication Methods**: Local (username/password), LDAP/Active Directory, OIDC/Keycloak (OAuth 2.0 with PKCE), PKI/X.509 certificates (CAC/PIV support)
+### 🔐 **Enterprise Authentication & Security**
+- **Enterprise Authentication System**: Support for 4 authentication methods with hybrid configuration
+  - **Local Authentication**: Username/password with bcrypt hashing
+  - **LDAP/Active Directory**: Enterprise directory integration for corporate deployments
+  - **OIDC/Keycloak**: OAuth 2.0 with PKCE for single sign-on (SSO) capabilities
+  - **PKI/X.509 Certificates**: CAC/PIV smart card support for government and high-security deployments
 - **Multi-Factor Authentication (MFA)**: TOTP-based authentication (Google Authenticator, Authy) with backup codes for account recovery
-- **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8), comprehensive audit logging (AU-2/AU-3)
+- **Comprehensive Audit Logging**: All authentication events logged for compliance and security monitoring
+- **FedRAMP Compliance Features**: Password complexity policies (IA-5), account lockout after failed attempts, classification banners (AC-8)
 - **Enterprise Session Management**: JWT with refresh token rotation, session timeout controls, secure token storage
 - **Password Security**: Password history tracking to prevent reuse, configurable complexity requirements
 - **Rate Limiting**: Protection against brute-force attacks on authentication endpoints
@@ -185,7 +193,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### **AI/ML Stack**
 - **WhisperX** - Advanced speech recognition with 100+ language support
-- **PyAnnote.audio** - Speaker diarization and voice analysis
+- **large-v3-turbo Model** - Default ultra-fast transcription model with 6x speed improvement
+- **PyAnnote v4** - Advanced speaker diarization with speaker overlap detection capabilities
 - **Faster-Whisper** - Optimized inference engine
 - **Multi-Provider LLM Integration** - Support for vLLM, OpenAI, Ollama, Anthropic Claude, and OpenRouter
 - **Local LLM Support** - Privacy-focused processing with vLLM and Ollama
@@ -197,7 +206,8 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 ### **Infrastructure**
 - **PostgreSQL** - Reliable relational database with JSONB support for flexible schemas
 - **MinIO** - S3-compatible object storage
-- **OpenSearch 3.3.1** - Full-text and vector search engine with Apache Lucene 10
+- **OpenSearch 3.4.0** - Full-text and neural search engine with Apache Lucene 10
+  - Native neural search for advanced semantic capabilities
   - 9.5x faster vector search performance
   - 25% faster queries with lower latency
   - 75% lower p90 latency for aggregations

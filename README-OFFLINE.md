@@ -19,12 +19,16 @@ Complete guide for deploying OpenTranscribe on air-gapped systems with no intern
 The OpenTranscribe offline package provides a complete, self-contained deployment solution for air-gapped environments. The package includes:
 
 - All Docker container images
-- Pre-downloaded AI models (~38GB)
+- Pre-downloaded AI models (~40GB)
+  - WhisperX transcription models (large-v3-turbo default + large-v3)
+  - PyAnnote speaker diarization models
+  - OpenSearch neural search models (semantic search embeddings)
+  - Language-specific alignment models (wav2vec2) for word-level timestamps
 - Configuration files and templates
 - Installation and management scripts
 - Complete documentation
 
-**Package Size:** 15-20GB compressed (tar.xz), ~60GB uncompressed (compression optional)
+**Package Size:** 15-20GB compressed (tar.xz), ~65GB uncompressed (compression optional)
 
 ## System Requirements
 
@@ -100,7 +104,7 @@ System where OpenTranscribe will be installed:
 
    **Option 2: Skip Compression**
    - Saves time if testing locally
-   - Leaves uncompressed directory (~60GB)
+   - Leaves uncompressed directory (~65GB)
    - Can compress manually later if needed
    - Useful for fast local network transfers
 
@@ -123,7 +127,7 @@ System where OpenTranscribe will be installed:
    **If uncompressed:**
    ```
    offline-package-build/
-   ├── opentranscribe-offline-v{version}/            (~60GB directory)
+   ├── opentranscribe-offline-v{version}/            (~65GB directory)
    └── opentranscribe-offline-v{version}.sha256
    ```
 
@@ -252,8 +256,9 @@ The `.env` file contains auto-detected settings. You may customize:
 - `JWT_SECRET_KEY` - JWT signing key (auto-generated)
 
 **AI Model Settings:**
-- `WHISPER_MODEL` - Transcription model size (default: large-v2)
-  - Options: tiny, base, small, medium, large-v1, large-v2
+- `WHISPER_MODEL` - Transcription model size (default: large-v3-turbo)
+  - Options: tiny, base, small, medium, large-v1, large-v2, large-v3, large-v3-turbo
+  - **Note:** `large-v3-turbo` is 6x faster than `large-v3` with excellent accuracy for English and most languages. Use `large-v3` for translation tasks or maximum accuracy on low-resource languages.
 - `BATCH_SIZE` - Processing batch size (default: 16)
 - `MIN_SPEAKERS` / `MAX_SPEAKERS` - Speaker detection range (default: 1-20, can be increased to 50+ for large events)
 
@@ -269,6 +274,13 @@ For AI summarization and speaker identification features:
 - Provider-specific API keys and settings
 
 **Note:** LLM features require internet access. Leave `LLM_PROVIDER` empty for offline transcription-only mode.
+
+**Neural Search Settings:**
+- OpenSearch neural search is included in the offline package with pre-downloaded embedding models
+- Uses `sentence-transformers/all-MiniLM-L6-v2` for semantic search (~80MB model)
+- Supports both full-text and neural/semantic search queries
+- No additional configuration needed for offline neural search support
+- Requires 2GB additional memory per OpenSearch container for embeddings
 
 ### Port Configuration
 
@@ -477,7 +489,8 @@ sudo ./opentr.sh restart
 **GPU Optimization:**
 - Use `COMPUTE_TYPE=float16` for NVIDIA GPUs
 - Increase `BATCH_SIZE` if you have >16GB VRAM
-- Use `large-v2` model for best accuracy (requires 8GB+ VRAM)
+- Use `large-v3-turbo` (default) for balanced speed/accuracy (requires 6GB+ VRAM)
+- Use `large-v3` for maximum accuracy or translation tasks (requires 10GB+ VRAM)
 
 **System Resources:**
 - Monitor with: `docker stats`

@@ -5,6 +5,114 @@ All notable changes to OpenTranscribe will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-07
+
+### Overview
+
+Major release with three major enterprise-grade features: multi-method authentication system with super admin UI, PyAnnote v4 migration with speaker overlap detection, and OpenSearch native neural search integration. This release significantly improves security, performance, and search capabilities.
+
+### Added
+
+#### Enterprise Authentication System
+- **Multi-Method Authentication**: Support for 4 simultaneous authentication methods:
+  - Local authentication with bcrypt hashing
+  - LDAP/Active Directory integration with auto-provisioning
+  - OIDC/Keycloak with identity federation and social login
+  - PKI/X.509 certificate authentication with OCSP/CRL revocation checking
+- **Super Admin Configuration UI** - Comprehensive settings interface for managing authentication methods without restart
+- **Multi-Factor Authentication (MFA)** - RFC 6238 compliant TOTP with Google Authenticator, Authy, Microsoft Authenticator compatibility
+- **Password Policies** - FedRAMP IA-5 compliant password requirements with complexity, history, and expiration
+- **Account Lockout** - NIST AC-7 compliant protection with configurable failed attempt thresholds and progressive lockout
+- **Rate Limiting** - Per-IP and per-user rate limiting for authentication and API endpoints
+- **Audit Logging** - Comprehensive authentication audit trail in structured JSON/CEF format with OpenSearch integration
+- **Session Management** - JWT token-based sessions with refresh token rotation and concurrent session limits
+- **Database-Driven Configuration** - All auth settings stored encrypted (AES-256-GCM) in database, accessible via admin UI
+
+#### PyAnnote v4 Migration & Optimization
+- **Automatic Migration System** - Admin UI for seamless migration from PyAnnote v3 to v4 with progress tracking
+- **Speaker Overlap Detection** - Identifies and visualizes overlapping speakers with confidence scoring
+- **Warm Model Caching** - Eliminates 40-60 second cold-start delays by pre-loading models on startup
+- **Fast Speaker Assignment** - 273x faster speaker assignment using interval tree optimization
+- **Flexible Embedding Mode** - Per-file toggle between PyAnnote v3, v4, or auto-detection
+- **Optional Word-Level Alignment** - User-configurable word-level timestamp alignment (saves 17-120s per file)
+- **Asynchronous Embedding Extraction** - Non-blocking speaker embedding processing
+
+#### OpenSearch Native Neural Search
+- **ML Commons Integration** - Native OpenSearch neural search using ML Commons plugin
+- **Server-Side Embeddings** - Embedding generation moved from client to server for better performance
+- **Hybrid Search** - Combines BM25 full-text with neural semantic search using RRF merging
+- **Model Registry** - 6 embedding models organized by quality tier (smallest/fastest to largest/most accurate)
+- **Offline/Airgapped Support** - Model downloading scripts for environments without internet access
+- **Dynamic Model Management** - Add/remove embedding models via admin UI
+
+#### Performance Improvements
+- **Default Model Change** - Switched from large-v2 to large-v3-turbo (6x faster transcription)
+  - Note: large-v3-turbo cannot translate; use large-v3 for translation needs
+- **Batch Size Optimization** - Intelligent batch sizing based on available VRAM
+- **Neural Model Endpoints** - RESTful API for model lifecycle management
+
+### Changed
+
+- **Default Whisper Model** - Changed from `large-v2` to `large-v3-turbo` for significantly faster transcription with maintained accuracy
+  - New default: `WHISPER_MODEL=large-v3-turbo` (6x faster, excellent for English and most languages)
+  - For translation to English: Use `WHISPER_MODEL=large-v3` (large-v3-turbo cannot translate)
+  - For maximum accuracy: Use `WHISPER_MODEL=large-v3` (slightly better accuracy than turbo)
+- **PyAnnote Embedding Dimension** - v4 uses 256-dim embeddings instead of 192-dim for better voice matching
+- **Speaker Embedding Storage** - Database schema updated to support v3/v4 dual-mode during migration
+- **Authentication Configuration** - Moved from environment variables to database for better security and manageability
+- **Model Caching** - Improved caching strategy with warm-start support and automatic prefetching
+
+### Breaking Changes
+
+- **Authentication Configuration**: Auth settings now configured via Super Admin UI (Settings → Authentication) instead of environment variables. Database configuration takes precedence if set.
+- **PyAnnote Migration**: Existing installations may need to migrate speaker embeddings for optimal overlap detection (optional but recommended)
+
+### Fixed
+
+- Speaker overlap detection accuracy improved
+- Neural search relevance and ranking improved
+- Authentication rate limiting prevents brute force attacks
+- PKI certificate validation with OCSP/CRL revocation checking
+
+### Upgrade Notes
+
+#### Standard Upgrade (Non-Breaking)
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Restart services (automatically runs migrations)
+docker compose up -d
+```
+
+The system will automatically detect the authentication configuration mode and function correctly. To use new authentication features:
+
+1. Log in as super admin
+2. Navigate to Settings → Authentication
+3. Enable desired authentication methods
+4. Configure each method in its dedicated section
+
+#### PyAnnote v4 Migration (Optional)
+
+To take advantage of new speaker overlap detection and improved performance:
+
+1. Navigate to Settings → Embeddings
+2. Click "Migrate to PyAnnote v4"
+3. Monitor progress with the real-time progress bar
+4. No restart required
+
+#### Model Selection for Your Language
+
+- **English audio**: Keep default `large-v3-turbo` for fastest transcription
+- **Non-English (no translation needed)**: Keep default `large-v3-turbo` for 6x faster speed
+- **Translation to English**: Switch to `large-v3` (turbo cannot translate)
+  - In Settings → Transcription → Model Selection, choose `large-v3`
+- **Maximum accuracy needed**: Switch to `large-v3` for best overall accuracy
+  - In Settings → Transcription → Model Selection, choose `large-v3`
+
+---
+
 ## [0.3.3] - 2025-01-13
 
 ### Overview
