@@ -185,11 +185,24 @@ class WhisperXService:
         # Load model with hardware-specific configuration
         self._log_model_loading()
 
+        # Override compute_type from env if set (e.g., int8_float16 for speed)
+        compute_type = os.getenv("WHISPER_COMPUTE_TYPE", self.compute_type)
+
         load_options = {
             "whisper_arch": self.model_name,
             "device": self.device,
-            "compute_type": self.compute_type,
+            "compute_type": compute_type,
         }
+
+        # Override beam_size and other asr_options from env
+        asr_options = {}
+        beam_size = os.getenv("WHISPER_BEAM_SIZE", "").strip()
+        if beam_size:
+            asr_options["beam_size"] = int(beam_size)
+            logger.info(f"Using custom beam_size={beam_size}")
+
+        if asr_options:
+            load_options["asr_options"] = asr_options
 
         # Add language hint if specified (helps accuracy even when translating)
         # "auto" means let Whisper detect the language automatically
@@ -204,6 +217,10 @@ class WhisperXService:
             # Always use device 0 since Docker maps the selected GPU to index 0
             load_options["device_index"] = 0
 
+        logger.info(
+            f"Loading WhisperX model: compute_type={compute_type}, "
+            f"beam_size={asr_options.get('beam_size', 5)}"
+        )
         model = whisperx.load_model(**load_options)
 
         # Load and validate audio
@@ -221,6 +238,165 @@ class WhisperXService:
         del model
         self.hardware_config.optimize_memory_usage()
         self.hardware_config.log_vram_usage("after transcription model deleted")
+
+        return transcription_result, audio
+
+    def transcribe_with_word_timestamps(self, audio_file_path: str) -> tuple[dict[str, Any], Any]:
+        """
+        Transcribe audio using faster-whisper directly with native word timestamps.
+
+        This bypasses WhisperX's batched pipeline to use faster-whisper's built-in
+        cross-attention-based word timing (DTW alignment). No separate wav2vec2
+        model needed. Trade-off: sequential processing (no batching) but gets
+        word-level timestamps in a single pass.
+
+        Uses WhisperX's VAD for chunking, then processes each chunk with
+        faster-whisper's native word_timestamps=True.
+
+        Args:
+            audio_file_path: Path to the audio file
+
+        Returns:
+            Tuple of (transcription_result dict with word timestamps, audio data)
+        """
+        import time as time_mod
+
+        step_start = time_mod.perf_counter()
+
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as e:
+            raise ImportError("faster-whisper is required.") from e
+
+        self._log_model_loading()
+
+        # Load audio via WhisperX (ensures correct format/sample rate)
+        audio = self._load_and_validate_audio(audio_file_path)
+
+        # Load faster-whisper model directly (not WhisperX's pipeline wrapper)
+        compute_type = os.getenv("WHISPER_COMPUTE_TYPE", self.compute_type)
+        beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
+
+        logger.info(
+            f"Loading faster-whisper model directly: {self.model_name}, "
+            f"compute_type={compute_type}, beam_size={beam_size}"
+        )
+        fw_model = WhisperModel(
+            self.model_name,
+            device=self.device,
+            device_index=0 if self.device == "cuda" else 0,
+            compute_type=compute_type,
+        )
+
+        model_load_time = time_mod.perf_counter() - step_start
+        logger.info(f"TIMING: faster-whisper model loaded in {model_load_time:.3f}s")
+
+        # Use WhisperX's VAD to get speech segments (same chunking as batched mode)
+        vad_start = time_mod.perf_counter()
+        import torch
+        from whisperx.vads.pyannote import Pyannote
+        from whisperx.vads.pyannote import load_vad_model
+
+        vad_pipeline = load_vad_model(device=self.device)
+        waveform = torch.from_numpy(audio).unsqueeze(0)
+        vad_result = vad_pipeline({"waveform": waveform, "sample_rate": 16000})
+
+        # Merge into ~30s chunks (same as WhisperX default)
+        vad_segments = Pyannote.merge_chunks(
+            vad_result,
+            chunk_size=30,
+            onset=0.500,
+            offset=0.363,
+        )
+        del vad_pipeline, waveform
+        self.hardware_config.optimize_memory_usage()
+
+        vad_time = time_mod.perf_counter() - vad_start
+        logger.info(
+            f"TIMING: VAD completed in {vad_time:.3f}s - {len(vad_segments)} speech segments"
+        )
+
+        # Transcribe each VAD chunk with word_timestamps=True
+        transcribe_start = time_mod.perf_counter()
+        sample_rate = 16000
+        all_segments = []
+        total_words = 0
+
+        task = "translate" if self.translate_to_english else "transcribe"
+        language = self.source_language if self.source_language != "auto" else None
+
+        detected_language = language
+        for chunk_idx, vad_seg in enumerate(vad_segments):
+            chunk_start = vad_seg["start"]
+            chunk_end = vad_seg["end"]
+
+            # Extract audio chunk
+            f1 = int(chunk_start * sample_rate)
+            f2 = int(chunk_end * sample_rate)
+            audio_chunk = audio[f1:f2]
+
+            # Transcribe with native word timestamps
+            segments_gen, info = fw_model.transcribe(
+                audio_chunk,
+                beam_size=beam_size,
+                word_timestamps=True,
+                task=task,
+                language=detected_language,
+                vad_filter=False,  # We already did VAD
+            )
+
+            # Detect language from first chunk
+            if chunk_idx == 0 and detected_language is None:
+                detected_language = info.language
+                logger.info(f"Detected language: {detected_language}")
+
+            # Process segments, adjusting timestamps to absolute positions
+            for seg in segments_gen:
+                words = []
+                if seg.words:
+                    for w in seg.words:
+                        words.append(
+                            {
+                                "word": w.word,
+                                "start": float(round(chunk_start + w.start, 3)),
+                                "end": float(round(chunk_start + w.end, 3)),
+                                "probability": float(round(w.probability, 3)),
+                            }
+                        )
+                    total_words += len(words)
+
+                all_segments.append(
+                    {
+                        "text": seg.text,
+                        "start": float(round(chunk_start + seg.start, 3)),
+                        "end": float(round(chunk_start + seg.end, 3)),
+                        "words": words,
+                    }
+                )
+
+        transcribe_time = time_mod.perf_counter() - transcribe_start
+        total_time = time_mod.perf_counter() - step_start
+        logger.info(
+            f"TIMING: native word_timestamps transcription completed in {transcribe_time:.3f}s "
+            f"- {len(all_segments)} segments, {total_words} words with timestamps"
+        )
+        logger.info(
+            f"TIMING: transcribe_with_word_timestamps TOTAL {total_time:.3f}s "
+            f"(model_load={model_load_time:.3f}s, vad={vad_time:.3f}s, "
+            f"transcribe={transcribe_time:.3f}s)"
+        )
+
+        # Clean up model
+        self.hardware_config.log_vram_usage("after native transcription, before cleanup")
+        del fw_model
+        self.hardware_config.optimize_memory_usage()
+        self.hardware_config.log_vram_usage("after native transcription model deleted")
+
+        transcription_result = {
+            "segments": all_segments,
+            "language": detected_language or "en",
+            "word_timestamps_native": True,
+        }
 
         return transcription_result, audio
 
@@ -247,15 +423,30 @@ class WhisperXService:
             model_name=None,
         )
 
-        logger.info("Aligning transcription for precise word timings...")
-        aligned_result = whisperx.align(
-            transcription_result["segments"],
-            align_model,
-            align_metadata,
-            audio,
-            self.device,
-            return_char_alignments=False,
-        )
+        use_batched = os.getenv("USE_BATCHED_ALIGNMENT", "false").lower() == "true"
+
+        if use_batched:
+            from app.utils.batched_alignment import align_batched
+
+            logger.info("Aligning transcription using BATCHED wav2vec2 inference...")
+            aligned_result = align_batched(
+                transcription_result["segments"],
+                align_model,
+                align_metadata,
+                audio,
+                self.device,
+                return_char_alignments=False,
+            )
+        else:
+            logger.info("Aligning transcription for precise word timings...")
+            aligned_result = whisperx.align(
+                transcription_result["segments"],
+                align_model,
+                align_metadata,
+                audio,
+                self.device,
+                return_char_alignments=False,
+            )
 
         # Optimize memory usage based on device
         self.hardware_config.log_vram_usage("after alignment, before cleanup")
@@ -501,47 +692,99 @@ class WhisperXService:
         """
         import time
 
+        from app.utils.vram_profiler import VRAMProfiler
+
         pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
 
         # Step 1: Transcribe (40% -> 50%)
+        import os
+
+        use_native_word_ts = os.getenv("USE_NATIVE_WORD_TIMESTAMPS", "false").lower() == "true"
+
         self._report_progress(progress_callback, 0.42, "Running initial transcription")
         step_start = time.perf_counter()
-        transcription_result, audio = self.transcribe_audio(audio_file_path)
+        if use_native_word_ts:
+            logger.info("Using native word timestamps mode (faster-whisper direct)")
+            with profiler.step("transcription_native_word_ts"):
+                transcription_result, audio = self.transcribe_with_word_timestamps(audio_file_path)
+        else:
+            with profiler.step("transcription"):
+                transcription_result, audio = self.transcribe_audio(audio_file_path)
         logger.info(
             f"TIMING: transcribe_audio completed in {time.perf_counter() - step_start:.3f}s"
         )
 
-        # Step 2: Align (50% -> 55%) - optional, can be disabled for performance
-        import os
+        from .parallel_pipeline import ThreadSafeProgress
+        from .parallel_pipeline import can_run_parallel
+        from .parallel_pipeline import get_pipeline_mode
+        from .parallel_pipeline import run_parallel_pipeline
 
-        # Alignment is required for proper speaker assignment and overlap detection
-        # TODO: Add support for segment-level-only mode without alignment
-        enable_alignment = os.getenv("ENABLE_ALIGNMENT", "true").lower() == "true"
+        pipeline_mode = get_pipeline_mode()
+        use_parallel = pipeline_mode == "parallel" and can_run_parallel()
 
-        if enable_alignment:
-            self._report_progress(progress_callback, 0.50, "Aligning word-level timestamps")
+        if use_parallel:
+            # Parallel mode: alignment and diarization run concurrently in threads
+            logger.info("Using PARALLEL pipeline mode (alignment + diarization concurrent)")
+            progress_wrapper = ThreadSafeProgress(progress_callback) if progress_callback else None
             step_start = time.perf_counter()
-            aligned_result = self._align_with_fallback(transcription_result, audio)
+            with profiler.step("parallel_align_and_diarize"):
+                aligned_result, diarize_segments = run_parallel_pipeline(
+                    whisperx_service=self,
+                    audio_file_path=audio_file_path,
+                    audio=audio,
+                    transcription_result=transcription_result,
+                    hf_token=hf_token,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
+                    num_speakers=num_speakers,
+                    progress=progress_wrapper,
+                )
             logger.info(
-                f"TIMING: align_transcription completed in {time.perf_counter() - step_start:.3f}s"
+                f"TIMING: parallel align+diarize completed in {time.perf_counter() - step_start:.3f}s"
             )
         else:
-            logger.info("TIMING: alignment SKIPPED (ENABLE_ALIGNMENT=false)")
-            aligned_result = transcription_result
+            # Sequential mode: alignment then diarization (default)
+            logger.info(f"Using SEQUENTIAL pipeline mode (PIPELINE_MODE={pipeline_mode})")
 
-        # Step 3: Diarize (55% -> 65%)
-        self._report_progress(progress_callback, 0.55, "Analyzing speaker patterns")
-        step_start = time.perf_counter()
-        diarize_segments = self.perform_speaker_diarization(
-            audio,
-            hf_token,
-            max_speakers=max_speakers,
-            min_speakers=min_speakers,
-            num_speakers=num_speakers,
-        )
-        logger.info(
-            f"TIMING: perform_speaker_diarization completed in {time.perf_counter() - step_start:.3f}s"
-        )
+            # Step 2: Align (50% -> 55%) - optional, disabled by default for performance
+            # Word-level timestamps from alignment are not persisted to DB or used by any
+            # downstream feature (search, frontend seek, speaker assignment all use segment-level).
+            # Enable with ENABLE_ALIGNMENT=true if word-level highlighting is needed.
+            # Skip alignment if native word timestamps are enabled (already have word timing)
+            enable_alignment = os.getenv("ENABLE_ALIGNMENT", "false").lower() == "true"
+            if use_native_word_ts:
+                enable_alignment = False
+                logger.info(
+                    "TIMING: alignment SKIPPED (native word timestamps already provide word timing)"
+                )
+
+            if enable_alignment:
+                self._report_progress(progress_callback, 0.50, "Aligning word-level timestamps")
+                step_start = time.perf_counter()
+                with profiler.step("alignment"):
+                    aligned_result = self._align_with_fallback(transcription_result, audio)
+                logger.info(
+                    f"TIMING: align_transcription completed in {time.perf_counter() - step_start:.3f}s"
+                )
+            else:
+                logger.info("TIMING: alignment SKIPPED (ENABLE_ALIGNMENT=false)")
+                aligned_result = transcription_result
+
+            # Step 3: Diarize (55% -> 65%)
+            self._report_progress(progress_callback, 0.55, "Analyzing speaker patterns")
+            step_start = time.perf_counter()
+            with profiler.step("diarization"):
+                diarize_segments = self.perform_speaker_diarization(
+                    audio,
+                    hf_token,
+                    max_speakers=max_speakers,
+                    min_speakers=min_speakers,
+                    num_speakers=num_speakers,
+                )
+            logger.info(
+                f"TIMING: perform_speaker_diarization completed in {time.perf_counter() - step_start:.3f}s"
+            )
 
         # Extract overlap info from PyAnnote v4 diarization before speaker assignment
         # diarize_segments is a DataFrame with attrs for overlap info
@@ -552,11 +795,31 @@ class WhisperXService:
         self._report_progress(progress_callback, 0.65, "Assigning speakers to transcript")
         self.hardware_config.log_vram_usage("before assign_word_speakers")
         step_start = time.perf_counter()
-        final_result = self.assign_speakers_to_words(diarize_segments, aligned_result)
+        with profiler.step("speaker_assignment"):
+            final_result = self.assign_speakers_to_words(diarize_segments, aligned_result)
         logger.info(
             f"TIMING: assign_word_speakers (WhisperX) completed in {time.perf_counter() - step_start:.3f}s"
         )
         self.hardware_config.log_vram_usage("after assign_word_speakers")
+
+        # Step 4b: Segment dedup (when alignment is disabled)
+        # Without alignment, WhisperX returns both coarse VAD-chunked segments AND
+        # fine-grained subsegments, creating duplicates. Clean them up.
+        # Can be explicitly disabled with ENABLE_SEGMENT_DEDUP=false for A/B testing.
+        enable_alignment = os.getenv("ENABLE_ALIGNMENT", "false").lower() == "true"
+        enable_dedup = os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true"
+        if not enable_alignment and enable_dedup:
+            from app.utils.segment_dedup import clean_segments
+
+            step_start = time.perf_counter()
+            original_count = len(final_result.get("segments", []))
+            final_result["segments"] = clean_segments(final_result["segments"])
+            logger.info(
+                f"TIMING: segment_dedup completed in {time.perf_counter() - step_start:.3f}s "
+                f"- {original_count} -> {len(final_result['segments'])} segments"
+            )
+        elif not enable_alignment and not enable_dedup:
+            logger.info("TIMING: segment_dedup SKIPPED (ENABLE_SEGMENT_DEDUP=false)")
 
         # Step 5: Log overlapping speech detection (70% -> 75%)
         step_start = time.perf_counter()
@@ -578,6 +841,9 @@ class WhisperXService:
         del audio
         self.hardware_config.optimize_memory_usage()
         self.hardware_config.log_vram_usage("after final WhisperX cleanup")
+
+        # Log VRAM profiling report
+        profiler.log_report()
 
         pipeline_elapsed = time.perf_counter() - pipeline_start
         logger.info(

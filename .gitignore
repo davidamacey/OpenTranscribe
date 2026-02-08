@@ -5,6 +5,7 @@ offline-package-build/
 OT_TEST/
 opentranscribe/
 reference_repos/
+benchmarks/
 
 # Environment variables
 .env
@@ -236,6 +237,11 @@ dump.rdb
 
 # Development specific files
 backend/whisperx-test.py
+transcript_readable.txt
+
+# Pipeline debug data (saved by PIPELINE_DEBUG_DIR)
+debug_data/
+pipeline_debug/
 
 # Fonts (downloaded during build)
 frontend/public/fonts/

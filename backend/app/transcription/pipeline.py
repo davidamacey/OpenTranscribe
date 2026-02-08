@@ -1,0 +1,203 @@
+"""Main transcription pipeline orchestrator.
+
+Coordinates: audio loading -> transcription -> diarization -> speaker
+assignment -> dedup into a single process() call with the same output
+format as WhisperXService.process_full_pipeline().
+"""
+
+import logging
+import time
+from typing import Any
+from typing import Callable
+
+from app.transcription.config import TranscriptionConfig
+from app.transcription.model_manager import ModelManager
+
+logger = logging.getLogger(__name__)
+
+
+class TranscriptionPipeline:
+    """Full transcription pipeline using faster-whisper + PyAnnote v4.
+
+    Output format is identical to WhisperXService.process_full_pipeline()
+    so no downstream changes are needed in core.py result processing.
+    """
+
+    def __init__(self, config: TranscriptionConfig):
+        self.config = config
+        self.manager = ModelManager.get_instance()
+
+    def process(
+        self,
+        audio_file_path: str,
+        progress_callback: Callable[[float, str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Full pipeline: audio -> transcribed, diarized, speaker-assigned segments.
+
+        Args:
+            audio_file_path: Path to the audio file (wav, mp3, etc).
+            progress_callback: Optional callback(progress: float, message: str)
+                for reporting progress. Progress values match the existing
+                WhisperX pipeline range (0.42 -> 0.70).
+
+        Returns:
+            Dict with keys:
+                "segments": list of segment dicts, each with
+                    "text", "start", "end", "speaker", "words"
+                "language": detected language code (str)
+                "overlap_info": dict with count, duration, regions (if overlaps)
+        """
+        from app.utils.hardware_detection import detect_hardware
+        from app.utils.vram_profiler import VRAMProfiler
+
+        pipeline_start = time.perf_counter()
+        profiler = VRAMProfiler()
+        hw = detect_hardware()
+
+        # Step 1: Load audio
+        self._report(progress_callback, 0.42, "Loading audio")
+        from app.transcription.audio import load_audio
+
+        audio = load_audio(audio_file_path)
+
+        # Step 2: Transcribe with BatchedInferencePipeline + word_timestamps
+        self._report(progress_callback, 0.43, "Running AI transcription")
+        step_start = time.perf_counter()
+        with profiler.step("transcription"):
+            transcriber = self.manager.get_transcriber(self.config)
+            transcript = transcriber.transcribe(audio)
+        logger.info(
+            f"TIMING: transcription step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        if not transcript.get("segments"):
+            logger.warning("Transcription produced no segments")
+            return transcript
+
+        # Step 3: Release transcriber VRAM for sequential mode
+        self._report(progress_callback, 0.52, "Preparing speaker analysis")
+        hw.log_vram_usage("after transcription, before diarizer load")
+        self.manager.release_transcriber()
+        hw.log_vram_usage("after transcriber release")
+
+        # Step 4: Diarize with PyAnnote v4
+        self._report(progress_callback, 0.55, "Analyzing speaker patterns")
+        step_start = time.perf_counter()
+        with profiler.step("diarization"):
+            diarizer = self.manager.get_diarizer(self.config)
+            diarize_df, overlap_info = diarizer.diarize(audio)
+        logger.info(
+            f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        # Save raw GPU outputs for offline post-processing iteration
+        self._save_intermediate(transcript, diarize_df, overlap_info)
+
+        # Step 5: Segment dedup BEFORE speaker assignment
+        # Splits coarse VAD chunks (20-30s) into sentence-level segments (~3-5s)
+        # so each sentence gets its own speaker assignment.
+        if self.config.enable_dedup:
+            step_start = time.perf_counter()
+            from app.utils.segment_dedup import clean_segments
+
+            original_count = len(transcript.get("segments", []))
+            transcript["segments"] = clean_segments(transcript["segments"])
+            logger.info(
+                f"TIMING: segment_dedup completed in "
+                f"{time.perf_counter() - step_start:.3f}s - "
+                f"{original_count} -> {len(transcript['segments'])} segments"
+            )
+
+        # Step 6: Assign speakers to segments and words
+        self._report(progress_callback, 0.65, "Assigning speakers to transcript")
+        step_start = time.perf_counter()
+        with profiler.step("speaker_assignment"):
+            from app.transcription.speaker_assigner import assign_speakers
+
+            result = assign_speakers(diarize_df, transcript)
+        logger.info(
+            f"TIMING: speaker assignment completed in {time.perf_counter() - step_start:.3f}s"
+        )
+
+        # Add overlap metadata
+        if overlap_info.get("count", 0) > 0:
+            result["overlap_info"] = overlap_info
+
+        # Save final result for comparison
+        self._save_intermediate_result(result, "final_result")
+
+        # Cleanup
+        hw.log_vram_usage("before final pipeline cleanup")
+        del diarize_df, audio
+        hw.optimize_memory_usage()
+        hw.log_vram_usage("after final pipeline cleanup")
+
+        profiler.log_report()
+
+        elapsed = time.perf_counter() - pipeline_start
+        logger.info(
+            f"TIMING: TranscriptionPipeline.process TOTAL completed in {elapsed:.3f}s - "
+            f"{len(result.get('segments', []))} segments, "
+            f"language={result.get('language', 'unknown')}"
+        )
+
+        return result
+
+    @staticmethod
+    def _save_intermediate(
+        transcript: dict,
+        diarize_df: Any,
+        overlap_info: dict,
+    ) -> None:
+        """Save raw GPU outputs so post-processing can be iterated offline."""
+        import json
+        import os
+
+        out_dir = os.environ.get("PIPELINE_DEBUG_DIR", "")
+        if not out_dir:
+            return
+
+        os.makedirs(out_dir, exist_ok=True)
+        logger.info(f"Saving intermediate pipeline data to {out_dir}")
+
+        # Raw transcription (segments + words from faster-whisper)
+        with open(os.path.join(out_dir, "raw_transcript.json"), "w") as f:
+            json.dump(transcript, f, indent=2, default=str)
+
+        # Diarization DataFrame
+        diarize_df.to_json(
+            os.path.join(out_dir, "raw_diarization.json"), orient="records", indent=2
+        )
+
+        # Overlap info
+        with open(os.path.join(out_dir, "overlap_info.json"), "w") as f:
+            json.dump(overlap_info, f, indent=2, default=str)
+
+        logger.info(
+            f"Saved: raw_transcript.json ({len(transcript.get('segments', []))} segments), "
+            f"raw_diarization.json ({len(diarize_df)} rows), overlap_info.json"
+        )
+
+    @staticmethod
+    def _save_intermediate_result(result: dict, name: str) -> None:
+        """Save a processing result for comparison."""
+        import json
+        import os
+
+        out_dir = os.environ.get("PIPELINE_DEBUG_DIR", "")
+        if not out_dir:
+            return
+
+        path = os.path.join(out_dir, f"{name}.json")
+        with open(path, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        logger.info(f"Saved {name}.json ({len(result.get('segments', []))} segments)")
+
+    @staticmethod
+    def _report(
+        callback: Callable[[float, str], None] | None,
+        progress: float,
+        message: str,
+    ) -> None:
+        if callback:
+            callback(progress, message)

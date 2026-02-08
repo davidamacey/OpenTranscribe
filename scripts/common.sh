@@ -50,7 +50,7 @@ fix_model_cache_permissions() {
   fi
 
   # Ensure all required subdirectories exist
-  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" 2>/dev/null
+  mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/nltk_data" "$MODEL_CACHE_DIR/sentence-transformers" "$MODEL_CACHE_DIR/opensearch-ml" 2>/dev/null
 
   # Check ownership of parent AND all subdirectories (subdirs may be root-owned
   # even if the parent is correctly owned by UID 1000)
@@ -89,6 +89,105 @@ fix_model_cache_permissions() {
   fi
 
   return 0
+}
+
+# Ensure OpenSearch neural models are downloaded for offline capability
+ensure_opensearch_models() {
+  # Read MODEL_CACHE_DIR from .env if it exists
+  local MODEL_CACHE_DIR=""
+  if [ -f .env ]; then
+    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+  fi
+
+  # Use default if not set
+  MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
+
+  # Check if OpenSearch neural models directory exists and has content
+  local opensearch_models_dir="$MODEL_CACHE_DIR/opensearch-ml"
+
+  # Check if default model exists (all-MiniLM-L6-v2)
+  if [ -d "$opensearch_models_dir/all-MiniLM-L6-v2" ] && [ -n "$(ls -A "$opensearch_models_dir/all-MiniLM-L6-v2" 2>/dev/null)" ]; then
+    echo "✅ OpenSearch neural models found"
+    return 0
+  fi
+
+  # Models not found - try to download them
+  echo "📥 OpenSearch neural models not found - attempting download..."
+  echo "   (Default model: all-MiniLM-L6-v2, ~80MB)"
+
+  # Check if download-models.py exists
+  if [ ! -f "./scripts/download-models.py" ]; then
+    echo "⚠️  Warning: download-models.py not found - models will download on first use"
+    return 1
+  fi
+
+  # Check if Docker is available
+  if ! command -v docker &> /dev/null; then
+    echo "⚠️  Warning: Docker not found - models will download on first use"
+    return 1
+  fi
+
+  # Check if backend Docker image exists (pull if not)
+  if ! docker image inspect davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+    echo "   Backend Docker image not found locally - pulling from Docker Hub..."
+    if ! docker pull davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+      echo "⚠️  Warning: Could not pull backend image - models will download on first use"
+      return 1
+    fi
+  fi
+
+  # Set environment to download only default OpenSearch model
+  export OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+
+  # Run download script (only for OpenSearch models - others handled separately)
+  echo "📥 Downloading OpenSearch neural model (all-MiniLM-L6-v2)..."
+
+  # Get Hugging Face token from .env if available
+  local HF_TOKEN=""
+  if [ -f .env ]; then
+    HF_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+  fi
+
+  # Detect GPU
+  local use_gpu="false"
+  local gpu_args=""
+  if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+    use_gpu="true"
+    if [ -n "$GPU_DEVICE_ID" ]; then
+      gpu_args="--gpus device=${GPU_DEVICE_ID}"
+    else
+      gpu_args="--gpus all"
+    fi
+  fi
+
+  # Create opensearch-ml directory if needed
+  mkdir -p "$opensearch_models_dir"
+
+  # Download OpenSearch models using Docker (same approach as transcription models)
+  # shellcheck disable=SC2086
+  docker run --rm \
+      $gpu_args \
+      -e CUDA_VISIBLE_DEVICES=0 \
+      -e HUGGINGFACE_TOKEN="${HF_TOKEN}" \
+      -e USE_GPU="${use_gpu}" \
+      -e OPENSEARCH_MODELS="all-MiniLM-L6-v2" \
+      -v "$(realpath "$opensearch_models_dir"):/home/appuser/.cache/opensearch-ml" \
+      -v "./scripts/download-models.py:/app/download-models.py:ro" \
+      davidamacey/opentranscribe-backend:latest \
+      python /app/download-models.py 2>&1 | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
+
+  # Check if model was actually downloaded
+  if [ -d "$opensearch_models_dir/all-MiniLM-L6-v2" ] && [ -n "$(ls -A "$opensearch_models_dir/all-MiniLM-L6-v2" 2>/dev/null)" ]; then
+    echo "✅ OpenSearch neural model downloaded and cached"
+    return 0
+  else
+    echo ""
+    echo "⚠️  OpenSearch model download was unsuccessful"
+    echo "   Don't worry - models will auto-download during backend startup"
+    echo "   This is normal and search will work correctly"
+    echo ""
+    return 1
+  fi
 }
 
 #######################

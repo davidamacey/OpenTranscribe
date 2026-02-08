@@ -1,4 +1,5 @@
 # Skip heavy AI imports during testing - speeds up test startup significantly
+import logging
 import os
 
 _SKIP_CELERY = os.environ.get("SKIP_CELERY", "").lower() == "true"
@@ -21,10 +22,16 @@ if not _SKIP_CELERY:
     torch.load = _patched_torch_load
 
     # Apply PyAnnote v4 compatibility patch BEFORE any whisperx imports
-    # This replaces whisperx.diarize.DiarizationPipeline with our v4-compatible version
-    from app.utils.pyannote_compat import apply_pyannote_v4_patch  # noqa: E402
+    # Only needed for whisperx engine — native engine uses PyAnnote v4 directly
+    _engine = os.environ.get("TRANSCRIPTION_ENGINE", "native").lower()
+    if _engine == "whisperx":
+        from app.utils.pyannote_compat import apply_pyannote_v4_patch  # noqa: E402
 
-    apply_pyannote_v4_patch()
+        apply_pyannote_v4_patch()
+    else:
+        logging.getLogger(__name__).info(
+            "Skipping WhisperX pyannote patch (TRANSCRIPTION_ENGINE=native)"
+        )
 
 # Imports must come after torch.load patch to prevent caching issues
 from celery import Celery  # noqa: E402
@@ -55,6 +62,7 @@ celery_app = Celery(
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
         "app.tasks.speaker_embedding_migration",
+        "app.tasks.baseline_export",
     ],
 )
 
@@ -115,6 +123,9 @@ celery_app.conf.update(
         "check_migration_status": {"queue": "utility"},
         "extract_v4_embeddings": {"queue": "gpu"},
         "finalize_v4_migration": {"queue": "utility"},
+        # Benchmark/baseline tasks (lightweight DB reads)
+        "export_transcript_baseline": {"queue": "utility"},
+        "compare_transcript_baseline": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={

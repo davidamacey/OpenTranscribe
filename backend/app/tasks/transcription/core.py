@@ -32,9 +32,13 @@ from .storage import generate_full_transcript
 from .storage import get_unique_speaker_names
 from .storage import save_transcript_segments
 from .storage import update_media_file_transcription_status
-from .whisperx_service import WhisperXService
 
 logger = logging.getLogger(__name__)
+
+
+def _get_transcription_engine() -> str:
+    """Get the configured transcription engine (native or whisperx)."""
+    return os.getenv("TRANSCRIPTION_ENGINE", "native").lower()
 
 
 def _get_user_language_settings(db, user_id: int) -> dict:
@@ -270,31 +274,74 @@ def _index_transcript_in_search(ctx: TranscriptionContext, processed_segments: l
         logger.warning(f"Failed to dispatch search indexing task for file {file_uuid}: {e}")
 
 
+def _resolve_language_settings(
+    ctx: TranscriptionContext,
+    source_language: str | None,
+    translate_to_english: bool | None,
+) -> tuple[str, bool]:
+    """Resolve language settings from explicit args or user DB settings."""
+    if source_language is not None and translate_to_english is not None:
+        return source_language, translate_to_english
+
+    with session_scope() as db:
+        user_lang_settings = _get_user_language_settings(db, ctx.user_id)
+        resolved_lang = source_language or user_lang_settings["source_language"]
+        resolved_translate = (
+            translate_to_english
+            if translate_to_english is not None
+            else user_lang_settings["translate_to_english"]
+        )
+
+    return resolved_lang, resolved_translate
+
+
+def _run_native_pipeline(
+    ctx: TranscriptionContext,
+    audio_file_path: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    source_language: str,
+    translate_to_english: bool,
+) -> dict:
+    """Run the native faster-whisper + PyAnnote v4 transcription pipeline."""
+    from app.transcription import TranscriptionConfig
+    from app.transcription import TranscriptionPipeline
+
+    config = TranscriptionConfig.from_environment(
+        source_language=source_language,
+        translate_to_english=translate_to_english,
+        min_speakers=min_speakers if min_speakers is not None else settings.MIN_SPEAKERS,
+        max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
+        num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
+        hf_token=settings.HUGGINGFACE_TOKEN,
+    )
+
+    with session_scope() as db:
+        update_task_status(db, ctx.task_id, "in_progress", progress=0.4)
+
+    send_progress_notification(ctx.user_id, ctx.file_id, 0.4, "Running AI transcription")
+
+    def progress_callback(progress, message):
+        with session_scope() as db:
+            update_task_status(db, ctx.task_id, "in_progress", progress=progress)
+        send_progress_notification(ctx.user_id, ctx.file_id, progress, message)
+
+    pipeline = TranscriptionPipeline(config)
+    return pipeline.process(audio_file_path, progress_callback=progress_callback)
+
+
 def _run_whisperx_pipeline(
     ctx: TranscriptionContext,
     audio_file_path: str,
     min_speakers: int | None,
     max_speakers: int | None,
     num_speakers: int | None,
-    source_language: str | None = None,
-    translate_to_english: bool | None = None,
+    source_language: str,
+    translate_to_english: bool,
 ) -> dict:
-    """Run the WhisperX transcription pipeline."""
-    # Get user language settings if not explicitly provided
-    if source_language is None or translate_to_english is None:
-        with session_scope() as db:
-            user_lang_settings = _get_user_language_settings(db, ctx.user_id)
-            source_language = source_language or user_lang_settings["source_language"]
-            translate_to_english = (
-                translate_to_english
-                if translate_to_english is not None
-                else user_lang_settings["translate_to_english"]
-            )
-
-    logger.info(
-        f"Language settings for file {ctx.file_id}: "
-        f"source_language={source_language}, translate_to_english={translate_to_english}"
-    )
+    """Run the legacy WhisperX transcription pipeline (fallback)."""
+    from .whisperx_service import WhisperXService
 
     whisperx_service = WhisperXService(
         model_name=os.getenv("WHISPER_MODEL", "large-v2"),
@@ -321,6 +368,51 @@ def _run_whisperx_pipeline(
         max_speakers=max_speakers if max_speakers is not None else settings.MAX_SPEAKERS,
         num_speakers=num_speakers if num_speakers is not None else settings.NUM_SPEAKERS,
     )
+
+
+def _run_transcription_pipeline(
+    ctx: TranscriptionContext,
+    audio_file_path: str,
+    min_speakers: int | None,
+    max_speakers: int | None,
+    num_speakers: int | None,
+    source_language: str | None = None,
+    translate_to_english: bool | None = None,
+) -> dict:
+    """Run the transcription pipeline using the configured engine."""
+    source_language, translate_to_english = _resolve_language_settings(
+        ctx, source_language, translate_to_english
+    )
+
+    logger.info(
+        f"Language settings for file {ctx.file_id}: "
+        f"source_language={source_language}, translate_to_english={translate_to_english}"
+    )
+
+    engine = _get_transcription_engine()
+
+    if engine == "native":
+        logger.info(f"Using NATIVE transcription engine for file {ctx.file_id}")
+        return _run_native_pipeline(
+            ctx,
+            audio_file_path,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            source_language,
+            translate_to_english,
+        )
+    else:
+        logger.info(f"Using WHISPERX transcription engine for file {ctx.file_id}")
+        return _run_whisperx_pipeline(
+            ctx,
+            audio_file_path,
+            min_speakers,
+            max_speakers,
+            num_speakers,
+            source_language,
+            translate_to_english,
+        )
 
 
 def _process_transcription_result(
@@ -563,8 +655,10 @@ def _process_file_in_temp_dir(
         progress_callback=audio_extraction_progress_callback,
     )
 
-    # Run WhisperX pipeline
-    result = _run_whisperx_pipeline(ctx, audio_file_path, min_speakers, max_speakers, num_speakers)
+    # Run transcription pipeline (native or whisperx based on TRANSCRIPTION_ENGINE)
+    result = _run_transcription_pipeline(
+        ctx, audio_file_path, min_speakers, max_speakers, num_speakers
+    )
 
     # Validate transcription result
     validation_error = _validate_transcription_result(result, ctx, ctx.task_id)
@@ -606,14 +700,16 @@ def transcribe_audio_task(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
 ):
-    """
-    Process an audio/video file with WhisperX for transcription and Pyannote for diarization.
+    """Process an audio/video file for transcription and speaker diarization.
+
+    Uses the native faster-whisper + PyAnnote v4 pipeline by default,
+    or falls back to WhisperX when TRANSCRIPTION_ENGINE=whisperx.
 
     Args:
-        file_uuid: UUID of the MediaFile to transcribe
-        min_speakers: Optional minimum number of speakers for diarization (falls back to settings.MIN_SPEAKERS)
-        max_speakers: Optional maximum number of speakers for diarization (falls back to settings.MAX_SPEAKERS)
-        num_speakers: Optional fixed number of speakers for diarization (falls back to settings.NUM_SPEAKERS)
+        file_uuid: UUID of the MediaFile to transcribe.
+        min_speakers: Minimum speakers for diarization (falls back to settings).
+        max_speakers: Maximum speakers for diarization (falls back to settings).
+        num_speakers: Fixed speaker count for diarization (falls back to settings).
     """
     task_id = self.request.id
     ctx = None
@@ -647,7 +743,7 @@ def transcribe_audio_task(
             logger.error(f"PyAnnote model access error: {str(e)}")
             return _handle_transcription_failure(ctx, task_id, str(e), "gated_model_access")
         except Exception as e:
-            logger.error(f"Error in WhisperX processing: {str(e)}")
+            logger.error(f"Error in transcription processing: {str(e)}")
             error_message = _get_user_friendly_error_message(str(e))
             return _handle_transcription_failure(ctx, task_id, error_message, "processing_error")
 

@@ -799,8 +799,12 @@ ${MODEL_CACHE_DIR}/
 ├── nltk_data/           # NLTK data files
 │   ├── tokenizers/      # punkt_tab tokenizer (~13MB)
 │   └── taggers/         # POS taggers
-└── sentence-transformers/ # Sentence transformers models
-    └── sentence-transformers_all-MiniLM-L6-v2/ # Semantic search model (~80MB)
+├── sentence-transformers/ # Sentence transformers models
+│   └── sentence-transformers_all-MiniLM-L6-v2/ # Semantic search model (~80MB)
+└── opensearch-ml/       # OpenSearch neural search models
+    ├── all-MiniLM-L6-v2/ # Default model for neural search (~80MB)
+    │   └── sentence-transformers_all-MiniLM-L6-v2-1.0.1-torch_script.zip
+    └── model_manifest.json # Download metadata
 ```
 
 ### Speaker Diarization Configuration
@@ -829,13 +833,60 @@ volumes:
   - ${MODEL_CACHE_DIR}/torch:/home/appuser/.cache/torch
   - ${MODEL_CACHE_DIR}/nltk_data:/home/appuser/.cache/nltk_data
   - ${MODEL_CACHE_DIR}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+  - ${MODEL_CACHE_DIR}/opensearch-ml:/home/appuser/.cache/opensearch-ml  # OpenSearch neural models
+
+# OpenSearch container volume mapping (read-only)
+  - ${MODEL_CACHE_DIR}/opensearch-ml:/ml-models:ro  # Mounted in OpenSearch container
 ```
 
 ### Key Benefits
 - **No code complexity**: Models use their natural cache locations
 - **Persistent storage**: Models saved between container restarts
 - **User configurable**: Simple `.env` variable controls cache location
-- **No re-downloads**: Models cached after first download (~2.6GB total)
+- **No re-downloads**: Models cached after first download (~2.7GB total)
+- **Automatic setup**: OpenSearch neural models download automatically on first start
+- **Offline capability**: Models persist for air-gapped deployments
+
+### OpenSearch Neural Search Models
+
+OpenTranscribe uses OpenSearch's native neural search for semantic/vector search capabilities:
+
+**Model Management:**
+- **Default Model**: `all-MiniLM-L6-v2` (384-dim, 80MB, English)
+- **Auto-Download**: Default model downloads automatically on first start if missing
+- **Offline Support**: Models persist in `${MODEL_CACHE_DIR}/opensearch-ml/` for air-gapped deployments
+- **Fallback**: If model download fails, OpenSearch downloads from internet on-demand (temporary, not persisted)
+
+**Download Methods:**
+
+1. **Automatic (Recommended)**: Run `./opentr.sh start dev` - models download if missing
+2. **Manual Pre-Download**: Run `bash scripts/download-models.sh models` before starting
+3. **Offline Preparation**:
+   ```bash
+   # On internet-connected machine:
+   DOWNLOAD_ALL_OPENSEARCH_MODELS=true bash scripts/download-models.sh models
+
+   # Copy models/ directory to offline machine
+   rsync -av models/ user@offline-machine:/opt/opentranscribe/models/
+   ```
+
+**Available Models** (see `backend/app/core/constants.py:OPENSEARCH_EMBEDDING_MODELS`):
+- Fast tier (384d): `all-MiniLM-L6-v2` (default), `paraphrase-multilingual-MiniLM-L12-v2`
+- Balanced tier (768d): `all-mpnet-base-v2`, `paraphrase-multilingual-mpnet-base-v2`
+- Best tier: `all-distilroberta-v1` (768d), `distiluse-base-multilingual-cased-v1` (512d)
+
+**Backend Startup Flow:**
+1. Backend checks for local models in `/ml-models/` (OpenSearch container mount)
+2. If default model missing, downloads to `~/.cache/opensearch-ml/` (backend container)
+3. Volume mapping persists models to host `${MODEL_CACHE_DIR}/opensearch-ml/`
+4. OpenSearch ML Commons registers model from local file (`file://`) for offline use
+5. If local registration fails, falls back to remote HuggingFace registration (requires internet)
+
+**Configuration** (`.env`):
+```bash
+OPENSEARCH_NEURAL_SEARCH_ENABLED=true  # Enable/disable neural search (default: true)
+OPENSEARCH_NEURAL_MODEL=huggingface/sentence-transformers/all-MiniLM-L6-v2  # Model to use
+```
 
 ## Security Features
 

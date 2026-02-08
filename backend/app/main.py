@@ -170,8 +170,9 @@ async def _initialize_neural_search():
     This function:
     1. Configures ML Commons cluster settings
     2. Checks for local models (offline deployment support)
-    3. Ensures the default model is registered and deployed
-    4. Creates/updates the neural ingest pipeline
+    3. Auto-downloads default model if missing and internet available
+    4. Ensures the default model is registered and deployed
+    5. Creates/updates the neural ingest pipeline
 
     Runs after a delay to allow OpenSearch to fully start.
     For offline/air-gapped deployments, models are loaded from
@@ -200,7 +201,29 @@ async def _initialize_neural_search():
             model_names = [m["short_name"] for m in local_models]
             logger.info(f"Found {len(local_models)} local models for offline use: {model_names}")
         else:
-            logger.info("No local models found, will use remote registration (requires internet)")
+            logger.warning("No local models found - attempting automatic download")
+
+            # Try to download default model if internet is available
+            from app.services.search.model_downloader import check_internet_connectivity
+            from app.services.search.model_downloader import ensure_model_downloaded
+
+            default_model = settings.OPENSEARCH_NEURAL_MODEL
+
+            if check_internet_connectivity():
+                logger.info(f"Internet available - downloading default model: {default_model}")
+                model_path = ensure_model_downloaded(default_model)
+
+                if model_path:
+                    logger.info(f"Model downloaded successfully: {model_path}")
+                    # Re-check local models after download
+                    local_models = ml_service.get_available_local_models()
+                    if local_models:
+                        logger.info("Models now available for offline use")
+                else:
+                    logger.warning("Model download failed - will use remote registration")
+            else:
+                logger.warning("No internet connection - cannot download models")
+                logger.warning("Will use remote registration (requires OpenSearch to download)")
 
         # Check if we have an active model
         active_model_id = ml_service.get_active_model_id()

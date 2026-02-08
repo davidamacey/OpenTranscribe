@@ -53,6 +53,16 @@ export default defineConfig(({ mode }) => {
             Host: 'minio:9000',
           },
         },
+        // S3 proxy for presigned URLs (thumbnails, media files)
+        // Mirrors the nginx /s3/ location block for dev mode parity
+        '/s3': {
+          target: env.VITE_MINIO_URL || 'http://minio:9000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/s3/, ''),
+          headers: {
+            Host: 'minio:9000',
+          },
+        },
       },
       // Add historyApiFallback to handle client-side routing
       fs: {

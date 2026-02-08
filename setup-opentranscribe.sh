@@ -923,6 +923,9 @@ configure_environment() {
     # Model selection based on hardware
     select_whisper_model
 
+    # OpenSearch neural search model selection
+    select_opensearch_models
+
     # GPU selection for multi-GPU systems
     select_gpu_device
 
@@ -1020,6 +1023,114 @@ select_whisper_model() {
     if [ "$WHISPER_MODEL" != "$RECOMMENDED_MODEL" ]; then
         echo -e "${YELLOW}  Note: You selected a different model than recommended${NC}"
     fi
+    echo ""
+}
+
+select_opensearch_models() {
+    echo -e "${YELLOW}🔍 Selecting OpenSearch Neural Search Models...${NC}"
+    echo ""
+
+    # Auto-select optimal model based on use case
+    local RECOMMENDED_MODEL="all-MiniLM-L6-v2"
+    local RECOMMENDATION_REASON="Fast, lightweight, good for English keyword-heavy searches"
+
+    # Display available models
+    echo -e "${BLUE}Available Neural Search Models (for semantic/vector search):${NC}"
+    echo ""
+    echo "Quality Tier       Model                    Dims  Size   Languages    Use Case"
+    echo "───────────────────────────────────────────────────────────────────────────────────────────────────"
+    echo "FAST (Default)     all-MiniLM-L6-v2         384   80MB   English      Fast baseline, keyword-heavy"
+    echo "FAST (Multi)       multilingual-MiniLM      384   420MB  50+ langs    Fast multilingual"
+    echo "BALANCED           all-mpnet-base-v2        768   420MB  English      Better semantic understanding"
+    echo "BALANCED (Multi)   multilingual-mpnet       768   1.1GB  50+ langs    Quality multilingual"
+    echo "BEST               all-distilroberta-v1     768   290MB  English      Best retrieval quality"
+    echo "BEST (Multi)       multilingual-cased       512   480MB  15 langs     Best for common languages"
+    echo ""
+    echo -e "${GREEN}Recommendation: ${RECOMMENDED_MODEL}${NC}"
+    echo "  Reason: ${RECOMMENDATION_REASON}"
+    echo ""
+    echo "Note: Higher quality models provide better semantic search but are larger."
+    echo "      You can change this later via Admin UI (Settings → Search → Model)."
+    echo ""
+
+    # Simplified options
+    echo "Select model quality level:"
+    echo "  1) fast         - all-MiniLM-L6-v2 (80MB, English only) [DEFAULT]"
+    echo "  2) balanced     - all-mpnet-base-v2 (420MB, English, better quality)"
+    echo "  3) best         - all-distilroberta-v1 (290MB, English, highest quality)"
+    echo "  4) multilingual-fast      - paraphrase-multilingual-MiniLM-L12-v2 (420MB, 50+ langs)"
+    echo "  5) multilingual-balanced  - paraphrase-multilingual-mpnet-base-v2 (1.1GB, 50+ langs)"
+    echo "  6) multilingual-best      - distiluse-base-multilingual-cased-v1 (480MB, 15 langs)"
+    echo "  7) all-models   - Download all 6 models (~2.6GB total, complete offline support)"
+    echo "  8) skip         - Don't download now (download on first use)"
+    echo ""
+
+    # Prompt user for model selection
+    while true; do
+        read -p "Select model quality [1-8, default=1]: " user_choice </dev/tty
+
+        # Use default if user just presses Enter
+        if [ -z "$user_choice" ] || [ "$user_choice" = "1" ]; then
+            OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+            OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+            break
+        fi
+
+        # Validate input
+        case "$user_choice" in
+            2)
+                OPENSEARCH_MODELS="all-mpnet-base-v2"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-mpnet-base-v2"
+                break
+                ;;
+            3)
+                OPENSEARCH_MODELS="all-distilroberta-v1"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-distilroberta-v1"
+                break
+                ;;
+            4)
+                OPENSEARCH_MODELS="paraphrase-multilingual-MiniLM-L12-v2"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+                break
+                ;;
+            5)
+                OPENSEARCH_MODELS="paraphrase-multilingual-mpnet-base-v2"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+                break
+                ;;
+            6)
+                OPENSEARCH_MODELS="distiluse-base-multilingual-cased-v1"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/distiluse-base-multilingual-cased-v1"
+                break
+                ;;
+            7)
+                # Download all models for complete offline support
+                export DOWNLOAD_ALL_OPENSEARCH_MODELS=true
+                OPENSEARCH_MODELS=""  # Empty means all models will be downloaded
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+                echo ""
+                echo -e "${GREEN}✓ Will download all 6 models (~2.6GB)${NC}"
+                echo "This provides complete offline support with all quality tiers"
+                echo ""
+                break
+                ;;
+            8)
+                OPENSEARCH_MODELS=""
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+                echo ""
+                echo -e "${YELLOW}⚠️  Skipping OpenSearch model download${NC}"
+                echo "Model will download automatically on first use (causes delay)"
+                echo ""
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Please enter 1-8.${NC}"
+                ;;
+        esac
+    done
+
+    echo ""
+    echo -e "${GREEN}✓ Selected model: ${OPENSEARCH_MODELS}${NC}"
     echo ""
 }
 
@@ -1205,6 +1316,11 @@ create_env_file() {
     sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env
     sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
     sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
+
+    # Update OpenSearch neural model configuration (if selected)
+    if [[ -n "$OPENSEARCH_NEURAL_MODEL" ]]; then
+        sed -i.bak "s|OPENSEARCH_NEURAL_MODEL=.*|OPENSEARCH_NEURAL_MODEL=$OPENSEARCH_NEURAL_MODEL|g" .env
+    fi
 
     # Update LLM configuration
     if [[ -n "$LLM_PROVIDER" ]]; then
@@ -1422,7 +1538,7 @@ configure_https_settings() {
 download_ai_models() {
     print_header "AI Model Pre-Download"
 
-    echo "OpenTranscribe requires AI models (~2.5GB) for transcription and speaker diarization."
+    echo "OpenTranscribe requires AI models (~2.7GB) for transcription, speaker diarization, and semantic search."
     echo ""
     echo "Configuration summary:"
     echo "  • Hardware: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
@@ -1500,7 +1616,7 @@ download_ai_models() {
     fi
 
     # Token is configured - proceed with download
-    echo -e "${YELLOW}Ready to download AI models (~2.5GB)${NC}"
+    echo -e "${YELLOW}Ready to download AI models (~2.7GB)${NC}"
     echo "This will take 10-30 minutes depending on your internet speed."
     echo ""
     read -p "Start model download now? (Y/n) " -n 1 -r </dev/tty
@@ -1534,12 +1650,14 @@ download_ai_models() {
     export COMPUTE_TYPE
     export DETECTED_DEVICE
     export GPU_DEVICE_ID
+    export OPENSEARCH_MODELS
+    export OPENSEARCH_NEURAL_MODEL
 
     # Create models directory structure with proper permissions
     print_info "Creating model cache directories with proper permissions..."
 
     # Create main directory and subdirectories
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
@@ -1559,7 +1677,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"

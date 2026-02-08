@@ -248,6 +248,9 @@ start_app() {
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
 
+  # Ensure OpenSearch neural models are downloaded for offline capability
+  ensure_opensearch_models
+
   # Build compose file list based on environment and flags
   COMPOSE_FILES="-f docker-compose.yml"
 
@@ -632,6 +635,9 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # Ensure OpenSearch neural models are downloaded for offline capability
+  ensure_opensearch_models
 
   # Start all services - docker compose handles dependency ordering via depends_on
   echo "🚀 Starting all services..."
