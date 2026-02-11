@@ -262,6 +262,7 @@ def _process_speaker_match(
     # Update confidence and suggestion in PostgreSQL
     speaker.confidence = similarity  # type: ignore[assignment]
     speaker.suggested_name = updated_speaker.display_name  # type: ignore[assignment]
+    speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
     store_speaker_match(int(updated_speaker.id), int(speaker.id), similarity, db)
 
     if similarity >= 0.75:

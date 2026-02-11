@@ -4,6 +4,7 @@
   import { DatePicker } from '@svelte-plugins/datepicker';
   import { format } from 'date-fns';
   import axiosInstance from '../lib/axios';
+  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   import { t } from '$stores/locale';
@@ -205,34 +206,44 @@
     });
   }
 
-  // Fetch all tags
+  // Fetch all tags (cached with TTL, invalidated via WebSocket push)
   async function fetchTags() {
     loadingTags = true;
     errorTags = null;
 
     try {
-      const response = await axiosInstance.get('/tags');
-      allTags = response.data;
+      allTags = await apiCache.getOrFetch(
+        cacheKey.tags(),
+        async () => {
+          const response = await axiosInstance.get('/tags');
+          return response.data;
+        },
+        CacheTTL.TAGS
+      );
     } catch (err) {
       console.error('[FilterSidebar] Error fetching tags:', err);
-      // Don't set error message, just set empty array
       allTags = [];
     } finally {
       loadingTags = false;
     }
   }
 
-  // Fetch all speakers for filtering (only those with display names)
+  // Fetch all speakers for filtering (cached with TTL, invalidated via WebSocket push)
   async function fetchSpeakers() {
     loadingSpeakers = true;
     errorSpeakers = null;
 
     try {
-      const response = await axiosInstance.get('/speakers?for_filter=true');
-      allSpeakers = response.data;
+      allSpeakers = await apiCache.getOrFetch(
+        cacheKey.speakers(),
+        async () => {
+          const response = await axiosInstance.get('/speakers?for_filter=true');
+          return response.data;
+        },
+        CacheTTL.SPEAKERS
+      );
     } catch (err) {
       console.error('Error fetching speakers:', err);
-      // Don't set error message, just set empty array
       allSpeakers = [];
     } finally {
       loadingSpeakers = false;
@@ -357,8 +368,14 @@
 
   async function fetchMediaMetadata() {
     try {
-      const response = await axiosInstance.get('/files/metadata-filters');
-      const data = response.data;
+      const data = await apiCache.getOrFetch(
+        cacheKey.metadataFilters(),
+        async () => {
+          const response = await axiosInstance.get('/files/metadata-filters');
+          return response.data;
+        },
+        CacheTTL.METADATA
+      );
 
       if (data.duration) {
         const minDur = Math.floor(data.duration.min ?? 0);
@@ -513,10 +530,21 @@
     }
   }
 
+  // Push-based cache invalidation listener
+  function handleCacheInvalidation(event: Event) {
+    const scope = (event as CustomEvent).detail?.scope;
+    if (scope === 'tags' || scope === 'all') fetchTags();
+    if (scope === 'speakers' || scope === 'all') fetchSpeakers();
+    if (scope === 'metadata' || scope === 'files' || scope === 'all') fetchMediaMetadata();
+  }
+
   onMount(() => {
     fetchTags();
     fetchSpeakers();
     fetchMediaMetadata();
+
+    // Listen for push-based cache invalidation from WebSocket
+    window.addEventListener('cache-invalidated', handleCacheInvalidation);
 
     // Initialize date picker from dateRange props
     if (dateRange.from instanceof Date) {
@@ -546,6 +574,10 @@
     setTimeout(() => {
       isInitialized = true;
     }, 0);
+
+    return () => {
+      window.removeEventListener('cache-invalidated', handleCacheInvalidation);
+    };
   });
 </script>
 

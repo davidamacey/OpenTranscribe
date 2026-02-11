@@ -508,6 +508,9 @@ class SpeakerMatchingService:
         speaker.confidence = match["confidence"]
         if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
             speaker.suggested_name = match["suggested_name"]
+            speaker.suggestion_source = (
+                "profile_match" if match.get("profile_id") else "voice_match"
+            )
 
         # If high confidence, auto-apply the suggestion
         if match["auto_accept"]:
@@ -634,6 +637,7 @@ class SpeakerMatchingService:
                     if match["confidence"] >= ConfidenceLevel.HIGH and match["display_name"]:
                         speaker.suggested_name = match["display_name"]
                         speaker.confidence = match["confidence"]
+                        speaker.suggestion_source = "voice_match"
                         self.db.flush()
                         break
 

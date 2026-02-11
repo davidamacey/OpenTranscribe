@@ -3,6 +3,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -91,9 +92,10 @@ def get_comments_for_file(
     media_file = get_file_by_uuid_with_permission(db, media_file_uuid, int(current_user.id))
     media_file_id = media_file.id
 
-    # Get comments for this file
+    # Get comments for this file (eager-load relationships to avoid N+1)
     comments = (
         db.query(Comment)
+        .options(joinedload(Comment.user), joinedload(Comment.media_file))
         .filter(Comment.media_file_id == media_file_id)
         .order_by(Comment.timestamp)
         .all()

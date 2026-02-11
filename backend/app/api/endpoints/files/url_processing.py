@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.config import settings
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -539,8 +540,20 @@ async def process_media_url(
             {"url": "https://vimeo.com/123456789"}
     """
     try:
+        # Check rate limit before processing
+        from app.services.youtube_rate_limiter import youtube_rate_limiter
+
+        if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+            allowed, reason = youtube_rate_limiter.check_rate_limit(int(current_user.id))
+            if not allowed:
+                raise HTTPException(status_code=429, detail=reason)
+
         # Validate and normalize URL
         normalized_url, media_service = _validate_media_url(request_data.url)
+
+        # Record download attempt after rate check passes
+        if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+            youtube_rate_limiter.record_download(int(current_user.id))
 
         # Handle playlist processing (early return) - currently YouTube only
         if media_service.is_playlist_url(normalized_url):
@@ -586,6 +599,25 @@ async def process_media_url(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error processing media URL",
         ) from e
+
+
+@router.get("/youtube/quota")
+async def get_youtube_download_quota(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get user's remaining YouTube download quota.
+
+    Returns:
+        dict: Quota information with hourly/daily remaining and limits.
+            - hourly_remaining: Downloads left this hour (-1 if unlimited)
+            - daily_remaining: Downloads left today (-1 if unlimited)
+            - hourly_limit: Max downloads per hour (-1 if unlimited)
+            - daily_limit: Max downloads per day (-1 if unlimited)
+    """
+    from app.services.youtube_rate_limiter import youtube_rate_limiter
+
+    quota = youtube_rate_limiter.get_remaining_quota(int(current_user.id))
+    return quota
 
 
 # Backward compatibility alias

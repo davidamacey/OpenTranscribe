@@ -5,6 +5,7 @@ from datetime import timezone
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -60,11 +61,16 @@ def create_user(user_data: UserCreate, db: Session) -> User:
 
 
 @router.get("", response_model=list[UserSchema])
-def list_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)):
+def list_users(
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+):
     """
-    List all users (admin only)
+    List users (admin only) with optional pagination.
     """
-    users = db.query(User).all()
+    users = db.query(User).order_by(User.id).offset(offset).limit(limit).all()
     return users
 
 
@@ -94,11 +100,12 @@ def update_current_user(
                 detail="Email already registered",
             )
 
-    # This functionality was referring to a username field that doesn't exist in the model
-    # Removed to align with the actual User model fields
-
-    # Update fields
+    # Update fields — strip privileged fields that only admins may change.
+    # Without this, any user could promote themselves via PUT /users/me.
     update_data = user_update.model_dump(exclude_unset=True)
+    privileged_fields = {"is_active", "is_superuser", "role", "auth_type"}
+    for field in privileged_fields:
+        update_data.pop(field, None)
 
     # Hash password if it's provided
     if "password" in update_data:
@@ -177,8 +184,19 @@ def update_user(
     # Uses helper that validates UUID format and returns 400 for invalid UUIDs
     user = get_user_by_uuid(db, user_uuid)
 
-    # Update fields
+    # Update fields — strip privilege-escalation fields unless caller is super_admin.
+    # Regular admins can update names, emails, etc. but cannot promote users.
     update_data = user_update.model_dump(exclude_unset=True)
+    if current_user.role != "super_admin":
+        privileged_fields = {"is_active", "is_superuser", "role", "auth_type"}
+        stripped = [f for f in privileged_fields if f in update_data]
+        for field in stripped:
+            update_data.pop(field)
+        if stripped:
+            logger.warning(
+                f"Admin {current_user.id} attempted to set privileged fields "
+                f"{stripped} on user {user.id} — stripped"
+            )
 
     # Hash password if it's provided
     if "password" in update_data:
@@ -236,6 +254,16 @@ def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete own user account",
         )
+
+    # Use the comprehensive cleanup from the admin endpoint to avoid orphaned records.
+    from app.api.endpoints.admin import _delete_user_media_files
+    from app.api.endpoints.admin import _delete_user_owned_records
+    from app.api.endpoints.admin import _delete_user_speakers
+
+    user_id = int(user.id)
+    _delete_user_owned_records(db, user_id)
+    _delete_user_speakers(db, user_id)
+    _delete_user_media_files(db, user_id)
 
     db.delete(user)
     db.commit()

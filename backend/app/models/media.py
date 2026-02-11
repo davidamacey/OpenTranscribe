@@ -101,11 +101,17 @@ class MediaFile(Base):
     retry_count = Column(Integer, default=0)  # Number of retry attempts
     max_retries = Column(Integer, default=3)  # Maximum retry attempts allowed
     last_error_message = Column(Text, nullable=True)  # Last error encountered
+    error_category = Column(String(50), nullable=True, index=True)  # Classified error type
     force_delete_eligible = Column(Boolean, default=False)  # Can be force deleted if orphaned
     recovery_attempts = Column(Integer, default=0)  # Number of recovery attempts
     last_recovery_attempt = Column(
         DateTime(timezone=True), nullable=True
     )  # Last recovery attempt time
+
+    # Processing model tracking
+    whisper_model = Column(String, nullable=True)  # e.g., "large-v3-turbo", "large-v3"
+    diarization_model = Column(String, nullable=True)  # e.g., "pyannote/speaker-diarization-3.1"
+    embedding_mode = Column(String, nullable=True)  # "v3" (512d) or "v4" (256d)
 
     # Relationships
     user = relationship("User", back_populates="media_files")
@@ -206,7 +212,10 @@ class Speaker(Base):
     )
     name = Column(String, nullable=False)  # Original name from diarization (e.g., "SPEAKER_01")
     display_name = Column(String, nullable=True)  # User-assigned display name
-    suggested_name = Column(String, nullable=True)  # AI-suggested name based on embedding match
+    suggested_name = Column(String, nullable=True)  # AI-suggested name from LLM or embedding match
+    suggestion_source = Column(
+        String, nullable=True
+    )  # Source of suggestion: "llm_analysis", "voice_match", "profile_match"
     verified = Column(Boolean, default=False)  # Flag to indicate if the speaker has been verified
     confidence = Column(Float, nullable=True)  # Confidence score if auto-matched
     created_at = Column(DateTime(timezone=True), server_default=func.now())

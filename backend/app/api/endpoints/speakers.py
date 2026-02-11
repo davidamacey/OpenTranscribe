@@ -111,21 +111,23 @@ def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     return speakers
 
 
-def _get_unique_speakers_for_filter(
-    speakers: list[Speaker], db: Session, current_user: User
-) -> list[dict[str, Any]]:
+def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
-    Returns list of dicts with id, name, display_name, and media_count.
+
+    Uses a single GROUP BY query with min() aggregates to pick a representative
+    UUID per display name — eliminates the N+1 per-name lookup.
+
+    Returns list of dicts with uuid, name, display_name, and media_count.
     """
     from sqlalchemy import func
 
-    # Query to get distinct display names with media file counts
-    # Group by display_name and count distinct media files for each
-    speaker_counts = (
+    rows = (
         db.query(
             Speaker.display_name,
             func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
+            func.min(Speaker.uuid).label("rep_uuid"),
+            func.min(Speaker.name).label("rep_name"),
         )
         .filter(
             Speaker.user_id == current_user.id,
@@ -138,27 +140,15 @@ def _get_unique_speakers_for_filter(
         .all()
     )
 
-    # Convert to list of dicts with proper format
-    unique_speakers: list[dict[str, Any]] = []
-    for display_name, media_count in speaker_counts:
-        # Get a representative speaker for this display name to get ID
-        representative_speaker = (
-            db.query(Speaker)
-            .filter(Speaker.user_id == current_user.id, Speaker.display_name == display_name)
-            .first()
-        )
-
-        if representative_speaker:
-            unique_speakers.append(
-                {
-                    "uuid": str(representative_speaker.uuid),
-                    "name": representative_speaker.name,
-                    "display_name": display_name,
-                    "media_count": media_count,
-                }
-            )
-
-    return unique_speakers
+    return [
+        {
+            "uuid": str(row.rep_uuid),
+            "name": row.rep_name,
+            "display_name": row.display_name,
+            "media_count": row.media_count,
+        }
+        for row in rows
+    ]
 
 
 def _resolve_file_uuid_to_id(file_uuid: str | None, current_user: User, db: Session) -> int | None:
@@ -270,11 +260,16 @@ def _get_suggestion_source(speaker: Speaker) -> str | None:
     if not (speaker.suggested_name and speaker.confidence):
         return None
 
+    # Use the persisted suggestion_source column if available
+    if speaker.suggestion_source:
+        return str(speaker.suggestion_source)
+
+    # Legacy fallback for speakers created before suggestion_source column
     if hasattr(speaker, "_suggestion_source"):
         return str(speaker._suggestion_source)
 
-    # Default assumption: embedding match
-    return "embedding_match"
+    # Default assumption for legacy data: embedding match
+    return "voice_match"
 
 
 def _compute_display_flags(
@@ -490,6 +485,11 @@ def list_speakers(
     try:
         from sqlalchemy.orm import joinedload
 
+        # Fast path: filter mode only needs aggregated display names
+        # Skip loading all speaker objects, profiles, and media files
+        if for_filter:
+            return _get_unique_speakers_for_filter(db, current_user)
+
         # Convert file_uuid to file_id if provided
         file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db)
 
@@ -498,12 +498,9 @@ def list_speakers(
             .options(joinedload(Speaker.profile), joinedload(Speaker.media_file))
             .filter(Speaker.user_id == current_user.id)
         )
-        query = _filter_speakers_query(query, verified_only, for_filter, file_id)
+        query = _filter_speakers_query(query, verified_only, False, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
-
-        if for_filter:
-            return _get_unique_speakers_for_filter(speakers, db, current_user)
 
         # Pre-calculate segment counts for all speakers in one query
         speaker_ids = [int(s.id) for s in speakers]
@@ -945,6 +942,15 @@ def merge_speakers(
     # Recalculate analytics for affected media files
     _refresh_analytics_after_merge(db, affected_media_files)
 
+    # Invalidate caches
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_speakers(int(current_user.id))
+        redis_cache.invalidate_user_files(int(current_user.id))
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+
     # Add computed status fields
     SpeakerStatusService.add_computed_status(target_speaker)
 
@@ -1261,6 +1267,7 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
         speaker.suggested_name = None  # type: ignore[assignment]
+        speaker.suggestion_source = None  # type: ignore[assignment]
         speaker.confidence = None  # type: ignore[assignment]
 
 
@@ -1331,6 +1338,15 @@ def update_speaker(
         )
         logger.info(f"Queued background processing for speaker {speaker_uuid}")
 
+    # Invalidate caches so speaker lists and file data refresh
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_speakers(int(current_user.id))
+        redis_cache.invalidate_user_files(int(current_user.id))
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+
     # Add computed status for immediate response
     SpeakerStatusService.add_computed_status(speaker)
     _set_no_cache_headers(response)
@@ -1357,6 +1373,15 @@ def delete_speaker(
     # Delete the speaker
     db.delete(speaker)
     db.commit()
+
+    # Invalidate caches
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_speakers(int(current_user.id))
+        redis_cache.invalidate_user_files(int(current_user.id))
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
 
 # --- Helper functions for verify_speaker_identification ---

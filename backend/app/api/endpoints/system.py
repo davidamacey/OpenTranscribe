@@ -17,9 +17,6 @@ from app.api.endpoints.admin import get_memory_usage
 from app.api.endpoints.admin import get_system_uptime
 from app.api.endpoints.auth import get_current_user
 from app.db.base import get_db
-from app.models.media import MediaFile
-from app.models.media import Speaker
-from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.services.protected_media_providers import get_protected_media_auth_config
 
@@ -82,131 +79,38 @@ async def get_system_stats(
                 "uptime": "Unknown",
             }
 
-        # Get user statistics (only counts, not sensitive data)
-        from datetime import datetime
-        from datetime import timedelta
-        from datetime import timezone
+        # Consolidated database statistics (efficient aggregate queries)
+        from app.utils.stats_helpers import get_file_stats
+        from app.utils.stats_helpers import get_file_timing_stats
+        from app.utils.stats_helpers import get_models_info
+        from app.utils.stats_helpers import get_processing_eta
+        from app.utils.stats_helpers import get_queue_depths
+        from app.utils.stats_helpers import get_recent_tasks
+        from app.utils.stats_helpers import get_task_stats
+        from app.utils.stats_helpers import get_throughput_stats
+        from app.utils.stats_helpers import get_user_stats
 
-        total_users = db.query(User).count()
+        user_stats = get_user_stats(db)
+        file_stats = get_file_stats(db)
+        task_stats = get_task_stats(db)
+        recent = get_recent_tasks(db, limit=10)
+        throughput = get_throughput_stats(db)
+        eta = get_processing_eta(db)
+        file_timing = get_file_timing_stats(db)
+        queue_depths = get_queue_depths()
+        models_info = get_models_info()
 
-        # Calculate new users in last 7 days
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        new_users = db.query(User).filter(User.created_at >= seven_days_ago).count()
-
-        # Get file statistics
-        from sqlalchemy.sql import func
-
-        total_files = db.query(MediaFile).count()
-
-        # Calculate new files in last 7 days
-        new_files = db.query(MediaFile).filter(MediaFile.upload_time >= seven_days_ago).count()
-
-        # Get total duration (in seconds)
-        total_duration_result = db.query(func.sum(MediaFile.duration)).scalar()
-        total_duration = total_duration_result if total_duration_result else 0
-
-        # Get transcript statistics
-        total_segments = db.query(TranscriptSegment).count()
-
-        # Get speaker statistics
-        total_speakers = db.query(Speaker).count()
-
-        # Get task statistics
-        from app.models.media import Task
-        from app.utils.task_utils import TASK_STATUS_COMPLETED
-        from app.utils.task_utils import TASK_STATUS_FAILED
-        from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
-        from app.utils.task_utils import TASK_STATUS_PENDING
-
-        total_tasks = db.query(Task).count()
-        pending_tasks = db.query(Task).filter(Task.status == TASK_STATUS_PENDING).count()
-        running_tasks = db.query(Task).filter(Task.status == TASK_STATUS_IN_PROGRESS).count()
-        completed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_COMPLETED).count()
-        failed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_FAILED).count()
-
-        # Calculate success rate
-        success_rate: int = 0
-        if total_tasks > 0:
-            success_rate = int(round((completed_tasks / total_tasks) * 100, 2))
-
-        # Calculate average processing time for completed tasks
-        avg_processing_time = 0
-        completed_task_list = (
-            db.query(Task)
-            .filter(
-                Task.status == TASK_STATUS_COMPLETED,
-                Task.created_at.isnot(None),
-                Task.completed_at.isnot(None),
-            )
-            .all()
-        )
-
-        if completed_task_list:
-            total_time = sum(
-                (task.completed_at - task.created_at).total_seconds()
-                for task in completed_task_list
-                if task.completed_at and task.created_at
-            )
-            avg_processing_time = (
-                total_time / len(completed_task_list) if completed_task_list else 0
-            )
-
-        # Get recent tasks (last 10)
-        recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(10).all()
-        recent = []
-        for task in recent_tasks:
-            elapsed = 0
-            if task.completed_at and task.created_at:
-                elapsed = (task.completed_at - task.created_at).total_seconds()
-            elif task.created_at:
-                # Make sure both datetimes are timezone-aware
-                now = datetime.now(timezone.utc)
-                created_at = task.created_at
-                # Convert created_at to timezone-aware if it's naive
-                if created_at and created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=timezone.utc)
-                elapsed = (now - created_at).total_seconds() if created_at else 0
-            recent.append(
-                {
-                    "id": task.id,
-                    "type": getattr(task, "task_type", ""),
-                    "status": task.status,
-                    "created_at": task.created_at.isoformat() if task.created_at else None,
-                    "elapsed": int(elapsed) if elapsed else 0,
-                }
-            )
-
-        # Get AI model configuration
-        from app.core.config import settings
-
-        models_info = {
-            "whisper": {
-                "name": settings.WHISPER_MODEL,
-                "description": f"Whisper {settings.WHISPER_MODEL}",
-                "purpose": "Speech Recognition & Transcription",
-            },
-            "diarization": {
-                "name": settings.PYANNOTE_MODEL,
-                "description": "PyAnnote Speaker Diarization 3.1",
-                "purpose": "Speaker Identification & Segmentation",
-            },
-            "alignment": {
-                "name": "Wav2Vec2 (Language-Adaptive)",
-                "description": "WhisperX Alignment Model",
-                "purpose": "Word-Level Timestamp Alignment",
-            },
-        }
+        total_files = file_stats["total"]
+        total_speakers = file_stats["speakers"]
+        total_segments = file_stats["segments"]
 
         # Construct the response
         stats = {
-            "users": {
-                "total": total_users,
-                "new": new_users,
-            },
+            "users": user_stats,
             "files": {
                 "total": total_files,
-                "new": new_files,
-                "total_duration": round(total_duration, 2) if total_duration else 0,
+                "new": file_stats["new"],
+                "total_duration": file_stats["total_duration"],
                 "segments": total_segments,
             },
             "transcripts": {"total_segments": total_segments},
@@ -225,16 +129,11 @@ async def get_system_stats(
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
             },
-            "tasks": {
-                "total": total_tasks,
-                "pending": pending_tasks,
-                "running": running_tasks,
-                "completed": completed_tasks,
-                "failed": failed_tasks,
-                "success_rate": success_rate,
-                "avg_processing_time": round(avg_processing_time, 2),
-                "recent": recent,
-            },
+            "tasks": {**task_stats, "recent": recent},
+            "throughput": throughput,
+            "eta": eta,
+            "file_timing": file_timing,
+            "queues": queue_depths,
         }
 
         return stats

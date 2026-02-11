@@ -1064,8 +1064,13 @@ class HybridSearchService:
         Returns:
             OpenSearch search body dict.
         """
-        # Over-fetch for grouping by file
-        fetch_size = page_size * 5
+        # Over-fetch for grouping by file.  Keyword-matched chunks are kept
+        # regardless of RRF score, so fetch_size directly controls how many
+        # unique files we can return.  Higher values find more files but cost
+        # more OpenSearch heap.
+        # Benchmarks on 561K docs: 2000 → ~377 files in ~760ms,
+        #                          3000 → ~480 files in ~1.1s.
+        fetch_size = min(max(page_size * 25, 2000), 3000)
 
         # Dynamically set search fields based on speaker filter
         if has_speaker_filter:
@@ -1123,25 +1128,6 @@ class HybridSearchService:
                 "number_of_fragments": 0,
             }
 
-        # Common _source fields
-        source_fields = [
-            "file_uuid",
-            "file_id",
-            "title",
-            "speaker",
-            "speakers",
-            "tags",
-            "start_time",
-            "end_time",
-            "chunk_index",
-            "upload_time",
-            "language",
-            "content",
-            "content_type",
-            "duration",
-            "file_size",
-        ]
-
         if use_hybrid and use_neural and query and query.strip():
             # Neural hybrid mode: OpenSearch generates embeddings server-side
             model_id = self._get_neural_model_id()
@@ -1159,20 +1145,32 @@ class HybridSearchService:
                                     }
                                 },
                                 # Neural leg - OpenSearch generates embedding from query_text
+                                # Wrap in bool/filter so user filters (speaker, tags, date,
+                                # etc.) also apply to neural results.
                                 {
-                                    "neural": {
-                                        "embedding": {
-                                            "query_text": query,
-                                            "model_id": model_id,
-                                            "k": settings.SEARCH_RRF_WINDOW_SIZE,
-                                        }
+                                    "bool": {
+                                        "must": [
+                                            {
+                                                "neural": {
+                                                    "embedding": {
+                                                        "query_text": query,
+                                                        "model_id": model_id,
+                                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
+                                                    }
+                                                }
+                                            }
+                                        ],
+                                        "filter": filters,
                                     }
                                 },
                             ]
                         }
                     },
                     "highlight": {"fields": highlight_fields},
-                    "_source": source_fields,
+                    # Exclude embedding vectors from _source to avoid heap exhaustion
+                    # on large indices. Include-lists force OpenSearch to load the full
+                    # _source (including 384-dim float arrays) into heap before filtering.
+                    "_source": {"excludes": ["embedding"]},
                 }
                 logger.debug(f"Using neural hybrid query with model {model_id}")
                 return search_body
@@ -1196,7 +1194,7 @@ class HybridSearchService:
         Uses the content.exact subfield (standard analyzer, no stemming)
         for truly exact matching. No fuzziness.
         """
-        fetch_size = page_size * 5
+        fetch_size = min(max(page_size * 15, 2000), 3000)
 
         # Dynamically set search fields based on speaker filter
         if has_speaker_filter:
@@ -1254,23 +1252,8 @@ class HybridSearchService:
                 }
             },
             "highlight": {"fields": highlight_fields_bm25},
-            "_source": [
-                "file_uuid",
-                "file_id",
-                "title",
-                "speaker",
-                "speakers",
-                "tags",
-                "start_time",
-                "end_time",
-                "chunk_index",
-                "upload_time",
-                "language",
-                "content",
-                "content_type",
-                "duration",
-                "file_size",
-            ],
+            # Exclude embedding vectors from _source to avoid heap exhaustion
+            "_source": {"excludes": ["embedding"]},
         }
 
     def _group_results_by_file(  # noqa: C901
@@ -1282,14 +1265,20 @@ class HybridSearchService:
         hits_by_file: dict[str, SearchHit] = {}
         raw_hits = response.get("hits", {}).get("hits", [])
 
-        # First pass: collect semantic-only snippets for efficient similar word computation
+        # First pass: collect semantic-only snippets for efficient similar word computation.
+        # Keyword-matched hits (with highlights) are ALWAYS kept regardless of score —
+        # the min_score filter only applies to semantic-only hits where the score
+        # reflects relevance.  RRF rank-based scores are not meaningful for keyword
+        # matches: a chunk at rank 500 that contains the literal search term is still
+        # a valid match.
         semantic_snippets = []
         for hit in raw_hits:
             score = hit.get("_score", 0.0) or 0.0
-            if score < settings.SEARCH_HYBRID_MIN_SCORE:
-                continue
             highlight = hit.get("highlight", {})
-            if not highlight:  # Semantic-only hit
+            if not highlight:
+                # Semantic-only hit — apply score threshold
+                if score < settings.SEARCH_HYBRID_MIN_SCORE:
+                    continue
                 source = hit["_source"]
                 snippet, _ = _extract_snippet_and_match_type(source, highlight)
                 semantic_snippets.append(snippet)
@@ -1300,15 +1289,17 @@ class HybridSearchService:
             similar_words_set = _get_semantic_similar_words(query, semantic_snippets)
             logger.debug(f"Found {len(similar_words_set)} similar words for query '{query}'")
 
-        # Second pass: process all hits
+        # Second pass: process all hits.
+        # Same rule: keyword-matched hits always kept, semantic-only filtered by score.
         for hit in raw_hits:
             score = hit.get("_score", 0.0) or 0.0
-            if score < settings.SEARCH_HYBRID_MIN_SCORE:
+            highlight = hit.get("highlight", {})
+            has_highlight = bool(highlight)
+            if not has_highlight and score < settings.SEARCH_HYBRID_MIN_SCORE:
                 continue
 
             source = hit["_source"]
             file_uuid = source["file_uuid"]
-            highlight = hit.get("highlight", {})
 
             snippet, match_type = _extract_snippet_and_match_type(source, highlight)
             title_highlighted = _extract_highlighted_field(highlight, "title")

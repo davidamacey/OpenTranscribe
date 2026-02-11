@@ -73,6 +73,45 @@ def get_speaker_embedding_dimension() -> int:
     return EmbeddingModeService.get_embedding_dimension()
 
 
+def check_and_repair_indices():
+    """Check OpenSearch indices health and auto-repair corrupted shards.
+
+    Runs a simple match_all query (size=0) against each index. If a 503 or
+    search_phase_execution_exception is returned (typically caused by corrupted
+    Lucene HNSW vector segment files after unclean shutdowns), the index is
+    closed and reopened to force OpenSearch to re-open all segment file handles.
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized, skipping health check")
+        return
+
+    indices = [settings.OPENSEARCH_SPEAKER_INDEX, settings.OPENSEARCH_TRANSCRIPT_INDEX]
+    for index_name in indices:
+        if not opensearch_client.indices.exists(index=index_name):
+            continue
+        try:
+            opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
+            logger.info(f"Index health check passed: {index_name}")
+        except Exception as e:
+            error_str = str(e)
+            if "503" in error_str or "search_phase_execution_exception" in error_str:
+                logger.warning(
+                    f"Index {index_name} unhealthy, attempting close/reopen recovery: {e}"
+                )
+                try:
+                    opensearch_client.indices.close(index=index_name)
+                    opensearch_client.indices.open(index=index_name)
+                    # Verify recovery
+                    opensearch_client.search(
+                        index=index_name, body={"query": {"match_all": {}}, "size": 0}
+                    )
+                    logger.info(f"Index {index_name} recovered successfully after close/reopen")
+                except Exception as repair_err:
+                    logger.error(f"Failed to repair index {index_name}: {repair_err}")
+            else:
+                logger.error(f"Index health check failed for {index_name}: {e}")
+
+
 def ensure_indices_exist():
     """
     Ensure the transcript and speaker indices exist, creating them if necessary
@@ -1246,6 +1285,44 @@ def cleanup_orphaned_embeddings(user_id: int) -> int:
         return 0
 
 
+def get_speaker_document(speaker_uuid: str) -> dict[str, Any] | None:
+    """
+    Get full speaker document (embedding + segment_count) from OpenSearch.
+
+    Args:
+        speaker_uuid: UUID of the speaker
+
+    Returns:
+        Dict with 'embedding' and 'segment_count' keys, or None if not found
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return None
+
+    try:
+        ensure_indices_exist()
+
+        response = opensearch_client.get(
+            index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid)
+        )
+
+        if response and "_source" in response:
+            source = response["_source"]
+            embedding = source.get("embedding")
+            if embedding is not None:
+                return {
+                    "embedding": list(embedding),
+                    "segment_count": int(source.get("segment_count", 1)),
+                }
+            return None
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting speaker document for {speaker_uuid}: {e}")
+        return None
+
+
 def get_speaker_embedding(speaker_uuid: str) -> list[float] | None:
     """
     Get the embedding vector for a speaker from OpenSearch
@@ -1450,6 +1527,68 @@ def remove_profile_embedding(profile_uuid: str) -> bool:
 
     except Exception as e:
         logger.warning(f"Error removing profile embedding (may not exist): {e}")
+        return False
+
+
+def remove_speaker_embedding(speaker_uuid: str) -> bool:
+    """
+    Remove a speaker embedding from OpenSearch.
+
+    Args:
+        speaker_uuid: UUID of the speaker
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        opensearch_client.delete(index=settings.OPENSEARCH_SPEAKER_INDEX, id=str(speaker_uuid))
+
+        logger.info(f"Removed speaker {speaker_uuid} embedding from OpenSearch")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Error removing speaker embedding (may not exist): {e}")
+        return False
+
+
+def update_speaker_segment_count(speaker_uuid: str, segment_count: int) -> bool:
+    """
+    Update only the segment_count of a speaker in OpenSearch.
+
+    Args:
+        speaker_uuid: UUID of the speaker
+        segment_count: New segment count value
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not opensearch_client:
+        logger.warning("OpenSearch client not initialized")
+        return False
+
+    try:
+        update_body = {
+            "doc": {
+                "segment_count": segment_count,
+                "updated_at": datetime.datetime.now().isoformat(),
+            }
+        }
+
+        opensearch_client.update(
+            index=settings.OPENSEARCH_SPEAKER_INDEX,
+            id=str(speaker_uuid),
+            body=update_body,
+        )
+
+        logger.info(f"Updated segment_count for speaker {speaker_uuid} to {segment_count}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Error updating speaker segment count: {e}")
         return False
 
 

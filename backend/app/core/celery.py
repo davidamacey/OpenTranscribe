@@ -97,6 +97,8 @@ celery_app.conf.update(
         "app.tasks.summarization.*": {"queue": "nlp"},
         "summarize_transcript": {"queue": "nlp"},
         "app.tasks.analytics.*": {"queue": "nlp"},
+        # Speaker embedding reassignment needs GPU for PyAnnote model
+        "update_speaker_embedding_on_reassignment": {"queue": "gpu"},
         "app.tasks.speaker_tasks.*": {"queue": "nlp"},
         "identify_speakers_llm": {"queue": "nlp"},
         "app.tasks.topic_extraction.*": {"queue": "nlp"},
@@ -138,6 +140,11 @@ celery_app.conf.update(
             "task": "search_index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "embedding"},
+        },
+        "gpu-stats-update": {
+            "task": "update_gpu_stats",
+            "schedule": crontab(minute="*/5"),  # Every 5 minutes
+            "options": {"queue": "gpu"},
         },
     },
 )

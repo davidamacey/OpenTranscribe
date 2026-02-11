@@ -309,7 +309,11 @@ def _get_llm_suggestions(db: Session, speaker: Speaker, current_user: User) -> l
     from app.services.speaker_matching_service import SpeakerMatchingService
 
     suggestions: list[dict[str, Any]] = []
-    if speaker.suggested_name and speaker.confidence:
+    if (
+        speaker.suggested_name
+        and speaker.confidence
+        and speaker.suggestion_source == "llm_analysis"
+    ):
         # Check if suggested_name matches any existing profiles
         suggested_profile = (
             db.query(SpeakerProfile)

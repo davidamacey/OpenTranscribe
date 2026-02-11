@@ -7,6 +7,7 @@ from typing import Optional
 
 from celery.result import AsyncResult
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
@@ -38,7 +39,17 @@ def create_task_record(
         progress=0.0,
     )
     db.add(task)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Task already exists (race condition or retry), fetch and return it
+        task = db.query(Task).filter(Task.id == celery_task_id).first()
+        if not task:
+            raise ValueError(f"Failed to create or find task: {celery_task_id}") from None
+        logger.info(f"Task {celery_task_id} already exists, reusing existing record")
+
     db.refresh(task)
 
     # Update the media file with active task tracking
@@ -134,11 +145,8 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> O
 def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[MediaFile]:
     """Check task statuses and update media file status accordingly.
 
-    This function checks all tasks associated with a media file and updates
-    the media file status based on task statuses:
-    - If all tasks are completed, mark the file as COMPLETED
-    - If any task is failed and no tasks are pending/in_progress, mark as ERROR
-    - If any tasks are still pending/in_progress, leave as PROCESSING
+    Uses a single SQL query with conditional COUNT to determine the correct
+    file status instead of loading every Task object into Python.
 
     Args:
         db: Database session
@@ -147,6 +155,8 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
     Returns:
         Updated MediaFile object or None if not found
     """
+    from sqlalchemy import func as sa_func
+
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
         logger.warning(f"Media file {file_id} not found")
@@ -156,33 +166,29 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
     if media_file.status in [FileStatus.COMPLETED, FileStatus.ERROR]:
         return media_file  # type: ignore[no-any-return]
 
-    # Get all tasks for this media file
-    tasks = db.query(Task).filter(Task.media_file_id == file_id).all()
-    if not tasks:
+    # Single SQL query: conditional counts per status
+    row = (
+        db.query(
+            sa_func.count().label("total"),
+            sa_func.count().filter(Task.status == TASK_STATUS_PENDING).label("pending"),
+            sa_func.count().filter(Task.status == TASK_STATUS_IN_PROGRESS).label("in_progress"),
+            sa_func.count().filter(Task.status == TASK_STATUS_COMPLETED).label("completed"),
+            sa_func.count().filter(Task.status == TASK_STATUS_FAILED).label("failed"),
+        )
+        .filter(Task.media_file_id == file_id)
+        .first()
+    )
+
+    if not row or row.total == 0:
         logger.warning(f"No tasks found for media file {file_id}")
         return media_file  # type: ignore[no-any-return]
 
-    # Count task statuses
-    counts: dict[str, int] = {
-        TASK_STATUS_PENDING: 0,
-        TASK_STATUS_IN_PROGRESS: 0,
-        TASK_STATUS_COMPLETED: 0,
-        TASK_STATUS_FAILED: 0,
-    }
-
-    for task in tasks:
-        task_status = str(task.status)
-        counts[task_status] = counts.get(task_status, 0) + 1
-
     # Determine the appropriate media file status
-    if counts[TASK_STATUS_PENDING] > 0 or counts[TASK_STATUS_IN_PROGRESS] > 0:
-        # Still has active tasks
+    if row.pending > 0 or row.in_progress > 0:
         new_status = FileStatus.PROCESSING
-    elif counts[TASK_STATUS_FAILED] > 0 and counts[TASK_STATUS_COMPLETED] == 0:
-        # All finished tasks failed
+    elif row.failed > 0 and row.completed == 0:
         new_status = FileStatus.ERROR
     else:
-        # All tasks completed successfully
         new_status = FileStatus.COMPLETED
 
     # Only update if status is changing
@@ -195,6 +201,9 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> Optional[Me
 def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]:
     """Get a summary of task statuses for a media file.
 
+    Uses a single SQL query with conditional COUNT and AVG instead of
+    loading every Task row into Python.
+
     Args:
         db: Database session
         file_id: ID of the media file to check
@@ -202,30 +211,39 @@ def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]
     Returns:
         Dictionary with task status counts and overall progress
     """
-    tasks = db.query(Task).filter(Task.media_file_id == file_id).all()
+    from sqlalchemy import func as sa_func
 
-    summary = {
-        "total": len(tasks),
-        "pending": 0,
-        "in_progress": 0,
-        "completed": 0,
-        "failed": 0,
-        "overall_progress": 0.0,
+    row = (
+        db.query(
+            sa_func.count().label("total"),
+            sa_func.count().filter(Task.status == TASK_STATUS_PENDING).label("pending"),
+            sa_func.count().filter(Task.status == TASK_STATUS_IN_PROGRESS).label("in_progress"),
+            sa_func.count().filter(Task.status == TASK_STATUS_COMPLETED).label("completed"),
+            sa_func.count().filter(Task.status == TASK_STATUS_FAILED).label("failed"),
+            sa_func.coalesce(sa_func.avg(Task.progress), 0.0).label("avg_progress"),
+        )
+        .filter(Task.media_file_id == file_id)
+        .first()
+    )
+
+    if not row or row.total == 0:
+        return {
+            "total": 0,
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "failed": 0,
+            "overall_progress": 0.0,
+        }
+
+    return {
+        "total": row.total,
+        "pending": row.pending,
+        "in_progress": row.in_progress,
+        "completed": row.completed,
+        "failed": row.failed,
+        "overall_progress": float(row.avg_progress),
     }
-
-    if not tasks:
-        return summary
-
-    # Count tasks by status and calculate overall progress
-    total_progress = 0.0
-    for task in tasks:
-        task_status = str(task.status)
-        summary[task_status] = summary.get(task_status, 0) + 1
-        total_progress += float(task.progress)
-
-    summary["overall_progress"] = total_progress / len(tasks)
-
-    return summary
 
 
 def cancel_active_task(db: Session, file_id: int) -> bool:
@@ -271,6 +289,9 @@ def cancel_active_task(db: Session, file_id: int) -> bool:
 def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> list[int]:
     """Find files that appear to be stuck in processing or pending.
 
+    Uses a single SQL query with OR conditions instead of 4 separate queries,
+    and loads only the columns needed for the Celery status check.
+
     Args:
         db: Database session
         stuck_threshold_hours: Hours (float) after which a file is considered stuck
@@ -278,48 +299,48 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
     Returns:
         List of file IDs that appear stuck
     """
+    from sqlalchemy.orm import load_only
+
     threshold_time = datetime.now(timezone.utc) - timedelta(hours=stuck_threshold_hours)
 
-    # Check for stuck processing files
-    processing_stuck_files = (
+    # Single query: all candidate stuck files (processing, pending, error, orphaned)
+    candidates = (
         db.query(MediaFile)
+        .options(
+            load_only(
+                MediaFile.id,
+                MediaFile.status,
+                MediaFile.active_task_id,
+                MediaFile.retry_count,
+            )
+        )
         .filter(
-            MediaFile.status == FileStatus.PROCESSING,
             or_(
-                MediaFile.task_last_update < threshold_time,
-                MediaFile.task_last_update.is_(None),
-            ),
+                # Stuck processing files
+                (MediaFile.status == FileStatus.PROCESSING)
+                & or_(
+                    MediaFile.task_last_update < threshold_time,
+                    MediaFile.task_last_update.is_(None),
+                ),
+                # Stuck pending files
+                (MediaFile.status == FileStatus.PENDING) & (MediaFile.upload_time < threshold_time),
+                # Failed files (filter retryable ones in Python — needs system settings)
+                MediaFile.status == FileStatus.ERROR,
+                # Orphaned files
+                MediaFile.status == FileStatus.ORPHANED,
+            )
         )
         .all()
     )
-
-    # Check for stuck pending files (uploaded but never started processing)
-    pending_stuck_files = (
-        db.query(MediaFile)
-        .filter(
-            MediaFile.status == FileStatus.PENDING,
-            MediaFile.upload_time < threshold_time,
-        )
-        .all()
-    )
-
-    # Check for failed files that can be retried based on system settings
-    all_failed_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ERROR).all()
-    # Filter based on system retry settings
-    failed_files = [
-        f
-        for f in all_failed_files
-        if system_settings_service.should_retry_file(db, int(f.retry_count))
-    ]
-
-    # Check for orphaned files that need recovery
-    orphaned_files = db.query(MediaFile).filter(MediaFile.status == FileStatus.ORPHANED).all()
-
-    # Combine all lists
-    stuck_files = processing_stuck_files + pending_stuck_files + failed_files + orphaned_files
 
     stuck_file_ids: list[int] = []
-    for file in stuck_files:
+    for file in candidates:
+        # For failed files, check retry eligibility
+        if file.status == FileStatus.ERROR and not system_settings_service.should_retry_file(
+            db, int(file.retry_count)
+        ):
+            continue
+
         # Double-check by querying Celery task status if we have an active task ID
         active_task_id = file.active_task_id
         if active_task_id:
@@ -337,8 +358,6 @@ def check_for_stuck_files(db: Session, stuck_threshold_hours: float = 2.0) -> li
                 logger.warning(f"Could not check task status for {active_task_id}: {e}")
                 stuck_file_ids.append(int(file.id))
         else:
-            # No active task but still processing - definitely stuck
-            # OR it's a pending file that never started processing
             stuck_file_ids.append(int(file.id))
 
     return stuck_file_ids
@@ -583,6 +602,11 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
 
         # Clear related task records for clean slate
         db.query(Task).filter(Task.media_file_id == file_id).delete()
+
+        # Reset summary fields so auto-summary triggers correctly after transcription retry
+        media_file.summary_data = None
+        media_file.summary_opensearch_id = None
+        media_file.summary_status = "pending"
 
         db.commit()
         logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")

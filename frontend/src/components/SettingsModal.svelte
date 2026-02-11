@@ -21,6 +21,7 @@
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
   import UserManagementTable from '$components/UserManagementTable.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import ProcessingDetailsModal from '$components/settings/ProcessingDetailsModal.svelte';
 
   // Import i18n
   import { t } from '$stores/locale';
@@ -87,12 +88,18 @@
       cpu: { total_percent: '0%', per_cpu: [], logical_cores: 0, physical_cores: 0 },
       memory: { total: '0 B', available: '0 B', used: '0 B', percent: '0%' },
       disk: { total: '0 B', used: '0 B', free: '0 B', percent: '0%' },
-      gpu: { available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A' },
+      gpu: { available: false, name: 'N/A', memory_total: 'N/A', memory_used: 'N/A', memory_free: 'N/A', memory_percent: 'N/A', utilization_percent: 'N/A', temperature_celsius: null },
       uptime: 'Unknown',
       platform: 'Unknown',
       python_version: 'Unknown'
-    }
+    },
+    throughput: { total_completed: 0, last_1h: 0, last_3h: 0, rate_1h: 0, rate_3h: 0 },
+    eta: { remaining: 0, files_per_hour: 0, hours_remaining: null, est_completion: null },
+    file_timing: { files: 0, avg_secs: 0, min_secs: 0, max_secs: 0, avg_mins: 0 },
+    queues: { gpu: 0, download: 0, nlp: 0, embedding: 0, cpu: 0, utility: 0, total: 0 }
   };
+  let showProcessingDetails = false;
+  let processingDetailsSection = 'performance';
   let statsLoading = false;
   let statsRefreshing = false;
   let statsInitialLoaded = false;
@@ -546,6 +553,11 @@
 
   async function refreshStats() {
     await loadStats();
+  }
+
+  function openProcessingDetails(section: string) {
+    processingDetailsSection = section;
+    showProcessingDetails = true;
   }
 
   async function loadTaskHealth() {
@@ -1130,14 +1142,64 @@
                   </div>
 
                   <!-- Performance Stats -->
-                  <div class="stat-card">
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('performance')}>
                     <h4>{$t('settings.statistics.performance')}</h4>
                     <div class="stat-detail">{$t('settings.statistics.avgProcessTime')}: {formatTime(stats.tasks?.avg_processing_time || 0)}</div>
+                    <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatTime(stats.file_timing?.avg_secs || 0)}</div>
+                    <div class="stat-detail">{$t('settings.statistics.fileTimingMin')}: {formatTime(stats.file_timing?.min_secs || 0)}</div>
+                    <div class="stat-detail">{$t('settings.statistics.fileTimingMax')}: {formatTime(stats.file_timing?.max_secs || 0)}</div>
                     <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total || 0}</div>
+                    <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+                  </div>
+
+                  <!-- Throughput & ETA -->
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('throughput')}>
+                    <h4>{$t('settings.statistics.throughput')}</h4>
+                    <div class="stat-value">{stats.throughput?.rate_1h || 0} <span class="stat-unit">{$t('settings.statistics.filesPerHour')}</span></div>
+                    <div class="stat-detail">{$t('settings.statistics.avgRate3h')}: {stats.throughput?.rate_3h || 0} {$t('settings.statistics.filesPerHour')}</div>
+                    {#if stats.eta?.remaining > 0}
+                      <div class="stat-detail">{$t('settings.statistics.remaining')}: {stats.eta.remaining} files</div>
+                      {#if stats.eta.hours_remaining !== null}
+                        <div class="stat-detail">{$t('settings.statistics.hoursRemaining')}: {stats.eta.hours_remaining}h</div>
+                      {/if}
+                    {:else}
+                      <div class="stat-detail">{$t('settings.statistics.noActiveProcessing')}</div>
+                    {/if}
+                    <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
+                  </div>
+
+                  <!-- Queue Depths -->
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('queues')}>
+                    <h4>{$t('settings.statistics.queueDepths')}</h4>
+                    <div class="stat-value">{stats.queues?.total || 0} <span class="stat-unit">{$t('settings.statistics.queueTotal')}</span></div>
+                    {#if stats.queues?.total > 0}
+                      <div class="queue-bars">
+                        {#each [
+                          { key: 'gpu', label: $t('settings.statistics.queueGpu') },
+                          { key: 'download', label: $t('settings.statistics.queueDownload') },
+                          { key: 'nlp', label: $t('settings.statistics.queueNlp') },
+                          { key: 'embedding', label: $t('settings.statistics.queueEmbedding') },
+                          { key: 'cpu', label: $t('settings.statistics.queueCpu') }
+                        ] as queue}
+                          {#if stats.queues?.[queue.key] > 0}
+                            <div class="stat-detail">{queue.label}: {stats.queues[queue.key]}</div>
+                          {/if}
+                        {/each}
+                      </div>
+                    {/if}
+                    <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
                   </div>
 
                   <!-- AI Models -->
-                  <div class="stat-card model-card">
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <div class="stat-card model-card stat-card-clickable" on:click={() => openProcessingDetails('models')}>
                     <h4>{$t('settings.statistics.aiModels')}</h4>
                     {#if stats.models}
                       <div class="model-info">
@@ -1153,10 +1215,23 @@
                           <span class="model-label">{$t('settings.statistics.alignment')}:</span>
                           <span class="model-value">{stats.models.alignment?.name || 'N/A'}</span>
                         </div>
+                        {#if stats.models.search_embedding}
+                          <div class="model-item">
+                            <span class="model-label">{$t('settings.statistics.searchModel')}:</span>
+                            <span class="model-value">{stats.models.search_embedding.name}</span>
+                          </div>
+                        {/if}
+                        {#if stats.models.llm}
+                          <div class="model-item">
+                            <span class="model-label">{$t('settings.statistics.llmModel')}:</span>
+                            <span class="model-value">{stats.models.llm.name}</span>
+                          </div>
+                        {/if}
                       </div>
                     {:else}
                       <div class="stat-detail">{$t('settings.statistics.modelNotAvailable')}</div>
                     {/if}
+                    <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
                   </div>
 
                   <!-- System Resources: CPU & Memory -->
@@ -1207,6 +1282,12 @@
                           <span>{$t('settings.statistics.total')}: {stats.system.gpu.memory_total || $t('common.unknown')}</span>
                           <span>{$t('settings.statistics.used')}: {stats.system.gpu.memory_used || $t('common.unknown')}</span>
                           <span>{$t('settings.statistics.free')}: {stats.system.gpu.memory_free || $t('common.unknown')}</span>
+                          {#if stats.system.gpu.utilization_percent && stats.system.gpu.utilization_percent !== 'N/A'}
+                            <span>{$t('settings.statistics.gpuUtilization')}: {stats.system.gpu.utilization_percent}</span>
+                          {/if}
+                          {#if stats.system.gpu.temperature_celsius !== null && stats.system.gpu.temperature_celsius !== undefined}
+                            <span>{$t('settings.statistics.gpuTemperature')}: {stats.system.gpu.temperature_celsius}°C</span>
+                          {/if}
                         </div>
                       </div>
                       <div class="progress-bar">
@@ -1460,6 +1541,13 @@
   on:confirm={handleConfirmModalConfirm}
   on:cancel={handleConfirmModalCancel}
   on:close={handleConfirmModalCancel}
+/>
+
+<!-- Processing Details Modal -->
+<ProcessingDetailsModal
+  bind:isOpen={showProcessingDetails}
+  bind:section={processingDetailsSection}
+  {stats}
 />
 
 <style>
@@ -1875,6 +1963,16 @@
     padding: 1rem;
   }
 
+  .stat-card-clickable {
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .stat-card-clickable:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  }
+
   .stat-card-with-bar {
     display: flex;
     flex-direction: column;
@@ -1945,6 +2043,19 @@
   .stat-detail span {
     display: block;
     margin-bottom: 0.125rem;
+  }
+
+  .stat-detail-hint {
+    margin-top: 0.5rem;
+    font-size: 0.6875rem;
+    opacity: 0.6;
+    font-style: italic;
+  }
+
+  .stat-unit {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-secondary);
   }
 
   .progress-bar {

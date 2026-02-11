@@ -23,7 +23,6 @@ from app.schemas.media import CollectionWithCount
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.services.formatting_service import FormattingService
 from app.utils.uuid_helpers import get_collection_by_uuid_with_permission
-from app.utils.uuid_helpers import get_file_by_uuid
 from app.utils.uuid_helpers import validate_uuids
 
 router = APIRouter()
@@ -197,33 +196,31 @@ async def add_media_to_collection(
     collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
-    # Convert UUIDs to IDs for media files
+    # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
     media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
-    media_file_ids = []
-    for file_uuid in media_file_uuids:
-        file = get_file_by_uuid(db, file_uuid)
-        if file.user_id != current_user.id:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Not authorized to access file {file_uuid}",
-            )
-        media_file_ids.append(file.id)
 
-    # Verify all media files exist and belong to user (already done above, but keep query for consistency)
+    import uuid as uuid_mod
+
+    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]
     media_files = (
         db.query(MediaFile)
         .filter(
-            MediaFile.id.in_(media_file_ids),
+            MediaFile.uuid.in_(parsed_uuids),
             MediaFile.user_id == current_user.id,
         )
         .all()
     )
 
-    if len(media_files) != len(media_file_ids):
+    if len(media_files) != len(media_file_uuids):
+        # Determine which UUIDs are missing or unauthorized
+        found_uuids = {str(f.uuid) for f in media_files}
+        missing = [u for u in media_file_uuids if u not in found_uuids]
         raise HTTPException(
             status_code=404,
-            detail="One or more media files not found or don't belong to you",
+            detail=f"Media files not found or not authorized: {missing}",
         )
+
+    media_file_ids = [f.id for f in media_files]
 
     # Get existing members to avoid duplicates
     existing_members = (
@@ -266,12 +263,14 @@ async def remove_media_from_collection(
     collection = get_collection_by_uuid_with_permission(db, collection_uuid, int(current_user.id))
     collection_id = collection.id
 
-    # Convert UUIDs to IDs for media files
+    # Bulk resolve UUIDs to IDs in a single query (avoids N+1)
     media_file_uuids = validate_uuids([str(uuid) for uuid in media_data.media_file_ids])
-    media_file_ids = []
-    for file_uuid in media_file_uuids:
-        file = get_file_by_uuid(db, file_uuid)
-        media_file_ids.append(file.id)
+
+    import uuid as uuid_mod
+
+    parsed_uuids = [uuid_mod.UUID(u) for u in media_file_uuids]
+    media_files = db.query(MediaFile).filter(MediaFile.uuid.in_(parsed_uuids)).all()
+    media_file_ids = [f.id for f in media_files]
 
     # Remove members
     removed_count = (

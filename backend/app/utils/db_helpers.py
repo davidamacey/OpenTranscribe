@@ -172,13 +172,7 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
     Returns:
         List of unique Speaker objects
     """
-    result = (
-        db.query(Speaker)
-        .join(TranscriptSegment)
-        .filter(TranscriptSegment.media_file_id == file_id)
-        .distinct()
-        .all()
-    )
+    result = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
     return result  # type: ignore[no-any-return]
 
 

@@ -4,6 +4,7 @@
 
   import { flip } from 'svelte/animate';
   import { fade, scale } from 'svelte/transition';
+  import { cachedThumbnail } from '$lib/thumbnailCache';
   import { websocketStore } from '$stores/websocket';
   import { toastStore } from '$stores/toast';
   import { hasActiveUploads, uploadsStore } from '$stores/uploads';
@@ -110,6 +111,7 @@
 
 
   import axiosInstance from '../lib/axios';
+  import { apiCache } from '$lib/apiCache';
 
   // Import components
   import FileUploader from '../components/FileUploader.svelte';
@@ -305,10 +307,9 @@
     // Reset pagination on new fetch
     galleryStore.resetPagination();
 
-    // Only show loading state on initial load
-    if (isInitialLoad || files.length === 0) {
-      loading = true;
-    }
+    // Always show loading state so the count chip displays "loading..." instead
+    // of prematurely showing "no matches" while the query is in progress
+    loading = true;
     error = null;
 
     try {
@@ -338,23 +339,43 @@
         response = await axiosInstance.get('/files', { params });
         const data = response.data;
 
-        // Handle paginated response
-        files = data.items;
-        galleryStore.setFiles(data.items);
-        galleryStore.appendFiles(data.items, {
-          page: data.page,
-          pageSize: data.page_size,
-          total: data.total,
-          totalPages: data.total_pages,
-          hasMore: data.has_more,
-        });
+        // Handle both paginated response (object with items) and flat list (legacy/fallback)
+        if (data && data.items) {
+          files = data.items;
+          galleryStore.setFiles(data.items);
+          galleryStore.appendFiles(data.items, {
+            page: data.page,
+            pageSize: data.page_size,
+            total: data.total,
+            totalPages: data.total_pages,
+            hasMore: data.has_more,
+          });
+        } else if (Array.isArray(data)) {
+          // Fallback for non-paginated response
+          files = data;
+          galleryStore.setFiles(data);
+          galleryStore.appendFiles(data, {
+            page: 1,
+            pageSize: data.length,
+            total: data.length,
+            totalPages: 1,
+            hasMore: false,
+          });
+        } else {
+          files = [];
+          galleryStore.setFiles([]);
+        }
       }
 
       updateFileMap();
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching files:', err);
-      error = $t('gallery.loadFilesFailed');
+      if (err?.code === 'ECONNABORTED') {
+        error = $t('gallery.queryTimeout');
+      } else {
+        error = $t('gallery.loadFilesFailed');
+      }
     } finally {
       loading = false;
     }
@@ -374,8 +395,10 @@
 
       if (selectedCollectionId !== null) {
         response = await axiosInstance.get(`/collections/${selectedCollectionId}/media`, { params });
-        const newFiles = response.data.items || response.data;
-        files = [...files, ...newFiles];
+        const newFiles = (response.data.items || response.data) as MediaFile[];
+        // Deduplicate: only add files not already loaded (prevents duplicate key errors)
+        const uniqueNew = newFiles.filter((f: MediaFile) => !fileMap.has(f.uuid));
+        files = [...files, ...uniqueNew];
         galleryStore.setFiles(files);
 
         if (response.data.items) {
@@ -391,15 +414,24 @@
         response = await axiosInstance.get('/files', { params });
         const data = response.data;
 
-        files = [...files, ...data.items];
-        galleryStore.setFiles(files);
-        galleryStore.appendFiles(data.items, {
-          page: data.page,
-          pageSize: data.page_size,
-          total: data.total,
-          totalPages: data.total_pages,
-          hasMore: data.has_more,
-        });
+        if (data && data.items) {
+          // Deduplicate: only add files not already loaded (prevents duplicate key errors)
+          const uniqueItems = data.items.filter((f: MediaFile) => !fileMap.has(f.uuid));
+          files = [...files, ...uniqueItems];
+          galleryStore.setFiles(files);
+          galleryStore.appendFiles(data.items, {
+            page: data.page,
+            pageSize: data.page_size,
+            total: data.total,
+            totalPages: data.total_pages,
+            hasMore: data.has_more,
+          });
+        } else if (Array.isArray(data)) {
+          // Fallback for non-paginated response
+          const uniqueItems = data.filter((f: MediaFile) => !fileMap.has(f.uuid));
+          files = [...files, ...uniqueItems];
+          galleryStore.setFiles(files);
+        }
       }
 
       updateFileMap();
@@ -726,6 +758,8 @@
   // Track processed notifications to avoid duplicate processing
   let processedNotificationIds = new Set<string>();
   let previousActiveUploadCount = 0;
+  let pendingNotifications: any[] = [];
+  let wsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Periodic cleanup to prevent processedNotificationIds from growing too large
   setInterval(() => {
@@ -734,135 +768,116 @@
     }
   }, 300000); // Clean up every 5 minutes
 
+  // Flush pending notifications in a single batched update
+  function flushPendingNotifications() {
+    wsFlushTimer = null;
+    if (pendingNotifications.length === 0) return;
+    const batch = pendingNotifications;
+    pendingNotifications = [];
+    processNotificationBatch(batch);
+  }
+
+  function processNotificationBatch(unprocessedNotifications: any[]) {
+    // Process all notifications, collecting updates into fileMap without
+    // triggering Svelte reactivity per-notification (prevents freeze with bulk processing)
+    let filesUpdated = false;
+    let needsRefreshIds: string[] = [];
+
+    unprocessedNotifications.forEach(notification => {
+      if (notification.type === 'file_deleted' && notification.data?.file_id) {
+        const fileId = String(notification.data.file_id);
+        removeFileSmooth(fileId);
+      }
+      else if (notification.type === 'transcription_status' && notification.data?.file_id) {
+        const fileId = String(notification.data.file_id);
+        const status = notification.data.status;
+        const existing = fileMap.get(fileId);
+
+        if (existing) {
+          const updatedFile = {
+            ...existing,
+            status: status,
+            display_status: status === 'processing' ? $t('common.processing') :
+                           status === 'completed' ? $t('common.completed') :
+                           status === 'pending' ? $t('common.pending') :
+                           status === 'error' ? $t('common.error') : status
+          };
+          fileMap.set(fileId, updatedFile);
+          filesUpdated = true;
+        }
+
+        if (status === 'error') {
+          needsRefreshIds.push(fileId);
+        }
+      }
+      else if (notification.type === 'cache_invalidate') {
+        // Push-based cache invalidation from backend
+        const scope = notification.data?.scope;
+        if (scope === 'files' || scope === 'all') {
+          apiCache.invalidate('files:');
+          throttledRefresh('cache-invalidate', 500);
+        }
+      }
+      else if (notification.type === 'file_upload' || notification.type === 'file_created') {
+        if (notification.data?.file) {
+          addNewFileSmooth(notification.data.file);
+        } else {
+          throttledRefresh('new-file', 500);
+        }
+      }
+      else if (notification.type === 'file_updated' && notification.data?.file_id) {
+        const fileId = String(notification.data.file_id);
+        const existing = fileMap.get(fileId);
+
+        if (existing) {
+          let updatedFile;
+          if (notification.data.file) {
+            updatedFile = { ...existing, ...notification.data.file };
+          } else {
+            const newStatus = notification.data.status || existing.status;
+            updatedFile = {
+              ...existing,
+              status: newStatus,
+              display_status: notification.data.display_status || existing.display_status,
+              thumbnail_url: notification.data.thumbnail_url || existing.thumbnail_url,
+            };
+          }
+          fileMap.set(fileId, updatedFile);
+          filesUpdated = true;
+        }
+        // File not in currently loaded pages — ignore silently.
+      }
+    });
+
+    // Single batched update: rebuild files array from fileMap once
+    if (filesUpdated) {
+      files = files.map(f => fileMap.get(f.uuid) || f);
+      galleryStore.setFiles(files);
+    }
+
+    // Schedule refreshes for error files (batched)
+    if (needsRefreshIds.length > 0) {
+      throttledRefresh('error-batch', 1000);
+    }
+  }
+
   function setupWebSocketUpdates() {
     unsubscribeFileStatus = websocketStore.subscribe(($ws) => {
       if ($ws.notifications.length > 0) {
-        // Process all unprocessed notifications, not just the latest one
         const unprocessedNotifications = $ws.notifications.filter(notification =>
           !processedNotificationIds.has(notification.id)
         );
 
         if (unprocessedNotifications.length > 0) {
-          // Mark all as processed immediately to avoid race conditions
           unprocessedNotifications.forEach(notification => {
             processedNotificationIds.add(notification.id);
           });
 
-          // Process each unprocessed notification
-          let filesUpdated = false;
-
-          unprocessedNotifications.forEach(notification => {
-            // Handle different notification types
-            if (notification.type === 'file_deleted' && notification.data?.file_id) {
-              const fileId = String(notification.data.file_id);
-              removeFileSmooth(fileId);
-            }
-            else if (notification.type === 'transcription_status' && notification.data?.file_id) {
-              const fileId = String(notification.data.file_id);  // UUID string
-              const status = notification.data.status;
-
-              // FIX: Update both status and display_status for concurrent upload status tracking
-              // This ensures gallery items show correct status during multiple file processing
-              // instead of staying stuck on "Pending" while notifications work correctly
-              const updatedFiles = files.map(file => {
-                if (file.uuid === fileId) {
-                  const updatedFile = {
-                    ...file,
-                    status: status,
-                    // Update display_status to ensure UI shows correct status immediately
-                    display_status: status === 'processing' ? $t('common.processing') :
-                                   status === 'completed' ? $t('common.completed') :
-                                   status === 'pending' ? $t('common.pending') :
-                                   status === 'error' ? $t('common.error') : status
-                  };
-                  // Update the file map immediately for consistent lookups
-                  fileMap.set(fileId, updatedFile);  // Use fileId (UUID) directly
-                  filesUpdated = true;
-                  return updatedFile;
-                }
-                return file;
-              });
-
-              // Force Svelte reactivity by creating new array reference
-              files = updatedFiles;
-
-              // If the file status changed to error, refresh to get the latest error message
-              if (status === 'error') {
-                throttledRefresh('error-' + fileId, 300);
-              }
-
-              // For completed status, don't refresh immediately since we expect a file_updated notification
-              // to arrive shortly with complete updated data. This prevents race conditions.
-              if (status === 'completed') {
-                // Wait a bit longer for the file_updated notification, then refresh if needed
-                setTimeout(() => {
-                  const currentFile = fileMap.get(fileId);  // Use fileId (UUID) directly
-                  if (currentFile && currentFile.status !== 'completed') {
-                    throttledRefresh('completed-fallback-' + fileId, 100);
-                  }
-                }, 800);
-              }
-            }
-            // Handle new file uploads with smooth addition
-            else if (notification.type === 'file_upload' || notification.type === 'file_created') {
-              if (notification.data?.file) {
-                // Add the new file smoothly without full refresh
-                addNewFileSmooth(notification.data.file);
-              } else {
-                // Fallback to throttled refresh if no file data provided
-                throttledRefresh('new-file', 500);
-              }
-            }
-            // Handle file updates (metadata, processing completion, etc.)
-            else if (notification.type === 'file_updated' && notification.data?.file_id) {
-              const fileId = String(notification.data.file_id);  // UUID string
-
-              // Try to update the file in place first
-              let fileExists = false;
-              let updatedFile = null;
-              files = files.map(file => {
-                if (file.uuid === fileId) {  // Compare UUIDs directly
-                  fileExists = true;
-                  // If we have full file data, use it; otherwise merge notification data
-                  if (notification.data.file) {
-                    updatedFile = {
-                      ...file,
-                      ...notification.data.file
-                    };
-                  } else {
-                    const newStatus = notification.data.status || file.status;
-                    updatedFile = {
-                      ...file,
-                      status: newStatus,
-                      display_status: notification.data.display_status || file.display_status,
-                      thumbnail_url: notification.data.thumbnail_url || file.thumbnail_url,
-                    };
-                  }
-                  return updatedFile;
-                }
-                return file;
-              });
-
-              // Update the file map immediately for consistent lookups
-              if (fileExists && updatedFile) {
-                fileMap.set(fileId, updatedFile);  // Use fileId (UUID) directly
-                filesUpdated = true;
-              } else {
-                // Only fetch if file doesn't exist in current list (new file)
-                if (notification.data.file) {
-                  addNewFileSmooth(notification.data.file);
-                } else {
-                  throttledRefresh('update-' + fileId, 300);
-                }
-              }
-            }
-          });
-
-          // Batch update gallery store and file map once after processing all notifications
-          if (filesUpdated) {
-            galleryStore.setFiles(files);
-            updateFileMap();
-          }
+          // Queue notifications and debounce processing to batch updates
+          // This prevents per-notification re-renders during bulk processing
+          pendingNotifications.push(...unprocessedNotifications);
+          if (wsFlushTimer) clearTimeout(wsFlushTimer);
+          wsFlushTimer = setTimeout(flushPendingNotifications, 250);
         }
       }
     });
@@ -1100,9 +1115,9 @@
               <div
                 class="file-list-row {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
                 class:even={index % 2 === 0}
-                animate:flip={{ duration: 300 }}
-                in:scale={{ duration: 300, start: 0.98 }}
-                out:fade={{ duration: 250 }}
+                animate:flip={{ duration: files.length > 50 ? 0 : 300 }}
+                in:scale={{ duration: files.length > 50 ? 0 : 300, start: 0.98 }}
+                out:fade={{ duration: files.length > 50 ? 0 : 250 }}
               >
                 {#if isSelecting}
                   <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -1236,9 +1251,9 @@
             {#each files as file (file.uuid)}
               <div
                 class="file-card {selectedFiles.has(file.uuid) ? 'selected' : ''} {pendingNewFiles.has(file.uuid) ? 'new-file' : ''} {pendingDeletions.has(file.uuid) ? 'deleting' : ''} {isSelecting ? 'selecting-mode' : ''}"
-                animate:flip={{ duration: 300 }}
-                in:scale={{ duration: 300, start: 0.8 }}
-                out:fade={{ duration: 250 }}
+                animate:flip={{ duration: files.length > 50 ? 0 : 300 }}
+                in:scale={{ duration: files.length > 50 ? 0 : 300, start: 0.8 }}
+                out:fade={{ duration: files.length > 50 ? 0 : 250 }}
               >
                   {#if isSelecting}
                     <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -1286,7 +1301,7 @@
                     {#if file.thumbnail_url && file.content_type && file.content_type.startsWith('video/')}
                       <div class="file-thumbnail">
                         <img
-                          src={file.thumbnail_url}
+                          use:cachedThumbnail={{ uuid: file.uuid, url: file.thumbnail_url }}
                           alt={$t('gallery.thumbnailAlt', { title: file.title || file.filename })}
                           loading="lazy"
                           decoding="async"

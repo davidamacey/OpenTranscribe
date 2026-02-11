@@ -79,7 +79,17 @@
         <div class="metadata-item">
           <span class="metadata-label">{$t('metadata.transcriptStatus')}:</span>
           <span class="metadata-value">
-            <span class="status-completed">{$t('metadata.completed')} <i class="fas fa-check-circle"></i></span>
+            {#if file?.status === 'completed'}
+              <span class="status-completed">{$t('metadata.completed')} <i class="fas fa-check-circle"></i></span>
+            {:else if file?.status === 'processing'}
+              <span class="status-processing">{$t('metadata.processing')} <i class="fas fa-spinner fa-spin"></i></span>
+            {:else if file?.status === 'error'}
+              <span class="status-error">{$t('metadata.failed')} <i class="fas fa-exclamation-triangle"></i></span>
+            {:else if file?.status === 'pending'}
+              <span class="status-pending">{$t('metadata.pending')}</span>
+            {:else}
+              <span class="status-pending">{file?.display_status || file?.status || $t('metadata.unknown')}</span>
+            {/if}
           </span>
         </div>
 
@@ -156,6 +166,32 @@
           </span>
         </div>
       </div>
+
+      {#if file?.whisper_model || file?.diarization_model || file?.embedding_mode}
+        <div class="processing-models-section">
+          <hr class="models-divider" />
+          <div class="models-row">
+            {#if file.whisper_model}
+              <span class="model-badge">
+                <span class="model-label">Whisper:</span>
+                <span class="model-name">{file.whisper_model}</span>
+              </span>
+            {/if}
+            {#if file.diarization_model}
+              <span class="model-badge">
+                <span class="model-label">Diarization:</span>
+                <span class="model-name">{file.diarization_model}</span>
+              </span>
+            {/if}
+            {#if file.embedding_mode}
+              <span class="model-badge">
+                <span class="model-label">Embeddings:</span>
+                <span class="model-name">{file.embedding_mode}</span>
+              </span>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </div>
   </div>
   {/if}
@@ -274,6 +310,48 @@
   .source-link:hover {
     color: var(--primary-hover);
     text-decoration: underline;
+  }
+
+  .processing-models-section {
+    margin-top: 4px;
+  }
+
+  .models-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 8px 0 12px 0;
+  }
+
+  .models-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+
+  .model-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: var(--surface-hover, rgba(0, 0, 0, 0.03));
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    font-size: 12px;
+  }
+
+  .model-badge .model-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-size: 10px;
+  }
+
+  .model-badge .model-name {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+    color: var(--text-primary);
+    font-weight: 500;
   }
 
   @media (max-width: 768px) {

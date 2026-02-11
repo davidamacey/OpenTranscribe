@@ -273,12 +273,23 @@ async def lifespan(app: FastAPI):
     logger.info("Starting application...")
     _validate_production_secrets()
 
-    try:
-        from app.db.migrations import run_migrations
+    from app.db.migrations import run_migrations
 
+    try:
         run_migrations()
     except Exception as e:
-        logger.error(f"Migration error: {e}")
+        logger.critical(f"Database migration failed — aborting startup: {e}")
+        raise SystemExit(1) from e
+
+    # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns)
+    try:
+        from app.services.opensearch_service import check_and_repair_indices
+        from app.services.opensearch_service import ensure_indices_exist
+
+        ensure_indices_exist()
+        check_and_repair_indices()
+    except Exception as e:
+        logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
     logger.info("Setting up MinIO and task recovery...")
     minio_task = asyncio.create_task(_setup_minio())

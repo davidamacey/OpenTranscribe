@@ -180,7 +180,7 @@
                 {:else if suggestion.source === 'llm_analysis'}
                   <span class="source-badge llm-analysis">
                     <svg class="source-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636-.707.707M21 12h-1M4 12H3m3.343-5.657-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                     </svg>
                     {$t('speakerVerification.aiAnalysis')}
                   </span>
@@ -854,9 +854,10 @@
   }
 
   .source-badge.llm-analysis {
-    background: color-mix(in srgb, var(--primary-color) 15%, var(--surface-color));
-    color: var(--primary-color);
-    border: 1px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, #7c3aed 18%, var(--surface-color)), color-mix(in srgb, #6d28d9 12%, var(--surface-color)));
+    color: #7c3aed;
+    border: 1.5px solid color-mix(in srgb, #7c3aed 35%, transparent);
+    font-weight: 600;
   }
 
   .source-badge.profile-embedding {

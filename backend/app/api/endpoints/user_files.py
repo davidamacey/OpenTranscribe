@@ -16,7 +16,9 @@ from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import defer
 
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
@@ -44,123 +46,137 @@ def get_user_file_status(
     Returns counts of files by status and identifies files that may need attention.
     """
     try:
-        # Get user's files
-        user_files = db.query(MediaFile).filter(MediaFile.user_id == current_user.id).all()
+        now = datetime.now(timezone.utc)
+        user_id = current_user.id
 
-        # Count files by status
-        status_counts = {
-            "total": len(user_files),
+        # --- Status counts via SQL GROUP BY (single aggregation query) ---
+        status_rows = (
+            db.query(MediaFile.status, func.count(MediaFile.id))
+            .filter(MediaFile.user_id == user_id)
+            .group_by(MediaFile.status)
+            .all()
+        )
+
+        status_counts: dict[str, int] = {
+            "total": 0,
             "pending": 0,
             "processing": 0,
             "completed": 0,
             "error": 0,
         }
+        for file_status, count in status_rows:
+            key = file_status.value if hasattr(file_status, "value") else str(file_status)
+            if key in status_counts:
+                status_counts[key] = count
+            status_counts["total"] += count
+
+        # --- Problem files via SQL (filtered query, no full table scan) ---
+        one_hour_ago = now - timedelta(hours=1)
+        two_hours_ago = now - timedelta(hours=2)
+
+        # Defer heavy JSON columns not needed for status display
+        problem_query = (
+            db.query(MediaFile)
+            .options(
+                defer(MediaFile.metadata_raw),
+                defer(MediaFile.waveform_data),
+                defer(MediaFile.metadata_important),
+                defer(MediaFile.summary_data),
+            )
+            .filter(
+                MediaFile.user_id == user_id,
+                (
+                    (MediaFile.status == FileStatus.PROCESSING)
+                    & (MediaFile.upload_time < one_hour_ago)
+                )
+                | (
+                    (MediaFile.status == FileStatus.PENDING)
+                    & (MediaFile.upload_time < two_hours_ago)
+                )
+                | (MediaFile.status == FileStatus.ERROR),
+            )
+            .order_by(MediaFile.upload_time.desc())
+        )
 
         problem_files = []
+        for file in problem_query.all():
+            file_age = now - file.upload_time
+            problem_files.append(
+                {
+                    "uuid": str(file.uuid),
+                    "filename": file.filename,
+                    "status": file.status.value,
+                    "upload_time": file.upload_time,
+                    "age_hours": file_age.total_seconds() / 3600,
+                    "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
+                    "formatted_duration": FormattingService.format_duration(
+                        float(file.duration) if file.duration is not None else None
+                    ),
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                    "formatted_file_size": FormattingService.format_bytes_detailed(
+                        int(file.file_size) if file.file_size is not None else None
+                    ),
+                    "display_status": FormattingService.format_status(FileStatus(file.status)),
+                    "status_badge_class": FormattingService.get_status_badge_class(
+                        file.status.value
+                    ),
+                }
+            )
+
+        # --- Recent files via SQL (last 24 hours, limited, pre-sorted) ---
+        twenty_four_hours_ago = now - timedelta(hours=24)
+
+        # Defer heavy JSON columns not needed for recent file list
+        recent_query = (
+            db.query(MediaFile)
+            .options(
+                defer(MediaFile.metadata_raw),
+                defer(MediaFile.waveform_data),
+                defer(MediaFile.metadata_important),
+                defer(MediaFile.summary_data),
+            )
+            .filter(
+                MediaFile.user_id == user_id,
+                MediaFile.upload_time >= twenty_four_hours_ago,
+            )
+            .order_by(MediaFile.upload_time.desc())
+            .limit(10)
+        )
+
         recent_files = []
-
-        for file in user_files:
-            # Count by status
-            if file.status == FileStatus.PENDING:
-                status_counts["pending"] += 1
-            elif file.status == FileStatus.PROCESSING:
-                status_counts["processing"] += 1
-            elif file.status == FileStatus.COMPLETED:
-                status_counts["completed"] += 1
-            elif file.status == FileStatus.ERROR:
-                status_counts["error"] += 1
-
-            # Check for potential problems
-            file_age = datetime.now(timezone.utc) - file.upload_time
-
-            # Files that might need attention
-            if (
-                (file.status == FileStatus.PROCESSING and file_age > timedelta(hours=1))
-                or (file.status == FileStatus.PENDING and file_age > timedelta(hours=2))
-                or (file.status == FileStatus.ERROR)
-            ):
-                problem_files.append(
-                    {
-                        "uuid": str(file.uuid),
-                        "filename": file.filename,
-                        "status": file.status.value,
-                        "upload_time": file.upload_time,
-                        "age_hours": file_age.total_seconds() / 3600,
-                        "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
-                        # Add formatted fields for frontend display
-                        "formatted_duration": FormattingService.format_duration(
-                            float(file.duration) if file.duration is not None else None
-                        ),
-                        "formatted_file_age": FormattingService.format_file_age(
-                            datetime(
-                                file.upload_time.year,
-                                file.upload_time.month,
-                                file.upload_time.day,
-                                file.upload_time.hour,
-                                file.upload_time.minute,
-                                file.upload_time.second,
-                                file.upload_time.microsecond,
-                                tzinfo=file.upload_time.tzinfo,
-                            )
-                        ),
-                        "formatted_file_size": FormattingService.format_bytes_detailed(
-                            int(file.file_size) if file.file_size is not None else None
-                        ),
-                        "display_status": FormattingService.format_status(FileStatus(file.status)),
-                        "status_badge_class": FormattingService.get_status_badge_class(
-                            file.status.value
-                        ),
-                    }
-                )
-
-            # Recent files (last 24 hours)
-            if file_age < timedelta(hours=24):
-                recent_files.append(
-                    {
-                        "uuid": str(file.uuid),
-                        "filename": file.filename,
-                        "status": file.status.value,
-                        "upload_time": file.upload_time,
-                        "duration": file.duration,
-                        "age_hours": file_age.total_seconds() / 3600,
-                        # Add formatted fields for frontend display
-                        "formatted_duration": FormattingService.format_duration(
-                            float(file.duration) if file.duration is not None else None
-                        ),
-                        "formatted_file_age": FormattingService.format_file_age(
-                            datetime(
-                                file.upload_time.year,
-                                file.upload_time.month,
-                                file.upload_time.day,
-                                file.upload_time.hour,
-                                file.upload_time.minute,
-                                file.upload_time.second,
-                                file.upload_time.microsecond,
-                                tzinfo=file.upload_time.tzinfo,
-                            )
-                        ),
-                        "formatted_file_size": FormattingService.format_bytes_detailed(
-                            int(file.file_size) if file.file_size is not None else None
-                        ),
-                        "display_status": FormattingService.format_status(FileStatus(file.status)),
-                        "status_badge_class": FormattingService.get_status_badge_class(
-                            file.status.value
-                        ),
-                    }
-                )
-
-        # Sort recent files by upload time (newest first)
-        recent_files.sort(key=lambda x: x["upload_time"], reverse=True)
+        for file in recent_query.all():
+            file_age = now - file.upload_time
+            recent_files.append(
+                {
+                    "uuid": str(file.uuid),
+                    "filename": file.filename,
+                    "status": file.status.value,
+                    "upload_time": file.upload_time,
+                    "duration": file.duration,
+                    "age_hours": file_age.total_seconds() / 3600,
+                    "formatted_duration": FormattingService.format_duration(
+                        float(file.duration) if file.duration is not None else None
+                    ),
+                    "formatted_file_age": FormattingService.format_file_age(file.upload_time),
+                    "formatted_file_size": FormattingService.format_bytes_detailed(
+                        int(file.file_size) if file.file_size is not None else None
+                    ),
+                    "display_status": FormattingService.format_status(FileStatus(file.status)),
+                    "status_badge_class": FormattingService.get_status_badge_class(
+                        file.status.value
+                    ),
+                }
+            )
 
         return {
             "status_counts": status_counts,
             "problem_files": {"count": len(problem_files), "files": problem_files},
             "recent_files": {
                 "count": len(recent_files),
-                "files": recent_files[:10],  # Limit to 10 most recent
+                "files": recent_files,
             },
             "has_problems": len(problem_files) > 0,
-            "timestamp": datetime.now(timezone.utc),
+            "timestamp": now,
         }
 
     except Exception as e:
@@ -193,44 +209,47 @@ def get_file_detailed_status(
 
         task_details = []
         for task in tasks:
-            task_details.append(
-                {
-                    "id": task.id,
-                    "task_type": task.task_type,
-                    "status": task.status,
-                    "progress": task.progress,
-                    "created_at": task.created_at,
-                    "updated_at": task.updated_at,
-                    "completed_at": task.completed_at,
-                    "error_message": task.error_message,
-                    # Add formatted processing time
-                    "formatted_processing_time": FormattingService.format_processing_time(
-                        datetime(
-                            task.created_at.year,
-                            task.created_at.month,
-                            task.created_at.day,
-                            task.created_at.hour,
-                            task.created_at.minute,
-                            task.created_at.second,
-                            task.created_at.microsecond,
-                            tzinfo=task.created_at.tzinfo,
-                        ),
-                        datetime(
-                            task.completed_at.year,
-                            task.completed_at.month,
-                            task.completed_at.day,
-                            task.completed_at.hour,
-                            task.completed_at.minute,
-                            task.completed_at.second,
-                            task.completed_at.microsecond,
-                            tzinfo=task.completed_at.tzinfo,
-                        )
-                        if task.completed_at
-                        else None,
+            task_detail: dict[str, Any] = {
+                "id": task.id,
+                "task_type": task.task_type,
+                "status": task.status,
+                "progress": task.progress,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
+                "completed_at": task.completed_at,
+                "error_message": task.error_message,
+                # Add formatted processing time
+                "formatted_processing_time": FormattingService.format_processing_time(
+                    datetime(
+                        task.created_at.year,
+                        task.created_at.month,
+                        task.created_at.day,
+                        task.created_at.hour,
+                        task.created_at.minute,
+                        task.created_at.second,
+                        task.created_at.microsecond,
+                        tzinfo=task.created_at.tzinfo,
                     ),
-                    "status_display": task.status.title(),
-                }
-            )
+                    datetime(
+                        task.completed_at.year,
+                        task.completed_at.month,
+                        task.completed_at.day,
+                        task.completed_at.hour,
+                        task.completed_at.minute,
+                        task.completed_at.second,
+                        task.completed_at.microsecond,
+                        tzinfo=task.completed_at.tzinfo,
+                    )
+                    if task.completed_at
+                    else None,
+                ),
+                "status_display": task.status.title(),
+            }
+            # Include model tracking info from the media file for transcription tasks
+            if task.task_type == "transcription":
+                task_detail["whisper_model"] = media_file.whisper_model
+                task_detail["diarization_model"] = media_file.diarization_model
+            task_details.append(task_detail)
 
         # Calculate file age and determine if retry is available
         file_age = datetime.now(timezone.utc) - media_file.upload_time
@@ -276,6 +295,9 @@ def get_file_detailed_status(
                 "status_badge_class": FormattingService.get_status_badge_class(
                     media_file.status.value
                 ),
+                "whisper_model": media_file.whisper_model,
+                "diarization_model": media_file.diarization_model,
+                "embedding_mode": media_file.embedding_mode,
             },
             "task_summary": task_summary,
             "task_details": task_details,

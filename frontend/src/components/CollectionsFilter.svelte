@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
+  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { t } from '$stores/locale';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
@@ -26,11 +27,18 @@
   export async function fetchCollections() {
     loading = true;
     try {
-      const response = await axiosInstance.get('/collections');
-      // Sort collections by media_count descending (most used first)
-      collections = (response.data || []).sort((a: any, b: any) => {
-        return (b.media_count || 0) - (a.media_count || 0);
-      });
+      const data = await apiCache.getOrFetch(
+        cacheKey.collections(),
+        async () => {
+          const response = await axiosInstance.get('/collections');
+          // Sort collections by media_count descending (most used first)
+          return (response.data || []).sort((a: any, b: any) => {
+            return (b.media_count || 0) - (a.media_count || 0);
+          });
+        },
+        CacheTTL.COLLECTIONS
+      );
+      collections = data;
     } catch (err) {
       console.error('Error fetching collections:', err);
     } finally {

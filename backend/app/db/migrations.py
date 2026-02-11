@@ -30,7 +30,7 @@ def get_alembic_config() -> Config:
     return config
 
 
-def _detect_schema_version(conn, tables: list[str]) -> str | None:
+def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     """Detect the schema version of an existing untracked database.
 
     Returns the Alembic revision to stamp, or None if no user table exists.
@@ -66,8 +66,42 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:
         "WHERE table_name='user' AND column_name='pki_fingerprint_sha256')"
     )
     has_auth_config = "auth_config" in tables
+    has_error_category = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='media_file' AND column_name='error_category')"
+    )
+    has_suggestion_source = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='speaker' AND column_name='suggestion_source')"
+    )
+    has_perf_indexes = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+        "WHERE indexname='idx_media_file_user_status_upload')"
+    )
+    has_fk_indexes = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='idx_comment_media_file_id')"
+    )
+    has_remaining_fk_indexes = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='idx_speaker_user_id')"
+    )
+    has_model_tracking = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='media_file' AND column_name='whisper_model')"
+    )
 
     # Return the highest version stamp that matches
+    if has_model_tracking:
+        return "v130_add_processing_model_tracking"
+    if has_remaining_fk_indexes:
+        return "v120_add_remaining_fk_indexes"
+    if has_fk_indexes:
+        return "v110_add_missing_fk_indexes"
+    if has_perf_indexes:
+        return "v100_optimize_query_performance"
+    if has_suggestion_source:
+        return "v091_add_speaker_suggestion_source"
+    if has_error_category:
+        return "v090_add_error_category"
     if has_auth_config:
         return "v080_add_auth_config"
     if has_pki_fingerprint:
@@ -99,6 +133,16 @@ def run_migrations() -> None:
 
     engine = create_engine(settings.DATABASE_URL)
 
+    # Ensure alembic_version column is wide enough for long revision IDs
+    with engine.connect() as conn:
+        from sqlalchemy import text
+
+        if "alembic_version" in inspect(engine).get_table_names():
+            conn.execute(
+                text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+            )
+            conn.commit()
+
     with engine.connect() as conn:
         context = MigrationContext.configure(conn)
         current_rev = context.get_current_revision()
@@ -127,7 +171,7 @@ def run_migrations() -> None:
     elif detected_version:
         logger.info(f"Existing database detected, stamping {detected_version}...")
         command.stamp(config, detected_version)
-        if detected_version != "v080_add_auth_config":
+        if detected_version != head_rev:
             logger.info("Applying migrations to upgrade to current version...")
             command.upgrade(config, "head")
     elif tables:

@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path,
           secure: false,
+          // Rewrite Location headers on 3xx redirects to use the proxy host
+          // instead of the Docker-internal target host (backend:8080).
+          // This is the http-proxy equivalent of nginx's `proxy_redirect default`
+          // and ensures redirects work correctly when accessed via LAN IP or localhost.
+          autoRewrite: true,
           configure: (proxy, _options) => {
             proxy.on('error', (err, _req, _res) => {
               console.log('proxy error', err);

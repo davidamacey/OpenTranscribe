@@ -67,6 +67,7 @@ def batch_process_speaker_matches():
                         ):
                             speaker.suggested_name = match["display_name"]
                             speaker.confidence = match["confidence"]
+                            speaker.suggestion_source = "voice_match"
                             db.flush()
                             break
 

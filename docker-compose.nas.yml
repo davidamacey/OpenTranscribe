@@ -1,0 +1,39 @@
+# docker-compose.nas.yml
+# Optional overlay for custom storage paths
+#
+# Replaces default Docker volumes with bind mounts for optimal storage layout:
+#   - MinIO media files → NAS (high capacity for bulk media)
+#   - PostgreSQL data → NVMe (fast random I/O for queries)
+#   - OpenSearch data → NVMe (fast indexing and vector search)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.nas.yml up
+#   OR with production + gpu-scale:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml \
+#     -f docker-compose.gpu-scale.yml -f docker-compose.nas.yml up -d
+#
+# Configuration (.env):
+#   MINIO_NAS_PATH=/mnt/nas/opentranscribe-minio    # Media file storage (NAS)
+#   POSTGRES_DATA_PATH=/mnt/nvm/opentranscribe/pg    # Database storage (NVMe)
+#   OPENSEARCH_DATA_PATH=/mnt/nvm/opentranscribe/os  # Search index storage (NVMe)
+#
+# IMPORTANT: Ensure all mount paths exist and are writable before starting.
+#   mkdir -p /mnt/nas/opentranscribe-minio
+#   mkdir -p /mnt/nvm/opentranscribe/pg /mnt/nvm/opentranscribe/os
+#   chown -R 1000:1000 /mnt/nvm/opentranscribe/os   # OpenSearch runs as UID 1000
+
+services:
+  minio:
+    volumes:
+      - ${MINIO_NAS_PATH:-/mnt/nas/opentranscribe-minio}:/data
+
+  postgres:
+    volumes:
+      - ${POSTGRES_DATA_PATH:-/mnt/nvm/opentranscribe/pg}:/var/lib/postgresql/data/
+      - ${INIT_DB_PATH:-./database/init_db.sql}:/docker-entrypoint-initdb.d/init_db.sql:ro
+
+  opensearch:
+    volumes:
+      - ${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}:/usr/share/opensearch/data
+      # Pre-downloaded neural search models for offline deployments
+      - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models:ro

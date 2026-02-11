@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '../lib/axios';
+  import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { user } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
   import { toastStore } from '../stores/toast';
@@ -43,11 +44,27 @@
   let tasksError: any = null;
   let showTasksSection = false;
 
+  // Collapsible sections state
+  let showProblemsSection = true;  // Expanded by default (needs attention!)
+  let showRecentSection = true;    // Expanded by default
+
   // Restore tasks section state from session storage
   if (typeof window !== 'undefined') {
     const savedTasksSection = sessionStorage.getItem('showTasksSection');
     if (savedTasksSection === 'true') {
       showTasksSection = true;
+    }
+
+    // Restore problems section state
+    const savedProblemsSection = sessionStorage.getItem('showProblemsSection');
+    if (savedProblemsSection !== null) {
+      showProblemsSection = savedProblemsSection === 'true';
+    }
+
+    // Restore recent section state
+    const savedRecentSection = sessionStorage.getItem('showRecentSection');
+    if (savedRecentSection !== null) {
+      showRecentSection = savedRecentSection === 'true';
     }
   }
 
@@ -63,10 +80,21 @@
   let unsubscribeWebSocket: any = null;
   let lastProcessedNotificationId = '';
 
+  // Push-based cache invalidation listener
+  function handleCacheInvalidation(event: Event) {
+    const scope = (event as CustomEvent).detail?.scope;
+    if (scope === 'files' || scope === 'all') {
+      fetchFileStatus(true);
+    }
+  }
+
   onMount(() => {
     fetchFileStatus();
     setupWebSocketUpdates();
     startAutoRefresh();
+
+    // Listen for push-based cache invalidation from WebSocket
+    window.addEventListener('cache-invalidated', handleCacheInvalidation);
 
     // Load tasks if section should be shown
     if (showTasksSection && tasks.length === 0) {
@@ -86,8 +114,18 @@
     error = null;
 
     try {
-      const response = await axiosInstance.get('/my-files/status');
-      fileStatus = response.data;
+      if (silent) {
+        // Silent refreshes bypass cache to get fresh data
+        apiCache.invalidate('status:');
+      }
+      fileStatus = await apiCache.getOrFetch(
+        cacheKey.status(),
+        async () => {
+          const response = await axiosInstance.get('/my-files/status');
+          return response.data;
+        },
+        CacheTTL.STATUS
+      );
     } catch (err: any) {
       console.error('Error fetching file status:', err);
       if (!silent) {
@@ -154,6 +192,20 @@
 
     if (showTasksSection && tasks.length === 0) {
       fetchTasks();
+    }
+  }
+
+  function toggleProblemsSection() {
+    showProblemsSection = !showProblemsSection;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('showProblemsSection', showProblemsSection.toString());
+    }
+  }
+
+  function toggleRecentSection() {
+    showRecentSection = !showRecentSection;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('showRecentSection', showRecentSection.toString());
     }
   }
 
@@ -233,12 +285,14 @@
   }
 
   function startAutoRefresh() {
+    // WebSocket push handles real-time updates; this is a fallback safety net
+    // to catch any missed notifications (runs every 2 minutes instead of 30s)
     refreshInterval = setInterval(() => {
       fetchFileStatus(true); // Silent refresh
       if (showTasksSection) {
         fetchTasks(true); // Silent refresh
       }
-    }, 30000); // Refresh every 30 seconds
+    }, 120000); // Fallback refresh every 2 minutes
   }
 
   function showMessage(message: any, type: any) {
@@ -306,6 +360,7 @@
     if (unsubscribeWebSocket) {
       unsubscribeWebSocket();
     }
+    window.removeEventListener('cache-invalidated', handleCacheInvalidation);
     // Ensure scrolling is restored if component is destroyed while modal is open
     document.body.style.overflow = '';
   });
@@ -390,17 +445,30 @@
         <div class="problems-section">
           <div class="problems-header">
             <h3>{$t('fileStatus.filesNeedAttention')}</h3>
-            <button
-              class="recovery-btn"
-              on:click={requestRecovery}
-              disabled={loading}
-            >
-              {$t('fileStatus.requestRecoveryAll')}
-            </button>
+            <div class="header-actions">
+              <button
+                class="section-toggle-btn"
+                on:click={toggleProblemsSection}
+                title={showProblemsSection ? 'Collapse section' : 'Expand section'}
+                aria-expanded={showProblemsSection}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showProblemsSection ? '180deg' : '0deg'}); transition: transform 0.2s ease;">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+              <button
+                class="recovery-btn"
+                on:click={requestRecovery}
+                disabled={loading}
+              >
+                {$t('fileStatus.requestRecoveryAll')}
+              </button>
+            </div>
           </div>
 
-          <div class="problem-files">
-            {#each fileStatus.problem_files.files as file}
+          {#if showProblemsSection}
+            <div class="problem-files">
+              {#each fileStatus.problem_files.files as file}
               <div class="problem-file">
                 <div class="file-info">
                   <div class="filename">{file.filename}</div>
@@ -443,8 +511,9 @@
                   {/if}
                 </div>
               </div>
-            {/each}
-          </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {:else}
         <div class="no-problems">
@@ -454,9 +523,23 @@
 
       {#if fileStatus.recent_files.count > 0}
         <div class="recent-files">
-          <h3>{$t('fileStatus.recentFiles')}</h3>
-          <div class="recent-files-grid">
-            {#each fileStatus.recent_files.files as file}
+          <div class="recent-header">
+            <h3>{$t('fileStatus.recentFiles')}</h3>
+            <button
+              class="section-toggle-btn"
+              on:click={toggleRecentSection}
+              title={showRecentSection ? 'Collapse section' : 'Expand section'}
+              aria-expanded={showRecentSection}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate({showRecentSection ? '180deg' : '0deg'}); transition: transform 0.2s ease;">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+          </div>
+
+          {#if showRecentSection}
+            <div class="recent-files-grid">
+              {#each fileStatus.recent_files.files as file}
               <div class="recent-file-card">
                 <div class="filename">{file.filename}</div>
                 <div class="file-status-row">
@@ -479,8 +562,9 @@
                   </button>
                 </div>
               </div>
-            {/each}
-          </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -725,6 +809,18 @@
                 <span class="metadata-label">{$t('fileStatus.fileAge')}:</span>
                 <span class="metadata-value">{detailedStatus.file.formatted_file_age || $t('fileStatus.unknown')}</span>
               </div>
+              {#if detailedStatus.file.whisper_model}
+                <div class="metadata-item">
+                  <span class="metadata-label">Whisper Model:</span>
+                  <span class="metadata-value model-name-value">{detailedStatus.file.whisper_model}</span>
+                </div>
+              {/if}
+              {#if detailedStatus.file.diarization_model}
+                <div class="metadata-item">
+                  <span class="metadata-label">Diarization:</span>
+                  <span class="metadata-value model-name-value">{detailedStatus.file.diarization_model}</span>
+                </div>
+              {/if}
             </div>
 
             {#if detailedStatus.is_stuck}
@@ -786,6 +882,18 @@
                         <div class="metadata-item">
                           <span class="metadata-label">{$t('fileStatus.progress')}</span>
                           <span class="metadata-value">{Math.round(task.progress * 100)}%</span>
+                        </div>
+                      {/if}
+                      {#if task.whisper_model}
+                        <div class="metadata-item">
+                          <span class="metadata-label">Whisper Model</span>
+                          <span class="metadata-value model-name-value">{task.whisper_model}</span>
+                        </div>
+                      {/if}
+                      {#if task.diarization_model}
+                        <div class="metadata-item">
+                          <span class="metadata-label">Diarization</span>
+                          <span class="metadata-value model-name-value">{task.diarization_model}</span>
                         </div>
                       {/if}
                     </div>
@@ -1535,6 +1643,11 @@
     word-break: break-word;
   }
 
+  .model-name-value {
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+    font-size: 0.85rem;
+  }
+
   .task-metadata-grid {
     display: flex;
     flex-direction: column;
@@ -1687,6 +1800,47 @@
   :global(.dark) .error-message {
     background: rgba(239, 68, 68, 0.1);
     border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  /* Collapsible section styles */
+  .problems-header .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .recent-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .recent-header h3 {
+    margin: 0;
+    color: var(--text-color);
+  }
+
+  .section-toggle-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary-color);
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .section-toggle-btn:hover {
+    background: var(--surface-color);
+    color: var(--text-color);
+  }
+
+  .section-toggle-btn svg {
+    transition: transform 0.2s ease;
   }
 
   @media (max-width: 768px) {

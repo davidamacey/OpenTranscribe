@@ -118,6 +118,15 @@ def send_notification_via_redis(
         logger.info(
             f"Published notification via Redis for user {user_id}, file {file_id}: {status.value}"
         )
+
+        # Invalidate caches so gallery / status page reflect the new state
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_user_files(user_id)
+        except Exception as cache_err:
+            logger.debug(f"Cache invalidation after status change failed: {cache_err}")
+
         return True
 
     except Exception as e:

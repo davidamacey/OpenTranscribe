@@ -394,11 +394,35 @@ IMPORTANT GUIDELINES:
             language_instruction=language_instruction
         )
 
+        # Preprocess transcript for topic extraction: remove stopwords, speaker
+        # labels, timestamps to reduce token count and improve signal-to-noise.
+        # NOTE: Only used for topics — summaries and speaker ID use raw text.
+        from app.utils.text_preprocessing import preprocess_for_topics
+
+        raw_len = len(transcript)
+        transcript_text = preprocess_for_topics(transcript)
+        logger.info(
+            f"Preprocessed transcript for topics: {raw_len} chars -> {len(transcript_text)} chars "
+            f"({100 - len(transcript_text) * 100 // max(raw_len, 1)}% reduction)"
+        )
+
+        # Use full context window intelligently instead of hard-coded truncation
+        # Reserve tokens for system prompt, user prompt structure, and response
+        # Rough estimate: 4 characters per token
+        available_chars = (llm_service.user_context_window - 2000) * 4
+
+        if len(transcript_text) > available_chars:
+            logger.warning(
+                f"Preprocessed transcript ({len(transcript_text)} chars) still exceeds context window, "
+                f"truncating to {available_chars} chars"
+            )
+            transcript_text = transcript_text[:available_chars]
+
         # Build prompt
         prompt = self.EXTRACTION_PROMPT_TEMPLATE.format(
             file_id=file_id,
             duration=duration,
-            transcript=transcript[:50000],  # Limit to first 50k chars to avoid token limits
+            transcript=transcript_text,
         )
 
         # Prepare messages with provider-specific optimizations

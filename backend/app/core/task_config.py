@@ -37,6 +37,10 @@ class TaskRecoveryConfig:
     # Orphaned task threshold (in hours)
     ORPHANED_TASK_THRESHOLD: int = 1
 
+    # OOM retry configuration
+    OOM_RETRY_ENABLED: bool = True  # Enable/disable OOM auto-retry
+    OOM_BACKOFF_BASE_MINUTES: int = 10  # Base delay for exponential backoff (2^n * this value)
+
     def __post_init__(self):
         if self.MAX_TASK_DURATIONS is None:
             self.MAX_TASK_DURATIONS = {

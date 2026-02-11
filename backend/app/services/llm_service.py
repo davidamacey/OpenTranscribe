@@ -681,33 +681,69 @@ class LLMService:
         prompt_template: str,
         output_language_name: str = "English",
     ) -> dict[str, Any]:
-        """Process multiple transcript chunks"""
-        section_summaries = []
+        """Process multiple transcript chunks in parallel using ThreadPoolExecutor.
 
-        for i, chunk in enumerate(chunks, 1):
-            logger.info(f"Processing section {i}/{len(chunks)} ({len(chunk)} chars)")
-            try:
-                section_summary = self._summarize_section(
-                    chunk, i, len(chunks), speaker_data, prompt_template, output_language_name
-                )
-                section_summaries.append(section_summary)
-                logger.info(f"Section {i} processing completed successfully")
-            except Exception as e:
-                logger.error(f"Failed to process section {i}: {type(e).__name__}: {e}")
-                section_summaries.append(
-                    {
-                        "key_points": [f"Section {i}: Processing failed - {str(e)[:100]}..."],
+        Each chunk is summarized independently, then combined into a final summary.
+        Parallelism is capped at min(num_chunks, 4) to avoid overwhelming the LLM API.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import as_completed
+
+        num_chunks = len(chunks)
+        max_workers = min(num_chunks, 4)
+        _error_placeholder: dict[str, Any] = {
+            "key_points": [],
+            "speakers_in_section": [],
+            "decisions": [],
+            "action_items": [],
+            "topics_discussed": [],
+        }
+        # Pre-fill with error placeholders; every slot is overwritten on success.
+        section_summaries: list[dict[str, Any]] = [
+            {**_error_placeholder, "key_points": [f"Section {i + 1}: Not processed"]}
+            for i in range(num_chunks)
+        ]
+
+        logger.info(f"Processing {num_chunks} sections in parallel (max_workers={max_workers})")
+
+        def _process_one(index: int, chunk: str) -> tuple[int, dict[str, Any]]:
+            """Process a single chunk, returning (index, result)."""
+            logger.info(f"Processing section {index + 1}/{num_chunks} ({len(chunk)} chars)")
+            return (
+                index,
+                self._summarize_section(
+                    chunk,
+                    index + 1,
+                    num_chunks,
+                    speaker_data,
+                    prompt_template,
+                    output_language_name,
+                ),
+            )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_one, i, chunk): i for i, chunk in enumerate(chunks)}
+
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    result_idx, section_summary = future.result()
+                    section_summaries[result_idx] = section_summary
+                    logger.info(f"Section {result_idx + 1} processing completed successfully")
+                except Exception as e:
+                    logger.error(f"Failed to process section {idx + 1}: {type(e).__name__}: {e}")
+                    section_summaries[idx] = {
+                        "key_points": [f"Section {idx + 1}: Processing failed - {str(e)[:100]}..."],
                         "speakers_in_section": [],
                         "decisions": [],
                         "action_items": [],
                         "topics_discussed": [],
                     }
-                )
 
         # Combine sections into final summary
         logger.info("Combining section summaries into final comprehensive summary")
         return self._combine_sections(
-            section_summaries, speaker_data, prompt_template, len(chunks), output_language_name
+            section_summaries, speaker_data, prompt_template, num_chunks, output_language_name
         )
 
     def _summarize_section(
@@ -1184,6 +1220,7 @@ class LLMService:
         speaker_segments: list,
         known_speakers: list,
         output_language: str = "en",
+        metadata_context: str = "",
     ) -> dict:
         """
         Use LLM to suggest speaker identifications based on contextual analysis of speech patterns,
@@ -1194,6 +1231,7 @@ class LLMService:
             speaker_segments: List of speaker segments with metadata including timestamps and text
             known_speakers: List of known speaker profiles with names and descriptions
             output_language: Language code for output reasoning (default: "en")
+            metadata_context: File metadata (title, author, description, tags) for extra context
 
         Returns:
             Dictionary containing speaker predictions with confidence scores and reasoning
@@ -1236,6 +1274,7 @@ ANALYSIS METHODOLOGY:
    - Role references ("as the CEO", "from engineering", etc.)
    - Historical context from previous conversations
    - Cross-references to known speaker profiles
+   - File metadata (title, description, author, tags) may contain speaker names or roles
 
 CONFIDENCE SCORING:
 - 0.9-1.0: Multiple strong indicators align (name mentioned + role + speech pattern match)
@@ -1255,7 +1294,17 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
                 )
             )
 
-            reserved_tokens = len(system_prompt) // 3 + len(known_speakers_context) // 3 + 2500
+            # Build metadata section for additional context
+            metadata_section = ""
+            if metadata_context:
+                metadata_section = f"\nFILE METADATA:\n{metadata_context}\n"
+
+            reserved_tokens = (
+                len(system_prompt) // 3
+                + len(known_speakers_context) // 3
+                + len(metadata_section) // 3
+                + 2500
+            )
             available_tokens = max(1000, self.user_context_window - reserved_tokens)
             transcript_content = self._truncate_transcript_for_speakers(
                 transcript, available_tokens
@@ -1263,7 +1312,7 @@ Only provide predictions with confidence >= 0.5. Explain your reasoning clearly 
 
             user_prompt = f"""TRANSCRIPT TO ANALYZE:
 {transcript_content}
-
+{metadata_section}
 CURRENT SPEAKER LABELS: {", ".join(speaker_labels)}
 {known_speakers_context}
 
@@ -1274,6 +1323,7 @@ Analyze this conversation transcript and identify each speaker label based on th
 - Leadership and authority patterns in the discussion
 - Any direct or indirect name mentions or role references
 - Communication styles and interpersonal dynamics
+- File metadata clues (title, description, author, tags)
 
 For each speaker you can identify with reasonable confidence (>=0.5), provide a detailed analysis.
 

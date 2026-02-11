@@ -108,13 +108,13 @@ def update_gpu_stats(self):
             gpu_properties = torch.cuda.get_device_properties(device_id)
 
             # Use nvidia-smi for accurate memory usage (includes all processes)
-            # Format: memory.used,memory.total,memory.free (in MiB)
+            # Format: memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu
             # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
             # Only dynamic parameter is device_id (integer), preventing command injection.
             result = subprocess.run(  # noqa: S603 - hardcoded nvidia-smi, integer device_id
                 [  # noqa: S607 # nosec B603 B607
                     "nvidia-smi",
-                    "--query-gpu=memory.used,memory.total,memory.free",
+                    "--query-gpu=memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
                     "--format=csv,noheader,nounits",
                     f"--id={device_id}",
                 ],
@@ -123,11 +123,13 @@ def update_gpu_stats(self):
                 check=True,
             )
 
-            # Parse the output: "used, total, free" in MiB
+            # Parse the output: "used, total, free, util%, temp" in MiB/%/C
             memory_values = result.stdout.strip().split(", ")
             memory_used_mib = float(memory_values[0])
             memory_total_mib = float(memory_values[1])
             memory_free_mib = float(memory_values[2])
+            utilization_percent = int(memory_values[3]) if len(memory_values) > 3 else None
+            temperature_celsius = int(memory_values[4]) if len(memory_values) > 4 else None
 
             # Convert MiB to bytes for formatting
             memory_used = memory_used_mib * 1024 * 1024
@@ -152,13 +154,17 @@ def update_gpu_stats(self):
                 "memory_used": format_bytes(memory_used),
                 "memory_free": format_bytes(memory_free),
                 "memory_percent": f"{memory_percent:.1f}%",
+                "utilization_percent": f"{utilization_percent}%"
+                if utilization_percent is not None
+                else "N/A",
+                "temperature_celsius": temperature_celsius,
             }
 
-        # Store in Redis with 60 second expiration
+        # Store in Redis with 5-minute expiration (survives gaps between GPU tasks)
         redis_client = celery_app.backend.client
         redis_client.setex(
             "gpu_stats",
-            60,  # Expire after 60 seconds
+            300,  # Expire after 5 minutes
             json.dumps(gpu_stats),
         )
 

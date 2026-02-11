@@ -154,6 +154,14 @@ async def upload_media_file(
         speaker_params.num_speakers,
     )
 
+    # Invalidate caches so gallery picks up the new file
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_user_files(int(current_user.id))
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+
     # Create a response with the file ID in headers
     response = JSONResponse(content=jsonable_encoder(db_file))
     response.headers["X-File-ID"] = str(db_file.uuid)
@@ -192,19 +200,32 @@ def list_media_files(
     current_user: User = Depends(get_current_active_user),
 ):
     """List all media files for the current user with optional filters and pagination"""
+    from sqlalchemy import func as sa_func
+    from sqlalchemy.orm import defer
     from sqlalchemy.orm import joinedload
+    from sqlalchemy.orm import load_only
+    from sqlalchemy.orm import selectinload
+
+    # Eager-loading strategy for list view:
+    # - joinedload for user (many-to-one — no row inflation)
+    # - selectinload for speakers (one-to-many — avoids Cartesian product)
+    #   with load_only for the two fields the speaker summary needs
+    # - defer heavy JSON columns not required by the list Pydantic schema
+    list_options = [
+        joinedload(MediaFile.user),
+        selectinload(MediaFile.speakers).load_only(
+            Speaker.uuid, Speaker.name, Speaker.display_name
+        ),
+        defer(MediaFile.metadata_raw),
+        defer(MediaFile.waveform_data),
+    ]
 
     # Admin users can see all files, regular users only see their own files
-    # Eagerly load the user and speakers relationships
     if current_user.role == "admin":
-        base_query = db.query(MediaFile).options(
-            joinedload(MediaFile.user), joinedload(MediaFile.speakers)
-        )
+        base_query = db.query(MediaFile).options(*list_options)
     else:
         base_query = (
-            db.query(MediaFile)
-            .options(joinedload(MediaFile.user), joinedload(MediaFile.speakers))
-            .filter(MediaFile.user_id == current_user.id)
+            db.query(MediaFile).options(*list_options).filter(MediaFile.user_id == current_user.id)
         )
 
     # Prepare filters dictionary
@@ -221,6 +242,7 @@ def list_media_files(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
+        "user_id": int(current_user.id) if current_user.role != "admin" else None,
     }
 
     # Apply all filters
@@ -239,14 +261,17 @@ def list_media_files(
     # Get the sort field (default to upload_time if invalid)
     sort_field = sort_field_mapping.get(sort_by, MediaFile.upload_time)
 
-    # Apply sort order
+    # Get total count BEFORE sorting/pagination.
+    # Use with_entities + func.count to avoid the subquery wrapper that
+    # .count() generates — produces a flat SELECT count(media_file.id) …
+    # instead of SELECT count(*) FROM (SELECT … ORDER BY …).
+    total_count = (filtered_query.with_entities(sa_func.count(MediaFile.id)).scalar()) or 0
+
+    # Apply sort order (only for the data query, not the count)
     if sort_order.lower() == "asc":
         filtered_query = filtered_query.order_by(sort_field.asc())
     else:
         filtered_query = filtered_query.order_by(sort_field.desc())
-
-    # Get total count BEFORE pagination
-    total_count = filtered_query.count()
 
     # Apply pagination
     offset = (page - 1) * page_size

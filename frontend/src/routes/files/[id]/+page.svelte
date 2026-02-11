@@ -43,7 +43,8 @@
   let file: any = null;
   let fileId = '';
   let videoUrl = '';
-  let errorMessage = '';
+  let pageErrorMessage = '';
+  let videoErrorMessage = '';
   let apiBaseUrl = '';
   let videoPlayerComponent: any = null;
   let currentTime = 0;
@@ -192,14 +193,15 @@
 
     if (!targetFileId) {
       console.error('FileDetail: No file ID provided to fetchFileDetails');
-      errorMessage = $t('fileDetail.noFileIdProvided');
+      pageErrorMessage = $t('fileDetail.noFileIdProvided');
       isLoading = false;
       return;
     }
 
     try {
       isLoading = true;
-      errorMessage = '';
+      pageErrorMessage = '';
+      videoErrorMessage = '';
 
       const response = await axiosInstance.get(`/files/${targetFileId}`);
 
@@ -213,8 +215,10 @@
         segmentLimit = response.data.segment_limit || 500;
         segmentOffset = response.data.segment_offset || 0;
 
-        // Set up video URL using the simple-video endpoint
-        setupVideoUrl(targetFileId);
+        // Set up video URL only if file might have media available
+        if (file.status !== 'error' && file.status !== 'cancelled') {
+          setupVideoUrl(targetFileId);
+        }
 
         // Process transcript data from the file response
         processTranscriptData();
@@ -227,7 +231,7 @@
       }
     } catch (error) {
       console.error('Error fetching file details:', error);
-      errorMessage = $t('fileDetail.failedToLoadFile');
+      pageErrorMessage = $t('fileDetail.failedToLoadFile');
       isLoading = false;
     }
   }
@@ -488,7 +492,7 @@
     } catch (error) {
       console.error('Failed to get video URL:', error);
       videoUrl = '';
-      errorMessage = 'Failed to load video. Please try refreshing the page.';
+      videoErrorMessage = 'Video not available for this file';
     }
   }
 
@@ -1998,7 +2002,7 @@
         console.error('Error loading AI suggestions:', err);
       });
     } else {
-      errorMessage = $t('fileDetail.invalidFileId');
+      pageErrorMessage = $t('fileDetail.invalidFileId');
       isLoading = false;
     }
 
@@ -2354,9 +2358,9 @@
       <div class="spinner"></div>
       <p>{$t('fileDetail.loading')}</p>
     </div>
-  {:else if errorMessage}
+  {:else if pageErrorMessage}
     <div class="error-container">
-      <p class="error-message">{errorMessage}</p>
+      <p class="error-message">{pageErrorMessage}</p>
       <button
         on:click={() => fetchFileDetails()}
         title={$t('fileDetail.retryTooltip')}
@@ -2551,7 +2555,7 @@
           {file}
           {isPlayerBuffering}
           {loadProgress}
-          {errorMessage}
+          errorMessage={videoErrorMessage}
           {speakerList}
           on:retry={handleVideoRetry}
           on:timeupdate={handleTimeUpdate}

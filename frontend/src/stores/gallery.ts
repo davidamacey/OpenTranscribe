@@ -196,7 +196,7 @@ function createGalleryStore() {
     },
 
     setFiles: (files: any[]) => {
-      update((state) => ({ ...state, files }));
+      update((state) => ({ ...state, files: files || [] }));
     },
 
     toggleFilters: () => {
@@ -221,15 +221,29 @@ function createGalleryStore() {
     },
 
     appendFiles: (newFiles: any[], metadata: PaginationMetadata) => {
-      update((state) => ({
-        ...state,
-        files: metadata.page === 1 ? newFiles : [...state.files, ...newFiles],
-        currentPage: metadata.page,
-        pageSize: metadata.pageSize,
-        totalFiles: metadata.total,
-        totalPages: metadata.totalPages,
-        hasMoreFiles: metadata.hasMore,
-      }));
+      update((state) => {
+        // Guard against undefined/null data from failed API responses
+        const safeNewFiles = Array.isArray(newFiles) ? newFiles : [];
+        let files: any[];
+        if (metadata.page === 1) {
+          files = safeNewFiles;
+        } else {
+          // Deduplicate by uuid to prevent keyed {#each} errors when items
+          // shift between pages during bulk processing status changes
+          const existingUuids = new Set((state.files || []).map((f: any) => f.uuid));
+          const uniqueNewFiles = safeNewFiles.filter((f: any) => !existingUuids.has(f.uuid));
+          files = [...state.files, ...uniqueNewFiles];
+        }
+        return {
+          ...state,
+          files,
+          currentPage: metadata.page,
+          pageSize: metadata.pageSize,
+          totalFiles: metadata.total,
+          totalPages: metadata.totalPages,
+          hasMoreFiles: metadata.hasMore,
+        };
+      });
     },
 
     resetPagination: () => {

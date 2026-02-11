@@ -198,18 +198,22 @@ ensure_opensearch_models() {
 # Detects NGINX configuration and shows appropriate URLs
 print_access_info() {
   # Check if NGINX is configured (via NGINX_SERVER_NAME env var or .env file)
+  # In dev mode, NGINX is never used (Vite serves frontend directly)
   local domain=""
   local protocol="https"
   local https_port="${NGINX_HTTPS_PORT:-443}"
 
-  # Check environment variable first
-  if [ -n "$NGINX_SERVER_NAME" ]; then
-    domain="$NGINX_SERVER_NAME"
-  # Then check .env file
-  elif [ -f .env ]; then
-    domain=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    https_port=$(grep '^NGINX_HTTPS_PORT=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    https_port="${https_port:-443}"
+  # Only show NGINX info in production mode
+  if [ "$ENVIRONMENT" != "dev" ]; then
+    # Check environment variable first
+    if [ -n "$NGINX_SERVER_NAME" ]; then
+      domain="$NGINX_SERVER_NAME"
+    # Then check .env file
+    elif [ -f .env ]; then
+      domain=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+      https_port=$(grep '^NGINX_HTTPS_PORT=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+      https_port="${https_port:-443}"
+    fi
   fi
 
   echo ""

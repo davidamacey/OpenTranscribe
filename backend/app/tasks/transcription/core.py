@@ -12,6 +12,7 @@ from app.models.media import MediaFile
 from app.services.minio_service import download_file
 from app.services.opensearch_service import index_transcript
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.utils.error_classification import categorize_error
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -128,6 +129,7 @@ def _handle_transcription_failure(
         media_file = get_refreshed_object(db, MediaFile, ctx.file_id)
         if media_file:
             media_file.last_error_message = error_msg
+            media_file.error_category = categorize_error(error_msg).value
             db.commit()
 
     send_error_notification(ctx.user_id, ctx.file_id, error_msg)
@@ -479,10 +481,30 @@ def _process_transcription_result(
     # Save to database
     send_progress_notification(ctx.user_id, ctx.file_id, 0.75, "Saving transcript to database")
     step_start = time.perf_counter()
+    # Determine model info for tracking
+    whisper_model = os.getenv("WHISPER_MODEL", "large-v3-turbo")
+    engine = _get_transcription_engine()
+    if engine == "native":
+        diarization_model = "pyannote/speaker-diarization-3.1"
+    else:
+        diarization_model = "pyannote/speaker-diarization"
+    try:
+        from app.services.embedding_mode_service import EmbeddingModeService
+
+        embedding_mode = EmbeddingModeService.get_mode()
+    except Exception:
+        embedding_mode = None
+
     with session_scope() as db:
         save_transcript_segments(db, ctx.file_id, processed_segments)
         update_media_file_transcription_status(
-            db, ctx.file_id, processed_segments, result.get("language", "en")
+            db,
+            ctx.file_id,
+            processed_segments,
+            result.get("language", "en"),
+            whisper_model=whisper_model,
+            diarization_model=diarization_model,
+            embedding_mode=embedding_mode,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
     # Note: save_transcript_segments has its own internal timing log
@@ -675,21 +697,26 @@ def _handle_outer_exception(
     """Handle top-level exception in transcription task."""
     file_id = ctx.file_id if ctx else None
     user_id = ctx.user_id if ctx else None
+    error_msg = str(error)
 
-    logger.error(f"Error processing file {file_id}: {str(error)}")
+    logger.error(f"Error processing file {file_id}: {error_msg}")
 
     try:
         with session_scope() as db:
             if file_id:
                 update_media_file_status(db, file_id, FileStatus.ERROR)
-            update_task_status(db, task_id, "failed", error_message=str(error), completed=True)
+                media_file = get_refreshed_object(db, MediaFile, file_id)
+                if media_file:
+                    media_file.error_category = categorize_error(error_msg).value
+                    db.commit()
+            update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
 
         if user_id and file_id:
-            send_error_notification(user_id, file_id, str(error))
+            send_error_notification(user_id, file_id, error_msg)
     except Exception as update_err:
         logger.error(f"Error updating task status: {update_err}")
 
-    return {"status": "error", "message": str(error)}
+    return {"status": "error", "message": error_msg}
 
 
 @celery_app.task(bind=True, name="transcribe_audio")

@@ -12,6 +12,20 @@ services:
     image: postgres:17.5-alpine
     restart: always
     env_file: .env
+    # Performance tuning for transcription workloads (2500+ files, 1M+ segments)
+    # All values configurable via .env, defaults tuned for 4-8GB RAM + SSD storage
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}
+      -c work_mem=${PG_WORK_MEM:-16MB}
+      -c maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
+      -c random_page_cost=${PG_RANDOM_PAGE_COST:-1.1}
+      -c effective_io_concurrency=${PG_EFFECTIVE_IO_CONCURRENCY:-200}
+      -c max_connections=${PG_MAX_CONNECTIONS:-200}
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c default_statistics_target=100
     volumes:
       - postgres_data:/var/lib/postgresql/data/
       - ${INIT_DB_PATH:-./database/init_db.sql}:/docker-entrypoint-initdb.d/init_db.sql:ro
@@ -142,7 +156,7 @@ services:
     container_name: opentranscribe-celery-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=1
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=${GPU_DEFAULT_CONCURRENCY:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000}
     # GPU configuration is provided by docker-compose.gpu.yml overlay
     # when NVIDIA GPU is detected (automatically handled by opentr.sh)
     # This allows the base file to work on macOS and CPU-only Linux systems
@@ -165,6 +179,8 @@ services:
       - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
+      # Per-container batch size override (default worker is typically a smaller GPU)
+      - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d celery@$$HOSTNAME"]
       interval: 30s
@@ -172,16 +188,16 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-download-worker:
     container_name: opentranscribe-celery-download-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=3 --max-tasks-per-child=10
+    command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-3} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10}
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
       - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
@@ -203,10 +219,10 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-cpu-worker:
     container_name: opentranscribe-celery-cpu-worker
@@ -231,16 +247,16 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-nlp-worker:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
     env_file: .env
-    command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=4 --max-tasks-per-child=50
+    command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50}
     environment:
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -259,10 +275,10 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
@@ -292,10 +308,10 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery-beat:
     container_name: opentranscribe-celery-beat
@@ -320,8 +336,10 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
-      - postgres
-      - redis
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   # GPU Scaled Worker - Base definition
   # Activated only with --gpu-scale flag via docker-compose.gpu-scale.yml overlay
@@ -350,10 +368,10 @@ services:
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
-      - postgres
-      - redis
-      - minio
-      - opensearch
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
     container_name: opentranscribe-frontend

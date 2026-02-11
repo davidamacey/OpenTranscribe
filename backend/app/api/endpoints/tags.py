@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -22,6 +23,29 @@ from app.schemas.media import TagWithCount
 
 logger = logging.getLogger(__name__)
 
+
+def _get_or_create_tag(db: Session, name: str) -> Tag:
+    """Atomically get or create a tag, handling concurrent race conditions.
+
+    Uses try-insert-then-select to avoid TOCTOU race on the unique name constraint.
+    """
+    tag = db.query(Tag).filter(Tag.name == name).first()
+    if tag:
+        return tag
+
+    try:
+        tag = Tag(name=name)
+        db.add(tag)
+        db.flush()  # Flush to trigger unique constraint check within the transaction
+        return tag
+    except IntegrityError:
+        db.rollback()
+        tag = db.query(Tag).filter(Tag.name == name).first()
+        if tag:
+            return tag
+        raise  # Re-raise if somehow still not found
+
+
 router = APIRouter()
 
 
@@ -34,19 +58,10 @@ def create_tag(
     """
     Create a new tag
     """
-    # Check if tag already exists
-    existing_tag = db.query(Tag).filter(Tag.name == tag_data.name).first()
-    if existing_tag:
-        # Return the existing tag instead of an error
-        return existing_tag
-
-    # Create new tag
-    new_tag = Tag(name=tag_data.name)
-    db.add(new_tag)
+    tag = _get_or_create_tag(db, tag_data.name)
     db.commit()
-    db.refresh(new_tag)
-
-    return new_tag
+    db.refresh(tag)
+    return tag
 
 
 @router.get("", response_model=list[TagWithCount])
@@ -171,26 +186,9 @@ async def add_tag_to_file(
     # Convert to proper TagBase object
     tag_base = TagBase(name=tag_data["name"])
 
-    """
-    Add a tag to a media file
-    """
-    # Verify file exists and belongs to user
-    media_file_verify = (
-        db.query(MediaFile)
-        .filter(MediaFile.id == file_id, MediaFile.user_id == current_user.id)
-        .first()
-    )
-
-    if not media_file_verify:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
-
-    # Check if tag exists, create if not
-    tag = db.query(Tag).filter(Tag.name == tag_base.name).first()
-    if not tag:
-        tag = Tag(name=tag_base.name)
-        db.add(tag)
-        db.commit()
-        db.refresh(tag)
+    # Atomically get or create the tag (race-condition safe)
+    # Note: ownership already verified by get_file_by_uuid_with_permission above
+    tag = _get_or_create_tag(db, tag_base.name)
     logger.info(f"Using tag: {tag.id}:{tag.name} for file_id={file_id}")
 
     # Check if file already has this tag
@@ -203,6 +201,15 @@ async def add_tag_to_file(
         file_tag = FileTag(media_file_id=file_id, tag_id=tag.id)
         db.add(file_tag)
         db.commit()
+
+        # Invalidate caches
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_tags(int(current_user.id))
+            redis_cache.invalidate_user_files(int(current_user.id))
+        except Exception as e:
+            logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
     return tag
 
@@ -236,6 +243,15 @@ def remove_tag_from_file(
     if file_tag:
         db.delete(file_tag)
         db.commit()
+
+        # Invalidate caches
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_tags(int(current_user.id))
+            redis_cache.invalidate_user_files(int(current_user.id))
+        except Exception as e:
+            logger.debug(f"Cache invalidation failed (non-critical): {e}")
 
     # Also check if this tag is now unused and should be removed
     # Count how many files still use this tag

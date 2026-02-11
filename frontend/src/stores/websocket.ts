@@ -25,7 +25,8 @@ export type NotificationType =
   | 'reindex_progress'
   | 'reindex_complete'
   | 'migration_progress'
-  | 'migration_complete';
+  | 'migration_complete'
+  | 'cache_invalidate';
 
 // Notification interface
 export interface Notification {
@@ -237,6 +238,29 @@ function createWebSocketStore() {
               // Embedding migration complete — dispatch event for EmbeddingMigrationSettings
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('migration-complete', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'cache_invalidate') {
+              // Push-based cache invalidation from backend
+              // Invalidate the in-memory apiCache and notify listening components
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  const scope = data.data?.scope || 'all';
+                  apiCache.invalidateByScope(scope);
+                })
+                .catch(() => {
+                  // apiCache may not be loaded yet during initial connection
+                });
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('cache-invalidated', { detail: data.data }));
+              }
+              return;
+            } else if (data.type === 'speaker_processing_complete') {
+              // Speaker background processing complete — silent notification, dispatch event only
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('speaker-processing-complete', { detail: data.data })
+                );
               }
               return;
             }

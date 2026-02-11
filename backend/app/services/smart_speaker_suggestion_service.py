@@ -438,14 +438,24 @@ class SmartSpeakerSuggestionService:
             logger.warning(f"Speaker {speaker_id} not found")
             return suggestions
 
-        # Step 1: LLM suggestions (from import process) - only if LLM provider is configured
-        # Note: suggested_name/confidence can also come from voice matching, so we need to distinguish
-        if speaker.suggested_name and speaker.confidence:
-            # Check if this came from actual LLM analysis (has specific metadata) or voice matching
-            # For now, we'll skip LLM suggestions unless we can distinguish them properly
-            # TODO: Add proper LLM suggestion detection when LLM provider is configured
+        # Step 1: LLM suggestions (from speaker identification task)
+        # Uses suggestion_source column to distinguish LLM analysis from voice matching
+        if (
+            speaker.suggested_name
+            and speaker.confidence
+            and speaker.suggestion_source == "llm_analysis"
+        ):
+            llm_suggestion = ConsolidatedSuggestion(
+                name=speaker.suggested_name,
+                confidence=float(speaker.confidence),
+                suggestion_type="llm_analysis",
+                reason="AI identified from transcript context",
+                auto_accept=float(speaker.confidence) >= 0.75,
+            )
+            suggestions.append(llm_suggestion)
             logger.info(
-                f"Found suggested_name ({speaker.suggested_name}) but treating as voice match to avoid confusion"
+                f"Added LLM suggestion: {speaker.suggested_name} "
+                f"(confidence: {speaker.confidence:.2f})"
             )
 
         # Get speaker embedding for voice and profile matching using UUID
@@ -628,14 +638,53 @@ class SmartSpeakerSuggestionService:
                 threshold,
             )
 
+            # Pre-fetch all media file titles in a single query to avoid N+1
+            media_file_ids_in_hits = list(
+                {
+                    hit["_source"].get("media_file_id")
+                    for hit in hits
+                    if hit["_source"].get("media_file_id")
+                }
+            )
+            if media_file_ids_in_hits:
+                from app.models.media import MediaFile as MediaFileModel
+
+                mf_rows = (
+                    db.query(MediaFileModel.id, MediaFileModel.title, MediaFileModel.filename)
+                    .filter(MediaFileModel.id.in_(media_file_ids_in_hits))
+                    .all()
+                )
+                _mf_title_cache: dict[int, str] = {
+                    row.id: str(row.title or row.filename or f"File {row.id}") for row in mf_rows
+                }
+            else:
+                _mf_title_cache = {}
+
             # Process hits and group by display_name to consolidate
             voice_matches: dict[str, dict[str, Any]] = {}
             for hit in hits:
-                result = _process_voice_hit(hit, db, threshold)
-                if result is None:
+                source = hit["_source"]
+                display_name = source.get("display_name")
+                if not display_name or display_name.startswith("SPEAKER_"):
                     continue
 
-                display_name, match_data = result
+                score = hit["_score"]
+                if score < threshold:
+                    continue
+
+                mf_id = source.get("media_file_id")
+                media_file_title = _mf_title_cache.get(mf_id) if mf_id else "Unknown"
+                if mf_id and not media_file_title:
+                    continue  # Orphaned data
+
+                match_data = {
+                    "name": display_name,
+                    "confidence": score,
+                    "media_file_id": mf_id,
+                    "speaker_id": source.get("speaker_id"),
+                    "media_file_title": media_file_title,
+                }
+
                 # Keep the highest confidence match for each name
                 if (
                     display_name not in voice_matches
@@ -778,23 +827,34 @@ class SmartSpeakerSuggestionService:
                 match for match in opensearch_matches if match.get("speaker_id") != speaker_id
             ]
 
-            # Convert OpenSearch results to our format
+            # Batch-fetch all referenced media files and speakers to avoid N+1
+            match_mf_ids = list(
+                {m.get("media_file_id") for m in opensearch_matches if m.get("media_file_id")}
+            )
+            match_spk_ids = list(
+                {m.get("speaker_id") for m in opensearch_matches if m.get("speaker_id")}
+            )
+
+            mf_map: dict[int, MediaFile] = {}
+            if match_mf_ids:
+                for mf in db.query(MediaFile).filter(MediaFile.id.in_(match_mf_ids)).all():
+                    mf_map[mf.id] = mf
+
+            from app.models.media import Speaker
+
+            spk_map: dict[int, Speaker] = {}
+            if match_spk_ids:
+                for spk in db.query(Speaker).filter(Speaker.id.in_(match_spk_ids)).all():
+                    spk_map[spk.id] = spk
+
+            # Convert OpenSearch results to our format using pre-fetched data
             for match in opensearch_matches:
-                # Get media file info if needed
-                media_file = (
-                    db.query(MediaFile).filter(MediaFile.id == match.get("media_file_id")).first()
-                )
+                media_file = mf_map.get(match.get("media_file_id"))
 
                 if media_file:
-                    # Get the actual speaker from the database to get the correct display name
-                    from app.models.media import Speaker
-
-                    speaker_record = (
-                        db.query(Speaker).filter(Speaker.id == match.get("speaker_id")).first()
-                    )
+                    speaker_record = spk_map.get(match.get("speaker_id"))
 
                     if speaker_record:
-                        # Use display_name if available, otherwise use the resolved_display_name or suggested_name
                         speaker_display_name = (
                             speaker_record.display_name
                             or speaker_record.resolved_display_name

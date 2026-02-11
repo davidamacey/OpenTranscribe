@@ -329,6 +329,11 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     status_badge_class: Optional[str] = None  # CSS class for status styling
     speaker_summary: Optional[dict[str, Any]] = None  # Speaker count and primary speakers
 
+    # Processing model tracking
+    whisper_model: Optional[str] = None
+    diarization_model: Optional[str] = None
+    embedding_mode: Optional[str] = None
+
     # Error handling fields
     error_category: Optional[str] = None  # Error category for user-friendly handling
     error_suggestions: Optional[list[str]] = None  # User-friendly error suggestions

@@ -26,6 +26,8 @@ from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import transcribe_audio_task
 from app.tasks.transcription.notifications import get_file_metadata
 from app.tasks.waveform import generate_waveform_task
+from app.utils.error_classification import categorize_error
+from app.utils.task_utils import update_media_file_status
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +90,15 @@ class YouTubeProcessingResult(TypedDict):
     file_id: int
 
 
-@celery_app.task(name="process_youtube_url_task", bind=True)
+@celery_app.task(
+    name="process_youtube_url_task",
+    bind=True,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+    rate_limit=settings.YOUTUBE_DOWNLOAD_RATE_LIMIT or None,
+)
 def process_youtube_url_task(
     self,
     url: str,
@@ -121,6 +131,19 @@ def process_youtube_url_task(
 
     try:
         logger.info(f"Starting YouTube processing task for URL: {url}, file_uuid: {file_uuid}")
+
+        # Apply pre-download jitter (random delay to avoid bot detection)
+        if settings.YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED:
+            import random
+            import time
+
+            jitter_seconds = random.uniform(  # noqa: S311
+                settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
+                settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
+            )
+
+            logger.info(f"Applying pre-download jitter: {jitter_seconds:.1f}s")
+            time.sleep(jitter_seconds)
 
         # Get internal file ID for database operations
         with session_scope() as db:
@@ -279,25 +302,66 @@ def process_youtube_url_task(
                 }
 
             except Exception as e:
-                logger.error(f"Error processing YouTube URL {url}: {e}")
+                error_msg = str(e)
+                error_category = categorize_error(error_msg)
 
-                # Update media file status to error
-                media_file.status = FileStatus.ERROR  # type: ignore[assignment]
-                media_file.last_error_message = str(e)  # type: ignore[assignment]
-                db.commit()
+                # Check if this is a retriable error (rate limits, timeouts, auth errors)
+                retriable_categories = {
+                    "auth_or_rate_limit",
+                    "network",
+                    "temporary",
+                }
+                is_retriable = error_category.value in retriable_categories
+
+                if is_retriable and self.request.retries < self.max_retries:
+                    # Calculate backoff: 30s, 120s, 480s
+                    countdown = 30 * (2**self.request.retries)
+                    logger.warning(
+                        f"Download attempt {self.request.retries + 1}/{self.max_retries} "
+                        f"failed for {url}: {error_msg}. "
+                        f"Retrying in {countdown}s..."
+                    )
+
+                    # Update status to show retry is pending
+                    media_file.last_error_message = (  # type: ignore[assignment]
+                        f"Retry {self.request.retries + 1}/{self.max_retries}: {error_msg}"
+                    )
+                    db.flush()
+
+                    send_youtube_notification_via_redis(
+                        user_id=user_id,
+                        file_id=file_id,
+                        status=FileStatus.PROCESSING,
+                        message=f"Download failed, retrying in {countdown}s...",
+                        progress=5,
+                    )
+
+                    # Raise to trigger Celery retry (non-blocking, frees worker)
+                    raise self.retry(countdown=countdown, exc=e) from None
+
+                # Non-retriable error or last attempt failed
+                logger.error(
+                    f"Download failed after {self.request.retries + 1} attempts "
+                    f"for {url}: {error_msg}"
+                )
+
+                media_file.last_error_message = error_msg  # type: ignore[assignment]
+                media_file.error_category = error_category.value  # type: ignore[assignment]
+                db.flush()
+                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
 
                 # Send error notification
                 send_youtube_notification_via_redis(
                     user_id=user_id,
                     file_id=file_id,
                     status=FileStatus.ERROR,
-                    message=f"YouTube processing failed: {str(e)}",
+                    message=f"YouTube processing failed: {error_msg}",
                     progress=0,
                 )
 
                 return {
                     "status": "error",
-                    "message": str(e),
+                    "message": error_msg,
                     "file_id": file_id if file_id is not None else 0,
                 }
 
@@ -421,31 +485,36 @@ def _send_file_created_notification(user_id: int, media_file: MediaFile) -> None
         logger.error(f"Failed to send file_created notification for video {media_file.id}: {e}")
 
 
-def _dispatch_video_task(media_file: MediaFile, user_id: int, db) -> bool:
+def _dispatch_video_task(media_file: MediaFile, user_id: int, db, countdown: int = 0) -> bool:
     """Dispatch processing task for a single video.
 
     Args:
         media_file: MediaFile instance to process.
         user_id: User ID who initiated the request.
         db: Database session.
+        countdown: Delay in seconds before task starts (default: 0).
 
     Returns:
         True if task was dispatched successfully, False otherwise.
     """
     try:
         video_url = str(media_file.source_url)
-        process_youtube_url_task.delay(
-            url=video_url,
-            user_id=user_id,
-            file_uuid=str(media_file.uuid),
+
+        # Use apply_async to support countdown parameter
+        process_youtube_url_task.apply_async(
+            args=[video_url, user_id, str(media_file.uuid)],
+            countdown=countdown,
         )
-        logger.info(f"Dispatched YouTube processing task for video: {media_file.title}")
+
+        logger.info(f"Dispatched task for '{media_file.title}' with {countdown}s delay")
         return True
     except Exception as e:
         logger.error(f"Failed to dispatch task for video {media_file.title}: {e}")
-        media_file.status = FileStatus.ERROR  # type: ignore[assignment]
-        media_file.last_error_message = f"Failed to start processing: {str(e)}"  # type: ignore[assignment]
-        db.commit()
+        error_msg = f"Failed to start processing: {str(e)}"
+        media_file.last_error_message = error_msg  # type: ignore[assignment]
+        media_file.error_category = categorize_error(error_msg).value  # type: ignore[assignment]
+        db.flush()
+        update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
         return False
 
 
@@ -543,10 +612,22 @@ def _handle_playlist_result(result: dict, user_id: int, db) -> YouTubePlaylistPr
     for media_file in created_media_files:
         _send_file_created_notification(user_id, media_file)
 
-    # Dispatch individual processing tasks for each video
-    dispatched_count = sum(
-        1 for media_file in created_media_files if _dispatch_video_task(media_file, user_id, db)
-    )
+    # Calculate staggered delays for playlist videos
+    from app.services.youtube_rate_limiter import calculate_playlist_delays
+
+    delays = calculate_playlist_delays(len(created_media_files))
+
+    # Dispatch individual processing tasks with progressive delays
+    dispatched_count = 0
+    for idx, media_file in enumerate(created_media_files):
+        countdown = delays[idx]
+
+        if _dispatch_video_task(media_file, user_id, db, countdown=countdown):
+            dispatched_count += 1
+            logger.info(
+                f"Video {idx + 1}/{len(created_media_files)}: "
+                f"'{media_file.title}' scheduled (+{countdown}s)"
+            )
 
     # Build completion message
     completion_message = (

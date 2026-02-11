@@ -43,12 +43,19 @@ class TranscriptionConfig:
         hw = detect_hardware()
         whisperx_config = hw.get_whisperx_config()
 
+        # Batch size: honor BATCH_SIZE env var, fall back to hardware-detected value
+        batch_size_env = os.getenv("BATCH_SIZE", "auto")
+        if batch_size_env != "auto":
+            batch_size = int(batch_size_env)
+        else:
+            batch_size = whisperx_config["batch_size"]
+
         # Base config from environment and hardware detection
         config = cls(
             model_name=os.getenv("WHISPER_MODEL", "large-v3-turbo"),
             compute_type=os.getenv("WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"]),
             beam_size=int(os.getenv("WHISPER_BEAM_SIZE", "5")),
-            batch_size=whisperx_config["batch_size"],
+            batch_size=batch_size,
             device=whisperx_config["device"],
             device_index=whisperx_config.get("device_index", 0),
             source_language=os.getenv("SOURCE_LANGUAGE", "auto"),

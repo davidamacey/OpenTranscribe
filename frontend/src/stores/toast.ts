@@ -7,6 +7,8 @@ export interface ToastMessage {
   duration?: number;
 }
 
+let toastCounter = 0;
+
 function createToastStore() {
   const { subscribe, update } = writable<ToastMessage[]>([]);
 
@@ -14,7 +16,7 @@ function createToastStore() {
     subscribe,
 
     show(message: string, type: ToastMessage['type'] = 'success', duration = 3000) {
-      const id = Date.now().toString();
+      const id = `${Date.now()}-${++toastCounter}`;
       const toast: ToastMessage = { id, message, type, duration };
 
       update((toasts) => [...toasts, toast]);

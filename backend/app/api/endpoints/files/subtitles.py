@@ -110,15 +110,22 @@ async def validate_subtitles(
         # Validate subtitle timing
         issues = SubtitleService.validate_subtitle_timing(db, file_id)
 
-        # Get segment count and total duration
+        # Get segment count and total duration via SQL aggregation
+        from sqlalchemy import func
+
         from app.models.media import TranscriptSegment
 
-        segments = (
-            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).all()
+        stats = (
+            db.query(
+                func.count(TranscriptSegment.id),
+                func.max(TranscriptSegment.end_time),
+            )
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .first()
         )
 
-        total_segments = len(segments)
-        total_duration = max([seg.end_time for seg in segments]) if segments else 0.0
+        total_segments = stats[0] if stats else 0
+        total_duration = float(stats[1]) if stats and stats[1] is not None else 0.0
 
         return SubtitleValidationResult(
             is_valid=len(issues) == 0,

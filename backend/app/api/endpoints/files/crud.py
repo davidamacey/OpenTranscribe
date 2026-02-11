@@ -6,7 +6,6 @@ from typing import cast
 
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
@@ -92,85 +91,44 @@ def get_media_file_by_id(
 
 
 def get_file_tags(db: Session, file_id: int) -> list[str]:
-    """
-    Get tags for a media file.
-
-    Args:
-        db: Database session
-        file_id: File ID
-
-    Returns:
-        List of tag names
-    """
-    tags = []
+    """Get tags for a media file."""
     try:
-        # Check if tag table exists first
-        inspector = inspect(db.bind) if db.bind is not None else None
-        if (
-            inspector is not None
-            and "tag" in inspector.get_table_names()
-            and "file_tag" in inspector.get_table_names()
-        ):
-            tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
-        else:
-            logger.warning("Tag tables don't exist yet, skipping tag retrieval")
+        tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
+        return [tag[0] for tag in tags]
     except Exception as tag_error:
         logger.error(f"Error getting tags: {tag_error}")
-        db.rollback()  # Important to roll back the failed transaction
-
-    return [tag[0] for tag in tags]
+        db.rollback()
+        return []
 
 
 def get_file_collections(db: Session, file_id: int, user_id: int) -> list[dict]:
-    """
-    Get collections that contain a media file.
-
-    Args:
-        db: Database session
-        file_id: File ID
-        user_id: User ID
-
-    Returns:
-        List of collection dictionaries
-    """
-    collections = []
+    """Get collections that contain a media file."""
     try:
-        # Check if collection tables exist first
-        inspector = inspect(db.bind) if db.bind is not None else None
-        if (
-            inspector is not None
-            and "collection" in inspector.get_table_names()
-            and "collection_member" in inspector.get_table_names()
-        ):
-            collection_objs = (
-                db.query(Collection)
-                .join(CollectionMember)
-                .filter(
-                    CollectionMember.media_file_id == file_id,
-                    Collection.user_id == user_id,
-                )
-                .all()
+        collection_objs = (
+            db.query(Collection)
+            .join(CollectionMember)
+            .filter(
+                CollectionMember.media_file_id == file_id,
+                Collection.user_id == user_id,
             )
+            .all()
+        )
 
-            # Convert to dictionaries
-            collections = [
-                {
-                    "uuid": str(col.uuid),
-                    "name": col.name,
-                    "description": col.description,
-                    "is_public": col.is_public,
-                    "created_at": col.created_at.isoformat() if col.created_at else None,
-                    "updated_at": col.updated_at.isoformat() if col.updated_at else None,
-                }
-                for col in collection_objs
-            ]
-        else:
-            logger.warning("Collection tables don't exist yet, skipping collection retrieval")
+        return [
+            {
+                "uuid": str(col.uuid),
+                "name": col.name,
+                "description": col.description,
+                "is_public": col.is_public,
+                "created_at": col.created_at.isoformat() if col.created_at else None,
+                "updated_at": col.updated_at.isoformat() if col.updated_at else None,
+            }
+            for col in collection_objs
+        ]
     except Exception as collection_error:
         logger.error(f"Error getting collections: {collection_error}")
-        db.rollback()  # Important to roll back the failed transaction
-
-    return collections
+        db.rollback()
+        return []
 
 
 def set_file_urls(db_file: MediaFile) -> None:
@@ -517,6 +475,14 @@ def update_media_file(
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
 
+    # Invalidate caches so gallery reflects the update
+    try:
+        from app.services.redis_cache_service import redis_cache
+
+        redis_cache.invalidate_user_files(int(current_user.id))
+    except Exception as e:
+        logger.debug(f"Cache invalidation failed (non-critical): {e}")
+
     return db_file
 
 
@@ -632,9 +598,19 @@ def delete_media_file(db: Session, file_uuid: str, current_user: User, force: bo
 
     try:
         # Delete from database (cascade will handle related records)
+        owner_id = int(db_file.user_id)
         db.delete(db_file)
         db.commit()
         logger.info(f"Successfully deleted file {file_id} from database")
+
+        # Invalidate caches — file list, tags, speakers, metadata all change
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_all_for_user(owner_id)
+        except Exception as cache_err:
+            logger.debug(f"Cache invalidation after delete failed: {cache_err}")
+
     except Exception as e:
         logger.error(f"Failed to delete file {file_id} from database: {e}")
         db.rollback()

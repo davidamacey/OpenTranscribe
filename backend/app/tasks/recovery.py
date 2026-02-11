@@ -141,6 +141,7 @@ def periodic_health_check_task(self):
     1. Tasks that are stuck in processing or pending state
     2. Media files with inconsistent states
     3. Files stuck in processing without active Celery tasks
+    4. Files that failed with GPU Out-of-Memory errors (OOM)
 
     Returns:
         Dictionary with summary of actions taken
@@ -152,6 +153,13 @@ def periodic_health_check_task(self):
         "inconsistent_files_fixed": 0,
         "stuck_files_without_celery_found": 0,
         "stuck_files_without_celery_recovered": 0,
+        "oom_files_found": 0,
+        "oom_files_retried": 0,
+        "oom_files_exhausted": 0,
+        "retriable_errors_found": 0,
+        "retriable_errors_retried": 0,
+        "incomplete_post_transcription_found": 0,
+        "post_transcription_tasks_dispatched": 0,
     }
 
     try:
@@ -193,12 +201,77 @@ def periodic_health_check_task(self):
                     f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
                 )
 
+            # Step 4: Identify and recover files with OOM errors
+            if task_recovery_config.OOM_RETRY_ENABLED:
+                oom_files = task_detection_service.identify_oom_error_files(db)
+                summary["oom_files_found"] = len(oom_files)
+
+                if oom_files:
+                    oom_stats = task_recovery_service.recover_oom_error_files(db, oom_files)
+                    summary["oom_files_retried"] = oom_stats["files_retried"]
+                    summary["oom_files_exhausted"] = oom_stats["files_exhausted"]
+                    logger.info(
+                        f"OOM Recovery: Found {len(oom_files)} files, "
+                        f"retried {oom_stats['files_retried']}, "
+                        f"exhausted {oom_stats['files_exhausted']}"
+                    )
+
+            # Step 5: Identify and recover retriable ERROR files (staggered batches)
+            # YouTube downloads use a strict per-cycle cap to stay within
+            # rate limits and avoid bans.  Transcription retries are less
+            # sensitive so they get a larger batch.
+            from app.core.config import settings as _settings
+
+            yt_batch = _settings.YOUTUBE_RECOVERY_BATCH_SIZE  # default 3
+            transcription_batch = 20
+
+            yt_retries, tx_retries = task_detection_service.identify_retriable_error_files_split(
+                db,
+                youtube_batch_size=yt_batch,
+                transcription_batch_size=transcription_batch,
+            )
+            all_retriable = yt_retries + tx_retries
+            summary["retriable_errors_found"] = len(all_retriable)
+            summary["retriable_youtube_found"] = len(yt_retries)
+            summary["retriable_errors_retried"] = 0
+
+            if all_retriable:
+                retry_stats = task_recovery_service.recover_retriable_error_files(db, all_retriable)
+                summary["retriable_errors_retried"] = retry_stats["files_retried"]
+                logger.info(
+                    f"Error Retry: Found {len(yt_retries)} YouTube + "
+                    f"{len(tx_retries)} transcription retriable files, "
+                    f"retried {retry_stats['files_retried']}, "
+                    f"failed {retry_stats['files_failed']}"
+                )
+
+            # Step 6: Recover COMPLETED files with incomplete post-transcription processing
+            incomplete_files = task_detection_service.identify_incomplete_post_transcription_files(
+                db, batch_size=10
+            )
+            summary["incomplete_post_transcription_found"] = len(incomplete_files)
+
+            if incomplete_files:
+                post_stats = task_recovery_service.recover_incomplete_post_transcription_files(
+                    db, incomplete_files
+                )
+                summary["post_transcription_tasks_dispatched"] = post_stats[
+                    "total_tasks_dispatched"
+                ]
+                logger.info(
+                    f"Post-transcription recovery: Found {len(incomplete_files)} incomplete files, "
+                    f"dispatched {post_stats['total_tasks_dispatched']} tasks"
+                )
+
             # Log summary
             logger.info(
                 f"Periodic health check completed: "
                 f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
                 f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
-                f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}"
+                f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "
+                f"Found {summary['oom_files_found']} OOM error files, retried {summary['oom_files_retried']}, exhausted {summary['oom_files_exhausted']}; "
+                f"Found {summary['retriable_errors_found']} retriable errors, retried {summary['retriable_errors_retried']}; "
+                f"Found {summary['incomplete_post_transcription_found']} incomplete post-transcription files, dispatched {summary['post_transcription_tasks_dispatched']} tasks"
             )
 
     except Exception as e:

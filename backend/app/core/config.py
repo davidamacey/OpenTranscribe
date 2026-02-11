@@ -274,7 +274,7 @@ class Settings(BaseSettings):
     SEARCH_CHUNK_TARGET_WORDS: int = int(os.getenv("SEARCH_CHUNK_TARGET_WORDS", "200"))
     SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
     SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "60"))
-    SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "100"))
+    SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "500"))
     SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
     SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
         os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.015")
@@ -503,6 +503,58 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL_NAME: str = os.getenv("OPENROUTER_MODEL_NAME", "anthropic/claude-3-haiku")
     OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
+
+    # ===== YouTube Anti-Bot Detection Configuration =====
+    # Cookie-Based Authentication (allows yt-dlp to use browser cookies)
+    YOUTUBE_COOKIE_BROWSER: Optional[str] = os.getenv(
+        "YOUTUBE_COOKIE_BROWSER", None
+    )  # firefox, chrome, chromium, edge, safari, opera
+    YOUTUBE_COOKIE_FILE: Optional[str] = os.getenv(
+        "YOUTUBE_COOKIE_FILE", None
+    )  # Path to cookies.txt file
+
+    # Playlist Staggering (progressive delays when dispatching videos)
+    YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = (
+        os.getenv("YOUTUBE_PLAYLIST_STAGGER_ENABLED", "true").lower() == "true"
+    )
+    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = int(
+        os.getenv("YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", "5")
+    )
+    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = int(
+        os.getenv("YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", "30")
+    )
+    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = int(
+        os.getenv("YOUTUBE_PLAYLIST_STAGGER_INCREMENT", "5")
+    )
+
+    # Pre-Download Jitter (random delay before each download starts)
+    YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = (
+        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", "true").lower() == "true"
+    )
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = int(
+        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS", "2")
+    )
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = int(
+        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS", "15")
+    )
+
+    # User Rate Limiting (per-user quotas to prevent abuse)
+    YOUTUBE_USER_RATE_LIMIT_ENABLED: bool = (
+        os.getenv("YOUTUBE_USER_RATE_LIMIT_ENABLED", "true").lower() == "true"
+    )
+    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = int(os.getenv("YOUTUBE_USER_RATE_LIMIT_PER_HOUR", "50"))
+    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = int(os.getenv("YOUTUBE_USER_RATE_LIMIT_PER_DAY", "500"))
+
+    # Recovery throttle: max YouTube downloads re-queued per health-check cycle
+    # (every 10 min).  Keep this well below YOUTUBE_USER_RATE_LIMIT_PER_HOUR / 6
+    # to leave headroom for user-initiated downloads.
+    YOUTUBE_RECOVERY_BATCH_SIZE: int = int(os.getenv("YOUTUBE_RECOVERY_BATCH_SIZE", "3"))
+
+    # Celery task-level rate limit for YouTube downloads.
+    # Format: "N/h" (per hour), "N/m" (per minute), "N/s" (per second).
+    # This is enforced by the download worker regardless of how many tasks
+    # are queued.  Set to "0" or empty to disable.
+    YOUTUBE_DOWNLOAD_RATE_LIMIT: str = os.getenv("YOUTUBE_DOWNLOAD_RATE_LIMIT", "30/h")
 
     # Performance optimization properties
     @property

@@ -18,7 +18,7 @@ fi
 
 # Maximum compose files list for stopping/removing all containers
 # Includes all possible compose files to ensure all containers are stopped
-MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml"
+MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml -f docker-compose.nas.yml"
 
 #######################
 # HELPER FUNCTIONS
@@ -40,6 +40,7 @@ show_help() {
   echo "  --build              - Build prod images locally (test before push)"
   echo "  --pull               - Force pull prod images from Docker Hub"
   echo "  --gpu-scale          - Enable multi-GPU worker scaling"
+  echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod)"
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod)"
@@ -76,6 +77,7 @@ show_help() {
   echo "Examples:"
   echo "  ./opentr.sh start                            # Start in development mode"
   echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling"
+  echo "  ./opentr.sh start dev --gpu-scale --nas     # Multi-GPU + NAS/NVMe storage"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -173,6 +175,7 @@ start_app() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
@@ -190,6 +193,10 @@ start_app() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --nas)
+        NAS_FLAG="--nas"
         shift
         ;;
       --with-pki)
@@ -299,8 +306,42 @@ start_app() {
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
-  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set
-  if [ -n "$NGINX_SERVER_NAME" ]; then
+  # Add NAS/NVMe storage overlay if requested via --nas flag
+  # or auto-detect when storage path env vars are set
+  if [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
+    NAS_FLAG="--nas"
+    echo "ℹ️  Auto-detected custom storage paths in .env, enabling NAS overlay"
+  fi
+  if [ -n "$NAS_FLAG" ]; then
+    if [ -f "docker-compose.nas.yml" ]; then
+      # Validate required directories exist
+      NAS_PATH="${MINIO_NAS_PATH:-/mnt/nas/opentranscribe-minio}"
+      PG_PATH="${POSTGRES_DATA_PATH:-/mnt/nvm/opentranscribe/pg}"
+      OS_PATH="${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}"
+
+      # Create directories if they don't exist
+      mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
+
+      # Check mount points are accessible
+      if [ ! -d "$NAS_PATH" ]; then
+        echo "❌ NAS path not accessible: $NAS_PATH"
+        echo "   Ensure NAS is mounted and set MINIO_NAS_PATH in .env"
+        exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nas.yml"
+      echo "💾 Adding custom storage overlay (docker-compose.nas.yml)"
+      echo "   MinIO media:  $NAS_PATH"
+      echo "   PostgreSQL:   $PG_PATH"
+      echo "   OpenSearch:   $OS_PATH"
+    else
+      echo "⚠️  --nas specified but docker-compose.nas.yml not found"
+    fi
+  fi
+
+  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
+  # Dev mode uses Vite dev server directly — nginx would be redundant
+  if [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "prod" ]; then
     if [ -f "docker-compose.nginx.yml" ]; then
       # Check for SSL certificates
       CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
@@ -325,6 +366,8 @@ start_app() {
     else
       echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
     fi
+  elif [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "dev" ]; then
+    echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
   # Add PKI overlay if requested
@@ -423,6 +466,7 @@ reset_and_init() {
   # Parse optional flags
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
+  NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
@@ -440,6 +484,10 @@ reset_and_init() {
         ;;
       --gpu-scale)
         GPU_SCALE_FLAG="--gpu-scale"
+        shift
+        ;;
+      --nas)
+        NAS_FLAG="--nas"
         shift
         ;;
       --with-pki)
@@ -539,8 +587,42 @@ reset_and_init() {
     echo "🎯 Adding GPU scaling overlay (docker-compose.gpu-scale.yml)"
   fi
 
-  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set
-  if [ -n "$NGINX_SERVER_NAME" ]; then
+  # Add NAS/NVMe storage overlay if requested via --nas flag
+  # or auto-detect when storage path env vars are set
+  if [ -z "$NAS_FLAG" ] && { [ -n "$MINIO_NAS_PATH" ] || [ -n "$POSTGRES_DATA_PATH" ] || [ -n "$OPENSEARCH_DATA_PATH" ]; }; then
+    NAS_FLAG="--nas"
+    echo "ℹ️  Auto-detected custom storage paths in .env, enabling NAS overlay"
+  fi
+  if [ -n "$NAS_FLAG" ]; then
+    if [ -f "docker-compose.nas.yml" ]; then
+      # Validate required directories exist
+      NAS_PATH="${MINIO_NAS_PATH:-/mnt/nas/opentranscribe-minio}"
+      PG_PATH="${POSTGRES_DATA_PATH:-/mnt/nvm/opentranscribe/pg}"
+      OS_PATH="${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}"
+
+      # Create directories if they don't exist
+      mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
+
+      # Check mount points are accessible
+      if [ ! -d "$NAS_PATH" ]; then
+        echo "❌ NAS path not accessible: $NAS_PATH"
+        echo "   Ensure NAS is mounted and set MINIO_NAS_PATH in .env"
+        exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nas.yml"
+      echo "💾 Adding custom storage overlay (docker-compose.nas.yml)"
+      echo "   MinIO media:  $NAS_PATH"
+      echo "   PostgreSQL:   $PG_PATH"
+      echo "   OpenSearch:   $OS_PATH"
+    else
+      echo "⚠️  --nas specified but docker-compose.nas.yml not found"
+    fi
+  fi
+
+  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
+  # Dev mode uses Vite dev server directly — nginx would be redundant
+  if [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "prod" ]; then
     if [ -f "docker-compose.nginx.yml" ]; then
       # Check for SSL certificates
       CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
@@ -565,6 +647,8 @@ reset_and_init() {
     else
       echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
     fi
+  elif [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "dev" ]; then
+    echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
   # Add PKI overlay if requested

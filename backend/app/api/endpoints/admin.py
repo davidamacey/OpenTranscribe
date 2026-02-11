@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import platform
 from datetime import datetime
@@ -25,9 +26,16 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.models.media import Analytics
+from app.models.media import Collection
+from app.models.media import CollectionMember
+from app.models.media import Comment
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.models.media import SpeakerCollection
+from app.models.media import SpeakerCollectionMember
+from app.models.media import SpeakerProfile
+from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -94,15 +102,15 @@ def get_memory_usage():
 
 
 def get_cpu_usage():
-    """Get CPU usage information"""
+    """Get CPU usage information.
+
+    Uses interval=None (non-blocking) which returns CPU usage since the last call.
+    The first call after import returns 0.0; subsequent calls return meaningful values.
+    This avoids blocking the async event loop for 1+ second.
+    """
     try:
-        # Get CPU usage as a percentage (across all cores)
-        cpu_percent = psutil.cpu_percent(interval=0.5)
-
-        # Get per-CPU percentages
-        per_cpu = psutil.cpu_percent(interval=0.5, percpu=True)
-
-        # Get CPU count
+        cpu_percent = psutil.cpu_percent(interval=None)
+        per_cpu = psutil.cpu_percent(interval=None, percpu=True)
         cpu_count = psutil.cpu_count(logical=True)
         physical_cores = psutil.cpu_count(logical=False) or 1
 
@@ -120,6 +128,11 @@ def get_cpu_usage():
             "logical_cores": 0,
             "physical_cores": 0,
         }
+
+
+# Prime the CPU percent counter on module load so the first API call returns real data.
+# This call is instant (interval=None) and runs once at import time.
+psutil.cpu_percent(interval=None)
 
 
 def get_disk_usage():
@@ -205,6 +218,60 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
         logger.info("Speakers deleted successfully")
 
 
+def _delete_user_owned_records(db: Session, user_id: int) -> None:
+    """Delete all user-owned records that are not covered by DB-level CASCADE.
+
+    Cleans up: SpeakerProfile, SpeakerCollection (+ members), Collection (+ members),
+    Comment, and Task records. Must be called BEFORE deleting MediaFile rows since
+    some of these tables have FK references to media_file.
+    """
+    # Speaker collections and their members
+    sc_ids = [
+        sc.id
+        for sc in db.query(SpeakerCollection.id).filter(SpeakerCollection.user_id == user_id).all()
+    ]
+    if sc_ids:
+        db.query(SpeakerCollectionMember).filter(
+            SpeakerCollectionMember.speaker_collection_id.in_(sc_ids)
+        ).delete(synchronize_session=False)
+        db.query(SpeakerCollection).filter(SpeakerCollection.user_id == user_id).delete(
+            synchronize_session=False
+        )
+        logger.info(f"Deleted {len(sc_ids)} speaker collections for user {user_id}")
+
+    # Collections and their members
+    col_ids = [c.id for c in db.query(Collection.id).filter(Collection.user_id == user_id).all()]
+    if col_ids:
+        db.query(CollectionMember).filter(CollectionMember.collection_id.in_(col_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Collection).filter(Collection.user_id == user_id).delete(synchronize_session=False)
+        logger.info(f"Deleted {len(col_ids)} collections for user {user_id}")
+
+    # Speaker profiles
+    profiles_deleted = (
+        db.query(SpeakerProfile)
+        .filter(SpeakerProfile.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    if profiles_deleted:
+        logger.info(f"Deleted {profiles_deleted} speaker profiles for user {user_id}")
+
+    # Comments
+    comments_deleted = (
+        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
+    )
+    if comments_deleted:
+        logger.info(f"Deleted {comments_deleted} comments for user {user_id}")
+
+    # Background tasks
+    tasks_deleted = (
+        db.query(TaskModel).filter(TaskModel.user_id == user_id).delete(synchronize_session=False)
+    )
+    if tasks_deleted:
+        logger.info(f"Deleted {tasks_deleted} task records for user {user_id}")
+
+
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
 
@@ -220,36 +287,31 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         media_ids = [m.id for m in media_files]
 
         # Delete transcript segments for these media files
-        segments_count = (
+        segments_deleted = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id.in_(media_ids))
-            .count()
+            .delete(synchronize_session=False)
         )
+        if segments_deleted:
+            logger.info(f"Deleted {segments_deleted} transcript segments")
 
-        if segments_count > 0:
-            logger.info(f"Deleting {segments_count} transcript segments for user's media files")
-            db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id.in_(media_ids)
-            ).delete(synchronize_session=False)
-            logger.info("Transcript segments deleted successfully")
+        # Delete file_tag records
+        file_tags_deleted = (
+            db.query(FileTag)
+            .filter(FileTag.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if file_tags_deleted:
+            logger.info(f"Deleted {file_tags_deleted} file tags")
 
-        # Delete other related records using SQLAlchemy ORM for safety
-        if media_ids:
-            # Delete file_tag records safely using SQLAlchemy
-            file_tags_deleted = (
-                db.query(FileTag)
-                .filter(FileTag.media_file_id.in_(media_ids))
-                .delete(synchronize_session=False)
-            )
-            logger.info(f"Deleted {file_tags_deleted} file tags successfully")
-
-            # Delete analytics records safely using SQLAlchemy
-            analytics_deleted = (
-                db.query(Analytics)
-                .filter(Analytics.media_file_id.in_(media_ids))
-                .delete(synchronize_session=False)
-            )
-            logger.info(f"Deleted {analytics_deleted} analytics records successfully")
+        # Delete analytics records
+        analytics_deleted = (
+            db.query(Analytics)
+            .filter(Analytics.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if analytics_deleted:
+            logger.info(f"Deleted {analytics_deleted} analytics records")
 
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
@@ -291,15 +353,19 @@ async def get_admin_stats(
     logger.info("Admin stats requested")
 
     try:
-        # System statistics
-        try:
-            system_stats = {
+        # System statistics — offload sync psutil calls to a thread to avoid
+        # blocking the async event loop.
+        def _collect_system_stats():
+            return {
                 "cpu": get_cpu_usage(),
                 "memory": get_memory_usage(),
                 "disk": get_disk_usage(),
                 "gpu": get_gpu_usage(),
                 "uptime": get_system_uptime(),
             }
+
+        try:
+            system_stats = await asyncio.to_thread(_collect_system_stats)
         except Exception as e:
             logger.error(f"Error getting system stats: {e}")
             system_stats = {
@@ -332,106 +398,16 @@ async def get_admin_stats(
                 "uptime": "Unknown",
             }
 
-        # Get user statistics
-        total_users = db.query(User).count()
-        active_users = db.query(User).filter(User.is_active).count()
-        inactive_users = total_users - active_users
-        superusers = db.query(User).filter(User.is_superuser).count()
+        # Consolidated database statistics (3 aggregate queries instead of 15+)
+        from app.utils.stats_helpers import get_file_stats
+        from app.utils.stats_helpers import get_recent_tasks
+        from app.utils.stats_helpers import get_task_stats
+        from app.utils.stats_helpers import get_user_stats
 
-        # Calculate new users in last 7 days
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        new_users = db.query(User).filter(User.created_at >= seven_days_ago).count()
-
-        # Get file statistics
-        total_files = db.query(MediaFile).count()
-
-        # Calculate new files in last 7 days
-        new_files = db.query(MediaFile).filter(MediaFile.upload_time >= seven_days_ago).count()
-
-        # Count files by status
-        pending_files = db.query(MediaFile).filter(MediaFile.status == "pending").count()
-        processing_files = db.query(MediaFile).filter(MediaFile.status == "processing").count()
-        completed_files = db.query(MediaFile).filter(MediaFile.status == "completed").count()
-        error_files = db.query(MediaFile).filter(MediaFile.status == "error").count()
-
-        # Get total file size
-        total_size_result = db.query(func.sum(MediaFile.file_size)).scalar()
-        total_size = total_size_result if total_size_result else 0
-
-        # Get total duration (in seconds)
-        total_duration_result = db.query(func.sum(MediaFile.duration)).scalar()
-        total_duration = total_duration_result if total_duration_result else 0
-
-        # Get transcript statistics
-        total_segments = db.query(TranscriptSegment).count()
-
-        # Get speaker statistics
-        total_speakers = db.query(Speaker).count()
-
-        # Get task statistics
-        from app.models.media import Task
-        from app.utils.task_utils import TASK_STATUS_COMPLETED
-        from app.utils.task_utils import TASK_STATUS_FAILED
-        from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
-        from app.utils.task_utils import TASK_STATUS_PENDING
-
-        total_tasks = db.query(Task).count()
-        pending_tasks = db.query(Task).filter(Task.status == TASK_STATUS_PENDING).count()
-        running_tasks = db.query(Task).filter(Task.status == TASK_STATUS_IN_PROGRESS).count()
-        completed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_COMPLETED).count()
-        failed_tasks = db.query(Task).filter(Task.status == TASK_STATUS_FAILED).count()
-
-        # Calculate success rate
-        success_rate: float = 0.0
-        if total_tasks > 0:
-            success_rate = round((completed_tasks / total_tasks) * 100, 2)
-
-        # Calculate average processing time for completed tasks
-        avg_processing_time: float = 0.0
-        completed_task_list = (
-            db.query(Task)
-            .filter(
-                Task.status == TASK_STATUS_COMPLETED,
-                Task.created_at.isnot(None),
-                Task.completed_at.isnot(None),
-            )
-            .all()
-        )
-
-        if completed_task_list:
-            total_time = sum(
-                (task.completed_at - task.created_at).total_seconds()
-                for task in completed_task_list
-                if task.completed_at and task.created_at
-            )
-            avg_processing_time = (
-                total_time / len(completed_task_list) if completed_task_list else 0.0
-            )
-
-        # Get recent tasks (last 10)
-        recent_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(10).all()
-        recent = []
-        for task in recent_tasks:
-            elapsed = 0
-            if task.completed_at and task.created_at:
-                elapsed = (task.completed_at - task.created_at).total_seconds()
-            elif task.created_at:
-                # Make sure both datetimes are timezone-aware
-                now = datetime.now(timezone.utc)
-                created_at = task.created_at
-                # Convert created_at to timezone-aware if it's naive
-                if created_at and created_at.tzinfo is None:
-                    created_at = created_at.replace(tzinfo=timezone.utc)
-                elapsed = (now - created_at).total_seconds() if created_at else 0
-            recent.append(
-                {
-                    "id": task.id,
-                    "type": getattr(task, "task_type", ""),
-                    "status": task.status,
-                    "created_at": task.created_at.isoformat() if task.created_at else None,
-                    "elapsed": int(elapsed) if elapsed else 0,
-                }
-            )
+        user_stats = get_user_stats(db, include_breakdown=True)
+        file_stats = get_file_stats(db, include_status_breakdown=True)
+        task_stats = get_task_stats(db)
+        recent = get_recent_tasks(db, limit=10)
 
         # Get AI model configuration
         from app.core.config import settings
@@ -454,27 +430,20 @@ async def get_admin_stats(
             },
         }
 
+        total_files = file_stats["total"]
+        total_speakers = file_stats["speakers"]
+        total_segments = file_stats["segments"]
+
         # Construct the response
         stats = {
-            "users": {
-                "total": total_users,
-                "active": active_users,
-                "inactive": inactive_users,
-                "superusers": superusers,
-                "new": new_users,
-            },
+            "users": user_stats,
             "files": {
                 "total": total_files,
-                "new": new_files,
-                "total_duration": round(total_duration, 2) if total_duration else 0,
+                "new": file_stats["new"],
+                "total_duration": file_stats["total_duration"],
                 "segments": total_segments,
-                "by_status": {
-                    "pending": pending_files,
-                    "processing": processing_files,
-                    "completed": completed_files,
-                    "error": error_files,
-                },
-                "total_size": total_size,
+                "by_status": file_stats.get("by_status", {}),
+                "total_size": file_stats["total_size"],
             },
             "transcripts": {"total_segments": total_segments},
             "speakers": {
@@ -492,16 +461,7 @@ async def get_admin_stats(
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
             },
-            "tasks": {
-                "total": total_tasks,
-                "pending": pending_tasks,
-                "running": running_tasks,
-                "completed": completed_tasks,
-                "failed": failed_tasks,
-                "success_rate": success_rate,
-                "avg_processing_time": round(avg_processing_time, 2),
-                "recent": recent,
-            },
+            "tasks": {**task_stats, "recent": recent},
         }
 
         return stats
@@ -515,16 +475,21 @@ async def get_admin_stats(
 
 @router.get("/users", response_model=list[UserSchema])
 def get_admin_users(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
+    limit: int = Query(200, ge=1, le=1000, description="Max users to return"),
+    offset: int = Query(0, ge=0, description="Number of users to skip"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
-    Get all users for admin
-    """
-    logger.info("Admin users list requested")
+    Get users for admin panel with pagination.
 
+    Defaults to 200 users which covers most deployments without breaking
+    existing frontend code. Use limit/offset for larger user bases.
+    """
     try:
-        # Sort alphabetically by full_name (case-insensitive) for consistent UI ordering
-        users = db.query(User).order_by(func.lower(User.full_name)).all()
+        users = (
+            db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
+        )
         return users
     except Exception as e:
         logger.error(f"Error getting admin users: {e}")
@@ -591,7 +556,13 @@ def delete_admin_user(
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
 
-        # Delete related data in order
+        # Delete related data in dependency order (children before parents)
+        try:
+            _delete_user_owned_records(db, int(user_id))
+        except Exception as owned_error:
+            logger.error(f"Error deleting user-owned records: {owned_error}")
+            raise
+
         try:
             _delete_user_speakers(db, int(user_id))
         except Exception as speaker_error:
@@ -1039,25 +1010,26 @@ async def get_account_status_report(
     current_user: User = Depends(get_current_admin_user),
 ):
     """Account status summary for compliance reporting."""
-    total = db.query(func.count(User.id)).scalar()
-    active = db.query(func.count(User.id)).filter(User.is_active == True).scalar()  # noqa: E712
-    inactive = total - active
-
-    # MFA enabled count
-    mfa_enabled = db.query(func.count(UserMFA.id)).filter(UserMFA.totp_enabled == True).scalar()  # noqa: E712
-
-    # Password expired (past max age)
+    # Consolidate 3 User COUNT queries into 1 using FILTER clauses
     expiry_threshold = datetime.now(timezone.utc) - timedelta(days=settings.PASSWORD_MAX_AGE_DAYS)
-    pwd_expired = (
-        db.query(func.count(User.id)).filter(User.password_changed_at < expiry_threshold).scalar()
-    )
+    user_row = db.query(
+        func.count().label("total"),
+        func.count().filter(User.is_active.is_(True)).label("active"),
+        func.count().filter(User.password_changed_at < expiry_threshold).label("pwd_expired"),
+    ).one()
+
+    # MFA is a separate table, so one more query
+    mfa_enabled = db.query(func.count(UserMFA.id)).filter(UserMFA.totp_enabled.is_(True)).scalar()
+
+    total = user_row.total
+    active = user_row.active
 
     return {
         "total_users": total,
         "active_users": active,
-        "inactive_users": inactive,
+        "inactive_users": total - active,
         "mfa_enabled_users": mfa_enabled,
-        "password_expired_users": pwd_expired,
+        "password_expired_users": user_row.pwd_expired,
     }
 
 

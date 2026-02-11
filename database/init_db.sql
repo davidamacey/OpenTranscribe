@@ -186,9 +186,13 @@ CREATE TABLE IF NOT EXISTS media_file (
     retry_count INTEGER DEFAULT 0,
     max_retries INTEGER DEFAULT 3,
     last_error_message TEXT NULL,
+    error_category VARCHAR(50) NULL,
     force_delete_eligible BOOLEAN DEFAULT FALSE,
     recovery_attempts INTEGER DEFAULT 0,
     last_recovery_attempt TIMESTAMP WITH TIME ZONE NULL,
+    whisper_model VARCHAR NULL,
+    diarization_model VARCHAR NULL,
+    embedding_mode VARCHAR NULL,
     user_id INTEGER NOT NULL REFERENCES "user" (id)
 );
 
@@ -234,7 +238,8 @@ CREATE TABLE IF NOT EXISTS speaker (
     profile_id INTEGER NULL REFERENCES speaker_profile(id) ON DELETE SET NULL, -- Link to global profile
     name VARCHAR(255) NOT NULL, -- Original name from diarization (e.g., "SPEAKER_01")
     display_name VARCHAR(255) NULL, -- User-assigned display name
-    suggested_name VARCHAR(255) NULL, -- AI-suggested name based on embedding match
+    suggested_name VARCHAR(255) NULL, -- AI-suggested name from LLM or embedding match
+    suggestion_source VARCHAR(50) NULL, -- Source: "llm_analysis", "voice_match", "profile_match"
     verified BOOLEAN NOT NULL DEFAULT FALSE, -- Flag to indicate if the speaker has been verified by a user
     confidence FLOAT NULL, -- Confidence score if auto-matched
     -- embedding_vector removed: stored in OpenSearch for optimal vector similarity performance
@@ -352,6 +357,18 @@ CREATE INDEX IF NOT EXISTS idx_media_file_active_task_id ON media_file(active_ta
 CREATE INDEX IF NOT EXISTS idx_media_file_task_last_update ON media_file(task_last_update);
 CREATE INDEX IF NOT EXISTS idx_media_file_force_delete_eligible ON media_file(force_delete_eligible);
 CREATE INDEX IF NOT EXISTS idx_media_file_retry_count ON media_file(retry_count);
+CREATE INDEX IF NOT EXISTS idx_media_file_error_category ON media_file(error_category) WHERE error_category IS NOT NULL;
+
+-- v1.0.0 composite indexes for gallery/filter query optimization
+CREATE INDEX IF NOT EXISTS idx_media_file_user_status_upload ON media_file(user_id, status, upload_time DESC);
+CREATE INDEX IF NOT EXISTS idx_media_file_summary_status_partial ON media_file(summary_status) WHERE summary_status IS NOT NULL AND summary_status != 'completed';
+CREATE INDEX IF NOT EXISTS idx_media_file_user_completed ON media_file(user_id, completed_at DESC) WHERE status = 'completed' AND completed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_speaker_display_name ON speaker(display_name) WHERE display_name IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_speaker_name ON speaker(name);
+CREATE INDEX IF NOT EXISTS idx_task_media_file_status ON task(media_file_id, status);
+CREATE INDEX IF NOT EXISTS idx_file_tag_media_tag ON file_tag(media_file_id, tag_id);
+CREATE INDEX IF NOT EXISTS idx_file_tag_media_file_id ON file_tag(media_file_id);
+CREATE INDEX IF NOT EXISTS idx_file_tag_tag_id ON file_tag(tag_id);
 
 -- UUID indexes for fast external API lookups
 CREATE INDEX IF NOT EXISTS idx_user_uuid ON "user"(uuid);
@@ -360,6 +377,8 @@ CREATE INDEX IF NOT EXISTS idx_tag_uuid ON tag(uuid);
 CREATE INDEX IF NOT EXISTS idx_speaker_uuid ON speaker(uuid);
 CREATE INDEX IF NOT EXISTS idx_speaker_profile_uuid ON speaker_profile(uuid);
 CREATE INDEX IF NOT EXISTS idx_comment_uuid ON comment(uuid);
+CREATE INDEX IF NOT EXISTS idx_comment_media_file_id ON comment(media_file_id);
+CREATE INDEX IF NOT EXISTS idx_comment_user_id ON comment(user_id);
 CREATE INDEX IF NOT EXISTS idx_collection_uuid ON collection(uuid);
 CREATE INDEX IF NOT EXISTS idx_speaker_collection_uuid ON speaker_collection(uuid);
 
@@ -372,6 +391,7 @@ CREATE INDEX IF NOT EXISTS idx_speaker_profile_user_id ON speaker_profile(user_i
 
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_media_file_id ON transcript_segment(media_file_id);
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_speaker_id ON transcript_segment(speaker_id);
+CREATE INDEX IF NOT EXISTS idx_transcript_segment_media_start ON transcript_segment(media_file_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_transcript_segment_overlap_group ON transcript_segment(overlap_group_id) WHERE overlap_group_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_task_user_id ON task(user_id);

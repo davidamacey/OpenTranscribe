@@ -34,6 +34,21 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
         logger.info("No segments to save")
         return
 
+    # Delete any existing segments for this file to prevent duplicates.
+    # Recovery/retry code paths may re-run transcription without cleanup,
+    # so this is the defensive single point of truth.
+    existing_count = (
+        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).count()
+    )
+    if existing_count > 0:
+        logger.warning(
+            f"Found {existing_count} existing segments for file {file_id}, "
+            f"deleting before re-saving {len(segments)} new segments"
+        )
+        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete(
+            synchronize_session=False
+        )
+
     logger.info(f"Saving {len(segments)} transcript segments to database (bulk insert)")
 
     # Prepare all records for bulk insert
@@ -82,7 +97,13 @@ def save_transcript_segments(db: Session, file_id: int, segments: list[dict[str,
 
 
 def update_media_file_transcription_status(
-    db: Session, file_id: int, segments: list[dict[str, Any]], language: str = "en"
+    db: Session,
+    file_id: int,
+    segments: list[dict[str, Any]],
+    language: str = "en",
+    whisper_model: str | None = None,
+    diarization_model: str | None = None,
+    embedding_mode: str | None = None,
 ) -> None:
     """
     Update media file with transcription completion metadata.
@@ -92,6 +113,9 @@ def update_media_file_transcription_status(
         file_id: Media file ID
         segments: List of transcript segments
         language: Detected language
+        whisper_model: Whisper model used for transcription
+        diarization_model: Diarization model used
+        embedding_mode: Speaker embedding mode ("v3" or "v4")
     """
     media_file = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
@@ -106,6 +130,14 @@ def update_media_file_transcription_status(
     media_file.language = language
     media_file.status = FileStatus.COMPLETED
     media_file.completed_at = datetime.datetime.now()
+
+    # Store processing model info
+    if whisper_model:
+        media_file.whisper_model = whisper_model
+    if diarization_model:
+        media_file.diarization_model = diarization_model
+    if embedding_mode:
+        media_file.embedding_mode = embedding_mode
 
     db.commit()
     logger.info(f"Updated media file {file_id} transcription status")

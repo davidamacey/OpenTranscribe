@@ -50,10 +50,22 @@ def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> bool:
         # Speaker has no segments - delete it
         speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
         if speaker:
-            speaker_uuid = speaker.uuid
+            speaker_uuid = str(speaker.uuid)
             speaker_name = speaker.name
             db.delete(speaker)
             db.commit()
+
+            # Also remove embedding from OpenSearch
+            try:
+                from app.services.opensearch_service import remove_speaker_embedding
+
+                remove_speaker_embedding(speaker_uuid)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to remove OpenSearch embedding for orphaned speaker "
+                    f"{speaker_uuid}: {e}"
+                )
+
             logger.info(
                 f"Deleted orphaned speaker {speaker_uuid} ({speaker_name}) - no remaining segments"
             )
@@ -109,25 +121,47 @@ def _handle_speaker_change(
     original_speaker_id: int | None,
     new_speaker_id: int | None,
     media_file_id: int,
+    segment_uuid: str | None = None,
+    media_file_uuid: str | None = None,
+    user_id: int | None = None,
 ) -> None:
     """
     Handle side effects of speaker assignment change.
 
-    Cleans up orphaned speakers and refreshes analytics.
+    Cleans up orphaned speakers, refreshes analytics, and dispatches
+    a background task to update speaker embeddings.
 
     Args:
         db: Database session
         original_speaker_id: Previous speaker ID (or None)
         new_speaker_id: New speaker ID (or None)
         media_file_id: ID of the media file for analytics refresh
+        segment_uuid: UUID of the reassigned segment (for embedding update)
+        media_file_uuid: UUID of the media file (for embedding update)
+        user_id: ID of the current user (for embedding update)
     """
     if original_speaker_id == new_speaker_id:
         return
 
+    # Capture source speaker UUID before orphan cleanup might delete it
+    source_speaker_uuid: str | None = None
+    if original_speaker_id:
+        original_speaker = db.query(Speaker).filter(Speaker.id == original_speaker_id).first()
+        if original_speaker:
+            source_speaker_uuid = str(original_speaker.uuid)
+
+    # Capture target speaker UUID for embedding task
+    target_speaker_uuid: str | None = None
+    if new_speaker_id:
+        target_speaker = db.query(Speaker).filter(Speaker.id == new_speaker_id).first()
+        if target_speaker:
+            target_speaker_uuid = str(target_speaker.uuid)
+
     # Check if the old speaker is now orphaned (no remaining segments)
     # and delete it if so - this keeps the speaker list clean
+    orphan_deleted = False
     if original_speaker_id:
-        _cleanup_orphaned_speaker(db, original_speaker_id)
+        orphan_deleted = _cleanup_orphaned_speaker(db, original_speaker_id)
 
     try:
         from app.services.analytics_service import AnalyticsService
@@ -137,6 +171,26 @@ def _handle_speaker_change(
     except Exception as e:
         # Don't fail the operation if analytics refresh fails
         logger.warning(f"Failed to refresh analytics after segment speaker change: {e}")
+
+    # Dispatch background task to update speaker embeddings
+    if segment_uuid and media_file_uuid and user_id and target_speaker_uuid:
+        try:
+            from app.tasks.speaker_tasks import update_speaker_embedding_on_reassignment
+
+            update_speaker_embedding_on_reassignment.delay(
+                segment_uuid=segment_uuid,
+                media_file_uuid=media_file_uuid,
+                target_speaker_uuid=target_speaker_uuid,
+                source_speaker_uuid=source_speaker_uuid if not orphan_deleted else None,
+                user_id=user_id,
+            )
+            logger.info(
+                f"Dispatched embedding update task for segment {segment_uuid} "
+                f"-> speaker {target_speaker_uuid}"
+            )
+        except Exception as e:
+            # Don't fail the operation if task dispatch fails
+            logger.warning(f"Failed to dispatch embedding update task: {e}")
 
 
 @router.put("/segments/{segment_uuid}/speaker", response_model=TranscriptSegmentSchema)
@@ -194,8 +248,16 @@ def update_segment_speaker(
     db.commit()
     db.refresh(segment)
 
-    # Handle side effects of speaker change (cleanup orphans, refresh analytics)
-    _handle_speaker_change(db, original_speaker_id, new_speaker_id, int(media_file.id))
+    # Handle side effects of speaker change (cleanup orphans, refresh analytics, embeddings)
+    _handle_speaker_change(
+        db,
+        original_speaker_id,
+        new_speaker_id,
+        int(media_file.id),
+        segment_uuid=segment_uuid,
+        media_file_uuid=str(media_file.uuid),
+        user_id=int(current_user.id),
+    )
 
     # Format the response with speaker details
     def format_timestamp(seconds: float) -> str:

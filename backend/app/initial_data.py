@@ -5,6 +5,7 @@ Creates a test user and sets up initial database values.
 
 import logging
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
@@ -36,15 +37,20 @@ def init_db(db: Session) -> None:
     else:
         logger.info("Test admin user already exists")
 
-    # Create default tags if they don't exist
+    # Create default tags if they don't exist (race-condition safe for multi-process startup)
     default_tags = ["Important", "Meeting", "Interview", "Personal"]
 
     for tag_name in default_tags:
         tag = db.query(Tag).filter(Tag.name == tag_name).first()
         if not tag:
-            tag = Tag(name=tag_name)
-            db.add(tag)
-            logger.info(f"Created default tag: {tag_name}")
+            try:
+                tag = Tag(name=tag_name)
+                db.add(tag)
+                db.flush()
+                logger.info(f"Created default tag: {tag_name}")
+            except IntegrityError:
+                db.rollback()
+                logger.info(f"Default tag '{tag_name}' already exists (concurrent creation)")
 
     db.commit()
 

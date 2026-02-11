@@ -45,12 +45,15 @@ services:
       -Q gpu
       --concurrency=${GPU_SCALE_WORKERS:-4}
       --prefetch-multiplier=${GPU_SCALE_WORKERS:-4}
-      --max-tasks-per-child=10
+      --max-tasks-per-child=${GPU_SCALE_MAX_TASKS:-500}
       -n gpu-scaled@%h
       --loglevel=info
     environment:
-      # GPU-specific environment variable (extends base environment)
-      - CUDA_VISIBLE_DEVICES=${GPU_SCALE_DEVICE_ID:-2}
+      # CUDA_VISIBLE_DEVICES=0 because Docker's device reservation (deploy.resources)
+      # already maps the host GPU (GPU_SCALE_DEVICE_ID) to device index 0 inside the container.
+      # Setting this to the host device ID (e.g., 2) would fail because the container
+      # only sees one GPU at index 0.
+      - CUDA_VISIBLE_DEVICES=0
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-scaled@$$HOSTNAME"]
       interval: 30s

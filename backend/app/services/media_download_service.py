@@ -826,18 +826,36 @@ class MediaDownloadService:
         if progress_callback:
             ydl_opts["progress_hooks"] = [progress_hook]
 
+        # Cookie authentication for sign-in required videos
+        if settings.YOUTUBE_COOKIE_FILE and os.path.exists(settings.YOUTUBE_COOKIE_FILE):
+            # Explicit cookie file (for headless servers)
+            ydl_opts["cookiefile"] = settings.YOUTUBE_COOKIE_FILE
+            logger.info(f"Using cookie file: {settings.YOUTUBE_COOKIE_FILE}")
+        elif settings.YOUTUBE_COOKIE_BROWSER:
+            # Browser cookie extraction (for servers with browser installed)
+            ydl_opts["cookiesfrombrowser"] = (settings.YOUTUBE_COOKIE_BROWSER, None, None, None)
+            logger.info(f"Using cookies from browser: {settings.YOUTUBE_COOKIE_BROWSER}")
+
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Extract info first
                 info = ydl.extract_info(url, download=False)
 
-                # Check duration (optional limit)
+                # Check duration - for very long videos (>4hr), download audio only
                 duration = info.get("duration")
                 if duration and duration > 14400:  # 4 hours limit
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Video is too long. Maximum duration is 4 hours.",
+                    logger.warning(
+                        f"Video duration {duration:.0f}s exceeds 4hr limit, "
+                        f"downloading audio-only for {url}"
                     )
+                    ydl_opts["format"] = "bestaudio[ext=m4a]/bestaudio"
+                    ydl_opts["merge_output_format"] = "m4a"
+                    ydl_opts["postprocessors"] = [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "m4a",
+                        }
+                    ]
 
                 # Download the video
                 ydl.download([url])

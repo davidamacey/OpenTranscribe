@@ -7,8 +7,8 @@ export const axiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // Reasonable timeout for API requests
-  timeout: 30000, // Increased timeout for larger file uploads
+  // Timeout for API requests (60s covers filter queries under heavy processing load)
+  timeout: 60000,
   // Let Axios handle 4xx and 5xx as errors appropriately
   validateStatus: (status) => status >= 200 && status < 300,
   // Enable automatic redirect following
