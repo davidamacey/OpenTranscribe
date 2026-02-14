@@ -157,8 +157,49 @@ def get_disk_usage():
         }
 
 
+def _query_gpu_via_smi() -> dict | None:
+    """Run nvidia-smi directly to get GPU stats. Returns None if unavailable."""
+    import os
+    import subprocess
+
+    try:
+        device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
+        result = subprocess.run(  # noqa: S603
+            [  # noqa: S607
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+                f"--id={device_id}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+        parts = result.stdout.strip().split(", ")
+        used_mib, total_mib, free_mib = float(parts[1]), float(parts[2]), float(parts[3])
+        used_bytes = used_mib * 1024 * 1024
+        total_bytes = total_mib * 1024 * 1024
+        free_bytes = free_mib * 1024 * 1024
+        pct = (used_bytes / total_bytes * 100) if total_bytes > 0 else 0
+        util = int(parts[4]) if len(parts) > 4 else None
+        temp = int(parts[5]) if len(parts) > 5 else None
+        return {
+            "available": True,
+            "name": parts[0],
+            "memory_total": format_bytes(total_bytes),
+            "memory_used": format_bytes(used_bytes),
+            "memory_free": format_bytes(free_bytes),
+            "memory_percent": f"{pct:.1f}%",
+            "utilization_percent": f"{util}%" if util is not None else "N/A",
+            "temperature_celsius": temp,
+        }
+    except (FileNotFoundError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
 def get_gpu_usage():
-    """Get GPU usage from Redis. Triggers on-demand collection if cache is empty."""
+    """Get GPU usage from Redis cache, falling back to direct nvidia-smi query."""
     try:
         import json
 
@@ -170,10 +211,17 @@ def get_gpu_usage():
         if gpu_stats_json:
             return json.loads(gpu_stats_json)
 
-        # No cached stats — trigger on-demand collection (debounced)
+        # Redis empty — try nvidia-smi directly (works if backend host has NVIDIA drivers)
+        direct_stats = _query_gpu_via_smi()
+        if direct_stats:
+            # Cache the result so subsequent polls don't re-run nvidia-smi
+            redis_client.setex("gpu_stats", 300, json.dumps(direct_stats))
+            return direct_stats
+
+        # nvidia-smi not available — dispatch to GPU worker (debounced)
         lock_acquired = redis_client.set("gpu_stats_pending", "1", nx=True, ex=30)
         if lock_acquired:
-            celery_app.send_task("update_gpu_stats", queue="gpu")
+            celery_app.send_task("update_gpu_stats", queue="cpu")
             logger.info("Dispatched on-demand GPU stats collection")
 
         return {

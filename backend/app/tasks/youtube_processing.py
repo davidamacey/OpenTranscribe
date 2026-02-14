@@ -154,7 +154,7 @@ def process_youtube_url_task(
         send_youtube_notification_via_redis(
             user_id=user_id,
             file_id=file_id,
-            status=FileStatus.PROCESSING,
+            status=FileStatus.DOWNLOADING,
             message="Starting YouTube video download...",
             progress=10,
         )
@@ -179,6 +179,10 @@ def process_youtube_url_task(
                     "file_id": file_id if file_id is not None else 0,
                 }
 
+            # Update database status to DOWNLOADING (was QUEUED for playlist placeholders)
+            media_file.status = FileStatus.DOWNLOADING  # type: ignore[assignment]
+            db.commit()
+
             media_service = MediaDownloadService()
 
             # Process the YouTube URL
@@ -188,7 +192,7 @@ def process_youtube_url_task(
                     send_youtube_notification_via_redis(
                         user_id=user_id,
                         file_id=file_id,
-                        status=FileStatus.PROCESSING,
+                        status=FileStatus.DOWNLOADING,
                         message=message,
                         progress=progress,
                     )

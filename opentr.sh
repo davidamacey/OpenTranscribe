@@ -16,10 +16,6 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-# Maximum compose files list for stopping/removing all containers
-# Includes all possible compose files to ensure all containers are stopped
-MAX_COMPOSE_FILES="-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.prod.yml -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml -f docker-compose.nginx.yml -f docker-compose.offline.yml -f docker-compose.nas.yml"
-
 #######################
 # HELPER FUNCTIONS
 #######################
@@ -844,15 +840,30 @@ restart_all() {
   docker compose ps
 }
 
+# Helper: stop all containers from both dev and prod compose chains, plus stragglers
+stop_all_containers() {
+  # Dev compose chain
+  docker compose -f docker-compose.yml -f docker-compose.override.yml \
+    -f docker-compose.gpu.yml -f docker-compose.gpu-scale.yml \
+    -f docker-compose.nas.yml "$@" 2>/dev/null || true
+
+  # Prod compose chain
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+    -f docker-compose.local.yml -f docker-compose.gpu.yml \
+    -f docker-compose.gpu-scale.yml -f docker-compose.nas.yml \
+    -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
+
+  # Catch stragglers by container name pattern
+  for container in $(docker ps -a --format '{{.Names}}' | grep -E 'opentranscribe-|transcribe-app-'); do
+    docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
+  done
+}
+
 # Function to remove containers and data volumes (but preserve images)
 remove_system() {
   echo "🗑️ Removing OpenTranscribe containers and data volumes..."
-
-  # Stop and remove containers and volumes
-  # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
   echo "🗑️ Stopping containers and removing data volumes..."
-  # shellcheck disable=SC2086
-  docker compose $MAX_COMPOSE_FILES down -v
+  stop_all_containers down -v
 
   echo "✅ Containers and data volumes removed. Images preserved for faster rebuilds."
 }
@@ -860,12 +871,8 @@ remove_system() {
 # Function to purge everything including images (most destructive)
 purge_system() {
   echo "💥 Purging ALL OpenTranscribe resources including images..."
-
-  # Stop and remove everything
-  # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
   echo "🗑️ Stopping and removing containers, volumes, and images..."
-  # shellcheck disable=SC2086
-  docker compose $MAX_COMPOSE_FILES down -v --rmi all
+  stop_all_containers down -v --rmi all
 
   # Remove any remaining OpenTranscribe images
   echo "🗑️ Removing any remaining OpenTranscribe images..."
@@ -939,9 +946,10 @@ case "$1" in
 
   stop)
     echo "🛑 Stopping all containers..."
-    # Use MAX_COMPOSE_FILES to ensure all containers from all compose files are stopped
-    # shellcheck disable=SC2086
-    docker compose $MAX_COMPOSE_FILES down
+    # Stop containers from both dev and prod compose chains, plus any stragglers.
+    # Using MAX_COMPOSE_FILES with conflicting overlays (prod + override) can fail
+    # silently, so we run each chain separately.
+    stop_all_containers down
     echo "✅ All containers stopped."
     ;;
 

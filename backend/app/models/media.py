@@ -21,8 +21,10 @@ from app.db.base import Base
 
 # Enum for file status
 class FileStatus(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
+    PENDING = "pending"  # Uploaded/created, ready to start processing
+    QUEUED = "queued"  # Playlist placeholder, waiting for download
+    DOWNLOADING = "downloading"  # Currently downloading from external source (YouTube)
+    PROCESSING = "processing"  # File downloaded, transcription in progress
     COMPLETED = "completed"
     ERROR = "error"
     CANCELLING = "cancelling"  # User requested cancellation

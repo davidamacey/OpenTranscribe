@@ -286,7 +286,8 @@ CREATE TABLE IF NOT EXISTS transcript_segment (
     text TEXT NOT NULL,
     is_overlap BOOLEAN NOT NULL DEFAULT FALSE,
     overlap_group_id UUID NULL,
-    overlap_confidence FLOAT NULL
+    overlap_confidence FLOAT NULL,
+    CONSTRAINT uq_transcript_segment_content UNIQUE (media_file_id, start_time, end_time, text)
 );
 
 -- Comments table

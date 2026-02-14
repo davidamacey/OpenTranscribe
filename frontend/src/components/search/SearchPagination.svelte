@@ -15,28 +15,49 @@
   $: pages = getVisiblePages(page, totalPages);
 
   function getVisiblePages(current: number, total: number): (number | '...')[] {
-    if (total <= 7) {
+    const INITIAL_PAGES = 5;  // Show pages 1-5 initially (Google style)
+    const AROUND_CURRENT = 2; // Show current ± 2 pages
+
+    // If total pages fit comfortably, show all
+    if (total <= INITIAL_PAGES + 4) {
       return Array.from({ length: total }, (_, i) => i + 1);
     }
 
-    const result: (number | '...')[] = [1];
+    const result: (number | '...')[] = [];
 
-    if (current > 3) {
-      result.push('...');
-    }
-
-    const start = Math.max(2, current - 1);
-    const end = Math.min(total - 1, current + 1);
-
-    for (let i = start; i <= end; i++) {
+    // Add initial pages (1-5)
+    for (let i = 1; i <= INITIAL_PAGES; i++) {
       result.push(i);
     }
 
-    if (current < total - 2) {
-      result.push('...');
+    // If current is beyond initial pages, add window around current
+    if (current > INITIAL_PAGES) {
+      // Add ellipsis if there's a gap
+      if (current > INITIAL_PAGES + 1) {
+        result.push('...');
+      }
+
+      // Add current ± 2 pages
+      const windowStart = Math.max(INITIAL_PAGES + 1, current - AROUND_CURRENT);
+      const windowEnd = Math.min(total - 1, current + AROUND_CURRENT);
+
+      for (let i = windowStart; i <= windowEnd; i++) {
+        result.push(i);
+      }
+
+      // Add ellipsis before last page if there's a gap
+      if (windowEnd < total - 1) {
+        result.push('...');
+      }
+    } else {
+      // Current within initial pages, add ellipsis before last if needed
+      if (INITIAL_PAGES < total - 1) {
+        result.push('...');
+      }
     }
 
-    if (total > 1) {
+    // Add last page if not already included
+    if (total > INITIAL_PAGES && result[result.length - 1] !== total) {
       result.push(total);
     }
 

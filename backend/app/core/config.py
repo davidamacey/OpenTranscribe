@@ -273,7 +273,7 @@ class Settings(BaseSettings):
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
     SEARCH_CHUNK_TARGET_WORDS: int = int(os.getenv("SEARCH_CHUNK_TARGET_WORDS", "200"))
     SEARCH_CHUNK_OVERLAP_WORDS: int = int(os.getenv("SEARCH_CHUNK_OVERLAP_WORDS", "40"))
-    SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "60"))
+    SEARCH_RRF_RANK_CONSTANT: int = int(os.getenv("SEARCH_RRF_RANK_CONSTANT", "40"))
     SEARCH_RRF_WINDOW_SIZE: int = int(os.getenv("SEARCH_RRF_WINDOW_SIZE", "500"))
     SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.01"))
     SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
@@ -282,7 +282,7 @@ class Settings(BaseSettings):
     # Intra-semantic suppression: filter semantic-only results whose score falls
     # below this fraction of the semantic score range. 0.5 = keep top half.
     SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
-        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.5")
+        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.35")
     )
 
     # OpenSearch Neural Search settings (ML Commons-based)

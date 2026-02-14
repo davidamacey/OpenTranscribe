@@ -33,6 +33,8 @@ export interface SearchHit {
   relevance_percent: number;
   duration: number;
   file_size: number;
+  semantic_occurrences: number;
+  has_both_match_types: boolean;
 }
 
 export interface SearchResponse {

@@ -10,68 +10,8 @@ import json
 import logging
 
 from app.core.celery import celery_app
-from app.db.session_utils import session_scope
-from app.services.task_detection_service import task_detection_service
-from app.services.task_recovery_service import task_recovery_service
 
 logger = logging.getLogger(__name__)
-
-
-@celery_app.task(name="check_tasks_health", bind=True)
-def check_tasks_health(self):
-    """
-    Periodic task to check for stuck tasks and inconsistent media files.
-
-    This task runs on a schedule to identify and recover:
-    1. Tasks that are stuck in processing or pending state
-    2. Media files with inconsistent states
-
-    Returns:
-        Dictionary with summary of actions taken
-    """
-    summary = {
-        "stuck_tasks_found": 0,
-        "stuck_tasks_recovered": 0,
-        "inconsistent_files_found": 0,
-        "inconsistent_files_fixed": 0,
-    }
-
-    try:
-        with session_scope() as db:
-            # Step 1: Identify and recover stuck tasks
-            stuck_tasks = task_detection_service.identify_stuck_tasks(db)
-            summary["stuck_tasks_found"] = len(stuck_tasks)
-
-            recovered_count = 0
-            for task in stuck_tasks:
-                if task_recovery_service.recover_stuck_task(db, task):
-                    recovered_count += 1
-
-            summary["stuck_tasks_recovered"] = recovered_count
-
-            # Step 2: Identify and fix inconsistent media files
-            inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
-            summary["inconsistent_files_found"] = len(inconsistent_files)
-
-            fixed_count = 0
-            for media_file in inconsistent_files:
-                if task_recovery_service.fix_inconsistent_media_file(db, media_file):
-                    fixed_count += 1
-
-            summary["inconsistent_files_fixed"] = fixed_count
-
-            # Log summary
-            logger.info(
-                f"Task health check completed: "
-                f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
-                f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}"
-            )
-
-    except Exception as e:
-        logger.error(f"Error in task health check: {str(e)}")
-        summary["error"] = str(e)  # type: ignore[assignment]
-
-    return summary
 
 
 @celery_app.task(name="update_gpu_stats", bind=True)
@@ -89,76 +29,66 @@ def update_gpu_stats(self):
         Dictionary with GPU stats or error status
     """
     try:
+        import os
         import subprocess
 
-        import torch
+        # Use GPU_DEVICE_ID env var if set, else default to 0
+        device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
 
-        if not torch.cuda.is_available():
-            gpu_stats = {
-                "available": False,
-                "name": "No GPU Available",
-                "memory_total": "N/A",
-                "memory_used": "N/A",
-                "memory_free": "N/A",
-                "memory_percent": "N/A",
-            }
-        else:
-            # Get GPU device info from PyTorch
-            device_id = 0  # Primary GPU
-            gpu_properties = torch.cuda.get_device_properties(device_id)
+        # Use nvidia-smi for all GPU info (no torch dependency needed).
+        # This allows the task to run on any worker queue, not just the GPU queue.
+        # Query: name, memory.used, memory.total, memory.free, utilization.gpu, temperature.gpu
+        # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
+        # Only dynamic parameter is device_id (integer), preventing command injection.
+        result = subprocess.run(  # noqa: S603 - hardcoded nvidia-smi, integer device_id
+            [  # noqa: S607 # nosec B603 B607
+                "nvidia-smi",
+                "--query-gpu=name,memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+                f"--id={device_id}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
 
-            # Use nvidia-smi for accurate memory usage (includes all processes)
-            # Format: memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu
-            # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
-            # Only dynamic parameter is device_id (integer), preventing command injection.
-            result = subprocess.run(  # noqa: S603 - hardcoded nvidia-smi, integer device_id
-                [  # noqa: S607 # nosec B603 B607
-                    "nvidia-smi",
-                    "--query-gpu=memory.used,memory.total,memory.free,utilization.gpu,temperature.gpu",
-                    "--format=csv,noheader,nounits",
-                    f"--id={device_id}",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+        # Parse the output: "name, used, total, free, util%, temp" in MiB/%/C
+        parts = result.stdout.strip().split(", ")
+        gpu_name = parts[0]
+        memory_used_mib = float(parts[1])
+        memory_total_mib = float(parts[2])
+        memory_free_mib = float(parts[3])
+        utilization_percent = int(parts[4]) if len(parts) > 4 else None
+        temperature_celsius = int(parts[5]) if len(parts) > 5 else None
 
-            # Parse the output: "used, total, free, util%, temp" in MiB/%/C
-            memory_values = result.stdout.strip().split(", ")
-            memory_used_mib = float(memory_values[0])
-            memory_total_mib = float(memory_values[1])
-            memory_free_mib = float(memory_values[2])
-            utilization_percent = int(memory_values[3]) if len(memory_values) > 3 else None
-            temperature_celsius = int(memory_values[4]) if len(memory_values) > 4 else None
+        # Convert MiB to bytes for formatting
+        memory_used = memory_used_mib * 1024 * 1024
+        memory_total = memory_total_mib * 1024 * 1024
+        memory_free = memory_free_mib * 1024 * 1024
 
-            # Convert MiB to bytes for formatting
-            memory_used = memory_used_mib * 1024 * 1024
-            memory_total = memory_total_mib * 1024 * 1024
-            memory_free = memory_free_mib * 1024 * 1024
+        # Calculate percentage used
+        memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
 
-            # Calculate percentage used
-            memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
+        # Format bytes to human-readable
+        def format_bytes(byte_count):
+            for unit in ["B", "KB", "MB", "GB", "TB"]:
+                if byte_count < 1024 or unit == "TB":
+                    return f"{byte_count:.2f} {unit}"
+                byte_count /= 1024
+            return f"{byte_count:.2f} TB"
 
-            # Format bytes to human-readable
-            def format_bytes(byte_count):
-                for unit in ["B", "KB", "MB", "GB", "TB"]:
-                    if byte_count < 1024 or unit == "TB":
-                        return f"{byte_count:.2f} {unit}"
-                    byte_count /= 1024
-                return f"{byte_count:.2f} TB"
-
-            gpu_stats = {
-                "available": True,
-                "name": gpu_properties.name,
-                "memory_total": format_bytes(memory_total),
-                "memory_used": format_bytes(memory_used),
-                "memory_free": format_bytes(memory_free),
-                "memory_percent": f"{memory_percent:.1f}%",
-                "utilization_percent": f"{utilization_percent}%"
-                if utilization_percent is not None
-                else "N/A",
-                "temperature_celsius": temperature_celsius,
-            }
+        gpu_stats = {
+            "available": True,
+            "name": gpu_name,
+            "memory_total": format_bytes(memory_total),
+            "memory_used": format_bytes(memory_used),
+            "memory_free": format_bytes(memory_free),
+            "memory_percent": f"{memory_percent:.1f}%",
+            "utilization_percent": f"{utilization_percent}%"
+            if utilization_percent is not None
+            else "N/A",
+            "temperature_celsius": temperature_celsius,
+        }
 
         # Store in Redis with 5-minute expiration (survives gaps between GPU tasks)
         redis_client = celery_app.backend.client
@@ -196,17 +126,16 @@ def update_gpu_stats(self):
         logger.debug(f"Updated GPU stats in Redis: {gpu_stats}")
         return gpu_stats
 
-    except ImportError:
-        logger.warning("PyTorch not available for GPU monitoring")
-        gpu_stats = {
+    except FileNotFoundError:
+        logger.warning("nvidia-smi not found — no GPU available")
+        return {
             "available": False,
-            "name": "PyTorch Not Installed",
+            "name": "No GPU Available",
             "memory_total": "N/A",
             "memory_used": "N/A",
             "memory_free": "N/A",
             "memory_percent": "N/A",
         }
-        return gpu_stats
     except Exception as e:
         logger.error(f"Error updating GPU stats: {str(e)}")
         return {

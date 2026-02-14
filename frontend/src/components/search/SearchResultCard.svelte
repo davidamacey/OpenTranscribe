@@ -11,11 +11,11 @@
 
   let expanded = false;
 
-  const MAX_VISIBLE = 2;
+  // Show more snippets for files with both keyword and semantic matches
+  $: maxVisible = hit.has_both_match_types ? 3 : 2;
 
-  $: visibleOccurrences = expanded ? hit.occurrences : hit.occurrences.slice(0, MAX_VISIBLE);
-  $: hiddenCount = hit.occurrences.length - MAX_VISIBLE;
-  $: semanticCount = hit.total_occurrences - hit.keyword_occurrences;
+  $: visibleOccurrences = expanded ? hit.occurrences : hit.occurrences.slice(0, maxVisible);
+  $: hiddenCount = hit.occurrences.length - maxVisible;
 
   function formatDate(dateStr: string): string {
     try {
@@ -54,7 +54,7 @@
   }
 </script>
 
-<article class="result-card" class:semantic-only-card={hit.semantic_only}>
+<article class="result-card">
   <div class="result-header">
     <div class="result-header-top">
       <a href="/files/{hit.file_uuid}" class="result-title">
@@ -119,14 +119,16 @@
       {/if}
       <span class="meta-item occurrences">
         <span class="occurrence-counts">
-          {#if hit.semantic_only}
-            <span class="match-badge semantic-badge" title={$t('search.semanticTooltip')}>{$t('search.semanticBadge')}{#if hit.relevance_percent > 0}&nbsp;{hit.relevance_percent}%{/if}</span>
-            <span class="match-badge semantic-count-badge">{hit.total_occurrences} {hit.total_occurrences === 1 ? $t('search.match') : $t('search.matches')}</span>
-          {:else}
+          {#if hit.keyword_occurrences > 0}
             <span class="match-badge keyword-count-badge">{hit.keyword_occurrences} {$t('search.keywordLabel')}</span>
-            {#if semanticCount > 0}
-              <span class="match-badge semantic-count-badge">{semanticCount} {$t('search.semanticLabel')}</span>
-            {/if}
+          {/if}
+          {#if hit.semantic_occurrences > 0}
+            <span class="match-badge semantic-count-badge">{hit.semantic_occurrences} {$t('search.semanticLabel')}</span>
+          {/if}
+          {#if hit.has_both_match_types}
+            <span class="match-badge dual-match-badge" title={$t('search.dualMatchTooltip')}>{hit.relevance_percent}%</span>
+          {:else if hit.relevance_percent > 0}
+            <span class="match-badge relevance-badge">{hit.relevance_percent}%</span>
           {/if}
         </span>
         {#if hit.total_occurrences > hit.occurrences.length}
@@ -153,6 +155,11 @@
   <div class="result-body">
     {#each visibleOccurrences as occurrence}
       <div class="occurrence-row">
+        {#if hit.has_both_match_types}
+          <span class="occurrence-type-label" class:exact={occurrence.has_keyword_match} class:related={!occurrence.has_keyword_match}>
+            {occurrence.has_keyword_match ? $t('search.exactLabel') : $t('search.relatedLabel')}
+          </span>
+        {/if}
         <SearchOccurrence {occurrence} fileUuid={hit.file_uuid} />
         <button
           class="preview-btn"
@@ -178,7 +185,7 @@
       <button class="show-more" on:click={() => (expanded = true)}>
         {$t('search.showMore', { count: hiddenCount })}
       </button>
-    {:else if expanded && hit.occurrences.length > MAX_VISIBLE}
+    {:else if expanded && hit.occurrences.length > maxVisible}
       <button class="show-more" on:click={() => (expanded = false)}>
         {$t('search.showLess')}
       </button>
@@ -422,8 +429,59 @@
     color: #5eead4;
   }
 
-  .semantic-only-card {
-    opacity: 0.92;
+  .dual-match-badge {
+    background: rgba(79, 70, 229, 0.12);
+    color: #4f46e5;
+    font-weight: 600;
+  }
+
+  :global(.dark) .dual-match-badge {
+    background: rgba(129, 140, 248, 0.15);
+    color: #818cf8;
+  }
+
+  .relevance-badge {
+    background: var(--hover-color, #f1f5f9);
+    color: var(--text-secondary, #6b7280);
+  }
+
+  :global(.dark) .relevance-badge {
+    background: rgba(255, 255, 255, 0.08);
+    color: #9ca3af;
+  }
+
+  .occurrence-type-label {
+    display: inline-block;
+    flex-shrink: 0;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+    margin-top: 0.5rem;
+    align-self: flex-start;
+  }
+
+  .occurrence-type-label.exact {
+    background: rgba(250, 204, 21, 0.15);
+    color: #a16207;
+  }
+
+  :global(.dark) .occurrence-type-label.exact {
+    background: rgba(250, 204, 21, 0.12);
+    color: #fbbf24;
+  }
+
+  .occurrence-type-label.related {
+    background: rgba(245, 158, 11, 0.1);
+    color: #d97706;
+  }
+
+  :global(.dark) .occurrence-type-label.related {
+    background: rgba(251, 191, 36, 0.12);
+    color: #fcd34d;
   }
 
   .view-transcript-btn {

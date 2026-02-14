@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter
+from fastapi import Body
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
@@ -61,6 +62,8 @@ def _search_response_to_schema(response) -> dict[str, Any]:
                 "relevance_percent": hit.relevance_percent,
                 "duration": hit.duration,
                 "file_size": hit.file_size,
+                "semantic_occurrences": hit.semantic_occurrences,
+                "has_both_match_types": hit.has_both_match_types,
             }
             for hit in response.results
         ],
@@ -128,8 +131,8 @@ def search_transcripts(
         Search results grouped by file with highlighted snippets.
 
     Notes:
-        - Sorting by 'relevance' always places keyword matches before semantic-only matches,
-          regardless of sort_order.
+        - Results are sorted in unified order by the requested field. RRF scores
+          already combine both keyword and semantic signals.
         - Sorting by 'completed_at' uses upload_time as a fallback since the completion
           timestamp is not indexed in the search layer.
     """
@@ -228,7 +231,9 @@ def get_available_filters(
 
 @router.post("/reindex")
 def trigger_reindex(
-    file_uuids: list[str] | None = None,
+    file_uuids: list[str] | None = Body(
+        None, description="Optional list of specific file UUIDs to reindex"
+    ),
     pending_only: bool = Query(False, description="Only reindex files without chunks"),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:

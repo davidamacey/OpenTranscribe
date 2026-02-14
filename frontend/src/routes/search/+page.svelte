@@ -504,11 +504,8 @@
     return (ms / 1000).toFixed(2);
   }
 
-  // Split results into keyword matches and semantic-only
-  $: keywordResults = $searchStore.results.filter(r => !r.semantic_only);
-  $: semanticHighResults = $searchStore.results.filter(r => r.semantic_only && r.semantic_confidence === 'high');
-  $: semanticLowResults = $searchStore.results.filter(r => r.semantic_only && r.semantic_confidence === 'low');
-  $: allSemanticOnly = keywordResults.length === 0 && (semanticHighResults.length > 0 || semanticLowResults.length > 0);
+  // Check if all results are semantic-only (for informational banner)
+  $: allSemanticOnly = $searchStore.results.length > 0 && $searchStore.results.every(r => r.semantic_only);
 
   onDestroy(() => {
     saveState();
@@ -660,7 +657,7 @@
                 </div>
               {/if}
 
-              {#each keywordResults as hit (hit.file_uuid)}
+              {#each $searchStore.results as hit (hit.file_uuid)}
                 <SearchResultCard
                   {hit}
                   {activePreview}
@@ -668,42 +665,6 @@
                   on:viewTranscript={handleViewTranscript}
                 />
               {/each}
-
-              {#if semanticHighResults.length > 0 && keywordResults.length > 0}
-                {#each semanticHighResults as hit (hit.file_uuid)}
-                  <SearchResultCard
-                    {hit}
-                    {activePreview}
-                    on:preview={handlePreview}
-                    on:viewTranscript={handleViewTranscript}
-                  />
-                {/each}
-              {:else if semanticHighResults.length > 0}
-                {#each semanticHighResults as hit (hit.file_uuid)}
-                  <SearchResultCard
-                    {hit}
-                    {activePreview}
-                    on:preview={handlePreview}
-                    on:viewTranscript={handleViewTranscript}
-                  />
-                {/each}
-              {/if}
-
-              {#if semanticLowResults.length > 0}
-                {#if keywordResults.length > 0 || semanticHighResults.length > 0}
-                  <div class="related-divider">
-                    <span>{$t('search.relatedResults')}</span>
-                  </div>
-                {/if}
-                {#each semanticLowResults as hit (hit.file_uuid)}
-                  <SearchResultCard
-                    {hit}
-                    {activePreview}
-                    on:preview={handlePreview}
-                    on:viewTranscript={handleViewTranscript}
-                  />
-                {/each}
-              {/if}
           </div>
 
           {#if $searchStore.totalPages > 1}
@@ -1564,32 +1525,6 @@
   :global(.dark) .no-keyword-notice {
     background: rgba(245, 158, 11, 0.1);
     color: #fbbf24;
-  }
-
-  .related-divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 20px 0 12px;
-    color: var(--text-secondary, #6b7280);
-    font-size: 0.85rem;
-  }
-
-  .related-divider::before,
-  .related-divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border-color, #e5e7eb);
-  }
-
-  :global(.dark) .related-divider {
-    color: #9ca3af;
-  }
-
-  :global(.dark) .related-divider::before,
-  :global(.dark) .related-divider::after {
-    background: #374151;
   }
 
   /* Responsive */

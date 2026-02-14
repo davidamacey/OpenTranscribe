@@ -88,8 +88,20 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name='media_file' AND column_name='whisper_model')"
     )
+    has_segment_unique_constraint = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='uq_transcript_segment_content')"
+    )
+    has_queued_downloading_statuses = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_enum e "
+        "JOIN pg_type t ON e.enumtypid = t.oid "
+        "WHERE t.typname = 'filestatus' AND e.enumlabel = 'queued')"
+    )
 
-    # Return the highest version stamp that matches
+    # Return the highest version stamp that matches (newest first)
+    if has_queued_downloading_statuses:
+        return "v072_add_queued_downloading_statuses"
+    if has_segment_unique_constraint:
+        return "v071_add_transcript_segment_unique_constraint"
     if has_model_tracking:
         return "v130_add_processing_model_tracking"
     if has_remaining_fk_indexes:

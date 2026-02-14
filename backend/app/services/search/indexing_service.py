@@ -97,21 +97,27 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
     },
 }
 
-# RRF search pipeline: rank-based fusion that doesn't require score normalization.
-# rank_constant=60 (default from the original RRF paper).
-HYBRID_SEARCH_PIPELINE = {
-    "description": "Hybrid BM25 + vector search with RRF",
-    "phase_results_processors": [
-        {
-            "score-ranker-processor": {
-                "combination": {
-                    "technique": "rrf",
-                    "rank_constant": 60,
+
+def _build_hybrid_search_pipeline() -> dict[str, Any]:
+    """Build the RRF search pipeline configuration with configurable rank_constant.
+
+    Lower rank_constant values give more weight to top-ranked results.
+    Default 40 is tuned for transcript search (shorter queries, focused collections).
+    The standard value of 60 from the original RRF paper is optimized for web search.
+    """
+    return {
+        "description": "Hybrid BM25 + vector search with RRF",
+        "phase_results_processors": [
+            {
+                "score-ranker-processor": {
+                    "combination": {
+                        "technique": "rrf",
+                        "rank_constant": settings.SEARCH_RRF_RANK_CONSTANT,
+                    }
                 }
             }
-        }
-    ],
-}
+        ],
+    }
 
 
 def ensure_chunks_index_exists() -> bool:
@@ -218,7 +224,10 @@ def recreate_index_for_dimension(dimension: int) -> bool:
 
 
 def ensure_search_pipeline_exists() -> bool:
-    """Ensure the hybrid search pipeline exists.
+    """Ensure the hybrid search pipeline exists with the correct rank_constant.
+
+    If the pipeline exists but has a different rank_constant than configured,
+    it will be recreated with the correct value.
 
     Returns:
         True if pipeline exists or was created, False on error.
@@ -228,11 +237,33 @@ def ensure_search_pipeline_exists() -> bool:
         return False
 
     pipeline_id = settings.OPENSEARCH_SEARCH_PIPELINE
+    pipeline_body = _build_hybrid_search_pipeline()
     try:
-        # Check if pipeline exists
+        # Check if pipeline exists and has correct rank_constant
         try:
-            opensearch_client.transport.perform_request("GET", f"/_search/pipeline/{pipeline_id}")
-            return True
+            response = opensearch_client.transport.perform_request(
+                "GET", f"/_search/pipeline/{pipeline_id}"
+            )
+            # Verify rank_constant matches configured value
+            existing = response.get(pipeline_id, response) if isinstance(response, dict) else {}
+            processors = existing.get("phase_results_processors", [])
+            for proc in processors:
+                ranker = proc.get("score-ranker-processor", {})
+                combo = ranker.get("combination", {})
+                existing_rc = combo.get("rank_constant")
+                if existing_rc is not None and existing_rc != settings.SEARCH_RRF_RANK_CONSTANT:
+                    logger.info(
+                        f"Search pipeline rank_constant mismatch: "
+                        f"{existing_rc} vs {settings.SEARCH_RRF_RANK_CONSTANT}, recreating"
+                    )
+                    # Delete and recreate
+                    opensearch_client.transport.perform_request(
+                        "DELETE", f"/_search/pipeline/{pipeline_id}"
+                    )
+                    break
+            else:
+                # Pipeline exists with correct config
+                return True
         except Exception:
             logger.debug(f"Search pipeline {pipeline_id} not found, will create it")
 
@@ -240,9 +271,12 @@ def ensure_search_pipeline_exists() -> bool:
         opensearch_client.transport.perform_request(
             "PUT",
             f"/_search/pipeline/{pipeline_id}",
-            body=HYBRID_SEARCH_PIPELINE,
+            body=pipeline_body,
         )
-        logger.info(f"Created search pipeline: {pipeline_id}")
+        logger.info(
+            f"Created search pipeline: {pipeline_id} "
+            f"(rank_constant={settings.SEARCH_RRF_RANK_CONSTANT})"
+        )
         return True
     except Exception as e:
         logger.error(f"Error creating search pipeline: {e}")
@@ -360,7 +394,7 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
 
     except Exception as e:
         logger.error(f"Error creating neural ingest pipeline: {e}")
-        _neural_pipeline_verified = True
+        _neural_pipeline_verified = False
         _neural_pipeline_available = False
         return False
 
@@ -652,7 +686,7 @@ class TranscriptIndexingService:
 
         if response.get("errors"):
             error_count = 0
-            for item in response["items"]:
+            for item in response.get("items", []):
                 if "error" in item.get("index", {}):
                     error_count += 1
                     error_info = item["index"]["error"]

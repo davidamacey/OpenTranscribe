@@ -481,7 +481,7 @@ def _create_playlist_video_placeholder(
         file_size=0,
         content_type="video/mp4",
         duration=video_entry.get("duration"),
-        status=FileStatus.PROCESSING,
+        status=FileStatus.QUEUED,  # Playlist placeholder, waiting for download
         title=video_title,
         author=video_entry.get("uploader"),
         source_url=video_url,

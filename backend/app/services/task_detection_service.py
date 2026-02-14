@@ -35,6 +35,7 @@ class IncompletePostTranscriptionFile:
     missing_topics: bool = False
     missing_speaker_id: bool = False
     missing_analytics: bool = False
+    missing_search_indexing: bool = False
     llm_configured: bool = False
 
 
@@ -278,8 +279,10 @@ class TaskDetectionService:
         - YouTube download files (file_size = 0 but have source_url) stuck in PROCESSING
 
         Excludes:
-        - Playlist placeholder files (file_size = 0, no source_url) that are
-          waiting in the download queue
+        - QUEUED files (playlist placeholders waiting for download)
+        - DOWNLOADING files (actively being downloaded)
+        - PENDING files (already queued for processing)
+        - Playlist placeholder files (file_size = 0, no source_url)
 
         Args:
             db: Database session
@@ -289,6 +292,7 @@ class TaskDetectionService:
         """
         from sqlalchemy import or_
 
+        # Only look at PROCESSING files - explicitly exclude QUEUED/DOWNLOADING
         abandoned_files = (
             db.query(MediaFile)
             .filter(
@@ -350,6 +354,69 @@ class TaskDetectionService:
             f"(skipped {skipped_with_live_tasks} with live Celery tasks)"
         )
         return truly_abandoned
+
+    def identify_stuck_downloading_files(self, db: Session) -> list[MediaFile]:
+        """
+        Identify files stuck in DOWNLOADING status without active download tasks.
+
+        A file is considered stuck if:
+        1. Status is DOWNLOADING
+        2. No active Celery task exists for the file
+        3. File has been in DOWNLOADING status for > 5 minutes
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of files stuck in downloading
+        """
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        stuck_threshold = now - timedelta(minutes=5)
+
+        # Find files in DOWNLOADING status that were updated > 5 minutes ago
+        downloading_files = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.DOWNLOADING,
+                MediaFile.upload_time < stuck_threshold,  # Been downloading for > 5 min
+            )
+            .all()
+        )
+
+        if not downloading_files:
+            return []
+
+        boot_time = _get_container_boot_time()
+        stuck_files = []
+
+        for media_file in downloading_files:
+            # Check for active download tasks
+            active_tasks = (
+                db.query(Task)
+                .filter(
+                    Task.media_file_id == media_file.id,
+                    Task.task_type.in_(["youtube_download", "url_download"]),
+                    Task.status.in_(["pending", "in_progress"]),
+                )
+                .all()
+            )
+
+            # If no active tasks, or all tasks are from before container boot, it's stuck
+            if not active_tasks:
+                stuck_files.append(media_file)
+            else:
+                has_post_boot_task = any(
+                    task.updated_at and task.updated_at > boot_time for task in active_tasks
+                )
+                if not has_post_boot_task:
+                    stuck_files.append(media_file)
+
+        if stuck_files:
+            logger.info(f"Identified {len(stuck_files)} files stuck in DOWNLOADING status")
+
+        return stuck_files
 
     def identify_oom_error_files(self, db: Session) -> list[MediaFile]:
         """
@@ -668,6 +735,18 @@ class TaskDetectionService:
             .all()
         )
 
+        # Batch-fetch files with successful search indexing (completed status)
+        files_with_search_indexing = set(
+            row[0]
+            for row in db.query(Task.media_file_id)
+            .filter(
+                Task.media_file_id.in_(file_ids),
+                Task.task_type == "search_indexing",
+                Task.status == "completed",
+            )
+            .all()
+        )
+
         # Batch-fetch recently-attempted task types for these files
         # Tasks created in the last 30 min that are pending/in_progress or recently completed
         recent_task_cutoff = now - timedelta(minutes=30)
@@ -675,6 +754,7 @@ class TaskDetectionService:
             "analytics",
             "speaker_identification",
             "summarization",
+            "search_indexing",  # Track search indexing failures
         ]
         recently_attempted_rows = (
             db.query(Task.media_file_id, Task.task_type)
@@ -725,8 +805,18 @@ class TaskDetectionService:
             missing_analytics = (
                 c.id not in files_with_analytics and (c.id, "analytics") not in recently_attempted
             )
+            missing_search_indexing = (
+                c.id not in files_with_search_indexing
+                and (c.id, "search_indexing") not in recently_attempted
+            )
 
-            if missing_summary or missing_topics or missing_speaker_id or missing_analytics:
+            if (
+                missing_summary
+                or missing_topics
+                or missing_speaker_id
+                or missing_analytics
+                or missing_search_indexing
+            ):
                 results.append(
                     IncompletePostTranscriptionFile(
                         media_file_id=c.id,
@@ -736,6 +826,7 @@ class TaskDetectionService:
                         missing_topics=missing_topics,
                         missing_speaker_id=missing_speaker_id,
                         missing_analytics=missing_analytics,
+                        missing_search_indexing=missing_search_indexing,
                         llm_configured=llm_ok,
                     )
                 )
@@ -857,6 +948,127 @@ class TaskDetectionService:
             )
             .all()
         )
+
+    def identify_stuck_pending_download_files(self, db: Session) -> list[MediaFile]:
+        """
+        Identify PENDING files that have download errors and should be marked ERROR.
+
+        These are files stuck in PENDING status with download failure messages
+        (e.g., "requires sign-in", "private video", "not available") that will
+        never succeed on retry.
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of PENDING files that should be marked as ERROR
+        """
+        from sqlalchemy import or_
+
+        # Files stuck in PENDING for > 1 hour with download error messages
+        stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        stuck_pending = (
+            db.query(MediaFile)
+            .filter(
+                MediaFile.status == FileStatus.PENDING,
+                MediaFile.upload_time < stale_time,
+                MediaFile.file_size == 0,
+                or_(MediaFile.storage_path.is_(None), MediaFile.storage_path == ""),
+                MediaFile.last_error_message.isnot(None),
+            )
+            .all()
+        )
+
+        # Filter for known unrecoverable error patterns
+        unrecoverable_patterns = [
+            "sign-in",
+            "private video",
+            "not available",
+            "members-only",
+            "removed",
+            "deleted",
+        ]
+
+        stuck_files = []
+        for media_file in stuck_pending:
+            if media_file.last_error_message:
+                error_lower = media_file.last_error_message.lower()
+                if any(pattern in error_lower for pattern in unrecoverable_patterns):
+                    stuck_files.append(media_file)
+
+        if stuck_files:
+            logger.info(
+                f"Identified {len(stuck_files)} PENDING files with unrecoverable download errors"
+            )
+
+        return stuck_files
+
+    def identify_stuck_llm_tasks(self, db: Session) -> list[Task]:
+        """
+        Identify LLM tasks stuck in_progress for an unreasonably long time.
+
+        Tasks stuck for > 6 hours are considered abandoned (worker crash, network timeout).
+        Normal LLM tasks complete in minutes to 1-2 hours for very long transcripts.
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of stuck LLM tasks
+        """
+        stuck_threshold = datetime.now(timezone.utc) - timedelta(hours=6)
+
+        stuck_tasks = (
+            db.query(Task)
+            .filter(
+                Task.status == "in_progress",
+                Task.task_type.in_(["speaker_identification", "summarization", "topic_extraction"]),
+                Task.created_at < stuck_threshold,
+            )
+            .all()
+        )
+
+        if stuck_tasks:
+            logger.info(f"Identified {len(stuck_tasks)} LLM tasks stuck in progress > 6 hours")
+
+        return stuck_tasks
+
+    def identify_false_positive_failed_tasks(self, db: Session) -> list[Task]:
+        """
+        Identify tasks marked failed by overly aggressive recovery.
+
+        These tasks have error message "Task recovered after being stuck in processing"
+        but likely completed successfully. Only consider recent tasks (< 3 days old)
+        to avoid retrying very old failures.
+
+        Args:
+            db: Database session
+
+        Returns:
+            List of falsely failed tasks eligible for retry
+        """
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+
+        false_positive_tasks = (
+            db.query(Task)
+            .filter(
+                Task.status == "failed",
+                Task.error_message == "Task recovered after being stuck in processing",
+                Task.task_type.in_(
+                    ["speaker_identification", "summarization", "topic_extraction", "transcription"]
+                ),
+                Task.created_at > recent_cutoff,
+            )
+            .all()
+        )
+
+        if false_positive_tasks:
+            logger.info(
+                f"Identified {len(false_positive_tasks)} tasks with false-positive failure status"
+            )
+
+        return false_positive_tasks
 
 
 # Service instance

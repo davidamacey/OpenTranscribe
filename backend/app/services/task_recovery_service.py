@@ -35,6 +35,37 @@ class TaskRecoveryService:
         """Initialize with optional configuration override."""
         self.config = config or task_recovery_config
 
+    def _cleanup_transcript_segments(self, db: Session, file_id: int) -> int:
+        """
+        Delete all transcript segments for a file before retry.
+
+        This prevents duplicate segments when transcription is retried due to
+        recovery, errors, or manual reprocessing.
+
+        Args:
+            db: Database session
+            file_id: Media file ID
+
+        Returns:
+            Number of segments deleted
+        """
+        from app.models.media import TranscriptSegment
+
+        segment_count = (
+            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).count()
+        )
+
+        if segment_count > 0:
+            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete(
+                synchronize_session=False
+            )
+            logger.info(
+                f"Deleted {segment_count} existing segments for file {file_id} before retry"
+            )
+            db.commit()
+
+        return segment_count
+
     def recover_stuck_task(self, db: Session, task: Task) -> bool:
         """
         Attempt to recover a stuck task.
@@ -139,29 +170,54 @@ class TaskRecoveryService:
 
         return recovered_count
 
-    def reset_abandoned_files(self, db: Session, abandoned_files: list[MediaFile]) -> int:
+    def reset_abandoned_files(
+        self, db: Session, abandoned_files: list[MediaFile]
+    ) -> dict[str, int]:
         """
-        Reset abandoned files to PENDING status for retry.
+        Reset abandoned files intelligently based on their actual progress.
+
+        For files stuck in PROCESSING:
+        - If transcription completed: Mark as COMPLETED (no segment deletion)
+        - If transcription incomplete: Reset to PENDING and delete segments
 
         Args:
             db: Database session
             abandoned_files: List of abandoned files
 
         Returns:
-            int: Number of successfully reset files
+            Dict with statistics: files_reset, files_completed
         """
-        reset_count = 0
+        stats = {"files_reset": 0, "files_completed": 0}
 
         for media_file in abandoned_files:
             try:
-                logger.info(f"Resetting abandoned file {media_file.id}: {media_file.filename}")
-                update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
-                reset_count += 1
+                # Check if transcription actually completed
+                if self._is_transcription_complete(db, int(media_file.id)):
+                    # Transcription completed - mark as COMPLETED instead of resetting
+                    logger.info(
+                        f"Abandoned file {media_file.id} has completed transcription - "
+                        f"marking as COMPLETED: {media_file.filename}"
+                    )
+                    update_media_file_status(db, int(media_file.id), FileStatus.COMPLETED)
+                    stats["files_completed"] += 1
+                else:
+                    # Transcription incomplete - reset and delete segments for clean retry
+                    logger.info(
+                        f"Resetting abandoned file {media_file.id} with incomplete transcription: "
+                        f"{media_file.filename}"
+                    )
+
+                    # Delete existing transcript segments to prevent duplicates on retry
+                    self._cleanup_transcript_segments(db, int(media_file.id))
+
+                    update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
+                    stats["files_reset"] += 1
 
             except Exception as e:
-                logger.error(f"Error resetting abandoned file {media_file.id}: {e}")
+                logger.error(f"Error handling abandoned file {media_file.id}: {e}")
+                db.rollback()
 
-        return reset_count
+        return stats
 
     def schedule_file_retry(self, media_file_id: int) -> bool:
         """
@@ -320,9 +376,48 @@ class TaskRecoveryService:
 
         return stats
 
+    def _is_transcription_complete(self, db: Session, media_file_id: int) -> bool:
+        """
+        Check if transcription has actually completed for a file.
+
+        A file is considered to have completed transcription if it has:
+        1. Transcript segments in the database
+        2. A completed_at timestamp set
+
+        Args:
+            db: Database session
+            media_file_id: ID of the file to check
+
+        Returns:
+            True if transcription is complete, False otherwise
+        """
+        from app.models.media import TranscriptSegment
+
+        segment_count = (
+            db.query(TranscriptSegment)
+            .filter(TranscriptSegment.media_file_id == media_file_id)
+            .count()
+        )
+
+        if segment_count == 0:
+            return False
+
+        media_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        if not media_file or not media_file.completed_at:
+            return False
+
+        logger.info(
+            f"File {media_file_id} has {segment_count} segments and completed_at={media_file.completed_at} - transcription is complete"
+        )
+        return True
+
     def recover_user_files(self, db: Session, problem_files: list[MediaFile]) -> dict[str, int]:
         """
         Recover problem files for users.
+
+        This method intelligently handles file recovery based on actual progress:
+        - If transcription completed but file stuck in PROCESSING: Mark as COMPLETED
+        - If transcription incomplete: Reset to PENDING for full retry
 
         Args:
             db: Database session
@@ -331,7 +426,7 @@ class TaskRecoveryService:
         Returns:
             Dict with recovery statistics
         """
-        stats = {"files_recovered": 0, "tasks_retried": 0}
+        stats = {"files_recovered": 0, "tasks_retried": 0, "files_completed": 0}
 
         for media_file in problem_files:
             try:
@@ -355,13 +450,28 @@ class TaskRecoveryService:
                 file_age = datetime.now(timezone.utc) - media_file.upload_time
 
                 if active_tasks == 0 and media_file.status == FileStatus.PROCESSING:
-                    # File is stuck, recover it
-                    media_file.retry_count += 1  # type: ignore[assignment]
-                    update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
-                    stats["files_recovered"] += 1
+                    # Check if transcription actually completed
+                    if self._is_transcription_complete(db, int(media_file.id)):
+                        # Transcription completed - mark as COMPLETED instead of resetting
+                        logger.info(
+                            f"File {media_file.id} stuck in PROCESSING but transcription complete - "
+                            f"marking as COMPLETED"
+                        )
+                        update_media_file_status(db, int(media_file.id), FileStatus.COMPLETED)
+                        stats["files_completed"] += 1
+                        # Post-transcription tasks will be handled by periodic health check Step 6
+                    else:
+                        # Transcription incomplete - reset and retry
+                        logger.info(
+                            f"File {media_file.id} stuck in PROCESSING with incomplete transcription - "
+                            f"resetting to PENDING"
+                        )
+                        media_file.retry_count += 1  # type: ignore[assignment]
+                        update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
+                        stats["files_recovered"] += 1
 
-                    if self.schedule_file_retry(int(media_file.id)):
-                        stats["tasks_retried"] += 1
+                        if self.schedule_file_retry(int(media_file.id)):
+                            stats["tasks_retried"] += 1
 
                 elif media_file.status == FileStatus.PENDING and file_age > timedelta(
                     hours=self.config.PENDING_FILE_RETRY_THRESHOLD
@@ -373,6 +483,48 @@ class TaskRecoveryService:
 
             except Exception as e:
                 logger.error(f"Error recovering file {media_file.id}: {e}")
+
+        return stats
+
+    def recover_stuck_downloading_files(
+        self, db: Session, stuck_files: list[MediaFile]
+    ) -> dict[str, int]:
+        """
+        Recover files stuck in DOWNLOADING status without active tasks.
+
+        These files had their download task crash or time out without properly
+        setting ERROR status. We reset them to QUEUED and retry the download.
+
+        Args:
+            db: Database session
+            stuck_files: List of files stuck in DOWNLOADING status
+
+        Returns:
+            Dict with recovery statistics: files_recovered, tasks_retried
+        """
+        stats = {"files_recovered": 0, "tasks_retried": 0}
+
+        for media_file in stuck_files:
+            try:
+                logger.warning(
+                    f"Recovering stuck download for file {media_file.id}: {media_file.filename}"
+                )
+
+                # Delete any partial data from failed download
+                self._cleanup_transcript_segments(db, int(media_file.id))
+
+                # Reset to QUEUED so download task can retry
+                update_media_file_status(db, int(media_file.id), FileStatus.QUEUED)
+                stats["files_recovered"] += 1
+
+                # Schedule retry of the download task
+                if self.schedule_file_retry(int(media_file.id)):
+                    stats["tasks_retried"] += 1
+                    logger.info(f"Scheduled download retry for file {media_file.id}")
+
+            except Exception as e:
+                logger.error(f"Error recovering stuck download for file {media_file.id}: {e}")
+                db.rollback()
 
         return stats
 
@@ -541,6 +693,7 @@ class TaskRecoveryService:
             "topics_dispatched": 0,
             "speaker_id_dispatched": 0,
             "analytics_dispatched": 0,
+            "search_indexing_dispatched": 0,
             "total_tasks_dispatched": 0,
             "dispatch_errors": 0,
         }
@@ -625,13 +778,37 @@ class TaskRecoveryService:
                         f"for file {incomplete.media_file_id}: {e}"
                     )
 
+            # 5. Search indexing (chunk-level embeddings for neural search)
+            if incomplete.missing_search_indexing:
+                try:
+                    from app.tasks.search_indexing_task import index_transcript_search_task
+
+                    result = index_transcript_search_task.delay(
+                        file_id=incomplete.media_file_id,
+                        file_uuid=file_uuid,
+                        user_id=incomplete.user_id,
+                    )
+                    stats["search_indexing_dispatched"] += 1
+                    stats["total_tasks_dispatched"] += 1
+                    logger.info(
+                        f"[Post-transcription recovery] Dispatched search indexing task "
+                        f"{result.id} for file {incomplete.media_file_id}"
+                    )
+                except Exception as e:
+                    stats["dispatch_errors"] += 1
+                    logger.error(
+                        f"[Post-transcription recovery] Failed to dispatch search indexing "
+                        f"for file {incomplete.media_file_id}: {e}"
+                    )
+
         logger.info(
             f"[Post-transcription recovery] Processed {stats['files_processed']} files, "
             f"dispatched {stats['total_tasks_dispatched']} tasks "
             f"(analytics={stats['analytics_dispatched']}, "
             f"speaker_id={stats['speaker_id_dispatched']}, "
             f"summaries={stats['summaries_dispatched']}, "
-            f"topics={stats['topics_dispatched']}), "
+            f"topics={stats['topics_dispatched']}, "
+            f"search_indexing={stats['search_indexing_dispatched']}), "
             f"errors={stats['dispatch_errors']}"
         )
 
@@ -728,6 +905,134 @@ class TaskRecoveryService:
             )
 
         return True
+
+    def recover_stuck_pending_download_files(
+        self, db: Session, stuck_files: list[MediaFile]
+    ) -> dict[str, int]:
+        """
+        Mark PENDING files with unrecoverable download errors as ERROR.
+
+        These files have been stuck in PENDING with download failures that
+        will never succeed (e.g., "requires sign-in", "private video").
+
+        Args:
+            db: Database session
+            stuck_files: List of PENDING files with download errors
+
+        Returns:
+            Dict with recovery statistics: files_marked_error
+        """
+        stats = {"files_marked_error": 0}
+
+        for media_file in stuck_files:
+            try:
+                logger.warning(
+                    f"Marking PENDING file {media_file.id} as ERROR - "
+                    f"unrecoverable download failure: {media_file.last_error_message}"
+                )
+
+                update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
+                stats["files_marked_error"] += 1
+
+            except Exception as e:
+                logger.error(f"Error marking stuck PENDING file {media_file.id} as ERROR: {e}")
+                db.rollback()
+
+        if stats["files_marked_error"] > 0:
+            logger.info(f"Marked {stats['files_marked_error']} stuck PENDING files as ERROR")
+
+        return stats
+
+    def recover_stuck_llm_tasks(self, db: Session, stuck_tasks: list[Task]) -> dict[str, int]:
+        """
+        Mark LLM tasks stuck in_progress for > 6 hours as failed.
+
+        These tasks are abandoned (worker crash, network timeout) and need
+        to be marked failed so recovery can retry them.
+
+        Args:
+            db: Database session
+            stuck_tasks: List of stuck LLM tasks
+
+        Returns:
+            Dict with recovery statistics: tasks_marked_failed
+        """
+        stats = {"tasks_marked_failed": 0}
+
+        for task in stuck_tasks:
+            try:
+                logger.warning(
+                    f"Marking stuck LLM task {task.id} ({task.task_type}) as failed - "
+                    f"stuck in progress for {datetime.now(timezone.utc) - task.created_at}"
+                )
+
+                task.status = "failed"  # type: ignore[assignment]
+                task.error_message = (  # type: ignore[assignment]
+                    "Task timeout - stuck in progress for > 6 hours"
+                )
+                task.completed_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                stats["tasks_marked_failed"] += 1
+
+            except Exception as e:
+                logger.error(f"Error marking stuck task {task.id} as failed: {e}")
+                db.rollback()
+
+        try:
+            db.commit()
+            if stats["tasks_marked_failed"] > 0:
+                logger.info(f"Marked {stats['tasks_marked_failed']} stuck LLM tasks as failed")
+        except Exception as e:
+            logger.error(f"Error committing stuck task recovery: {e}")
+            db.rollback()
+            return {"tasks_marked_failed": 0}
+
+        return stats
+
+    def recover_false_positive_failed_tasks(
+        self, db: Session, false_positive_tasks: list[Task]
+    ) -> dict[str, int]:
+        """
+        Reset tasks falsely marked failed by overly aggressive recovery.
+
+        These tasks have error "Task recovered after being stuck in processing"
+        but likely completed successfully. Reset to pending for automatic retry.
+
+        Args:
+            db: Database session
+            false_positive_tasks: List of falsely failed tasks
+
+        Returns:
+            Dict with recovery statistics: tasks_reset
+        """
+        stats = {"tasks_reset": 0}
+
+        for task in false_positive_tasks:
+            try:
+                logger.info(
+                    f"Resetting false-positive failed task {task.id} ({task.task_type}) to pending"
+                )
+
+                task.status = "pending"  # type: ignore[assignment]
+                task.error_message = None  # type: ignore[assignment]
+                task.completed_at = None  # type: ignore[assignment]
+                task.updated_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                stats["tasks_reset"] += 1
+
+            except Exception as e:
+                logger.error(f"Error resetting false-positive task {task.id}: {e}")
+                db.rollback()
+
+        try:
+            db.commit()
+            if stats["tasks_reset"] > 0:
+                logger.info(f"Reset {stats['tasks_reset']} false-positive failed tasks")
+        except Exception as e:
+            logger.error(f"Error committing false-positive task recovery: {e}")
+            db.rollback()
+            return {"tasks_reset": 0}
+
+        return stats
 
 
 # Service instance

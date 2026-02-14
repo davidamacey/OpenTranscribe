@@ -114,8 +114,7 @@ celery_app.conf.update(
         # Utility Queue - Lightweight maintenance tasks (concurrency=2)
         "app.tasks.utility.*": {"queue": "utility"},
         "app.tasks.recovery.*": {"queue": "utility"},
-        "check_tasks_health": {"queue": "utility"},
-        "update_gpu_stats": {"queue": "gpu"},
+        "update_gpu_stats": {"queue": "cpu"},
         "startup_recovery": {"queue": "utility"},
         "recover_user_files": {"queue": "utility"},
         "periodic_health_check": {"queue": "utility"},
@@ -144,7 +143,7 @@ celery_app.conf.update(
         "gpu-stats-update": {
             "task": "update_gpu_stats",
             "schedule": crontab(minute="*/5"),  # Every 5 minutes
-            "options": {"queue": "gpu"},
+            "options": {"queue": "cpu"},
         },
     },
 )

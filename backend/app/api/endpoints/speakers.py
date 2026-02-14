@@ -120,13 +120,14 @@ def _get_unique_speakers_for_filter(db: Session, current_user: User) -> list[dic
 
     Returns list of dicts with uuid, name, display_name, and media_count.
     """
+    from sqlalchemy import String
     from sqlalchemy import func
 
     rows = (
         db.query(
             Speaker.display_name,
             func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
-            func.min(Speaker.uuid).label("rep_uuid"),
+            func.min(Speaker.uuid.cast(String)).label("rep_uuid"),
             func.min(Speaker.name).label("rep_name"),
         )
         .filter(

@@ -10,6 +10,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.task_config import task_recovery_config
 from app.db.session_utils import session_scope
+from app.models.media import FileStatus
 from app.services.task_detection_service import task_detection_service
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_lock import with_task_lock
@@ -17,7 +18,7 @@ from app.utils.task_lock import with_task_lock
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="startup_recovery", bind=True)
+@celery_app.task(name="startup_recovery", bind=True, acks_late=True, reject_on_worker_lost=True)
 def startup_recovery_task(self):
     """
     Recovery task to run on system startup to handle files/tasks interrupted by
@@ -34,6 +35,7 @@ def startup_recovery_task(self):
     summary = {
         "abandoned_files_found": 0,
         "abandoned_files_reset": 0,
+        "abandoned_files_completed": 0,
         "orphaned_tasks_found": 0,
         "orphaned_tasks_failed": 0,
         "files_retried": 0,
@@ -45,12 +47,18 @@ def startup_recovery_task(self):
             abandoned_files = task_detection_service.identify_abandoned_files(db)
             summary["abandoned_files_found"] = len(abandoned_files)
 
-            reset_count = task_recovery_service.reset_abandoned_files(db, abandoned_files)
-            summary["abandoned_files_reset"] = reset_count
+            reset_stats = task_recovery_service.reset_abandoned_files(db, abandoned_files)
+            summary["abandoned_files_reset"] = reset_stats["files_reset"]
+            summary["abandoned_files_completed"] = reset_stats["files_completed"]
 
-            # Step 2: Retry abandoned files
+            # Step 2: Retry abandoned files that were reset (not those that were completed)
             retry_count = 0
-            for media_file in abandoned_files[:reset_count]:  # Only retry successfully reset files
+            files_to_retry = [
+                f
+                for f in abandoned_files
+                if f.status == FileStatus.PENDING  # Only retry files that were reset to PENDING
+            ]
+            for media_file in files_to_retry:
                 if task_recovery_service.schedule_file_retry(int(media_file.id)):
                     retry_count += 1
             summary["files_retried"] = retry_count
@@ -64,7 +72,9 @@ def startup_recovery_task(self):
 
             logger.info(
                 f"Startup recovery completed: "
-                f"Reset {summary['abandoned_files_reset']} abandoned files, "
+                f"Found {summary['abandoned_files_found']} abandoned files, "
+                f"reset {summary['abandoned_files_reset']} incomplete files, "
+                f"completed {summary['abandoned_files_completed']} finished files, "
                 f"failed {summary['orphaned_tasks_failed']} orphaned tasks, "
                 f"retried {summary['files_retried']} transcriptions"
             )
@@ -76,7 +86,7 @@ def startup_recovery_task(self):
     return summary
 
 
-@celery_app.task(name="recover_user_files", bind=True)
+@celery_app.task(name="recover_user_files", bind=True, acks_late=True, reject_on_worker_lost=True)
 def recover_user_files_task(self, user_id: int | None = None):
     """
     Task to recover files for a specific user or all users.
@@ -130,6 +140,9 @@ def recover_user_files_task(self, user_id: int | None = None):
 @celery_app.task(
     name="periodic_health_check",
     bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME - 30,
     time_limit=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME,
 )
 @with_task_lock("periodic_health_check", timeout=task_recovery_config.HEALTH_CHECK_MAX_RUNTIME)
@@ -153,11 +166,19 @@ def periodic_health_check_task(self):
         "inconsistent_files_fixed": 0,
         "stuck_files_without_celery_found": 0,
         "stuck_files_without_celery_recovered": 0,
+        "stuck_downloading_found": 0,
+        "stuck_downloading_recovered": 0,
         "oom_files_found": 0,
         "oom_files_retried": 0,
         "oom_files_exhausted": 0,
         "retriable_errors_found": 0,
         "retriable_errors_retried": 0,
+        "stuck_pending_downloads_found": 0,
+        "stuck_pending_downloads_marked_error": 0,
+        "stuck_llm_tasks_found": 0,
+        "stuck_llm_tasks_marked_failed": 0,
+        "false_positive_tasks_found": 0,
+        "false_positive_tasks_reset": 0,
         "incomplete_post_transcription_found": 0,
         "post_transcription_tasks_dispatched": 0,
     }
@@ -199,6 +220,21 @@ def periodic_health_check_task(self):
                 summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
                 logger.info(
                     f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
+                )
+
+            # Step 3.5: Identify and recover files stuck in DOWNLOADING status
+            stuck_downloading_files = task_detection_service.identify_stuck_downloading_files(db)
+            summary["stuck_downloading_found"] = len(stuck_downloading_files)
+
+            if stuck_downloading_files:
+                download_recovery_stats = task_recovery_service.recover_stuck_downloading_files(
+                    db, stuck_downloading_files
+                )
+                summary["stuck_downloading_recovered"] = download_recovery_stats["files_recovered"]
+                logger.info(
+                    f"Download Recovery: Found {len(stuck_downloading_files)} stuck files, "
+                    f"recovered {download_recovery_stats['files_recovered']}, "
+                    f"retried {download_recovery_stats['tasks_retried']}"
                 )
 
             # Step 4: Identify and recover files with OOM errors
@@ -245,6 +281,50 @@ def periodic_health_check_task(self):
                     f"failed {retry_stats['files_failed']}"
                 )
 
+            # Step 5.5: Mark PENDING files with unrecoverable download errors as ERROR
+            stuck_pending_downloads = task_detection_service.identify_stuck_pending_download_files(
+                db
+            )
+            summary["stuck_pending_downloads_found"] = len(stuck_pending_downloads)
+
+            if stuck_pending_downloads:
+                pending_stats = task_recovery_service.recover_stuck_pending_download_files(
+                    db, stuck_pending_downloads
+                )
+                summary["stuck_pending_downloads_marked_error"] = pending_stats[
+                    "files_marked_error"
+                ]
+                logger.info(
+                    f"Stuck PENDING Recovery: Found {len(stuck_pending_downloads)} files with "
+                    f"unrecoverable download errors, marked {pending_stats['files_marked_error']} as ERROR"
+                )
+
+            # Step 5.6: Mark stuck LLM tasks (in_progress > 6 hours) as failed
+            stuck_llm_tasks = task_detection_service.identify_stuck_llm_tasks(db)
+            summary["stuck_llm_tasks_found"] = len(stuck_llm_tasks)
+
+            if stuck_llm_tasks:
+                llm_stats = task_recovery_service.recover_stuck_llm_tasks(db, stuck_llm_tasks)
+                summary["stuck_llm_tasks_marked_failed"] = llm_stats["tasks_marked_failed"]
+                logger.info(
+                    f"Stuck LLM Task Recovery: Found {len(stuck_llm_tasks)} tasks stuck > 6 hours, "
+                    f"marked {llm_stats['tasks_marked_failed']} as failed"
+                )
+
+            # Step 5.7: Reset false-positive failed tasks for retry
+            false_positive_tasks = task_detection_service.identify_false_positive_failed_tasks(db)
+            summary["false_positive_tasks_found"] = len(false_positive_tasks)
+
+            if false_positive_tasks:
+                fp_stats = task_recovery_service.recover_false_positive_failed_tasks(
+                    db, false_positive_tasks
+                )
+                summary["false_positive_tasks_reset"] = fp_stats["tasks_reset"]
+                logger.info(
+                    f"False-Positive Task Recovery: Found {len(false_positive_tasks)} tasks "
+                    f"falsely marked failed, reset {fp_stats['tasks_reset']} for retry"
+                )
+
             # Step 6: Recover COMPLETED files with incomplete post-transcription processing
             incomplete_files = task_detection_service.identify_incomplete_post_transcription_files(
                 db, batch_size=10
@@ -269,8 +349,12 @@ def periodic_health_check_task(self):
                 f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
                 f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
                 f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "
+                f"Found {summary['stuck_downloading_found']} stuck downloads, recovered {summary['stuck_downloading_recovered']}; "
                 f"Found {summary['oom_files_found']} OOM error files, retried {summary['oom_files_retried']}, exhausted {summary['oom_files_exhausted']}; "
                 f"Found {summary['retriable_errors_found']} retriable errors, retried {summary['retriable_errors_retried']}; "
+                f"Found {summary['stuck_pending_downloads_found']} stuck PENDING downloads, marked {summary['stuck_pending_downloads_marked_error']} as ERROR; "
+                f"Found {summary['stuck_llm_tasks_found']} stuck LLM tasks, marked {summary['stuck_llm_tasks_marked_failed']} as failed; "
+                f"Found {summary['false_positive_tasks_found']} false-positive tasks, reset {summary['false_positive_tasks_reset']}; "
                 f"Found {summary['incomplete_post_transcription_found']} incomplete post-transcription files, dispatched {summary['post_transcription_tasks_dispatched']} tasks"
             )
 

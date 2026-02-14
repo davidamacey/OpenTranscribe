@@ -30,3 +30,14 @@ services:
             - driver: nvidia
               capabilities: [gpu]
               device_ids: ['${GPU_DEVICE_ID:-0}']
+
+  celery-cpu-worker:
+    # GPU access for nvidia-smi stats collection (update_gpu_stats task).
+    # Only needs driver access — no CUDA workloads run here.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${GPU_DEVICE_ID:-0}']
