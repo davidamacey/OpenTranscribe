@@ -55,6 +55,10 @@ whisperx==3.7.0
 # Do NOT install ctranslate2 from PyPI here - the PyPI version is CUDA-only.
 # The Dockerfile handles downloading and installing the ROCm wheel.
 
+# Pin huggingface-hub to <1.0.0 because pyannote.audio v3 uses deprecated
+# use_auth_token parameter removed in huggingface-hub 1.0.0
+huggingface-hub<1.0.0
+
 # PyAnnote (compatible with NumPy 2.x and PyTorch 2.6+)
 pyannote.audio>=3.3.2
 
