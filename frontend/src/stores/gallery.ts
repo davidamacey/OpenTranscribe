@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/environment';
+import type { MediaFile } from '$lib/types/media';
 
 // LocalStorage key for view mode persistence
 const VIEW_MODE_STORAGE_KEY = 'gallery-view-mode';
@@ -32,7 +33,7 @@ export interface GalleryState {
   isSelecting: boolean;
   selectedFiles: Set<string>; // UUIDs
   lastSelectedId: string | null; // For shift+click range selection
-  files: any[];
+  files: MediaFile[];
   showFilters: boolean;
   currentPage: number; // 0 = nothing loaded
   pageSize: number;
@@ -40,6 +41,7 @@ export interface GalleryState {
   totalPages: number;
   hasMoreFiles: boolean;
   isLoadingMore: boolean;
+  scrollTop: number; // For scroll position restoration on back navigation
 }
 
 export interface GalleryActions {
@@ -51,13 +53,13 @@ export interface GalleryActions {
   handleMultiSelect: (fileId: string, ctrlKey: boolean, shiftKey: boolean) => void;
   selectAllFiles: () => void;
   clearSelection: () => void;
-  setFiles: (files: any[]) => void;
+  setFiles: (files: MediaFile[]) => void;
   toggleFilters: () => void;
   triggerUpload: () => void;
   triggerCollections: () => void;
   triggerAddToCollection: () => void;
   triggerDeleteSelected: () => void;
-  appendFiles: (newFiles: any[], metadata: PaginationMetadata) => void;
+  appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => void;
   resetPagination: () => void;
   setLoadingMore: (loading: boolean) => void;
 }
@@ -72,11 +74,12 @@ const initialState: GalleryState = {
   files: [],
   showFilters: true,
   currentPage: 0,
-  pageSize: 20,
+  pageSize: 100,
   totalFiles: 0,
   totalPages: 0,
   hasMoreFiles: false,
   isLoadingMore: false,
+  scrollTop: 0,
 };
 
 // Create the store
@@ -195,7 +198,7 @@ function createGalleryStore() {
       }));
     },
 
-    setFiles: (files: any[]) => {
+    setFiles: (files: MediaFile[]) => {
       update((state) => ({ ...state, files: files || [] }));
     },
 
@@ -220,18 +223,18 @@ function createGalleryStore() {
       deleteSelectedTrigger.update((n) => n + 1);
     },
 
-    appendFiles: (newFiles: any[], metadata: PaginationMetadata) => {
+    appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
         const safeNewFiles = Array.isArray(newFiles) ? newFiles : [];
-        let files: any[];
+        let files: MediaFile[];
         if (metadata.page === 1) {
           files = safeNewFiles;
         } else {
           // Deduplicate by uuid to prevent keyed {#each} errors when items
           // shift between pages during bulk processing status changes
-          const existingUuids = new Set((state.files || []).map((f: any) => f.uuid));
-          const uniqueNewFiles = safeNewFiles.filter((f: any) => !existingUuids.has(f.uuid));
+          const existingUuids = new Set((state.files || []).map((f) => f.uuid));
+          const uniqueNewFiles = safeNewFiles.filter((f) => !existingUuids.has(f.uuid));
           files = [...state.files, ...uniqueNewFiles];
         }
         return {
@@ -259,6 +262,10 @@ function createGalleryStore() {
 
     setLoadingMore: (loading: boolean) => {
       update((state) => ({ ...state, isLoadingMore: loading }));
+    },
+
+    setScrollTop: (scrollTop: number) => {
+      update((state) => ({ ...state, scrollTop }));
     },
 
     // Subscribe to action triggers (skip initial values)
