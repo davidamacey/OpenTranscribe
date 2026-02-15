@@ -1,0 +1,67 @@
+# docker-compose.rocm-build.yml
+# Overlay that switches all backend services to use Dockerfile.rocm
+#
+# This file is automatically loaded by opentr.sh when AMD ROCm GPU is detected.
+# It layers on top of docker-compose.override.yml (dev) or docker-compose.prod.yml (prod)
+# and only overrides the Dockerfile reference — all other settings (volumes, commands,
+# environment) are inherited from the base overlay.
+#
+# Usage:
+#   ./opentr.sh start dev              # Auto-detects AMD GPU and applies if available
+#   OR manually:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml up
+
+services:
+  backend:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  celery-worker:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+    # ROCm/HIP: Use solo pool to avoid fork.
+    # The HSA runtime initializes during `import torch` (library load) in the parent
+    # process. Forked children inherit stale HSA state, causing "invalid device ordinal".
+    # With --concurrency=1 already set, --pool=solo is functionally equivalent.
+    command: celery -A app.core.celery worker --loglevel=info -Q gpu --concurrency=1 --pool=solo
+
+  celery-download-worker:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  celery-cpu-worker:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  celery-nlp-worker:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  celery-beat:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  flower:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
+
+  celery-worker-gpu-scaled:
+    image: opentranscribe-backend-rocm:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.rocm
