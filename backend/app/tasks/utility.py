@@ -74,6 +74,73 @@ def check_tasks_health(self):
     return summary
 
 
+def _get_gpu_memory_bytes(device_id: int = 0) -> tuple[float, float, float]:
+    """
+    Get GPU memory stats using the appropriate system tool.
+
+    Tries nvidia-smi for NVIDIA GPUs, rocm-smi for AMD GPUs,
+    then falls back to PyTorch's own memory reporting.
+
+    Args:
+        device_id: GPU device index
+
+    Returns:
+        Tuple of (memory_used_bytes, memory_total_bytes, memory_free_bytes)
+    """
+    import shutil
+    import subprocess
+
+    # Try nvidia-smi first (NVIDIA GPUs)
+    if shutil.which("nvidia-smi"):
+        # Security: Safe subprocess call with hardcoded system command.
+        # Only dynamic parameter is device_id (integer), preventing command injection.
+        result = subprocess.run(
+            [  # noqa: S603 S607 # nosec B603 B607
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+                f"--id={device_id}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        values = result.stdout.strip().split(", ")
+        return (
+            float(values[0]) * 1024 * 1024,
+            float(values[1]) * 1024 * 1024,
+            float(values[2]) * 1024 * 1024,
+        )
+
+    # Try rocm-smi for AMD GPUs
+    if shutil.which("rocm-smi"):
+        result = subprocess.run(
+            [  # noqa: S603 S607 # nosec B603 B607
+                "rocm-smi",
+                "--showmeminfo",
+                "vram",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+        # rocm-smi JSON: {"card0": {"VRAM Total Used (B)": ..., "VRAM Total Memory (B)": ...}}
+        card_key = list(data.keys())[0]
+        card_data = data[card_key]
+        used = float(card_data.get("VRAM Total Used (B)", 0))
+        total = float(card_data.get("VRAM Total Memory (B)", 0))
+        return (used, total, total - used)
+
+    # Fallback: PyTorch memory API (works on both CUDA and ROCm via HIP)
+    import torch
+
+    total = float(torch.cuda.get_device_properties(device_id).total_memory)
+    allocated = float(torch.cuda.memory_allocated(device_id))
+    return (allocated, total, total - allocated)
+
+
 @celery_app.task(name="update_gpu_stats", bind=True)
 def update_gpu_stats(self):
     """
@@ -82,8 +149,8 @@ def update_gpu_stats(self):
     This task runs on the celery worker (which has GPU access) and stores
     GPU memory stats in Redis so the backend API can retrieve them.
 
-    Uses nvidia-smi to get accurate GPU memory usage including all processes,
-    not just PyTorch allocated memory.
+    Uses nvidia-smi (NVIDIA), rocm-smi (AMD), or PyTorch memory API
+    to get GPU memory usage.
 
     Returns:
         Dictionary with GPU stats or error status
@@ -107,32 +174,10 @@ def update_gpu_stats(self):
             device_id = 0  # Primary GPU
             gpu_properties = torch.cuda.get_device_properties(device_id)
 
-            # Use nvidia-smi for accurate memory usage (includes all processes)
-            # Format: memory.used,memory.total,memory.free (in MiB)
-            # Security: Safe subprocess call with hardcoded system command (nvidia-smi).
-            # Only dynamic parameter is device_id (integer), preventing command injection.
-            result = subprocess.run(
-                [  # noqa: S603 S607 # nosec B603 B607 - hardcoded nvidia-smi, integer device_id
-                    "nvidia-smi",
-                    "--query-gpu=memory.used,memory.total,memory.free",
-                    "--format=csv,noheader,nounits",
-                    f"--id={device_id}",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
+            # Get memory stats from the appropriate system tool
+            memory_used, memory_total, memory_free = _get_gpu_memory_bytes(
+                device_id
             )
-
-            # Parse the output: "used, total, free" in MiB
-            memory_values = result.stdout.strip().split(", ")
-            memory_used_mib = float(memory_values[0])
-            memory_total_mib = float(memory_values[1])
-            memory_free_mib = float(memory_values[2])
-
-            # Convert MiB to bytes for formatting
-            memory_used = memory_used_mib * 1024 * 1024
-            memory_total = memory_total_mib * 1024 * 1024
-            memory_free = memory_free_mib * 1024 * 1024
 
             # Calculate percentage used
             memory_percent = (memory_used / memory_total * 100) if memory_total > 0 else 0
