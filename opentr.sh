@@ -135,6 +135,27 @@ detect_and_configure_hardware() {
       export COMPUTE_TYPE="int8"
       export USE_GPU="false"
     fi
+  elif command -v rocm-smi &> /dev/null && rocm-smi --showproductname &> /dev/null 2>&1; then
+    echo "✅ AMD ROCm GPU detected"
+    export DOCKER_RUNTIME="rocm"
+    export TORCH_DEVICE="cuda"  # ROCm uses torch.cuda API via HIP translation
+    export COMPUTE_TYPE="float16"
+    export USE_GPU="true"
+
+    # Auto-detect render group GID from /dev/kfd for container device access
+    if [ -c "/dev/kfd" ]; then
+      RENDER_GID=$(stat -c '%g' /dev/kfd 2>/dev/null || stat -f '%g' /dev/kfd 2>/dev/null || echo "109")
+      export RENDER_GROUP_GID="$RENDER_GID"
+      echo "✅ ROCm kernel fusion driver available (/dev/kfd, render GID: $RENDER_GID)"
+    else
+      echo "⚠️  AMD GPU detected but /dev/kfd not found"
+      echo "   ROCm GPU access may not work in containers"
+      echo "   Falling back to CPU mode"
+      export DOCKER_RUNTIME=""
+      export TORCH_DEVICE="cpu"
+      export COMPUTE_TYPE="int8"
+      export USE_GPU="false"
+    fi
   elif [[ "$PLATFORM" == "darwin" && "$ARCH" == "arm64" ]]; then
     echo "✅ Apple Silicon detected"
     export TORCH_DEVICE="mps"
@@ -255,6 +276,14 @@ start_app() {
   if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
+  fi
+
+  # Add ROCm GPU overlay if AMD GPU is detected
+  if [ "$DOCKER_RUNTIME" = "rocm" ]; then
+    if [ -f "docker-compose.rocm-build.yml" ] && [ -f "docker-compose.gpu-rocm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml"
+      echo "🎯 Adding ROCm overlays for AMD GPU acceleration"
+    fi
   fi
 
   # Add GPU scaling overlay if requested
@@ -409,6 +438,14 @@ reset_and_init() {
   if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
     COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     echo "🎯 Adding GPU overlay (docker-compose.gpu.yml) for NVIDIA acceleration"
+  fi
+
+  # Add ROCm GPU overlay if AMD GPU is detected
+  if [ "$DOCKER_RUNTIME" = "rocm" ]; then
+    if [ -f "docker-compose.rocm-build.yml" ] && [ -f "docker-compose.gpu-rocm.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml"
+      echo "🎯 Adding ROCm overlays for AMD GPU acceleration"
+    fi
   fi
 
   # Add GPU scaling overlay if requested
@@ -731,6 +768,13 @@ case "$1" in
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
     fi
 
+    # Add ROCm overlay if AMD GPU is detected
+    if [ "$DOCKER_RUNTIME" = "rocm" ]; then
+      if [ -f "docker-compose.rocm-build.yml" ] && [ -f "docker-compose.gpu-rocm.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml"
+      fi
+    fi
+
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build backend celery-worker celery-beat flower
     echo "✅ Backend services rebuilt successfully."
@@ -777,6 +821,14 @@ case "$1" in
     if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.gpu.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.gpu.yml"
       echo "🎯 Including GPU overlay for build"
+    fi
+
+    # Add ROCm overlay if AMD GPU is detected
+    if [ "$DOCKER_RUNTIME" = "rocm" ]; then
+      if [ -f "docker-compose.rocm-build.yml" ] && [ -f "docker-compose.gpu-rocm.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml"
+        echo "🎯 Including ROCm overlays for build"
+      fi
     fi
 
     # shellcheck disable=SC2086

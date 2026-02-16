@@ -1,0 +1,50 @@
+# docker-compose.gpu-rocm.yml
+# Optional overlay for GPU acceleration (AMD ROCm)
+#
+# This overlay enables GPU runtime for celery-worker on systems with AMD GPUs.
+# It is automatically detected and loaded by opentr.sh when ROCm is available.
+#
+# Usage:
+#   ./opentr.sh start dev              # Auto-detects AMD GPU and applies if available
+#   OR manually:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f docker-compose.rocm-build.yml -f docker-compose.gpu-rocm.yml up
+#
+# Note: This file is automatically included by opentr.sh when AMD ROCm GPU is detected.
+# On macOS or systems without AMD GPU, this file is not loaded, allowing the base
+# docker-compose.yml to work on CPU-only systems.
+#
+# Configuration (.env file):
+#   GPU_DEVICE_ID - GPU device to use (default: 0)
+#   HSA_OVERRIDE_GFX_VERSION - GFX version override for GPU compatibility
+#     RX 7900 XTX/XT (gfx1100): 11.0.0
+#     RX 7800 XT / 7700 XT (gfx1101): 11.0.1
+#     RX 7600 (gfx1102): 11.0.2
+#     RX 6900/6800 XT (gfx1030): 10.3.0
+#   RENDER_GROUP_GID - Host's render group GID for /dev/kfd access
+#     Find with: stat -c '%g' /dev/kfd
+#     Common values: 109 (Ubuntu), 993 (Fedora/RHEL), varies by distro
+
+services:
+  celery-worker:
+    # Enable AMD ROCm GPU access via device passthrough
+    # /dev/kfd - Kernel Fusion Driver (required for ROCm compute)
+    # /dev/dri - Direct Rendering Infrastructure (GPU device nodes)
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    # Add host's video and render group GIDs for device access.
+    # The render group GID varies by distro (e.g. 109 on Ubuntu, 993 on Fedora).
+    # Using numeric GID ensures it matches the host's /dev/kfd ownership.
+    group_add:
+      - video
+      - "${RENDER_GROUP_GID:-109}"
+    # ROCm requires seccomp=unconfined for HSA memory mapping
+    # See: https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html
+    security_opt:
+      - seccomp:unconfined
+    # Larger shared memory for PyTorch model loading (default 64MB is too small)
+    shm_size: '8g'
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-11.0.0}
+      - HIP_VISIBLE_DEVICES=${GPU_DEVICE_ID:-0}

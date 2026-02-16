@@ -1,0 +1,168 @@
+# =============================================================================
+# OpenTranscribe Backend - ROCm Dockerfile (AMD GPU)
+# Multi-stage build optimized for security with non-root user
+# Uses PyTorch ROCm 6.4 and CTranslate2 ROCm HIP backend
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build Stage - Install Python dependencies with compilation
+# -----------------------------------------------------------------------------
+FROM python:3.13-slim-trixie AS builder
+
+WORKDIR /build
+
+# Install build dependencies (only in this stage)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    g++ \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first for better layer caching
+COPY requirements-rocm.txt .
+
+# Upgrade pip to latest version first (security fix for CVE-2025-8869)
+RUN pip install --user --no-cache-dir --upgrade pip
+
+# Install Python dependencies (ROCm variant)
+# PyTorch 2.8.0+rocm6.4 from pytorch.org
+# CTranslate2 ROCm wheel from GitHub releases (not on PyPI)
+# WhisperX 3.7.0 - latest version with ctranslate2 4.5+ compatibility
+# NumPy 2.x - fully compatible with all packages
+# Use --user to install to /root/.local which we'll copy to final stage
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements-rocm.txt
+
+# Install CTranslate2 ROCm wheel from official GitHub releases
+# These wheels are built with HIP backend for AMD GPUs
+# See: https://github.com/OpenNMT/CTranslate2/releases
+ARG CTRANSLATE2_VERSION=4.7.1
+ARG CTRANSLATE2_PYTHON=cp313
+RUN curl -sL -o /tmp/rocm-wheels.zip \
+    "https://github.com/OpenNMT/CTranslate2/releases/download/v${CTRANSLATE2_VERSION}/rocm-python-wheels-Linux.zip" && \
+    unzip -j /tmp/rocm-wheels.zip "temp-linux/ctranslate2-${CTRANSLATE2_VERSION}-${CTRANSLATE2_PYTHON}-${CTRANSLATE2_PYTHON}-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" -d /tmp/ && \
+    pip install --user --no-cache-dir --force-reinstall /tmp/ctranslate2-*.whl && \
+    rm -f /tmp/rocm-wheels.zip /tmp/ctranslate2-*.whl
+
+# -----------------------------------------------------------------------------
+# Stage 2: Runtime Stage - Minimal production image with non-root user
+# -----------------------------------------------------------------------------
+FROM python:3.13-slim-trixie
+
+# OCI annotations for container metadata and compliance
+LABEL org.opencontainers.image.title="OpenTranscribe Backend (ROCm)" \
+      org.opencontainers.image.description="AI-powered transcription backend with WhisperX and PyAnnote (AMD ROCm GPU)" \
+      org.opencontainers.image.vendor="OpenTranscribe" \
+      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.licenses="AGPL-3.0" \
+      org.opencontainers.image.source="https://github.com/davidamacey/OpenTranscribe" \
+      org.opencontainers.image.documentation="https://github.com/davidamacey/OpenTranscribe/blob/master/README.md"
+
+# Install runtime dependencies and ROCm runtime libraries
+# ROCm 7.0 libs needed by CTranslate2's ROCm wheel at runtime.
+# hsa-rocr: HSA runtime with ROCm 7.0 symbols (hsa_amd_memory_get_preferred_copy_engine)
+# rocrand-dev: Headers for MIOpen JIT kernel compilation on consumer GPUs (gfx1100/1101)
+#   PyTorch ROCm wheels lack pre-compiled MIOpen kernels for RDNA 3, so MIOpen compiles
+#   them at first run. This needs rocrand headers (rocrand/rocrand_xorwow.h).
+# hip-dev headers: hip/hip_runtime.h needed by rocrand headers for MIOpen JIT.
+#   hip-dev can't be installed via apt because it pulls rocm-llvm which depends on
+#   libstdc++-11-dev (unavailable on Trixie). Instead we download the .deb and
+#   extract only the include directory — no dependency resolution needed.
+# C++ header stubs: hiprtc/comgr's built-in hiprtc_runtime.h provides type traits
+#   (integral_constant, enable_if, etc.) but rocrand headers do #include <utility>
+#   which is unused. We can't install real C++ headers (GCC's conflict with
+#   hiprtc_runtime.h's definitions; rocm-llvm can't be installed on Trixie).
+#   Instead we create empty stubs in /opt/rocm/include/ so the #include resolves.
+# Debian Trixie ships libhsa-runtime64-1 (ROCm 6.x) which we override via symlink.
+# We use the AMD apt repo targeting Ubuntu Noble (24.04), compatible with Trixie.
+ARG ROCM_VERSION=7.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libsndfile1 \
+    libimage-exiftool-perl \
+    libgomp1 \
+    && echo "deb [arch=amd64 trusted=yes] https://repo.radeon.com/rocm/apt/${ROCM_VERSION}/ noble main" \
+       > /etc/apt/sources.list.d/rocm.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    hsa-rocr \
+    hipblas \
+    hiprand \
+    hipsparse \
+    hipsolver \
+    hipfft \
+    miopen-hip \
+    rocrand-dev \
+    && cd /tmp && apt-get download hip-dev \
+    && dpkg-deb -x hip-dev_*.deb /tmp/hip-extract \
+    && cp -a /tmp/hip-extract/opt/rocm*/include/* /opt/rocm/include/ 2>/dev/null || true \
+    && rm -rf /tmp/hip-extract /tmp/hip-dev_*.deb \
+    && printf '#pragma once\n' | tee /opt/rocm/include/utility /opt/rocm/include/type_traits > /dev/null \
+    && echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf \
+    && ldconfig \
+    && ln -sf /opt/rocm/lib/libhsa-runtime64.so.1 /usr/lib/x86_64-linux-gnu/libhsa-runtime64.so.1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user for security
+# Add to video and render groups for ROCm GPU access (/dev/kfd, /dev/dri)
+RUN groupadd -r render && \
+    groupadd -r appuser && \
+    useradd -r -g appuser -G video,render -u 1000 -m -s /bin/bash appuser && \
+    mkdir -p /app /app/models /app/temp && \
+    chown -R appuser:appuser /app && \
+    mkdir -p /home/appuser/.cache/huggingface \
+             /home/appuser/.cache/torch \
+             /home/appuser/.cache/nltk_data \
+             /home/appuser/.cache/sentence-transformers \
+             /home/appuser/.cache/yt-dlp && \
+    chown -R appuser:appuser /home/appuser/.cache
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python packages from builder stage
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Replace PyTorch's and Triton's bundled ROCm 6.4 HSA runtime with ROCm 7.0
+# Both bundle libhsa-runtime64.so (ROCm 6.4, SONAME .so.1). CTranslate2 needs
+# ROCm 7.0's version (with hsa_amd_memory_get_preferred_copy_engine@ROCR_1).
+# Since shared libs with the same SONAME load only once per process, whichever
+# loads first wins. PyTorch loads before CTranslate2, so without this fix its
+# ROCm 6.4 HSA runtime is used and CTranslate2 fails with undefined symbol.
+RUN ln -sf /opt/rocm/lib/libhsa-runtime64.so.1 \
+        /home/appuser/.local/lib/python3.13/site-packages/torch/lib/libhsa-runtime64.so && \
+    ln -sf /opt/rocm/lib/libhsa-runtime64.so.1 \
+        /home/appuser/.local/lib/python3.13/site-packages/triton/backends/amd/lib/libhsa-runtime64.so
+
+# Ensure scripts in .local are usable by adding to PATH
+# Set LD_LIBRARY_PATH so CTranslate2 and other native libs can find:
+#   - ROCm system libs (hipblas, rocblas) installed via apt from /opt/rocm/lib
+#   - ROCm runtime libs (amdhip64) bundled in PyTorch ROCm wheel
+# Set cache directories to user home
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    LD_LIBRARY_PATH=/opt/rocm/lib:/home/appuser/.local/lib/python3.13/site-packages/torch/lib \
+    HF_HOME=/home/appuser/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface/transformers \
+    TORCH_HOME=/home/appuser/.cache/torch \
+    NLTK_DATA=/home/appuser/.cache/nltk_data \
+    SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/sentence-transformers
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
+# Switch to non-root user
+USER appuser
+
+# Expose application port
+EXPOSE 8080
+
+# Health check to verify the application is responding
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Command to run the application in production (no reload)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

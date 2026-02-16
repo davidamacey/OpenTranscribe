@@ -1,0 +1,76 @@
+fastapi>=0.103.1
+uvicorn[standard]>=0.23.2
+websockets>=11.0.3
+sqlalchemy>=2.0.20
+alembic>=1.12.0
+pydantic>=2.3.0
+pydantic-settings>=2.0.0
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.6
+passlib[bcrypt]>=1.7.4
+bcrypt==3.2.2
+email-validator
+# Asynchronous Tasks
+celery>=5.3.4
+redis>=5.0.0
+flower>=2.0.0
+psycopg2-binary>=2.9.7
+minio>=7.2.18
+opensearch-py>=3.0.0
+httpx>=0.24.1
+python-dotenv>=1.0.0
+pytest>=7.4.2
+
+# LDAP/Active Directory Authentication
+ldap3>=2.9.1
+
+# Rate Limiting
+slowapi>=0.1.9
+
+# PKI/X.509 Certificate Authentication
+cryptography>=42.0.0
+
+# MFA/TOTP Authentication (FedRAMP IA-2)
+pyotp>=2.9.0
+qrcode[pil]>=7.4.0
+
+# AI/ML Stack - ROCm variant for AMD GPUs
+# Non-GPU packages are identical to requirements.txt
+numpy>=1.25.2
+
+# PyTorch with ROCm 6.4 support for AMD GPUs
+# PyTorch 2.8.0 bundles its own ROCm 6.4 runtime in torch/lib/
+# CTranslate2 ROCm wheel uses ROCm 7.0 system libs (installed via apt in Dockerfile)
+# These coexist because they have different SONAMEs (.so.2 vs .so.3)
+--extra-index-url https://download.pytorch.org/whl/rocm6.4
+torch==2.8.0
+torchaudio==2.8.0
+
+# WhisperX latest version with ctranslate2 4.5+ support
+whisperx==3.7.0
+
+# CTranslate2 with ROCm HIP support (official wheels from GitHub releases)
+# The ROCm wheel is installed separately in the Dockerfile from:
+# https://github.com/OpenNMT/CTranslate2/releases
+# Do NOT install ctranslate2 from PyPI here - the PyPI version is CUDA-only.
+# The Dockerfile handles downloading and installing the ROCm wheel.
+
+# Pin huggingface-hub to <1.0.0 because pyannote.audio v3 uses deprecated
+# use_auth_token parameter removed in huggingface-hub 1.0.0
+huggingface-hub<1.0.0
+
+# PyAnnote (compatible with NumPy 2.x and PyTorch 2.6+)
+pyannote.audio>=3.3.2
+
+# Supporting libraries
+omegaconf>=2.3.0
+ffmpeg-python>=0.2.0
+sentencepiece>=0.1.99
+psutil>=5.9.5
+pyexiftool>=0.5.0
+yt-dlp>=2025.1.7
+
+# Semantic search and NLP
+sentence-transformers>=2.2.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+# Note: nltk is installed as transitive dependency from transformers/whisperx
+# NLTK data files (punkt_tab) must be pre-downloaded for offline usage
