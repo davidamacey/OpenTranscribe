@@ -127,6 +127,21 @@
   let showExportConfirmation = false;
   let pendingExportFormat = '';
 
+  // TXT export options modal state + localStorage persistence
+  const TXT_PREF_KEY = 'opentranscribe.txtExportPrefs';
+  function loadTxtPrefs(): { includeTimestamps: boolean; includeSpeakers: boolean } {
+    try {
+      const raw = localStorage.getItem(TXT_PREF_KEY);
+      if (raw) return { includeTimestamps: true, includeSpeakers: true, ...JSON.parse(raw) };
+    } catch {}
+    return { includeTimestamps: true, includeSpeakers: true };
+  }
+  function saveTxtPrefs(prefs: { includeTimestamps: boolean; includeSpeakers: boolean }) {
+    try { localStorage.setItem(TXT_PREF_KEY, JSON.stringify(prefs)); } catch {}
+  }
+  let showTxtExportOptions = false;
+  let txtExportOptions = { includeTimestamps: true, includeSpeakers: true, includeComments: false, hasComments: false };
+
   // Speaker profile confirmation modal state
   let showSpeakerProfileConfirmation = false;
   let pendingSpeakerUpdate = null;
@@ -1011,16 +1026,23 @@
         };
         const endpoint = `/comments/files/${file.uuid}/comments`;
         const response = await axiosInstance.get(endpoint, { headers });
-        const fileComments = response.data || [];
-        hasComments = fileComments.length > 0;
+        const fetchedComments = response.data || [];
+        hasComments = fetchedComments.length > 0;
       }
     } catch (error) {
       console.error('Error checking for comments:', error);
-      // If we can't check comments, assume no comments
       hasComments = false;
     }
 
-    // If no comments, export directly without modal
+    if (format === 'txt') {
+      // Show TXT-specific options modal (timestamps, speakers, comments)
+      const prefs = loadTxtPrefs();
+      txtExportOptions = { ...prefs, includeComments: false, hasComments };
+      showTxtExportOptions = true;
+      return;
+    }
+
+    // For other formats: use the existing comments-only confirmation flow
     if (!hasComments) {
       pendingExportFormat = format;
       processExportWithComments(false);
@@ -1032,7 +1054,7 @@
     showExportConfirmation = true;
   }
 
-  async function processExportWithComments(includeComments: boolean) {
+  async function processExportWithComments(includeComments: boolean, txtOptions?: { includeTimestamps: boolean; includeSpeakers: boolean }) {
     const format = pendingExportFormat;
     let transcriptData = file?.transcript_segments;
     if (!file || !transcriptData) return;
@@ -1105,12 +1127,20 @@
 
       switch (format) {
         case 'txt':
-          // Create transcript content with segments
-          let segments = transcriptData.map((seg: any) =>
-            `[${formatSimpleTimestamp(seg.start_time || seg.start || 0)} --> ${formatSimpleTimestamp(seg.end_time || seg.end || 0)}] ${getSpeakerDisplayName(seg)}: ${seg.text}`
-          );
+          // Build each segment line respecting the timestamp/speaker toggle options
+          let segments = transcriptData.map((seg: any) => {
+            const parts: string[] = [];
+            if (txtOptions?.includeTimestamps !== false) {
+              parts.push(`[${formatSimpleTimestamp(seg.start_time || seg.start || 0)} --> ${formatSimpleTimestamp(seg.end_time || seg.end || 0)}]`);
+            }
+            if (txtOptions?.includeSpeakers !== false) {
+              parts.push(`${getSpeakerDisplayName(seg)}:`);
+            }
+            parts.push(seg.text);
+            return parts.join(' ');
+          });
 
-          // Add comments if requested
+          // Add comments if requested (comments always retain their timestamps since they are positional)
           if (includeComments && fileComments.length > 0) {
             const commentLines = fileComments.map((comment: any) => {
               const userName = comment.user?.full_name || comment.user?.username || comment.user?.email || 'Anonymous';
@@ -1322,6 +1352,20 @@
   function handleExportModalClose() {
     // Just close the modal without doing anything
     showExportConfirmation = false;
+  }
+
+  // TXT export options modal handler
+  async function handleTxtExportConfirm() {
+    showTxtExportOptions = false;
+    saveTxtPrefs({
+      includeTimestamps: txtExportOptions.includeTimestamps,
+      includeSpeakers: txtExportOptions.includeSpeakers
+    });
+    pendingExportFormat = 'txt';
+    await processExportWithComments(txtExportOptions.includeComments, {
+      includeTimestamps: txtExportOptions.includeTimestamps,
+      includeSpeakers: txtExportOptions.includeSpeakers
+    });
   }
 
   /**
@@ -2681,6 +2725,55 @@
   on:close={handleExportModalClose}
 />
 
+<!-- TXT Export Options Modal -->
+{#if showTxtExportOptions}
+  <div class="modal-overlay">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title">{$t('exportOptions.title')}</h2>
+          <button
+            class="modal-close-btn"
+            on:click={() => showTxtExportOptions = false}
+            aria-label={$t('modal.closeDialog')}
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-message">{$t('exportOptions.description')}</p>
+          <div class="export-options-list">
+            <label class="export-option-label">
+              <input type="checkbox" bind:checked={txtExportOptions.includeTimestamps} />
+              {$t('exportOptions.includeTimestamps')}
+            </label>
+            <label class="export-option-label">
+              <input type="checkbox" bind:checked={txtExportOptions.includeSpeakers} />
+              {$t('exportOptions.includeSpeakers')}
+            </label>
+            {#if txtExportOptions.hasComments}
+              <label class="export-option-label">
+                <input type="checkbox" bind:checked={txtExportOptions.includeComments} />
+                {$t('exportOptions.includeComments')}
+              </label>
+            {/if}
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" on:click={handleTxtExportConfirm}>
+            {$t('exportOptions.export')}
+          </button>
+          <button class="btn btn-cancel" on:click={() => showTxtExportOptions = false}>
+            {$t('common.cancel')}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Speaker Profile Confirmation Modal -->
 {#if showSpeakerProfileConfirmation}
   <div class="modal-overlay">
@@ -3369,6 +3462,29 @@
     color: var(--text-secondary);
     line-height: 1.5;
     font-size: 0.95rem;
+  }
+
+  .export-options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .export-option-label {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text-color);
+  }
+
+  .export-option-label input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+    accent-color: var(--primary-color);
   }
 
   .modal-footer {
