@@ -16,6 +16,7 @@
   import SecuritySettings from '$components/settings/SecuritySettings.svelte';
   import SearchSettings from '$components/settings/SearchSettings.svelte';
   import EmbeddingMigrationSettings from '$components/settings/EmbeddingMigrationSettings.svelte';
+  import RetentionSettings from '$components/settings/RetentionSettings.svelte';
   import AuthenticationSettings from '$components/settings/AuthenticationSettings.svelte';
   import AccountStatusDashboard from '$components/settings/AccountStatusDashboard.svelte';
   import AuditLogViewer from '$components/settings/AuditLogViewer.svelte';
@@ -129,6 +130,7 @@
           { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health' },
           { id: 'admin-settings' as SettingsSection, label: $t('settings.systemSettings.title'), icon: 'settings' },
           { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database' },
+          { id: 'retention' as SettingsSection, label: $t('settings.retention.title'), icon: 'clock' },
           ...(isSuperAdmin ? [
             { id: 'authentication' as SettingsSection, label: $t('settings.authentication.title'), icon: 'key' },
             { id: 'account-status' as SettingsSection, label: 'Account Status', icon: 'users' },
@@ -1480,6 +1482,13 @@
           {#if activeSection === 'embedding-migration' && isAdmin}
             <div class="content-section">
               <EmbeddingMigrationSettings />
+            </div>
+          {/if}
+
+          <!-- File Retention Section -->
+          {#if activeSection === 'retention' && isAdmin}
+            <div class="content-section">
+              <RetentionSettings />
             </div>
           {/if}
 

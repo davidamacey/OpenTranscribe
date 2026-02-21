@@ -332,3 +332,102 @@ class FileCleanupService:
 
 # Global service instance
 cleanup_service = FileCleanupService()
+
+
+def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
+    """Perform full cleanup of a MediaFile and all associated external data.
+
+    This is the service-layer equivalent of the HTTP delete endpoint. It deletes
+    the file's objects from MinIO, removes per-file speaker embeddings and the
+    transcript document from OpenSearch, then deletes the database record (DB
+    cascade removes all child rows). SpeakerProfile records and their OpenSearch
+    profile embeddings (keyed as ``profile_{profile_uuid}``) are intentionally
+    left intact.
+
+    Args:
+        db: SQLAlchemy database session.
+        file: MediaFile ORM instance to delete.
+
+    Returns:
+        A dict with keys:
+          - ``deleted`` (bool): True on full success, False on any error.
+          - ``file_uuid`` (str): UUID of the file that was processed.
+          - ``error`` (str | None): Error message on failure, None on success.
+    """
+    file_uuid = str(file.uuid)
+
+    try:
+        # Step 1: Delete MinIO objects — non-fatal if the object is already gone.
+        for path_attr in ("storage_path", "thumbnail_path"):
+            path = getattr(file, path_attr, None)
+            if path:
+                try:
+                    from app.services.minio_service import delete_file
+
+                    delete_file(str(path))
+                    logger.info(f"auto_delete_media_file: deleted MinIO object {path}")
+                except Exception as minio_err:
+                    logger.warning(
+                        f"auto_delete_media_file: could not delete MinIO object {path} "
+                        f"(non-fatal): {minio_err}"
+                    )
+
+        # Step 2: Delete per-file speaker embeddings from OpenSearch.
+        try:
+            from app.services.opensearch_service import remove_speaker_embedding
+
+            for speaker in list(file.speakers):
+                remove_speaker_embedding(str(speaker.uuid))
+        except Exception as spk_err:
+            logger.warning(
+                f"auto_delete_media_file: error removing speaker embeddings for file "
+                f"{file_uuid} (non-fatal): {spk_err}"
+            )
+
+        # Step 3: Delete transcript document from OpenSearch (ignore 404).
+        try:
+            from app.services.opensearch_service import opensearch_client
+            from app.services.opensearch_service import settings as os_settings
+
+            if opensearch_client:
+                try:
+                    opensearch_client.delete(
+                        index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX,
+                        id=file_uuid,
+                    )
+                    logger.info(
+                        f"auto_delete_media_file: deleted transcript {file_uuid} from OpenSearch"
+                    )
+                except Exception as os_err:
+                    logger.warning(
+                        f"auto_delete_media_file: could not delete transcript {file_uuid} "
+                        f"from OpenSearch (non-fatal): {os_err}"
+                    )
+        except Exception as os_import_err:
+            logger.warning(
+                f"auto_delete_media_file: OpenSearch cleanup skipped for file {file_uuid}: "
+                f"{os_import_err}"
+            )
+
+        # Step 4: Delete from database — cascade removes all child rows.
+        owner_id = int(file.user_id)
+        db.delete(file)
+        db.commit()
+        logger.info(f"auto_delete_media_file: deleted file {file_uuid} from database")
+
+        # Step 5: Invalidate Redis caches for the file owner.
+        try:
+            from app.services.redis_cache_service import redis_cache
+
+            redis_cache.invalidate_all_for_user(owner_id)
+        except Exception as cache_err:
+            logger.debug(
+                f"auto_delete_media_file: cache invalidation failed (non-critical): {cache_err}"
+            )
+
+        return {"deleted": True, "file_uuid": file_uuid, "error": None}
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"auto_delete_media_file: failed to delete file {file_uuid}: {e}")
+        return {"deleted": False, "file_uuid": file_uuid, "error": str(e)}

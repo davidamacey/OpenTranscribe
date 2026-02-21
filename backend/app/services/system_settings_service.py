@@ -75,6 +75,27 @@ def get_setting_bool(db: Session, key: str, default: bool = False) -> bool:
     return value.lower() in ("true", "1", "yes", "on")
 
 
+def _get_settings_map(db: Session, keys: list[str]) -> dict[str, str | None]:
+    """Fetch multiple settings in a single query. Returns {key: value_str | None}."""
+    rows = db.query(SystemSettings).filter(SystemSettings.key.in_(keys)).all()
+    return {str(row.key): (str(row.value) if row.value is not None else None) for row in rows}
+
+
+def _bool_val(v: str | None, default: bool) -> bool:
+    """Parse a settings string as bool."""
+    return v.lower() in ("true", "1", "yes", "on") if v is not None else default
+
+
+def _int_val(v: str | None, default: int) -> int:
+    """Parse a settings string as int."""
+    if v is None:
+        return default
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return default
+
+
 def set_setting(
     db: Session, key: str, value: Any, description: str | None = None
 ) -> SystemSettings:
@@ -105,6 +126,32 @@ def set_setting(
     db.commit()
     db.refresh(setting)
     return setting  # type: ignore[no-any-return]
+
+
+def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]]) -> None:
+    """
+    Update multiple settings in a single round-trip.
+
+    Fetches all affected keys in one SELECT, applies changes in memory,
+    then commits once.
+
+    Args:
+        updates: Mapping of {key: (value, description)} to write.
+    """
+    keys = list(updates.keys())
+    existing = {
+        str(row.key): row
+        for row in db.query(SystemSettings).filter(SystemSettings.key.in_(keys)).all()
+    }
+    for key, (value, description) in updates.items():
+        str_value = str(value).lower() if isinstance(value, bool) else str(value)
+        if key in existing:
+            existing[key].value = str_value  # type: ignore[assignment]
+            if description is not None:
+                existing[key].description = description  # type: ignore[assignment]
+        else:
+            db.add(SystemSettings(key=key, value=str_value, description=description))
+    db.commit()
 
 
 def get_all_settings(db: Session) -> dict[str, dict]:
@@ -245,3 +292,100 @@ def update_garbage_cleanup_config(
         )
 
     return get_garbage_cleanup_config(db)
+
+
+def get_retention_config(db: Session) -> dict:
+    """
+    Get file retention configuration as a structured dict.
+
+    Fetches all seven retention keys in a single database query.
+
+    Returns:
+        Dictionary with file retention configuration:
+        - retention_enabled: bool (whether auto-deletion is active)
+        - retention_days: int (files older than this are deleted)
+        - delete_error_files: bool (whether to also delete error-status files)
+        - run_time: str (HH:MM daily schedule time)
+        - timezone: str (IANA timezone string)
+        - last_run: str|None (ISO UTC timestamp of last run)
+        - last_run_deleted: int (files deleted in last run)
+    """
+    row = _get_settings_map(
+        db,
+        [
+            "files.retention_enabled",
+            "files.retention_days",
+            "files.delete_error_files",
+            "files.retention_run_time",
+            "files.retention_timezone",
+            "files.retention_last_run",
+            "files.retention_last_run_deleted",
+        ],
+    )
+    return {
+        "retention_enabled": _bool_val(row.get("files.retention_enabled"), False),
+        "retention_days": _int_val(row.get("files.retention_days"), 90),
+        "delete_error_files": _bool_val(row.get("files.delete_error_files"), False),
+        "run_time": row.get("files.retention_run_time") or "02:00",
+        "timezone": row.get("files.retention_timezone") or "UTC",
+        "last_run": row.get("files.retention_last_run"),
+        "last_run_deleted": _int_val(row.get("files.retention_last_run_deleted"), 0),
+    }
+
+
+def update_retention_config(
+    db: Session,
+    retention_enabled: bool | None = None,
+    retention_days: int | None = None,
+    delete_error_files: bool | None = None,
+    run_time: str | None = None,
+    timezone: str | None = None,
+) -> dict:
+    """
+    Update file retention configuration.
+
+    All provided (non-None) fields are written in a single database round-trip.
+
+    Args:
+        db: Database session
+        retention_enabled: New enabled state (None to keep current)
+        retention_days: New retention window in days (None to keep current)
+        delete_error_files: Whether to also delete error files (None to keep current)
+        run_time: New HH:MM daily schedule time (None to keep current)
+        timezone: New IANA timezone string (None to keep current)
+
+    Returns:
+        Updated retention configuration
+    """
+    updates: dict[str, tuple[Any, str | None]] = {}
+
+    if retention_enabled is not None:
+        updates["files.retention_enabled"] = (
+            retention_enabled,
+            "Enable automatic deletion of old completed transcription files",
+        )
+    if retention_days is not None:
+        updates["files.retention_days"] = (
+            retention_days,
+            "Delete completed files older than this many days (requires retention_enabled=true)",
+        )
+    if delete_error_files is not None:
+        updates["files.delete_error_files"] = (
+            delete_error_files,
+            "Also delete files in error status during retention runs",
+        )
+    if run_time is not None:
+        updates["files.retention_run_time"] = (
+            run_time,
+            "Daily scheduled run time in HH:MM format",
+        )
+    if timezone is not None:
+        updates["files.retention_timezone"] = (
+            timezone,
+            "IANA timezone for the scheduled run (e.g. America/New_York)",
+        )
+
+    if updates:
+        _set_settings_batch(db, updates)
+
+    return get_retention_config(db)

@@ -13,9 +13,11 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from sqlalchemy import and_
 from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from app.api.endpoints.auth import get_current_admin_user
 from app.auth.audit import AuditEventType
@@ -29,6 +31,7 @@ from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import Comment
+from app.models.media import FileStatus
 from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -43,6 +46,11 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.schemas.admin import GarbageCleanupConfig
 from app.schemas.admin import GarbageCleanupConfigUpdate
+from app.schemas.admin import RetentionConfig
+from app.schemas.admin import RetentionConfigUpdate
+from app.schemas.admin import RetentionPreviewFile
+from app.schemas.admin import RetentionPreviewResponse
+from app.schemas.admin import RetentionRunResponse
 from app.schemas.admin import RetryConfig
 from app.schemas.admin import RetryConfigUpdate
 from app.schemas.user import AdminPasswordResetRequest
@@ -726,6 +734,188 @@ async def update_garbage_cleanup_configuration(
     )
 
     return GarbageCleanupConfig(**updated)
+
+
+# ============== File Retention Settings ==============
+
+
+def _get_retention_eligible_files(db: Session, retention_days: int, delete_error_files: bool):
+    """Query files eligible for deletion under the given retention parameters."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    eligible_statuses = [FileStatus.COMPLETED]
+    if delete_error_files:
+        eligible_statuses.append(FileStatus.ERROR)
+
+    return (
+        db.query(MediaFile)
+        .options(selectinload(MediaFile.speakers))
+        .filter(
+            or_(
+                and_(MediaFile.completed_at.isnot(None), MediaFile.completed_at < cutoff),
+                and_(MediaFile.completed_at.is_(None), MediaFile.upload_time < cutoff),
+            ),
+            MediaFile.status.in_([s.value for s in eligible_statuses]),
+        )
+        .all()
+    )
+
+
+@router.get("/settings/retention-config", response_model=RetentionConfig)
+async def get_retention_configuration(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetentionConfig:
+    """
+    Get file retention configuration settings (admin only).
+
+    Returns the current retention configuration including:
+    - retention_enabled: Whether automatic deletion is active
+    - retention_days: Files older than this are deleted
+    - delete_error_files: Whether error-status files are also deleted
+    - run_time: HH:MM daily schedule time
+    - timezone: IANA timezone for the schedule
+    - last_run: ISO timestamp of last run
+    - last_run_deleted: Files deleted in last run
+    """
+    logger.info(f"Retention config requested by admin {current_user.email}")
+    config = system_settings_service.get_retention_config(db)
+    return RetentionConfig(**config)
+
+
+@router.put("/settings/retention-config", response_model=RetentionConfig)
+async def update_retention_configuration(
+    config: RetentionConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetentionConfig:
+    """
+    Update file retention configuration settings (admin only).
+
+    Args:
+        config: New configuration values (only provided values are updated)
+
+    Returns:
+        Updated retention configuration
+    """
+    logger.info(f"Retention config update by admin {current_user.email}: {config}")
+
+    updated = system_settings_service.update_retention_config(
+        db,
+        retention_enabled=config.retention_enabled,
+        retention_days=config.retention_days,
+        delete_error_files=config.delete_error_files,
+        run_time=config.run_time,
+        timezone=config.timezone,
+    )
+
+    return RetentionConfig(**updated)
+
+
+@router.get("/settings/retention-config/preview", response_model=RetentionPreviewResponse)
+async def preview_retention_deletion(
+    retention_days: int = Query(..., ge=1, le=3650, description="Retention window in days"),
+    delete_error_files: bool = Query(False, description="Include error-status files"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetentionPreviewResponse:
+    """
+    Dry-run preview of files that would be deleted (admin only).
+
+    Returns count, total size, and a sample list of files that would be deleted
+    with the given retention parameters. No files are modified.
+    """
+    logger.info(
+        f"Retention preview requested by admin {current_user.email}: "
+        f"{retention_days} days, delete_error_files={delete_error_files}"
+    )
+
+    files = _get_retention_eligible_files(db, retention_days, delete_error_files)
+
+    # Build user lookup for owner names
+    user_ids = list({f.user_id for f in files})
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    user_map = {u.id: u.email for u in users}
+
+    now_utc = datetime.now(timezone.utc)
+    total_size = sum(f.file_size or 0 for f in files)
+
+    # Build preview list (cap at 100 rows for response size)
+    preview_files = []
+    for f in files[:100]:
+        if f.completed_at:
+            ref_dt = (
+                f.completed_at.replace(tzinfo=timezone.utc)
+                if f.completed_at.tzinfo is None
+                else f.completed_at
+            )
+        else:
+            ref_dt = (
+                f.upload_time.replace(tzinfo=timezone.utc)
+                if f.upload_time.tzinfo is None
+                else f.upload_time
+            )
+        age_days = (now_utc - ref_dt).days
+        preview_files.append(
+            RetentionPreviewFile(
+                uuid=str(f.uuid),
+                title=f.filename or str(f.uuid),
+                owner_email=user_map.get(f.user_id, "unknown"),
+                completed_at=f.completed_at.isoformat() if f.completed_at else None,
+                age_days=age_days,
+                size_bytes=f.file_size or 0,
+                status=f.status if isinstance(f.status, str) else f.status.value,
+            )
+        )
+
+    return RetentionPreviewResponse(
+        file_count=len(files),
+        total_size_bytes=total_size,
+        files=preview_files,
+    )
+
+
+@router.post("/settings/retention-config/run", response_model=RetentionRunResponse)
+async def trigger_retention_run(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetentionRunResponse:
+    """
+    Manually trigger a retention cleanup run (admin only).
+
+    Dispatches the cleanup task immediately with force=True, bypassing
+    the time-window check and the retention_enabled flag. Useful for
+    on-demand cleanup without enabling the automatic schedule.
+    """
+    logger.info(f"Manual retention run triggered by admin {current_user.email}")
+
+    from app.core.celery import celery_app
+
+    task = celery_app.send_task(
+        "cleanup_expired_files",
+        kwargs={"force": True},
+        queue="utility",
+    )
+
+    return RetentionRunResponse(
+        task_id=str(task.id),
+        status="queued",
+        message="Retention cleanup task queued successfully.",
+    )
+
+
+@router.get("/settings/retention-config/status", response_model=RetentionConfig)
+async def get_retention_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> RetentionConfig:
+    """
+    Get retention configuration with last-run status (admin only).
+
+    Same as GET /retention-config but intended for status polling after
+    a manual run to refresh last_run and last_run_deleted values.
+    """
+    config = system_settings_service.get_retention_config(db)
+    return RetentionConfig(**config)
 
 
 # ============== Super Admin Role Verification ==============

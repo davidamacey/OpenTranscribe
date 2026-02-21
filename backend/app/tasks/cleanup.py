@@ -3,10 +3,15 @@ Celery tasks for file cleanup and system maintenance.
 """
 
 import logging
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from celery import shared_task
 
+from app.core.celery import celery_app
 from app.db.session_utils import session_scope
 from app.services.file_cleanup_service import cleanup_service
 
@@ -171,3 +176,141 @@ def emergency_file_recovery(self, file_uuids: list):
     except Exception as e:
         logger.error(f"Critical error in emergency recovery: {e}")
         raise
+
+
+@celery_app.task(name="cleanup_expired_files", queue="utility")
+def cleanup_expired_files(force: bool = False):
+    """
+    Delete media files that have exceeded the configured retention window.
+
+    Reads retention configuration from system settings, checks whether the
+    task is scheduled to run in the current hour (unless force=True), and
+    deletes all eligible completed (and optionally error-status) files whose
+    age exceeds the configured retention_days threshold.
+
+    Args:
+        force: When True, skip the enabled/hour/already-ran-today guards and
+               execute the deletion pass unconditionally.
+
+    Returns:
+        A dict with one of the following shapes:
+        - ``{"status": "disabled"}`` – retention is turned off and force is False.
+        - ``{"status": "not_scheduled_now"}`` – current hour does not match the
+          configured run_time hour and force is False.
+        - ``{"status": "already_ran_today"}`` – the task already completed
+          successfully today in the configured timezone and force is False.
+        - ``{"status": "completed", "deleted": int, "failed": int}`` – the
+          deletion pass finished; deleted/failed counts reflect file outcomes.
+        - ``{"status": "error", "error": str}`` – an unexpected exception
+          occurred; details are included for diagnostics.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.services.file_cleanup_service import auto_delete_media_file
+    from app.services.system_settings_service import get_retention_config
+    from app.services.system_settings_service import set_setting
+
+    try:
+        with session_scope() as db:
+            config = get_retention_config(db)
+
+            if not force:
+                # Guard 1: retention must be enabled
+                if not config["retention_enabled"]:
+                    logger.debug("cleanup_expired_files: retention disabled, skipping")
+                    return {"status": "disabled"}
+
+                # Guard 2: current hour must match the scheduled run hour
+                tz = ZoneInfo(config["timezone"])
+                now_local = datetime.now(tz)
+                scheduled_hour = int(config["run_time"].split(":")[0])
+                if now_local.hour != scheduled_hour:
+                    logger.debug(
+                        f"cleanup_expired_files: not scheduled hour "
+                        f"(now={now_local.hour}, scheduled={scheduled_hour}), skipping"
+                    )
+                    return {"status": "not_scheduled_now"}
+
+                # Guard 3: must not have already run today in this timezone
+                last_run_str = config["last_run"]
+                if last_run_str is not None:
+                    try:
+                        last_run_utc = datetime.fromisoformat(last_run_str)
+                        last_run_local = last_run_utc.astimezone(tz)
+                        if last_run_local.date() == now_local.date():
+                            logger.debug("cleanup_expired_files: already ran today, skipping")
+                            return {"status": "already_ran_today"}
+                    except (ValueError, TypeError) as parse_err:
+                        logger.warning(
+                            f"cleanup_expired_files: could not parse last_run "
+                            f"'{last_run_str}': {parse_err}; proceeding with run"
+                        )
+
+            # Build the age cutoff in UTC
+            cutoff = datetime.utcnow() - timedelta(days=config["retention_days"])
+
+            # Determine which statuses are eligible for deletion
+            eligible_statuses = [FileStatus.COMPLETED.value]
+            if config["delete_error_files"]:
+                eligible_statuses.append(FileStatus.ERROR.value)
+
+            # Query files that have aged out; eager-load speakers to avoid N+1 queries
+            # when auto_delete_media_file iterates file.speakers for embedding cleanup.
+            from sqlalchemy.orm import selectinload
+
+            eligible_files = (
+                db.query(MediaFile)
+                .options(selectinload(MediaFile.speakers))
+                .filter(
+                    MediaFile.status.in_(eligible_statuses),
+                    ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < cutoff))
+                    | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < cutoff)),
+                )
+                .all()
+            )
+
+            logger.info(
+                f"cleanup_expired_files: found {len(eligible_files)} file(s) "
+                f"eligible for deletion (cutoff={cutoff.isoformat()})"
+            )
+
+            deleted = 0
+            failed = 0
+
+            for media_file in eligible_files:
+                result = auto_delete_media_file(db, media_file)
+                if result["deleted"]:
+                    deleted += 1
+                    logger.info(
+                        f"cleanup_expired_files: deleted file id={media_file.id} "
+                        f"uuid={media_file.uuid}"
+                    )
+                else:
+                    failed += 1
+                    logger.error(
+                        f"cleanup_expired_files: failed to delete file "
+                        f"id={media_file.id} uuid={media_file.uuid}: {result.get('error')}"
+                    )
+
+            # Persist run metadata to system settings — store with explicit UTC offset
+            # so the already_ran_today guard parses correctly on any server timezone
+            run_timestamp = datetime.now(timezone.utc).isoformat()
+            set_setting(
+                db,
+                "files.retention_last_run",
+                run_timestamp,
+                "ISO UTC timestamp of the last retention cleanup run",
+            )
+            set_setting(
+                db,
+                "files.retention_last_run_deleted",
+                deleted,
+                "Number of files deleted in the most recent retention cleanup run",
+            )
+
+            logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
+            return {"status": "completed", "deleted": deleted, "failed": failed}
+
+    except Exception as exc:
+        logger.error(f"cleanup_expired_files: unexpected error: {exc}", exc_info=True)
+        return {"status": "error", "error": str(exc)}

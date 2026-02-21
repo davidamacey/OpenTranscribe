@@ -551,7 +551,14 @@ INSERT INTO system_settings (key, value, description) VALUES
     ('transcription.garbage_cleanup_enabled', 'true', 'Whether to clean up garbage words (very long words with no spaces) during transcription'),
     ('transcription.max_word_length', '50', 'Maximum word length threshold for garbage detection (words longer than this with no spaces are replaced)'),
     ('search.embedding_model', 'all-MiniLM-L6-v2', 'Search embedding model ID used for semantic search'),
-    ('search.embedding_dimension', '384', 'Search embedding vector dimension matching the current model')
+    ('search.embedding_dimension', '384', 'Search embedding vector dimension matching the current model'),
+    ('files.retention_enabled', 'false', 'Enable automatic deletion of old completed transcription files'),
+    ('files.retention_days', '90', 'Delete completed files older than this many days (requires retention_enabled=true)'),
+    ('files.delete_error_files', 'false', 'Also delete files in error status during retention runs'),
+    ('files.retention_run_time', '02:00', 'Daily scheduled run time in HH:MM format'),
+    ('files.retention_timezone', 'UTC', 'IANA timezone for the scheduled run (e.g. America/New_York)'),
+    ('files.retention_last_run', NULL, 'ISO UTC timestamp of last successful retention run'),
+    ('files.retention_last_run_deleted', '0', 'Number of files deleted in last retention run')
 ON CONFLICT (key) DO NOTHING;
 
 -- Insert system prompts with comprehensive guidance and properly escaped JSON

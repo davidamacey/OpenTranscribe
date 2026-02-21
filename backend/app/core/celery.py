@@ -65,6 +65,7 @@ celery_app = Celery(
         "app.tasks.embedding_migration_v4",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
+        "app.tasks.cleanup",
     ],
 )
 
@@ -129,6 +130,8 @@ celery_app.conf.update(
         # Benchmark/baseline tasks (lightweight DB reads)
         "export_transcript_baseline": {"queue": "utility"},
         "compare_transcript_baseline": {"queue": "utility"},
+        # Retention cleanup task
+        "cleanup_expired_files": {"queue": "utility"},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -146,6 +149,10 @@ celery_app.conf.update(
             "task": "update_gpu_stats",
             "schedule": crontab(minute="*/5"),  # Every 5 minutes
             "options": {"queue": "cpu"},
+        },
+        "cleanup-expired-files": {
+            "task": "cleanup_expired_files",
+            "schedule": crontab(minute=0),  # Every hour on the hour
         },
     },
 )
