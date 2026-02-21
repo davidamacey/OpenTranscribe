@@ -69,6 +69,9 @@
 
   // Cleanup on destroy
   onDestroy(() => {
+    if (isOpen) {
+      document.body.style.overflow = '';
+    }
     if (portalContainer) {
       document.body.removeChild(portalContainer);
       portalContainer = null;
@@ -80,6 +83,7 @@
   function closeDropdown() {
     if (isOpen) {
       isOpen = false;
+      document.body.style.overflow = '';
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
       renderPortal();
@@ -100,9 +104,11 @@
     isOpen = !isOpen;
 
     if (isOpen) {
+      document.body.style.overflow = 'hidden';
       document.addEventListener('click', handleGlobalClick, true);
       window.addEventListener('resize', closeDropdown);
     } else {
+      document.body.style.overflow = '';
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('resize', closeDropdown);
     }
@@ -252,51 +258,9 @@
     header.textContent = $t('speaker.assignSpeaker');
     menu.appendChild(header);
 
-    // "No Speaker" option
-    const noSpeakerBtn = createDropdownItem(
-      '',
-      $t('speaker.noSpeaker'),
-      !segment.speaker,
-      undefined,
-      undefined,
-      true
-    );
-    noSpeakerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      handleSpeakerSelect(null);
-    });
-    menu.appendChild(noSpeakerBtn);
-
-    // Divider
-    const divider1 = document.createElement('div');
-    divider1.className = 'dropdown-divider';
-    menu.appendChild(divider1);
-
-    // Speaker options
-    for (const speaker of speakers) {
-      const isSelected = speaker.uuid === currentSpeakerUuid;
-      const color = getSpeakerColor(speaker.name);
-      const speakerBtn = createDropdownItem(
-        speaker.uuid,
-        translateSpeakerLabel(speaker.display_name || speaker.name),
-        isSelected,
-        color.bg,
-        color.border
-      );
-      speakerBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleSpeakerSelect(speaker.uuid);
-      });
-      menu.appendChild(speakerBtn);
-    }
-
-    // Add "Create New Speaker" button if mediaFileUuid is available
+    // "Create New Speaker" button — top of list for quick access
     if (mediaFileUuid) {
       const nextSpeakerName = getNextSpeakerName();
-
-      const divider2 = document.createElement('div');
-      divider2.className = 'dropdown-divider';
-      menu.appendChild(divider2);
 
       const createBtn = document.createElement('button');
       createBtn.className = 'dropdown-item create-speaker-btn';
@@ -318,6 +282,61 @@
       menu.appendChild(createBtn);
     }
 
+    // "No Speaker" option
+    const noSpeakerBtn = createDropdownItem(
+      '',
+      $t('speaker.noSpeaker'),
+      !segment.speaker,
+      undefined,
+      undefined,
+      true
+    );
+    noSpeakerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleSpeakerSelect(null);
+    });
+    menu.appendChild(noSpeakerBtn);
+
+    // Divider — separates utility actions from named speakers
+    const divider = document.createElement('div');
+    divider.className = 'dropdown-divider';
+    menu.appendChild(divider);
+
+    // Split speakers: human-named first, then unidentified SPEAKER_## auto-labels.
+    // Classification uses the effective display name so that a speaker renamed to
+    // "John Smith" (display_name) is treated as named even though their internal
+    // name is still "SPEAKER_01".
+    const isAutoLabel = (s: Speaker) =>
+      /^SPEAKER_\d+$/.test(s.display_name || s.name);
+    const namedSpeakers = speakers.filter((s) => !isAutoLabel(s));
+    const autoSpeakers = speakers.filter((s) => isAutoLabel(s));
+
+    const renderSpeakerBtn = (speaker: Speaker) => {
+      const isSelected = speaker.uuid === currentSpeakerUuid;
+      const color = getSpeakerColor(speaker.name);
+      // If the speaker has a human name but the underlying id is SPEAKER_##,
+      // append the number so the user can see continuity in the ordered list.
+      const numMatch = speaker.name.match(/^SPEAKER_(\d+)$/);
+      const effectiveName = translateSpeakerLabel(speaker.display_name || speaker.name);
+      const label =
+        numMatch && speaker.display_name ? `${effectiveName} (${numMatch[1]})` : effectiveName;
+      const speakerBtn = createDropdownItem(
+        speaker.uuid,
+        label,
+        isSelected,
+        color.bg,
+        color.border
+      );
+      speakerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleSpeakerSelect(speaker.uuid);
+      });
+      menu.appendChild(speakerBtn);
+    };
+
+    for (const speaker of namedSpeakers) renderSpeakerBtn(speaker);
+    for (const speaker of autoSpeakers) renderSpeakerBtn(speaker);
+
     // Clear and append
     portalContainer.innerHTML = '';
     portalContainer.appendChild(menu);
@@ -335,6 +354,10 @@
       z-index: 10000;
       min-width: 200px;
       padding: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
     }
 
     .speaker-dropdown-portal .dropdown-header {
