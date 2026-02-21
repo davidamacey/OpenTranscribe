@@ -345,6 +345,56 @@ async def get_keycloak_jwks(cfg: Optional[KeycloakConfig] = None) -> Optional[di
             return None
 
 
+async def call_keycloak_logout(
+    keycloak_refresh_token: str,
+    cfg: Optional[KeycloakConfig] = None,
+) -> bool:
+    """Call Keycloak's logout endpoint to terminate the federated session.
+
+    Uses the stored Keycloak refresh token to perform a back-channel logout,
+    ensuring the user's Keycloak session is fully terminated when they log out
+    of OpenTranscribe.
+
+    Args:
+        keycloak_refresh_token: Decrypted Keycloak refresh token.
+        cfg: Keycloak configuration. If None, loads from env.
+
+    Returns:
+        True if Keycloak session was successfully terminated, False otherwise.
+        Failure is non-fatal — the local session is always cleared regardless.
+    """
+    if cfg is None:
+        cfg = KeycloakConfig.from_env()
+
+    urls = _get_keycloak_urls(cfg, internal=True)
+    logout_data = {
+        "client_id": cfg.client_id,
+        "client_secret": cfg.client_secret,
+        "refresh_token": keycloak_refresh_token,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(urls["logout"], data=logout_data)
+            if response.status_code in (200, 204):
+                logger.info("Keycloak federated logout successful")
+                return True
+            logger.warning(
+                f"Keycloak logout returned unexpected status {response.status_code}: "
+                f"{response.text[:200]}"
+            )
+            return False
+    except httpx.TimeoutException:
+        logger.warning("Keycloak logout timed out (5s) — local session still cleared")
+        return False
+    except httpx.HTTPError as e:
+        logger.warning(f"Keycloak logout HTTP error: {e} — local session still cleared")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error during Keycloak logout: {type(e).__name__}: {e}")
+        return False
+
+
 def _extract_certificate_claims(token_claims: dict) -> dict:
     """Extract certificate claims from Keycloak OIDC token.
 

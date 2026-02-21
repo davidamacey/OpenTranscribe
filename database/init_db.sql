@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     allow_local_fallback BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_uid VARCHAR(255) UNIQUE NULL,
     keycloak_id VARCHAR(255) UNIQUE NULL,
+    keycloak_refresh_token TEXT NULL,
     pki_subject_dn VARCHAR(512) UNIQUE NULL,
     -- FedRAMP compliance fields
     password_hash_version VARCHAR(20) DEFAULT 'bcrypt',

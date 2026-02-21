@@ -5,6 +5,7 @@ from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy import Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -35,6 +36,9 @@ class User(Base):
     )  # When True: user can authenticate via password even if auth_type != 'local'
     ldap_uid = Column(String, nullable=True, index=True)  # sAMAccountName from AD
     keycloak_id = Column(String(255), unique=True, nullable=True, index=True)  # Keycloak subject ID
+    keycloak_refresh_token = Column(
+        Text, nullable=True
+    )  # Encrypted KC refresh token for federated logout
     pki_subject_dn = Column(
         String(512), unique=True, nullable=True, index=True
     )  # X.509 certificate DN

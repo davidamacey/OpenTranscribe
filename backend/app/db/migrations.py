@@ -114,8 +114,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'user' AND column_name = 'allow_local_fallback')"
     )
+    has_keycloak_refresh_token = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'keycloak_refresh_token')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v170: keycloak_refresh_token column for federated logout
+    if has_keycloak_refresh_token:
+        return "v170_add_keycloak_refresh_token"
     # v160: allow_local_fallback column added to user table
     if has_allow_local_fallback:
         return "v160_add_allow_local_fallback"
