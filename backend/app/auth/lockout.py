@@ -288,7 +288,39 @@ def _save_record(record: LockoutRecord) -> None:
     store.set(key, json.dumps(record.to_dict()), ex=ttl)
 
 
-def check_and_record_attempt(identifier: str, success: bool) -> tuple[bool, Optional[datetime]]:
+def _record_attempt_audit_only(identifier: str) -> None:
+    """Record a failed login attempt for audit purposes without triggering lockout.
+
+    Used for super admin accounts that are exempt from lockout to preserve
+    emergency access. All attempts are still logged for NIST AC-7 compliance.
+
+    Args:
+        identifier: Email or username of the account
+    """
+    identifier = _normalize_identifier(identifier)
+    now = datetime.now(timezone.utc)
+
+    record = _get_record(identifier)
+    if not record:
+        record = LockoutRecord(identifier=identifier)
+
+    record.failed_attempts += 1
+    record.last_failed_attempt = now.isoformat()
+    if record.first_failed_attempt is None:
+        record.first_failed_attempt = now.isoformat()
+
+    # Save record WITHOUT setting locked_until
+    _save_record(record)
+
+    logger.warning(
+        f"Super admin account {_mask_identifier(identifier)} had failed login "
+        f"attempt #{record.failed_attempts} — exempt from lockout"
+    )
+
+
+def check_and_record_attempt(
+    identifier: str, success: bool, exempt_from_lockout: bool = False
+) -> tuple[bool, Optional[datetime]]:
     """
     Atomically check lockout status and record login attempt result.
 
@@ -298,6 +330,8 @@ def check_and_record_attempt(identifier: str, success: bool) -> tuple[bool, Opti
     Args:
         identifier: Email or username of the account
         success: True if login was successful, False if failed
+        exempt_from_lockout: If True, record attempts for audit but never lock the account.
+            Used for super admin accounts to preserve emergency access (NIST AC-7 compliant).
 
     Returns:
         Tuple of (is_locked, unlock_time):
@@ -305,6 +339,11 @@ def check_and_record_attempt(identifier: str, success: bool) -> tuple[bool, Opti
         - unlock_time: When the lockout expires (None if not locked)
     """
     if not settings.ACCOUNT_LOCKOUT_ENABLED:
+        return False, None
+
+    if exempt_from_lockout:
+        if not success:
+            _record_attempt_audit_only(identifier)
         return False, None
 
     identifier = _normalize_identifier(identifier)

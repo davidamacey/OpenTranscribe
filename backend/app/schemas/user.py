@@ -64,6 +64,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     role: Optional[str] = None
+    allow_local_fallback: Optional[bool] = None
 
 
 class UserInDB(UserBase, UUIDBaseSchema):
@@ -75,6 +76,7 @@ class UserInDB(UserBase, UUIDBaseSchema):
     is_active: bool
     is_superuser: bool
     auth_type: str  # "local", "ldap", "keycloak", "pki"
+    allow_local_fallback: bool = False
     ldap_uid: Optional[str] = None
     keycloak_id: Optional[str] = None
     pki_subject_dn: Optional[str] = None

@@ -110,8 +110,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'transcript_segment' AND column_name = 'words')"
     )
+    has_allow_local_fallback = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user' AND column_name = 'allow_local_fallback')"
+    )
 
     # Return the highest version stamp that matches (newest first)
+    # v160: allow_local_fallback column added to user table
+    if has_allow_local_fallback:
+        return "v160_add_allow_local_fallback"
     # v140: words column added to transcript_segment
     if has_word_timestamps and has_varchar_status and not filestatus_enum_exists:
         return "v140_add_word_timestamps"

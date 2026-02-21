@@ -96,18 +96,21 @@ def _fetch_user_by_email(conn, cursor, email: str) -> tuple | None:
         email: Normalized email address
 
     Returns:
-        User tuple (id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type)
+        User tuple (id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type, allow_local_fallback)
         or None if not found
     """
     cursor.execute(
-        'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type FROM "user" WHERE email = %s',
+        'SELECT id, email, hashed_password, full_name, role, is_active, is_superuser, auth_type, allow_local_fallback FROM "user" WHERE email = %s',
         (email,),
     )
     return cursor.fetchone()  # type: ignore[no-any-return]
 
 
 def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> bool:
-    """Check if user can authenticate with password (not LDAP-only).
+    """Check if user can authenticate with password.
+
+    LDAP users are always rejected (no local password stored).
+    PKI/Keycloak users are rejected unless allow_local_fallback is True.
 
     Args:
         user_tuple: User record tuple from database
@@ -117,11 +120,21 @@ def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> boo
         True if user can authenticate with password, False otherwise
     """
     auth_type = user_tuple[7]  # auth_type is at index 7
+    allow_local_fallback = user_tuple[8] if len(user_tuple) > 8 else False
+
     if auth_type == "ldap":
         logger.info(
             f"Authentication failed: user {masked_email} is LDAP type, cannot use password auth"
         )
         return False
+
+    if auth_type in ("pki", "keycloak") and not allow_local_fallback:
+        logger.info(
+            f"Authentication failed: user {masked_email} has auth_type={auth_type!r} "
+            f"without local fallback permission"
+        )
+        return False
+
     return True
 
 
@@ -210,6 +223,7 @@ def direct_authenticate_user(email: str, password: str) -> dict | None:
             is_active,
             is_superuser,
             auth_type,
+            _allow_local_fallback,
         ) = user
 
         if not _validate_user_can_authenticate(user, masked_email):

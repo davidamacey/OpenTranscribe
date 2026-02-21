@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
     role VARCHAR(50) DEFAULT 'user',
     auth_type VARCHAR(20) DEFAULT 'local' NOT NULL,
+    allow_local_fallback BOOLEAN NOT NULL DEFAULT FALSE,
     ldap_uid VARCHAR(255) UNIQUE NULL,
     keycloak_id VARCHAR(255) UNIQUE NULL,
     pki_subject_dn VARCHAR(512) UNIQUE NULL,

@@ -457,11 +457,13 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
     return str(user.uuid), _build_user_data(user)
 
 
-def _authenticate_production_user(db: Session, username: str, password: str) -> tuple[str, dict]:
+def _authenticate_production_user(
+    db: Session, username: str, password: str
+) -> tuple[str, dict, str]:
     """Authenticate user in production environment.
 
     Hybrid authentication:
-    1. Try local authentication (database password)
+    1. Try local authentication (database password) — includes users with allow_local_fallback
     2. If enabled, try LDAP authentication
 
     Args:
@@ -470,7 +472,9 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
         password: Password to verify
 
     Returns:
-        Tuple of (user_uuid_string, user_data_dict)
+        Tuple of (user_uuid_string, user_data_dict, actual_auth_method)
+        actual_auth_method is "local", "ldap", etc. — describes how the user
+        actually authenticated (may differ from user.auth_type for fallback logins).
 
     Raises:
         HTTPException: If authentication fails
@@ -480,18 +484,26 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
         db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
     )
 
-    # If local user exists with auth_type='local', try local auth
-    if local_user and local_user.auth_type == AUTH_TYPE_LOCAL:
+    # Determine if user can use local (password) authentication
+    can_use_local_auth = local_user and (
+        local_user.auth_type == AUTH_TYPE_LOCAL
+        or getattr(local_user, "allow_local_fallback", False)
+    )
+
+    # If user can use local auth, try it first
+    if can_use_local_auth:
         result = _authenticate_local_user(db, username, password)
         if result:
-            return result
+            return result[0], result[1], AUTH_TYPE_LOCAL
         # Local auth failed, try LDAP as fallback
         logger.info(f"Local auth failed for {username}, trying LDAP as fallback")
-        return _authenticate_ldap_user(db, username, password)
+        uuid_str, data = _authenticate_ldap_user(db, username, password)
+        return uuid_str, data, "ldap"
 
     # Try LDAP authentication
     try:
-        return _authenticate_ldap_user(db, username, password)
+        uuid_str, data = _authenticate_ldap_user(db, username, password)
+        return uuid_str, data, "ldap"
     except HTTPException:
         # LDAP failed, try local auth as fallback if user exists
         if not local_user:
@@ -500,7 +512,7 @@ def _authenticate_production_user(db: Session, username: str, password: str) -> 
         logger.info(f"LDAP failed, trying local auth as fallback for: {username}")
         result = _authenticate_local_user(db, str(local_user.email), password)
         if result:
-            return result
+            return result[0], result[1], AUTH_TYPE_LOCAL
 
         # All authentication methods failed
         raise HTTPException(
@@ -530,7 +542,9 @@ def _get_user_role(db: Session, user_uuid_str: str, user_data: dict | None = Non
     return str(user_db.role) if user_db else ""
 
 
-def _perform_authentication(db: Session, username: str, password: str) -> tuple[bool, str, dict]:
+def _perform_authentication(
+    db: Session, username: str, password: str
+) -> tuple[bool, str, dict, str]:
     """Handle testing vs production authentication.
 
     Args:
@@ -539,10 +553,11 @@ def _perform_authentication(db: Session, username: str, password: str) -> tuple[
         password: Password to verify
 
     Returns:
-        Tuple of (auth_success, user_uuid_str, user_data)
+        Tuple of (auth_success, user_uuid_str, user_data, actual_auth_method)
         - auth_success: True if authentication succeeded
         - user_uuid_str: User UUID string (empty if failed)
         - user_data: User data dict (empty if failed or testing)
+        - actual_auth_method: How the user actually authenticated ("local", "ldap", etc.)
 
     Raises:
         HTTPException: If user is inactive (400) or other non-auth errors
@@ -551,20 +566,26 @@ def _perform_authentication(db: Session, username: str, password: str) -> tuple[
 
     if testing_environment:
         user_uuid_str = _authenticate_testing_user(db, username, password)
-        return True, user_uuid_str, {}
+        return True, user_uuid_str, {}, "local"
 
     try:
-        user_uuid_str, user_data = _authenticate_production_user(db, username, password)
-        return True, user_uuid_str, user_data
+        user_uuid_str, user_data, actual_auth_method = _authenticate_production_user(
+            db, username, password
+        )
+        return True, user_uuid_str, user_data, actual_auth_method
     except HTTPException as auth_error:
         if auth_error.status_code == status.HTTP_401_UNAUTHORIZED:
-            return False, "", {}
+            return False, "", {}, ""
         # Re-raise non-auth errors (400 for inactive user, etc.)
         raise
 
 
 def _handle_lockout_check(
-    username: str, auth_success: bool, client_ip: str, user_agent: str
+    username: str,
+    auth_success: bool,
+    client_ip: str,
+    user_agent: str,
+    exempt_from_lockout: bool = False,
 ) -> tuple[bool, int | None]:
     """Handle lockout logic with atomic check-and-record.
 
@@ -573,6 +594,8 @@ def _handle_lockout_check(
         auth_success: Whether authentication succeeded
         client_ip: Client IP address
         user_agent: Client user agent
+        exempt_from_lockout: If True, record attempts for audit but never lock.
+            Used for super admin accounts with allow_local_fallback.
 
     Returns:
         Tuple of (is_locked, unlock_time)
@@ -584,7 +607,9 @@ def _handle_lockout_check(
     """
 
     # Atomic lockout check and record (prevents race conditions - CRITICAL-1 fix)
-    lockout_result = check_and_record_attempt(username, success=auth_success)
+    lockout_result = check_and_record_attempt(
+        username, success=auth_success, exempt_from_lockout=exempt_from_lockout
+    )
     is_locked, unlock_datetime = lockout_result
     unlock_time: int | None = int(unlock_datetime.timestamp()) if unlock_datetime else None
 
@@ -618,7 +643,11 @@ def _handle_lockout_check(
 
 
 def _check_mfa_requirement(
-    db: Session, user: User, user_uuid_str: str, user_role: str
+    db: Session,
+    user: User,
+    user_uuid_str: str,
+    user_role: str,
+    actual_auth_method: str = "",
 ) -> JSONResponse | None:
     """Check if MFA is required for user and return MFA response if needed.
 
@@ -627,6 +656,9 @@ def _check_mfa_requirement(
         user: User model object
         user_uuid_str: User UUID string
         user_role: User's role
+        actual_auth_method: How the user actually authenticated. When a PKI/Keycloak
+            user authenticates via password fallback, actual_auth_method will be "local"
+            and MFA should still apply.
 
     Returns:
         JSONResponse with MFA token if MFA required, None otherwise
@@ -635,8 +667,12 @@ def _check_mfa_requirement(
     if not _is_mfa_enabled(db):
         return None
 
-    # Skip MFA for PKI and Keycloak users (they have their own 2FA)
-    if user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]:
+    # Skip MFA for PKI and Keycloak users ONLY if they authenticated via their native method.
+    # If they used local password fallback, MFA must still apply.
+    if (
+        user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_KEYCLOAK]
+        and actual_auth_method != AUTH_TYPE_LOCAL
+    ):
         return None
 
     user_mfa = db.query(UserMFA).filter(UserMFA.user_id == int(user.id)).first()
@@ -750,15 +786,24 @@ def login_for_access_token(
 
     try:
         # Perform authentication (handles testing vs production)
-        auth_success, user_uuid_str, user_data = _perform_authentication(
+        auth_success, user_uuid_str, user_data, actual_auth_method = _perform_authentication(
             db, username, form_data.password
         )
 
         # Get client info for audit logging
         client_ip, user_agent = _get_client_info(request)
 
+        # Determine if user is exempt from lockout (super admin with local fallback)
+        exempt_from_lockout = False
+        if auth_success:
+            _user_for_lockout = db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
+            if _user_for_lockout and getattr(_user_for_lockout, "allow_local_fallback", False):
+                exempt_from_lockout = _user_for_lockout.role == "super_admin"
+
         # Handle lockout check and recording
-        is_locked, _ = _handle_lockout_check(username, auth_success, client_ip, user_agent)
+        is_locked, _ = _handle_lockout_check(
+            username, auth_success, client_ip, user_agent, exempt_from_lockout=exempt_from_lockout
+        )
 
         if is_locked:
             # Return same error as invalid credentials to prevent username enumeration
@@ -840,7 +885,10 @@ def login_for_access_token(
                     )
 
         # Check if MFA is required for this user (FedRAMP IA-2)
-        mfa_response = _check_mfa_requirement(db, user_db, user_uuid_str, user_role)
+        # Pass actual_auth_method so fallback logins still get MFA
+        mfa_response = _check_mfa_requirement(
+            db, user_db, user_uuid_str, user_role, actual_auth_method=actual_auth_method
+        )
         if mfa_response:
             return mfa_response
 

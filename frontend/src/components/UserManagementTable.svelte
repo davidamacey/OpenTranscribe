@@ -16,6 +16,7 @@
    * @property {boolean} [is_active]
    * @property {string} [full_name]
    * @property {string} [auth_type]
+   * @property {boolean} [allow_local_fallback]
    */
 
   /** @type {Array<User>} */
@@ -71,11 +72,16 @@
   /** @type {string|null} */
   let currentUserId = null;
 
-  // Subscribe to the user store to get the current user UUID
+  // Subscribe to the user store to get the current user UUID and role
+  /** @type {boolean} */
+  let isSuperAdmin = false;
+
   $: if ($user) {
     currentUserId = $user.uuid;
+    isSuperAdmin = $user.role === 'super_admin';
   } else {
     currentUserId = null;
+    isSuperAdmin = false;
   }
 
   // Reactively update filtered users when users prop or search term changes
@@ -308,6 +314,33 @@
   }
 
   /**
+   * Toggle allow_local_fallback for a user (super_admin only)
+   * @param {User} targetUser
+   */
+  async function toggleLocalFallback(targetUser) {
+    const newValue = !targetUser.allow_local_fallback;
+    try {
+      await axiosInstance.put(`/users/${targetUser.uuid}`, {
+        allow_local_fallback: newValue
+      });
+      const userName = targetUser.full_name || targetUser.email;
+      if (newValue) {
+        toastStore.success($t('userManagement.localFallbackEnabled', { name: userName }));
+      } else {
+        toastStore.success($t('userManagement.localFallbackDisabled', { name: userName }));
+      }
+      onRefresh();
+    } catch (err) {
+      console.error('Error toggling local fallback:', err);
+      let message = $t('userManagement.localFallbackFailed');
+      if (err?.response?.data?.detail) {
+        message = String(err.response.data.detail);
+      }
+      toastStore.error(message);
+    }
+  }
+
+  /**
    * Process search input
    * @param {Event} e
    */
@@ -467,7 +500,23 @@
             <td>
               <div class="table-actions">
                 {#if currentUser.uuid !== currentUserId}
-                  {#if currentUser.auth_type === 'local'}
+                  {#if isSuperAdmin && currentUser.auth_type && currentUser.auth_type !== 'local' && currentUser.auth_type !== 'ldap'}
+                  <button
+                    class="icon-button fallback-toggle-button"
+                    class:active={currentUser.allow_local_fallback}
+                    on:click={() => toggleLocalFallback(currentUser)}
+                    title={currentUser.allow_local_fallback
+                      ? $t('userManagement.disableLocalFallback', { name: currentUser.full_name || currentUser.email })
+                      : $t('userManagement.enableLocalFallback', { name: currentUser.full_name || currentUser.email })}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                      <polyline points="10 17 15 12 10 7"/>
+                      <line x1="15" y1="12" x2="3" y2="12"/>
+                    </svg>
+                  </button>
+                  {/if}
+                  {#if currentUser.auth_type === 'local' || currentUser.allow_local_fallback}
                   <button
                     class="icon-button reset-password-button"
                     on:click={() => openPasswordResetModal(currentUser)}
@@ -842,6 +891,31 @@
 
   .recover-button:active:not(:disabled) {
     transform: scale(0.95);
+  }
+
+  /* Fallback toggle button - amber/orange */
+  .fallback-toggle-button {
+    background-color: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+  }
+
+  .fallback-toggle-button:hover:not(:disabled) {
+    background-color: #f59e0b;
+    color: white;
+    transform: scale(1.05);
+  }
+
+  .fallback-toggle-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .fallback-toggle-button.active {
+    background-color: #f59e0b;
+    color: white;
+  }
+
+  .fallback-toggle-button.active:hover:not(:disabled) {
+    background-color: #d97706;
   }
 
   /* Reset password button - purple/indigo */

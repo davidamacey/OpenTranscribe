@@ -243,8 +243,9 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     if not user:
         return None
 
-    # LDAP users cannot authenticate via password - they have no local password
-    if user.auth_type != "local":
+    # Only allow password auth for local users or users with local fallback enabled.
+    # LDAP users never have a local password; PKI/Keycloak users need explicit opt-in.
+    if user.auth_type != "local" and not getattr(user, "allow_local_fallback", False):
         return None
 
     # Empty password hash means user cannot authenticate locally

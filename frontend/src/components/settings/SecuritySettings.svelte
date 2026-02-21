@@ -40,7 +40,7 @@
   let disableLoading = false;
 
   // PKI user detection
-  $: isPKIUser = $userStore?.auth_type === 'pki';
+  $: isPKIUser = $userStore?.auth_type === 'pki' && !$userStore?.allow_local_fallback;
 
   onMount(async () => {
     await loadMFAStatus();

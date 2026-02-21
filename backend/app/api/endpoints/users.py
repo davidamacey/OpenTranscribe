@@ -103,13 +103,17 @@ def update_current_user(
     # Update fields — strip privileged fields that only admins may change.
     # Without this, any user could promote themselves via PUT /users/me.
     update_data = user_update.model_dump(exclude_unset=True)
-    privileged_fields = {"is_active", "is_superuser", "role", "auth_type"}
+    privileged_fields = {"is_active", "is_superuser", "role", "auth_type", "allow_local_fallback"}
     for field in privileged_fields:
         update_data.pop(field, None)
 
     # Hash password if it's provided
     if "password" in update_data:
-        if current_user.auth_type != AUTH_TYPE_LOCAL:
+        # Allow password changes for local users OR users with allow_local_fallback
+        can_change_password = current_user.auth_type == AUTH_TYPE_LOCAL or getattr(
+            current_user, "allow_local_fallback", False
+        )
+        if not can_change_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change password for non-local users",
@@ -186,9 +190,16 @@ def update_user(
 
     # Update fields — strip privilege-escalation fields unless caller is super_admin.
     # Regular admins can update names, emails, etc. but cannot promote users.
+    # allow_local_fallback is also a super_admin-only field (security-critical).
     update_data = user_update.model_dump(exclude_unset=True)
     if current_user.role != "super_admin":
-        privileged_fields = {"is_active", "is_superuser", "role", "auth_type"}
+        privileged_fields = {
+            "is_active",
+            "is_superuser",
+            "role",
+            "auth_type",
+            "allow_local_fallback",
+        }
         stripped = [f for f in privileged_fields if f in update_data]
         for field in stripped:
             update_data.pop(field)
@@ -200,7 +211,11 @@ def update_user(
 
     # Hash password if it's provided
     if "password" in update_data:
-        if user.auth_type != AUTH_TYPE_LOCAL:
+        # Allow password changes for local users OR users with allow_local_fallback
+        can_change_password = user.auth_type == AUTH_TYPE_LOCAL or getattr(
+            user, "allow_local_fallback", False
+        )
+        if not can_change_password:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot change password for non-local users",

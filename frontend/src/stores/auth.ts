@@ -22,6 +22,7 @@ export interface User {
   full_name: string;
   role: 'user' | 'admin' | 'super_admin';
   auth_type: 'local' | 'ldap' | 'keycloak' | 'pki'; // Authentication type for password change UI
+  allow_local_fallback?: boolean;
   certificate?: CertificateInfo;
   created_at: string;
   updated_at: string;
